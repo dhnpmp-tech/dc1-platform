@@ -67,13 +67,14 @@ function uuid(): string {
  * SELECT FOR UPDATE to prevent TOCTOU race — concurrent debits cannot double-spend.
  * Idempotent via unique txId.
  */
-export async function debit(
-  userId: string,
-  amountHalala: number,
-  reason: string,
-  jobId?: string,
-  idempotencyKey?: string
-): Promise<Transaction> {
+export async function debit(params: {
+  userId: string;
+  amount: number;
+  reason?: string;
+  jobId?: string;
+  idempotencyKey?: string;
+}): Promise<Transaction> {
+  const { userId, amount: amountHalala, reason = 'debit', jobId, idempotencyKey } = params;
   const txId = idempotencyKey ?? uuid();
 
   // Atomic balance check + debit in a single PL/pgSQL transaction (no TOCTOU)

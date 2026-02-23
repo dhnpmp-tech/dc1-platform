@@ -114,12 +114,15 @@ function minutesBetween(start: Date, end: Date): number {
 /**
  * Start a billing session for a GPU job.
  */
-export async function startBillingSession(
-  jobId: string,
-  renterId: string,
-  providerId: string,
-  ratePerHourSar: number
-): Promise<BillingSession> {
+export async function startBillingSession(params: {
+  jobId: string;
+  userId: string;
+  providerId: string;
+  gpuId?: string;
+  ratePerHour: number;
+  reservationId?: string;
+}): Promise<BillingSession> {
+  const { jobId, userId: renterId, providerId, ratePerHour: ratePerHourSar } = params;
   const sessionId = uuid();
   const rateHalala = wallet.sarToHalala(ratePerHourSar);
   const reserveHalala = rateHalala * DEFAULT_RESERVE_HOURS;
@@ -193,7 +196,7 @@ export async function recordBillingTick(sessionId: string): Promise<BillingTick>
   const proofHash = computeProofHash(session.jobId, sessionId, renterCharge, timestamp);
 
   // Debit renter
-  await wallet.debit(session.renterId, renterCharge, `Billing tick #${tickNumber} for job ${session.jobId}`, session.jobId);
+  await wallet.debit({ userId: session.renterId, amount: renterCharge, reason: `Billing tick #${tickNumber} for job ${session.jobId}`, jobId: session.jobId });
 
   // Credit provider (escrow)
   await wallet.credit(session.providerId, provider, `Provider credit tick #${tickNumber} for job ${session.jobId}`, session.jobId);
@@ -257,7 +260,7 @@ export async function closeBillingSession(sessionId: string): Promise<BillingRec
   const remainProvider = totalProvider - billedProvider;
 
   if (remainRenter > 0) {
-    await wallet.debit(session.renterId, remainRenter, `Final settlement for job ${session.jobId}`, session.jobId);
+    await wallet.debit({ userId: session.renterId, amount: remainRenter, reason: `Final settlement for job ${session.jobId}`, jobId: session.jobId });
   }
   if (remainProvider > 0) {
     await wallet.credit(session.providerId, remainProvider, `Final provider credit for job ${session.jobId}`, session.jobId);
