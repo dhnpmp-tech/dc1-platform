@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+// DC1 Platform - GPU Rental Network
 export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-dc-black via-gray-900 to-dc-black">
