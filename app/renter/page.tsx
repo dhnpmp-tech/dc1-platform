@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase, getMachines, getTransactions } from '@/lib/supabase'
+import { supabase, getMachines, getTransactions } from '../../lib/supabase'
 
 interface Machine {
   id: string

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase, getUsers, getMachines, getRentals, getWallets } from '@/lib/supabase'
+import { supabase, getUsers, getMachines, getRentals, getWallets } from '../../lib/supabase'
 
 interface User {
   id: string
