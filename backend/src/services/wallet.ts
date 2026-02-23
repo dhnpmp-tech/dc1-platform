@@ -2,10 +2,14 @@
  * DC1 Wallet Service — Gate 0
  * All internal amounts in HALALA (1 SAR = 100 halala) to avoid floating point.
  * Display conversion: halala / 100 = SAR
+ *
+ * C3 fix: Atomic debit uses Supabase RPC (debit_wallet_atomic) with SELECT FOR UPDATE
+ * to prevent TOCTOU race conditions on concurrent debit calls.
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import type { DbBillingTransaction, DbBillingReservation } from '../types/db';
 
 const supabase: SupabaseClient = createClient(
   process.env.SUPABASE_URL!,
@@ -58,7 +62,10 @@ function uuid(): string {
 // ── Wallet Operations ──────────────────────────────────────────────────────
 
 /**
- * Debit (decrease) a user's wallet. Idempotent via unique txId.
+ * Debit (decrease) a user's wallet.
+ * C3 fix: Uses debit_wallet_atomic RPC which runs inside a DB transaction with
+ * SELECT FOR UPDATE to prevent TOCTOU race — concurrent debits cannot double-spend.
+ * Idempotent via unique txId.
  */
 export async function debit(
   userId: string,
@@ -69,37 +76,21 @@ export async function debit(
 ): Promise<Transaction> {
   const txId = idempotencyKey ?? uuid();
 
-  // Check idempotency
-  const { data: existing } = await supabase
-    .from('billing_transactions')
-    .select('*')
-    .eq('id', txId)
-    .maybeSingle();
-  if (existing) return mapTx(existing);
+  // Atomic balance check + debit in a single PL/pgSQL transaction (no TOCTOU)
+  const { data, error } = await supabase.rpc('debit_wallet_atomic', {
+    p_user_id: userId,
+    p_amount_halala: amountHalala,
+    p_reason: reason,
+    p_job_id: jobId ?? null,
+    p_idempotency_key: txId,
+  });
 
-  // Atomic: check balance then insert in RPC or sequential with row-lock
-  const bal = await getBalance(userId);
-  if (bal.available < amountHalala) {
-    throw new Error(`Insufficient balance: available ﷼${halalaToSar(bal.available)}, need ﷼${halalaToSar(amountHalala)}`);
+  if (error) {
+    // Supabase RPC surfaces PL/pgSQL RAISE EXCEPTION as error.message
+    throw new Error(`Debit failed: ${error.message}`);
   }
 
-  const now = new Date();
-  const { data, error } = await supabase
-    .from('billing_transactions')
-    .insert({
-      id: txId,
-      user_id: userId,
-      type: 'debit',
-      amount_halala: amountHalala,
-      reason,
-      job_id: jobId ?? null,
-      created_at: now.toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Debit failed: ${error.message}`);
-  return mapTx(data);
+  return mapTx(data as DbBillingTransaction);
 }
 
 /**
@@ -256,7 +247,8 @@ export async function getBalance(userId: string): Promise<WalletBalance> {
 
 // ── Mappers ────────────────────────────────────────────────────────────────
 
-function mapTx(row: any): Transaction {
+// H3 fix: Use proper DB types instead of `any`
+function mapTx(row: DbBillingTransaction): Transaction {
   return {
     id: row.id,
     userId: row.user_id,
@@ -268,7 +260,7 @@ function mapTx(row: any): Transaction {
   };
 }
 
-function mapRes(row: any): Reservation {
+function mapRes(row: DbBillingReservation): Reservation {
   return {
     id: row.id,
     userId: row.user_id,

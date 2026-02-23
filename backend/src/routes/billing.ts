@@ -61,8 +61,9 @@ export default async function billingRoutes(app: FastifyInstance) {
           recordedAt: t.recorded_at,
         })),
       });
-    } catch (err: any) {
-      return reply.code(500).send({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return reply.code(500).send({ error: msg });
     }
   });
 
@@ -89,8 +90,9 @@ export default async function billingRoutes(app: FastifyInstance) {
         receiptHash: receipt.receipt_hash,
         closedAt: receipt.closed_at,
       });
-    } catch (err: any) {
-      return reply.code(500).send({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return reply.code(500).send({ error: msg });
     }
   });
 
@@ -104,8 +106,9 @@ export default async function billingRoutes(app: FastifyInstance) {
         tickCount: audit.tickCount,
         discrepancies: audit.discrepancies,
       });
-    } catch (err: any) {
-      return reply.code(500).send({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return reply.code(500).send({ error: msg });
     }
   });
 
@@ -124,8 +127,9 @@ export default async function billingRoutes(app: FastifyInstance) {
           availableHalala: balance.availableHalala,
         },
       });
-    } catch (err: any) {
-      return reply.code(500).send({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return reply.code(500).send({ error: msg });
     }
   });
 }

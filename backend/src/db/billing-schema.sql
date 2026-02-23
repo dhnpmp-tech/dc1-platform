@@ -71,6 +71,55 @@ CREATE TABLE IF NOT EXISTS billing_payouts (
   UNIQUE(provider_id, session_id)
 );
 
+-- ── Atomic Debit RPC (C3 fix: prevents TOCTOU race on concurrent debits) ─────
+-- Uses SELECT FOR UPDATE to lock the user's rows before balance check + insert.
+-- Called from wallet.ts debit() function via supabase.rpc('debit_wallet_atomic').
+CREATE OR REPLACE FUNCTION debit_wallet_atomic(
+  p_user_id        UUID,
+  p_amount_halala  INTEGER,
+  p_reason         TEXT,
+  p_job_id         UUID DEFAULT NULL,
+  p_idempotency_key UUID DEFAULT gen_random_uuid()
+) RETURNS billing_transactions AS $$
+DECLARE
+  v_total_credits   BIGINT;
+  v_total_debits    BIGINT;
+  v_total_reserved  BIGINT;
+  v_available       BIGINT;
+  v_result          billing_transactions;
+BEGIN
+  -- Idempotency: return existing row if already processed
+  SELECT * INTO v_result FROM billing_transactions WHERE id = p_idempotency_key;
+  IF FOUND THEN RETURN v_result; END IF;
+
+  -- Lock user's transaction and reservation rows (prevents concurrent double-spend)
+  PERFORM 1 FROM billing_transactions WHERE user_id = p_user_id FOR UPDATE;
+  PERFORM 1 FROM billing_reservations WHERE user_id = p_user_id AND status = 'held' FOR UPDATE;
+
+  -- Compute available balance atomically
+  SELECT COALESCE(SUM(amount_halala), 0) INTO v_total_credits
+    FROM billing_transactions WHERE user_id = p_user_id AND type = 'credit';
+  SELECT COALESCE(SUM(amount_halala), 0) INTO v_total_debits
+    FROM billing_transactions WHERE user_id = p_user_id AND type = 'debit';
+  SELECT COALESCE(SUM(amount_halala), 0) INTO v_total_reserved
+    FROM billing_reservations WHERE user_id = p_user_id AND status = 'held';
+
+  v_available := (v_total_credits - v_total_debits) - v_total_reserved;
+
+  IF v_available < p_amount_halala THEN
+    RAISE EXCEPTION 'Insufficient balance: available % halala, need % halala',
+      v_available, p_amount_halala;
+  END IF;
+
+  -- Insert debit transaction
+  INSERT INTO billing_transactions (id, user_id, type, amount_halala, reason, job_id, created_at)
+    VALUES (p_idempotency_key, p_user_id, 'debit', p_amount_halala, p_reason, p_job_id, now())
+    RETURNING * INTO v_result;
+
+  RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_billing_tx_user ON billing_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_billing_tx_job ON billing_transactions(job_id);

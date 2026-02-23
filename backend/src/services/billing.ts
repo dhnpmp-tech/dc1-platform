@@ -7,6 +7,12 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import * as wallet from './wallet';
+import type {
+  DbBillingSession,
+  DbBillingTick,
+  DbBillingReceipt,
+  DbBillingPayout,
+} from '../types/db';
 
 const supabase: SupabaseClient = createClient(
   process.env.SUPABASE_URL!,
@@ -429,7 +435,8 @@ async function getSession(sessionId: string): Promise<BillingSession> {
   return mapSession(data);
 }
 
-function mapSession(row: any): BillingSession {
+// H3 fix: Use proper DB types instead of `any` — compile errors on column renames
+function mapSession(row: DbBillingSession): BillingSession {
   return {
     id: row.id,
     jobId: row.job_id,
@@ -444,7 +451,7 @@ function mapSession(row: any): BillingSession {
   };
 }
 
-function mapTick(row: any): BillingTick {
+function mapTick(row: DbBillingTick): BillingTick {
   return {
     id: row.id,
     sessionId: row.session_id,
@@ -458,7 +465,7 @@ function mapTick(row: any): BillingTick {
   };
 }
 
-function mapReceipt(row: any): BillingReceipt {
+function mapReceipt(row: DbBillingReceipt): BillingReceipt {
   return {
     sessionId: row.session_id,
     jobId: row.job_id,
@@ -471,7 +478,7 @@ function mapReceipt(row: any): BillingReceipt {
   };
 }
 
-function mapPayout(row: any): PayoutRecord {
+function mapPayout(row: DbBillingPayout): PayoutRecord {
   return {
     id: row.id,
     providerId: row.provider_id,
