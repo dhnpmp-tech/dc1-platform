@@ -45,14 +45,31 @@ def _audit_log(event: str, details: dict):
 
 
 def _ssh_check(host: str, port: int = 22) -> bool:
-    """Quick SSH reachability check."""
+    """Quick SSH reachability check with host key verification.
+
+    C4 fix: Uses SSHClient + RejectPolicy + load_system_host_keys() — same pattern
+    as daemon.py from Week 1 audit. Prevents MITM: unknown hosts are rejected,
+    not auto-accepted.
+    """
+    client = paramiko.SSHClient()
     try:
-        sock = paramiko.Transport((host, port))
-        sock.connect(username="dc1")
-        sock.close()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        client.load_system_host_keys()
+        client.connect(
+            hostname=host,
+            port=port,
+            username="dc1",
+            timeout=SSH_TIMEOUT,
+            look_for_keys=True,
+            allow_agent=True,
+        )
         return True
+    except paramiko.SSHException:
+        return False
     except Exception:
         return False
+    finally:
+        client.close()
 
 
 def _get_gpu_temp(gpu_id: str) -> Optional[float]:
