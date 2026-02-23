@@ -28,13 +28,8 @@ const AGENT_NAME = 'VOLT-DOCKER';
 const DEFAULT_MEMORY_LIMIT = 20 * 1024 * 1024 * 1024; // 20 GB
 const DEFAULT_CPU_LIMIT = 8;
 
-// In-memory job registry (production: use DB)
-const jobRegistry = new Map<string, JobRecord>();
-
-interface JobRecord {
-  job: Job;
-  containerMetrics: ContainerMetrics | null;
-}
+// H2 fix: No in-memory registry — all job state persisted to Mission Control API.
+// Eliminates data loss on process restart.
 
 // ── Helpers ──
 
@@ -138,19 +133,20 @@ export async function submitJob(request: JobRequest): Promise<Job> {
   await audit('job.submit.start', 'job', jobId, { renterId: request.renterId });
 
   try {
-    // 1. Validate renter balance
+    // H1 fix: Match GPU first — needed to compute accurate estimated cost from real rate.
+    // 1. Match best GPU
+    const gpu = await matchGpu(request.requiredVramGb, request.gpuCount);
+
+    // 2. Validate renter balance against actual GPU rate (not cancelled-out formula)
     const { balanceUsd } = await mcGet<{ balanceUsd: number }>(
       `/renters/${request.renterId}/balance`,
     );
-    const estimatedCost = request.estimatedHours * (request.maxBudgetUsd / request.estimatedHours);
+    const estimatedCost = request.estimatedHours * gpu.ratePerHour;
     if (balanceUsd < estimatedCost) {
       throw new Error(
-        `Insufficient balance: $${balanceUsd.toFixed(2)} < estimated $${estimatedCost.toFixed(2)}`,
+        `Insufficient balance: $${balanceUsd.toFixed(2)} < estimated $${estimatedCost.toFixed(2)} (${request.estimatedHours}h × $${gpu.ratePerHour}/hr)`,
       );
     }
-
-    // 2. Match best GPU
-    const gpu = await matchGpu(request.requiredVramGb, request.gpuCount);
 
     // 3. Reserve GPU
     await mcPatch(`/gpu/${gpu.id}`, { status: 'in-use' });
@@ -196,8 +192,7 @@ export async function submitJob(request: JobRequest): Promise<Job> {
       status: job.status,
     });
 
-    jobRegistry.set(jobId, { job, containerMetrics: null });
-
+    // H2 fix: job state is fully persisted to Mission Control — no local registry needed.
     await audit('job.submit.success', 'job', jobId, {
       gpuId: gpu.id,
       containerId: containerResult.containerId,
@@ -218,14 +213,13 @@ export async function submitJob(request: JobRequest): Promise<Job> {
 export async function getJobStatus(jobId: string): Promise<JobStatus> {
   await audit('job.status.start', 'job', jobId, {});
 
-  const record = jobRegistry.get(jobId);
-  if (!record) {
-    throw new Error(`Job ${jobId} not found in registry`);
+  // H2 fix: Fetch job state from Mission Control (persistent, crash-safe).
+  const job = await mcGet<Job>(`/jobs/${jobId}`);
+  if (!job) {
+    throw new Error(`Job ${jobId} not found in Mission Control`);
   }
 
-  const { job } = record;
   let metrics: ContainerMetrics | null = null;
-
   if (job.status === 'running') {
     metrics = await monitorContainer(job.containerId);
   }
@@ -236,10 +230,12 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
   const costSoFar = elapsedHours * job.ratePerHour;
   const budgetRemaining = job.maxBudgetUsd - costSoFar;
 
-  // Over-budget kill
+  // Over-budget kill — persist status to MC; use local var since Job is read-only from MC
+  let currentStatus = job.status;
   if (budgetRemaining <= 0 && job.status === 'running') {
     await stopContainer(job.containerId, 'over-budget');
-    job.status = 'over-budget' as JobStatusEnum;
+    currentStatus = 'over-budget' as JobStatusEnum;
+    await mcPatch(`/jobs/${jobId}`, { status: currentStatus });
     await audit('job.overbudget.killed', 'job', jobId, { costSoFar, budget: job.maxBudgetUsd });
   }
 
@@ -249,11 +245,9 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
     Math.round((elapsedHours / (job.estimatedCostUsd / job.ratePerHour)) * 100),
   );
 
-  record.containerMetrics = metrics;
-
   const status: JobStatus = {
     jobId,
-    status: job.status,
+    status: currentStatus,
     progressPercent,
     gpuMetrics: metrics,
     costSoFarUsd: Math.round(costSoFar * 100) / 100,
@@ -275,14 +269,21 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
 export async function completeJob(jobId: string): Promise<JobResult> {
   await audit('job.complete.start', 'job', jobId, {});
 
-  const record = jobRegistry.get(jobId);
-  if (!record) {
-    throw new Error(`Job ${jobId} not found in registry`);
+  // H2 fix: Fetch job state from Mission Control (persistent, crash-safe).
+  const job = await mcGet<Job>(`/jobs/${jobId}`);
+  if (!job) {
+    throw new Error(`Job ${jobId} not found in Mission Control`);
   }
 
-  const { job } = record;
-
   try {
+    // Capture final metrics before stopping
+    let finalMetrics: ContainerMetrics | null = null;
+    try {
+      finalMetrics = await monitorContainer(job.containerId);
+    } catch {
+      // Best-effort — container may already be exiting
+    }
+
     // 1. Stop container
     await stopContainer(job.containerId, 'job-completed');
 
@@ -304,8 +305,7 @@ export async function completeJob(jobId: string): Promise<JobResult> {
     // 4. Release GPU
     await mcPatch(`/gpu/${job.matchedGpu.id}`, { status: 'available' });
 
-    // 5. Update job status
-    job.status = 'completed';
+    // 5. Update job status in Mission Control
     await mcPatch(`/jobs/${jobId}`, {
       status: 'completed',
       totalCostUsd: Math.round(totalCost * 100) / 100,
@@ -331,7 +331,7 @@ export async function completeJob(jobId: string): Promise<JobResult> {
       status: 'completed',
       totalCostUsd: Math.round(totalCost * 100) / 100,
       totalMinutes,
-      finalMetrics: record.containerMetrics,
+      finalMetrics,
       gpuWiped,
       payoutTriggered,
     };
@@ -344,7 +344,7 @@ export async function completeJob(jobId: string): Promise<JobResult> {
     return result;
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    job.status = 'failed';
+    await mcPatch(`/jobs/${jobId}`, { status: 'failed' }).catch(() => {/* best-effort */});
     await audit('job.complete.failed', 'job', jobId, { error: msg });
     throw new Error(`Job completion failed: ${msg}`);
   }

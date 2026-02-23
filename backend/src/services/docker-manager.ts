@@ -316,13 +316,16 @@ export async function wipeGPUMemory(gpuId: string): Promise<void> {
       );
     }
 
-    // Reset GPU clocks on host via a privileged one-shot container
+    // Reset GPU clocks on host via a privileged one-shot container.
+    // Uses --clocks-reset (safe: resets clock offsets only, does NOT kill running processes).
+    // --gpu-reset is intentionally NOT used — it kills all processes on the GPU.
     const resetContainer = await docker.createContainer({
       Image: 'nvidia/cuda:12.2.0-base-ubuntu22.04',
-      Cmd: ['nvidia-smi', '-i', gpuId, '--gpu-reset'],
+      Cmd: ['nvidia-smi', '-i', gpuId, '--clocks-reset'],
       HostConfig: {
         AutoRemove: true,
         Privileged: true,
+        NetworkMode: 'none', // CRITICAL: no network even for privileged containers
         DeviceRequests: [
           {
             Driver: '',
@@ -350,6 +353,7 @@ export async function wipeGPUMemory(gpuId: string): Promise<void> {
       ],
       HostConfig: {
         AutoRemove: true,
+        NetworkMode: 'none', // C2 fix: isolate verify container too
         DeviceRequests: [
           {
             Driver: '',
