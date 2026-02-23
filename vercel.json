@@ -1,0 +1,7 @@
+JSON
+
+{
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install"
+}
