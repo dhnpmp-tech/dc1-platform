@@ -10,6 +10,7 @@ Complete Next.js 14 dashboard platform for DC1 GPU Rental Network with three rol
 
 ## ✨ Features
 
+
 ### All Dashboards
 - **Real-time Data** - Live Supabase integration with subscriptions
 - **Responsive Design** - Mobile, tablet, and desktop compatible
