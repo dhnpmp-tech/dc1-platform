@@ -173,3 +173,73 @@ export interface DbStandup {
   blockers: string | null;
   created_at: string;
 }
+
+// ── Billing Tables ──────────────────────────────────────────────────────────
+
+export interface DbBillingTransaction {
+  id: string;                       // uuid, PK
+  user_id: string;                  // FK → users.id
+  type: 'debit' | 'credit';
+  amount_halala: number;            // integer, halala (1 SAR = 100 halala)
+  reason: string;
+  job_id: string | null;
+  created_at: string;               // timestamptz
+}
+
+export interface DbBillingReservation {
+  id: string;                       // uuid, PK
+  user_id: string;                  // FK → users.id
+  amount_halala: number;
+  job_id: string;
+  status: 'held' | 'settled' | 'released';
+  actual_amount_halala: number | null;
+  settled_at: string | null;
+  created_at: string;
+}
+
+export interface DbBillingSession {
+  id: string;                       // uuid, PK
+  job_id: string;
+  renter_id: string;                // FK → users.id
+  provider_id: string;              // FK → users.id
+  rate_per_hour_halala: number;
+  started_at: string;               // timestamptz
+  ended_at: string | null;
+  reservation_id: string;           // FK → billing_reservations.id
+  reserved_amount_halala: number;
+  status: 'active' | 'closing' | 'closed';
+}
+
+export interface DbBillingTick {
+  id: string;                       // uuid, PK
+  session_id: string;               // FK → billing_sessions.id
+  tick_number: number;
+  elapsed_minutes: number;
+  increment_minutes: number;
+  renter_charge_halala: number;
+  provider_credit_halala: number;
+  dc1_revenue_halala: number;
+  proof_hash: string;
+  recorded_at: string;              // timestamptz
+}
+
+export interface DbBillingReceipt {
+  id: string;                       // uuid, PK
+  session_id: string;               // FK → billing_sessions.id UNIQUE
+  job_id: string;
+  total_minutes: number;
+  renter_charged_total_halala: number;
+  provider_payout_total_halala: number;
+  dc1_revenue_total_halala: number;
+  receipt_hash: string;
+  closed_at: string;                // timestamptz
+}
+
+export interface DbBillingPayout {
+  id: string;                       // uuid, PK
+  provider_id: string;              // FK → users.id
+  session_id: string;               // FK → billing_sessions.id
+  amount_halala: number;
+  status: 'pending' | 'processing' | 'completed';
+  created_at: string;
+}
