@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --dc-black: #1a1a1a;
+  --dc-gold: #FFD700;
+  --dc-cyan: #00A8E1;
+}
+
+body {
+  @apply bg-dc-black text-white font-sans;
+}
+
+* {
+  @apply box-border;
+}
