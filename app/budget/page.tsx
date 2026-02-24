@@ -32,15 +32,19 @@ const AGENT_COLORS: Record<string, string> = {
 
 const AGENTS = ['NEXUS', 'ATLAS', 'VOLT', 'GUARDIAN', 'SPARK', 'SYNC'] as const;
 
-// Generate mock weekly trend data
+// Static mock weekly trend data (deterministic to avoid re-render flicker)
+const MOCK_WEEKLY_TREND: DailyTrend[] = [
+  { day: 'Mon', inputTokens: 150000, outputTokens: 30000 },
+  { day: 'Tue', inputTokens: 180000, outputTokens: 35000 },
+  { day: 'Wed', inputTokens: 120000, outputTokens: 25000 },
+  { day: 'Thu', inputTokens: 200000, outputTokens: 40000 },
+  { day: 'Fri', inputTokens: 175000, outputTokens: 32000 },
+  { day: 'Sat', inputTokens: 0, outputTokens: 0 },
+  { day: 'Sun', inputTokens: 0, outputTokens: 0 },
+];
+
 function getMockWeeklyTrend(): DailyTrend[] {
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const today = new Date().getDay();
-  return days.map((day, i) => ({
-    day,
-    inputTokens: i <= today ? Math.floor(Math.random() * 200000 + 100000) : 0,
-    outputTokens: i <= today ? Math.floor(Math.random() * 40000 + 20000) : 0,
-  }));
+  return MOCK_WEEKLY_TREND;
 }
 
 function usageColor(pct: number): string {
@@ -76,7 +80,7 @@ export default function BudgetPage() {
   const fetchMetrics = useCallback(async () => {
     try {
       const MC_BASE = 'http://76.13.179.86:8084/api';
-      const token = process.env.NEXT_PUBLIC_MC_TOKEN || 'dc1-mc-gate0-2026';
+      const token = process.env.NEXT_PUBLIC_MC_TOKEN || '';
       const res = await fetch(`${MC_BASE}/metrics`, {
         headers: { Authorization: `Bearer ${token}` },
       });

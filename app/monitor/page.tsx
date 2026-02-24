@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 
 interface ServiceHealth {
@@ -18,12 +18,7 @@ interface StatusLogEntry {
   responseTimeMs: number | null;
 }
 
-const SERVICE_CONFIGS = [
-  { name: 'Vercel', url: 'https://dc1-platform.vercel.app' },
-  { name: 'Supabase', url: 'https://fvvxqp-qqjszv6vweybvjfpc.supabase.co' },
-  { name: 'Mission Control', url: 'http://76.13.179.86:8084/api/tasks' },
-  { name: 'GitHub API', url: 'https://api.github.com' },
-] as const;
+const SERVICE_NAMES = ['Vercel', 'Supabase', 'Mission Control', 'GitHub API'] as const;
 
 const STATUS_DOT: Record<string, string> = {
   healthy: 'bg-[#00c853]',
@@ -56,9 +51,9 @@ function SkeletonCard() {
 
 export default function MonitorPage() {
   const [services, setServices] = useState<ServiceHealth[]>(() =>
-    SERVICE_CONFIGS.map((cfg) => ({
-      name: cfg.name,
-      url: cfg.url,
+    SERVICE_NAMES.map((name) => ({
+      name,
+      url: '',
       status: 'down' as const,
       responseTimeMs: null,
       lastChecked: null,
@@ -66,59 +61,37 @@ export default function MonitorPage() {
     }))
   );
   const [loading, setLoading] = useState(true);
-  const servicesRef = useRef(services);
-  servicesRef.current = services;
-
-  const checkService = useCallback(async (index: number, url: string): Promise<Partial<ServiceHealth>> => {
-    const start = performance.now();
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch(url, {
-        method: 'HEAD',
-        mode: 'no-cors',
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      const elapsed = Math.round(performance.now() - start);
-      const status: ServiceHealth['status'] = elapsed > 3000 ? 'degraded' : 'healthy';
-      return { status, responseTimeMs: elapsed };
-    } catch {
-      const elapsed = Math.round(performance.now() - start);
-      // no-cors requests may opaque — treat as healthy if fast
-      if (elapsed < 5000) {
-        return { status: 'healthy', responseTimeMs: elapsed };
-      }
-      return { status: 'down', responseTimeMs: null };
-    }
-  }, []);
-
   const checkAll = useCallback(async () => {
-    const results = await Promise.all(
-      SERVICE_CONFIGS.map((cfg, i) => checkService(i, cfg.url))
-    );
-    const now = new Date();
-    setServices((prev) =>
-      prev.map((svc, i) => {
-        const result = results[i];
-        const newStatus = result.status ?? 'down';
-        const newLog: StatusLogEntry = {
-          timestamp: now,
-          status: newStatus,
-          responseTimeMs: result.responseTimeMs ?? null,
-        };
-        const statusLog = [newLog, ...svc.statusLog].slice(0, 5);
-        return {
-          ...svc,
-          status: newStatus,
-          responseTimeMs: result.responseTimeMs ?? null,
-          lastChecked: now,
-          statusLog,
-        };
-      })
-    );
+    try {
+      const res = await fetch('/api/ping');
+      if (!res.ok) throw new Error(`ping API ${res.status}`);
+      const data: { name: string; status: 'healthy' | 'degraded' | 'down'; responseTimeMs: number | null }[] = await res.json();
+
+      const now = new Date();
+      setServices((prev) =>
+        prev.map((svc) => {
+          const match = data.find((d) => d.name === svc.name);
+          const newStatus = match?.status ?? 'down';
+          const newLog: StatusLogEntry = {
+            timestamp: now,
+            status: newStatus,
+            responseTimeMs: match?.responseTimeMs ?? null,
+          };
+          const statusLog = [newLog, ...svc.statusLog].slice(0, 5);
+          return {
+            ...svc,
+            status: newStatus,
+            responseTimeMs: match?.responseTimeMs ?? null,
+            lastChecked: now,
+            statusLog,
+          };
+        })
+      );
+    } catch (err) {
+      console.error('Ping API failed:', err);
+    }
     setLoading(false);
-  }, [checkService]);
+  }, []);
 
   useEffect(() => {
     checkAll();
@@ -156,7 +129,7 @@ export default function MonitorPage() {
         {/* Service Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {loading && services.every((s) => !s.lastChecked)
-            ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+            ? Array.from({ length: SERVICE_NAMES.length }).map((_, i) => <SkeletonCard key={i} />)
             : services.map((svc) => (
                 <div key={svc.name} className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 space-y-3">
                   <div className="flex items-center justify-between">
