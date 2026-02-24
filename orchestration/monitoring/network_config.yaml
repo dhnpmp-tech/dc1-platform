@@ -1,4 +1,6 @@
 # DC1 Gate 0 — Network Monitor Configuration
+# All sensitive credentials must be provided via environment variables
+
 targets:
   primary: "8.8.8.8"
   fallback: "1.1.1.1"
@@ -18,14 +20,13 @@ storage:
 
 logging:
   log_path: "logs/network_monitor.log"
-  level: "INFO"
 
 alerts:
-  mc_api_url: "http://76.13.179.86:8084/api/alerts"
-  mc_api_token: "dc1-mc-gate0-2026"
-  agent_id: "3149e473-3a2f-4163-8246-b682caf2f053"
   cooldown_s: 300
 
 status:
-  host: "0.0.0.0"
   port: 8085
+
+# Environment Variables Required (set before startup):
+# - DC1_MC_TOKEN: Mission Control API token
+# - DC1_AGENT_ID: Agent UUID for identification
