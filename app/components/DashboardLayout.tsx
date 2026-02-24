@@ -11,11 +11,13 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: '🏠' },
+  { label: 'Connection Monitor', href: '/monitor', icon: '📡' },
+  { label: 'Agent Intelligence', href: '/agents', icon: '🤖' },
+  { label: 'Token Budget', href: '/budget', icon: '💰' },
   { label: 'Connections', href: '/connections', icon: '🔗' },
   { label: 'Token Usage', href: '/tokens', icon: '🪙' },
   { label: 'Jobs', href: '/jobs', icon: '⚡' },
   { label: 'Security', href: '/security', icon: '🛡️' },
-  { label: 'Agents', href: '/agents', icon: '🤖' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
