@@ -1,0 +1,7 @@
+Package: dc1-provider
+Version: 1.0
+Architecture: amd64
+Maintainer: DC1 <support@dc1.sa>
+Description: DC1 Provider Daemon
+ Automatic GPU provider setup for DC1 marketplace
+Depends: docker.io, nvidia-docker2, curl

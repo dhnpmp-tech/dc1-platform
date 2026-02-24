@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DC1 Provider Registration</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: #111111;
+            border: 2px solid #FFD700;
+            border-radius: 10px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(255, 215, 0, 0.1);
+        }
+        
+        h1 {
+            color: #FFD700;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #00D9FF;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #FFD700;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #333333;
+            border-radius: 5px;
+            background: #222222;
+            color: #ffffff;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #00D9FF;
+            background: #1a1a1a;
+            box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-submit {
+            background: #FFD700;
+            color: #000000;
+        }
+        
+        .btn-submit:hover:not(:disabled) {
+            background: #FFC700;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(255, 215, 0, 0.3);
+        }
+        
+        .btn-submit:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .status.show {
+            display: block;
+        }
+        
+        .status.success {
+            background: rgba(0, 217, 255, 0.1);
+            border: 1px solid #00D9FF;
+            color: #00D9FF;
+        }
+        
+        .status.error {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid #ff4444;
+            color: #ff4444;
+        }
+        
+        .status.loading {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid #FFD700;
+            color: #FFD700;
+            text-align: center;
+        }
+        
+        .status h3 {
+            margin-bottom: 10px;
+        }
+        
+        .status p {
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        
+        .status code {
+            display: block;
+            background: #000000;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+        
+        .copy-btn {
+            padding: 8px 12px;
+            background: #00D9FF;
+            color: #000000;
+            border: none;
+            border-radius: 3px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #FFD700;
+            color: #000000;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .download-link:hover {
+            background: #FFC700;
+            transform: translateY(-2px);
+        }
+        
+        .gpu-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .gpu-option {
+            padding: 12px;
+            border: 1px solid #333333;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        
+        .gpu-option:hover {
+            border-color: #00D9FF;
+            background: rgba(0, 217, 255, 0.1);
+        }
+        
+        .gpu-option.selected {
+            border-color: #FFD700;
+            background: rgba(255, 215, 0, 0.1);
+        }
+        
+        .info-box {
+            background: rgba(0, 217, 255, 0.1);
+            border-left: 3px solid #00D9FF;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Become a DC1 Provider</h1>
+        <p class="subtitle">Earn ﷼ by sharing your GPU compute power</p>
+        
+        <div class="info-box">
+            💡 <strong>Quick setup:</strong> Takes 5 minutes. No coding required. Automatic earnings every hour.
+        </div>
+        
+        <form id="providerForm">
+            <div class="form-group">
+                <label>Your Full Name</label>
+                <input type="text" id="name" placeholder="e.g., Fadi Al-Muhairi" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="email" placeholder="e.g., fadi@example.com" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Your GPU Model</label>
+                <div class="gpu-list">
+                    <div class="gpu-option" data-gpu="RTX 3090">
+                        <strong>RTX 3090</strong><br>
+                        <small>24GB • ﷼0.75/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 4090">
+                        <strong>RTX 4090</strong><br>
+                        <small>24GB • ﷼1.00/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 3060 Ti">
+                        <strong>RTX 3060 Ti</strong><br>
+                        <small>8GB • ﷼0.40/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="A100">
+                        <strong>A100</strong><br>
+                        <small>40GB • ﷼2.00/hr</small>
+                    </div>
+                </div>
+                <input type="hidden" id="gpu_model" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Your Operating System</label>
+                <select id="os" required>
+                    <option value="">Select your OS...</option>
+                    <option value="Windows">Windows (10/11)</option>
+                    <option value="Mac">macOS (Intel/Apple Silicon)</option>
+                    <option value="Linux">Linux (Ubuntu/Debian)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Phone (Optional)</label>
+                <input type="tel" id="phone" placeholder="e.g., +966 55 123 4567">
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" class="btn-submit" id="submitBtn">
+                    Register & Download Installer
+                </button>
+            </div>
+        </form>
+        
+        <div id="status"></div>
+    </div>
+    
+    <script>
+        document.querySelectorAll('.gpu-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.gpu-option').forEach(o => o.classList.remove('selected'));
+                this.classList.add('selected');
+                document.getElementById('gpu_model').value = this.dataset.gpu;
+            });
+        });
+        
+        document.getElementById('providerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const statusDiv = document.getElementById('status');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            if (!document.getElementById('gpu_model').value) {
+                showStatus(statusDiv, 'error', 'Please select a GPU model');
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            showStatus(statusDiv, 'loading', 'Processing your registration...');
+            
+            try {
+                const data = {
+                    name: document.getElementById('name').value,
+                    email: document.getElementById('email').value,
+                    gpu_model: document.getElementById('gpu_model').value,
+                    os: document.getElementById('os').value,
+                    phone: document.getElementById('phone').value || null
+                };
+                
+                const response = await fetch('/api/providers/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) throw new Error('Registration failed');
+                
+                const result = await response.json();
+                const apiKey = result.api_key;
+                const installerUrl = result.installer_url;
+                const osName = data.os;
+                const installerName = `dc1-provider-setup-${osName}${osName === 'Windows' ? '.exe' : osName === 'Mac' ? '.pkg' : '.deb'}`;
+                
+                const successHTML = `
+                    <h3>✅ Registration Successful!</h3>
+                    <p><strong>Welcome to DC1, ${data.name}!</strong></p>
+                    <p>Your API Key: <code style="color: #FFD700;">${apiKey}</code></p>
+                    <h4 style="margin-top: 20px; color: #00D9FF;">Download & Install</h4>
+                    <p>Click below to download the DC1 installer:</p>
+                    <a href="${installerUrl}" class="download-link">
+                        📥 Download ${installerName}
+                    </a>
+                    <h4 style="margin-top: 20px; color: #00D9FF;">Or use the quick setup command:</h4>
+                    <code>curl https://dc1.sa/setup?key=${apiKey} | bash</code>
+                    <button type="button" class="copy-btn" onclick="copyToClipboard('curl https://dc1.sa/setup?key=${apiKey} | bash')">
+                        📋 Copy Command
+                    </button>
+                `;
+                
+                showStatus(statusDiv, 'success', successHTML);
+                
+            } catch (error) {
+                showStatus(statusDiv, 'error', `Registration failed: ${error.message}`);
+                submitBtn.disabled = false;
+            }
+        });
+        
+        function showStatus(div, type, content) {
+            div.className = `status show ${type}`;
+            div.innerHTML = content;
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+    </script>
+</body>
+</html>
+

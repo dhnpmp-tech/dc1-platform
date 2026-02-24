@@ -1,0 +1,6 @@
+# DC1 Provider Configuration
+DC1_API_URL=https://dc1-platform.vercel.app/api
+DC1_PROVIDER_NAME=
+DC1_API_KEY=
+DC1_GPU_MODEL=auto
+DC1_HEARTBEAT_INTERVAL=30

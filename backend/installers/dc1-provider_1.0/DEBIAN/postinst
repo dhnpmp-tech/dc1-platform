@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+
+# Start daemon
+/usr/local/bin/dc1-provider-setup "$@"
+
+echo "✓ DC1 Provider installed successfully"

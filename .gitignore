@@ -42,3 +42,5 @@ Thumbs.db
 .env*.local
 *.pyc
 __pycache__/
+backend/node_modules/
+backend/data/
