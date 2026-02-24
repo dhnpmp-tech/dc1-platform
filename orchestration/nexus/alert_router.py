@@ -1,4 +1,4 @@
-"""Alert router — severity-based routing to Telegram, MC API, and logs."""
+"""Alert router â severity-based routing to Telegram, MC API, and logs."""
 from __future__ import annotations
 
 import asyncio
@@ -65,7 +65,7 @@ class AlertRouter:
     # --- Routing ---
 
     async def route(self, alert: Alert) -> None:
-        logger.info("Alert [%s] %s: %s — %s", alert.severity.value, alert.source_agent, alert.title, alert.message)
+        logger.info("Alert [%s] %s: %s â %s", alert.severity.value, alert.source_agent, alert.title, alert.message)
 
         if alert.severity == Severity.CRITICAL:
             # Critical: immediate, bypass rate limit
@@ -84,8 +84,6 @@ class AlertRouter:
             return
 
         if alert.severity == Severity.MEDIUM:
-            self._batch.append(alert)
-            self._ensure_batch_task()
             await self._send_mc_api(alert)
             return
 
@@ -108,18 +106,26 @@ class AlertRouter:
             return
         batch = self._batch[:]
         self._batch.clear()
-        summary = f"📋 Batched alerts ({len(batch)}):\n"
+        summary = f"ð Batched alerts ({len(batch)}):\n"
         for a in batch:
-            summary += f"• [{a.severity.value.upper()}] {a.source_agent}: {a.title}\n"
+            summary += f"â¢ [{a.severity.value.upper()}] {a.source_agent}: {a.title}\n"
         logger.info(summary)
+        # Send batch summary to MC API so the team actually sees it
+        batch_alert = Alert(
+            severity=Severity.MEDIUM,
+            source_agent="NEXUS",
+            title=f"Batch Summary ({len(batch)} alerts)",
+            message=summary,
+        )
+        await self._send_mc_api(batch_alert)
 
     # --- Telegram ---
 
     async def _send_telegram(self, alert: Alert, chat_id: str) -> None:
         if alert.severity == Severity.CRITICAL:
-            text = f"🔴 CRITICAL — [{alert.source_agent}] {alert.title}\n{alert.message}"
+            text = f"ð´ CRITICAL â [{alert.source_agent}] {alert.title}\n{alert.message}"
         else:
-            text = f"⚠️ [{alert.source_agent}] {alert.title}\n{alert.message}"
+            text = f"â ï¸ [{alert.source_agent}] {alert.title}\n{alert.message}"
         url = TELEGRAM_API.format(token=self._config.telegram_bot_token)
         try:
             async with aiohttp.ClientSession() as session:
