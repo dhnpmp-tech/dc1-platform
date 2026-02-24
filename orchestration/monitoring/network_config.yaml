@@ -1,0 +1,31 @@
+# DC1 Gate 0 — Network Monitor Configuration
+targets:
+  primary: "8.8.8.8"
+  fallback: "1.1.1.1"
+
+ping:
+  interval_s: 10
+  timeout_s: 5
+
+thresholds:
+  loss_pct_alert: 5.0
+  outage_consecutive_s: 5
+  rolling_window_s: 60
+
+storage:
+  db_path: "data/network_metrics.db"
+  retention_days: 7
+
+logging:
+  log_path: "logs/network_monitor.log"
+  level: "INFO"
+
+alerts:
+  mc_api_url: "http://76.13.179.86:8084/api/alerts"
+  mc_api_token: "dc1-mc-gate0-2026"
+  agent_id: "3149e473-3a2f-4163-8246-b682caf2f053"
+  cooldown_s: 300
+
+status:
+  host: "0.0.0.0"
+  port: 8085
