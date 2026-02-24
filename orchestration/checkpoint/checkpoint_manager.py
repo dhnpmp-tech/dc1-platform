@@ -74,10 +74,16 @@ class CheckpointManager:
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:
             os.write(fd, data)
+            os.fsync(fd)
             os.close(fd)
+            fd = -1  # mark as closed
             os.rename(tmp, path)
         except BaseException:
-            os.close(fd) if not os.get_inheritable(fd) else None  # noqa: E501
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
             if os.path.exists(tmp):
                 os.unlink(tmp)
             raise
@@ -235,6 +241,7 @@ class CheckpointManager:
 
         async def _loop() -> None:
             while True:
+                await asyncio.sleep(self._config.save_interval_s)
                 try:
                     state = await state_fn()
                     result = await self.save_checkpoint(job_id, container_id, state)
@@ -247,7 +254,6 @@ class CheckpointManager:
                     raise
                 except Exception as exc:
                     logger.error("Scheduler error for %s: %s", job_id, exc)
-                await asyncio.sleep(self._config.save_interval_s)
 
         task = asyncio.create_task(_loop(), name=f"checkpoint-{job_id}")
         self._schedulers[job_id] = task
