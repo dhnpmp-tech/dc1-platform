@@ -11,8 +11,6 @@ import {
   createTestJob,
   createTestGPU,
   cleanupTestData,
-  clearMcEndpoints,
-  mockMcEndpoint,
 } from './setup';
 
 // ── Hoisted mocks (vi.mock factories run before imports) ───────────────────
