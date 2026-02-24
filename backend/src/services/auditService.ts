@@ -1,13 +1,11 @@
 /**
  * DC1 Audit Service — Gate 0 Security
  * Immutable audit logging with fire-and-forget pattern.
- * GUARDIAN agent (3bad1840)
+ * GUARDIAN agent (3bad1840) — hardened
  */
-
 import { createClient } from '@supabase/supabase-js';
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
+// ── Types ──────────────────────────────────────────────────────────────────
 export interface AuditEvent {
   agent_id?: string | null;
   action: string;
@@ -36,22 +34,23 @@ export interface AuditRecord {
 export interface AuditFilters {
   agent_id?: string;
   action?: string;
-  from?: string;   // ISO date
-  to?: string;     // ISO date
+  from?: string; // ISO date
+  to?: string;   // ISO date
   page?: number;
   limit?: number;
 }
 
-// ── Supabase Client ──────────────────────────────────────────────────────────
-
+// ── Supabase Client ────────────────────────────────────────────────────────
 function getSupabase() {
-  return createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_KEY!,
-  );
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) {
+    throw new Error('[AUDIT] SUPABASE_URL and SUPABASE_SERVICE_KEY must be set');
+  }
+  return createClient(url, key);
 }
 
-// ── Service Functions ────────────────────────────────────────────────────────
+// ── Service Functions ──────────────────────────────────────────────────────
 
 /**
  * Fire-and-forget audit log insertion.
@@ -77,6 +76,7 @@ export async function logAuditEvent(event: AuditEvent): Promise<void> {
         response_size_bytes: event.response_size_bytes,
       },
     };
+
     await supabase.from('audit_logs').insert(row);
   } catch (_err: unknown) {
     // Swallow — audit must never crash the API
@@ -91,8 +91,9 @@ export async function logAuditEvent(event: AuditEvent): Promise<void> {
  */
 export async function getAuditLog(filters: AuditFilters): Promise<AuditRecord[]> {
   const supabase = getSupabase();
+
   const page = filters.page ?? 1;
-  const limit = filters.limit ?? 50;
+  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
   const offset = (page - 1) * limit;
 
   let query = supabase
@@ -102,9 +103,9 @@ export async function getAuditLog(filters: AuditFilters): Promise<AuditRecord[]>
     .range(offset, offset + limit - 1);
 
   if (filters.agent_id) query = query.eq('agent_id', filters.agent_id);
-  if (filters.action) query = query.eq('action', filters.action);
-  if (filters.from) query = query.gte('timestamp', filters.from);
-  if (filters.to) query = query.lte('timestamp', filters.to);
+  if (filters.action)   query = query.eq('action', filters.action);
+  if (filters.from)     query = query.gte('timestamp', filters.from);
+  if (filters.to)       query = query.lte('timestamp', filters.to);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -113,14 +114,22 @@ export async function getAuditLog(filters: AuditFilters): Promise<AuditRecord[]>
 
 /**
  * Get single audit record by ID.
+ * Validates UUID format before querying.
  */
 export async function getAuditLogById(id: string): Promise<AuditRecord | null> {
+  // UUID v4 validation
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) {
+    return null;
+  }
+
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from('audit_logs')
     .select('id, agent_id, action, resource_id, details, timestamp')
     .eq('id', id)
     .single();
+
   if (error) return null;
   return data as AuditRecord;
 }
