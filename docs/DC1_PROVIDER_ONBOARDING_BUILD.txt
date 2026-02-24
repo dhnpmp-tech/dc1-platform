@@ -1,0 +1,1118 @@
+═══════════════════════════════════════════════════════════════════════════════
+                  DC1 PROVIDER ONBOARDING SYSTEM - COMPLETE BUILD PACKAGE
+                                    For: Claude Cowork
+═══════════════════════════════════════════════════════════════════════════════
+
+TASK: Build provider onboarding system (no terminal needed) + packaged installers
+TIMELINE: 6-10 hours total
+DEADLINE: TODAY (Feb 24, 2026)
+
+═══════════════════════════════════════════════════════════════════════════════
+INSTRUCTIONS FOR CLAUDE COWORK
+═══════════════════════════════════════════════════════════════════════════════
+
+PART A: WEB FORM + SHELL SCRIPT (MVP - 2-4 hours)
+═════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Create Database Table
+Run this SQL in your SQLite database:
+
+CREATE TABLE providers (
+    id INTEGER PRIMARY KEY,
+    provider_id TEXT UNIQUE,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT,
+    gpu_model TEXT,
+    os TEXT,
+    api_key TEXT UNIQUE NOT NULL,
+    status TEXT,
+    provider_ip TEXT,
+    provider_hostname TEXT,
+    gpu_status TEXT,
+    total_earnings REAL DEFAULT 0,
+    total_jobs INTEGER DEFAULT 0,
+    uptime_percent REAL DEFAULT 0,
+    last_heartbeat TIMESTAMP,
+    created_at TIMESTAMP
+);
+
+
+STEP 2: Create Frontend HTML Form
+File: /backend/public/provider-onboarding.html
+[Copy FILE 1 below - provider-onboarding.html]
+
+
+STEP 3: Create Backend API Routes
+File: /backend/src/routes/providers.js
+[Copy FILE 2 below - providers.js]
+
+
+STEP 4: Register Routes in Express Server
+In /backend/src/server.js, add this line in the routes section:
+app.use('/api/providers', require('./routes/providers.js'));
+
+
+STEP 5: Create Installers Directory
+mkdir -p /backend/installers
+cd /backend/installers
+
+
+STEP 6: Create Shell Script Installer
+File: /backend/installers/dc1-provider-setup.sh
+[Copy FILE 3 below - dc1-provider-setup.sh]
+Then make it executable:
+chmod +x /backend/installers/dc1-provider-setup.sh
+
+
+STEP 7: Test Part A
+1. Restart Express server
+2. Visit http://76.13.179.86:8081/provider-onboarding
+3. Fill form with test data
+4. Submit
+5. Should see API key + download link
+6. Test: curl -O http://76.13.179.86:8081/dc1-provider-setup.sh
+
+
+PART B: PACKAGED INSTALLERS (.exe, .pkg, .deb) - 4-6 hours (can run in parallel)
+═════════════════════════════════════════════════════════════════════════════
+
+STEP 8: Install Build Tools on VPS
+sudo apt update
+sudo apt install -y nsis dpkg-dev build-essential xar
+
+
+STEP 9: Create Windows Installer (.exe)
+File: /backend/installers/dc1-provider-Windows.nsi
+[Copy FILE 4 below - dc1-provider-Windows.nsi]
+
+Then build:
+cd /backend/installers
+makensis dc1-provider-Windows.nsi
+
+Output: dc1-provider-setup-Windows.exe
+
+
+STEP 10: Create macOS Installer (.pkg)
+File: /backend/installers/build-mac-pkg.sh
+[Copy FILE 5 below - build-mac-pkg.sh]
+
+Then build:
+cd /backend/installers
+bash build-mac-pkg.sh
+
+Output: dc1-provider-setup-Mac.pkg
+
+
+STEP 11: Create Linux Installer (.deb)
+File: /backend/installers/build-deb.sh
+[Copy FILE 6 below - build-deb.sh]
+
+Then build:
+cd /backend/installers
+bash build-deb.sh
+
+Output: dc1-provider-setup-Linux.deb
+
+
+STEP 12: Verify All Files Exist
+ls -la /backend/installers/
+Should see:
+- dc1-provider-setup.sh
+- dc1-provider-Windows.nsi
+- build-mac-pkg.sh
+- build-deb.sh
+- dc1-provider-setup-Windows.exe
+- dc1-provider-setup-Mac.pkg
+- dc1-provider-setup-Linux.deb
+
+
+TESTING CHECKLIST
+═════════════════════════════════════════════════════════════════════════════
+
+Part A (Web Form):
+☐ Visit http://76.13.179.86:8081/provider-onboarding
+☐ Form loads with GPU options
+☐ Fill test data (name, email, GPU model, OS)
+☐ Click "Register & Download"
+☐ Receive API key successfully
+☐ See download link
+☐ API key appears in database (SELECT * FROM providers;)
+
+Part B (Installers):
+☐ Windows: Download .exe, verify file size >20MB
+☐ macOS: Download .pkg, verify file size >15MB
+☐ Linux: Download .deb, verify file size >10MB
+
+API Endpoint Tests:
+☐ POST /api/providers/register → Returns api_key
+☐ GET /api/providers/installer?key=TEST&os=Windows → Downloads .exe
+☐ GET /api/providers/installer?key=TEST&os=Mac → Downloads .pkg
+☐ GET /api/providers/installer?key=TEST&os=Linux → Downloads .deb
+
+
+DEPLOYMENT CHECKLIST
+═════════════════════════════════════════════════════════════════════════════
+
+☐ Database table created
+☐ Frontend HTML deployed to /backend/public/
+☐ Backend API routes in /backend/src/routes/
+☐ Routes registered in Express server.js
+☐ Shell script created and executable
+☐ Installers built (.exe, .pkg, .deb)
+☐ All files in /backend/installers/
+☐ Express server restarted
+☐ All API endpoints responding
+☐ Form loads at /provider-onboarding
+
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE 1: provider-onboarding.html
+═════════════════════════════════════════════════════════════════════════════
+Location: /backend/public/provider-onboarding.html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DC1 Provider Registration</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: #111111;
+            border: 2px solid #FFD700;
+            border-radius: 10px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(255, 215, 0, 0.1);
+        }
+        
+        h1 {
+            color: #FFD700;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #00D9FF;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #FFD700;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #333333;
+            border-radius: 5px;
+            background: #222222;
+            color: #ffffff;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #00D9FF;
+            background: #1a1a1a;
+            box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-submit {
+            background: #FFD700;
+            color: #000000;
+        }
+        
+        .btn-submit:hover:not(:disabled) {
+            background: #FFC700;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(255, 215, 0, 0.3);
+        }
+        
+        .btn-submit:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .status.show {
+            display: block;
+        }
+        
+        .status.success {
+            background: rgba(0, 217, 255, 0.1);
+            border: 1px solid #00D9FF;
+            color: #00D9FF;
+        }
+        
+        .status.error {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid #ff4444;
+            color: #ff4444;
+        }
+        
+        .status.loading {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid #FFD700;
+            color: #FFD700;
+            text-align: center;
+        }
+        
+        .status h3 {
+            margin-bottom: 10px;
+        }
+        
+        .status p {
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        
+        .status code {
+            display: block;
+            background: #000000;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+        
+        .copy-btn {
+            padding: 8px 12px;
+            background: #00D9FF;
+            color: #000000;
+            border: none;
+            border-radius: 3px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #FFD700;
+            color: #000000;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .download-link:hover {
+            background: #FFC700;
+            transform: translateY(-2px);
+        }
+        
+        .gpu-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .gpu-option {
+            padding: 12px;
+            border: 1px solid #333333;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        
+        .gpu-option:hover {
+            border-color: #00D9FF;
+            background: rgba(0, 217, 255, 0.1);
+        }
+        
+        .gpu-option.selected {
+            border-color: #FFD700;
+            background: rgba(255, 215, 0, 0.1);
+        }
+        
+        .info-box {
+            background: rgba(0, 217, 255, 0.1);
+            border-left: 3px solid #00D9FF;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Become a DC1 Provider</h1>
+        <p class="subtitle">Earn ﷼ by sharing your GPU compute power</p>
+        
+        <div class="info-box">
+            💡 <strong>Quick setup:</strong> Takes 5 minutes. No coding required. Automatic earnings every hour.
+        </div>
+        
+        <form id="providerForm">
+            <div class="form-group">
+                <label>Your Full Name</label>
+                <input type="text" id="name" placeholder="e.g., Fadi Al-Muhairi" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="email" placeholder="e.g., fadi@example.com" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Your GPU Model</label>
+                <div class="gpu-list">
+                    <div class="gpu-option" data-gpu="RTX 3090">
+                        <strong>RTX 3090</strong><br>
+                        <small>24GB • ﷼0.75/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 4090">
+                        <strong>RTX 4090</strong><br>
+                        <small>24GB • ﷼1.00/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 3060 Ti">
+                        <strong>RTX 3060 Ti</strong><br>
+                        <small>8GB • ﷼0.40/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="A100">
+                        <strong>A100</strong><br>
+                        <small>40GB • ﷼2.00/hr</small>
+                    </div>
+                </div>
+                <input type="hidden" id="gpu_model" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Your Operating System</label>
+                <select id="os" required>
+                    <option value="">Select your OS...</option>
+                    <option value="Windows">Windows (10/11)</option>
+                    <option value="Mac">macOS (Intel/Apple Silicon)</option>
+                    <option value="Linux">Linux (Ubuntu/Debian)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Phone (Optional)</label>
+                <input type="tel" id="phone" placeholder="e.g., +966 55 123 4567">
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" class="btn-submit" id="submitBtn">
+                    Register & Download Installer
+                </button>
+            </div>
+        </form>
+        
+        <div id="status"></div>
+    </div>
+    
+    <script>
+        document.querySelectorAll('.gpu-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.gpu-option').forEach(o => o.classList.remove('selected'));
+                this.classList.add('selected');
+                document.getElementById('gpu_model').value = this.dataset.gpu;
+            });
+        });
+        
+        document.getElementById('providerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const statusDiv = document.getElementById('status');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            if (!document.getElementById('gpu_model').value) {
+                showStatus(statusDiv, 'error', 'Please select a GPU model');
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            showStatus(statusDiv, 'loading', 'Processing your registration...');
+            
+            try {
+                const data = {
+                    name: document.getElementById('name').value,
+                    email: document.getElementById('email').value,
+                    gpu_model: document.getElementById('gpu_model').value,
+                    os: document.getElementById('os').value,
+                    phone: document.getElementById('phone').value || null
+                };
+                
+                const response = await fetch('/api/providers/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) throw new Error('Registration failed');
+                
+                const result = await response.json();
+                const apiKey = result.api_key;
+                const installerUrl = result.installer_url;
+                const osName = data.os;
+                const installerName = `dc1-provider-setup-${osName}${osName === 'Windows' ? '.exe' : osName === 'Mac' ? '.pkg' : '.deb'}`;
+                
+                const successHTML = `
+                    <h3>✅ Registration Successful!</h3>
+                    <p><strong>Welcome to DC1, ${data.name}!</strong></p>
+                    <p>Your API Key: <code style="color: #FFD700;">${apiKey}</code></p>
+                    <h4 style="margin-top: 20px; color: #00D9FF;">Download & Install</h4>
+                    <p>Click below to download the DC1 installer:</p>
+                    <a href="${installerUrl}" class="download-link">
+                        📥 Download ${installerName}
+                    </a>
+                    <h4 style="margin-top: 20px; color: #00D9FF;">Or use the quick setup command:</h4>
+                    <code>curl https://dc1.sa/setup?key=${apiKey} | bash</code>
+                    <button type="button" class="copy-btn" onclick="copyToClipboard('curl https://dc1.sa/setup?key=${apiKey} | bash')">
+                        📋 Copy Command
+                    </button>
+                `;
+                
+                showStatus(statusDiv, 'success', successHTML);
+                
+            } catch (error) {
+                showStatus(statusDiv, 'error', `Registration failed: ${error.message}`);
+                submitBtn.disabled = false;
+            }
+        });
+        
+        function showStatus(div, type, content) {
+            div.className = `status show ${type}`;
+            div.innerHTML = content;
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+    </script>
+</body>
+</html>
+
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE 2: providers.js
+═════════════════════════════════════════════════════════════════════════════
+Location: /backend/src/routes/providers.js
+
+const express = require('express');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const router = express.Router();
+
+// Database (use existing connection)
+const db = require('../db');
+
+// ============================================================================
+// POST /api/providers/register - Register new provider
+// ============================================================================
+router.post('/register', async (req, res) => {
+    try {
+        const { name, email, gpu_model, os, phone } = req.body;
+        
+        // Validate inputs
+        if (!name || !email || !gpu_model || !os) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        
+        // Generate unique API key
+        const api_key = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
+        
+        // Generate unique provider ID
+        const provider_id = 'prov-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        
+        // Save to database
+        await db.run(
+            `INSERT INTO providers (provider_id, name, email, phone, gpu_model, os, api_key, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [provider_id, name, email, phone || null, gpu_model, os, api_key, 'registered', new Date().toISOString()]
+        );
+        
+        // Generate installer URL
+        const installer_url = `/api/providers/installer?key=${api_key}&os=${os}`;
+        
+        res.json({
+            success: true,
+            provider_id,
+            api_key,
+            installer_url,
+            message: `Welcome ${name}! Your API key is ready. Download the installer to get started.`
+        });
+        
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/installer - Download installer (with validation)
+// ============================================================================
+router.get('/installer', (req, res) => {
+    try {
+        const { key, os } = req.query;
+        
+        if (!key || !os) {
+            return res.status(400).json({ error: 'Missing API key or OS' });
+        }
+        
+        // Determine installer path
+        const installerMap = {
+            'Windows': 'dc1-provider-setup-Windows.exe',
+            'Mac': 'dc1-provider-setup-Mac.pkg',
+            'Linux': 'dc1-provider-setup-Linux.deb'
+        };
+        
+        const installerFile = installerMap[os];
+        if (!installerFile) {
+            return res.status(400).json({ error: 'Invalid OS' });
+        }
+        
+        const installerPath = path.join(__dirname, '../../installers', installerFile);
+        
+        // Check if file exists
+        if (!fs.existsSync(installerPath)) {
+            return res.status(404).json({ error: 'Installer not found' });
+        }
+        
+        // Send file with appropriate headers
+        res.setHeader('Content-Disposition', `attachment; filename="${installerFile}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        
+        const fileStream = fs.createReadStream(installerPath);
+        fileStream.pipe(res);
+        
+    } catch (error) {
+        console.error('Installer download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/heartbeat - Provider heartbeat (GPU status update)
+// ============================================================================
+router.post('/heartbeat', async (req, res) => {
+    try {
+        const { api_key, gpu_status, uptime, provider_ip, provider_hostname } = req.body;
+        
+        // Verify API key
+        const provider = await db.get(
+            'SELECT * FROM providers WHERE api_key = ?',
+            [api_key]
+        );
+        
+        if (!provider) {
+            return res.status(401).json({ error: 'Invalid API key' });
+        }
+        
+        // Update provider status
+        await db.run(
+            `UPDATE providers 
+             SET gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = ?
+             WHERE api_key = ?`,
+            [
+                JSON.stringify(gpu_status),
+                provider_ip,
+                provider_hostname,
+                new Date().toISOString(),
+                'online'
+            ],
+            [api_key]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Heartbeat received',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('Heartbeat error:', error);
+        res.status(500).json({ error: 'Heartbeat failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/status - Get provider dashboard data
+// ============================================================================
+router.get('/status/:api_key', async (req, res) => {
+    try {
+        const { api_key } = req.params;
+        
+        const provider = await db.get(
+            'SELECT * FROM providers WHERE api_key = ?',
+            [api_key]
+        );
+        
+        if (!provider) {
+            return res.status(404).json({ error: 'Provider not found' });
+        }
+        
+        res.json({
+            provider_id: provider.provider_id,
+            name: provider.name,
+            status: provider.status,
+            gpu_model: provider.gpu_model,
+            gpu_status: provider.gpu_status ? JSON.parse(provider.gpu_status) : null,
+            provider_ip: provider.provider_ip,
+            last_heartbeat: provider.last_heartbeat,
+            total_earnings: provider.total_earnings || 0,
+            total_jobs: provider.total_jobs || 0,
+            uptime_percent: provider.uptime_percent || 0
+        });
+        
+    } catch (error) {
+        res.status(500).json({ error: 'Status fetch failed' });
+    }
+});
+
+module.exports = router;
+
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE 3: dc1-provider-setup.sh
+═════════════════════════════════════════════════════════════════════════════
+Location: /backend/installers/dc1-provider-setup.sh
+
+#!/bin/bash
+
+#############################################################################
+#         DC1 Provider Setup Script - Universal (Linux/Mac/Windows+WSL)   #
+#############################################################################
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Configuration
+DC1_API_KEY="${1:-}"
+DC1_API_URL="${2:-http://76.13.179.86:8083}"
+DC1_PROVIDER_DIR="$HOME/dc1-provider"
+
+# ============================================================================
+# FUNCTIONS
+# ============================================================================
+
+log_header() {
+    echo -e "\n${BLUE}════════════════════════════════════════${NC}"
+    echo -e "${BLUE}$1${NC}"
+    echo -e "${BLUE}════════════════════════════════════════${NC}\n"
+}
+
+log_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+log_error() {
+    echo -e "${RED}✗ $1${NC}"
+    exit 1
+}
+
+log_info() {
+    echo -e "${YELLOW}ℹ $1${NC}"
+}
+
+# ============================================================================
+# STEP 1: VALIDATE API KEY
+# ============================================================================
+
+log_header "DC1 Provider Setup - Starting"
+
+if [ -z "$DC1_API_KEY" ]; then
+    log_error "API key required! Usage: $0 <API_KEY>"
+fi
+
+log_info "API Key: ${DC1_API_KEY:0:20}..."
+log_success "Configuration valid"
+
+# ============================================================================
+# STEP 2: INSTALL DEPENDENCIES
+# ============================================================================
+
+log_header "Installing Dependencies"
+
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    log_info "Detected Linux"
+    sudo apt update -qq
+    sudo apt install -y -qq curl docker.io nvidia-docker2 2>&1 | tail -3
+    
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    log_info "Detected macOS"
+    
+    if ! command -v brew &> /dev/null; then
+        log_info "Installing Homebrew..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+    
+    brew install docker
+    
+else
+    log_error "Unsupported OS: $OSTYPE"
+fi
+
+log_success "Dependencies installed"
+
+# ============================================================================
+# STEP 3: SETUP DC1 DIRECTORIES
+# ============================================================================
+
+log_header "Setting Up DC1 Directories"
+
+mkdir -p "$DC1_PROVIDER_DIR"/{jobs,logs,checkpoints,config}
+
+log_success "Directories created at $DC1_PROVIDER_DIR"
+
+# ============================================================================
+# STEP 4: CREATE DC1 CONFIG
+# ============================================================================
+
+log_header "Creating Configuration"
+
+cat > "$DC1_PROVIDER_DIR/config/.env" << EOF
+DC1_API_KEY=$DC1_API_KEY
+DC1_API_URL=$DC1_API_URL
+PROVIDER_DIR=$DC1_PROVIDER_DIR
+PROVIDER_HOSTNAME=$(hostname)
+PROVIDER_IP=$(hostname -I | awk '{print $1}')
+EOF
+
+log_success "Configuration saved"
+
+# ============================================================================
+# STEP 5: START DC1 DAEMON
+# ============================================================================
+
+log_header "Starting DC1 Daemon"
+
+# Create daemon script
+cat > "$DC1_PROVIDER_DIR/daemon.sh" << 'DAEMON_EOF'
+#!/bin/bash
+
+source "$HOME/dc1-provider/config/.env"
+
+LOGS="$PROVIDER_DIR/logs/daemon.log"
+
+log_msg() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOGS"
+}
+
+send_heartbeat() {
+    GPU_INFO=$(nvidia-smi --query-gpu=index,name,temperature.gpu,utilization.gpu,memory.used,memory.total \
+               --format=csv,noheader 2>/dev/null || echo "offline")
+    
+    curl -s -X POST "$DC1_API_URL/api/providers/heartbeat" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"api_key\": \"$DC1_API_KEY\",
+            \"provider_ip\": \"$PROVIDER_IP\",
+            \"provider_hostname\": \"$PROVIDER_HOSTNAME\",
+            \"gpu_status\": \"$GPU_INFO\",
+            \"uptime\": \"$(uptime -p)\"
+        }" && log_msg "Heartbeat sent" || log_msg "Heartbeat failed"
+}
+
+log_msg "DC1 Daemon started (PID: $$)"
+
+while true; do
+    send_heartbeat
+    sleep 30
+done
+DAEMON_EOF
+
+chmod +x "$DC1_PROVIDER_DIR/daemon.sh"
+
+# Start daemon in background
+nohup "$DC1_PROVIDER_DIR/daemon.sh" > /dev/null 2>&1 &
+
+log_success "DC1 Daemon started (running in background)"
+
+# ============================================================================
+# VERIFICATION
+# ============================================================================
+
+log_header "Verification"
+
+if nvidia-smi > /dev/null 2>&1; then
+    GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
+    log_success "GPU detected: $GPU"
+else
+    log_info "GPU not detected (may need reboot after driver installation)"
+fi
+
+if docker ps > /dev/null 2>&1; then
+    log_success "Docker is running"
+else
+    log_info "Docker may need to be started manually"
+fi
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+
+log_header "Setup Complete! 🎉"
+
+echo -e "${GREEN}Your DC1 provider is ready!${NC}\n"
+echo "Configuration:"
+echo "  Location: $DC1_PROVIDER_DIR"
+echo "  API Key: ${DC1_API_KEY:0:20}..."
+echo "  Status: Running in background"
+echo ""
+echo "Next steps:"
+echo "  1. Monitor logs: tail -f $DC1_PROVIDER_DIR/logs/daemon.log"
+echo "  2. View dashboard: Visit http://dc1.sa/provider/dashboard"
+echo "  3. Start earning: GPU will accept jobs automatically"
+echo ""
+
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE 4: dc1-provider-Windows.nsi
+═════════════════════════════════════════════════════════════════════════════
+Location: /backend/installers/dc1-provider-Windows.nsi
+
+; DC1 Provider Installer for Windows
+; Built with NSIS (Nullsoft Scriptable Install System)
+
+!include "MUI2.nsh"
+
+Name "DC1 Provider Setup"
+OutFile "dc1-provider-setup-Windows.exe"
+InstallDir "$PROGRAMFILES\DC1Provider"
+InstallDirRegKey HKLM "Software\DC1Provider" "InstallLocation"
+
+RequestExecutionLevel admin
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+!insertmacro MUI_LANGUAGE "English"
+
+Section "DC1 Provider"
+    SetOutPath "$INSTDIR"
+    
+    File "daemon.sh"
+    File "config.template"
+    
+    CreateDirectory "$SMPROGRAMS\DC1"
+    CreateShortcut "$SMPROGRAMS\DC1\DC1 Provider Status.lnk" "$INSTDIR\status.bat"
+    CreateShortcut "$SMPROGRAMS\DC1\Uninstall.lnk" "$INSTDIR\uninstall.exe"
+    
+    WriteRegStr HKLM "Software\DC1Provider" "InstallLocation" "$INSTDIR"
+    
+    WriteUninstaller "$INSTDIR\uninstall.exe"
+    
+SectionEnd
+
+Section "Install Dependencies"
+    SetOutPath "$INSTDIR"
+    
+    ExecWait "powershell -Command $`
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Write-Host 'Installing Docker Desktop...'
+            $url = 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe'
+            $installer = '$INSTDIR\DockerInstaller.exe'
+            Invoke-WebRequest -Uri $url -OutFile $installer
+            & $installer install --quiet
+            Remove-Item $installer
+        }
+    `"
+    
+    ExecWait "powershell -Command $`
+        & '$INSTDIR\daemon.sh'
+    `"
+    
+SectionEnd
+
+Section "Uninstall"
+    
+    ExecWait "taskkill /F /IM dc1-daemon.exe"
+    
+    RMDir /r "$INSTDIR"
+    
+    RMDir /r "$SMPROGRAMS\DC1"
+    
+    DeleteRegKey HKLM "Software\DC1Provider"
+    
+SectionEnd
+
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE 5: build-mac-pkg.sh
+═════════════════════════════════════════════════════════════════════════════
+Location: /backend/installers/build-mac-pkg.sh
+
+#!/bin/bash
+
+# Build macOS .pkg installer
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Create package structure
+mkdir -p build/DC1Provider.pkg/Contents/Resources
+mkdir -p build/DC1Provider.pkg/Contents/MacOS
+
+# Copy scripts
+cp "$SCRIPT_DIR/dc1-provider-setup.sh" build/DC1Provider.pkg/Contents/MacOS/
+chmod +x build/DC1Provider.pkg/Contents/MacOS/dc1-provider-setup.sh
+
+# Create PackageInfo
+cat > build/DC1Provider.pkg/Contents/PackageInfo << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.dc1.provider</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>IFMajorVersion</key>
+    <integer>1</integer>
+    <key>IFMinorVersion</key>
+    <integer>0</integer>
+    <key>IFPkgFlagAllowBackRev</key>
+    <false/>
+    <key>IFPkgFlagAuthorizationAction</key>
+    <string>AdminAuthorization</string>
+    <key>IFPkgFlagDefaultLocation</key>
+    <string>/usr/local/bin</string>
+    <key>IFPkgFlagFollowLinks</key>
+    <true/>
+    <key>IFPkgFlagInstallFat</key>
+    <false/>
+    <key>IFPkgFlagIsBundle</key>
+    <false/>
+    <key>IFPkgFlagRelocatable</key>
+    <false/>
+    <key>IFPkgFlagRestartAction</key>
+    <string>None</string>
+    <key>IFPkgFlagRootVolumeOnly</key>
+    <false/>
+    <key>IFPkgFlagUseUserMask</key>
+    <false/>
+    <key>IFPkgFormatVersion</key>
+    <real>0.10000000149011612</real>
+</dict>
+</plist>
+EOF
+
+# Create .pkg
+cd build
+xar -czf dc1-provider-setup-Mac.pkg DC1Provider.pkg/
+mv dc1-provider-setup-Mac.pkg ../ 
+cd ..
+
+echo "✓ macOS installer created: dc1-provider-setup-Mac.pkg"
+
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE 6: build-deb.sh
+═════════════════════════════════════════════════════════════════════════════
+Location: /backend/installers/build-deb.sh
+
+#!/bin/bash
+
+# Build Linux .deb installer
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Create .deb structure
+mkdir -p dc1-provider_1.0/DEBIAN
+mkdir -p dc1-provider_1.0/usr/local/bin
+mkdir -p dc1-provider_1.0/etc/dc1-provider
+
+# Copy daemon script
+cp "$SCRIPT_DIR/dc1-provider-setup.sh" dc1-provider_1.0/usr/local/bin/dc1-provider-setup
+chmod +x dc1-provider_1.0/usr/local/bin/dc1-provider-setup
+
+# Create control file
+cat > dc1-provider_1.0/DEBIAN/control << 'EOF'
+Package: dc1-provider
+Version: 1.0
+Architecture: amd64
+Maintainer: DC1 <support@dc1.sa>
+Description: DC1 Provider Daemon
+ Automatic GPU provider setup for DC1 marketplace
+Depends: docker.io, nvidia-docker2, curl
+EOF
+
+# Create postinst (post-installation script)
+cat > dc1-provider_1.0/DEBIAN/postinst << 'EOF'
+#!/bin/bash
+set -e
+
+# Start daemon
+/usr/local/bin/dc1-provider-setup "$@"
+
+echo "✓ DC1 Provider installed successfully"
+EOF
+
+chmod +x dc1-provider_1.0/DEBIAN/postinst
+
+# Build .deb
+dpkg-deb --build dc1-provider_1.0 dc1-provider-setup-Linux.deb
+
+echo "✓ Linux installer created: dc1-provider-setup-Linux.deb"
+
+
+═══════════════════════════════════════════════════════════════════════════════
+END OF COMPLETE BUILD PACKAGE
+═══════════════════════════════════════════════════════════════════════════════
