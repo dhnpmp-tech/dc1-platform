@@ -327,25 +327,63 @@
                 
                 const result = await response.json();
                 const apiKey = result.api_key;
-                const installerUrl = result.installer_url;
-                const osName = data.os;
-                const installerName = `dc1-provider-setup-${osName}${osName === 'Windows' ? '.exe' : osName === 'Mac' ? '.pkg' : '.deb'}`;
                 
                 const successHTML = `
-                    <h3>✅ Registration Successful!</h3>
-                    <p><strong>Welcome to DC1, ${data.name}!</strong></p>
-                    <p>Your API Key: <code style="color: #FFD700;">${apiKey}</code></p>
-                    <h4 style="margin-top: 20px; color: #00D9FF;">Download & Install</h4>
-                    <p>Click below to download the DC1 installer:</p>
-                    <a href="${installerUrl}" class="download-link">
-                        📥 Download ${installerName}
-                    </a>
-                    <h4 style="margin-top: 20px; color: #00D9FF;">Or use the quick setup command:</h4>
-                    <code>curl https://dc1.sa/setup?key=${apiKey} | bash</code>
-                    <button type="button" class="copy-btn" onclick="copyToClipboard('curl https://dc1.sa/setup?key=${apiKey} | bash')">
-                        📋 Copy Command
-                    </button>
-                `;
+            <h3>\u2705 Registration Successful!</h3>
+            <p><strong>Welcome to DC1, ${data.name}!</strong></p>
+            <div style="background:#1a1a2e;border:2px solid #FFD700;border-radius:8px;padding:16px;margin:16px 0;">
+              <p style="margin:0 0 8px;color:#ccc;">Your API Key (save this!):</p>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <code style="color:#FFD700;font-size:1.1em;word-break:break-all;flex:1;">${apiKey}</code>
+                <button type="button" class="copy-btn" onclick="copyToClipboard('${apiKey}')" style="white-space:nowrap;">
+                  \ud83d\udccb Copy Key
+                </button>
+              </div>
+            </div>
+
+            <h4 style="margin-top:24px;color:#00D9FF;">Step 1: Download Installer</h4>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin:12px 0;">
+              <a href="/installers/dc1-provider-setup-Windows.exe" class="download-link" style="flex:1;min-width:140px;text-align:center;" download>
+                \ud83d\udda5\ufe0f Windows .exe
+              </a>
+              <a href="/installers/dc1-provider-setup-Linux.deb" class="download-link" style="flex:1;min-width:140px;text-align:center;" download>
+                \ud83d\udc27 Linux .deb
+              </a>
+              <a href="/installers/dc1-provider-setup.sh" class="download-link" style="flex:1;min-width:140px;text-align:center;" download>
+                \ud83d\udce6 macOS / Linux .sh
+              </a>
+            </div>
+
+            <h4 style="margin-top:24px;color:#00D9FF;">Step 2: Run the Installer</h4>
+
+            <div style="background:#0d1117;border:1px solid #333;border-radius:8px;padding:16px;margin:12px 0;">
+              <p style="color:#00D9FF;margin:0 0 8px;font-weight:bold;">\ud83d\udda5\ufe0f Windows:</p>
+              <p style="color:#ccc;margin:0;">Double-click <code>dc1-provider-setup-Windows.exe</code> and follow the prompts.</p>
+            </div>
+
+            <div style="background:#0d1117;border:1px solid #333;border-radius:8px;padding:16px;margin:12px 0;">
+              <p style="color:#00D9FF;margin:0 0 8px;font-weight:bold;">\ud83d\udc27 Linux (.deb):</p>
+              <code style="color:#8be9fd;display:block;margin:4px 0;">sudo dpkg -i dc1-provider-setup-Linux.deb</code>
+              <code style="color:#8be9fd;display:block;margin:4px 0;">dc1-provider-setup ${apiKey}</code>
+              <button type="button" class="copy-btn" onclick="copyToClipboard('sudo dpkg -i dc1-provider-setup-Linux.deb && dc1-provider-setup ${apiKey}')" style="margin-top:8px;">
+                \ud83d\udccb Copy Commands
+              </button>
+            </div>
+
+            <div style="background:#0d1117;border:1px solid #333;border-radius:8px;padding:16px;margin:12px 0;">
+              <p style="color:#00D9FF;margin:0 0 8px;font-weight:bold;">\ud83c\udf4e macOS / Linux (.sh):</p>
+              <p style="color:#888;margin:0 0 8px;font-size:0.9em;">Open Terminal and run:</p>
+              <code style="color:#8be9fd;display:block;margin:4px 0;">chmod +x ~/Downloads/dc1-provider-setup.sh</code>
+              <code style="color:#8be9fd;display:block;margin:4px 0;">bash ~/Downloads/dc1-provider-setup.sh ${apiKey}</code>
+              <button type="button" class="copy-btn" onclick="copyToClipboard('chmod +x ~/Downloads/dc1-provider-setup.sh && bash ~/Downloads/dc1-provider-setup.sh ${apiKey}')" style="margin-top:8px;">
+                \ud83d\udccb Copy Commands
+              </button>
+            </div>
+
+            <div style="background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:12px;margin-top:16px;">
+              <p style="color:#ccc;margin:0;font-size:0.9em;">\ud83d\udca1 <strong>What happens next?</strong> The installer sets up Docker and starts the DC1 provider daemon. Your GPU will begin accepting jobs and earning \ufdfc automatically. Check your status anytime at <a href="/api/providers/status/${apiKey}" style="color:#00D9FF;">/api/providers/status/${apiKey}</a></p>
+            </div>
+          `;
                 
                 showStatus(statusDiv, 'success', successHTML);
                 
