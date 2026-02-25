@@ -28,6 +28,8 @@ app.use('/api/providers', providersRouter);
 
 const standupRouter = require('./routes/standup');
 app.use('/api/standup', standupRouter);
+const securityRouter = require('./routes/security');
+app.use('/api/security', securityRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

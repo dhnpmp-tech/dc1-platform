@@ -1,139 +1,166 @@
 'use client';
 
-// TODO: wire to GET /api/security/violations
+import { useEffect, useState, useCallback } from 'react';
 
-// MOCKED DATA
-interface GuardRule {
-  name: string;
+interface SecurityEvent {
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  provider_id: number;
+  provider_name: string;
   description: string;
-  status: 'active' | 'inactive';
-  lastTriggered: string | null;
-  actionTaken: string;
-}
-
-interface Violation {
   timestamp: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  agent: string;
-  description: string;
-  actionTaken: string;
 }
 
-interface ChecklistItem {
-  label: string;
-  status: '✅' | '⚠️' | '❌';
-  note?: string;
+interface SecuritySummary {
+  total: number;
+  critical: number;
+  warning: number;
+  info: number;
 }
-
-const mockRules: GuardRule[] = [
-  { name: 'api_ratelimit', description: '100 req/min per agent', status: 'active', lastTriggered: '2026-02-23T16:45:00Z', actionTaken: 'Request throttled, 429 returned' },
-  { name: 'token_budget', description: 'Daily limits enforced per agent', status: 'active', lastTriggered: '2026-02-23T14:20:00Z', actionTaken: 'NEXUS budget warning at 90%' },
-  { name: 'container_no_internet', description: 'Docker egress blocked', status: 'active', lastTriggered: null, actionTaken: 'N/A — no violations' },
-  { name: 'gpu_memory_wipe', description: 'Verified between jobs', status: 'active', lastTriggered: '2026-02-23T17:11:30Z', actionTaken: 'GPU memory cleared, verified clean' },
-  { name: 'audit_logging', description: 'All actions immutable log', status: 'active', lastTriggered: '2026-02-23T17:24:45Z', actionTaken: 'Continuous — 1,247 events today' },
-];
-
-const mockViolations: Violation[] = [
-  { timestamp: '2026-02-23T16:45:12Z', severity: 'low', agent: 'VOLT', description: 'Rate limit exceeded — 112 req/min', actionTaken: 'Throttled for 60s' },
-  { timestamp: '2026-02-23T14:20:00Z', severity: 'medium', agent: 'NEXUS', description: 'Token budget at 96% — approaching limit', actionTaken: 'Warning sent, budget cap enforced' },
-  { timestamp: '2026-02-22T22:15:00Z', severity: 'low', agent: 'SPARK', description: 'Attempted unauthorized endpoint access', actionTaken: '403 returned, logged' },
-];
-
-const checklist: ChecklistItem[] = [
-  { label: 'Network isolation', status: '✅', note: 'Jobs can\'t reach internet' },
-  { label: 'Data isolation', status: '✅', note: 'Jobs can\'t see other job data' },
-  { label: 'Memory wipe', status: '✅', note: 'GPU cleared between jobs' },
-  { label: 'Billing verification', status: '✅', note: 'Cryptographic proof' },
-  { label: 'Audit trail', status: '✅', note: 'Immutable log' },
-  { label: 'Firecracker isolation', status: '⚠️', note: 'TODO: Phase 2' },
-  { label: 'Zero-trust API calls', status: '⚠️', note: 'TODO: Phase 2' },
-];
 
 const severityColors: Record<string, string> = {
-  low: 'bg-[#00d4ff]/10 text-[#00d4ff]',
-  medium: 'bg-[#ffab00]/10 text-[#ffab00]',
-  high: 'bg-[#ff5252]/10 text-[#ff5252]',
-  critical: 'bg-[#ff5252]/20 text-[#ff5252]',
+  info: 'bg-[#00c853]/10 text-[#00c853]',
+  warning: 'bg-[#ffab00]/10 text-[#ffab00]',
+  critical: 'bg-[#ff5252]/10 text-[#ff5252]',
+};
+
+const typeLabels: Record<string, string> = {
+  failed_heartbeat: '💀 Failed Heartbeat',
+  new_registration: '🆕 New Registration',
+  suspicious_toggle: '⚠️ Suspicious Toggle',
+  active_threat: '🚨 Active Threat',
 };
 
 export default function SecurityPage() {
+  const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [summary, setSummary] = useState<SecuritySummary>({ total: 0, critical: 0, warning: 0, info: 0 });
+  const [loading, setLoading] = useState(true);
+  const [flagging, setFlagging] = useState<number | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<string>('');
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [eventsRes, summaryRes] = await Promise.all([
+        fetch('/api/security?endpoint=events'),
+        fetch('/api/security?endpoint=summary'),
+      ]);
+      const eventsData = await eventsRes.json();
+      const summaryData = await summaryRes.json();
+      setEvents(eventsData.events || []);
+      setSummary(summaryData);
+      setLastRefresh(new Date().toLocaleTimeString());
+    } catch {
+      // backend offline — keep stale data
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  const handleFlag = async (providerId: number) => {
+    setFlagging(providerId);
+    try {
+      await fetch(`/api/security?providerId=${providerId}`, { method: 'POST' });
+      await fetchData();
+    } catch {
+      // ignore
+    } finally {
+      setFlagging(null);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#00d4ff]">🛡️ Security Guards</h1>
+        <h1 className="text-2xl font-bold text-[#00d4ff]">🛡️ Security Guards View</h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">CVSS Score</span>
-          <span className="px-3 py-1 rounded-full bg-[#00c853]/10 text-[#00c853] text-sm font-bold">1.2/10 — Excellent</span>
+          <span className="text-xs text-gray-500">Auto-refresh 30s</span>
+          {lastRefresh && <span className="text-xs text-gray-600">Last: {lastRefresh}</span>}
+          <button
+            onClick={fetchData}
+            className="px-3 py-1 rounded bg-[#21262d] text-gray-300 text-xs hover:bg-[#30363d] transition-colors"
+          >
+            ↻ Refresh
+          </button>
         </div>
       </div>
 
-      {/* Guard Rules */}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: 'Total Events', value: summary.total, color: 'text-white' },
+          { label: 'Critical', value: summary.critical, color: 'text-[#ff5252]' },
+          { label: 'Warnings', value: summary.warning, color: 'text-[#ffab00]' },
+          { label: 'Info', value: summary.info, color: 'text-[#00c853]' },
+        ].map((card) => (
+          <div key={card.label} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">{card.label}</div>
+            <div className={`text-3xl font-bold mt-1 ${card.color}`}>{card.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Live Event Feed */}
       <div className="bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#30363d]">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Guard Rules</h2>
+        <div className="px-4 py-3 border-b border-[#30363d] flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Live Event Feed</h2>
+          <span className="text-xs text-gray-600">{events.length} events</span>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-xs text-gray-500 border-b border-[#30363d]">
-              <th className="text-left px-4 py-2">Rule</th>
-              <th className="text-left px-4 py-2">Description</th>
-              <th className="text-left px-4 py-2">Status</th>
-              <th className="text-left px-4 py-2">Last Triggered</th>
-              <th className="text-left px-4 py-2">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mockRules.map(r => (
-              <tr key={r.name} className="border-b border-[#30363d]/50 hover:bg-[#21262d]">
-                <td className="px-4 py-3 font-mono text-[#00d4ff] text-xs">{r.name}</td>
-                <td className="px-4 py-3 text-gray-300">{r.description}</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded text-xs ${r.status === 'active' ? 'bg-[#00c853]/10 text-[#00c853]' : 'bg-gray-500/10 text-gray-400'}`}>
-                    {r.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-gray-400 text-xs">{r.lastTriggered ? new Date(r.lastTriggered).toLocaleString() : '—'}</td>
-                <td className="px-4 py-3 text-gray-400 text-xs">{r.actionTaken}</td>
+
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Loading security events...</div>
+        ) : events.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            ✅ No security events — all clear
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-[#30363d]">
+                <th className="text-left px-4 py-2">Timestamp</th>
+                <th className="text-left px-4 py-2">Provider</th>
+                <th className="text-left px-4 py-2">Event</th>
+                <th className="text-left px-4 py-2">Severity</th>
+                <th className="text-left px-4 py-2">Description</th>
+                <th className="text-left px-4 py-2">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Violations log */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Recent Violations</h2>
-          <div className="space-y-3">
-            {mockViolations.map((v, i) => (
-              <div key={i} className="border-l-2 border-[#30363d] pl-3 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-xs ${severityColors[v.severity]}`}>{v.severity}</span>
-                  <span className="text-xs text-gray-500">{new Date(v.timestamp).toLocaleString()}</span>
-                  <span className="text-xs text-[#00d4ff]">{v.agent}</span>
-                </div>
-                <div className="text-sm text-gray-300">{v.description}</div>
-                <div className="text-xs text-gray-500">Action: {v.actionTaken}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Security checklist */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Gate 0 Security Checklist</h2>
-          <div className="space-y-2.5">
-            {checklist.map((item, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-lg">{item.status}</span>
-                <div>
-                  <div className="text-sm">{item.label}</div>
-                  {item.note && <div className="text-xs text-gray-500">{item.note}</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+            </thead>
+            <tbody>
+              {events.map((event, i) => (
+                <tr key={`${event.provider_id}-${event.type}-${i}`} className="border-b border-[#30363d]/50 hover:bg-[#21262d]">
+                  <td className="px-4 py-3 text-gray-400 text-xs font-mono">
+                    {new Date(event.timestamp).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-[#00d4ff] text-xs">
+                    #{event.provider_id} {event.provider_name}
+                  </td>
+                  <td className="px-4 py-3 text-xs">{typeLabels[event.type] || event.type}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${severityColors[event.severity]}`}>
+                      {event.severity}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-300 text-xs">{event.description}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => handleFlag(event.provider_id)}
+                      disabled={flagging === event.provider_id}
+                      className="px-2 py-1 rounded text-xs bg-[#ff5252]/10 text-[#ff5252] hover:bg-[#ff5252]/20 transition-colors disabled:opacity-50"
+                    >
+                      {flagging === event.provider_id ? '...' : '🚩 Flag'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
