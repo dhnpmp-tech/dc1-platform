@@ -44,6 +44,9 @@ router.post('/register', async (req, res) => {
         });
         
     } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'A provider with this email already exists' });
+    }
         console.error('Registration error:', error);
         res.status(500).json({ error: 'Registration failed' });
     }
