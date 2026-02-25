@@ -14,6 +14,11 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static files (provider-onboarding.html etc)
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Clean URL route for provider onboarding
+app.get('/provider-onboarding', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/provider-onboarding.html'));
+});
+
 // Serve installer files for download
 app.use('/installers', express.static(path.join(__dirname, '..', 'installers')));
 
