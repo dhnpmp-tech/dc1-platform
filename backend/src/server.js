@@ -26,6 +26,9 @@ app.use('/installers', express.static(path.join(__dirname, '..', 'installers')))
 const providersRouter = require('./routes/providers');
 app.use('/api/providers', providersRouter);
 
+const securityRouter = require('./routes/security');
+app.use('/api/security', securityRouter);
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'dc1-provider-onboarding', timestamp: new Date().toISOString() });
