@@ -225,7 +225,20 @@
         <div class="info-box">
             💡 <strong>Quick setup:</strong> Takes 5 minutes. No coding required. Automatic earnings every hour.
         </div>
-        
+
+        <!-- GPU Autodetect Banner -->
+        <div id="gpu-detect-banner" style="display:none; background:rgba(255,215,0,0.08); border:1px solid #FFD700; border-radius:8px; padding:16px; margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:24px;">🔍</span>
+                <div style="flex:1;">
+                    <strong style="color:#FFD700;" id="detect-title">Detecting your GPU...</strong>
+                    <p style="color:#999;font-size:12px;margin-top:4px;" id="detect-subtitle">Scanning via WebGL renderer</p>
+                </div>
+                <div id="detect-spinner" style="width:20px;height:20px;border:2px solid #333;border-top-color:#FFD700;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+            </div>
+        </div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
         <form id="providerForm">
             <div class="form-group">
                 <label>Your Full Name</label>
@@ -238,26 +251,59 @@
             </div>
             
             <div class="form-group">
-                <label>Your GPU Model</label>
-                <div class="gpu-list">
-                    <div class="gpu-option" data-gpu="RTX 3090">
-                        <strong>RTX 3090</strong><br>
-                        <small>24GB • ﷼0.75/hr</small>
+                <label>Your GPU Model <span id="gpu-detected-badge" style="display:none;background:#FFD700;color:#000;padding:2px 8px;border-radius:10px;font-size:11px;margin-left:8px;">AUTO-DETECTED</span></label>
+                <div class="gpu-list" id="gpu-list">
+                    <!-- NVIDIA Consumer -->
+                    <div class="gpu-option" data-gpu="RTX 5090" data-vram="32" data-rate="1.80">
+                        <strong>RTX 5090</strong><br><small>32GB • ﷼1.80/hr</small>
                     </div>
-                    <div class="gpu-option" data-gpu="RTX 4090">
-                        <strong>RTX 4090</strong><br>
-                        <small>24GB • ﷼1.00/hr</small>
+                    <div class="gpu-option" data-gpu="RTX 5080" data-vram="16" data-rate="1.20">
+                        <strong>RTX 5080</strong><br><small>16GB • ﷼1.20/hr</small>
                     </div>
-                    <div class="gpu-option" data-gpu="RTX 3060 Ti">
-                        <strong>RTX 3060 Ti</strong><br>
-                        <small>8GB • ﷼0.40/hr</small>
+                    <div class="gpu-option" data-gpu="RTX 4090" data-vram="24" data-rate="1.00">
+                        <strong>RTX 4090</strong><br><small>24GB • ﷼1.00/hr</small>
                     </div>
-                    <div class="gpu-option" data-gpu="A100">
-                        <strong>A100</strong><br>
-                        <small>40GB • ﷼2.00/hr</small>
+                    <div class="gpu-option" data-gpu="RTX 4080" data-vram="16" data-rate="0.80">
+                        <strong>RTX 4080</strong><br><small>16GB • ﷼0.80/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 4070 Ti" data-vram="12" data-rate="0.60">
+                        <strong>RTX 4070 Ti</strong><br><small>12GB • ﷼0.60/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 3090" data-vram="24" data-rate="0.75">
+                        <strong>RTX 3090</strong><br><small>24GB • ﷼0.75/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 3080" data-vram="10" data-rate="0.55">
+                        <strong>RTX 3080</strong><br><small>10GB • ﷼0.55/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="RTX 3060 Ti" data-vram="8" data-rate="0.40">
+                        <strong>RTX 3060 Ti</strong><br><small>8GB • ﷼0.40/hr</small>
+                    </div>
+                    <!-- NVIDIA Data Center -->
+                    <div class="gpu-option" data-gpu="H100" data-vram="80" data-rate="3.50">
+                        <strong>H100</strong><br><small>80GB • ﷼3.50/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="A100" data-vram="40" data-rate="2.00">
+                        <strong>A100</strong><br><small>40/80GB • ﷼2.00/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="L40S" data-vram="48" data-rate="1.60">
+                        <strong>L40S</strong><br><small>48GB • ﷼1.60/hr</small>
+                    </div>
+                    <!-- AMD -->
+                    <div class="gpu-option" data-gpu="RX 7900 XTX" data-vram="24" data-rate="0.70">
+                        <strong>RX 7900 XTX</strong><br><small>24GB • ﷼0.70/hr</small>
+                    </div>
+                    <div class="gpu-option" data-gpu="MI300X" data-vram="192" data-rate="4.00">
+                        <strong>MI300X</strong><br><small>192GB • ﷼4.00/hr</small>
+                    </div>
+                    <!-- Other -->
+                    <div class="gpu-option" data-gpu="other" id="gpu-other-option" style="border-style:dashed;">
+                        <strong>Other GPU</strong><br><small>Enter manually</small>
                     </div>
                 </div>
                 <input type="hidden" id="gpu_model" required>
+                <div id="gpu-custom-input" style="display:none;margin-top:10px;">
+                    <input type="text" id="gpu_custom" placeholder="e.g., RTX 4060, Tesla V100, Apple M3 Ultra..." style="border-color:#FFD700;">
+                </div>
             </div>
             
             <div class="form-group">
@@ -286,12 +332,125 @@
     </div>
     
     <script>
+        // =====================================================================
+        // GPU AUTODETECT via WebGL
+        // =====================================================================
+        const GPU_KEYWORDS = {
+            'RTX 5090': ['5090'],
+            'RTX 5080': ['5080'],
+            'RTX 4090': ['4090'],
+            'RTX 4080': ['4080'],
+            'RTX 4070 Ti': ['4070 ti', '4070ti'],
+            'RTX 3090': ['3090'],
+            'RTX 3080': ['3080'],
+            'RTX 3060 Ti': ['3060 ti', '3060ti'],
+            'H100': ['h100'],
+            'A100': ['a100'],
+            'L40S': ['l40s', 'l40'],
+            'RX 7900 XTX': ['7900 xtx', '7900xtx'],
+            'MI300X': ['mi300x', 'mi300'],
+        };
+
+        function detectGPU() {
+            const banner = document.getElementById('gpu-detect-banner');
+            banner.style.display = 'block';
+
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (!gl) throw new Error('WebGL not supported');
+
+                const ext = gl.getExtension('WEBGL_debug_renderer_info');
+                let renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+                let vendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+
+                if (!renderer || renderer === 'WebKit WebGL' || renderer.includes('SwiftShader') || renderer.includes('llvmpipe')) {
+                    throw new Error('Generic/software renderer detected');
+                }
+
+                // Try to match to a known GPU
+                const rendererLower = renderer.toLowerCase();
+                let matchedGPU = null;
+
+                for (const [gpuName, keywords] of Object.entries(GPU_KEYWORDS)) {
+                    if (keywords.some(kw => rendererLower.includes(kw))) {
+                        matchedGPU = gpuName;
+                        break;
+                    }
+                }
+
+                if (matchedGPU) {
+                    // Auto-select the matched GPU card
+                    const option = document.querySelector(`.gpu-option[data-gpu="${matchedGPU}"]`);
+                    if (option) {
+                        document.querySelectorAll('.gpu-option').forEach(o => o.classList.remove('selected'));
+                        option.classList.add('selected');
+                        option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        document.getElementById('gpu_model').value = matchedGPU;
+                    }
+
+                    document.getElementById('detect-title').textContent = `Detected: ${matchedGPU}`;
+                    document.getElementById('detect-subtitle').textContent = `Renderer: ${renderer} (${vendor})`;
+                    document.getElementById('detect-spinner').style.display = 'none';
+                    document.getElementById('gpu-detected-badge').style.display = 'inline';
+                    banner.style.borderColor = '#4ade80';
+                    banner.style.background = 'rgba(74,222,128,0.08)';
+                    document.getElementById('detect-title').style.color = '#4ade80';
+                } else {
+                    // Detected a GPU but can't match it to our list
+                    document.getElementById('detect-title').textContent = `GPU Found: ${renderer}`;
+                    document.getElementById('detect-subtitle').textContent = `Not in our catalog yet — please select the closest match or choose "Other GPU"`;
+                    document.getElementById('detect-spinner').style.display = 'none';
+                    banner.style.borderColor = '#00D9FF';
+                }
+            } catch (e) {
+                document.getElementById('detect-title').textContent = 'Could not auto-detect GPU';
+                document.getElementById('detect-subtitle').textContent = 'Please select your GPU manually below';
+                document.getElementById('detect-spinner').style.display = 'none';
+                banner.style.borderColor = '#666';
+                banner.style.background = 'rgba(100,100,100,0.08)';
+                document.getElementById('detect-title').style.color = '#999';
+            }
+        }
+
+        // =====================================================================
+        // OS AUTODETECT
+        // =====================================================================
+        function detectOS() {
+            const ua = navigator.userAgent.toLowerCase();
+            const osSelect = document.getElementById('os');
+            if (ua.includes('win')) osSelect.value = 'Windows';
+            else if (ua.includes('mac')) osSelect.value = 'Mac';
+            else if (ua.includes('linux') || ua.includes('ubuntu') || ua.includes('debian')) osSelect.value = 'Linux';
+        }
+
+        // Run autodetect on page load
+        detectGPU();
+        detectOS();
+
+        // =====================================================================
+        // GPU Selection handlers
+        // =====================================================================
         document.querySelectorAll('.gpu-option').forEach(option => {
             option.addEventListener('click', function() {
                 document.querySelectorAll('.gpu-option').forEach(o => o.classList.remove('selected'));
                 this.classList.add('selected');
-                document.getElementById('gpu_model').value = this.dataset.gpu;
+
+                const customInput = document.getElementById('gpu-custom-input');
+                if (this.dataset.gpu === 'other') {
+                    customInput.style.display = 'block';
+                    document.getElementById('gpu_custom').focus();
+                    document.getElementById('gpu_model').value = '';
+                } else {
+                    customInput.style.display = 'none';
+                    document.getElementById('gpu_model').value = this.dataset.gpu;
+                }
             });
+        });
+
+        // Sync custom GPU input to hidden field
+        document.getElementById('gpu_custom').addEventListener('input', function() {
+            document.getElementById('gpu_model').value = this.value;
         });
         
         document.getElementById('providerForm').addEventListener('submit', async (e) => {
