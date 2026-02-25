@@ -39,6 +39,31 @@ db.exec(`
   )
 `);
 
+// Idempotent schema migrations — run on every startup.
+// ALTER TABLE fails silently if column already exists (SQLite "duplicate column" error).
+// This ensures the schema is always correct regardless of DB state — no manual VPS steps needed.
+const migrations = [
+  'ALTER TABLE providers ADD COLUMN gpu_status TEXT',
+  'ALTER TABLE providers ADD COLUMN provider_ip TEXT',
+  'ALTER TABLE providers ADD COLUMN provider_hostname TEXT',
+  'ALTER TABLE providers ADD COLUMN last_heartbeat TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_name_detected TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_vram_mib INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN gpu_driver TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_compute TEXT',
+  'ALTER TABLE providers ADD COLUMN total_earnings REAL DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
+];
+
+migrations.forEach(sql => {
+  try {
+    db.exec(sql);
+  } catch (e) {
+    // Column already exists — safe to ignore
+  }
+});
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 // Flatten params: if a single array is passed, spread it; otherwise pass as-is
