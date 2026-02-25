@@ -170,5 +170,33 @@ router.get('/status/:api_key', async (req, res) => {
     }
 });
 
-module.exports = router;
+// === SETUP ROUTE - Serve daemon.sh with injected API key ===
+router.get('/setup', (req, res) => {
+    try {
+        const { key } = req.query;
+        if (!key) {
+            return res.status(400).json({ error: 'API key required: /setup?key=YOUR_KEY' });
+        }
 
+        const daemonPath = path.join(__dirname, '../../installers/daemon.sh');
+        if (!fs.existsSync(daemonPath)) {
+            return res.status(404).json({ error: 'daemon.sh not found' });
+        }
+
+        let daemonScript = fs.readFileSync(daemonPath, 'utf-8');
+        daemonScript = daemonScript.replace(
+            'DC1_API_KEY="${1:-}"',
+            'DC1_API_KEY="' + key + '"'
+        );
+
+        res.setHeader('Content-Type', 'text/x-shellscript');
+        res.setHeader('Content-Disposition', 'inline; filename="daemon.sh"');
+        res.send(daemonScript);
+
+    } catch (error) {
+        console.error('Setup script error:', error);
+        res.status(500).json({ error: 'Failed to serve setup script' });
+    }
+});
+
+module.exports = router;
