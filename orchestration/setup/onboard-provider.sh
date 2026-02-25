@@ -4,8 +4,10 @@
 # =============================================================================
 # Configures a new GPU provider machine via SSH from the DC1 server.
 #
-# Usage: ./onboard-provider.sh <provider_ip> <ssh_user> <gpu_name>
-# Example: ./onboard-provider.sh 192.168.1.100 dc1user "RTX 3090"
+# Usage: ./onboard-provider.sh <provider_ip> <ssh_user> [gpu_name]
+# Example: ./onboard-provider.sh 192.168.1.100 dc1user
+#          ./onboard-provider.sh 192.168.1.100 dc1user "RTX 3090"  # override name
+# GPU name is AUTO-DETECTED via nvidia-smi if not provided.
 # =============================================================================
 
 set -euo pipefail
@@ -22,14 +24,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FILE="${SCRIPT_DIR}/provider-setup.log"
 
 # --- Args ---
-if [ $# -lt 3 ]; then
-    echo -e "${RED}Usage: $0 <provider_ip> <ssh_user> <gpu_name>${NC}"
+if [ $# -lt 2 ]; then
+    echo -e "${RED}Usage: $0 <provider_ip> <ssh_user> [gpu_name]${NC}"
+    echo -e "${BLUE}       GPU name is auto-detected via nvidia-smi if not provided.${NC}"
     exit 1
 fi
 
 PROVIDER_IP="$1"
 SSH_USER="$2"
-GPU_NAME="$3"
+GPU_NAME="${3:-}"  # Optional — auto-detected below if empty
 SSH_CMD="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new ${SSH_USER}@${PROVIDER_IP}"
 
 # --- Logging ---
@@ -56,10 +59,17 @@ else
     exit 1
 fi
 
-# GPU accessible
+# GPU accessible — auto-detect name and VRAM
 GPU_INFO=$($SSH_CMD "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader" 2>/dev/null || echo "")
 if [ -n "$GPU_INFO" ]; then
-    step_pass "GPU detected: $GPU_INFO"
+    # Auto-detect GPU name if not provided as argument
+    if [ -z "$GPU_NAME" ]; then
+        GPU_NAME=$(echo "$GPU_INFO" | head -1 | awk -F',' '{print $1}' | xargs)
+        step_pass "GPU auto-detected: $GPU_INFO"
+        step_info "Using GPU name: '${GPU_NAME}'"
+    else
+        step_pass "GPU detected: $GPU_INFO (name override: '${GPU_NAME}')"
+    fi
 else
     step_fail "nvidia-smi not found or no GPU detected"
     exit 1
