@@ -95,6 +95,24 @@ db.exec(`
   )
 `);
 
+// Benchmark runs table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS benchmark_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    benchmark_type TEXT NOT NULL CHECK(benchmark_type IN ('quick','standard','full')),
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
+    started_at TEXT,
+    completed_at TEXT,
+    score_gflops REAL,
+    temp_max_celsius REAL,
+    vram_used_mib INTEGER,
+    latency_ms REAL,
+    notes TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 // Flatten params: if a single array is passed, spread it; otherwise pass as-is
