@@ -122,6 +122,20 @@ db.exec(`
   )
 `);
 
+// Bottleneck events table (fallback loop)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS bottleneck_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    trigger TEXT NOT NULL CHECK(trigger IN ('high_utilization','queue_overflow','timeout')),
+    utilization_pct REAL,
+    jobs_affected INTEGER DEFAULT 0,
+    action_taken TEXT,
+    resolved_at TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+
 // Benchmark runs table
 db.exec(`
   CREATE TABLE IF NOT EXISTS benchmark_runs (

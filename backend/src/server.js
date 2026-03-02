@@ -42,8 +42,8 @@ app.use('/api/security', securityRouter);
 const intelligenceRouter = require('./routes/intelligence');
 app.use('/api/intelligence', intelligenceRouter);
 
-const recoveryRouter = require('./routes/recovery');
-app.use('/api/recovery', recoveryRouter);
+const fallbackRouter = require('./routes/fallback');
+app.use('/api/fallback', fallbackRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -59,6 +59,10 @@ app.get('/', (req, res) => {
 const { runRecoveryCycle } = require('./services/recovery-engine');
 setInterval(runRecoveryCycle, 30 * 1000);
 console.log('[recovery] Recovery cycle started (every 30s)');
+
+// Start fallback loop (bottleneck detection + disconnect recovery) every 15 seconds
+const { startLoop: startFallbackLoop } = require('./services/fallback-loop');
+startFallbackLoop();
 
 app.listen(PORT, () => {
   console.log(`DC1 Provider Onboarding server running on port ${PORT}`);
