@@ -42,6 +42,18 @@ db.exec(`
 // Idempotent schema migrations — run on every startup.
 // ALTER TABLE fails silently if column already exists (SQLite "duplicate column" error).
 // This ensures the schema is always correct regardless of DB state — no manual VPS steps needed.
+// Recovery orchestrator table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS recovery_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('WARNING','RECONNECT','FAILOVER','CRITICAL','DEGRADED')),
+    timestamp TEXT NOT NULL,
+    details TEXT,
+    resolved_at TEXT
+  )
+`);
+
 const migrations = [
   'ALTER TABLE providers ADD COLUMN gpu_status TEXT',
   'ALTER TABLE providers ADD COLUMN provider_ip TEXT',
@@ -54,6 +66,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN total_earnings REAL DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
 ];
 
 // Additional idempotent table creation for jobs and recovery
@@ -90,6 +103,42 @@ migrations.forEach(sql => {
     // Column already exists — safe to ignore
   }
 });
+
+// Create jobs table if not exists
+db.exec(`
+  CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    job_type TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    submitted_at DATETIME,
+    started_at DATETIME,
+    completed_at DATETIME,
+    duration_minutes INTEGER,
+    cost_halala INTEGER DEFAULT 0,
+    gpu_requirements TEXT,
+    notes TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+
+// Benchmark runs table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS benchmark_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    benchmark_type TEXT NOT NULL CHECK(benchmark_type IN ('quick','standard','full')),
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
+    started_at TEXT,
+    completed_at TEXT,
+    score_gflops REAL,
+    temp_max_celsius REAL,
+    vram_used_mib INTEGER,
+    latency_ms REAL,
+    notes TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
