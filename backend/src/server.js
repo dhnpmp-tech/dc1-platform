@@ -39,6 +39,8 @@ const standupRouter = require('./routes/standup');
 app.use('/api/standup', standupRouter);
 const securityRouter = require('./routes/security');
 app.use('/api/security', securityRouter);
+const intelligenceRouter = require('./routes/intelligence');
+app.use('/api/intelligence', intelligenceRouter);
 
 const recoveryRouter = require('./routes/recovery');
 app.use('/api/recovery', recoveryRouter);

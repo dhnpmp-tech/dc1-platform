@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { label: 'Token Usage', href: '/tokens', icon: '🪙' },
   { label: 'Jobs', href: '/jobs', icon: '⚡' },
   { label: 'Security', href: '/security', icon: '🛡️' },
+  { label: 'Intelligence', href: '/intelligence', icon: '🧠' },
   { label: 'Agents', href: '/agents', icon: '🤖' },
 ];
 
