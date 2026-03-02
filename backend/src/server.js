@@ -26,6 +26,12 @@ app.use('/installers', express.static(path.join(__dirname, '..', 'installers')))
 const providersRouter = require('./routes/providers');
 app.use('/api/providers', providersRouter);
 
+const recoveryRouter = require('./routes/recovery');
+app.use('/api/recovery', recoveryRouter);
+
+const jobsRouter = require('./routes/jobs');
+app.use('/api/jobs', jobsRouter);
+
 const standupRouter = require('./routes/standup');
 app.use('/api/standup', standupRouter);
 const securityRouter = require('./routes/security');
