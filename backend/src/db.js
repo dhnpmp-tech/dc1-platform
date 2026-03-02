@@ -16,7 +16,8 @@ const db = new Database(DB_PATH);
 // Enable WAL mode for better concurrency
 db.pragma('journal_mode = WAL');
 
-// Create providers table if not exists
+// ─── TABLE DEFINITIONS (single definition per table, no duplicates) ───
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS providers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,46 +40,24 @@ db.exec(`
   )
 `);
 
-// Idempotent schema migrations — run on every startup.
-// ALTER TABLE fails silently if column already exists (SQLite "duplicate column" error).
-// This ensures the schema is always correct regardless of DB state — no manual VPS steps needed.
-// Recovery orchestrator table
-db.exec(`
-  CREATE TABLE IF NOT EXISTS recovery_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    event_type TEXT NOT NULL CHECK(event_type IN ('WARNING','RECONNECT','FAILOVER','CRITICAL','DEGRADED')),
-    timestamp TEXT NOT NULL,
-    details TEXT,
-    resolved_at TEXT
-  )
-`);
-
-const migrations = [
-  'ALTER TABLE providers ADD COLUMN gpu_status TEXT',
-  'ALTER TABLE providers ADD COLUMN provider_ip TEXT',
-  'ALTER TABLE providers ADD COLUMN provider_hostname TEXT',
-  'ALTER TABLE providers ADD COLUMN last_heartbeat TEXT',
-  'ALTER TABLE providers ADD COLUMN gpu_name_detected TEXT',
-  'ALTER TABLE providers ADD COLUMN gpu_vram_mib INTEGER DEFAULT 0',
-  'ALTER TABLE providers ADD COLUMN gpu_driver TEXT',
-  'ALTER TABLE providers ADD COLUMN gpu_compute TEXT',
-  'ALTER TABLE providers ADD COLUMN total_earnings REAL DEFAULT 0',
-  'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
-  'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
-  'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
-];
-
-// Additional idempotent table creation for jobs and recovery
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id TEXT UNIQUE NOT NULL,
+    job_id TEXT UNIQUE,
     provider_id INTEGER,
+    job_type TEXT,
     status TEXT DEFAULT 'pending',
     vram_required INTEGER DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT
+    cost_halala INTEGER DEFAULT 0,
+    gpu_requirements TEXT,
+    notes TEXT,
+    submitted_at TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    updated_at TEXT,
+    created_at TEXT,
+    duration_minutes INTEGER,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
 
@@ -86,43 +65,21 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS recovery_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id TEXT,
+    provider_id INTEGER,
     from_provider_id INTEGER,
     to_provider_id INTEGER,
+    event_type TEXT,
     reason TEXT,
-    status TEXT NOT NULL CHECK(status IN ('pending','success','failed','no_backup')),
-    started_at TEXT NOT NULL,
+    status TEXT CHECK(status IN ('pending','success','failed','no_backup')),
+    timestamp TEXT,
+    details TEXT,
+    started_at TEXT,
     completed_at TEXT,
+    resolved_at TEXT,
     notes TEXT
   )
 `);
 
-migrations.forEach(sql => {
-  try {
-    db.exec(sql);
-  } catch (e) {
-    // Column already exists — safe to ignore
-  }
-});
-
-// Create jobs table if not exists
-db.exec(`
-  CREATE TABLE IF NOT EXISTS jobs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    job_type TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
-    submitted_at DATETIME,
-    started_at DATETIME,
-    completed_at DATETIME,
-    duration_minutes INTEGER,
-    cost_halala INTEGER DEFAULT 0,
-    gpu_requirements TEXT,
-    notes TEXT,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  )
-`);
-
-// Benchmark runs table
 db.exec(`
   CREATE TABLE IF NOT EXISTS benchmark_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,12 +97,86 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS bottleneck_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    trigger TEXT NOT NULL CHECK(trigger IN ('high_utilization','queue_overflow','timeout')),
+    utilization_pct REAL,
+    jobs_affected INTEGER DEFAULT 0,
+    action_taken TEXT,
+    resolved_at TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reconciliation_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at TEXT NOT NULL,
+    jobs_checked INTEGER DEFAULT 0,
+    jobs_clean INTEGER DEFAULT 0,
+    jobs_flagged INTEGER DEFAULT 0,
+    total_collected_halala INTEGER DEFAULT 0,
+    total_paid_halala INTEGER DEFAULT 0,
+    dc1_margin_halala INTEGER DEFAULT 0,
+    notes TEXT
+  )
+`);
+
+// ─── MIGRATIONS (idempotent — safe to re-run) ───
+
+const migrations = [
+  // providers columns
+  'ALTER TABLE providers ADD COLUMN gpu_status TEXT',
+  'ALTER TABLE providers ADD COLUMN provider_ip TEXT',
+  'ALTER TABLE providers ADD COLUMN provider_hostname TEXT',
+  'ALTER TABLE providers ADD COLUMN last_heartbeat TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_name_detected TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_vram_mib INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN gpu_driver TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_compute TEXT',
+  'ALTER TABLE providers ADD COLUMN total_earnings REAL DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
+  // jobs columns (for existing DBs that had the old narrow schema)
+  'ALTER TABLE jobs ADD COLUMN job_type TEXT',
+  'ALTER TABLE jobs ADD COLUMN cost_halala INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN gpu_requirements TEXT',
+  'ALTER TABLE jobs ADD COLUMN notes TEXT',
+  'ALTER TABLE jobs ADD COLUMN submitted_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN started_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN completed_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN duration_minutes INTEGER',
+  // recovery_events columns (for existing DBs that had the old narrow schema)
+  'ALTER TABLE recovery_events ADD COLUMN job_id TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN provider_id INTEGER',
+  'ALTER TABLE recovery_events ADD COLUMN from_provider_id INTEGER',
+  'ALTER TABLE recovery_events ADD COLUMN to_provider_id INTEGER',
+  'ALTER TABLE recovery_events ADD COLUMN event_type TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN reason TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN status TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN timestamp TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN details TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN started_at TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN completed_at TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN resolved_at TEXT',
+  'ALTER TABLE recovery_events ADD COLUMN notes TEXT',
+];
+
+migrations.forEach(sql => {
+  try {
+    db.exec(sql);
+  } catch (e) {
+    // Column already exists — safe to ignore
+  }
+});
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
-// Flatten params: if a single array is passed, spread it; otherwise pass as-is
 function flatParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
-  // Flatten nested arrays (e.g. [arr1, arr2] -> [...arr1, ...arr2])
   return params.reduce((acc, p) => Array.isArray(p) ? acc.concat(p) : acc.concat([p]), []);
 }
 
