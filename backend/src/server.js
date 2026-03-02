@@ -37,6 +37,8 @@ app.use('/api/jobs', jobsRouter);
 
 const standupRouter = require('./routes/standup');
 app.use('/api/standup', standupRouter);
+const reconciliationRouter = require('./routes/reconciliation');
+app.use('/api/reconciliation', reconciliationRouter);
 const securityRouter = require('./routes/security');
 app.use('/api/security', securityRouter);
 const intelligenceRouter = require('./routes/intelligence');

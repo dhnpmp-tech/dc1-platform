@@ -122,6 +122,34 @@ db.exec(`
   )
 `);
 
+// Billing columns on jobs table (needed for reconciliation)
+const jobMigrations = [
+  'ALTER TABLE jobs ADD COLUMN cost_halala INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN provider_earned_halala INTEGER',
+  'ALTER TABLE jobs ADD COLUMN dc1_fee_halala INTEGER',
+  'ALTER TABLE jobs ADD COLUMN proof_hash TEXT',
+  'ALTER TABLE jobs ADD COLUMN session_id TEXT',
+  'ALTER TABLE jobs ADD COLUMN job_type TEXT',
+  'ALTER TABLE jobs ADD COLUMN submitted_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN completed_at TEXT',
+];
+jobMigrations.forEach(sql => { try { db.exec(sql); } catch (e) { /* column exists */ } });
+
+// Reconciliation runs table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reconciliation_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at TEXT NOT NULL,
+    jobs_checked INTEGER DEFAULT 0,
+    jobs_clean INTEGER DEFAULT 0,
+    jobs_flagged INTEGER DEFAULT 0,
+    total_collected_halala INTEGER DEFAULT 0,
+    total_paid_halala INTEGER DEFAULT 0,
+    dc1_margin_halala INTEGER DEFAULT 0,
+    notes TEXT
+  )
+`);
+
 // Benchmark runs table
 db.exec(`
   CREATE TABLE IF NOT EXISTS benchmark_runs (
