@@ -1,0 +1,32 @@
+# DC1 Gate 0 — Network Monitor Configuration
+# All sensitive credentials must be provided via environment variables
+
+targets:
+  primary: "8.8.8.8"
+  fallback: "1.1.1.1"
+
+ping:
+  interval_s: 10
+  timeout_s: 5
+
+thresholds:
+  loss_pct_alert: 5.0
+  outage_consecutive_s: 5
+  rolling_window_s: 60
+
+storage:
+  db_path: "data/network_metrics.db"
+  retention_days: 7
+
+logging:
+  log_path: "logs/network_monitor.log"
+
+alerts:
+  cooldown_s: 300
+
+status:
+  port: 8085
+
+# Environment Variables Required (set before startup):
+# - DC1_MC_TOKEN: Mission Control API token
+# - DC1_AGENT_ID: Agent UUID for identification
