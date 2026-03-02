@@ -54,6 +54,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN total_earnings REAL DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN reliability_score REAL DEFAULT 0',
 ];
 
 migrations.forEach(sql => {
@@ -63,6 +64,23 @@ migrations.forEach(sql => {
     // Column already exists — safe to ignore
   }
 });
+
+// Create benchmark_runs table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS benchmark_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL REFERENCES providers(id),
+    benchmark_type TEXT NOT NULL CHECK(benchmark_type IN ('quick','standard','full')),
+    status TEXT NOT NULL CHECK(status IN ('pending','running','completed','failed')),
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    score_gflops REAL,
+    temp_max_celsius REAL,
+    vram_used_mib INTEGER,
+    latency_ms REAL,
+    notes TEXT
+  )
+`);
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
