@@ -2,7 +2,10 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
+
+const registerLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, message: { error: 'Too many registration attempts. Try again in 1 minute.' } });
 
 // Database (use existing connection)
 const db = require('../db');
@@ -10,7 +13,7 @@ const db = require('../db');
 // ============================================================================
 // POST /api/providers/register - Register new provider
 // ============================================================================
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
     try {
         const { name, email, gpu_model, os, phone } = req.body;
         
