@@ -23,7 +23,8 @@ import {
 } from './docker-manager.js';
 
 const MC_BASE = process.env['MC_API_URL'] ?? 'http://76.13.179.86:8084/api';
-const MC_TOKEN = process.env['MC_TOKEN'] ?? 'dc1-mc-gate0-2026';
+const MC_TOKEN = process.env['MC_TOKEN'];
+if (!MC_TOKEN) console.warn('[WARN] MC_TOKEN not set — protected endpoints will reject all requests');
 const AGENT_NAME = 'VOLT-DOCKER';
 const DEFAULT_MEMORY_LIMIT = 20 * 1024 * 1024 * 1024; // 20 GB
 const DEFAULT_CPU_LIMIT = 8;
