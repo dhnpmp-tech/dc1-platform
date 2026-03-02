@@ -57,6 +57,31 @@ export default function Home() {
           </Link>
         </div>
 
+        {/* Mission Control */}
+        <div className="mt-12 max-w-5xl mx-auto">
+          <h2 className="text-2xl font-bold text-center text-dc-gold mb-6">Mission Control</h2>
+          <div className="grid md:grid-cols-3 gap-6">
+            <Link href="/monitor">
+              <div className="bg-gradient-to-br from-[#00d4ff]/10 to-transparent border border-[#00d4ff]/30 rounded-lg p-6 hover:shadow-lg hover:shadow-[#00d4ff]/20 transition-all cursor-pointer">
+                <h3 className="text-lg font-bold text-[#00d4ff] mb-2">📡 Connection Monitor</h3>
+                <p className="text-sm text-gray-400">Live service health for all DC1 infrastructure</p>
+              </div>
+            </Link>
+            <Link href="/agents">
+              <div className="bg-gradient-to-br from-[#bb86fc]/10 to-transparent border border-[#bb86fc]/30 rounded-lg p-6 hover:shadow-lg hover:shadow-[#bb86fc]/20 transition-all cursor-pointer">
+                <h3 className="text-lg font-bold text-[#bb86fc] mb-2">🤖 Agent Intelligence</h3>
+                <p className="text-sm text-gray-400">Agent swarm status, tasks & activity</p>
+              </div>
+            </Link>
+            <Link href="/budget">
+              <div className="bg-gradient-to-br from-[#ffd700]/10 to-transparent border border-[#ffd700]/30 rounded-lg p-6 hover:shadow-lg hover:shadow-[#ffd700]/20 transition-all cursor-pointer">
+                <h3 className="text-lg font-bold text-[#ffd700] mb-2">💰 Token Budget</h3>
+                <p className="text-sm text-gray-400">Per-agent token usage & cost tracking</p>
+              </div>
+            </Link>
+          </div>
+        </div>
+
         <div className="mt-16 text-center text-sm text-gray-500">
           <p>Supabase Connected | Real-time Updates | Responsive Design</p>
         </div>
