@@ -31,6 +31,9 @@ app.use('/api/standup', standupRouter);
 const securityRouter = require('./routes/security');
 app.use('/api/security', securityRouter);
 
+const recoveryRouter = require('./routes/recovery');
+app.use('/api/recovery', recoveryRouter);
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'dc1-provider-onboarding', timestamp: new Date().toISOString() });
@@ -40,6 +43,11 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'provider-onboarding.html'));
 });
+
+// Start recovery cycle every 30 seconds
+const { runRecoveryCycle } = require('./services/recovery-engine');
+setInterval(runRecoveryCycle, 30 * 1000);
+console.log('[recovery] Recovery cycle started (every 30s)');
 
 app.listen(PORT, () => {
   console.log(`DC1 Provider Onboarding server running on port ${PORT}`);

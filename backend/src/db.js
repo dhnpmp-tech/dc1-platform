@@ -56,6 +56,33 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
 ];
 
+// Additional idempotent table creation for jobs and recovery
+db.exec(`
+  CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT UNIQUE NOT NULL,
+    provider_id INTEGER,
+    status TEXT DEFAULT 'pending',
+    vram_required INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS recovery_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT,
+    from_provider_id INTEGER,
+    to_provider_id INTEGER,
+    reason TEXT,
+    status TEXT NOT NULL CHECK(status IN ('pending','success','failed','no_backup')),
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    notes TEXT
+  )
+`);
+
 migrations.forEach(sql => {
   try {
     db.exec(sql);
