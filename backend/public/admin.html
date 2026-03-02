@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DC1 Admin - Provider Monitor</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh}
+.header{background:linear-gradient(135deg,#1a1a2e,#16213e);padding:20px 30px;border-bottom:1px solid #2a2a4a;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:24px;background:linear-gradient(90deg,#00d2ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header .refresh{color:#888;font-size:13px}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:20px 30px}
+.stat-card{background:#12121f;border:1px solid #2a2a4a;border-radius:12px;padding:20px;text-align:center}
+.stat-card .number{font-size:36px;font-weight:700;margin:8px 0}
+.stat-card .label{font-size:13px;color:#888;text-transform:uppercase;letter-spacing:1px}
+.stat-card.online .number{color:#00ff88}
+.stat-card.offline .number{color:#ff4444}
+.stat-card.total .number{color:#00d2ff}
+.stat-card.registered .number{color:#ffaa00}
+.section{padding:10px 30px 20px}
+.section h2{font-size:18px;margin-bottom:14px;color:#ccc;display:flex;align-items:center;gap:8px}
+.provider-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}
+.provider-card{background:#12121f;border:1px solid #2a2a4a;border-radius:12px;padding:18px;transition:border-color .3s}
+.provider-card.online{border-left:4px solid #00ff88}
+.provider-card.offline{border-left:4px solid #ff4444}
+.provider-card.registered{border-left:4px solid #555}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.card-header .name{font-size:16px;font-weight:600}
+.badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase}
+.badge.online{background:#00ff8822;color:#00ff88}
+.badge.offline{background:#ff444422;color:#ff4444}
+.badge.registered{background:#55555544;color:#888}
+.card-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #1a1a2e}
+.card-row .key{color:#888}
+.card-row .val{color:#ddd;font-family:'Courier New',monospace;font-size:12px}
+.gpu-bar{height:6px;background:#1a1a2e;border-radius:3px;margin-top:8px;overflow:hidden}
+.gpu-bar .fill{height:100%;border-radius:3px;transition:width .5s}
+.temp-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.temp-cool{background:#00ff88}.temp-warm{background:#ffaa00}.temp-hot{background:#ff4444}
+.empty-state{text-align:center;padding:40px;color:#555;font-size:15px}
+#loading{text-align:center;padding:60px;color:#555}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>DC1 Provider Monitor</h1>
+  <div class="refresh">Auto-refresh: <span id="countdown">10</span>s | Last: <span id="lastUpdate">-</span></div>
+</div>
+<div class="stats-row">
+  <div class="stat-card total"><div class="label">Total Providers</div><div class="number" id="statTotal">-</div></div>
+  <div class="stat-card online"><div class="label">Online Now</div><div class="number" id="statOnline">-</div></div>
+  <div class="stat-card offline"><div class="label">Offline</div><div class="number" id="statOffline">-</div></div>
+  <div class="stat-card registered"><div class="label">Registered Only</div><div class="number" id="statRegistered">-</div></div>
+</div>
+<div class="section">
+  <h2>Provider Fleet</h2>
+  <div id="providerGrid" class="provider-grid"><div id="loading">Loading providers...</div></div>
+</div>
+<script>
+const API = window.location.origin + '/api/admin/providers';
+let timer = 10;
+
+function tempClass(t) { return t < 50 ? 'temp-cool' : t < 75 ? 'temp-warm' : 'temp-hot'; }
+function timeAgo(ts) {
+  if (!ts) return 'Never';
+  const s = Math.floor((Date.now() - new Date(ts)) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+function renderCard(p) {
+  const gpu = p.gpu_status || {};
+  const vramPct = gpu.vram_total ? Math.round((gpu.vram_used||0)/gpu.vram_total*100) : 0;
+  const utilPct = gpu.utilization || 0;
+  const temp = gpu.temperature || null;
+  const barColor = p.is_online ? '#00ff88' : '#555';
+
+  return `<div class="provider-card ${p.status}">
+    <div class="card-header">
+      <span class="name">${p.name}</span>
+      <span class="badge ${p.status}">${p.status}</span>
+    </div>
+    <div class="card-row"><span class="key">Email</span><span class="val">${p.email}</span></div>
+    <div class="card-row"><span class="key">GPU</span><span class="val">${p.gpu_model || 'N/A'}</span></div>
+    ${gpu.name ? `<div class="card-row"><span class="key">GPU Detected</span><span class="val">${gpu.name}</span></div>` : ''}
+    ${temp !== null ? `<div class="card-row"><span class="key">Temperature</span><span class="val"><span class="temp-indicator ${tempClass(temp)}"></span>${temp}C</span></div>` : ''}
+    ${gpu.vram_total ? `<div class="card-row"><span class="key">VRAM</span><span class="val">${gpu.vram_used||0} / ${gpu.vram_total} MB (${vramPct}%)</span></div>
+    <div class="gpu-bar"><div class="fill" style="width:${vramPct}%;background:${vramPct>80?'#ff4444':vramPct>50?'#ffaa00':'#00ff88'}"></div></div>` : ''}
+    ${gpu.utilization !== undefined ? `<div class="card-row"><span class="key">GPU Util</span><span class="val">${utilPct}%</span></div>
+    <div class="gpu-bar"><div class="fill" style="width:${utilPct}%;background:${barColor}"></div></div>` : ''}
+    <div class="card-row"><span class="key">OS</span><span class="val">${p.os || 'N/A'}</span></div>
+    <div class="card-row"><span class="key">IP</span><span class="val">${p.provider_ip || 'N/A'}</span></div>
+    <div class="card-row"><span class="key">Hostname</span><span class="val">${p.provider_hostname || 'N/A'}</span></div>
+    <div class="card-row"><span class="key">Last Heartbeat</span><span class="val">${timeAgo(p.last_heartbeat)}</span></div>
+    <div class="card-row"><span class="key">Registered</span><span class="val">${new Date(p.created_at).toLocaleDateString()}</span></div>
+    <div class="card-row"><span class="key">API Key</span><span class="val" style="font-size:10px">${p.api_key||'N/A'}</span></div>
+  </div>`;
+}
+
+async function fetchData() {
+  try {
+    const res = await fetch(API);
+    const data = await res.json();
+    document.getElementById('statTotal').textContent = data.total;
+    document.getElementById('statOnline').textContent = data.online;
+    document.getElementById('statOffline').textContent = data.offline;
+    document.getElementById('statRegistered').textContent = data.registered;
+    const grid = document.getElementById('providerGrid');
+    if (data.providers.length === 0) {
+      grid.innerHTML = '<div class="empty-state">No providers registered yet</div>';
+    } else {
+      grid.innerHTML = data.providers.map(renderCard).join('');
+    }
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error('Fetch error:', e);
+  }
+}
+
+fetchData();
+setInterval(() => {
+  timer--;
+  document.getElementById('countdown').textContent = timer;
+  if (timer <= 0) { timer = 10; fetchData(); }
+}, 1000);
+</script>
+</body>
+</html>
