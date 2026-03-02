@@ -42,8 +42,13 @@ app.use('/api/security', securityRouter);
 const intelligenceRouter = require('./routes/intelligence');
 app.use('/api/intelligence', intelligenceRouter);
 
-const recoveryRouter = require('./routes/recovery');
-app.use('/api/recovery', recoveryRouter);
+const syncRouter = require('./routes/sync');
+app.use('/api/sync', syncRouter);
+
+// Initialize Supabase sync bridge
+const supabaseSync = require('./services/supabase-sync');
+if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
+
 
 // Health check
 app.get('/api/health', (req, res) => {
