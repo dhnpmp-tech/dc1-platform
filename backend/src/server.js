@@ -31,6 +31,8 @@ app.use('/api/standup', standupRouter);
 const securityRouter = require('./routes/security');
 app.use('/api/security', securityRouter);
 
+app.use('/api/benchmark', require('./routes/benchmark'));
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'dc1-provider-onboarding', timestamp: new Date().toISOString() });
