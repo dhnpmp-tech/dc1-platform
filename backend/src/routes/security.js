@@ -50,7 +50,7 @@ try {
 // ============================================================================
 // GET /api/security/events — all security events
 // ============================================================================
-router.get('/events', (req, res) => {
+router.get('/events', requireAuth, (req, res) => {
   try {
     const events = [];
     const now = new Date();
@@ -139,7 +139,7 @@ router.get('/events', (req, res) => {
 // ============================================================================
 // GET /api/security/summary — counts by severity
 // ============================================================================
-router.get('/summary', (req, res) => {
+router.get('/summary', requireAuth, (req, res) => {
   try {
     // Reuse events logic (small dataset, fine for Gate 0)
     const eventsRes = {};
