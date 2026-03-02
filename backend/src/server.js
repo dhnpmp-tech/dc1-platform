@@ -46,3 +46,8 @@ app.listen(PORT, () => {
   console.log(`Form: http://localhost:${PORT}/provider-onboarding.html`);
   console.log(`API:  http://localhost:${PORT}/api/providers`);
 });
+
+// Audit & Operations documentation page
+app.get('/docs', (req, res) => {
+    res.sendFile(require('path').join(__dirname, '../public/docs.html'));
+});
