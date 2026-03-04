@@ -149,6 +149,12 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN started_at TEXT',
   'ALTER TABLE jobs ADD COLUMN completed_at TEXT',
   'ALTER TABLE jobs ADD COLUMN duration_minutes INTEGER',
+  // jobs columns added by sync E2E branch (needed on deployed VPS)
+  'ALTER TABLE jobs ADD COLUMN assigned_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN picked_up_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN task_spec TEXT',
+  'ALTER TABLE jobs ADD COLUMN result TEXT',
+  'ALTER TABLE jobs ADD COLUMN error TEXT',
   // recovery_events columns (for existing DBs that had the old narrow schema)
   'ALTER TABLE recovery_events ADD COLUMN job_id TEXT',
   'ALTER TABLE recovery_events ADD COLUMN provider_id INTEGER',
