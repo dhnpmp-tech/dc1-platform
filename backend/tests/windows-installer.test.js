@@ -76,6 +76,18 @@ async function runTests() {
 
         // Test 6: Script looks like PowerShell
         assert(body.includes('DC1 Provider Daemon Installer'), 'Script contains expected PowerShell content');
+
+        // Test 7: No hardcoded C:\dc1-provider path (should use LOCALAPPDATA)
+        assert(!body.includes('C:\\dc1-provider'), 'Script does NOT contain hardcoded C:\\dc1-provider');
+
+        // Test 8: Uses per-user LOCALAPPDATA path
+        assert(body.includes('LOCALAPPDATA'), 'Script contains LOCALAPPDATA (per-user install path)');
+
+        // Test 9: Checks pip exit code
+        assert(body.includes('LASTEXITCODE'), 'Script contains LASTEXITCODE (pip error check)');
+
+        // Test 10: ErrorActionPreference is Continue, not Stop
+        assert(!body.includes('ErrorActionPreference = "Stop"'), 'Script does NOT use ErrorActionPreference = "Stop"');
     }
 
     console.log(`\nResults: ${passed} passed, ${failed} failed\n`);
