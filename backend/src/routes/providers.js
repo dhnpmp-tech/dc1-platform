@@ -202,4 +202,36 @@ router.get('/setup', (req, res) => {
     }
 });
 
+// === SETUP-WINDOWS ROUTE - Serve daemon.ps1 with injected API key ===
+router.get('/setup-windows', async (req, res) => {
+    try {
+        const { key } = req.query;
+        if (!key) {
+            return res.status(400).json({ error: 'API key required: /setup-windows?key=YOUR_KEY' });
+        }
+
+        // Validate API key exists in DB
+        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        if (!provider) {
+            return res.status(404).json({ error: 'Invalid API key' });
+        }
+
+        const ps1Path = path.join(__dirname, '../../installers/daemon.ps1');
+        if (!fs.existsSync(ps1Path)) {
+            return res.status(500).json({ error: 'PowerShell installer template not found' });
+        }
+
+        let script = fs.readFileSync(ps1Path, 'utf-8');
+        script = script.replace(/INJECTED_API_KEY/g, key);
+
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Content-Disposition', 'inline; filename="daemon.ps1"');
+        res.send(script);
+
+    } catch (error) {
+        console.error('Windows setup script error:', error);
+        res.status(500).json({ error: 'Failed to serve Windows setup script' });
+    }
+});
+
 module.exports = router;
