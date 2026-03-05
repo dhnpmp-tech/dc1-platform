@@ -242,7 +242,7 @@ router.get('/me', async (req, res) => {
         const { key } = req.query;
         if (!key) return res.status(400).json({ error: 'API key required' });
 
-        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         // Today and week earnings
@@ -316,7 +316,7 @@ router.post('/pause', async (req, res) => {
         const { key } = req.body;
         if (!key) return res.status(400).json({ error: 'API key required' });
 
-        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         db.run('UPDATE providers SET status = ?, is_paused = 1 WHERE id = ?', 'paused', provider.id);
@@ -335,7 +335,7 @@ router.post('/resume', async (req, res) => {
         const { key } = req.body;
         if (!key) return res.status(400).json({ error: 'API key required' });
 
-        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         const lastHb = provider.last_heartbeat ? new Date(provider.last_heartbeat) : null;
@@ -358,7 +358,7 @@ router.post('/preferences', async (req, res) => {
         const { key, run_mode, scheduled_start, scheduled_end, gpu_usage_cap_pct, vram_reserve_gb, temp_limit_c } = req.body;
         if (!key) return res.status(400).json({ error: 'API key required' });
 
-        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         // Validate
@@ -405,7 +405,7 @@ router.get('/download', async (req, res) => {
         const { key, platform } = req.query;
         if (!key) return res.status(400).json({ error: 'API key required' });
 
-        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         const isLinux = platform === 'linux';
@@ -420,6 +420,8 @@ router.get('/download', async (req, res) => {
         let script = fs.readFileSync(templatePath, 'utf-8');
         script = script.replace(/\{\{API_KEY\}\}/g, key);
         script = script.replace(/\{\{RUN_MODE\}\}/g, provider.run_mode || 'always-on');
+        script = script.replace(/\{\{SCHEDULED_START\}\}/g, provider.scheduled_start || '23:00');
+        script = script.replace(/\{\{SCHEDULED_END\}\}/g, provider.scheduled_end || '07:00');
 
         res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
         res.setHeader('Content-Type', 'application/octet-stream');
@@ -431,3 +433,4 @@ router.get('/download', async (req, res) => {
 });
 
 module.exports = router;
+
