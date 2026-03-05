@@ -567,7 +567,7 @@ export default function AdminDashboard() {
             bgClass={avgUtil !== null ? 'from-green-500/10' : 'from-gray-500/5'} />
           <KPICard label="Active Jobs" value={activeJobs.length} sub={activeJobs.length > 0 ? activeJobs.map(j => j.job_type).join(', ') : 'No jobs running'}
             colorClass={activeJobs.length > 0 ? 'text-purple-400' : 'text-gray-500'} bgClass={activeJobs.length > 0 ? 'from-purple-500/10' : 'from-gray-500/5'} pulse={activeJobs.length > 0} />
-          <KPICard label="Revenue (SAR)" value={`﷼${collectedSar.toFixed(2)}`} sub={recon ? `${recon.jobsChecked} jobs processed` : 'No jobs yet'} colorClass="text-dc-gold" bgClass="from-yellow-500/10" />
+          <KPICard label="Revenue (SAR)" value={`﷼${collectedSar.toFixed(2)}`} sub={recon ? `${recon.jobsChecked} completed job${recon.jobsChecked === 1 ? '' : 's'} · actual` : 'No completed jobs yet'} colorClass="text-dc-gold" bgClass="from-yellow-500/10" />
           <KPICard label="DC1 Margin" value={`${dc1MarginPct}%`} sub={dc1MarginSar > 0 ? `﷼${dc1MarginSar.toFixed(2)} earned` : '25% split'} colorClass="text-dc-cyan" bgClass="from-cyan-500/10" />
         </div>
 
@@ -713,14 +713,18 @@ export default function AdminDashboard() {
           {/* Billing Summary */}
           <div className="bg-gray-900 rounded-xl border border-white/10 overflow-hidden">
             <div className="px-5 py-4 border-b border-white/10">
-              <h2 className="text-white font-bold">Billing Summary</h2>
-              <p className="text-gray-500 text-xs mt-0.5">{recon ? `${recon.jobsChecked} jobs reconciled` : 'No billing data'}</p>
+              <h2 className="text-white font-bold">Billing</h2>
+              <p className="text-gray-500 text-xs mt-0.5">
+                {recon
+                  ? `${recon.jobsChecked} completed job${recon.jobsChecked === 1 ? '' : 's'} · actual metered revenue`
+                  : 'No completed jobs yet'}
+              </p>
             </div>
             <div className="p-5 space-y-3">
               {recon ? (<>
-                <div className="flex justify-between py-2 border-b border-white/5"><span className="text-gray-400 text-sm">Total Collected</span><span className="text-white font-bold">﷼{halalToSar(recon.totalCollectedHalala)}</span></div>
-                <div className="flex justify-between py-2 border-b border-white/5"><span className="text-gray-400 text-sm">Provider Payouts</span><span className="text-green-400 font-semibold">﷼{halalToSar(recon.totalPaidHalala)}</span></div>
-                <div className="flex justify-between py-2 border-b border-white/5"><span className="text-gray-400 text-sm">DC1 Revenue</span><span className="text-dc-gold font-bold">﷼{halalToSar(recon.dc1MarginHalala)}</span></div>
+                <div className="flex justify-between py-2 border-b border-white/5"><span className="text-gray-400 text-sm">Actual Revenue</span><span className="text-white font-bold">﷼{halalToSar(recon.totalCollectedHalala)}</span></div>
+                <div className="flex justify-between py-2 border-b border-white/5"><span className="text-gray-400 text-sm">Provider Earnings</span><span className="text-green-400 font-semibold">﷼{halalToSar(recon.totalPaidHalala)}</span></div>
+                <div className="flex justify-between py-2 border-b border-white/5"><span className="text-gray-400 text-sm">DC1 Cut</span><span className="text-dc-gold font-bold">﷼{halalToSar(recon.dc1MarginHalala)}</span></div>
                 <div className="flex justify-between py-2"><span className="text-gray-400 text-sm">Split</span><span className="text-gray-300 text-sm">75% / 25%</span></div>
               </>) : <div className="py-8 text-center text-gray-500 text-sm">{backendAlive ? 'No completed jobs yet' : 'Backend offline'}</div>}
             </div>

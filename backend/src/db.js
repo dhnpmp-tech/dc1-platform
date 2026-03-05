@@ -155,6 +155,11 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN task_spec TEXT',
   'ALTER TABLE jobs ADD COLUMN result TEXT',
   'ALTER TABLE jobs ADD COLUMN error TEXT',
+  // billing actuals — set at completion from real elapsed time (not submitted estimate)
+  'ALTER TABLE jobs ADD COLUMN actual_cost_halala INTEGER',
+  'ALTER TABLE jobs ADD COLUMN actual_duration_minutes INTEGER',
+  'ALTER TABLE jobs ADD COLUMN provider_earned_halala INTEGER',
+  'ALTER TABLE jobs ADD COLUMN dc1_fee_halala INTEGER',
   // provider self-service columns
   'ALTER TABLE providers ADD COLUMN run_mode TEXT DEFAULT \'always-on\'',
   'ALTER TABLE providers ADD COLUMN scheduled_start TEXT DEFAULT \'23:00\'',
