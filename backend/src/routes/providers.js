@@ -234,4 +234,200 @@ router.get('/setup-windows', async (req, res) => {
     }
 });
 
+// ============================================================================
+// GET /api/providers/me - Provider self-service dashboard data
+// ============================================================================
+router.get('/me', async (req, res) => {
+    try {
+        const { key } = req.query;
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        // Today and week earnings
+        const todayStart = new Date();
+        todayStart.setUTCHours(0, 0, 0, 0);
+        const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const todayEarnings = db.get(
+            `SELECT COALESCE(SUM(cost_halala), 0) as total FROM jobs WHERE provider_id = ? AND status = 'completed' AND completed_at >= ?`,
+            provider.id, todayStart.toISOString()
+        );
+        const weekEarnings = db.get(
+            `SELECT COALESCE(SUM(cost_halala), 0) as total FROM jobs WHERE provider_id = ? AND status = 'completed' AND completed_at >= ?`,
+            provider.id, weekStart.toISOString()
+        );
+
+        // Active job
+        const activeJob = db.get(
+            `SELECT id, job_id, job_type, started_at, cost_halala FROM jobs WHERE provider_id = ? AND status = 'running' LIMIT 1`,
+            provider.id
+        );
+
+        // GPU metrics from gpu_status JSON
+        let gpuMetrics = { utilization_pct: 0, vram_used_mib: 0, temperature_c: 0 };
+        if (provider.gpu_status) {
+            try {
+                const gs = JSON.parse(provider.gpu_status);
+                gpuMetrics = {
+                    utilization_pct: gs.utilization_pct || gs.gpu_utilization || 0,
+                    vram_used_mib: gs.vram_used_mib || gs.memory_used || 0,
+                    temperature_c: gs.temperature_c || gs.temperature || 0
+                };
+            } catch (_) {}
+        }
+
+        res.json({
+            provider: {
+                id: provider.id,
+                name: provider.name,
+                status: provider.status,
+                gpu_model: provider.gpu_model,
+                gpu_vram_mib: provider.gpu_vram_mib || 0,
+                last_heartbeat: provider.last_heartbeat || null,
+                run_mode: provider.run_mode || 'always-on',
+                scheduled_start: provider.scheduled_start || '23:00',
+                scheduled_end: provider.scheduled_end || '07:00',
+                gpu_usage_cap_pct: provider.gpu_usage_cap_pct != null ? provider.gpu_usage_cap_pct : 80,
+                vram_reserve_gb: provider.vram_reserve_gb != null ? provider.vram_reserve_gb : 1,
+                temp_limit_c: provider.temp_limit_c != null ? provider.temp_limit_c : 85,
+                is_paused: Boolean(provider.is_paused),
+                total_earnings_halala: provider.total_earnings ? Math.round(provider.total_earnings * 100) : 0,
+                total_jobs: provider.total_jobs || 0,
+                uptime_percent: provider.uptime_percent || 0,
+                gpu_metrics: gpuMetrics,
+                today_earnings_halala: todayEarnings.total,
+                week_earnings_halala: weekEarnings.total,
+                active_job: activeJob || null
+            }
+        });
+    } catch (error) {
+        console.error('Provider me error:', error);
+        res.status(500).json({ error: 'Failed to fetch provider data' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/pause - Pause provider
+// ============================================================================
+router.post('/pause', async (req, res) => {
+    try {
+        const { key } = req.body;
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        db.run('UPDATE providers SET status = ?, is_paused = 1 WHERE id = ?', 'paused', provider.id);
+        res.json({ success: true, status: 'paused' });
+    } catch (error) {
+        console.error('Pause error:', error);
+        res.status(500).json({ error: 'Pause failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/resume - Resume provider
+// ============================================================================
+router.post('/resume', async (req, res) => {
+    try {
+        const { key } = req.body;
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const lastHb = provider.last_heartbeat ? new Date(provider.last_heartbeat) : null;
+        const isRecent = lastHb && (Date.now() - lastHb.getTime()) < 60000;
+        const newStatus = isRecent ? 'online' : 'connected';
+
+        db.run('UPDATE providers SET status = ?, is_paused = 0 WHERE id = ?', newStatus, provider.id);
+        res.json({ success: true, status: newStatus });
+    } catch (error) {
+        console.error('Resume error:', error);
+        res.status(500).json({ error: 'Resume failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/preferences - Update provider preferences
+// ============================================================================
+router.post('/preferences', async (req, res) => {
+    try {
+        const { key, run_mode, scheduled_start, scheduled_end, gpu_usage_cap_pct, vram_reserve_gb, temp_limit_c } = req.body;
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        // Validate
+        const validModes = ['always-on', 'manual', 'scheduled'];
+        if (run_mode && !validModes.includes(run_mode)) {
+            return res.status(400).json({ error: 'Invalid run_mode' });
+        }
+        if (gpu_usage_cap_pct != null && (gpu_usage_cap_pct < 0 || gpu_usage_cap_pct > 100)) {
+            return res.status(400).json({ error: 'gpu_usage_cap_pct must be 0-100' });
+        }
+        if (vram_reserve_gb != null && (vram_reserve_gb < 0 || vram_reserve_gb > 16)) {
+            return res.status(400).json({ error: 'vram_reserve_gb must be 0-16' });
+        }
+        if (temp_limit_c != null && (temp_limit_c < 50 || temp_limit_c > 100)) {
+            return res.status(400).json({ error: 'temp_limit_c must be 50-100' });
+        }
+
+        const updates = {
+            run_mode: run_mode || provider.run_mode || 'always-on',
+            scheduled_start: scheduled_start || provider.scheduled_start || '23:00',
+            scheduled_end: scheduled_end || provider.scheduled_end || '07:00',
+            gpu_usage_cap_pct: gpu_usage_cap_pct != null ? gpu_usage_cap_pct : (provider.gpu_usage_cap_pct != null ? provider.gpu_usage_cap_pct : 80),
+            vram_reserve_gb: vram_reserve_gb != null ? vram_reserve_gb : (provider.vram_reserve_gb != null ? provider.vram_reserve_gb : 1),
+            temp_limit_c: temp_limit_c != null ? temp_limit_c : (provider.temp_limit_c != null ? provider.temp_limit_c : 85)
+        };
+
+        db.run(
+            `UPDATE providers SET run_mode = ?, scheduled_start = ?, scheduled_end = ?, gpu_usage_cap_pct = ?, vram_reserve_gb = ?, temp_limit_c = ? WHERE id = ?`,
+            updates.run_mode, updates.scheduled_start, updates.scheduled_end, updates.gpu_usage_cap_pct, updates.vram_reserve_gb, updates.temp_limit_c, provider.id
+        );
+
+        res.json({ success: true, preferences: updates });
+    } catch (error) {
+        console.error('Preferences error:', error);
+        res.status(500).json({ error: 'Preferences update failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/download - Download daemon installer with injected key
+// ============================================================================
+router.get('/download', async (req, res) => {
+    try {
+        const { key, platform } = req.query;
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = await db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const isLinux = platform === 'linux';
+        const templateFile = isLinux ? 'daemon.sh' : 'daemon.ps1';
+        const downloadName = isLinux ? 'dc1-setup.sh' : 'dc1-setup.ps1';
+        const templatePath = path.join(__dirname, '../../installers', templateFile);
+
+        if (!fs.existsSync(templatePath)) {
+            return res.status(404).json({ error: 'Installer template not found' });
+        }
+
+        let script = fs.readFileSync(templatePath, 'utf-8');
+        script = script.replace(/\{\{API_KEY\}\}/g, key);
+        script = script.replace(/\{\{RUN_MODE\}\}/g, provider.run_mode || 'always-on');
+
+        res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(script);
+    } catch (error) {
+        console.error('Download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
 module.exports = router;

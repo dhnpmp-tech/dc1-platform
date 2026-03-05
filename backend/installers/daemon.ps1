@@ -1,7 +1,8 @@
 # DC1 Provider Daemon Installer for Windows
 # Usage: iwr http://76.13.179.86:8083/api/providers/setup-windows?key=YOUR_KEY -UseBasicParsing | iex
 $ErrorActionPreference = "Continue"
-$API_KEY = "INJECTED_API_KEY"
+$API_KEY = "{{API_KEY}}"
+$RUN_MODE = "{{RUN_MODE}}"
 $API_URL = "http://76.13.179.86:8083"
 $INSTALL_DIR = "$env:LOCALAPPDATA\dc1-provider"
 
