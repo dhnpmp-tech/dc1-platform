@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND = process.env.BACKEND_URL || 'http://76.13.179.86:8083';
 
+// Gate 0 default billing rate
+const RATE_HALALA_PER_MIN = 10; // 10 halala/min = ﷼0.10/min = ﷼6/hr
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -53,10 +56,19 @@ export async function GET(
       progressPercent = Math.min(99, Math.round((elapsedMinutes / durationMinutes) * 100));
     }
 
-    const costHalala = Number(job.cost_halala) || 0;
-    const costSoFarSar = costHalala / 100;
-    // Gate 0: default rate 10 halala/min
-    const budgetRemainingSar = Math.max(0, (durationMinutes * 10 / 100) - costSoFarSar);
+    // Total budget derived from duration × rate (Gate 0 flat rate)
+    const totalBudgetSar = (durationMinutes * RATE_HALALA_PER_MIN) / 100;
+
+    // cost_halala in the DB is set once at submission time (pre-calculated estimate),
+    // not incremented while the job runs. Using it directly would show near-full spend
+    // from the first poll. Instead: compute live cost from elapsed runtime × rate.
+    // For completed/cancelled jobs, use the stored value as the authoritative final cost.
+    const costSoFarSar =
+      backendStatus === 'completed' || backendStatus === 'cancelled'
+        ? Number(job.cost_halala || 0) / 100
+        : Math.min(totalBudgetSar, (elapsedMinutes * RATE_HALALA_PER_MIN) / 100);
+
+    const budgetRemainingSar = Math.max(0, totalBudgetSar - costSoFarSar);
 
     return NextResponse.json({
       success: true,
@@ -70,7 +82,7 @@ export async function GET(
           memoryTotalGb: 8,
           temperatureC: 0,
         },
-        costSoFarSar,
+        costSoFarSar: Math.round(costSoFarSar * 100) / 100,
         elapsedMinutes: Math.round(elapsedMinutes * 100) / 100,
         budgetRemainingSar: Math.round(budgetRemainingSar * 100) / 100,
       },
