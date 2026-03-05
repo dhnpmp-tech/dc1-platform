@@ -135,10 +135,11 @@ router.post('/:job_id/complete', (req, res) => {
       now, job.id
     );
 
-    // Update provider stats
+    // Update provider stats — provider gets 75% floor split, not full renter charge
+    const providerEarnedHalala = Math.floor((job.cost_halala * 75) / 100);
     db.run(
       `UPDATE providers SET total_jobs = total_jobs + 1, total_earnings = total_earnings + ? WHERE id = ?`,
-      job.cost_halala / 100, job.provider_id
+      providerEarnedHalala / 100, job.provider_id
     );
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
