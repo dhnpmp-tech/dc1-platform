@@ -96,4 +96,90 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+// GET /api/admin/providers/:id - Full provider detail
+router.get('/providers/:id', (req, res) => {
+  try {
+    const provider = db.get('SELECT * FROM providers WHERE id = ?', req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Not found' });
+    
+    let gpuStatus = null;
+    try { gpuStatus = provider.gpu_status ? JSON.parse(provider.gpu_status) : null; } catch(e) {}
+    
+    const since24h = new Date(Date.now() - 24*60*60*1000).toISOString();
+    const since7d = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+    
+    const hb24h = db.get('SELECT COUNT(*) as cnt FROM heartbeat_log WHERE provider_id = ? AND received_at > ?', req.params.id, since24h) || { cnt: 0 };
+    const hb7d = db.get('SELECT COUNT(*) as cnt FROM heartbeat_log WHERE provider_id = ? AND received_at > ?', req.params.id, since7d) || { cnt: 0 };
+    const expectedIn24h = (24 * 60 * 60) / 30;
+    const expectedIn7d = 7 * expectedIn24h;
+    const uptime24h = Math.min(100, Math.round((hb24h.cnt / expectedIn24h) * 100));
+    const uptime7d = Math.min(100, Math.round((hb7d.cnt / expectedIn7d) * 100));
+    
+    const metrics24h = db.get(
+      'SELECT AVG(gpu_util_pct) as avg_util, AVG(gpu_temp_c) as avg_temp, AVG(gpu_power_w) as avg_power, MAX(gpu_temp_c) as max_temp FROM heartbeat_log WHERE provider_id = ? AND received_at > ?',
+      req.params.id, since24h
+    );
+    
+    const recentHb = db.all('SELECT * FROM heartbeat_log WHERE provider_id = ? ORDER BY received_at DESC LIMIT 20', req.params.id);
+    const jobs = db.all('SELECT * FROM jobs WHERE provider_id = ? ORDER BY created_at DESC LIMIT 20', req.params.id);
+    
+    let disconnects = [];
+    try { disconnects = db.all('SELECT * FROM recovery_events WHERE provider_id = ? ORDER BY timestamp DESC LIMIT 10', req.params.id); } catch(e) {}
+    
+    const now = new Date();
+    const lastBeat = provider.last_heartbeat ? new Date(provider.last_heartbeat) : null;
+    const minSince = lastBeat ? Math.round((now - lastBeat) / 60000) : null;
+    
+    res.json({
+      provider: { ...provider, gpu_status: gpuStatus, is_online: minSince !== null && minSince < 5, minutes_since_heartbeat: minSince },
+      uptime: { hours_24: uptime24h, days_7: uptime7d, heartbeats_24h: hb24h.cnt },
+      metrics_24h: metrics24h || {},
+      heartbeat_log: recentHb,
+      jobs,
+      disconnects
+    });
+  } catch (error) {
+    console.error('Admin provider detail error:', error);
+    res.status(500).json({ error: 'Failed to fetch provider detail' });
+  }
+});
+
+// GET /api/admin/jobs/:id - Full job detail
+router.get('/jobs/:id', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.id, req.params.id);
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    
+    const provider = job.provider_id
+      ? db.get('SELECT id, name, email, gpu_name_detected, gpu_model, gpu_vram_mib, vram_gb, provider_hostname, provider_ip FROM providers WHERE id = ?', job.provider_id)
+      : null;
+    
+    let recovery = [];
+    try { recovery = db.all('SELECT * FROM recovery_events WHERE job_id = ? ORDER BY timestamp DESC', String(job.job_id || job.id)); } catch(e) {}
+    
+    let gpuReq = null;
+    try { gpuReq = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null; } catch(e) {}
+    
+    const elapsed = job.started_at
+      ? Math.floor((new Date(job.completed_at || new Date()) - new Date(job.started_at)) / 60000)
+      : (job.duration_minutes || 0);
+    
+    res.json({
+      job: { ...job, gpu_requirements: gpuReq },
+      provider,
+      recovery_events: recovery,
+      billing: {
+        duration_minutes: elapsed,
+        cost_halala: job.cost_halala || 0,
+        cost_sar: ((job.cost_halala || 0) / 100).toFixed(2),
+        provider_cut_halala: Math.round((job.cost_halala || 0) * 0.75),
+        dc1_cut_halala: Math.round((job.cost_halala || 0) * 0.25)
+      }
+    });
+  } catch (error) {
+    console.error('Admin job detail error:', error);
+    res.status(500).json({ error: 'Failed to fetch job detail' });
+  }
+});
+
 module.exports = router;
