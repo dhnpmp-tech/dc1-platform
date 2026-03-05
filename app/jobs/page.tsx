@@ -117,7 +117,7 @@ export default function JobsPage() {
                   <span className={`px-1.5 py-0.5 rounded ${statusColors[j.status]}`}>
                     {j.status}
                   </span>
-                  <span className="text-gray-500">{j.gpu}</span>
+                  <span className="text-gray-500 truncate max-w-[120px]" title={j.gpu}>Docker: {j.gpu}</span>
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   {j.renter} · ﷼{j.costSoFar.toFixed(2)}
@@ -151,7 +151,7 @@ export default function JobsPage() {
                   <div className="text-sm font-mono">{selectedJob.id}</div>
                 </div>
                 <div className="bg-[#0d1117] rounded-lg p-3">
-                  <div className="text-xs text-gray-500">Provider</div>
+                  <div className="text-xs text-gray-500">Provider ID</div>
                   <div className="text-sm">{selectedJob.providerId || 'N/A'}</div>
                 </div>
                 <div className="bg-[#0d1117] rounded-lg p-3">

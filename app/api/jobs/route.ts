@@ -16,16 +16,17 @@ export async function GET() {
     }
 
     const data = await res.json();
-    const jobs = (data.jobs || []).map((j: Record<string, unknown>) => ({
-      id: String(j.id),
-      name: (j.job_type as string) || 'Untitled Job',
-      renter: 'DC1 Renter', // No renter info in backend schema yet
-      gpu: j.gpu_requirements
+    const jobs = (data.jobs || []).map((j: Record<string, unknown>) => {
+      const gpuReqs = j.gpu_requirements
         ? (typeof j.gpu_requirements === 'string'
             ? JSON.parse(j.gpu_requirements as string)
-            : j.gpu_requirements as Record<string, unknown>
-          ).docker_image || 'GPU'
-        : 'GPU',
+            : j.gpu_requirements as Record<string, unknown>)
+        : null;
+      return {
+      id: String(j.id),
+      name: (j.job_id as string) || (j.job_type as string) || 'Job',
+      renter: 'DC1 Renter', // No renter info in backend schema yet
+      gpu: gpuReqs?.docker_image || gpuReqs?.gpu_model || (j.job_type as string) || 'GPU',
       status: mapStatus(j.status as string),
       costSoFar: Number(j.cost_halala || 0) / 100,
       submittedAt: j.submitted_at,
@@ -33,7 +34,7 @@ export async function GET() {
       completedAt: j.completed_at,
       providerId: j.provider_id,
       durationMinutes: j.duration_minutes,
-    }));
+    }; });
 
     return NextResponse.json(
       { jobs },
