@@ -98,40 +98,45 @@ router.get('/installer', (req, res) => {
 // ============================================================================
 // POST /api/providers/heartbeat - Provider heartbeat (GPU status update)
 // ============================================================================
-router.post('/heartbeat', async (req, res) => {
+router.post('/heartbeat', (req, res) => {
     try {
         const { api_key, gpu_status, uptime, provider_ip, provider_hostname } = req.body;
         
-        // Verify API key
-        const provider = await db.get(
-            'SELECT * FROM providers WHERE api_key = ?',
-            [api_key]
+        const gs = gpu_status || {};
+        const gpuName = gs.gpu_name || null;
+        const gpuVramMib = (gs.gpu_vram_mib != null) ? gs.gpu_vram_mib : null;
+        const gpuDriver = gs.driver_version || null;
+        const gpuUtil = (gs.gpu_util_pct != null) ? gs.gpu_util_pct : null;
+        const gpuTemp = (gs.temp_c != null) ? gs.temp_c : null;
+        const gpuPower = (gs.power_w != null) ? gs.power_w : null;
+        const gpuFreeVram = (gs.free_vram_mib != null) ? gs.free_vram_mib : null;
+        const daemonVersion = gs.daemon_version || null;
+        const pythonVersion = gs.python_version || null;
+        const osInfo = gs.os_info || null;
+        const now = new Date().toISOString();
+
+        // Verify API key (sync — better-sqlite3)
+        const p = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!p) return res.status(401).json({ error: 'Invalid API key' });
+
+        db.run(`UPDATE providers SET
+          gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = 'online',
+          gpu_name_detected = COALESCE(?, gpu_name_detected),
+          gpu_vram_mib = COALESCE(?, gpu_vram_mib),
+          gpu_driver = COALESCE(?, gpu_driver)
+          WHERE id = ?`,
+          JSON.stringify(gpu_status), provider_ip || null, provider_hostname || null, now,
+          gpuName, gpuVramMib, gpuDriver, p.id
         );
-        
-        if (!provider) {
-            return res.status(401).json({ error: 'Invalid API key' });
-        }
-        
-        // Update provider status
-        const result = await db.run(
-            `UPDATE providers 
-             SET gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = ?
-             WHERE api_key = ?`,
-            [
-                JSON.stringify(gpu_status),
-                provider_ip,
-                provider_hostname,
-                new Date().toISOString(),
-                'online',
-                api_key
-            ]
+
+        db.run(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          p.id, now, provider_ip||null, provider_hostname||null,
+          gpuUtil, gpuTemp, gpuPower, gpuFreeVram, gpuVramMib,
+          daemonVersion, pythonVersion, osInfo
         );
-        
-        res.json({
-            success: true,
-            message: 'Heartbeat received',
-            timestamp: new Date().toISOString()
-        });
+
+        return res.json({ success: true, message: 'Heartbeat received', timestamp: now });
         
     } catch (error) {
         console.error('Heartbeat error:', error);

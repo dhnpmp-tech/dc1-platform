@@ -187,6 +187,26 @@ migrations.forEach(sql => {
   }
 });
 
+// ─── HEARTBEAT LOG TABLE ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS heartbeat_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    received_at TEXT NOT NULL,
+    provider_ip TEXT,
+    provider_hostname TEXT,
+    gpu_util_pct REAL,
+    gpu_temp_c REAL,
+    gpu_power_w REAL,
+    gpu_vram_free_mib INTEGER,
+    gpu_vram_total_mib INTEGER,
+    daemon_version TEXT,
+    python_version TEXT,
+    os_info TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 function flatParams(params) {
