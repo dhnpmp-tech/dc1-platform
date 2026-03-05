@@ -42,29 +42,24 @@ export async function POST(request: Request) {
     }
 
     const providers: Provider[] = await providersRes.json();
-
-    // Filter online providers with sufficient VRAM
     const requiredVramGib = body.requiredVramGb;
+
+    // Only 'online' providers can accept jobs — backend enforces this status.
+    // 'connected' means registered but never heartbeated; backend will reject those.
     const eligible = providers.filter(
       (p) =>
-        (p.status === 'online' || p.status === 'connected') &&
-        (p.vram_gib >= requiredVramGib || p.vram_gib === 0) // vram_gib=0 means unknown, allow for Gate 0
+        p.status === 'online' &&
+        (p.vram_gib >= requiredVramGib || p.vram_gib === 0) // vram_gib=0 = unknown VRAM, allow for Gate 0
     );
 
     if (eligible.length === 0) {
-      // Gate 0 fallback: if no online providers, pick first registered one with matching GPU
-      const fallback = providers.find((p) => p.status !== 'offline');
-      if (!fallback) {
-        return NextResponse.json(
-          { error: 'No available providers matching requirements. All providers are offline.' },
-          { status: 503 }
-        );
-      }
-      // Use fallback for Gate 0 testing
-      eligible.push(fallback as Provider & { status: string });
+      return NextResponse.json(
+        { error: 'No online providers available matching your requirements. Try again shortly or reduce VRAM requirements.' },
+        { status: 503 }
+      );
     }
 
-    // Select first eligible provider (Gate 0 — simple selection)
+    // Select first eligible provider (Gate 0 — simple FIFO selection)
     const selectedProvider = eligible[0];
     const durationMinutes = Math.round(body.estimatedHours * 60);
 
