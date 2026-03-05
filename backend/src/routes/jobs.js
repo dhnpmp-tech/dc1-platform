@@ -52,13 +52,15 @@ router.post('/submit', (req, res) => {
 
     const cost_halala = calculateCostHalala(job_type, duration_minutes);
     const now = new Date().toISOString();
+    const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
     const result = db.run(
-      `INSERT INTO jobs (provider_id, job_type, status, submitted_at, duration_minutes, cost_halala, gpu_requirements, notes)
-       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`,
-      provider_id, job_type, now, duration_minutes, cost_halala,
+      `INSERT INTO jobs (job_id, provider_id, job_type, status, submitted_at, duration_minutes, cost_halala, gpu_requirements, notes, created_at)
+       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+      job_id, provider_id, job_type, now, duration_minutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
-      null
+      null,
+      now
     );
 
     // Auto-transition to running
@@ -73,6 +75,7 @@ router.post('/submit', (req, res) => {
       success: true,
       job: {
         id: job.id,
+        job_id: job.job_id,
         provider_id: job.provider_id,
         job_type: job.job_type,
         status: job.status,
@@ -139,6 +142,7 @@ router.post('/:job_id/complete', (req, res) => {
     );
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
+    updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
     res.json({ success: true, job: updated });
   } catch (error) {
     res.status(500).json({ error: 'Failed to complete job' });
