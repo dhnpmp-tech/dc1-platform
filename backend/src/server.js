@@ -26,6 +26,9 @@ app.use('/installers', express.static(path.join(__dirname, '..', 'installers')))
 const providersRouter = require('./routes/providers');
 app.use('/api/providers', providersRouter);
 
+const adminRouter = require('./routes/admin');
+app.use('/api/admin', adminRouter);
+
 const benchmarkRouter = require('./routes/benchmark');
 app.use('/api/benchmark', benchmarkRouter);
 
