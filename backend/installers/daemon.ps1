@@ -1,12 +1,16 @@
 # DC1 Provider Daemon Installer for Windows
 # Usage: iwr http://76.13.179.86:8083/api/providers/setup-windows?key=YOUR_KEY -UseBasicParsing | iex
 $ErrorActionPreference = "Continue"
-$API_KEY = "INJECTED_API_KEY"
+$API_KEY = "{{API_KEY}}"
+$RUN_MODE = "{{RUN_MODE}}"
+$SCHEDULED_START = "{{SCHEDULED_START}}"
+$SCHEDULED_END = "{{SCHEDULED_END}}"
 $API_URL = "http://76.13.179.86:8083"
 $INSTALL_DIR = "$env:LOCALAPPDATA\dc1-provider"
 
 Write-Host "`n=== DC1 Provider Daemon Installer ===" -ForegroundColor Cyan
 Write-Host "API Key: $($API_KEY.Substring(0,20))..." -ForegroundColor Gray
+Write-Host "Mode:    $RUN_MODE" -ForegroundColor Gray
 
 # --- Step 1: Find or install Python ---
 Write-Host "`n[1/6] Checking Python..." -ForegroundColor Yellow
@@ -93,6 +97,11 @@ while True:
 "@
 
 Set-Content -Path "$INSTALL_DIR\dc1_daemon.py" -Value $daemonPy -Encoding UTF8
+
+# Write config.json so daemon can read preferences
+$config = @{ api_key = $API_KEY; run_mode = $RUN_MODE; api_url = $API_URL } | ConvertTo-Json
+Set-Content -Path "$INSTALL_DIR\config.json" -Value $config -Encoding UTF8
+
 Write-Host "  Created $INSTALL_DIR\dc1_daemon.py" -ForegroundColor Green
 
 # --- Step 3: Install requests ---
@@ -107,23 +116,64 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  requests installed." -ForegroundColor Green
 
-# --- Step 4: Create scheduled task ---
-Write-Host "[4/6] Creating scheduled task..." -ForegroundColor Yellow
+# --- Step 4: Register scheduled task (mode-dependent) ---
+Write-Host "[4/6] Configuring run mode: $RUN_MODE..." -ForegroundColor Yellow
 $taskName = "DC1ProviderDaemon"
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
 $action = New-ScheduledTaskAction -Execute $pythonExe -Argument "$INSTALL_DIR\dc1_daemon.py" -WorkingDirectory $INSTALL_DIR
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest -LogonType Interactive
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
-Write-Host "  Scheduled task '$taskName' created." -ForegroundColor Green
 
-# --- Step 5: Start the task ---
+if ($RUN_MODE -eq 'manual') {
+    # Manual mode: no scheduled task — provider controls when daemon runs
+    # Create a desktop shortcut (Start DC1.bat) for manual launch
+    $startScript = "@echo off`necho Starting DC1 Provider Daemon...`nstart /min $pythonExe $INSTALL_DIR\dc1_daemon.py`necho Done. Check your dashboard.`ntimeout /t 3"
+    Set-Content -Path "$INSTALL_DIR\start-dc1.bat" -Value $startScript -Encoding ASCII
+    $stopScript = "@echo off`necho Stopping DC1 Provider Daemon...`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq dc1_daemon*`" 2>nul`npython -c `"import requests; requests.post('$API_URL/api/providers/pause', json={'key':'$API_KEY'})`" 2>nul`necho Stopped.`ntimeout /t 3"
+    Set-Content -Path "$INSTALL_DIR\stop-dc1.bat" -Value $stopScript -Encoding ASCII
+    Write-Host "  Manual mode — no auto-start task created." -ForegroundColor Yellow
+    Write-Host "  Start earning: double-click $INSTALL_DIR\start-dc1.bat" -ForegroundColor Cyan
+} elseif ($RUN_MODE -eq 'scheduled') {
+    # Scheduled mode: run daily at configured start time
+    $startHour = 23; $startMin = 0
+    if ($SCHEDULED_START -match '^(\d{1,2}):(\d{2})$') {
+        $startHour = [int]$Matches[1]; $startMin = [int]$Matches[2]
+    }
+    $triggerTime = (Get-Date -Hour $startHour -Minute $startMin -Second 0).ToString("HH:mm")
+    $trigger = New-ScheduledTaskTrigger -Daily -At $triggerTime
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
+    Write-Host "  Scheduled mode — runs daily at $triggerTime." -ForegroundColor Green
+    # Also create a stop shortcut for when the user wakes up
+    $stopScript = "@echo off`necho Stopping DC1 Provider Daemon...`ntaskkill /F /IM python.exe 2>nul`necho Stopped.`ntimeout /t 3"
+    Set-Content -Path "$INSTALL_DIR\stop-dc1.bat" -Value $stopScript -Encoding ASCII
+} else {
+    # Always-on (default): start at every login
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
+    Write-Host "  Always-on mode — starts automatically at login." -ForegroundColor Green
+}
+
+# Create dashboard shortcut on Desktop for all modes
+$dashUrl = "$API_URL/provider?key=$API_KEY"
+# Use a .bat that opens the browser (works without .lnk COM object in restricted envs)
+$shortcutContent = "@echo off`nstart `"`" `"$dashUrl`""
+Set-Content -Path "$env:USERPROFILE\Desktop\DC1 - My Earnings.bat" -Value $shortcutContent -Encoding ASCII
+Write-Host "  Desktop shortcut created: 'DC1 - My Earnings'" -ForegroundColor Green
+
+# --- Step 5: Start daemon (not for manual mode — user controls that) ---
 Write-Host "[5/6] Starting daemon..." -ForegroundColor Yellow
-Start-ScheduledTask -TaskName $taskName
-Start-Sleep -Seconds 5
-Write-Host "  Daemon started." -ForegroundColor Green
+if ($RUN_MODE -eq 'manual') {
+    Write-Host "  Manual mode — skipping auto-start. Use start-dc1.bat when ready." -ForegroundColor Yellow
+} elseif ($RUN_MODE -eq 'scheduled') {
+    Write-Host "  Scheduled mode — daemon will start at $triggerTime. Starting once now for verification..." -ForegroundColor Yellow
+    Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 5
+} else {
+    Start-ScheduledTask -TaskName $taskName
+    Start-Sleep -Seconds 5
+    Write-Host "  Daemon started." -ForegroundColor Green
+}
 
 # --- Step 6: Test connection ---
 Write-Host "[6/6] Testing connection..." -ForegroundColor Yellow
@@ -137,12 +187,19 @@ try {
     $response = Invoke-WebRequest -Uri "$API_URL/api/providers/heartbeat" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 10
     if ($response.StatusCode -eq 200) {
         Write-Host "`n==============================================" -ForegroundColor Green
-        Write-Host "  DC1 Provider Daemon installed and online!" -ForegroundColor Green
+        Write-Host "  DC1 Provider Daemon installed successfully!" -ForegroundColor Green
         Write-Host "==============================================" -ForegroundColor Green
+        Write-Host "  Mode:        $RUN_MODE"
         Write-Host "  Install dir: $INSTALL_DIR"
-        Write-Host "  Task name:   $taskName"
+        if ($RUN_MODE -ne 'manual') { Write-Host "  Task name:   $taskName" }
         Write-Host "  Python:      $pythonExe"
-        Write-Host "  The daemon sends heartbeats every 30 seconds.`n"
+        Write-Host "  Dashboard:   $dashUrl"
+        if ($RUN_MODE -eq 'manual') {
+            Write-Host "`n  To start earning: double-click 'DC1 - My Earnings' on your Desktop" -ForegroundColor Cyan
+            Write-Host "  Or run: $INSTALL_DIR\start-dc1.bat`n"
+        } else {
+            Write-Host "`n  The daemon runs automatically. Check your dashboard anytime:`n  $dashUrl`n"
+        }
     } else {
         throw "Unexpected status: $($response.StatusCode)"
     }

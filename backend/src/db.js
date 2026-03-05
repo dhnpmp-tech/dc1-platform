@@ -155,6 +155,14 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN task_spec TEXT',
   'ALTER TABLE jobs ADD COLUMN result TEXT',
   'ALTER TABLE jobs ADD COLUMN error TEXT',
+  // provider self-service columns
+  'ALTER TABLE providers ADD COLUMN run_mode TEXT DEFAULT \'always-on\'',
+  'ALTER TABLE providers ADD COLUMN scheduled_start TEXT DEFAULT \'23:00\'',
+  'ALTER TABLE providers ADD COLUMN scheduled_end TEXT DEFAULT \'07:00\'',
+  'ALTER TABLE providers ADD COLUMN gpu_usage_cap_pct INTEGER DEFAULT 80',
+  'ALTER TABLE providers ADD COLUMN vram_reserve_gb INTEGER DEFAULT 1',
+  'ALTER TABLE providers ADD COLUMN temp_limit_c INTEGER DEFAULT 85',
+  'ALTER TABLE providers ADD COLUMN is_paused INTEGER DEFAULT 0',
   // recovery_events columns (for existing DBs that had the old narrow schema)
   'ALTER TABLE recovery_events ADD COLUMN job_id TEXT',
   'ALTER TABLE recovery_events ADD COLUMN provider_id INTEGER',
