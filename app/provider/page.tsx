@@ -1,208 +1,281 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { supabase, getMachines, getRentals, getWallets } from '../../lib/supabase'
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
-interface Machine {
-  id: string
-  model: string
-  vram: number
-  hourly_rate: number
-  status: string
+function timeAgo(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'N/A';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  return `${Math.floor(diff / 3600000)}h ago`;
 }
 
-interface Rental {
-  id: string
-  machine_id: string
-  renter_id: string
-  hours_rented: number
-  status: string
+function halalaToSAR(halala: number | undefined | null): string {
+  return `﷼${((halala || 0) / 100).toFixed(2)}`;
 }
 
-interface Wallet {
-  id: string
-  user_id: string
-  balance: number
+interface ProviderData {
+  name?: string;
+  gpu_model?: string;
+  status?: string;
+  is_paused?: boolean;
+  run_mode?: string;
+  scheduled_start?: string;
+  scheduled_end?: string;
+  gpu_temp?: number;
+  gpu_usage?: number;
+  vram_used?: number;
+  vram_total?: number;
+  uptime_percent?: number;
+  last_heartbeat?: string;
+  earnings_today?: number;
+  earnings_week?: number;
+  earnings_total?: number;
+  jobs_done?: number;
+  active_job?: {
+    job_type?: string;
+    started_at?: string;
+  } | null;
+  gpu_cap?: number;
+  vram_reserve?: number;
+  temp_limit?: number;
 }
 
-export default function ProviderDashboard() {
-  const [machines, setMachines] = useState<Machine[]>([])
-  const [rentals, setRentals] = useState<Rental[]>([])
-  const [wallet, setWallet] = useState<Wallet | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [earnings, setEarnings] = useState(0)
+function ProviderDashboardInner() {
+  const searchParams = useSearchParams();
+  const keyParam = searchParams.get('key');
+  const [key, setKey] = useState(keyParam || '');
+  const [inputKey, setInputKey] = useState('');
+  const [data, setData] = useState<ProviderData | null>(null);
+  const [modeOpen, setModeOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [gpuCap, setGpuCap] = useState(80);
+  const [vramReserve, setVramReserve] = useState(1);
+  const [tempLimit, setTempLimit] = useState(85);
+  const [schedStart, setSchedStart] = useState('23:00');
+  const [schedEnd, setSchedEnd] = useState('07:00');
+
+  const fetchData = useCallback(async () => {
+    if (!key) return;
+    try {
+      const res = await fetch(`/api/providers/me?key=${key}`);
+      if (res.ok) {
+        const d = await res.json();
+        setData(d);
+        if (d.gpu_cap) setGpuCap(d.gpu_cap);
+        if (d.vram_reserve !== undefined) setVramReserve(d.vram_reserve);
+        if (d.temp_limit) setTempLimit(d.temp_limit);
+        if (d.scheduled_start) setSchedStart(d.scheduled_start);
+        if (d.scheduled_end) setSchedEnd(d.scheduled_end);
+      }
+    } catch { /* ignore */ }
+  }, [key]);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [machinesData, rentalsData, walletsData] = await Promise.all([
-          getMachines(),
-          getRentals(),
-          getWallets(),
-        ])
+    fetchData();
+    if (!key) return;
+    const i = setInterval(fetchData, 30000);
+    return () => clearInterval(i);
+  }, [key, fetchData]);
 
-        setMachines(machinesData)
-        setRentals(rentalsData)
-        
-        // Get first provider's wallet
-        const providerWallet = walletsData.find((w: any) => w.user_id === 'tareg-uuid')
-        setWallet(providerWallet || null)
-
-        // Calculate earnings
-        const totalEarnings = rentalsData.reduce((sum: number, rental: any) => {
-          const machine = machinesData.find((m: any) => m.id === rental.machine_id)
-          return sum + (rental.hours_rented * (machine?.hourly_rate || 0))
-        }, 0)
-        setEarnings(totalEarnings)
-      } catch (error) {
-        console.error('Error loading provider data:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadData()
-
-    // Real-time subscription
-    const subscription = supabase
-      .channel('provider-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'machines' }, () => {
-        loadData()
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rentals' }, () => {
-        loadData()
-      })
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [])
-
-  if (loading) {
+  if (!key) {
     return (
-      <div className="min-h-screen bg-dc-black flex items-center justify-center">
-        <p className="text-dc-gold text-xl">Loading Provider Dashboard...</p>
+      <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">
+        <div className="max-w-sm w-full px-4">
+          <h1 className="text-2xl font-bold mb-4">Provider Dashboard</h1>
+          <p className="text-gray-400 mb-4">Enter your provider key:</p>
+          <input value={inputKey} onChange={e => setInputKey(e.target.value)}
+            className="w-full bg-[#252525] border border-gray-700 rounded-lg px-4 py-3 mb-3 focus:border-[#FFD700] focus:outline-none"
+            placeholder="dc1-provider-..." />
+          <button onClick={() => setKey(inputKey)}
+            className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200]">Go</button>
+        </div>
       </div>
-    )
+    );
   }
 
-  const activeRentals = rentals.filter(r => r.status === 'active')
-  const rewardTier = earnings > 10000 ? 'Gold' : earnings > 5000 ? 'Silver' : 'Bronze'
+  const statusBadge = data?.is_paused
+    ? { icon: '⏸', label: 'PAUSED', color: 'text-yellow-400' }
+    : data?.status === 'online'
+      ? { icon: '🟢', label: 'ONLINE', color: 'text-green-400' }
+      : { icon: '🔴', label: 'OFFLINE', color: 'text-red-400' };
+
+  const tempColor = (data?.gpu_temp || 0) < 70 ? 'text-green-400' : (data?.gpu_temp || 0) < 80 ? 'text-yellow-400' : 'text-red-400';
+  const tempLabel = (data?.gpu_temp || 0) < 70 ? 'Safe' : (data?.gpu_temp || 0) < 80 ? 'Warm' : 'Hot';
+
+  const changeMode = async (mode: string) => {
+    setModeOpen(false);
+    await fetch('/api/providers/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key, run_mode: mode,
+        scheduled_start: mode === 'scheduled' ? schedStart : undefined,
+        scheduled_end: mode === 'scheduled' ? schedEnd : undefined,
+      }),
+    });
+    fetchData();
+  };
+
+  const togglePause = async () => {
+    const endpoint = data?.is_paused ? '/api/providers/resume' : '/api/providers/pause';
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    fetchData();
+  };
+
+  const saveSettings = async () => {
+    await fetch('/api/providers/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, gpu_cap: gpuCap, vram_reserve: vramReserve, temp_limit: tempLimit }),
+    });
+    fetchData();
+  };
+
+  const modeLabel = data?.run_mode === 'scheduled' ? 'Scheduled' : data?.run_mode === 'manual' ? 'Manual' : 'Always-on';
 
   return (
-    <main className="min-h-screen bg-dc-black">
-      {/* Navigation */}
-      <nav className="bg-gray-900 border-b border-dc-gold/20">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="text-dc-gold font-bold text-xl">DC1</Link>
-          <h1 className="text-dc-gold text-2xl font-bold">Provider Dashboard</h1>
-          <div />
-        </div>
-      </nav>
-
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Earnings Summary */}
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-dc-gold/10 to-transparent border border-dc-gold/30 rounded-lg p-6">
-            <p className="text-gray-400 text-sm">Total Earnings</p>
-            <h2 className="text-3xl font-bold text-dc-gold">${earnings.toFixed(2)}</h2>
-            <p className="text-xs text-gray-500 mt-2">From {rentals.length} rentals</p>
+    <div className="min-h-screen bg-[#1a1a1a] text-white">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className={`text-lg font-bold ${statusBadge.color}`}>{statusBadge.icon} {statusBadge.label}</span>
+              <span className="text-xl font-bold">{data?.name || 'Loading...'}</span>
+            </div>
+            <p className="text-gray-400 text-sm">{data?.gpu_model || 'GPU'}</p>
           </div>
-
-          <div className="bg-gradient-to-br from-dc-cyan/10 to-transparent border border-dc-cyan/30 rounded-lg p-6">
-            <p className="text-gray-400 text-sm">Active Rentals</p>
-            <h2 className="text-3xl font-bold text-dc-cyan">{activeRentals.length}</h2>
-            <p className="text-xs text-gray-500 mt-2">Generating income</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 rounded-lg p-6">
-            <p className="text-gray-400 text-sm">Reward Tier</p>
-            <h2 className="text-3xl font-bold text-white">{rewardTier}</h2>
-            <p className="text-xs text-gray-500 mt-2">Based on earnings</p>
-          </div>
-        </div>
-
-        {/* Machines Table */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 mb-8 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700">
-            <h2 className="text-dc-gold text-xl font-bold">Your Machines</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-800">
-                <tr className="border-b border-gray-700">
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Model</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">VRAM</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Hourly Rate</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {machines.map((machine) => (
-                  <tr key={machine.id} className="border-b border-gray-700 hover:bg-gray-800/50">
-                    <td className="px-6 py-4 text-sm">{machine.model}</td>
-                    <td className="px-6 py-4 text-sm">{machine.vram}GB</td>
-                    <td className="px-6 py-4 text-sm text-dc-gold">${machine.hourly_rate}/hr</td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        machine.status === 'active' ? 'bg-green-900/30 text-green-400' : 'bg-gray-700 text-gray-300'
-                      }`}>
-                        {machine.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <button className="text-dc-cyan hover:text-dc-cyan/80">Manage</button>
-                    </td>
-                  </tr>
+          <div className="relative">
+            <button onClick={() => setModeOpen(!modeOpen)}
+              className="bg-[#252525] border border-gray-700 rounded-lg px-4 py-2 text-sm hover:border-[#FFD700] transition">
+              Mode: {modeLabel} <span className="ml-1">▾</span>
+            </button>
+            {modeOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-[#252525] border border-gray-700 rounded-lg overflow-hidden z-10 min-w-[200px]">
+                {['always-on', 'manual', 'scheduled'].map(m => (
+                  <button key={m} onClick={() => changeMode(m)}
+                    className={`block w-full text-left px-4 py-2 text-sm hover:bg-[#333] ${data?.run_mode === m ? 'text-[#FFD700]' : ''}`}>
+                    {m === 'always-on' ? 'Always-on' : m === 'manual' ? 'Manual' : 'Scheduled'}
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Active Rentals */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 mb-8 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-            <h2 className="text-dc-cyan text-xl font-bold">Active Rentals</h2>
-            <span className="text-dc-cyan font-bold">{activeRentals.length}</span>
-          </div>
-          <div className="p-6">
-            {activeRentals.length > 0 ? (
-              <div className="space-y-4">
-                {activeRentals.map((rental) => (
-                  <div key={rental.id} className="bg-gray-800 rounded p-4 flex justify-between items-center">
-                    <div>
-                      <p className="text-white font-semibold">Rental #{rental.id.slice(0, 8)}</p>
-                      <p className="text-sm text-gray-400">{rental.hours_rented} hours rented</p>
-                    </div>
-                    <button className="bg-dc-cyan/20 text-dc-cyan hover:bg-dc-cyan/30 px-4 py-2 rounded">
-                      View Details
-                    </button>
+                {data?.run_mode === 'scheduled' && (
+                  <div className="px-4 py-2 border-t border-gray-700 flex gap-2">
+                    <input type="time" value={schedStart} onChange={e => setSchedStart(e.target.value)}
+                      className="bg-[#333] border border-gray-600 rounded px-2 py-1 text-sm text-white w-24" />
+                    <input type="time" value={schedEnd} onChange={e => setSchedEnd(e.target.value)}
+                      className="bg-[#333] border border-gray-600 rounded px-2 py-1 text-sm text-white w-24" />
                   </div>
-                ))}
+                )}
               </div>
-            ) : (
-              <p className="text-gray-400">No active rentals</p>
             )}
           </div>
         </div>
 
-        {/* Withdraw Button */}
-        <div className="bg-gradient-to-r from-dc-gold/10 to-transparent border border-dc-gold/30 rounded-lg p-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-dc-gold font-bold text-lg mb-1">Available Balance</h3>
-              <p className="text-gray-400">${wallet?.balance.toFixed(2) || '0.00'}</p>
-            </div>
-            <button className="bg-dc-gold text-dc-black px-8 py-3 rounded-lg font-bold hover:bg-dc-gold/90 transition">
-              Withdraw
-            </button>
+        {/* GPU Health */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
+            <p className="text-gray-400 text-sm mb-1">Temperature</p>
+            <p className={`text-2xl font-bold ${tempColor}`}>{data?.gpu_temp ?? '--'}°C</p>
+            <p className={`text-sm ${tempColor}`}>{tempLabel}</p>
+          </div>
+          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
+            <p className="text-gray-400 text-sm mb-1">GPU Usage</p>
+            <p className="text-2xl font-bold text-[#00A8E1]">{data?.gpu_usage ?? '--'}%</p>
+            <p className="text-sm text-gray-400">{data?.active_job ? 'DC1 job' : 'Idle'}</p>
+          </div>
+          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
+            <p className="text-gray-400 text-sm mb-1">VRAM</p>
+            <p className="text-2xl font-bold">{data?.vram_used ?? '--'} / {data?.vram_total ?? '--'} GB</p>
           </div>
         </div>
+
+        {/* Connection */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
+            <p className="text-gray-400 text-sm mb-1">Stability</p>
+            <p className="text-xl font-bold">{data?.uptime_percent ?? '--'}%</p>
+          </div>
+          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
+            <p className="text-gray-400 text-sm mb-1">Last Heartbeat</p>
+            <p className="text-xl font-bold">{timeAgo(data?.last_heartbeat)}</p>
+          </div>
+        </div>
+
+        {/* Earnings */}
+        <div className="bg-[#252525] rounded-lg p-4 border border-[#FFD700]/30 mb-6">
+          <h3 className="text-[#FFD700] font-semibold mb-3">💰 Earnings</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div><p className="text-gray-400 text-xs">Today</p><p className="text-lg font-bold text-[#FFD700]">{halalaToSAR(data?.earnings_today)}</p></div>
+            <div><p className="text-gray-400 text-xs">This Week</p><p className="text-lg font-bold text-[#FFD700]">{halalaToSAR(data?.earnings_week)}</p></div>
+            <div><p className="text-gray-400 text-xs">All Time</p><p className="text-lg font-bold text-[#FFD700]">{halalaToSAR(data?.earnings_total)}</p></div>
+            <div><p className="text-gray-400 text-xs">Jobs Done</p><p className="text-lg font-bold">{data?.jobs_done ?? 0}</p></div>
+          </div>
+        </div>
+
+        {/* Current Job */}
+        {data?.active_job && (
+          <div className="bg-[#252525] rounded-lg p-4 border border-[#00A8E1]/30 mb-6">
+            <h3 className="text-[#00A8E1] font-semibold mb-2">🔄 Current Job</h3>
+            <p className="text-sm"><span className="text-gray-400">Type:</span> {data.active_job.job_type}</p>
+            <p className="text-sm"><span className="text-gray-400">Started:</span> {timeAgo(data.active_job.started_at)}</p>
+            <p className="text-sm text-[#FFD700]">Earning ﷼0.10/min</p>
+          </div>
+        )}
+
+        {/* Controls */}
+        <button onClick={togglePause}
+          className={`w-full py-4 rounded-lg font-bold text-lg mb-4 transition ${data?.is_paused ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-amber-500 hover:bg-amber-400 text-black'}`}>
+          {data?.is_paused ? '▶ Resume — Start Earning' : '⏸ Pause — I need my GPU'}
+        </button>
+
+        {/* GPU Protection Settings */}
+        <div className="bg-[#252525] rounded-lg border border-gray-800 mb-6">
+          <button onClick={() => setSettingsOpen(!settingsOpen)}
+            className="w-full px-4 py-3 text-left font-semibold flex justify-between items-center">
+            ⚙ GPU Protection Settings <span>{settingsOpen ? '▴' : '▾'}</span>
+          </button>
+          {settingsOpen && (
+            <div className="px-4 pb-4 space-y-4">
+              <div>
+                <label className="text-sm text-gray-400 flex justify-between"><span>GPU Usage Cap</span><span>{gpuCap}%</span></label>
+                <input type="range" min={10} max={100} value={gpuCap} onChange={e => setGpuCap(+e.target.value)}
+                  className="w-full accent-[#FFD700]" />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 flex justify-between"><span>VRAM Reserve</span><span>{vramReserve} GB</span></label>
+                <input type="range" min={0} max={8} value={vramReserve} onChange={e => setVramReserve(+e.target.value)}
+                  className="w-full accent-[#FFD700]" />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 flex justify-between"><span>Temperature Limit</span><span>{tempLimit}°C</span></label>
+                <input type="range" min={60} max={100} value={tempLimit} onChange={e => setTempLimit(+e.target.value)}
+                  className="w-full accent-[#FFD700]" />
+              </div>
+              <button onClick={saveSettings}
+                className="w-full py-2 rounded-lg bg-[#FFD700] text-black font-semibold hover:bg-[#e6c200] transition">
+                Save Settings
+              </button>
+            </div>
+          )}
+        </div>
+
+        <a href={`/provider/earnings?key=${key}`} className="text-[#00A8E1] underline text-sm">📊 Earnings History</a>
       </div>
-    </main>
-  )
+    </div>
+  );
+}
+
+export default function ProviderDashboard() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">Loading...</div>}>
+      <ProviderDashboardInner />
+    </Suspense>
+  );
 }
