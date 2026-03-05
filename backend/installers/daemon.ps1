@@ -1,9 +1,9 @@
 # DC1 Provider Daemon Installer for Windows
 # Usage: iwr http://76.13.179.86:8083/api/providers/setup-windows?key=YOUR_KEY -UseBasicParsing | iex
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $API_KEY = "INJECTED_API_KEY"
 $API_URL = "http://76.13.179.86:8083"
-$INSTALL_DIR = "C:\dc1-provider"
+$INSTALL_DIR = "$env:LOCALAPPDATA\dc1-provider"
 
 Write-Host "`n=== DC1 Provider Daemon Installer ===" -ForegroundColor Cyan
 Write-Host "API Key: $($API_KEY.Substring(0,20))..." -ForegroundColor Gray
@@ -101,6 +101,10 @@ $pipExe = Join-Path (Split-Path $pythonExe) "Scripts\pip.exe"
 if (-not (Test-Path $pipExe)) { $pipExe = $pythonExe; $pipArgs = @("-m", "pip", "install", "requests") }
 else { $pipArgs = @("install", "requests") }
 & $pipExe @pipArgs 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ERROR: pip install failed (exit code $LASTEXITCODE). Check your internet connection." -ForegroundColor Red
+    exit 1
+}
 Write-Host "  requests installed." -ForegroundColor Green
 
 # --- Step 4: Create scheduled task ---
