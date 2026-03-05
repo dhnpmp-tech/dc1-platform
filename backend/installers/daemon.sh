@@ -67,17 +67,19 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     SP_OUT=$(system_profiler SPDisplaysDataType 2>/dev/null) || true
 
     if [ -n "$SP_OUT" ]; then
-        MAC_GPU=$(echo "$SP_OUT" | grep "Chipset Model:" | head -1 | awk -F': ' '{print $2}' | xargs)
+        # || true on every grep — set -euo pipefail treats no-match (exit 1) as fatal
+        MAC_GPU=$(echo "$SP_OUT" | grep "Chipset Model:" | head -1 | awk -F': ' '{print $2}' | xargs || true)
         [ -n "$MAC_GPU" ] && GPU_NAME="$MAC_GPU" && GPU_COUNT=1
 
-        # Parse VRAM — may be "GB" or "MB" or "Shared" (Apple Silicon)
-        VRAM_LINE=$(echo "$SP_OUT" | grep -i "VRAM" | head -1)
+        # Parse VRAM — may be "GB" or "MB" or absent entirely (Apple Silicon reports "Shared")
+        VRAM_LINE=$(echo "$SP_OUT" | grep -i "VRAM" | head -1 || true)
         if echo "$VRAM_LINE" | grep -qi " GB"; then
-            VRAM_NUM=$(echo "$VRAM_LINE" | grep -oE '[0-9]+' | head -1)
+            VRAM_NUM=$(echo "$VRAM_LINE" | grep -oE '[0-9]+' | head -1 || true)
             GPU_VRAM_MIB=$((${VRAM_NUM:-0} * 1024))
         elif echo "$VRAM_LINE" | grep -qi " MB"; then
-            GPU_VRAM_MIB=$(echo "$VRAM_LINE" | grep -oE '[0-9]+' | head -1)
+            GPU_VRAM_MIB=$(echo "$VRAM_LINE" | grep -oE '[0-9]+' | head -1 || true)
         fi
+        # If VRAM_LINE is empty (Apple Silicon shared memory), GPU_VRAM_MIB stays 0 — that's fine
 
         GPU_DRIVER="macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown')"
         log_success "Detected GPU: ${GPU_NAME} (${GPU_VRAM_MIB} MiB VRAM)"
