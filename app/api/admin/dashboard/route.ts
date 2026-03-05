@@ -13,12 +13,15 @@ async function safeFetch(url: string) {
 }
 
 export async function GET() {
-  const [dashboard, fleet, reconciliation, activeJobs] = await Promise.all([
+  const [dashboard, fleet, reconciliation, activeJobsRaw] = await Promise.all([
     safeFetch(`${BACKEND_URL}/api/admin/dashboard`),
     safeFetch(`${BACKEND_URL}/api/intelligence/fleet`),
     safeFetch(`${BACKEND_URL}/api/reconciliation/summary`),
     safeFetch(`${BACKEND_URL}/api/jobs/active`),
   ]);
+
+  // /api/jobs/active returns { jobs: [...] } — unwrap to array
+  const activeJobs = activeJobsRaw?.jobs ?? null;
 
   return NextResponse.json({
     dashboard,

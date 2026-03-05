@@ -50,12 +50,12 @@ interface DashboardData {
     recent_heartbeats: Provider[]
   } | null
   fleet: {
-    totalProviders: number
-    onlineProviders: number
-    totalGpus: number
-    totalVramGib: number
-    avgUtilizationPct: number
-    gpuDistribution: { model: string; count: number; total_vram_gib: number; avg_util_pct: number }[]
+    total_providers: number
+    online_providers: number
+    total_gpus: number
+    total_vram_gib: number
+    avg_utilization_pct: number
+    gpu_distribution: { model: string; count: number; total_vram_gib: number; avg_util_pct: number }[]
   } | null
   reconciliation: {
     totalCollectedHalala: number
@@ -503,8 +503,8 @@ export default function AdminDashboard() {
   const registeredOnly = providers.filter(p => !p.last_heartbeat).length
   const offlineProviders = providers.filter(p => !p.is_online && p.last_heartbeat)
 
-  const avgUtil = fleet?.avgUtilizationPct ?? null
-  const totalVram = fleet?.totalVramGib ?? 0
+  const avgUtil = fleet?.avg_utilization_pct ?? null
+  const totalVram = fleet?.total_vram_gib ?? 0
 
   const collectedSar = recon ? parseFloat(halalToSar(recon.totalCollectedHalala)) : 0
   const dc1MarginSar = recon ? parseFloat(halalToSar(recon.dc1MarginHalala)) : 0
@@ -641,7 +641,7 @@ export default function AdminDashboard() {
                         <td className="px-4 py-3">
                           {temp != null && p.is_online ? <span className={tempColor(temp)}>{temp}°C</span> : <span className="text-gray-600">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-dc-gold font-semibold">﷼{halalToSar(p.total_earnings || 0)}</td>
+                        <td className="px-4 py-3 text-dc-gold font-semibold">﷼{(p.total_earnings || 0).toFixed(2)}</td>
                         <td className="px-4 py-3">
                           <button className="text-xs text-cyan-400 hover:text-cyan-300" onClick={e => { e.stopPropagation(); setSelectedProviderId(p.id) }}>Details →</button>
                         </td>
@@ -663,9 +663,9 @@ export default function AdminDashboard() {
               <p className="text-gray-500 text-xs mt-0.5">{totalVram ? `${totalVram} GB total VRAM` : 'No fleet data'}</p>
             </div>
             <div className="p-5 space-y-3">
-              {fleet?.gpuDistribution && fleet.gpuDistribution.length > 0 ? (
-                fleet.gpuDistribution.map((g, i) => {
-                  const pct = fleet.totalGpus > 0 ? Math.round((g.count / fleet.totalGpus) * 100) : 0
+              {fleet?.gpu_distribution && fleet.gpu_distribution.length > 0 ? (
+                fleet.gpu_distribution.map((g, i) => {
+                  const pct = fleet.total_gpus > 0 ? Math.round((g.count / fleet.total_gpus) * 100) : 0
                   return (
                     <div key={i}>
                       <div className="flex justify-between text-sm mb-1">
