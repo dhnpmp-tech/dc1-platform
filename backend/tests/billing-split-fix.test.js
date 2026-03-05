@@ -11,15 +11,13 @@ function cleanup() {
 }
 
 function insertProvider(id) {
-  try {
-    db.run(
-      `INSERT INTO providers (id, total_jobs, total_earnings) VALUES (?, 0, 0)`,
-      id
-    );
-  } catch (e) {
-    // provider might already exist
-    db.run(`UPDATE providers SET total_jobs = 0, total_earnings = 0 WHERE id = ?`, id);
-  }
+  // INSERT OR REPLACE ensures deterministic test setup after cleanup().
+  // name + email are NOT NULL in schema; total_jobs/total_earnings are migration columns.
+  db.run(
+    `INSERT OR REPLACE INTO providers (id, name, email, total_jobs, total_earnings)
+     VALUES (?, ?, ?, 0, 0)`,
+    id, `Test Provider ${id}`, `test${id}@dc1test.local`
+  );
 }
 
 // --- Bug 1: Provider earnings should use 75% floor split ---
@@ -65,6 +63,7 @@ test('provider 75% floor split rounds down correctly', () => {
 
 test('reconciliation counts completed jobs with NULL completed_at', () => {
   cleanup();
+  insertProvider(1);
 
   // Insert a legacy completed job with no completed_at
   const now = new Date().toISOString();
@@ -85,6 +84,7 @@ test('reconciliation counts completed jobs with NULL completed_at', () => {
 
 test('reconciliation includes mix of jobs with and without completed_at', () => {
   cleanup();
+  insertProvider(1);
 
   const now = new Date().toISOString();
   // Legacy job — no completed_at
