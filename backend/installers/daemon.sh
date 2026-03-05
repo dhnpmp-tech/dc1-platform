@@ -55,12 +55,35 @@ if command -v nvidia-smi &>/dev/null; then
         log_success "Detected ${GPU_COUNT} GPU(s): ${GPU_NAME} (${GPU_VRAM_MIB} MiB VRAM)"
         log_success "Driver: ${GPU_DRIVER} | Compute: ${GPU_COMPUTE}"
 
-        # Warn if below 8 GB
         if [ "$GPU_VRAM_MIB" -lt 8192 ] 2>/dev/null; then
             log_info "WARNING: GPU has ${GPU_VRAM_MIB} MiB VRAM — DC1 recommends 8 GB minimum"
         fi
     else
         log_info "nvidia-smi found but no GPUs detected"
+    fi
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS: use system_profiler for GPU/VRAM detection (Apple Silicon + AMD)
+    log_info "macOS detected — using system_profiler for GPU detection"
+    SP_OUT=$(system_profiler SPDisplaysDataType 2>/dev/null) || true
+
+    if [ -n "$SP_OUT" ]; then
+        MAC_GPU=$(echo "$SP_OUT" | grep "Chipset Model:" | head -1 | awk -F': ' '{print $2}' | xargs)
+        [ -n "$MAC_GPU" ] && GPU_NAME="$MAC_GPU" && GPU_COUNT=1
+
+        # Parse VRAM — may be "GB" or "MB" or "Shared" (Apple Silicon)
+        VRAM_LINE=$(echo "$SP_OUT" | grep -i "VRAM" | head -1)
+        if echo "$VRAM_LINE" | grep -qi " GB"; then
+            VRAM_NUM=$(echo "$VRAM_LINE" | grep -oE '[0-9]+' | head -1)
+            GPU_VRAM_MIB=$((${VRAM_NUM:-0} * 1024))
+        elif echo "$VRAM_LINE" | grep -qi " MB"; then
+            GPU_VRAM_MIB=$(echo "$VRAM_LINE" | grep -oE '[0-9]+' | head -1)
+        fi
+
+        GPU_DRIVER="macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown')"
+        log_success "Detected GPU: ${GPU_NAME} (${GPU_VRAM_MIB} MiB VRAM)"
+        log_info "Note: GPU temp/power monitoring requires NVIDIA on macOS"
+    else
+        log_info "system_profiler unavailable — GPU detection skipped"
     fi
 else
     log_info "nvidia-smi not found — GPU detection skipped (install NVIDIA drivers for auto-detection)"
@@ -168,12 +191,39 @@ LOGS="$PROVIDER_DIR/logs/daemon.log"
 log_msg() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOGS"; }
 
 send_heartbeat() {
-    # Auto-detect current GPU utilization
-    GPU_UTIL="0"
+    DAEMON_VERSION="1.1.0"
+    OS_INFO="$(uname -s) $(uname -r)"
+    PYTHON_VER="$(python3 --version 2>&1 | awk '{print $2}' 2>/dev/null || echo 'N/A')"
+
+    # Live GPU metrics — queried fresh every heartbeat
+    GPU_UTIL_JSON="null"
+    GPU_TEMP_JSON="null"
+    GPU_POWER_JSON="null"
     VRAM_USED="0"
+    VRAM_FREE="0"
+
     if command -v nvidia-smi &>/dev/null; then
-        GPU_UTIL=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 || echo "0")
-        VRAM_USED=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 || echo "0")
+        # Full NVIDIA query: util%, temp, power draw, used VRAM, free VRAM
+        NV_OUT=$(nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,power.draw,memory.used,memory.free \
+            --format=csv,noheader,nounits 2>/dev/null | head -1) || true
+        if [ -n "$NV_OUT" ]; then
+            _UTIL=$(echo "$NV_OUT" | awk -F', ' '{gsub(/ /,"",$1); print $1}')
+            _TEMP=$(echo "$NV_OUT" | awk -F', ' '{gsub(/ /,"",$2); print $2}')
+            _PWR=$(echo  "$NV_OUT" | awk -F', ' '{gsub(/ /,"",$3); print $3}')
+            _USED=$(echo "$NV_OUT" | awk -F', ' '{gsub(/ /,"",$4); print $4}')
+            _FREE=$(echo "$NV_OUT" | awk -F', ' '{gsub(/ /,"",$5); print $5}')
+            # Only emit numeric values (nvidia-smi can output "[N/A]" for some metrics)
+            [[ "$_UTIL" =~ ^[0-9]+(\.[0-9]+)?$ ]] && GPU_UTIL_JSON="$_UTIL"
+            [[ "$_TEMP" =~ ^[0-9]+(\.[0-9]+)?$ ]] && GPU_TEMP_JSON="$_TEMP"
+            [[ "$_PWR"  =~ ^[0-9]+(\.[0-9]+)?$ ]] && GPU_POWER_JSON="$_PWR"
+            [[ "$_USED" =~ ^[0-9]+$             ]] && VRAM_USED="$_USED"
+            [[ "$_FREE" =~ ^[0-9]+$             ]] && VRAM_FREE="$_FREE"
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS: update GPU_NAME dynamically in case initial detection missed it
+        MAC_GPU=$(system_profiler SPDisplaysDataType 2>/dev/null | grep "Chipset Model:" | head -1 | awk -F': ' '{print $2}' | xargs 2>/dev/null || true)
+        [ -n "$MAC_GPU" ] && GPU_NAME="$MAC_GPU"
+        # temp/power/util require sudo via powermetrics on macOS — not collected here
     fi
 
     curl -s -X POST "$DC1_API_URL/api/providers/heartbeat" \
@@ -187,11 +237,18 @@ send_heartbeat() {
                 \"gpu_vram_mib\": $GPU_VRAM_MIB,
                 \"gpu_driver\": \"$GPU_DRIVER\",
                 \"gpu_count\": $GPU_COUNT,
-                \"gpu_util_pct\": $GPU_UTIL,
-                \"vram_used_mib\": $VRAM_USED
+                \"gpu_util_pct\": $GPU_UTIL_JSON,
+                \"temp_c\": $GPU_TEMP_JSON,
+                \"power_w\": $GPU_POWER_JSON,
+                \"vram_used_mib\": $VRAM_USED,
+                \"free_vram_mib\": $VRAM_FREE,
+                \"daemon_version\": \"$DAEMON_VERSION\",
+                \"python_version\": \"$PYTHON_VER\",
+                \"os_info\": \"$OS_INFO\"
             },
             \"uptime\": \"$(uptime -p 2>/dev/null || echo unknown)\"
-        }" && log_msg "Heartbeat sent (GPU util: ${GPU_UTIL}%)" || log_msg "Heartbeat failed"
+        }" && log_msg "Heartbeat sent (util: ${GPU_UTIL_JSON}%, temp: ${GPU_TEMP_JSON}°C)" \
+          || log_msg "Heartbeat failed"
 }
 
 log_msg "DC1 Daemon started (PID: $$)"
