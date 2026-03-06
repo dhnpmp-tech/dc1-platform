@@ -158,13 +158,14 @@ router.post('/:job_id/complete', (req, res) => {
       now, actualMinutes, actual_cost_halala, provider_earned, dc1_fee, job.id
     );
 
-    // Provider earnings updated from actual billing, not estimate
+    // Provider earnings updated from actual billing — 75% floor split, not full renter charge
+    // provider_earned = splitBilling(actual_cost_halala).provider (computed at line 147)
     db.run(
       `UPDATE providers SET
         total_jobs = total_jobs + 1,
         total_earnings = total_earnings + ?
        WHERE id = ?`,
-      actual_cost_halala / 100, job.provider_id
+      provider_earned / 100, job.provider_id
     );
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
