@@ -197,7 +197,7 @@ export default function RenterDashboard() {
                     </span>
                   </div>
                   <Link
-                    href="/jobs/submit"
+                    href={`/jobs/submit?provider=${machine.id}&gpu=${encodeURIComponent(machine.model)}&vram=${machine.vram}`}
                     className="block w-full bg-dc-cyan text-dc-black font-bold py-2 rounded hover:bg-dc-cyan/90 transition text-center"
                   >
                     Rent Now

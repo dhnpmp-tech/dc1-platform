@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import JobMonitor from '@/components/jobs/JobMonitor';
+import JobMonitor from '../../../../components/jobs/JobMonitor';
 
 export default function MonitorPage({ params }: { params: { id: string } }) {
   return (
