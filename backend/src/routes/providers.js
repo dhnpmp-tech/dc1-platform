@@ -437,5 +437,23 @@ router.get('/download', async (req, res) => {
     }
 });
 
+// ============================================================================
+// GET /api/providers/download-windows-exe
+// Returns the generic Windows .exe installer (asks for API key during install)
+// ============================================================================
+router.get('/download-windows-exe', (req, res) => {
+    const exePath = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
+    if (fs.existsSync(exePath)) {
+        res.setHeader('Content-Disposition', 'attachment; filename="dc1-provider-setup.exe"');
+        res.setHeader('Content-Type', 'application/octet-stream');
+        return res.sendFile(exePath);
+    }
+    res.status(404).json({
+        error: 'Installer not yet built',
+        message: 'Run: makensis backend/installers/dc1-provider-Windows.nsi to build the installer',
+        powershell_alternative: '/api/providers/setup-windows?key=YOUR_KEY'
+    });
+});
+
 module.exports = router;
 
