@@ -15,6 +15,12 @@ function calculateCostHalala(jobType, durationMinutes) {
   return Math.round(rate * durationMinutes);
 }
 
+// Floor-plus-remainder: guarantees provider + dc1 === total exactly
+function splitBilling(totalHalala) {
+  const provider = Math.floor(totalHalala * 0.75);
+  return { provider, dc1: totalHalala - provider };
+}
+
 // POST /api/jobs/submit
 router.post('/submit', (req, res) => {
   try {
@@ -130,21 +136,51 @@ router.post('/:job_id/complete', (req, res) => {
     }
 
     const now = new Date().toISOString();
+
+    // Calculate ACTUAL cost from real elapsed time, not the submitted estimate
+    const startedAt = job.started_at || job.submitted_at;
+    const actualMinutes = startedAt
+      ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 60000))
+      : (job.duration_minutes || 1);
+    const rate = COST_RATES[job.job_type] || COST_RATES['default'];
+    const actual_cost_halala = Math.round(rate * actualMinutes);
+    const { provider: provider_earned, dc1: dc1_fee } = splitBilling(actual_cost_halala);
+
     db.run(
-      `UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ?`,
-      now, job.id
+      `UPDATE jobs SET
+        status = 'completed',
+        completed_at = ?,
+        actual_duration_minutes = ?,
+        actual_cost_halala = ?,
+        provider_earned_halala = ?,
+        dc1_fee_halala = ?
+       WHERE id = ?`,
+      now, actualMinutes, actual_cost_halala, provider_earned, dc1_fee, job.id
     );
 
-    // Update provider stats — provider gets 75% floor split, not full renter charge
-    const providerEarnedHalala = Math.floor((job.cost_halala * 75) / 100);
+    // Provider earnings updated from actual billing — 75% floor split, not full renter charge
+    // provider_earned = splitBilling(actual_cost_halala).provider (computed at line 147)
     db.run(
-      `UPDATE providers SET total_jobs = total_jobs + 1, total_earnings = total_earnings + ? WHERE id = ?`,
-      providerEarnedHalala / 100, job.provider_id
+      `UPDATE providers SET
+        total_jobs = total_jobs + 1,
+        total_earnings = total_earnings + ?
+       WHERE id = ?`,
+      provider_earned / 100, job.provider_id
     );
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
     updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
-    res.json({ success: true, job: updated });
+    res.json({
+      success: true,
+      job: updated,
+      billing: {
+        estimated_cost_halala: job.cost_halala,
+        actual_cost_halala,
+        actual_duration_minutes: actualMinutes,
+        provider_earned_halala: provider_earned,
+        dc1_fee_halala: dc1_fee
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to complete job' });
   }

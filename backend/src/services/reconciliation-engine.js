@@ -36,10 +36,15 @@ function verifyJobBilling(jobId) {
   const job = db.get('SELECT * FROM jobs WHERE job_id = ? OR id = ?', jobId, jobId);
   if (!job) return { jobId, clean: false, error: 'Job not found', discrepancies: ['job_not_found'] };
 
-  const renterPaid = job.cost_halala || 0;
+  // Use actual_cost_halala if set (job completed via updated handler),
+  // fall back to cost_halala (estimate) for jobs completed before this fix
+  const renterPaid = job.actual_cost_halala != null
+    ? job.actual_cost_halala
+    : job.cost_halala || 0;
+
   const { provider: expectedProvider, dc1: expectedDc1 } = splitCost(renterPaid);
 
-  // Check if provider_earned_halala and dc1_fee_halala columns exist
+  // Use stored split if available, otherwise recompute from actual cost
   const providerEarned = job.provider_earned_halala != null ? job.provider_earned_halala : expectedProvider;
   const dc1Fee = job.dc1_fee_halala != null ? job.dc1_fee_halala : expectedDc1;
 
@@ -117,7 +122,11 @@ function verifyProofHash(jobId) {
  * Run full reconciliation across all completed jobs.
  */
 function runFullReconciliation() {
-  const jobs = db.all("SELECT * FROM jobs WHERE status = 'completed'") || [];
+  // Only count jobs that fully completed — status AND completed_at must be set.
+  // This ensures billing reflects actual finished work, not submitted estimates.
+  const jobs = db.all(
+    "SELECT * FROM jobs WHERE status = 'completed' AND completed_at IS NOT NULL"
+  ) || [];
 
   let jobsChecked = 0;
   let jobsClean = 0;
