@@ -168,14 +168,14 @@ function KPICard({ label, value, sub, colorClass, bgClass, pulse }: {
 
 // ─── Provider Detail Modal ────────────────────────────────────────────────────
 
-function ProviderModal({ id, onClose, onOpenJob }: { id: number; onClose: () => void; onOpenJob: (id: number | string) => void }) {
+function ProviderModal({ id, onClose, onOpenJob, adminToken }: { id: number; onClose: () => void; onOpenJob: (id: number | string) => void; adminToken: string }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('connection')
 
   useEffect(() => {
-    fetch(`/api/admin/providers/${id}`).then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
-  }, [id])
+    adminFetchWithToken(`/api/admin/providers/${id}`, adminToken).then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
+  }, [id, adminToken])
 
   if (loading) return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center" onClick={onClose}>
@@ -364,13 +364,13 @@ function ProviderModal({ id, onClose, onOpenJob }: { id: number; onClose: () => 
 
 // ─── Job Detail Modal ─────────────────────────────────────────────────────────
 
-function JobModal({ id, onClose }: { id: number | string; onClose: () => void }) {
+function JobModal({ id, onClose, adminToken }: { id: number | string; onClose: () => void; adminToken: string }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/admin/jobs/${id}`).then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
-  }, [id])
+    adminFetchWithToken(`/api/admin/jobs/${id}`, adminToken).then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
+  }, [id, adminToken])
 
   if (loading) return (
     <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center" onClick={onClose}>
@@ -459,9 +459,137 @@ function JobModal({ id, onClose }: { id: number | string; onClose: () => void })
   )
 }
 
+// ─── Auth-aware fetch helper ──────────────────────────────────────────────────
+
+function adminFetchWithToken(url: string, token: string): Promise<Response> {
+  return fetch(url, {
+    headers: { 'x-admin-token': token },
+  })
+}
+
+// ─── Login Gate ───────────────────────────────────────────────────────────────
+
+function AdminLoginGate({ onAuthenticated }: { onAuthenticated: (token: string) => void }) {
+  const [token, setToken] = useState('')
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!token.trim()) { setError('Please enter a token.'); return }
+    setError('')
+    setChecking(true)
+    try {
+      const res = await adminFetchWithToken('/api/admin/dashboard', token.trim())
+      if (res.ok) {
+        localStorage.setItem('dc1_admin_token', token.trim())
+        onAuthenticated(token.trim())
+      } else if (res.status === 401 || res.status === 403) {
+        setError('Invalid token. Contact the DC1 team.')
+      } else {
+        // Non-auth error (502 etc) — token might be fine, backend may be down
+        // Still allow through so dashboard can show its own "backend offline" state
+        localStorage.setItem('dc1_admin_token', token.trim())
+        onAuthenticated(token.trim())
+      }
+    } catch {
+      // Network error — allow through, dashboard will show offline state
+      localStorage.setItem('dc1_admin_token', token.trim())
+      onAuthenticated(token.trim())
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-dc-black flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="bg-gray-900 border border-white/10 rounded-2xl p-8 text-center">
+          <Link href="/" className="text-white font-bold text-xl tracking-tight inline-block mb-6">
+            🔗 DC1 Admin
+          </Link>
+
+          <div className="mb-6">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-800 border border-white/10 flex items-center justify-center">
+              <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </div>
+            <h2 className="text-white text-lg font-semibold mb-1">Admin Access Required</h2>
+            <p className="text-gray-500 text-sm">Enter your admin token to continue.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input
+              type="password"
+              value={token}
+              onChange={e => { setToken(e.target.value); setError('') }}
+              placeholder="Enter admin token..."
+              className="w-full bg-gray-800 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-dc-gold/50 focus:ring-1 focus:ring-dc-gold/30 transition-colors"
+              autoFocus
+              disabled={checking}
+            />
+
+            {error && (
+              <p className="text-red-400 text-sm font-medium">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={checking}
+              className="w-full bg-dc-gold/90 hover:bg-dc-gold text-black font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {checking ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  Verifying…
+                </span>
+              ) : 'Access Dashboard'}
+            </button>
+          </form>
+
+          <p className="text-gray-600 text-xs mt-6">
+            This area is restricted to DC1 team members only.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
+  // ─── Auth State ───────────────────────────────────────────────────────────
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [adminToken, setAdminToken] = useState('')
+  const [authChecked, setAuthChecked] = useState(false)
+
+  // Check localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('dc1_admin_token')
+    if (stored) {
+      setAdminToken(stored)
+      setIsAuthenticated(true)
+    }
+    setAuthChecked(true)
+  }, [])
+
+  const handleAuthenticated = (token: string) => {
+    setAdminToken(token)
+    setIsAuthenticated(true)
+  }
+
+  const handleSignOut = () => {
+    localStorage.removeItem('dc1_admin_token')
+    setAdminToken('')
+    setIsAuthenticated(false)
+    setDashData(null)
+    setProvData(null)
+    setLoading(true)
+  }
+
+  // ─── Dashboard State ─────────────────────────────────────────────────────
   const [dashData, setDashData] = useState<DashboardData | null>(null)
   const [provData, setProvData] = useState<ProvidersData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -472,11 +600,19 @@ export default function AdminDashboard() {
   const [selectedJobId, setSelectedJobId] = useState<number | string | null>(null)
 
   const fetchAll = useCallback(async () => {
+    if (!adminToken) return
     try {
-      const [d, p] = await Promise.all([
-        fetch('/api/admin/dashboard').then(r => r.ok ? r.json() : null),
-        fetch('/api/admin/providers').then(r => r.ok ? r.json() : null),
+      const [dRes, pRes] = await Promise.all([
+        adminFetchWithToken('/api/admin/dashboard', adminToken),
+        adminFetchWithToken('/api/admin/providers', adminToken),
       ])
+      // Handle 401/403 — session expired or token revoked
+      if (dRes.status === 401 || dRes.status === 403 || pRes.status === 401 || pRes.status === 403) {
+        handleSignOut()
+        return
+      }
+      const d = dRes.ok ? await dRes.json() : null
+      const p = pRes.ok ? await pRes.json() : null
       setDashData(d)
       setProvData(p)
       setBackendAlive(!!d && !!d.dashboard)
@@ -487,9 +623,9 @@ export default function AdminDashboard() {
       setLastRefresh(new Date())
       setSecondsAgo(0)
     }
-  }, [])
+  }, [adminToken])
 
-  useEffect(() => { fetchAll(); const poll = setInterval(fetchAll, 30000); return () => clearInterval(poll) }, [fetchAll])
+  useEffect(() => { if (isAuthenticated && adminToken) { fetchAll(); const poll = setInterval(fetchAll, 30000); return () => clearInterval(poll) } }, [fetchAll, isAuthenticated, adminToken])
   useEffect(() => { const t = setInterval(() => setSecondsAgo(s => s + 1), 1000); return () => clearInterval(t) }, [lastRefresh])
 
   const stats = dashData?.dashboard?.stats
@@ -512,6 +648,15 @@ export default function AdminDashboard() {
 
   const hasAlert = !backendAlive || (onlineNow === 0 && totalProviders > 0)
 
+  // ─── Auth Gate ──────────────────────────────────────────────────────────────
+  if (!authChecked) return (
+    <div className="min-h-screen bg-dc-black flex flex-col items-center justify-center gap-4">
+      <div className="w-8 h-8 border-2 border-dc-gold border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+
+  if (!isAuthenticated) return <AdminLoginGate onAuthenticated={handleAuthenticated} />
+
   if (loading) return (
     <div className="min-h-screen bg-dc-black flex flex-col items-center justify-center gap-4">
       <div className="w-8 h-8 border-2 border-dc-gold border-t-transparent rounded-full animate-spin" />
@@ -523,10 +668,10 @@ export default function AdminDashboard() {
     <main className="min-h-screen bg-dc-black text-white">
       {/* Modals */}
       {selectedProviderId !== null && (
-        <ProviderModal id={selectedProviderId} onClose={() => setSelectedProviderId(null)} onOpenJob={(id) => setSelectedJobId(id)} />
+        <ProviderModal id={selectedProviderId} onClose={() => setSelectedProviderId(null)} onOpenJob={(id) => setSelectedJobId(id)} adminToken={adminToken} />
       )}
       {selectedJobId !== null && (
-        <JobModal id={selectedJobId} onClose={() => setSelectedJobId(null)} />
+        <JobModal id={selectedJobId} onClose={() => setSelectedJobId(null)} adminToken={adminToken} />
       )}
 
       {/* Nav */}
@@ -541,6 +686,7 @@ export default function AdminDashboard() {
             <span className="text-xs text-gray-500">{lastRefresh ? `Updated ${secondsAgo}s ago` : 'Loading…'}</span>
             <button onClick={fetchAll} className="text-xs text-gray-400 hover:text-white border border-gray-700 px-3 py-1 rounded-md transition-colors">↻ Refresh</button>
             <span className="text-xs bg-red-900/40 text-red-400 border border-red-500/30 px-3 py-1 rounded-full font-semibold">ADMIN</span>
+            <button onClick={handleSignOut} className="text-xs text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-500/30 px-3 py-1 rounded-md transition-colors">Sign Out</button>
           </div>
         </div>
       </nav>
