@@ -227,7 +227,13 @@ router.get('/setup-windows', async (req, res) => {
         }
 
         let script = fs.readFileSync(ps1Path, 'utf-8');
-        script = script.replace(/INJECTED_API_KEY/g, key);
+        // Replace all template placeholders with provider-specific values
+        script = script.replace(/\{\{API_KEY\}\}/g, key);
+        script = script.replace(/INJECTED_API_KEY/g, key); // legacy fallback
+        script = script.replace(/\{\{API_URL\}\}/g, process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083');
+        script = script.replace(/\{\{RUN_MODE\}\}/g, provider.run_mode || 'always-on');
+        script = script.replace(/\{\{SCHEDULED_START\}\}/g, provider.scheduled_start || '23:00');
+        script = script.replace(/\{\{SCHEDULED_END\}\}/g, provider.scheduled_end || '07:00');
 
         res.setHeader('Content-Type', 'text/plain');
         res.setHeader('Content-Disposition', 'inline; filename="daemon.ps1"');
