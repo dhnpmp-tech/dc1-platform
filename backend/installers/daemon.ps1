@@ -115,11 +115,53 @@ def send_heartbeat():
         print(f"[{datetime.datetime.now()}] Error: {e}")
         return False
 
+def check_and_run_job():
+    import os
+    try:
+        r = requests.get(f"{API_URL}/api/jobs/assigned", params={"key": API_KEY}, timeout=10)
+        if r.status_code != 200:
+            return
+        job = r.json().get("job")
+        if not job or not job.get("task_spec"):
+            return
+        job_id = job["id"]
+        task = job["task_spec"]
+        print(f"[{datetime.datetime.now()}] Job {job_id} picked up — executing...")
+        tmp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_dc1_task.py")
+        with open(tmp, "w") as f:
+            f.write(task)
+        t0 = datetime.datetime.now()
+        proc = subprocess.run([sys.executable, tmp], capture_output=True, text=True, timeout=300)
+        duration_s = int((datetime.datetime.now() - t0).total_seconds())
+        result_text = (proc.stdout or "").strip()[-1000:] or "completed"
+        error_text = (proc.stderr or "").strip()[-500:] if proc.returncode != 0 else None
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        requests.post(f"{API_URL}/api/jobs/{job_id}/result",
+            json={"result": result_text, "error": error_text, "duration_seconds": duration_s}, timeout=10)
+        print(f"[{datetime.datetime.now()}] Job {job_id} done in {duration_s}s")
+    except subprocess.TimeoutExpired:
+        print(f"[{datetime.datetime.now()}] Job {job.get('id')} timed out after 300s — reporting")
+        try:
+            requests.post(f"{API_URL}/api/jobs/{job.get('id')}/result",
+                json={"error": "Job timed out after 300 seconds", "duration_seconds": 300}, timeout=10)
+        except Exception:
+            pass
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[{datetime.datetime.now()}] Job error: {e}")
+
 print("DC1 Provider Daemon v" + DAEMON_VERSION + " starting...")
 send_heartbeat()
 while True:
     time.sleep(INTERVAL)
     send_heartbeat()
+    check_and_run_job()
 "@
 
 Set-Content -Path "$INSTALL_DIR\dc1_daemon.py" -Value $daemonPy -Encoding UTF8
@@ -239,3 +281,4 @@ try {
     Write-Host "    2. Verify API key is correct"
     Write-Host "    3. Try: Invoke-WebRequest $API_URL/health`n"
 }
+
