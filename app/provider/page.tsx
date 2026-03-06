@@ -57,20 +57,31 @@ function ProviderDashboardInner() {
   const [schedStart, setSchedStart] = useState('23:00');
   const [schedEnd, setSchedEnd] = useState('07:00');
 
+  const [error, setError] = useState<string | null>(null);
+
   const fetchData = useCallback(async () => {
     if (!key) return;
     try {
       const res = await fetch(`/api/providers/me?key=${key}`);
-      if (res.ok) {
-        const d = await res.json();
-        setData(d);
-        if (d.gpu_cap) setGpuCap(d.gpu_cap);
-        if (d.vram_reserve !== undefined) setVramReserve(d.vram_reserve);
-        if (d.temp_limit) setTempLimit(d.temp_limit);
-        if (d.scheduled_start) setSchedStart(d.scheduled_start);
-        if (d.scheduled_end) setSchedEnd(d.scheduled_end);
+      if (res.status === 404) {
+        setError('invalid-key');
+        return;
       }
-    } catch { /* ignore */ }
+      if (!res.ok) {
+        setError('server');
+        return;
+      }
+      const d = await res.json();
+      setData(d);
+      setError(null);
+      if (d.gpu_cap) setGpuCap(d.gpu_cap);
+      if (d.vram_reserve !== undefined) setVramReserve(d.vram_reserve);
+      if (d.temp_limit) setTempLimit(d.temp_limit);
+      if (d.scheduled_start) setSchedStart(d.scheduled_start);
+      if (d.scheduled_end) setSchedEnd(d.scheduled_end);
+    } catch {
+      setError('server');
+    }
   }, [key]);
 
   useEffect(() => {
@@ -91,6 +102,54 @@ function ProviderDashboardInner() {
             placeholder="dc1-provider-..." />
           <button onClick={() => setKey(inputKey)}
             className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200]">Go</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state — invalid key or server error
+  if (error === 'invalid-key') {
+    return (
+      <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">
+        <div className="max-w-sm w-full px-4 text-center">
+          <p className="text-5xl mb-4">🔑</p>
+          <h1 className="text-2xl font-bold mb-3 text-red-400">Invalid Provider Key</h1>
+          <p className="text-gray-400 mb-6">
+            This key wasn&apos;t found. Check your onboarding email or contact{' '}
+            <a href="mailto:support@dc1st.com" className="text-[#00A8E1] underline">support@dc1st.com</a>
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => { setKey(''); setError(null); }}
+              className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200] transition"
+            >
+              Try Another Key
+            </button>
+            <a
+              href="/provider-onboarding"
+              className="block w-full py-3 rounded-lg font-semibold border border-gray-700 text-gray-300 hover:border-gray-500 transition text-center"
+            >
+              Register as Provider
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === 'server') {
+    return (
+      <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">
+        <div className="max-w-sm w-full px-4 text-center">
+          <p className="text-5xl mb-4">⚠️</p>
+          <h1 className="text-2xl font-bold mb-3 text-yellow-400">Connection Error</h1>
+          <p className="text-gray-400 mb-6">Could not reach the server. Please try again.</p>
+          <button
+            onClick={() => { setError(null); fetchData(); }}
+            className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200] transition"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -266,7 +325,12 @@ function ProviderDashboardInner() {
           )}
         </div>
 
-        <a href={`/provider/earnings?key=${key}`} className="text-[#00A8E1] underline text-sm">📊 Earnings History</a>
+        {/* Earnings History — inline */}
+        <div className="bg-[#252525] rounded-lg border border-gray-800 p-4">
+          <h3 className="text-[#00A8E1] font-semibold mb-3">📊 Earnings History</h3>
+          <p className="text-gray-500 text-sm">Detailed earnings history coming soon. Your totals are shown above.</p>
+          <p className="text-gray-600 text-xs mt-2">Payouts processed weekly to your registered account.</p>
+        </div>
       </div>
     </div>
   );

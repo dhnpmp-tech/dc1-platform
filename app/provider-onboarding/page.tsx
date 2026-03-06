@@ -1,11 +1,42 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+
+const GPU_OPTIONS = [
+  'RTX 4090',
+  'RTX 4080',
+  'RTX 4070 Ti',
+  'RTX 4060 Ti',
+  'RTX 3090',
+  'RTX 3080',
+  'RTX 3070',
+  'RTX 3060',
+  'A100',
+  'Other',
+];
+
+function detectOS(): 'windows' | 'mac' | 'linux' {
+  if (typeof navigator === 'undefined') return 'windows';
+  const ua = navigator.userAgent;
+  if (ua.includes('Windows')) return 'windows';
+  if (ua.includes('Mac')) return 'mac';
+  return 'linux';
+}
+
+function detectOSString(): string {
+  if (typeof navigator === 'undefined') return 'Windows';
+  const ua = navigator.userAgent;
+  if (ua.includes('Windows')) return 'Windows';
+  if (ua.includes('Mac')) return 'Mac';
+  return 'Linux';
+}
 
 export default function ProviderOnboarding() {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [gpuModel, setGpuModel] = useState('');
   const [consent1, setConsent1] = useState(false);
   const [consent2, setConsent2] = useState(false);
   const [hwCheckDone, setHwCheckDone] = useState(false);
@@ -15,6 +46,15 @@ export default function ProviderOnboarding() {
   const [apiKey, setApiKey] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const [connectionTimeout, setConnectionTimeout] = useState(false);
+  const [detectedOS, setDetectedOS] = useState<'windows' | 'mac' | 'linux'>('windows');
+  const pollStartRef = useRef<number | null>(null);
+
+  // Detect OS on mount
+  useEffect(() => {
+    setDetectedOS(detectOS());
+  }, []);
 
   // Step 2: auto-pass hardware check after 2s
   useEffect(() => {
@@ -24,10 +64,19 @@ export default function ProviderOnboarding() {
     }
   }, [step]);
 
-  // Step 4: poll for connection
+  // Step 4: poll for connection with 5-minute timeout
   useEffect(() => {
     if (step !== 4 || !apiKey) return;
+    pollStartRef.current = Date.now();
+    setConnectionTimeout(false);
+
     const interval = setInterval(async () => {
+      // Check for 5-minute timeout
+      if (pollStartRef.current && Date.now() - pollStartRef.current > 5 * 60 * 1000) {
+        setConnectionTimeout(true);
+        clearInterval(interval);
+        return;
+      }
       try {
         const res = await fetch(`/api/providers/status/${apiKey}`);
         if (res.ok) {
@@ -42,28 +91,56 @@ export default function ProviderOnboarding() {
     return () => clearInterval(interval);
   }, [step, apiKey]);
 
-  const canContinueStep1 = name.trim() && email.trim() && consent1 && consent2;
+  const canContinueStep1 = name.trim() && email.trim() && gpuModel && consent1 && consent2;
 
   const handleDownload = async () => {
     setDownloading(true);
+    setRegisterError(null);
     try {
+      const os = detectOSString();
       const res = await fetch('/api/providers/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name, email, run_mode: runMode,
+          name,
+          email,
+          gpu_model: gpuModel,
+          os,
+          run_mode: runMode,
           scheduled_start: runMode === 'scheduled' ? schedStart : undefined,
           scheduled_end: runMode === 'scheduled' ? schedEnd : undefined,
         }),
       });
+
+      if (res.status === 409) {
+        setRegisterError('duplicate');
+        setDownloading(false);
+        return;
+      }
+      if (!res.ok) {
+        setRegisterError('server');
+        setDownloading(false);
+        return;
+      }
+
       const data = await res.json();
       const key = data.api_key;
       setApiKey(key);
-      window.location.href = `/api/providers/download?key=${key}&platform=windows`;
+
+      // Download the correct installer for detected OS
+      const platform = detectedOS === 'windows' ? 'windows' : 'linux';
+      window.location.href = `/api/providers/download?key=${key}&platform=${platform}`;
       setStep(4);
     } catch {
+      setRegisterError('server');
       setDownloading(false);
     }
+  };
+
+  const osLabels: Record<string, { label: string; platform: string; icon: string }> = {
+    windows: { label: 'Windows', platform: 'windows', icon: '🪟' },
+    mac: { label: 'macOS', platform: 'linux', icon: '🍎' },
+    linux: { label: 'Linux', platform: 'linux', icon: '🐧' },
   };
 
   return (
@@ -97,6 +174,20 @@ export default function ProviderOnboarding() {
               disabled={step > 1}
               className="w-full bg-[#252525] border border-gray-700 rounded-lg px-4 py-3 focus:border-[#FFD700] focus:outline-none disabled:opacity-50"
             />
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">What GPU do you have?</label>
+              <select
+                value={gpuModel}
+                onChange={e => setGpuModel(e.target.value)}
+                disabled={step > 1}
+                className="w-full bg-[#252525] border border-gray-700 rounded-lg px-4 py-3 focus:border-[#FFD700] focus:outline-none disabled:opacity-50 text-white"
+              >
+                <option value="" disabled>Select your GPU</option>
+                {GPU_OPTIONS.map(gpu => (
+                  <option key={gpu} value={gpu}>{gpu}</option>
+                ))}
+              </select>
+            </div>
             <label className="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" checked={consent1} onChange={e => setConsent1(e.target.checked)} disabled={step > 1}
                 className="mt-1 accent-[#FFD700]" />
@@ -174,6 +265,26 @@ export default function ProviderOnboarding() {
                 </div>
               ))}
             </div>
+
+            {/* Registration Error Messages */}
+            {registerError === 'duplicate' && (
+              <div className="mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                <p className="text-yellow-400 text-sm font-semibold">This email is already registered.</p>
+                <p className="text-yellow-400/70 text-sm mt-1">
+                  <Link href="/provider" className="underline hover:text-yellow-300">Log in instead?</Link>
+                </p>
+              </div>
+            )}
+            {registerError === 'server' && (
+              <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                <p className="text-red-400 text-sm font-semibold">Registration failed.</p>
+                <p className="text-red-400/70 text-sm mt-1">
+                  Please try again or contact{' '}
+                  <a href="mailto:support@dc1st.com" className="underline hover:text-red-300">support@dc1st.com</a>
+                </p>
+              </div>
+            )}
+
             {step === 3 && (
               <div className="mt-6">
                 <button onClick={handleDownload} disabled={downloading}
@@ -183,9 +294,25 @@ export default function ProviderOnboarding() {
               </div>
             )}
             {apiKey && step >= 4 && (
-              <p className="text-sm text-gray-400 mt-2">
-                <a href={`/api/providers/download?key=${apiKey}&platform=linux`} className="text-[#00A8E1] underline">Linux / Mac</a>
-              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                {(['windows', 'mac', 'linux'] as const).map(os => {
+                  const info = osLabels[os];
+                  const isDetected = os === detectedOS;
+                  return (
+                    <a
+                      key={os}
+                      href={`/api/providers/download?key=${apiKey}&platform=${info.platform}`}
+                      className={`text-sm px-3 py-1.5 rounded-lg border transition ${
+                        isDetected
+                          ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700] font-semibold'
+                          : 'border-gray-700 text-[#00A8E1] hover:border-gray-500'
+                      }`}
+                    >
+                      {info.icon} {info.label} {isDetected && '(detected)'}
+                    </a>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
@@ -194,13 +321,36 @@ export default function ProviderOnboarding() {
         {step >= 4 && (
           <div className="mb-8">
             <h2 className="text-xl font-semibold mb-4">4. Connect Your GPU</h2>
-            {!connected ? (
+            {!connected && !connectionTimeout ? (
               <div className="space-y-4">
                 <p className="text-green-400">✅ Installer downloaded! Run it on your PC.</p>
                 <div className="flex items-center gap-3 text-[#00A8E1]">
                   <div className="w-3 h-3 bg-[#00A8E1] rounded-full animate-pulse" />
                   Waiting for your GPU to connect...
                 </div>
+              </div>
+            ) : connectionTimeout && !connected ? (
+              <div className="space-y-4">
+                <p className="text-yellow-400 font-semibold">⚠️ Having trouble connecting?</p>
+                <p className="text-gray-400 text-sm">We haven&apos;t detected your GPU yet. Try these steps:</p>
+                <ol className="list-decimal list-inside space-y-2 text-sm text-gray-300 bg-[#252525] rounded-lg p-4 border border-gray-700">
+                  <li>Make sure you ran the installer as the correct user</li>
+                  <li>Check your firewall allows outbound connections on port 443</li>
+                  <li>Try restarting the DC1 daemon</li>
+                </ol>
+                <p className="text-gray-500 text-xs">
+                  Still stuck? Contact{' '}
+                  <a href="mailto:support@dc1st.com" className="text-[#00A8E1] underline">support@dc1st.com</a>
+                </p>
+                <button
+                  onClick={() => {
+                    pollStartRef.current = Date.now();
+                    setConnectionTimeout(false);
+                  }}
+                  className="text-[#00A8E1] underline text-sm"
+                >
+                  Retry connection check
+                </button>
               </div>
             ) : (
               <div className="space-y-4">
