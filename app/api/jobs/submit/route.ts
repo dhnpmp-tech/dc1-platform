@@ -1,89 +1,72 @@
 import { NextResponse } from 'next/server';
 
-const BACKEND = process.env.BACKEND_URL || 'http://76.13.179.86:8083';
+const BACKEND = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
 
+// New interface matching JobSubmitForm.tsx fields
 interface SubmitBody {
-  renterId?: string;
-  dockerImage: string;
+  provider_id?: number | string;
+  job_type: string;
+  duration_minutes: number;
+  gpu_requirements?: {
+    min_vram_gb?: number;
+    gpu_count?: number;
+  };
+  dockerImage?: string;
   jobCodePath?: string;
-  requiredVramGb: number;
-  gpuCount: number;
-  estimatedHours: number;
-  maxBudgetUsd?: number;
-  metadata?: Record<string, unknown>;
-}
-
-interface Provider {
-  id: number;
-  name: string;
-  status: string;
-  gpu_model: string;
-  vram_gib: number;
+  maxBudgetSar?: number;
 }
 
 export async function POST(request: Request) {
   try {
     const body: SubmitBody = await request.json();
 
-    if (!body.dockerImage || !body.requiredVramGb || !body.estimatedHours) {
+    if (!body.job_type || !body.duration_minutes) {
       return NextResponse.json(
-        { error: 'Missing required fields: dockerImage, requiredVramGb, estimatedHours' },
+        { error: 'Missing required fields: job_type, duration_minutes' },
         { status: 400 }
       );
     }
 
-    // Fetch providers from intelligence endpoint
-    const providersRes = await fetch(`${BACKEND}/api/intelligence/providers`);
-    if (!providersRes.ok) {
-      return NextResponse.json(
-        { error: 'Failed to fetch providers' },
-        { status: 502 }
+    // If a specific provider was pre-selected (via Rent Now URL params), use it directly.
+    // Otherwise find the first online provider that meets VRAM requirements.
+    let providerId: number | string | undefined = body.provider_id;
+
+    if (!providerId) {
+      const minVram = body.gpu_requirements?.min_vram_gb ?? 0;
+      const providersRes = await fetch(`${BACKEND}/api/providers?minVram=${minVram}`);
+      if (!providersRes.ok) {
+        return NextResponse.json({ error: 'Failed to fetch providers' }, { status: 502 });
+      }
+      const data = await providersRes.json();
+      const online = (data.providers || []).filter(
+        (p: { status: string }) => p.status === 'online'
       );
+      if (online.length === 0) {
+        return NextResponse.json(
+          { error: 'No online providers available. Try again shortly or reduce VRAM requirements.' },
+          { status: 503 }
+        );
+      }
+      providerId = online[0].id;
     }
 
-    const providers: Provider[] = await providersRes.json();
-    const requiredVramGib = body.requiredVramGb;
-
-    // Only 'online' providers can accept jobs — backend enforces this status.
-    // 'connected' means registered but never heartbeated; backend will reject those.
-    const eligible = providers.filter(
-      (p) =>
-        p.status === 'online' &&
-        (p.vram_gib >= requiredVramGib || p.vram_gib === 0) // vram_gib=0 = unknown VRAM, allow for Gate 0
-    );
-
-    if (eligible.length === 0) {
-      return NextResponse.json(
-        { error: 'No online providers available matching your requirements. Try again shortly or reduce VRAM requirements.' },
-        { status: 503 }
-      );
-    }
-
-    // Select first eligible provider (Gate 0 — simple FIFO selection)
-    const selectedProvider = eligible[0];
-    const durationMinutes = Math.round(body.estimatedHours * 60);
-
-    // Submit to backend
+    // Forward to backend
     const submitRes = await fetch(`${BACKEND}/api/jobs/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        provider_id: selectedProvider.id,
-        job_type: 'gpu-compute',
-        duration_minutes: durationMinutes,
-        gpu_requirements: {
-          min_vram_gb: body.requiredVramGb,
-          docker_image: body.dockerImage,
-          gpu_count: body.gpuCount || 1,
-          job_code_path: body.jobCodePath || '',
-        },
+        provider_id: providerId,
+        job_type: body.job_type,
+        duration_minutes: body.duration_minutes,
+        gpu_requirements: body.gpu_requirements || null,
+        renter_id: 'demo-renter-gate1', // TODO: replace with Supabase auth session (Gate 1)
       }),
     });
 
     if (!submitRes.ok) {
       const err = await submitRes.json().catch(() => ({ error: 'Backend submission failed' }));
       return NextResponse.json(
-        { error: err.error || 'Job submission failed', details: err },
+        { error: err.error || 'Job submission failed' },
         { status: submitRes.status }
       );
     }
@@ -94,13 +77,13 @@ export async function POST(request: Request) {
       success: true,
       job: {
         id: result.job?.id,
+        job_id: result.job?.job_id,
         status: result.job?.status,
-        providerId: selectedProvider.id,
-        providerName: selectedProvider.name,
-        gpuModel: selectedProvider.gpu_model,
-        submittedAt: result.job?.submitted_at,
-        durationMinutes: result.job?.duration_minutes,
-        costHalala: result.job?.cost_halala,
+        provider_id: result.job?.provider_id,
+        job_type: result.job?.job_type,
+        duration_minutes: result.job?.duration_minutes,
+        cost_halala: result.job?.cost_halala,
+        submitted_at: result.job?.submitted_at,
       },
     });
   } catch (error) {
