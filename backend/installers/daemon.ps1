@@ -59,7 +59,7 @@ Write-Host "[2/6] Creating daemon script..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
 
 $daemonPy = @"
-import requests, time, datetime, socket, subprocess, sys, platform
+import requests, time, datetime, socket, subprocess, sys, platform, threading
 
 API_KEY = "$API_KEY"
 API_URL = "$API_URL"
@@ -157,11 +157,30 @@ def check_and_run_job():
         print(f"[{datetime.datetime.now()}] Job error: {e}")
 
 print("DC1 Provider Daemon v" + DAEMON_VERSION + " starting...")
+# Thread-safe job lock — prevents multiple jobs running simultaneously
+_job_lock = threading.Lock()
+_job_running = False
+
+def run_job_in_background():
+    global _job_running
+    if _job_running:
+        return  # Already executing a job
+    if not _job_lock.acquire(blocking=False):
+        return
+    _job_running = True
+    try:
+        check_and_run_job()
+    finally:
+        _job_running = False
+        _job_lock.release()
+
 send_heartbeat()
 while True:
     time.sleep(INTERVAL)
     send_heartbeat()
-    check_and_run_job()
+    # Dispatch job check in background thread so heartbeats keep flowing
+    t = threading.Thread(target=run_job_in_background, daemon=True)
+    t.start()
 "@
 
 Set-Content -Path "$INSTALL_DIR\dc1_daemon.py" -Value $daemonPy -Encoding UTF8
