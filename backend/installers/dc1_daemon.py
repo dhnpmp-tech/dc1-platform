@@ -2,7 +2,7 @@
 DC1 Provider Daemon — Standalone Template
 Placeholders {{API_KEY}} and {{API_URL}} are replaced by dc1-setup-helper.ps1
 """
-import requests, time, datetime, socket, subprocess, sys, platform, json, os
+import requests, time, datetime, socket, subprocess, sys, platform, threading, json, os
 
 API_KEY = "{{API_KEY}}"
 API_URL = "{{API_URL}}"
@@ -149,6 +149,24 @@ def check_and_run_job():
 
 if __name__ == "__main__":
     print("DC1 Provider Daemon v" + DAEMON_VERSION + " starting...")
+
+    # Thread-safe job lock — prevents multiple jobs running simultaneously
+    _job_lock = threading.Lock()
+    _job_running = False
+
+    def run_job_in_background():
+        global _job_running
+        if _job_running:
+            return  # Already executing a job
+        if not _job_lock.acquire(blocking=False):
+            return
+        _job_running = True
+        try:
+            check_and_run_job()
+        finally:
+            _job_running = False
+            _job_lock.release()
+
     send_heartbeat()
     while True:
         time.sleep(INTERVAL)
@@ -156,4 +174,6 @@ if __name__ == "__main__":
             print(f"[{datetime.datetime.now()}] Outside scheduled window ({SCHED_START}–{SCHED_END}). Exiting.")
             sys.exit(0)   # Task Scheduler restarts at next SCHED_START trigger
         send_heartbeat()
-        check_and_run_job()
+        # Dispatch job check in background thread so heartbeats keep flowing
+        t = threading.Thread(target=run_job_in_background, daemon=True)
+        t.start()
