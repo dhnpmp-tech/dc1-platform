@@ -87,6 +87,54 @@ def send_heartbeat():
         print(f"[{datetime.datetime.now()}] Error: {e}")
         return False
 
+def check_and_run_job():
+    """Poll for an assigned job; if found, execute task_spec and report result."""
+    try:
+        r = requests.get(f"{API_URL}/api/jobs/assigned", params={"key": API_KEY}, timeout=10)
+        if r.status_code != 200:
+            return
+        job = r.json().get("job")
+        if not job or not job.get("task_spec"):
+            return
+
+        job_id  = job["id"]
+        task    = job["task_spec"]
+        print(f"[{datetime.datetime.now()}] Job {job_id} picked up — executing task...")
+
+        # Write task to temp file and run it
+        tmp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_dc1_task.py")
+        with open(tmp, "w") as f:
+            f.write(task)
+
+        t0 = datetime.datetime.now()
+        proc = subprocess.run(
+            [sys.executable, tmp],
+            capture_output=True, text=True, timeout=300
+        )
+        duration_s = int((datetime.datetime.now() - t0).total_seconds())
+
+        result_text = (proc.stdout or "").strip()[-1000:] or "completed"
+        error_text  = (proc.stderr or "").strip()[-500:] if proc.returncode != 0 else None
+
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+
+        # Report result back to platform
+        requests.post(
+            f"{API_URL}/api/jobs/{job_id}/result",
+            json={"result": result_text, "error": error_text, "duration_seconds": duration_s},
+            timeout=10
+        )
+        print(f"[{datetime.datetime.now()}] Job {job_id} complete in {duration_s}s — result reported.")
+
+    except subprocess.TimeoutExpired:
+        print(f"[{datetime.datetime.now()}] Job timed out after 300s")
+    except Exception as e:
+        print(f"[{datetime.datetime.now()}] Job execution error: {e}")
+
+
 if __name__ == "__main__":
     print("DC1 Provider Daemon v" + DAEMON_VERSION + " starting...")
     send_heartbeat()
@@ -96,3 +144,4 @@ if __name__ == "__main__":
             print(f"[{datetime.datetime.now()}] Outside scheduled window ({SCHED_START}–{SCHED_END}). Exiting.")
             sys.exit(0)   # Task Scheduler restarts at next SCHED_START trigger
         send_heartbeat()
+        check_and_run_job()

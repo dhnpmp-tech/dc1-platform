@@ -98,6 +98,93 @@ router.post('/submit', (req, res) => {
   }
 });
 
+// GET /api/jobs/assigned?key=API_KEY
+// Daemon polls this to check if it has a running job with a task to execute
+router.get('/assigned', (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const job = db.get(
+      `SELECT * FROM jobs WHERE provider_id = ? AND status = 'running' AND task_spec IS NOT NULL AND picked_up_at IS NULL ORDER BY started_at ASC LIMIT 1`,
+      [provider.id]
+    );
+
+    if (!job) return res.json({ job: null });
+
+    // Mark as picked up so daemon doesn't re-execute
+    db.run(`UPDATE jobs SET picked_up_at = ? WHERE id = ?`, [new Date().toISOString(), job.id]);
+
+    job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
+    res.json({ job });
+  } catch (error) {
+    console.error('Assigned job fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch assigned job' });
+  }
+});
+
+// POST /api/jobs/:job_id/result
+// Daemon posts execution result; auto-completes the job
+router.post('/:job_id/result', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ?', [req.params.job_id]);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const { result, error: jobError, duration_seconds, gpu_util_peak } = req.body;
+
+    const now = new Date().toISOString();
+    const actualMinutes = duration_seconds ? Math.ceil(duration_seconds / 60) : job.duration_minutes;
+    const billingRate = job.job_type === 'training' ? 25 : job.job_type === 'rendering' ? 20 : 15;
+    const actualCostHalala = billingRate * actualMinutes;
+    const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
+
+    db.run(
+      `UPDATE jobs SET
+        status = 'completed',
+        result = ?,
+        error = ?,
+        completed_at = ?,
+        actual_duration_minutes = ?,
+        actual_cost_halala = ?,
+        provider_earned_halala = ?,
+        dc1_fee_halala = ?
+      WHERE id = ?`,
+      [
+        result || 'completed',
+        jobError || null,
+        now,
+        actualMinutes,
+        actualCostHalala,
+        providerEarned,
+        dc1Fee,
+        job.id
+      ]
+    );
+
+    db.run(
+      `UPDATE providers SET total_earnings = total_earnings + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
+      [providerEarned / 100, job.provider_id]
+    );
+
+    const updated = db.get('SELECT * FROM jobs WHERE id = ?', [job.id]);
+    res.json({
+      success: true,
+      job: updated,
+      billing: {
+        actual_cost_halala: actualCostHalala,
+        provider_earned_halala: providerEarned,
+        dc1_fee_halala: dc1Fee
+      }
+    });
+  } catch (error) {
+    console.error('Job result error:', error);
+    res.status(500).json({ error: 'Failed to record job result' });
+  }
+});
+
 // GET /api/jobs/active
 router.get('/active', (req, res) => {
   try {
