@@ -39,7 +39,7 @@ const AGENTS: AgentInfo[] = [
   { name: 'SYNC', uuid: 'cb6a5cc5', role: 'QA — Tests & Integration', color: 'text-[#00d4ff]', borderColor: 'border-[#00d4ff]/30', badgeBg: 'bg-[#00d4ff]/10' },
 ];
 
-const MC_BASE = 'http://76.13.179.86:8084/api';
+const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
 const MC_TOKEN = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_MC_TOKEN || 'dc1-mc-gate0-2026')
   : 'dc1-mc-gate0-2026';

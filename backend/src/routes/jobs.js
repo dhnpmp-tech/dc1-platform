@@ -1,6 +1,28 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
+
+// HMAC secret for signing task_spec (falls back to admin token or random)
+const HMAC_SECRET = process.env.DC1_HMAC_SECRET || process.env.DC1_ADMIN_TOKEN || crypto.randomBytes(32).toString('hex');
+
+function signTaskSpec(taskSpec) {
+  return crypto.createHmac('sha256', HMAC_SECRET).update(taskSpec).digest('hex');
+}
+
+// Renter auth middleware — validates renter API key from header or query
+function requireRenter(req, res, next) {
+  const key = req.headers['x-renter-key'] || req.query.renter_key;
+  if (!key) {
+    return res.status(401).json({ error: 'Renter API key required (x-renter-key header or renter_key query)' });
+  }
+  const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+  if (!renter) {
+    return res.status(403).json({ error: 'Invalid or inactive renter API key' });
+  }
+  req.renter = renter;
+  next();
+}
 
 // Cost rates in halala per minute by job type
 const COST_RATES = {
@@ -21,10 +43,10 @@ function splitBilling(totalHalala) {
   return { provider, dc1: totalHalala - provider };
 }
 
-// POST /api/jobs/submit
-router.post('/submit', (req, res) => {
+// POST /api/jobs/submit — requires renter auth
+router.post('/submit', requireRenter, (req, res) => {
   try {
-    const { provider_id, job_type, duration_minutes, gpu_requirements } = req.body;
+    const { provider_id, job_type, duration_minutes, gpu_requirements, task_spec, max_duration_seconds } = req.body;
 
     if (!provider_id || !job_type || !duration_minutes) {
       return res.status(400).json({ error: 'Missing required fields: provider_id, job_type, duration_minutes' });
@@ -44,14 +66,24 @@ router.post('/submit', (req, res) => {
       return res.status(400).json({ error: 'Provider is not online', provider_status: provider.status });
     }
 
+    // Check provider doesn't already have a running job
+    const existingJob = db.get(
+      `SELECT id FROM jobs WHERE provider_id = ? AND status = 'running'`,
+      provider_id
+    );
+    if (existingJob) {
+      return res.status(409).json({ error: 'Provider already has a running job', existing_job_id: existingJob.id });
+    }
+
     // Validate GPU requirements if specified
     if (gpu_requirements) {
       const req_vram = gpu_requirements.min_vram_gb;
-      if (req_vram && provider.vram_gb && provider.vram_gb < req_vram) {
+      const providerVram = provider.gpu_vram_mib ? provider.gpu_vram_mib / 1024 : provider.vram_gb;
+      if (req_vram && providerVram && providerVram < req_vram) {
         return res.status(400).json({
           error: 'Provider does not meet GPU requirements',
           required_vram_gb: req_vram,
-          provider_vram_gb: provider.vram_gb
+          provider_vram_gb: providerVram
         });
       }
     }
@@ -60,11 +92,23 @@ router.post('/submit', (req, res) => {
     const now = new Date().toISOString();
     const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
+    // Job timeout: default 10 minutes, max 1 hour
+    const timeout = Math.min(max_duration_seconds || 600, 3600);
+    const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString();
+
+    // HMAC-sign task_spec if present
+    const taskSpecHmac = task_spec ? signTaskSpec(task_spec) : null;
+
     const result = db.run(
-      `INSERT INTO jobs (job_id, provider_id, job_type, status, submitted_at, duration_minutes, cost_halala, gpu_requirements, notes, created_at)
-       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
-      job_id, provider_id, job_type, now, duration_minutes, cost_halala,
+      `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, status, submitted_at, duration_minutes,
+        cost_halala, gpu_requirements, task_spec, task_spec_hmac, max_duration_seconds, timeout_at, notes, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      job_id, provider_id, req.renter.id, job_type, now, duration_minutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
+      task_spec || null,
+      taskSpecHmac,
+      timeout,
+      timeoutAt,
       null,
       now
     );
@@ -83,13 +127,17 @@ router.post('/submit', (req, res) => {
         id: job.id,
         job_id: job.job_id,
         provider_id: job.provider_id,
+        renter_id: job.renter_id,
         job_type: job.job_type,
         status: job.status,
         submitted_at: job.submitted_at,
         started_at: job.started_at,
         duration_minutes: job.duration_minutes,
         cost_halala: job.cost_halala,
-        gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null
+        max_duration_seconds: timeout,
+        timeout_at: timeoutAt,
+        gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
+        task_spec_signed: !!taskSpecHmac
       }
     });
   } catch (error) {
@@ -306,6 +354,54 @@ router.post('/:job_id/cancel', (req, res) => {
   }
 });
 
+// GET /api/jobs/verify-hmac?job_id=X&hmac=Y
+// Daemon can verify a task_spec signature before executing
+router.get('/verify-hmac', (req, res) => {
+  try {
+    const { job_id, hmac } = req.query;
+    if (!job_id || !hmac) return res.status(400).json({ error: 'job_id and hmac required' });
+
+    const job = db.get('SELECT task_spec_hmac FROM jobs WHERE id = ?', job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const valid = job.task_spec_hmac && crypto.timingSafeEqual(
+      Buffer.from(hmac, 'hex'),
+      Buffer.from(job.task_spec_hmac, 'hex')
+    );
+
+    res.json({ valid: !!valid });
+  } catch (error) {
+    res.json({ valid: false, error: 'Verification failed' });
+  }
+});
+
+// Timeout enforcement — called by recovery engine every 30s
+function enforceJobTimeouts() {
+  try {
+    const now = new Date().toISOString();
+    const timedOut = db.all(
+      `SELECT * FROM jobs WHERE status = 'running' AND timeout_at IS NOT NULL AND timeout_at < ?`,
+      now
+    );
+
+    for (const job of timedOut) {
+      db.run(
+        `UPDATE jobs SET status = 'failed', error = 'Job timed out', completed_at = ? WHERE id = ?`,
+        now, job.id
+      );
+      console.log(`[timeout] Job ${job.job_id} timed out (provider ${job.provider_id})`);
+    }
+
+    return timedOut.length;
+  } catch (error) {
+    console.error('[timeout] Enforcement error:', error);
+    return 0;
+  }
+}
+
 module.exports = router;
 module.exports.calculateCostHalala = calculateCostHalala;
 module.exports.COST_RATES = COST_RATES;
+module.exports.enforceJobTimeouts = enforceJobTimeouts;
+module.exports.signTaskSpec = signTaskSpec;
+module.exports.HMAC_SECRET = HMAC_SECRET;

@@ -160,6 +160,13 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN actual_duration_minutes INTEGER',
   'ALTER TABLE jobs ADD COLUMN provider_earned_halala INTEGER',
   'ALTER TABLE jobs ADD COLUMN dc1_fee_halala INTEGER',
+  // renter_id for renter auth (existing jobs may lack this)
+  'ALTER TABLE jobs ADD COLUMN renter_id INTEGER',
+  // job timeout enforcement
+  'ALTER TABLE jobs ADD COLUMN max_duration_seconds INTEGER DEFAULT 600',
+  'ALTER TABLE jobs ADD COLUMN timeout_at TEXT',
+  // HMAC signature for task_spec security
+  'ALTER TABLE jobs ADD COLUMN task_spec_hmac TEXT',
   // provider self-service columns
   'ALTER TABLE providers ADD COLUMN run_mode TEXT DEFAULT \'always-on\'',
   'ALTER TABLE providers ADD COLUMN scheduled_start TEXT DEFAULT \'23:00\'',
@@ -191,6 +198,23 @@ migrations.forEach(sql => {
     // Column already exists — safe to ignore
   }
 });
+
+// ─── RENTERS TABLE ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS renters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    api_key TEXT NOT NULL UNIQUE,
+    organization TEXT,
+    status TEXT DEFAULT 'active',
+    balance_halala INTEGER DEFAULT 0,
+    total_spent_halala INTEGER DEFAULT 0,
+    total_jobs INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+  )
+`);
 
 // ─── HEARTBEAT LOG TABLE ───
 db.exec(`

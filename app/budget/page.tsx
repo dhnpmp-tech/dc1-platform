@@ -79,7 +79,7 @@ export default function BudgetPage() {
 
   const fetchMetrics = useCallback(async () => {
     try {
-      const MC_BASE = 'http://76.13.179.86:8084/api';
+      const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
       const token = process.env.NEXT_PUBLIC_MC_TOKEN || '';
       const res = await fetch(`${MC_BASE}/metrics`, {
         headers: { Authorization: `Bearer ${token}` },

@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
@@ -10,6 +11,47 @@ const PORT = process.env.DC1_PROVIDER_PORT || 8083;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ── Rate Limiting ───────────────────────────────────────────────────────
+// Registration: 5 attempts per IP per hour (prevents spam)
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many registration attempts. Try again in 1 hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/providers/register', registerLimiter);
+
+// Job submission: 30 per IP per minute
+const jobSubmitLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: 'Too many job submissions. Slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/jobs/submit', jobSubmitLimiter);
+
+// Admin endpoints: 100 per IP per minute
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { error: 'Admin rate limit exceeded.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/admin', adminLimiter);
+
+// General API: 300 per IP per minute
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  message: { error: 'Rate limit exceeded.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', generalLimiter);
 
 // Serve static files (provider-onboarding.html etc)
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -50,6 +92,9 @@ app.use('/api/intelligence', intelligenceRouter);
 const syncRouter = require('./routes/sync');
 app.use('/api/sync', syncRouter);
 
+const rentersRouter = require('./routes/renters');
+app.use('/api/renters', rentersRouter);
+
 // Initialize Supabase sync bridge
 const supabaseSync = require('./services/supabase-sync');
 if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
@@ -71,6 +116,11 @@ app.get('/', (req, res) => {
 const { runRecoveryCycle } = require('./services/recovery-engine');
 setInterval(runRecoveryCycle, 30 * 1000);
 console.log('[recovery] Recovery cycle started (every 30s)');
+
+// Start job timeout enforcement every 30 seconds
+const { enforceJobTimeouts } = require('./routes/jobs');
+setInterval(enforceJobTimeouts, 30 * 1000);
+console.log('[timeout] Job timeout enforcement started (every 30s)');
 
 // Start fallback loop (bottleneck detection + disconnect recovery) every 15 seconds
 const { startLoop: startFallbackLoop } = require('./services/fallback-loop');
