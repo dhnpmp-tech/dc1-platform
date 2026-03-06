@@ -130,7 +130,19 @@ def check_and_run_job():
         print(f"[{datetime.datetime.now()}] Job {job_id} complete in {duration_s}s — result reported.")
 
     except subprocess.TimeoutExpired:
-        print(f"[{datetime.datetime.now()}] Job timed out after 300s")
+        print(f"[{datetime.datetime.now()}] Job {job.get('id')} timed out after 300s — reporting to API")
+        try:
+            requests.post(
+                f"{API_URL}/api/jobs/{job.get('id')}/result",
+                json={"error": "Job timed out after 300 seconds", "duration_seconds": 300},
+                timeout=10
+            )
+        except Exception:
+            pass
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
     except Exception as e:
         print(f"[{datetime.datetime.now()}] Job execution error: {e}")
 

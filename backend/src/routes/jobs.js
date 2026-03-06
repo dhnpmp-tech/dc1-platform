@@ -133,6 +133,15 @@ router.post('/:job_id/result', (req, res) => {
     const job = db.get('SELECT * FROM jobs WHERE id = ?', [req.params.job_id]);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
+    // Guard against duplicate settlement — only settle a running job once
+    if (job.status !== 'running') {
+      return res.status(409).json({
+        error: 'Job already settled',
+        current_status: job.status,
+        job_id: job.job_id
+      });
+    }
+
     const { result, error: jobError, duration_seconds, gpu_util_peak } = req.body;
 
     const now = new Date().toISOString();
