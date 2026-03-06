@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Suspense } from 'react';
 import JobSubmitForm from '../../../components/jobs/JobSubmitForm';
 
 export default function SubmitJobPage() {
@@ -17,7 +18,9 @@ export default function SubmitJobPage() {
         <h1 className="text-2xl font-bold mb-1">Submit GPU Job</h1>
         <p className="text-white/40 mb-8">Configure and launch a compute job on the DC1 network.</p>
 
-        <JobSubmitForm />
+        <Suspense fallback={<div className="text-white/40 text-sm">Loading form...</div>}>
+          <JobSubmitForm />
+        </Suspense>
       </div>
     </div>
   );
