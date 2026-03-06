@@ -2,12 +2,41 @@
 DC1 Provider Daemon — Standalone Template
 Placeholders {{API_KEY}} and {{API_URL}} are replaced by dc1-setup-helper.ps1
 """
-import requests, time, datetime, socket, subprocess, sys, platform
+import requests, time, datetime, socket, subprocess, sys, platform, json, os
 
 API_KEY = "{{API_KEY}}"
 API_URL = "{{API_URL}}"
 INTERVAL = 30
 DAEMON_VERSION = "1.1.0"
+
+# --- Schedule-aware exit (honors run_mode=scheduled + scheduled_end from config.json) ---
+_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+_config = {}
+try:
+    with open(_CONFIG_PATH) as _f:
+        _config = json.load(_f)
+except Exception:
+    pass
+
+RUN_MODE = _config.get("run_mode", "always-on")
+SCHED_START = _config.get("scheduled_start", "23:00")
+SCHED_END   = _config.get("scheduled_end",   "07:00")
+
+def _parse_hhmm(t):
+    h, m = map(int, t.split(":"))
+    return datetime.time(h, m)
+
+def within_schedule():
+    """Return False when scheduled mode is active and current time is outside the window."""
+    if RUN_MODE != "scheduled":
+        return True
+    now   = datetime.datetime.now().time()
+    start = _parse_hhmm(SCHED_START)
+    end   = _parse_hhmm(SCHED_END)
+    if start <= end:          # same-day window  e.g. 09:00-17:00
+        return start <= now <= end
+    else:                     # overnight window e.g. 23:00-07:00
+        return now >= start or now <= end
 
 def get_gpu_info():
     info = {
@@ -63,4 +92,7 @@ if __name__ == "__main__":
     send_heartbeat()
     while True:
         time.sleep(INTERVAL)
+        if not within_schedule():
+            print(f"[{datetime.datetime.now()}] Outside scheduled window ({SCHED_START}–{SCHED_END}). Exiting.")
+            sys.exit(0)   # Task Scheduler restarts at next SCHED_START trigger
         send_heartbeat()

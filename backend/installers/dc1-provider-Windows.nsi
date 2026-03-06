@@ -233,6 +233,14 @@ Section "Install"
     Pop $0
     DetailPrint "Setup helper exit code: $0"
 
+    ; Abort installer on setup failure — prevents broken installed state
+    IntCmp $0 0 setup_ok setup_failed setup_failed
+    setup_failed:
+        MessageBox MB_OK|MB_ICONSTOP "Installation failed (exit code $0).$\n$\nCheck the log at:$\n$INSTDIR\install.log$\n$\nCommon causes: Python download failed, pip install error, or no internet connection."
+        RMDir /r "$INSTDIR"
+        Quit
+    setup_ok:
+
     ; Write uninstaller
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
