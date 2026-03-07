@@ -37,14 +37,36 @@ const COST_RATES = {
 // These auto-generate Python task_spec scripts for known job types so renters
 // can submit jobs with simple JSON params instead of writing Python code.
 
+// Sanitize a string for safe embedding in Python single-quoted strings
+function pyEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ').replace(/\r/g, '');
+}
+
+// Whitelist model IDs to prevent code injection via model param
+const ALLOWED_SD_MODELS = [
+  'stabilityai/stable-diffusion-2-1-base',
+  'stabilityai/stable-diffusion-2-1',
+  'runwayml/stable-diffusion-v1-5',
+  'CompVis/stable-diffusion-v1-4',
+  'stabilityai/stable-diffusion-xl-base-1.0',
+];
+const ALLOWED_LLM_MODELS = [
+  'microsoft/phi-2',
+  'microsoft/phi-1_5',
+  'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+  'google/gemma-2b',
+  'mistralai/Mistral-7B-Instruct-v0.2',
+];
+
 function generateImageGenScript(params) {
-  const prompt = (params.prompt || 'A beautiful sunset over Riyadh skyline').replace(/'/g, "\\'").replace(/\n/g, ' ');
-  const negPrompt = (params.negative_prompt || 'blurry, low quality, distorted').replace(/'/g, "\\'");
+  const prompt = pyEscape(params.prompt || 'A beautiful sunset over Riyadh skyline');
+  const negPrompt = pyEscape(params.negative_prompt || 'blurry, low quality, distorted');
   const steps = Math.min(Math.max(parseInt(params.steps) || 30, 5), 100);
   const width = Math.min(Math.max(parseInt(params.width) || 512, 256), 1024);
   const height = Math.min(Math.max(parseInt(params.height) || 512, 256), 1024);
   const seed = params.seed ? parseInt(params.seed) : -1;
-  const model = params.model || 'stabilityai/stable-diffusion-2-1-base';
+  const rawModel = String(params.model || 'stabilityai/stable-diffusion-2-1-base');
+  const model = ALLOWED_SD_MODELS.includes(rawModel) ? rawModel : 'stabilityai/stable-diffusion-2-1-base';
 
   return `#!/usr/bin/env python3
 """DC1 Image Generation — auto-generated task script"""
@@ -91,7 +113,7 @@ else:
     seed_used = random.randint(0, 2**32-1)
     generator = torch.Generator(device=device).manual_seed(seed_used)
 
-print(f"[dc1] Generating {width}x${height} image, ${steps} steps, seed={seed_used}...", flush=True)
+print(f"[dc1] Generating ${width}x${height} image, ${steps} steps, seed={seed_used}...", flush=True)
 t1 = time.time()
 
 with torch.no_grad():
@@ -135,9 +157,10 @@ print("DC1_RESULT_JSON:" + json.dumps(output))
 }
 
 function generateLlmInferenceScript(params) {
-  const prompt = (params.prompt || 'What is the capital of Saudi Arabia?').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+  const prompt = pyEscape(params.prompt || 'What is the capital of Saudi Arabia?');
   const maxTokens = Math.min(Math.max(parseInt(params.max_tokens) || 512, 32), 4096);
-  const model = params.model || 'microsoft/phi-2';
+  const rawModel = String(params.model || 'microsoft/phi-2');
+  const model = ALLOWED_LLM_MODELS.includes(rawModel) ? rawModel : 'microsoft/phi-2';
   const temperature = Math.min(Math.max(parseFloat(params.temperature) || 0.7, 0.1), 2.0);
 
   return `#!/usr/bin/env python3
@@ -410,7 +433,7 @@ router.post('/:job_id/result', (req, res) => {
 
     const now = new Date().toISOString();
     const actualMinutes = duration_seconds ? Math.ceil(duration_seconds / 60) : job.duration_minutes;
-    const billingRate = job.job_type === 'training' ? 25 : job.job_type === 'rendering' ? 20 : 15;
+    const billingRate = COST_RATES[job.job_type] || COST_RATES['default'];
     const actualCostHalala = billingRate * actualMinutes;
     const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
 
@@ -467,6 +490,28 @@ router.get('/active', (req, res) => {
     res.json({ jobs });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch active jobs' });
+  }
+});
+
+// GET /api/jobs/verify-hmac?job_id=X&hmac=Y
+// Daemon can verify a task_spec signature before executing
+// IMPORTANT: must be BEFORE /:job_id routes to avoid being caught by param route
+router.get('/verify-hmac', (req, res) => {
+  try {
+    const { job_id, hmac } = req.query;
+    if (!job_id || !hmac) return res.status(400).json({ error: 'job_id and hmac required' });
+
+    const job = db.get('SELECT task_spec_hmac FROM jobs WHERE id = ?', job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const valid = job.task_spec_hmac && crypto.timingSafeEqual(
+      Buffer.from(hmac, 'hex'),
+      Buffer.from(job.task_spec_hmac, 'hex')
+    );
+
+    res.json({ valid: !!valid });
+  } catch (error) {
+    res.json({ valid: false, error: 'Verification failed' });
   }
 });
 
@@ -661,27 +706,6 @@ router.get('/:job_id/output', (req, res) => {
   } catch (error) {
     console.error('Job output error:', error);
     res.status(500).json({ error: 'Failed to fetch job output' });
-  }
-});
-
-// GET /api/jobs/verify-hmac?job_id=X&hmac=Y
-// Daemon can verify a task_spec signature before executing
-router.get('/verify-hmac', (req, res) => {
-  try {
-    const { job_id, hmac } = req.query;
-    if (!job_id || !hmac) return res.status(400).json({ error: 'job_id and hmac required' });
-
-    const job = db.get('SELECT task_spec_hmac FROM jobs WHERE id = ?', job_id);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
-
-    const valid = job.task_spec_hmac && crypto.timingSafeEqual(
-      Buffer.from(hmac, 'hex'),
-      Buffer.from(job.task_spec_hmac, 'hex')
-    );
-
-    res.json({ valid: !!valid });
-  } catch (error) {
-    res.json({ valid: false, error: 'Verification failed' });
   }
 });
 

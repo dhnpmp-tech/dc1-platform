@@ -327,10 +327,10 @@ if __name__ == "__main__":
     print(f"  Interval:  {INTERVAL}s")
     print(f"  Bare metal forced: {FORCE_BARE_METAL}")
 
-    # Check Docker on startup
-    docker_info = check_docker()
-    print(f"  Docker:    {'YES' if docker_info['docker'] else 'NO'} ({docker_info.get('docker_version', 'N/A')})")
-    print(f"  NVIDIA CT: {'YES' if docker_info['nvidia_docker'] else 'NO'}")
+    # Check Docker on startup (populates cache so heartbeat doesn't re-check)
+    _docker_status = check_docker()
+    print(f"  Docker:    {'YES' if _docker_status['docker'] else 'NO'} ({_docker_status.get('docker_version', 'N/A')})")
+    print(f"  NVIDIA CT: {'YES' if _docker_status['nvidia_docker'] else 'NO'}")
 
     # Thread-safe job lock — prevents multiple jobs running simultaneously
     _job_lock = threading.Lock()
