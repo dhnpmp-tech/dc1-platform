@@ -356,12 +356,7 @@ router.post('/submit', requireRenter, (req, res) => {
       now
     );
 
-    // Auto-transition to running
-    db.run(
-      `UPDATE jobs SET status = 'running', started_at = ? WHERE id = ?`,
-      now, result.lastInsertRowid
-    );
-
+    // Job stays 'pending' until daemon picks it up and sets 'running'
     const job = db.get('SELECT * FROM jobs WHERE id = ?', result.lastInsertRowid);
 
     res.status(201).json({
@@ -400,14 +395,17 @@ router.get('/assigned', (req, res) => {
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
     const job = db.get(
-      `SELECT * FROM jobs WHERE provider_id = ? AND status = 'running' AND task_spec IS NOT NULL AND picked_up_at IS NULL ORDER BY started_at ASC LIMIT 1`,
+      `SELECT * FROM jobs WHERE provider_id = ? AND status IN ('pending', 'running') AND task_spec IS NOT NULL AND picked_up_at IS NULL ORDER BY created_at ASC LIMIT 1`,
       [provider.id]
     );
 
     if (!job) return res.json({ job: null });
 
-    // Mark as picked up so daemon doesn't re-execute
-    db.run(`UPDATE jobs SET picked_up_at = ? WHERE id = ?`, [new Date().toISOString(), job.id]);
+    // Transition to running + mark as picked up so daemon doesn't re-execute
+    const now = new Date().toISOString();
+    db.run(`UPDATE jobs SET status = 'running', started_at = COALESCE(started_at, ?), picked_up_at = ? WHERE id = ?`, [now, now, job.id]);
+    job.status = 'running';
+    job.picked_up_at = now;
 
     job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
     res.json({ job });
