@@ -1,5 +1,5 @@
 # DC1 Platform — Agent Briefing Document
-> Last updated: 2026-03-07 | Branch: `main` | Commit: 763afa4
+> Last updated: 2026-03-07 | Branch: `main` | Commit: 1b05b27
 
 ## What Is DC1
 
@@ -257,24 +257,54 @@ Full test results:
 - ✅ Admin test benchmark job — creates pending job for daemon pickup
 - ✅ CORS blocking — unauthorized origins rejected, Vercel domains allowed
 
+## What Was Just Built (commit 1b05b27 — Gate 1 Billing)
+
+### 17. Pre-Pay Billing (`jobs.js`)
+- Balance check on job submit: rejects with 402 if `balance_halala < cost_halala`
+- Upfront deduction: estimated cost deducted from renter balance at submit time
+- Settlement on job completion (`providers.js` job-result handler):
+  - Refunds difference if actual cost < estimated
+  - Charges extra if actual > estimated
+  - Updates renter `total_spent_halala` and `total_jobs`
+
+### 18. Renter Top-Up & Balance (`renters.js`)
+- `POST /api/renters/topup` — accepts `amount_sar` or `amount_halala`, max 1000 SAR per tx
+- `GET /api/renters/balance` — returns balance, held amount (running jobs), available, total spent
+- In production: will connect to Stripe/Tap payment gateway
+
+### 19. Provider Earnings & Withdrawal (`providers.js`)
+- `GET /api/providers/earnings` — shows total earned, pending withdrawals, withdrawn, available SAR
+- `POST /api/providers/withdraw` — creates withdrawal request (min 10 SAR, bank_transfer default)
+- New `withdrawals` table: withdrawal_id, provider_id, amount_sar, payout_method, status, timestamps
+
+### 20. Heartbeat Rate Limiting (`server.js`)
+- 4 requests per minute per IP (daemon sends every 30s = 2/min normally)
+- Prevents heartbeat flooding from misconfigured or malicious daemons
+
+### 21. E2E Billing Verified
+- ✅ Renter top-up (50 SAR → 5000 halala balance)
+- ✅ Job submit deducts estimated cost (750 halala for 30min training)
+- ✅ Balance shows correct deduction (5000 → 4250)
+- ✅ Insufficient balance rejected with 402 + shortfall details
+- ✅ Provider earnings shows 0.22 SAR earned
+- ✅ Withdrawal below minimum (10 SAR) correctly rejected
+
 ## What Still Needs Building
 
-### High Priority (Gate 1 prep)
+### High Priority (Gate 1 remaining)
 1. **Docker isolation** — container-based job execution with GPU passthrough (`--gpus device=0`)
-2. **Renter balance/billing** — pre-pay model, deduct on job completion, reject if insufficient
-3. **Provider earnings withdrawal** — SAR payout mechanism
-4. **Rate limiting on daemon heartbeat** — prevent heartbeat flooding
+2. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
 
 ### Medium Priority
-5. **Admin token rotation** — expiring admin tokens instead of static
-6. **Job queue** — multiple pending jobs per provider, FIFO execution
-7. **WebSocket live updates** — replace polling with real-time job status
-8. **Installer auto-update** — daemon self-update mechanism
+3. **Admin token rotation** — expiring admin tokens instead of static
+4. **Job queue** — multiple pending jobs per provider, FIFO execution
+5. **WebSocket live updates** — replace polling with real-time job status
+6. **Installer auto-update** — daemon self-update mechanism
 
 ### Lower Priority
-9. **Provider reputation system** — reliability scoring based on uptime + job completion
-10. **Renter API key rotation** — allow renters to regenerate keys
-11. **Multi-GPU provider support** — parallel job execution on multi-GPU rigs
+7. **Provider reputation system** — reliability scoring based on uptime + job completion
+8. **Renter API key rotation** — allow renters to regenerate keys
+9. **Multi-GPU provider support** — parallel job execution on multi-GPU rigs
 
 ## Environment Variables
 
@@ -304,6 +334,8 @@ Full test results:
 | POST | `/api/providers/job-result` | api_key in body | Daemon submits job result |
 | GET | `/api/providers/download/daemon` | key query param | Serve dc1-daemon.py with injected key |
 | GET | `/api/providers/download/setup` | key+os query params | OS-specific setup script |
+| GET | `/api/providers/earnings` | x-provider-key header | Check earnings balance |
+| POST | `/api/providers/withdraw` | api_key in body | Request earnings withdrawal |
 
 ### Job Endpoints
 | Method | Path | Auth | Purpose |
@@ -318,12 +350,14 @@ Full test results:
 | GET | `/api/jobs/active` | None | List active jobs |
 | GET | `/api/jobs/verify-hmac` | None | Verify task_spec HMAC |
 
-### Renter Endpoints (NEW)
+### Renter Endpoints
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | POST | `/api/renters/register` | None | Register new renter |
 | GET | `/api/renters/me?key=` | Renter API key | Renter profile + jobs |
 | GET | `/api/renters/available-providers` | None | List online GPUs |
+| POST | `/api/renters/topup` | x-renter-key header | Add balance (amount_sar or amount_halala) |
+| GET | `/api/renters/balance` | x-renter-key header | Check balance, held, available |
 
 ### Admin Endpoints
 | Method | Path | Auth | Purpose |
@@ -349,6 +383,7 @@ The daemon (`dc1-daemon.py`) is a single Python file that runs as a background s
 
 | Commit | Description |
 |--------|-------------|
+| `1b05b27` | Gate 1: billing, withdrawal, heartbeat rate limit |
 | `763afa4` | CORS lockdown + task_spec serialization fix |
 | `eb15dd9` | Gate 0 daemon system: readiness, job execution, installer scripts |
 | `ae8c5ee` | Renter registration page + job submit auth |
