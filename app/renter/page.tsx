@@ -433,7 +433,7 @@ export default function RenterDashboard() {
                       <div className="text-right">
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           rental.status === 'completed' ? 'bg-green-900/30 text-green-400' :
-                          rental.status === 'active' ? 'bg-blue-900/30 text-blue-400' :
+                          rental.status === 'running' ? 'bg-blue-900/30 text-blue-400' :
                           rental.status === 'cancelled' ? 'bg-red-900/30 text-red-400' :
                           'bg-yellow-900/30 text-yellow-400'
                         }`}>

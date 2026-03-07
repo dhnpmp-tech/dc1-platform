@@ -115,7 +115,7 @@ async function syncProvider(provider) {
 
 function mapRentalStatus(jobStatus) {
   const statusMap = {
-    'pending': 'pending', 'running': 'active', 'completed': 'completed',
+    'pending': 'pending', 'running': 'running', 'completed': 'completed',
     'failed': 'cancelled', 'cancelled': 'cancelled', 'timed_out': 'cancelled'
   };
   return statusMap[jobStatus] || 'pending';
