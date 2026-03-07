@@ -39,9 +39,8 @@ VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey "LegalCopyright" "© 2026 DC1. All rights reserved."
 
 ; --------------- Brand ---------------
-; TODO: Replace with custom DC1 icon when available
-!define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
-!define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+!define MUI_ICON "dc1-icon.ico"
+!define MUI_UNICON "dc1-icon.ico"
 !define MUI_ABORTWARNING
 
 ; --------------- Variables ---------------
