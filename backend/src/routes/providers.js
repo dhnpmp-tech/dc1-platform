@@ -7,6 +7,9 @@ const router = express.Router();
 // Database (use existing connection)
 const db = require('../db');
 
+// Import shared billing rates from jobs module
+const { COST_RATES } = require('./jobs');
+
 // ============================================================================
 // POST /api/providers/register - Register new provider
 // ============================================================================
@@ -563,9 +566,8 @@ router.post('/job-result', (req, res) => {
         const startedAt = job.started_at || job.submitted_at;
         const actualMinutes = startedAt ? Math.ceil((Date.now() - new Date(startedAt).getTime()) / 60000) : job.duration_minutes || 0;
 
-        // Billing rates (halala/minute)
-        const rates = { 'llm-inference': 15, 'training': 25, 'rendering': 20 };
-        const ratePerMin = rates[job.job_type] || 10;
+        // Billing rates (halala/minute) — use shared COST_RATES from jobs module
+        const ratePerMin = COST_RATES[job.job_type] || COST_RATES['default'];
         const actualCostHalala = actualMinutes * ratePerMin;
         const providerEarned = Math.floor(actualCostHalala * 0.75);
         const dc1Fee = actualCostHalala - providerEarned;
