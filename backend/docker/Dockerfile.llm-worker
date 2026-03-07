@@ -1,6 +1,7 @@
 # DC1 LLM Inference Worker — Text Generation
 # Pre-installs transformers + bitsandbytes for quantized inference
-FROM dc1/base-worker:latest
+ARG BASE_IMAGE=dc1/base-worker:latest
+FROM ${BASE_IMAGE}
 
 # LLM inference dependencies
 RUN pip3 install --no-cache-dir \

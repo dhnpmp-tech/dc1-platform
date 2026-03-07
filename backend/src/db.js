@@ -180,6 +180,12 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN readiness_details TEXT',
   'ALTER TABLE providers ADD COLUMN daemon_version TEXT',
   'ALTER TABLE providers ADD COLUMN current_job_id TEXT',
+  // machine verification columns
+  'ALTER TABLE providers ADD COLUMN verification_status TEXT DEFAULT \'unverified\'',
+  'ALTER TABLE providers ADD COLUMN verification_score INTEGER',
+  'ALTER TABLE providers ADD COLUMN verification_last_at TEXT',
+  'ALTER TABLE providers ADD COLUMN verification_challenge TEXT',
+  'ALTER TABLE providers ADD COLUMN verified_gpu TEXT',
   // recovery_events columns (for existing DBs that had the old narrow schema)
   'ALTER TABLE recovery_events ADD COLUMN job_id TEXT',
   'ALTER TABLE recovery_events ADD COLUMN provider_id INTEGER',
@@ -234,6 +240,24 @@ db.exec(`
     requested_at TEXT NOT NULL,
     processed_at TEXT,
     notes TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+
+// ─── VERIFICATION RUNS TABLE ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS verification_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    challenge_id TEXT NOT NULL UNIQUE,
+    challenge_params TEXT NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
+    requested_at TEXT,
+    completed_at TEXT,
+    result_data TEXT,
+    verdict TEXT CHECK(verdict IN ('verified','suspect','failed')),
+    score INTEGER,
+    flags TEXT,
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);

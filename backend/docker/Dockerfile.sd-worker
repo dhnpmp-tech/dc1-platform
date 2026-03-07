@@ -1,6 +1,7 @@
 # DC1 Stable Diffusion Worker — Image Generation
 # Pre-installs diffusers + accelerate so jobs start fast
-FROM dc1/base-worker:latest
+ARG BASE_IMAGE=dc1/base-worker:latest
+FROM ${BASE_IMAGE}
 
 # Stable Diffusion dependencies
 RUN pip3 install --no-cache-dir \

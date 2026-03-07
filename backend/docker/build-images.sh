@@ -2,11 +2,15 @@
 # DC1 Docker Worker Image Builder
 # Run this on a machine with Docker to build all worker images.
 # These images are then pulled by provider daemons.
+#
+# Usage:
+#   ./build-images.sh                                    # Local build only
+#   DC1_REGISTRY=ghcr.io/dhnpmp-tech ./build-images.sh   # Build + push to GHCR
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REGISTRY="${DC1_REGISTRY:-}"  # Optional: set to push to a registry (e.g., ghcr.io/dhnpmp-tech)
+REGISTRY="${DC1_REGISTRY:-}"  # Optional: set to push to a registry
 
 echo "=== DC1 Worker Image Builder ==="
 echo ""
@@ -18,12 +22,16 @@ echo "  ✓ dc1/base-worker:latest"
 
 # 2. Stable Diffusion worker
 echo "[2/3] Building dc1/sd-worker..."
-docker build -t dc1/sd-worker:latest -f "$SCRIPT_DIR/Dockerfile.sd-worker" "$SCRIPT_DIR"
+docker build -t dc1/sd-worker:latest \
+  --build-arg BASE_IMAGE=dc1/base-worker:latest \
+  -f "$SCRIPT_DIR/Dockerfile.sd-worker" "$SCRIPT_DIR"
 echo "  ✓ dc1/sd-worker:latest"
 
 # 3. LLM inference worker
 echo "[3/3] Building dc1/llm-worker..."
-docker build -t dc1/llm-worker:latest -f "$SCRIPT_DIR/Dockerfile.llm-worker" "$SCRIPT_DIR"
+docker build -t dc1/llm-worker:latest \
+  --build-arg BASE_IMAGE=dc1/base-worker:latest \
+  -f "$SCRIPT_DIR/Dockerfile.llm-worker" "$SCRIPT_DIR"
 echo "  ✓ dc1/llm-worker:latest"
 
 echo ""
@@ -39,4 +47,9 @@ if [ -n "$REGISTRY" ]; then
         docker push $REGISTRY/dc1-$img:latest
         echo "  ✓ $REGISTRY/dc1-$img:latest"
     done
+    echo ""
+    echo "Images available at:"
+    echo "  $REGISTRY/dc1-base-worker:latest"
+    echo "  $REGISTRY/dc1-sd-worker:latest"
+    echo "  $REGISTRY/dc1-llm-worker:latest"
 fi

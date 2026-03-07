@@ -126,6 +126,9 @@ app.use('/api/sync', syncRouter);
 const rentersRouter = require('./routes/renters');
 app.use('/api/renters', rentersRouter);
 
+const verificationRouter = require('./routes/verification');
+app.use('/api/verification', verificationRouter);
+
 // Initialize Supabase sync bridge
 const supabaseSync = require('./services/supabase-sync');
 if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
