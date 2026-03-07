@@ -29,7 +29,184 @@ const COST_RATES = {
   'llm-inference': 15,    // 15 halala/min
   'training': 25,         // 25 halala/min
   'rendering': 20,        // 20 halala/min
+  'image_generation': 20, // 20 halala/min
   'default': 10           // 10 halala/min
+};
+
+// ── Job template scripts ────────────────────────────────────────────────────
+// These auto-generate Python task_spec scripts for known job types so renters
+// can submit jobs with simple JSON params instead of writing Python code.
+
+function generateImageGenScript(params) {
+  const prompt = (params.prompt || 'A beautiful sunset over Riyadh skyline').replace(/'/g, "\\'").replace(/\n/g, ' ');
+  const negPrompt = (params.negative_prompt || 'blurry, low quality, distorted').replace(/'/g, "\\'");
+  const steps = Math.min(Math.max(parseInt(params.steps) || 30, 5), 100);
+  const width = Math.min(Math.max(parseInt(params.width) || 512, 256), 1024);
+  const height = Math.min(Math.max(parseInt(params.height) || 512, 256), 1024);
+  const seed = params.seed ? parseInt(params.seed) : -1;
+  const model = params.model || 'stabilityai/stable-diffusion-2-1-base';
+
+  return `#!/usr/bin/env python3
+"""DC1 Image Generation — auto-generated task script"""
+import torch, base64, io, json, sys, time
+
+t0 = time.time()
+print("[dc1] Loading model: ${model}", flush=True)
+
+try:
+    from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+except ImportError:
+    print("[dc1] Installing diffusers...", flush=True)
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "diffusers", "transformers", "accelerate", "safetensors", "-q"])
+    from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+dtype = torch.float16 if device == "cuda" else torch.float32
+
+pipe = StableDiffusionPipeline.from_pretrained(
+    '${model}',
+    torch_dtype=dtype,
+    safety_checker=None,
+    requires_safety_checker=False
+)
+pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+pipe = pipe.to(device)
+
+# Memory optimization for <=8GB GPUs
+if device == "cuda":
+    try:
+        pipe.enable_attention_slicing()
+    except:
+        pass
+
+print(f"[dc1] Model loaded in {time.time()-t0:.1f}s on {device}", flush=True)
+
+generator = None
+seed_used = ${seed}
+if seed_used >= 0:
+    generator = torch.Generator(device=device).manual_seed(seed_used)
+else:
+    import random
+    seed_used = random.randint(0, 2**32-1)
+    generator = torch.Generator(device=device).manual_seed(seed_used)
+
+print(f"[dc1] Generating {width}x${height} image, ${steps} steps, seed={seed_used}...", flush=True)
+t1 = time.time()
+
+with torch.no_grad():
+    result = pipe(
+        prompt='${prompt}',
+        negative_prompt='${negPrompt}',
+        num_inference_steps=${steps},
+        width=${width},
+        height=${height},
+        generator=generator,
+        guidance_scale=7.5
+    )
+
+image = result.images[0]
+gen_time = time.time() - t1
+print(f"[dc1] Generated in {gen_time:.1f}s", flush=True)
+
+# Encode as base64 PNG
+buf = io.BytesIO()
+image.save(buf, format="PNG", optimize=True)
+b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+# Output structured result — daemon captures this
+output = {
+    "type": "image",
+    "format": "png",
+    "encoding": "base64",
+    "width": ${width},
+    "height": ${height},
+    "steps": ${steps},
+    "seed": seed_used,
+    "prompt": '${prompt}',
+    "model": '${model}',
+    "device": device,
+    "gen_time_s": round(gen_time, 1),
+    "total_time_s": round(time.time()-t0, 1),
+    "data": b64
+}
+print("DC1_RESULT_JSON:" + json.dumps(output))
+`;
+}
+
+function generateLlmInferenceScript(params) {
+  const prompt = (params.prompt || 'What is the capital of Saudi Arabia?').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+  const maxTokens = Math.min(Math.max(parseInt(params.max_tokens) || 512, 32), 4096);
+  const model = params.model || 'microsoft/phi-2';
+  const temperature = Math.min(Math.max(parseFloat(params.temperature) || 0.7, 0.1), 2.0);
+
+  return `#!/usr/bin/env python3
+"""DC1 LLM Inference — auto-generated task script"""
+import torch, json, sys, time
+
+t0 = time.time()
+print("[dc1] Loading model: ${model}", flush=True)
+
+try:
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+except ImportError:
+    print("[dc1] Installing transformers...", flush=True)
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers", "accelerate", "bitsandbytes", "-q"])
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+dtype = torch.float16 if device == "cuda" else torch.float32
+
+tokenizer = AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained(
+    '${model}',
+    torch_dtype=dtype,
+    device_map="auto" if device == "cuda" else None,
+    trust_remote_code=True
+)
+
+print(f"[dc1] Model loaded in {time.time()-t0:.1f}s on {device}", flush=True)
+
+prompt = '${prompt}'
+inputs = tokenizer(prompt, return_tensors="pt").to(device)
+
+print(f"[dc1] Generating up to ${maxTokens} tokens...", flush=True)
+t1 = time.time()
+
+with torch.no_grad():
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=${maxTokens},
+        temperature=${temperature},
+        do_sample=True,
+        top_p=0.9,
+        pad_token_id=tokenizer.eos_token_id
+    )
+
+text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+gen_time = time.time() - t1
+tokens_generated = outputs.shape[1] - inputs["input_ids"].shape[1]
+
+output = {
+    "type": "text",
+    "prompt": prompt,
+    "response": text,
+    "model": '${model}',
+    "tokens_generated": tokens_generated,
+    "tokens_per_second": round(tokens_generated / gen_time, 1) if gen_time > 0 else 0,
+    "gen_time_s": round(gen_time, 1),
+    "total_time_s": round(time.time()-t0, 1),
+    "device": device
+}
+print("DC1_RESULT_JSON:" + json.dumps(output))
+`;
+}
+
+// Map job types to their template generators
+const JOB_TEMPLATES = {
+  'image_generation': generateImageGenScript,
+  'llm-inference': generateLlmInferenceScript,
 };
 
 function calculateCostHalala(jobType, durationMinutes) {
@@ -115,8 +292,27 @@ router.post('/submit', requireRenter, (req, res) => {
     const timeout = Math.min(max_duration_seconds || 600, 3600);
     const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString();
 
+    // ── Auto-generate task script from template if job_type has one ─────
+    let finalTaskSpec = task_spec;
+    let result_type = 'text'; // default result type
+
+    if (JOB_TEMPLATES[job_type]) {
+      // Parse params from task_spec (could be JSON string or object)
+      let params = {};
+      if (task_spec) {
+        params = typeof task_spec === 'string' ? (() => { try { return JSON.parse(task_spec); } catch { return { prompt: task_spec }; } })() : task_spec;
+      }
+      // If params look like raw Python code (not JSON), use as-is
+      if (typeof params === 'string' || (params.prompt === undefined && typeof task_spec === 'string' && task_spec.includes('import '))) {
+        finalTaskSpec = task_spec;
+      } else {
+        finalTaskSpec = JOB_TEMPLATES[job_type](params);
+        result_type = job_type === 'image_generation' ? 'image' : 'text';
+      }
+    }
+
     // Stringify task_spec if it's an object, then HMAC-sign
-    const taskSpecStr = task_spec ? (typeof task_spec === 'string' ? task_spec : JSON.stringify(task_spec)) : null;
+    const taskSpecStr = finalTaskSpec ? (typeof finalTaskSpec === 'string' ? finalTaskSpec : JSON.stringify(finalTaskSpec)) : null;
     const taskSpecHmac = taskSpecStr ? signTaskSpec(taskSpecStr) : null;
 
     const result = db.run(
@@ -371,6 +567,100 @@ router.post('/:job_id/cancel', (req, res) => {
     res.json({ success: true, job: updated });
   } catch (error) {
     res.status(500).json({ error: 'Failed to cancel job' });
+  }
+});
+
+// GET /api/jobs/:job_id/output — serve job result (image, text, etc.)
+// Renter or anyone with the job_id can fetch the output
+router.get('/:job_id/output', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (job.status !== 'completed') {
+      return res.status(202).json({
+        status: job.status,
+        message: job.status === 'running' ? 'Job still running...' : `Job status: ${job.status}`,
+        job_id: job.job_id,
+        submitted_at: job.submitted_at,
+        started_at: job.started_at
+      });
+    }
+
+    if (!job.result) {
+      return res.status(204).json({ error: 'Job completed but no output data' });
+    }
+
+    // Try to parse structured DC1_RESULT_JSON from the result
+    let structured = null;
+    const jsonMatch = job.result.match(/DC1_RESULT_JSON:(.+)$/m);
+    if (jsonMatch) {
+      try { structured = JSON.parse(jsonMatch[1]); } catch {}
+    }
+
+    // If structured image result, serve as image or JSON based on Accept header
+    if (structured && structured.type === 'image' && structured.data) {
+      const wantsJson = (req.headers.accept || '').includes('application/json');
+      if (wantsJson) {
+        return res.json({
+          type: 'image',
+          format: structured.format || 'png',
+          width: structured.width,
+          height: structured.height,
+          prompt: structured.prompt,
+          model: structured.model,
+          seed: structured.seed,
+          gen_time_s: structured.gen_time_s,
+          total_time_s: structured.total_time_s,
+          device: structured.device,
+          image_base64: structured.data,
+          billing: {
+            actual_cost_halala: job.actual_cost_halala,
+            actual_cost_sar: job.actual_cost_halala ? (job.actual_cost_halala / 100).toFixed(2) : null
+          }
+        });
+      }
+      // Serve raw image
+      const imgBuf = Buffer.from(structured.data, 'base64');
+      res.set('Content-Type', `image/${structured.format || 'png'}`);
+      res.set('Content-Length', imgBuf.length);
+      res.set('X-DC1-Prompt', structured.prompt?.substring(0, 200));
+      res.set('X-DC1-Seed', String(structured.seed || ''));
+      res.set('X-DC1-GenTime', String(structured.gen_time_s || ''));
+      return res.send(imgBuf);
+    }
+
+    // If structured text result
+    if (structured && structured.type === 'text') {
+      return res.json({
+        type: 'text',
+        prompt: structured.prompt,
+        response: structured.response,
+        model: structured.model,
+        tokens_generated: structured.tokens_generated,
+        tokens_per_second: structured.tokens_per_second,
+        gen_time_s: structured.gen_time_s,
+        total_time_s: structured.total_time_s,
+        device: structured.device,
+        billing: {
+          actual_cost_halala: job.actual_cost_halala,
+          actual_cost_sar: job.actual_cost_halala ? (job.actual_cost_halala / 100).toFixed(2) : null
+        }
+      });
+    }
+
+    // Fallback: raw text result
+    res.json({
+      type: 'text',
+      result: job.result,
+      billing: {
+        actual_cost_halala: job.actual_cost_halala,
+        actual_cost_sar: job.actual_cost_halala ? (job.actual_cost_halala / 100).toFixed(2) : null
+      }
+    });
+  } catch (error) {
+    console.error('Job output error:', error);
+    res.status(500).json({ error: 'Failed to fetch job output' });
   }
 });
 

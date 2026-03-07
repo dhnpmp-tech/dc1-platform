@@ -30,8 +30,8 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));  // Increased for base64 image results
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ── Rate Limiting ───────────────────────────────────────────────────────
 // Registration: 5 attempts per IP per hour (prevents spam)
