@@ -44,10 +44,11 @@ function pyEscape(s) {
 
 // Whitelist model IDs to prevent code injection via model param
 const ALLOWED_SD_MODELS = [
-  'stabilityai/stable-diffusion-2-1-base',
+  'CompVis/stable-diffusion-v1-4',
+  'stable-diffusion-v1-5/stable-diffusion-v1-5',
+  'CompVis/stable-diffusion-v1-4',
   'stabilityai/stable-diffusion-2-1',
   'runwayml/stable-diffusion-v1-5',
-  'CompVis/stable-diffusion-v1-4',
   'stabilityai/stable-diffusion-xl-base-1.0',
 ];
 const ALLOWED_LLM_MODELS = [
@@ -65,8 +66,8 @@ function generateImageGenScript(params) {
   const width = Math.min(Math.max(parseInt(params.width) || 512, 256), 1024);
   const height = Math.min(Math.max(parseInt(params.height) || 512, 256), 1024);
   const seed = params.seed ? parseInt(params.seed) : -1;
-  const rawModel = String(params.model || 'stabilityai/stable-diffusion-2-1-base');
-  const model = ALLOWED_SD_MODELS.includes(rawModel) ? rawModel : 'stabilityai/stable-diffusion-2-1-base';
+  const rawModel = String(params.model || 'CompVis/stable-diffusion-v1-4');
+  const model = ALLOWED_SD_MODELS.includes(rawModel) ? rawModel : 'CompVis/stable-diffusion-v1-4';
 
   return `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
