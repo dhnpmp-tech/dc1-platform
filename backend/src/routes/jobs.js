@@ -399,6 +399,50 @@ function enforceJobTimeouts() {
   }
 }
 
+// ============================================================================
+// POST /api/jobs/test - Admin creates test benchmark job for a provider
+// ============================================================================
+router.post('/test', (req, res) => {
+  try {
+    const adminToken = req.headers['x-admin-token'];
+    const expectedToken = process.env.DC1_ADMIN_TOKEN;
+    if (expectedToken && adminToken !== expectedToken) {
+      return res.status(403).json({ error: 'Admin token required' });
+    }
+
+    const { provider_id, matrix_size, iterations } = req.body;
+    if (!provider_id) return res.status(400).json({ error: 'provider_id required' });
+
+    // Verify provider exists and is online
+    const provider = db.get('SELECT id, status, readiness_status FROM providers WHERE id = ?', provider_id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const job_id = 'test-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+    const taskSpec = JSON.stringify({
+      benchmark: 'matmul',
+      matrix_size: matrix_size || 4096,
+      iterations: iterations || 5
+    });
+    const taskSpecHmac = signTaskSpec(taskSpec);
+    const now = new Date().toISOString();
+
+    db.run(
+      `INSERT INTO jobs (job_id, provider_id, job_type, status, task_spec, task_spec_hmac, gpu_requirements, duration_minutes, max_duration_seconds, submitted_at, created_at)
+       VALUES (?, ?, 'benchmark', 'pending', ?, ?, '{}', 5, 300, ?, ?)`,
+      job_id, provider_id, taskSpec, taskSpecHmac, now, now
+    );
+
+    res.json({
+      success: true,
+      job: { job_id, provider_id, status: 'pending', task_spec: JSON.parse(taskSpec) },
+      message: `Test job created. Daemon will pick it up on next poll.`
+    });
+  } catch (error) {
+    console.error('Test job creation error:', error);
+    res.status(500).json({ error: 'Test job creation failed' });
+  }
+});
+
 module.exports = router;
 module.exports.calculateCostHalala = calculateCostHalala;
 module.exports.COST_RATES = COST_RATES;

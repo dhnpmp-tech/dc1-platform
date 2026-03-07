@@ -461,5 +461,214 @@ router.get('/download-windows-exe', (req, res) => {
     });
 });
 
+// ============================================================================
+// POST /api/providers/readiness - Daemon reports system check results
+// ============================================================================
+router.post('/readiness', (req, res) => {
+    try {
+        const { api_key, checks, daemon_version } = req.body;
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        // checks = { cuda: bool, pytorch: bool, vram_gb: number, driver: string, ... }
+        const allPassed = checks && checks.cuda && checks.pytorch && (checks.vram_gb >= 4);
+        const status = allPassed ? 'ready' : 'failed';
+
+        db.run(
+            `UPDATE providers SET readiness_status = ?, readiness_details = ?, daemon_version = ?, updated_at = ? WHERE id = ?`,
+            status, JSON.stringify(checks || {}), daemon_version || null, new Date().toISOString(), provider.id
+        );
+
+        res.json({ success: true, readiness_status: status, checks });
+    } catch (error) {
+        console.error('Readiness check error:', error);
+        res.status(500).json({ error: 'Readiness check failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/:api_key/jobs - Daemon polls for assigned pending jobs
+// ============================================================================
+router.get('/:api_key/jobs', (req, res) => {
+    try {
+        const { api_key } = req.params;
+        const provider = db.get('SELECT id, readiness_status FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        // Find oldest pending job assigned to this provider
+        const job = db.get(
+            `SELECT id, job_id, job_type, task_spec, task_spec_hmac, gpu_requirements, duration_minutes, max_duration_seconds
+             FROM jobs WHERE provider_id = ? AND status = 'pending'
+             ORDER BY submitted_at ASC LIMIT 1`,
+            provider.id
+        );
+
+        if (!job) {
+            return res.json({ job: null });
+        }
+
+        // Mark as picked up
+        const now = new Date().toISOString();
+        db.run(
+            `UPDATE jobs SET picked_up_at = ?, status = 'running', started_at = COALESCE(started_at, ?),
+             timeout_at = datetime(?, '+' || COALESCE(max_duration_seconds, 600) || ' seconds')
+             WHERE id = ?`,
+            now, now, now, job.id
+        );
+        db.run(`UPDATE providers SET current_job_id = ? WHERE id = ?`, job.job_id, provider.id);
+
+        // Parse task_spec if it's a string
+        let taskSpec = job.task_spec;
+        try { taskSpec = JSON.parse(taskSpec); } catch {}
+
+        res.json({
+            job: {
+                id: job.id,
+                job_id: job.job_id,
+                job_type: job.job_type,
+                task_spec: taskSpec,
+                task_spec_hmac: job.task_spec_hmac,
+                gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
+                duration_minutes: job.duration_minutes,
+                max_duration_seconds: job.max_duration_seconds || 600
+            }
+        });
+    } catch (error) {
+        console.error('Job poll error:', error);
+        res.status(500).json({ error: 'Job poll failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/job-result - Daemon submits completed job result
+// ============================================================================
+router.post('/job-result', (req, res) => {
+    try {
+        const { api_key, job_id, result, success, error: jobError, metrics } = req.body;
+        if (!api_key || !job_id) return res.status(400).json({ error: 'api_key and job_id required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const job = db.get('SELECT * FROM jobs WHERE job_id = ? AND provider_id = ?', job_id, provider.id);
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+        if (job.status === 'completed') return res.json({ success: true, message: 'Already completed' });
+
+        const now = new Date().toISOString();
+        const newStatus = success ? 'completed' : 'failed';
+
+        // Calculate actual duration and billing
+        const startedAt = job.started_at || job.submitted_at;
+        const actualMinutes = startedAt ? Math.ceil((Date.now() - new Date(startedAt).getTime()) / 60000) : job.duration_minutes || 0;
+
+        // Billing rates (halala/minute)
+        const rates = { 'llm-inference': 15, 'training': 25, 'rendering': 20 };
+        const ratePerMin = rates[job.job_type] || 10;
+        const actualCostHalala = actualMinutes * ratePerMin;
+        const providerEarned = Math.floor(actualCostHalala * 0.75);
+        const dc1Fee = actualCostHalala - providerEarned;
+
+        db.run(
+            `UPDATE jobs SET status = ?, result = ?, error = ?, completed_at = ?,
+             actual_duration_minutes = ?, actual_cost_halala = ?,
+             provider_earned_halala = ?, dc1_fee_halala = ?
+             WHERE id = ?`,
+            newStatus, JSON.stringify(result || {}), jobError || null, now,
+            actualMinutes, actualCostHalala, providerEarned, dc1Fee, job.id
+        );
+
+        // Update provider stats
+        if (success) {
+            db.run(
+                `UPDATE providers SET total_earnings = total_earnings + ?, total_jobs = total_jobs + 1, current_job_id = NULL WHERE id = ?`,
+                providerEarned / 100, provider.id  // total_earnings is in SAR
+            );
+        } else {
+            db.run(`UPDATE providers SET current_job_id = NULL WHERE id = ?`, provider.id);
+        }
+
+        res.json({
+            success: true,
+            job_id,
+            status: newStatus,
+            actual_minutes: actualMinutes,
+            cost_halala: actualCostHalala,
+            provider_earned_halala: providerEarned,
+            dc1_fee_halala: dc1Fee
+        });
+    } catch (error) {
+        console.error('Job result error:', error);
+        res.status(500).json({ error: 'Job result submission failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/download/daemon - Serve dc1-daemon.py with injected key
+// ============================================================================
+router.get('/download/daemon', (req, res) => {
+    try {
+        const { key } = req.query;
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const daemonPath = path.join(__dirname, '../../installers/dc1-daemon.py');
+        if (!fs.existsSync(daemonPath)) {
+            return res.status(404).json({ error: 'Daemon file not found' });
+        }
+
+        let script = fs.readFileSync(daemonPath, 'utf-8');
+        const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
+        script = script.replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`);
+        script = script.replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
+
+        res.setHeader('Content-Type', 'text/x-python');
+        res.setHeader('Content-Disposition', 'attachment; filename="dc1-daemon.py"');
+        res.send(script);
+    } catch (error) {
+        console.error('Daemon download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/download/setup - OS-specific setup script with injected key
+// ============================================================================
+router.get('/download/setup', (req, res) => {
+    try {
+        const { key, os: osType } = req.query;
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const isWindows = (osType || '').toLowerCase() === 'windows';
+        const templateFile = isWindows ? 'dc1-setup-windows.ps1' : 'dc1-setup-unix.sh';
+        const templatePath = path.join(__dirname, '../../installers', templateFile);
+
+        if (!fs.existsSync(templatePath)) {
+            return res.status(404).json({ error: `Setup script ${templateFile} not found` });
+        }
+
+        const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
+        let script = fs.readFileSync(templatePath, 'utf-8');
+        script = script.replace(/INJECT_KEY_HERE/g, key);
+        script = script.replace(/INJECT_URL_HERE/g, apiUrl);
+
+        const contentType = isWindows ? 'text/plain' : 'text/x-shellscript';
+        const filename = isWindows ? 'dc1-setup.ps1' : 'dc1-setup.sh';
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(script);
+    } catch (error) {
+        console.error('Setup download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
 module.exports = router;
 

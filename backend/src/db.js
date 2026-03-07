@@ -175,6 +175,11 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN vram_reserve_gb INTEGER DEFAULT 1',
   'ALTER TABLE providers ADD COLUMN temp_limit_c INTEGER DEFAULT 85',
   'ALTER TABLE providers ADD COLUMN is_paused INTEGER DEFAULT 0',
+  // provider readiness + daemon tracking
+  'ALTER TABLE providers ADD COLUMN readiness_status TEXT DEFAULT \'pending\'',
+  'ALTER TABLE providers ADD COLUMN readiness_details TEXT',
+  'ALTER TABLE providers ADD COLUMN daemon_version TEXT',
+  'ALTER TABLE providers ADD COLUMN current_job_id TEXT',
   // recovery_events columns (for existing DBs that had the old narrow schema)
   'ALTER TABLE recovery_events ADD COLUMN job_id TEXT',
   'ALTER TABLE recovery_events ADD COLUMN provider_id INTEGER',
