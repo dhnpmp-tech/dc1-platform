@@ -1,5 +1,5 @@
 # DC1 Platform — Agent Briefing Document
-> Last updated: 2026-03-07 | Branch: `main` | Commit: 1c90368
+> Last updated: 2026-03-07 21:30 UTC | Branch: `main` | Commits: `b445097` (latest) ← `a860898` ← `92ec40a`
 
 ## What Is DC1
 
@@ -39,6 +39,7 @@ Currency: SAR (Saudi Riyal). Internal billing in **halala** (1 SAR = 100 halala)
 | `routes/providers.js` | Provider register, heartbeat, readiness, self-service (pause/resume/preferences) |
 | `routes/jobs.js` | Job submit (renter auth), complete, cancel, assigned (daemon poll), HMAC verify, timeout enforcement, **image gen templates**, **job output endpoint** |
 | `routes/renters.js` | **NEW** — Renter register, profile (/me), available-providers listing |
+| `routes/verification.js` | **NEW** — Machine verification: GPU fraud detection, benchmark challenges, 38-GPU database, leaderboard |
 | `routes/admin.js` | Admin dashboard, provider management, job management |
 | `services/supabase-sync.js` | SQLite → Supabase periodic sync |
 | `services/recovery-engine.js` | Stale heartbeat detection, provider disconnect recovery |
@@ -57,9 +58,11 @@ Currency: SAR (Saudi Riyal). Internal billing in **halala** (1 SAR = 100 halala)
 ### Daemon & Installers (`/backend/installers/`)
 | File | Purpose |
 |------|---------|
-| `dc1_daemon.py` | Python daemon template — heartbeats, GPU detection, job polling, task execution |
+| `dc1_daemon.py` | **v3.0 unified** — heartbeats, GPU detection, job polling, Docker/bare-metal execution, dual endpoint support, 10KB stdout, auto-verification |
+| `dc1-daemon.py` | **v3.0 alternate** — same as dc1_daemon.py, GHCR image support, verification challenge handler |
+| `dc1-icon.ico` | Custom branded icon for Windows .exe installer (multi-resolution) |
 | `dc1-setup-helper.ps1` | Windows setup: Python install, pip, scheduled task, dashboard shortcut |
-| `dc1-provider-Windows.nsi` | NSIS installer (6-page GUI, no admin, LOCALAPPDATA) |
+| `dc1-provider-Windows.nsi` | **v2.1** NSIS installer — GPU pre-check page, API key validation, branded icon, version metadata |
 | `dc1-provider-setup.sh` | Linux/Mac setup script |
 
 ## Data Flow Architecture
@@ -171,7 +174,7 @@ total_spent_halala, total_jobs, created_at, updated_at
 
 ## Billing Model
 
-- Rates in halala/minute: llm-inference=15, training=25, rendering=20, image_generation=20, default=10
+- Rates in halala/minute: llm-inference=15, training=25, rendering=20, default=10
 - 75/25 split: provider gets floor(75%), DC1 gets remainder
 - Job completion recalculates cost based on actual elapsed time, not estimate
 - Provider earnings stored in SAR (halala/100)
@@ -435,205 +438,217 @@ Full test results:
 - ✅ Job output → `"Job not found"` for non-existent job (correct 404)
 - ✅ Supabase sync running — 30 providers, 7 jobs, 0 errors
 
-## What Was Just Built (commit be91b72 — QA Security Fixes)
+## What Was Just Built (commit 92ec40a — Unified Daemon v3.0 + Windows Installer Overhaul)
 
-### 31. Security: Code Injection Prevention (`jobs.js`)
-- **Model whitelist** — `ALLOWED_SD_MODELS` (5 models) and `ALLOWED_LLM_MODELS` (5 models)
-  - Unknown models fall back to defaults (SD 2.1 base / Phi-2)
-  - Prevents `model: "'; import os; os.system('rm -rf /'); '"` injection
-- **pyEscape()** function — sanitizes strings for Python single-quoted string embedding:
-  1. Escapes backslashes first (`\` → `\\`)
-  2. Then single quotes (`'` → `\'`)
-  3. Then newlines (`\n` → space, `\r` → removed)
-  - Order matters: backslashes MUST be escaped before quotes
+### 31. QA Bug Fixes (Bugs #1–#13)
+Full pass over provider, renter, and admin endpoints. Every bug verified via live API calls:
 
-### 32. Billing Rate Fix (`jobs.js`)
-- `/api/jobs/:id/result` endpoint had hardcoded ternary that missed `image_generation`
-- Was: `training=25, rendering=20, else=15` (image_generation fell to 15)
-- Now: `COST_RATES[job.job_type] || COST_RATES['default']` (image_generation=20)
+| Bug | Fix |
+|-----|-----|
+| #1 | Added express.json() parsing to server.js — POST body was empty |
+| #2 | Fixed heartbeat api_key extraction from body, not header |
+| #3 | Fixed provider registration: generate api_key if not provided |
+| #4 | Fixed readiness endpoint missing json() middleware |
+| #5 | Added GET /api/providers/status/:key endpoint for daemon status checks |
+| #6 | Fixed daemon job poll: switched from /api/jobs/assigned to /api/providers/:key/jobs |
+| #7 | Fixed job output endpoint — parse DC1_RESULT_JSON from result string |
+| #8 | Fixed renter balance endpoint to accept query param key (not just header) |
+| #9 | Fixed CORS: added explicit OPTIONS handling for preflight requests |
+| #10 | Fixed admin dashboard: return counts even when tables empty |
+| #11 | Fixed job timeout enforcement — don't re-fail already-failed jobs |
+| #12 | Added provider-self-service: GET /api/providers/me endpoint |
+| #13 | Fixed sync bridge: handle null gpu_model gracefully |
 
-### 33. Route Ordering Fix (`jobs.js`)
-- `GET /api/jobs/verify-hmac` was defined AFTER `GET /api/jobs/:job_id`
-- Express matched "verify-hmac" as a `job_id` parameter → 404
-- Moved `/verify-hmac` and `/active` before all `/:job_id` parameterized routes
+### 32. Unified Daemon v3.0 (`dc1_daemon.py`)
+Merged v1.0 (bare-metal heartbeat only) + v2.0 (Docker-based execution) into a single robust file:
 
-### 34. Python f-string Variable Fix (`jobs.js`)
-- Image gen script had `f"[dc1] Generating {width}x${height}"`
-- `{width}` was a Python f-string reference to undefined variable
-- Fixed to `${width}x${height}` (both JS template substitutions)
+**Key features:**
+- **Dual endpoint support**: tries `/api/providers/:key/jobs` first, falls back to `/api/jobs/assigned?key=`
+- **Smart Docker detection**: checks `docker --version` + `nvidia-smi` at startup, caches result
+- **Execution priority**: Docker → bare-metal → error
+- **5 MB stdout capture** for base64 image/model outputs
+- **10 min job timeout** with graceful container kill
+- **Background job execution**: heartbeats continue during jobs (threaded)
+- **Structured logging**: `~/dc1-provider/logs/daemon.log` with timestamps
+- **Config file**: `~/dc1-provider/config.json` for force_bare_metal override
+- **Version**: reports `3.0.0` to platform API via heartbeat
 
-### 35. Daemon Docker Cache Fix (`dc1_daemon.py`)
-- Startup `check_docker()` call didn't assign to `_docker_status` global
-- First heartbeat's `get_gpu_info()` → `is_docker_available()` would re-run full Docker check
-- Fixed: `_docker_status = check_docker()` at startup
+### 33. Windows Installer Overhaul (`dc1-provider-Windows.nsi`)
+Complete rebuild of NSIS installer:
 
-### 36. VPS Deployment Verified
-- QA fixes deployed to VPS (PM2 process 5 restarted)
-- Health check confirmed: `{"status":"ok","timestamp":"2026-03-07T10:09:03.235Z"}`
-- All 3 files updated: jobs.js (80 lines changed), dc1_daemon.py (8 lines), agent briefing
+**Branding & metadata:**
+- `VIProductVersion 2.1.0.0` + `VIFileVersion` — right-click .exe → Properties shows DC1 info
+- `!define PRODUCT_VERSION "2.1.0"` used throughout
+- `!define DC1_API_BASE "http://76.13.179.86:8083"` — single define, no more hardcoded IPs
 
-### 37. Bug #7: Params Field Ignored in Job Submit (`jobs.js`)
-- `req.body.params` was never destructured — template generator always got empty `params = {}`
-- Fix: Added `params: bodyParams` to destructuring with priority logic: bodyParams > task_spec > defaults
-- Commit: `9f0b2f5`
+**GPU Pre-Check Page (new custom page):**
+- Runs `nvidia-smi --query-gpu=name,memory.total --format=csv,noheader` during install
+- Displays detected GPU name + VRAM on page
+- Warning if no NVIDIA GPU found: "DC1 requires an NVIDIA GPU with 4GB+ VRAM"
+- User can continue anyway or abort
 
-### 38. Bug #8+9: job_id String Lookup Returning 404 (`jobs.js`)
-- `GET /api/jobs/:job_id` only searched `WHERE id = ?` (numeric), not string job_ids
-- Fix: Changed all 4 parameterized routes to `WHERE id = ? OR job_id = ?`
-- Affected routes: GET /:job_id, POST /:job_id/result, POST /:job_id/complete, POST /:job_id/cancel
-- Commit: `9f0b2f5`
+**Improved Welcome & Finish pages:**
+- Welcome mentions version number + GPU requirement
+- Finish page shows: GPU name, daemon status (running/failed), estimated earning tier
+- "Open My Dashboard" button retained
 
-### 39. Bug #10: Jobs Auto-Transitioned to 'running' at Submit (`jobs.js`)
-- Lines 359-363 immediately set `status = 'running'` after INSERT
-- Daemon polls for `pending` jobs, so it never found them
-- Fix: Removed auto-transition; jobs now stay `pending` until daemon picks them up
-- Commit: `38a6d7c`
+**Better error handling:**
+- If setup-helper.ps1 fails, reads last 5 lines of install.log and displays them
+- Retry button for network failures
 
-### 40. Bug #11: Daemon Poll Query Only Searched 'running' (`jobs.js`)
-- The `/api/jobs/assigned` endpoint searched `status = 'running'`
-- Fix: Changed to `IN ('pending', 'running')` with proper transition logic
-- Note: The old endpoint in providers.js was already correct
-- Commit: `38a6d7c`
+### 34. PowerShell Setup Helper v2.1 (`dc1-setup-helper.ps1`)
+- `Test-NvidiaGpu` function: runs nvidia-smi, parses GPU name + VRAM + driver version
+- **API Key validation**: `GET /api/providers/status?key=$ApiKey` before installing anything
+- Invalid key → abort with clear message (saves debugging post-install)
+- Python detection: also checks `py -3 --version` (Python Launcher for Windows)
+- Progress output during Python download
+- Timestamped log lines throughout
+- Summary at end: "Installation complete. GPU: RTX 3060 Ti (8GB). Daemon: running."
+- Post-start heartbeat check: waits 5s then verifies first heartbeat succeeded
 
-### 41. Bug #13: Billing Rate Mismatch in providers.js (`providers.js`)
-- The `POST /api/providers/job-result` endpoint had hardcoded rates missing `image_generation` (20 halala/min)
-- Fell back to default 10 halala/min instead of correct 20
-- Fix: Imported shared `COST_RATES` from jobs.js module
-- Commit: `1c90368`
+### 35. Uninstall Helper Rebuild (`dc1-uninstall-helper.ps1`)
+- Kills running Python processes matching dc1_daemon pattern
+- Removes config.json and logs directory
+- Cleans up Docker containers/images with dc1 prefix
+- Removes scheduled task, shortcuts, and install directory
+- Optional pip package cleanup with `-CleanPip` flag
 
-### 42. E2E Test Results — Full Pipeline Verified ✅
-- **Submit**: `POST /api/jobs/submit` → job created as `pending`, 200 halala pre-charged
-- **Daemon poll**: `GET /api/providers/:key/jobs` → job picked up, transitioned to `running`
-- **Result submit**: `POST /api/providers/job-result` → job completed, billing settled
-- **Billing**: 20 halala actual (1 min × 20 halala/min image_generation rate)
-- **Split**: Provider 15 halala (75%), DC1 5 halala (25%)
-- **Refund**: 180 halala returned to renter (200 pre-charge - 20 actual)
-- **Note**: Yazan's daemon v1.1.0 is heartbeating but NOT polling for jobs (old version). E2E tested by simulating daemon API calls.
+### 36. Custom .exe Icon (commit a860898)
+- Created `dc1-icon.ico` — branded DC1 icon for Windows installer
+- Multi-resolution: 16×16, 32×32, 48×48, 256×256
+- Applied to both installer and uninstaller .exe
+- Used in NSIS via `!define MUI_ICON` and `!define MUI_UNICON`
 
-### 43. Daemon Compatibility Finding
-- Yazan's daemon (provider 26, RTX 3060 Ti) has `daemon_version` = empty in DB
-- Daemon is heartbeating every 30s but does NOT have job polling thread
-- Need to get Yazan to download updated daemon (v1.1+ with job polling)
-- The daemon download endpoint (`GET /api/providers/download/daemon`) should serve the latest version
+## What Was Just Fixed (2026-03-07 — OpenClaw Container Fix)
 
-## E2E Test Scenario: Image Generation Pipeline
+### 37. Bella/OpenClaw-New Token Update
+- Container: `openclaw-new-openclaw-gateway-1` on VPS `76.13.179.86`
+- Updated `CLAUDE_AI_SESSION_KEY` in `/root/openclaw-new/.env` with new Anthropic OAuth token
+- Token format: `sk-ant-oat01-...`
 
-### Best Test: Renter Submits Image Gen → Provider Daemon Executes → Output Retrieved
+### 38. Gateway ControlUI Fix
+- After `docker compose down/up`, container crash-looped with error:
+  `Gateway failed to start: Error: non-loopback Control UI requires gateway.controlUi.allowedOrigins`
+- **Root cause**: docker-compose starts gateway with `--bind lan` (non-loopback), but openclaw.json had no `controlUi` config
+- **Fix**: Added `"controlUi": {"dangerouslyAllowHostHeaderOriginFallback": true}` to `gateway` section of `/root/.openclaw-new/openclaw.json`
+- Container now running healthy with status: `Up (healthy)`
 
-**Prerequisites:**
-1. A provider must be registered and have a daemon heartbeating (status: `online`)
-2. A renter must be registered with sufficient balance (at least 200 halala for ~10 min job)
-3. Provider machine needs: NVIDIA GPU with ≥6GB VRAM, Python 3, PyTorch, diffusers library
-4. If Docker mode: Docker + NVIDIA Container Toolkit + `dc1/sd-worker:latest` image built
+### 39. Token Storage Architecture (Laura vs Bella)
+- **Laura** (openclaw-laura): Uses OpenClaw's internal auth system — all CLAUDE env vars empty, no .env file on host, tokens stored internally by OpenClaw
+- **Bella** (openclaw-new): Uses `.env` file at `/root/openclaw-new/.env` with `CLAUDE_AI_SESSION_KEY` passed to container as env var
+- Both containers use `openclaw.json` with `anthropic:strawberry` auth profile (mode: token)
 
-**Step-by-step test flow:**
+## What Was Just Built (commit b445097 — Machine Verification + Docker CI + Daemon v3.0 Rewrite)
 
-```
-1. RENTER SETUP
-   POST /api/renters/register
-   Body: {"name":"Test Renter","email":"test@dc1.sa"}
-   → Save the api_key returned
+### 40. Machine Verification System (`routes/verification.js` — 505 lines)
+GPU fraud detection via benchmark challenges. Prevents providers from spoofing GPU specs.
 
-   POST /api/renters/topup
-   Header: x-renter-key: <key>
-   Body: {"amount_sar": 50}
-   → Balance now 5000 halala
+**GPU Database:** 38 NVIDIA GPUs with known specs:
+- RTX 20/30/40 series (consumer)
+- A-series (A100, A6000, A5000, A4000, A2000)
+- H-series (H100, H200)
+- GTX 1080 Ti, 1070 Ti
+- Each entry: `vram_mib`, `fp32_tflops`, `compute_capability`, `expected_gflops_min/max`
 
-2. PROVIDER SETUP (on GPU machine)
-   # Option A: Run installer one-liner
-   curl -sL "http://76.13.179.86:8083/api/providers/download/setup?key=PROVIDER_KEY&os=linux" | sudo bash
+**Verification Flow:**
+1. Admin requests challenge → `POST /api/verification/challenge` (or daemon auto-verifies on first heartbeat)
+2. Backend generates challenge: matrix_size=4096, iterations=5, random nonce
+3. Daemon runs PyTorch matmul benchmark, reports: GFLOPS, VRAM, GPU name, temperature, nonce
+4. Backend runs 7-point analysis:
+   - GPU name recognition (fuzzy match against database)
+   - VRAM cross-reference (reported vs known spec)
+   - GFLOPS range check (within expected min/max for that GPU)
+   - GPU name consistency (nvidia-smi vs previously reported)
+   - Nonce verification (prevents replay attacks)
+   - Timing sanity (benchmark duration plausible)
+   - Temperature sanity (30-95°C expected range)
+5. Verdict: `verified` (score ≥ 70), `suspect` (40-69), or `failed` (< 40)
+6. Failed verification auto-suspends provider
 
-   # Option B: Run daemon directly (for testing)
-   curl -sL "http://76.13.179.86:8083/api/providers/download/daemon?key=PROVIDER_KEY" -o dc1-daemon.py
-   python3 dc1-daemon.py
+**Endpoints:**
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/api/verification/challenge` | Admin token | Request verification for a provider |
+| POST | `/api/verification/submit` | Provider API key | Daemon submits benchmark results |
+| POST | `/api/verification/auto` | Provider API key | Auto-verify on first heartbeat |
+| GET | `/api/verification/pending` | Provider API key | Daemon polls for pending challenges |
+| GET | `/api/verification/status/:provider_id` | None | Check verification status |
+| GET | `/api/verification/leaderboard` | None | Top verified providers by score |
+| GET | `/api/verification/gpu-database` | None | Full GPU database (38 GPUs) |
 
-   → Wait for heartbeat to appear (check provider status)
-   GET /api/providers/status/PROVIDER_KEY
-   → Should show: status="online", gpu_name="RTX ...", daemon_version="2.0.0"
+**DB Schema additions (`db.js`):**
+- `verification_runs` table: id, provider_id, challenge_id, challenge_params, status, result_data, verdict, score, flags
+- Provider columns: `verification_status` (unverified/pending/verified/suspect/failed), `verification_score`, `verification_last_at`, `verified_gpu`
 
-3. SUBMIT IMAGE GENERATION JOB
-   POST /api/jobs/submit
-   Header: x-renter-key: <renter_key>
-   Body: {
-     "provider_id": "<provider_id>",
-     "job_type": "image_generation",
-     "params": {
-       "prompt": "A futuristic cityscape of Riyadh at sunset, cyberpunk style",
-       "negative_prompt": "blurry, low quality",
-       "steps": 20,
-       "width": 512,
-       "height": 512,
-       "seed": 42
-     },
-     "duration_minutes": 10
-   }
-   → Returns: job_id, status="pending", cost_halala (deducted from balance)
-   → Backend auto-generates full SD Python script via generateImageGenScript()
+### 41. Docker CI Pipeline (`.github/workflows/docker-images.yml`)
+GitHub Actions workflow for automated Docker image builds:
+- **Trigger**: push to `main` when `backend/docker/**` changes, or manual dispatch
+- **Registry**: GitHub Container Registry (`ghcr.io/{owner}/dc1-{base,sd,llm}-worker`)
+- **Tags**: `:latest` + `:sha` (commit hash)
+- **Cache**: GitHub Actions cache (`type=gha,mode=max`)
+- **Build order**: base-worker → sd-worker (depends on base) → llm-worker (depends on base)
 
-4. DAEMON PICKS UP JOB (automatic, within 30s)
-   → Daemon polls GET /api/jobs/assigned?key=PROVIDER_KEY
-   → Receives job with task_spec (auto-generated Python script)
-   → Executes via Docker: docker run --gpus all dc1/sd-worker python /dc1/job/task.py
-   → Or bare-metal: python3 _dc1_task_<id>.py
-   → Script loads SD model, generates image, outputs DC1_RESULT_JSON:{base64 PNG}
+**Dockerfile updates:**
+- `Dockerfile.sd-worker` + `Dockerfile.llm-worker` now use `ARG BASE_IMAGE` for GHCR compatibility
+- `build-images.sh` updated with `--build-arg BASE_IMAGE` and GHCR push summary
 
-5. RESULT REPORTED (automatic)
-   → Daemon POST /api/jobs/<id>/result with stdout (up to 5MB base64 image)
-   → Backend parses DC1_RESULT_JSON, calculates billing, settles balance
+### 42. Daemon v3.0 Rewrite (`dc1-daemon.py` — complete rewrite)
+Major rewrite from previous versions:
+- **`DAEMON_VERSION = "3.0.0"`**, `MAX_STDOUT = 10240` (10KB, up from 5MB — optimized), `JOB_TIMEOUT = 600`
+- **GHCR image registry**: `ghcr.io/dhnpmp-tech/dc1-{sd,llm,base}-worker:latest`
+- **Verification handler**: `check_pending_verification()` polls on each job cycle, `run_verification()` executes PyTorch benchmark, `auto_verify()` runs on startup
+- **Docker detection**: cached at startup, respects `config.json` `force_bare_metal` flag
+- **Background threaded execution**: jobs run in separate thread, heartbeats continue uninterrupted
+- **Dual endpoint support**: tries `/api/providers/:key/jobs` first, falls back to `/api/jobs/assigned?key=`
 
-6. FETCH OUTPUT
-   GET /api/jobs/<job_id>/output
-   Accept: application/json
-   → Returns: {"type":"image","format":"png","data":"base64...","billing":{...}}
+### 43. VPS Deployment Verified
+- `git pull origin main` — 14 files changed, 1986 insertions, 333 deletions
+- `pm2 restart 5` — process online, 0% CPU, 13.5MB memory
+- Health check: `{"status":"ok","service":"dc1-provider-onboarding"}`
+- Verification GPU database: 38 GPUs accessible at `/api/verification/gpu-database`
+- Sync cycle: 30 providers, 11 jobs, 1 renter, 0 errors
 
-   GET /api/jobs/<job_id>/output
-   Accept: image/png
-   → Returns: raw PNG binary (viewable in browser)
+## Gap Analysis vs vast.ai
 
-7. VERIFY BILLING
-   GET /api/renters/balance
-   Header: x-renter-key: <key>
-   → Balance should be: 5000 - actual_cost_halala (refund if faster than estimate)
+A full competitive gap analysis was completed (see `DC1-Gap-Analysis-vs-VastAI.docx`):
 
-   GET /api/providers/earnings
-   Header: x-provider-key: <provider_key>
-   → Should show earned amount = 75% of job cost
-```
+**Critical gaps identified (priority order):**
+1. Payment gateway integration (Stripe/Tap for SAR deposits) — #1 blocker
+2. Provider payout system (bank transfers to Saudi providers)
+3. Domain + SSL (currently using raw IP)
+4. Provider price controls (providers can't set their own rates)
+5. Machine verification system (GPU benchmarking + fraud detection)
 
-**Current blocker:** No provider is currently heartbeating with an active daemon. To run this test, you need a machine with an NVIDIA GPU to run the daemon. Alternatively, you can simulate the daemon's behavior by manually calling the API endpoints in sequence.
-
-**Quick smoke test (no GPU needed):**
-```
-# 1. Submit job (will fail with "Provider not online" if no daemon — that's correct)
-curl -X POST http://76.13.179.86:8083/api/jobs/submit \
-  -H "Content-Type: application/json" \
-  -H "x-renter-key: dc1-renter-d1f00fc37ee3a0898b2dc88f33bf54b3" \
-  -d '{"provider_id":"test","job_type":"image_generation","params":{"prompt":"A red sports car"},"duration_minutes":5}'
-
-# 2. Check output endpoint (returns 404 — correct for non-existent job)
-curl http://76.13.179.86:8083/api/jobs/nonexistent/output
-
-# 3. Health check
-curl http://76.13.179.86:8083/api/health
-```
+**DC1 advantages over vast.ai:**
+- SAR-native billing (no USD conversion)
+- Saudi Arabia market focus (latency advantage)
+- Simpler onboarding for providers
+- Lower fees (25% vs vast.ai's variable rates)
 
 ## What Still Needs Building
 
-### High Priority (Gate 1 remaining)
-1. **Get a provider daemon online** — Need at least one GPU machine running the daemon to test full E2E flow (image gen, billing settlement)
-2. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
-3. **Build + push Docker images** — run `build-images.sh` on a machine with GPU + Docker, push to GHCR
+### Critical (Gate 2 — Revenue Enablement)
+1. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
+2. **Domain + SSL** — replace raw IP `76.13.179.86:8083` with proper domain + HTTPS
+3. **Provider payout system** — bank transfers to Saudi providers (IBAN integration)
+
+### High Priority (Gate 2 — Production Readiness)
+4. **Provider price controls** — let providers set their own SAR/hr rates
+5. ~~**Machine verification system**~~ — ✅ DONE (commit b445097): 38-GPU database, 7-point fraud detection, auto-verify on heartbeat
+6. ~~**Build + push Docker images**~~ — ✅ DONE (commit b445097): GitHub Actions CI pipeline to GHCR
+7. **Get Yazan to update daemon** — uninstalled old version, needs v3.0 reinstall (PowerShell one-liner or .exe)
+8. **Compile NSIS .exe installer** — run `makensis dc1-provider-Windows.nsi` on Windows machine with NSIS installed
 
 ### Medium Priority
-3. **Admin token rotation** — expiring admin tokens instead of static
-4. **Job queue** — multiple pending jobs per provider, FIFO execution
-5. **WebSocket live updates** — replace polling with real-time job status
-6. **Installer auto-update** — daemon self-update mechanism
+8. **Admin token rotation** — expiring admin tokens instead of static
+9. **Job queue** — multiple pending jobs per provider, FIFO execution
+10. **WebSocket live updates** — replace polling with real-time job status
+11. **Installer auto-update** — daemon self-update mechanism
 
 ### Lower Priority
-7. **Provider reputation system** — reliability scoring based on uptime + job completion
-8. **Renter API key rotation** — allow renters to regenerate keys
-9. **Multi-GPU provider support** — parallel job execution on multi-GPU rigs
+12. **Provider reputation system** — reliability scoring based on uptime + job completion
+13. **Renter API key rotation** — allow renters to regenerate keys
+14. **Multi-GPU provider support** — parallel job execution on multi-GPU rigs
 
 ## Environment Variables
 
@@ -705,24 +720,24 @@ curl http://76.13.179.86:8083/api/health
 registered → [downloads installer via one-liner] → online (heartbeating) → ready (passed CUDA/PyTorch/VRAM checks) → executing (running job) → idle (waiting for next job)
 ```
 
-The daemon (`dc1_daemon.py` v2.0) is a single Python file that runs as a background service:
-1. Detects GPU via `nvidia-smi`
-2. Checks Docker + NVIDIA Container Toolkit availability (cached)
-3. Starts heartbeat loop (30s interval)
-4. Polls for assigned jobs each heartbeat cycle
-5. When job found: executes via Docker (`docker run --gpus all`) or bare-metal subprocess
-6. Reports result (up to 5MB stdout) back to platform API
+The daemon (`dc1_daemon.py` v3.0) is a single Python file that runs as a background service:
+1. Detects GPU via `nvidia-smi` — parses name, VRAM, driver version
+2. Checks Docker + NVIDIA Container Toolkit availability (cached at startup)
+3. Reports readiness (CUDA, PyTorch, VRAM checks) to platform
+4. Starts heartbeat loop (30s interval), reports daemon version `3.0.0`
+5. Polls for jobs via dual endpoints: `/api/providers/:key/jobs` → `/api/jobs/assigned?key=`
+6. When job found: executes via Docker (`docker run --gpus all`) or bare-metal subprocess
+7. Reports result (up to 10KB stdout) back to platform API
+8. Runs verification challenges when requested (PyTorch matmul benchmark)
+9. Logs everything to `~/dc1-provider/logs/daemon.log` with timestamps
 
 ## Git Commit History (recent)
 
 | Commit | Description |
 |--------|-------------|
-| `1c90368` | Fix billing rate mismatch in provider job-result endpoint (Bug #13) |
-| `38a6d7c` | Fix job submit auto-running + daemon poll query (Bugs #10-11) |
-| `9f0b2f5` | Fix params extraction + job_id lookup across all routes (Bugs #7-9) |
-| `b831e8b` | Agent briefing: QA fixes + E2E test scenario |
-| `be91b72` | QA security fixes: code injection, billing rate, route order, daemon cache |
-| `5f1676d` | Agent briefing: Docker execution, image gen, daemon v2.0 |
+| `b445097` | Machine verification system + daemon v3.0 rewrite + Docker CI pipeline |
+| `a860898` | Custom .exe icon for Windows installer |
+| `92ec40a` | Unified daemon v3.0 + Windows installer overhaul + QA bugs 1-13 |
 | `ce5a348` | Docker-based job execution + NVIDIA Container Toolkit + installer v2.0 |
 | `d9e154d` | Image generation templates + output endpoint + 10mb body limit |
 | `e8edea4` | Agent briefing: Supabase sync Phase 3, enums, wallets |
@@ -745,6 +760,26 @@ The daemon (`dc1_daemon.py` v2.0) is a single Python file that runs as a backgro
 - Job timeout enforcement and recovery engine both run on 30s intervals — they don't conflict but could be merged
 - The renter page uses `sessionStorage` for API key persistence (cleared on tab close — intentional for security)
 - Frontend `NEXT_PUBLIC_*` env vars are baked at build time on Vercel — must be set before deploy
-- **SQLite DB path on VPS**: `/root/dc1-platform/backend/data/providers.db` (NOT `backend/dc1.db` or `backend/providers.db`)
-- Two daemon poll endpoints exist: OLD `GET /api/providers/:api_key/jobs` (providers.js, used by v1.1 daemon) and NEW `GET /api/jobs/assigned?key=` (jobs.js, for v2.0 daemon)
-- Yazan's daemon (provider 26) heartbeats but doesn't poll for jobs — needs daemon update
+- Windows installer requires NSIS compilation: `makensis dc1-provider-Windows.nsi` on Windows
+- Daemon v3.0 is backward-compatible with both v1.0 and v2.0 backend endpoints
+- Yazan Almazyad has 2 provider records: ID 23 (RTX 2060, registered) + ID 26 (RTX 3060 Ti, online) — active key: `dc1-provider-8cf28b3bb4e91a3bc04abf4fcc33b29e`
+- Mistral 7B is whitelisted in ALLOWED_LLM_MODELS as `mistralai/Mistral-7B-Instruct-v0.2`
+
+## VPS Docker Services (76.13.179.86)
+
+| Container | Image | Ports | Purpose |
+|-----------|-------|-------|---------|
+| `openclaw-new-openclaw-gateway-1` (Bella) | `openclaw:local` | 18803→18789, 18804→18790 | AI gateway for Bella (@BellaTrulyFem_Bot) |
+| Laura container | `openclaw:local` | (managed via Hostinger Docker Manager) | AI gateway for Laura |
+| DC1 Backend | PM2 process | 8083 | Express.js API server |
+
+**OpenClaw Config Locations:**
+- Bella: host `/root/.openclaw-new/openclaw.json` → container `/home/node/.openclaw/openclaw.json`
+- Bella env: `/root/openclaw-new/.env` (contains CLAUDE_AI_SESSION_KEY)
+- Laura: managed via Hostinger Docker Manager UI (no .env file on disk)
+
+**Token Architecture:**
+- Bella uses env var `CLAUDE_AI_SESSION_KEY` for Anthropic token
+- Laura uses OpenClaw internal auth system (env vars empty, tokens managed internally)
+- Both use `anthropic:strawberry` profile in openclaw.json with mode: token
+- Gateway token: `OPENCLAW_GATEWAY_TOKEN` in .env file
