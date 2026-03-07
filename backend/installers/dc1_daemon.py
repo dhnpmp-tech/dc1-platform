@@ -352,7 +352,7 @@ def run_job_docker(job_id, task_spec, job_type):
     os.makedirs(job_dir, exist_ok=True)
 
     task_file = os.path.join(job_dir, "task.py")
-    with open(task_file, "w") as f:
+    with open(task_file, "w", encoding="utf-8") as f:
         f.write(task_spec)
 
     image = DOCKER_IMAGES.get(job_type, DEFAULT_DOCKER_IMAGE)
@@ -405,7 +405,7 @@ def run_job_docker(job_id, task_spec, job_type):
 def run_job_bare(job_id, task_spec):
     """Execute a job as a local subprocess (fallback when Docker unavailable)."""
     tmp = os.path.join(_BASE_DIR, f"_dc1_task_{job_id}.py")
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(task_spec)
 
     t0 = time.time()

@@ -69,7 +69,8 @@ function generateImageGenScript(params) {
   const model = ALLOWED_SD_MODELS.includes(rawModel) ? rawModel : 'stabilityai/stable-diffusion-2-1-base';
 
   return `#!/usr/bin/env python3
-"""DC1 Image Generation — auto-generated task script"""
+# -*- coding: utf-8 -*-
+"""DC1 Image Generation - auto-generated task script"""
 import torch, base64, io, json, sys, time
 
 t0 = time.time()
@@ -136,7 +137,7 @@ buf = io.BytesIO()
 image.save(buf, format="PNG", optimize=True)
 b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
-# Output structured result — daemon captures this
+# Output structured result - daemon captures this
 output = {
     "type": "image",
     "format": "png",
@@ -164,7 +165,8 @@ function generateLlmInferenceScript(params) {
   const temperature = Math.min(Math.max(parseFloat(params.temperature) || 0.7, 0.1), 2.0);
 
   return `#!/usr/bin/env python3
-"""DC1 LLM Inference — auto-generated task script"""
+# -*- coding: utf-8 -*-
+"""DC1 LLM Inference - auto-generated task script"""
 import torch, json, sys, time
 
 t0 = time.time()
