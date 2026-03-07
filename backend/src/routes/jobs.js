@@ -246,7 +246,7 @@ function splitBilling(totalHalala) {
 // POST /api/jobs/submit — requires renter auth
 router.post('/submit', requireRenter, (req, res) => {
   try {
-    const { provider_id, job_type, duration_minutes, gpu_requirements, task_spec, max_duration_seconds } = req.body;
+    const { provider_id, job_type, duration_minutes, gpu_requirements, task_spec, params: bodyParams, max_duration_seconds } = req.body;
 
     if (!provider_id || !job_type || !duration_minutes) {
       return res.status(400).json({ error: 'Missing required fields: provider_id, job_type, duration_minutes' });
@@ -320,9 +320,13 @@ router.post('/submit', requireRenter, (req, res) => {
     let result_type = 'text'; // default result type
 
     if (JOB_TEMPLATES[job_type]) {
-      // Parse params from task_spec (could be JSON string or object)
+      // Parse params: prefer body.params, fall back to task_spec
       let params = {};
-      if (task_spec) {
+      if (bodyParams && typeof bodyParams === 'object' && Object.keys(bodyParams).length > 0) {
+        // Renter sent params directly in request body (recommended way)
+        params = bodyParams;
+      } else if (task_spec) {
+        // Fall back to parsing task_spec as JSON
         params = typeof task_spec === 'string' ? (() => { try { return JSON.parse(task_spec); } catch { return { prompt: task_spec }; } })() : task_spec;
       }
       // If params look like raw Python code (not JSON), use as-is
@@ -417,7 +421,7 @@ router.get('/assigned', (req, res) => {
 // Daemon posts execution result; auto-completes the job
 router.post('/:job_id/result', (req, res) => {
   try {
-    const job = db.get('SELECT * FROM jobs WHERE id = ?', [req.params.job_id]);
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
     // Guard against duplicate settlement — only settle a running job once
@@ -518,7 +522,7 @@ router.get('/verify-hmac', (req, res) => {
 // GET /api/jobs/:job_id
 router.get('/:job_id', (req, res) => {
   try {
-    const job = db.get('SELECT * FROM jobs WHERE id = ?', req.params.job_id);
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
@@ -532,7 +536,7 @@ router.get('/:job_id', (req, res) => {
 // POST /api/jobs/:job_id/complete
 router.post('/:job_id/complete', (req, res) => {
   try {
-    const job = db.get('SELECT * FROM jobs WHERE id = ?', req.params.job_id);
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
@@ -594,7 +598,7 @@ router.post('/:job_id/complete', (req, res) => {
 // POST /api/jobs/:job_id/cancel
 router.post('/:job_id/cancel', (req, res) => {
   try {
-    const job = db.get('SELECT * FROM jobs WHERE id = ?', req.params.job_id);
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
