@@ -1,5 +1,5 @@
 # DC1 Platform — Agent Briefing Document
-> Last updated: 2026-03-07 | Branch: `main` | Commit: 1b05b27
+> Last updated: 2026-03-07 | Branch: `main` | Commit: 0b14596
 
 ## What Is DC1
 
@@ -72,16 +72,23 @@ WRITES (Express backend is source of truth):
   Job complete      → SQLite jobs table (billing calculated)
 
 SYNC (SQLite → Supabase, every 30s):
-  Phase 1: providers → users + machines + machine_metrics
-  Phase 2: jobs     → rentals + transactions
+  Phase 1:  providers    → users + machines + machine_metrics
+  Phase 2:  jobs         → rentals + transactions
+  Phase 3a: renters      → users (type='renter') + wallets (balance, held, spent)
+  Phase 3b: provider $   → provider wallets (earned, withdrawn, pending, available)
+  Phase 3c: withdrawals  → Supabase withdrawals table
 
 READS (Frontend reads from Supabase for speed + real-time):
   Renter dashboard  → Supabase machines table (real-time subscription)
   Rental history    → Supabase rentals table (joined with machines)
+  Wallet balances   → Supabase wallets table (renter + provider balances)
+  Withdrawals       → Supabase withdrawals table (provider payouts)
   Renter auth/profile → Express backend /api/renters/me (API key check)
 ```
 
-The sync bridge (`supabase-sync.js`) maintains a providerMap cache that maps SQLite `provider.id` → Supabase `{ userId, machineId }` UUIDs. This mapping is used in Phase 2 to link jobs to the correct Supabase rentals.
+The sync bridge (`supabase-sync.js`) maintains two caches:
+- `providerMap`: SQLite `provider.id` → Supabase `{ userId, machineId }` UUIDs (used in Phase 2 + 3b)
+- `renterMap`: SQLite `renter.id` → Supabase `{ userId, walletId }` UUIDs (used in Phase 3a)
 
 **RLS Policies** (Supabase Row Level Security):
 - `machines_read_public`: anon can SELECT where status = 'active' or 'verified'
@@ -289,6 +296,67 @@ Full test results:
 - ✅ Provider earnings shows 0.22 SAR earned
 - ✅ Withdrawal below minimum (10 SAR) correctly rejected
 
+## What Was Just Built (commit 0b14596 — Supabase Billing Sync)
+
+### 22. Supabase Schema Migrations (applied via MCP)
+- Added `rental` + `withdrawal` + `completed` to `transaction_type` enum
+- Added `completed` to `transaction_status` enum
+- Created `withdrawals` table in Supabase:
+  - `id` UUID PK, `provider_id` UUID FK→users, `sqlite_withdrawal_id` TEXT UNIQUE
+  - `amount_sar` NUMERIC, `amount_usd` GENERATED (×0.27), `payout_method` enum, `status` payout_status enum
+  - RLS: users see own withdrawals, service_role full access
+- Added wallet tracking columns: `total_earned_sar`, `total_withdrawn_sar`, `pending_withdrawal_sar`, `total_spent_sar`, `total_jobs`, `wallet_type`, `updated_at`
+
+### 23. Sync Bridge Phase 3 (`supabase-sync.js`)
+**Phase 3a — Renter → Wallet Sync:**
+- Finds/creates Supabase user for each SQLite renter (type='renter', or 'both' if also provider)
+- Finds/creates wallet record per renter
+- Syncs: `balance_sar` (from halala/100), `hold_sar` (sum of running job costs), `total_spent_sar`, `total_jobs`
+- Maintains `renterMap` cache for cross-referencing
+
+**Phase 3b — Provider Wallet Sync:**
+- Creates provider wallets separate from renter wallets (wallet_type='provider' or 'both')
+- Syncs: `total_earned_sar`, `total_withdrawn_sar` (completed withdrawals), `pending_withdrawal_sar`
+- Calculates available balance: earned - withdrawn - pending
+
+**Phase 3c — Withdrawal Sync:**
+- Syncs SQLite `withdrawals` table → Supabase `withdrawals` table
+- Maps SQLite withdrawal_id → Supabase `sqlite_withdrawal_id` (unique key for upsert)
+- Maps status to `payout_status` enum: pending/processing/completed/failed
+
+### 24. E2E Supabase Sync Verified
+- ✅ Sync bridge runs with 0 errors across all 3 phases
+- ✅ 30 provider wallets synced (Yazan: 0.22 SAR, Peter: 0.20 SAR)
+- ✅ 7 renter wallets synced (E2E test bot: 42.50 SAR balance = 4250 halala)
+- ✅ Wallet totals: 30 provider wallets (0.42 SAR earned), 7 renter wallets (33,792.50 SAR balance)
+- ✅ Sync cycle: ~10s for 30 providers + 7 jobs + 7 renters + 30 wallets + 0 withdrawals
+
+## Supabase Tables (Project: rwxqcqgjszvbwcyjfpec)
+
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `users` | 37 | Providers + renters (type: provider/renter/both) |
+| `machines` | 35 | GPU machines linked to provider users |
+| `machine_metrics` | 5396 | Time-series GPU utilization, temp, memory |
+| `rentals` | 10 | Job records (mapped from SQLite jobs) |
+| `wallets` | 37 | Renter balances + provider earnings |
+| `transactions` | 3 | Completed job payments |
+| `withdrawals` | 0 | Provider payout requests |
+| `ratings` | 2 | Provider ratings |
+| `audit_logs` | 0 | System audit trail |
+| `support_tickets` | 0 | Support requests |
+| `referrals` | 0 | Referral program |
+
+### Supabase Enums
+| Enum | Values |
+|------|--------|
+| `rental_status` | pending, confirmed, running, completed, cancelled, disputed |
+| `transaction_type` | topup, earning, payout, refund, fee, dispute, rental, withdrawal |
+| `transaction_status` | pending, confirmed, failed, cancelled, completed |
+| `payment_method` | stripe, moyasar, bank_transfer, wallet |
+| `payout_status` | pending, processing, completed, failed |
+| `user_type` | provider, renter, both |
+
 ## What Still Needs Building
 
 ### High Priority (Gate 1 remaining)
@@ -318,6 +386,9 @@ Full test results:
 | `DC1_HMAC_SECRET` | VPS backend | HMAC signing secret for task_spec |
 | `DC1_ADMIN_TOKEN` | VPS backend | Admin API auth token |
 | `DC1_PROVIDER_PORT` | VPS backend | Express port (default 8083) |
+| `SUPABASE_URL` | VPS backend | Supabase project URL (default: `https://rwxqcqgjszvbwcyjfpec.supabase.co`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | VPS backend | Supabase service role key (required for sync bridge) |
+| `SYNC_INTERVAL_MS` | VPS backend | Sync bridge interval (default: 30000ms) |
 
 ## API Endpoints Reference
 
@@ -383,7 +454,10 @@ The daemon (`dc1-daemon.py`) is a single Python file that runs as a background s
 
 | Commit | Description |
 |--------|-------------|
+| `0b14596` | Supabase sync Phase 3: renters, wallets, withdrawals |
+| `dc42487` | Agent briefing update for Gate 1 |
 | `1b05b27` | Gate 1: billing, withdrawal, heartbeat rate limit |
+| `90e9077` | Agent briefing update: CORS, env var, E2E |
 | `763afa4` | CORS lockdown + task_spec serialization fix |
 | `eb15dd9` | Gate 0 daemon system: readiness, job execution, installer scripts |
 | `ae8c5ee` | Renter registration page + job submit auth |
