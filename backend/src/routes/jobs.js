@@ -316,7 +316,7 @@ router.post('/submit', requireRenter, (req, res) => {
 
     // Job timeout: default 10 minutes, max 1 hour
     const timeout = Math.min(max_duration_seconds || 600, 3600);
-    const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString();
+    const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
 
     // ── Auto-generate task script from template if job_type has one ─────
     let finalTaskSpec = task_spec;
@@ -719,7 +719,7 @@ function enforceJobTimeouts() {
   try {
     const now = new Date().toISOString();
     const timedOut = db.all(
-      `SELECT * FROM jobs WHERE status = 'running' AND timeout_at IS NOT NULL AND timeout_at < ?`,
+      `SELECT * FROM jobs WHERE status = 'running' AND timeout_at IS NOT NULL AND datetime(replace(timeout_at, 'T', ' ')) < datetime(replace(?, 'T', ' '))`,
       now
     );
 
