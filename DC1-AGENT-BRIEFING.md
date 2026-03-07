@@ -1,5 +1,5 @@
 # DC1 Platform — Agent Briefing Document
-> Last updated: 2026-03-07 | Branch: `main` | Commit: 0b14596
+> Last updated: 2026-03-07 | Branch: `main` | Commit: ce5a348
 
 ## What Is DC1
 
@@ -37,7 +37,7 @@ Currency: SAR (Saudi Riyal). Internal billing in **halala** (1 SAR = 100 halala)
 | `server.js` | Express app setup, CORS lockdown, rate limiting, route mounting, recovery/timeout intervals |
 | `db.js` | SQLite schema — providers, jobs, renters tables + migrations |
 | `routes/providers.js` | Provider register, heartbeat, readiness, self-service (pause/resume/preferences) |
-| `routes/jobs.js` | Job submit (renter auth), complete, cancel, assigned (daemon poll), HMAC verify, timeout enforcement |
+| `routes/jobs.js` | Job submit (renter auth), complete, cancel, assigned (daemon poll), HMAC verify, timeout enforcement, **image gen templates**, **job output endpoint** |
 | `routes/renters.js` | **NEW** — Renter register, profile (/me), available-providers listing |
 | `routes/admin.js` | Admin dashboard, provider management, job management |
 | `services/supabase-sync.js` | SQLite → Supabase periodic sync |
@@ -357,11 +357,89 @@ Full test results:
 | `payout_status` | pending, processing, completed, failed |
 | `user_type` | provider, renter, both |
 
+## What Was Just Built (commits d9e154d + ce5a348 — Image Gen + Docker)
+
+### 25. Image Generation Job Templates (`jobs.js`)
+- Added `image_generation: 20` halala/min to COST_RATES
+- `generateImageGenScript(params)` — auto-generates full Stable Diffusion Python script from JSON:
+  - Input: `{prompt, negative_prompt, steps, width, height, seed, model}`
+  - Output: Full Python script using `diffusers` + `StableDiffusionPipeline`
+  - Result: base64 PNG via `DC1_RESULT_JSON:` protocol
+- `generateLlmInferenceScript(params)` — auto-generates transformers script:
+  - Input: `{prompt, max_tokens, model, temperature}`
+  - Output: Full Python script using HuggingFace `transformers`
+- `JOB_TEMPLATES` map: job_type → script generator function
+- Job submit auto-generates task_spec when job_type matches a template
+- Renters submit simple JSON `{"prompt":"...", "steps":20}` — backend generates the Python code
+
+### 26. Job Output Endpoint (`GET /api/jobs/:id/output`)
+- Parses `DC1_RESULT_JSON:{...}` from job result string
+- Image results: serves raw PNG (`Content-Type: image/png`) or JSON with base64 (based on `Accept` header)
+- Text results: structured JSON with prompt, response, tokens_per_second
+- Includes billing info (actual_cost_halala, actual_cost_sar)
+- Express body limit increased to 10mb for base64 image payloads
+
+### 27. Docker-Based Job Execution — Daemon v2.0 (`dc1_daemon.py`)
+**Execution modes:**
+- **Docker mode** (default when Docker + NVIDIA CT detected): `docker run --gpus all --rm -v job_dir:/dc1/job dc1/sd-worker python /dc1/job/task.py`
+- **Bare-metal fallback** (when Docker unavailable): direct subprocess execution (legacy)
+
+**Key improvements:**
+- 5 MB stdout capture (was 1 KB) for base64 image data
+- 10 min job timeout (was 5 min) for image generation
+- Docker health check on startup (cached for session)
+- `config.json` → `force_bare_metal: true` option for debugging
+- Container resource limits: `--memory 16g --shm-size 2g`
+- Background thread for job execution (heartbeats continue during jobs)
+
+**Docker image mapping:**
+| Job Type | Docker Image |
+|----------|-------------|
+| `image_generation` | `dc1/sd-worker:latest` |
+| `llm-inference` | `dc1/llm-worker:latest` |
+| `training` | `dc1/train-worker:latest` |
+| `rendering` | `dc1/render-worker:latest` |
+| `benchmark` | `dc1/base-worker:latest` |
+
+### 28. Docker Worker Images (`backend/docker/`)
+- `Dockerfile.base` — CUDA 12.2 + Python 3 + PyTorch (cu121) + common ML libs
+- `Dockerfile.sd-worker` — extends base + diffusers + SD 2.1 model pre-cached (~2.5 GB)
+- `Dockerfile.llm-worker` — extends base + transformers + bitsandbytes + Phi-2 pre-cached (~5.5 GB)
+- `build-images.sh` — builds all 3 images + optional registry push (`DC1_REGISTRY` env var)
+
+### 29. Installer Scripts v2.0 (Linux + Windows)
+**Linux/Mac (`dc1-setup-unix.sh`)** — 8-step setup:
+1. Python 3
+2. pip packages (requests, psutil)
+3. NVIDIA driver check
+4. Docker install (get.docker.com)
+5. NVIDIA Container Toolkit install + configure
+6. Pre-pull NVIDIA CUDA base image
+7. Download daemon + config
+8. Create systemd/launchd service
+
+**Windows (`dc1-setup-windows.ps1`)** — 8-step setup:
+1. Python 3 (winget)
+2. pip packages
+3. NVIDIA driver check
+4. Docker Desktop (winget)
+5. GPU passthrough test (WSL 2 backend)
+6. Pre-pull base images
+7. Download daemon + config
+8. Windows Scheduled Task
+
+### 30. E2E Verification
+- ✅ VPS deployed — PM2 process 5 restarted, port 8083
+- ✅ Health check — `status: "ok"`
+- ✅ Job submit → `"Provider is not online"` (correct — no daemon heartbeating)
+- ✅ Job output → `"Job not found"` for non-existent job (correct 404)
+- ✅ Supabase sync running — 30 providers, 7 jobs, 0 errors
+
 ## What Still Needs Building
 
 ### High Priority (Gate 1 remaining)
-1. **Docker isolation** — container-based job execution with GPU passthrough (`--gpus device=0`)
-2. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
+1. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
+2. **Build + push Docker images** — run `build-images.sh` on a machine with GPU + Docker, push to GHCR
 
 ### Medium Priority
 3. **Admin token rotation** — expiring admin tokens instead of static
@@ -419,6 +497,7 @@ Full test results:
 | POST | `/api/jobs/:id/cancel` | None | Cancel a job |
 | GET | `/api/jobs/:id` | None | Get job details |
 | GET | `/api/jobs/active` | None | List active jobs |
+| GET | `/api/jobs/:id/output` | None | Fetch job output (image/text) |
 | GET | `/api/jobs/verify-hmac` | None | Verify task_spec HMAC |
 
 ### Renter Endpoints
@@ -443,17 +522,21 @@ Full test results:
 registered → [downloads installer via one-liner] → online (heartbeating) → ready (passed CUDA/PyTorch/VRAM checks) → executing (running job) → idle (waiting for next job)
 ```
 
-The daemon (`dc1-daemon.py`) is a single Python file that runs as a background service:
+The daemon (`dc1_daemon.py` v2.0) is a single Python file that runs as a background service:
 1. Detects GPU via `nvidia-smi`
-2. Runs readiness checks → reports to backend
-3. Starts heartbeat thread (30s interval)
-4. Starts job poll thread (10s interval)
-5. When job found: executes GPU benchmark (PyTorch matmul) → submits result
+2. Checks Docker + NVIDIA Container Toolkit availability (cached)
+3. Starts heartbeat loop (30s interval)
+4. Polls for assigned jobs each heartbeat cycle
+5. When job found: executes via Docker (`docker run --gpus all`) or bare-metal subprocess
+6. Reports result (up to 5MB stdout) back to platform API
 
 ## Git Commit History (recent)
 
 | Commit | Description |
 |--------|-------------|
+| `ce5a348` | Docker-based job execution + NVIDIA Container Toolkit + installer v2.0 |
+| `d9e154d` | Image generation templates + output endpoint + 10mb body limit |
+| `e8edea4` | Agent briefing: Supabase sync Phase 3, enums, wallets |
 | `0b14596` | Supabase sync Phase 3: renters, wallets, withdrawals |
 | `dc42487` | Agent briefing update for Gate 1 |
 | `1b05b27` | Gate 1: billing, withdrawal, heartbeat rate limit |
