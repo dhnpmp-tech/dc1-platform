@@ -1,5 +1,5 @@
 # =============================================================================
-# DC1 Provider Daemon — Setup Helper
+# DC1 Provider Daemon — Setup Helper v2.1
 # Called by the NSIS installer with user selections from the GUI pages.
 # =============================================================================
 param(
@@ -8,7 +8,9 @@ param(
     [string]$ScheduledStart = "23:00",
     [string]$ScheduledEnd = "07:00",
     [string]$ApiUrl = "$($env:DC1_API_URL ?? 'http://76.13.179.86:8083')",
-    [string]$InstallDir = "$env:LOCALAPPDATA\dc1-provider"
+    [string]$InstallDir = "$env:LOCALAPPDATA\dc1-provider",
+    [string]$GpuName = "unknown",
+    [string]$GpuVram = "0"
 )
 
 $ErrorActionPreference = "Continue"
@@ -22,21 +24,123 @@ function Log {
     Add-Content -Path $logFile -Value $line -ErrorAction SilentlyContinue
 }
 
-Log "=== DC1 Provider Setup Helper ==="
-Log "ApiKey:   $($ApiKey.Substring(0, [Math]::Min(20, $ApiKey.Length)))..."
-Log "RunMode:  $RunMode"
-Log "InstallDir: $InstallDir"
-
 # Ensure install directory exists
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
+Log "============================================="
+Log "  DC1 Provider Setup Helper v2.1"
+Log "============================================="
+Log "ApiKey:     $($ApiKey.Substring(0, [Math]::Min(20, $ApiKey.Length)))..."
+Log "RunMode:    $RunMode"
+Log "InstallDir: $InstallDir"
+Log "ApiUrl:     $ApiUrl"
+Log "GPU:        $GpuName ($GpuVram MB)"
+Log ""
+
 # ---------------------------------------------------------------------------
-# Step 1: Find or install Python
+# Step 1: Validate API Key with the server
 # ---------------------------------------------------------------------------
-Log "[1/7] Checking Python..."
+Log "[1/8] Validating API key with DC1 server..."
+try {
+    $statusUrl = "$ApiUrl/api/providers/heartbeat"
+    $testBody = @{
+        api_key = $ApiKey
+        provider_hostname = $env:COMPUTERNAME
+        provider_ip = $null
+        gpu_status = @{
+            gpu_name = $GpuName
+            gpu_vram_mib = [int]$GpuVram
+            daemon_version = "setup-2.1"
+        }
+    } | ConvertTo-Json -Depth 3
+    $response = Invoke-WebRequest -Uri $statusUrl -Method POST -Body $testBody -ContentType "application/json" -UseBasicParsing -TimeoutSec 15
+    if ($response.StatusCode -eq 200) {
+        Log "  API key validated successfully."
+    } else {
+        Log "  WARNING: Unexpected status $($response.StatusCode). Continuing anyway."
+    }
+} catch {
+    $errMsg = $_.Exception.Message
+    if ($errMsg -match "401|403|Unauthorized|Forbidden") {
+        Log "  ERROR: Invalid API key. Please check your provider API key and try again."
+        Log "  Server response: $errMsg"
+        exit 2
+    } elseif ($errMsg -match "Unable to connect|timeout|network") {
+        Log "  WARNING: Could not reach DC1 server at $ApiUrl"
+        Log "  Error: $errMsg"
+        Log "  Continuing with offline install — daemon will retry when online."
+    } else {
+        Log "  WARNING: API validation returned: $errMsg"
+        Log "  Continuing anyway."
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Step 2: GPU Detection & Validation
+# ---------------------------------------------------------------------------
+Log "[2/8] Detecting NVIDIA GPU..."
+
+function Test-NvidiaGpu {
+    $gpuInfo = @{
+        detected = $false
+        name = "unknown"
+        vram_mb = 0
+        driver = "unknown"
+        cuda = "unknown"
+        compute_cap = "unknown"
+    }
+    try {
+        $result = & nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader,nounits 2>$null
+        if ($LASTEXITCODE -eq 0 -and $result) {
+            $parts = $result.Split(",") | ForEach-Object { $_.Trim() }
+            $gpuInfo.detected = $true
+            if ($parts.Count -ge 1) { $gpuInfo.name = $parts[0] }
+            if ($parts.Count -ge 2) { try { $gpuInfo.vram_mb = [int]$parts[1] } catch {} }
+            if ($parts.Count -ge 3) { $gpuInfo.driver = $parts[2] }
+            if ($parts.Count -ge 4) { $gpuInfo.compute_cap = $parts[3] }
+        }
+    } catch {}
+
+    # Check CUDA availability
+    try {
+        $cudaResult = & nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $gpuInfo.cuda = "available"
+        }
+    } catch {}
+
+    return $gpuInfo
+}
+
+$gpu = Test-NvidiaGpu
+if ($gpu.detected) {
+    Log "  GPU found: $($gpu.name)"
+    Log "  VRAM:      $($gpu.vram_mb) MB"
+    Log "  Driver:    $($gpu.driver)"
+    Log "  Compute:   $($gpu.compute_cap)"
+    if ($gpu.vram_mb -lt 4096) {
+        Log "  WARNING: GPU has less than 4 GB VRAM. Some jobs may not run."
+    }
+} else {
+    Log "  WARNING: No NVIDIA GPU detected via nvidia-smi."
+    Log "  The daemon will install but may not be able to run GPU jobs."
+    Log "  Make sure NVIDIA drivers are installed and nvidia-smi is in PATH."
+}
+
+# ---------------------------------------------------------------------------
+# Step 3: Find or install Python
+# ---------------------------------------------------------------------------
+Log "[3/8] Checking Python..."
 
 function Find-RealPython {
     $candidates = @()
+    # Python Launcher for Windows (py.exe)
+    try {
+        $pyLauncher = & py -3 -c "import sys; print(sys.executable)" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $pyLauncher) {
+            $candidates += $pyLauncher.Trim()
+        }
+    } catch {}
     # User-installed Python
     $userPaths = Get-ChildItem "C:\Users\$env:USERNAME\AppData\Local\Programs\Python\*\python.exe" -ErrorAction SilentlyContinue
     if ($userPaths) { $candidates += $userPaths.FullName }
@@ -57,11 +161,16 @@ function Find-RealPython {
 $pythonExe = Find-RealPython
 
 if (-not $pythonExe) {
-    Log "  Python not found. Installing Python 3.12..."
+    Log "  Python not found. Downloading Python 3.12..."
     $installerUrl = "https://www.python.org/ftp/python/3.12.4/python-3.12.4-amd64.exe"
     $installerPath = "$env:TEMP\python-3.12.4-amd64.exe"
     try {
+        Log "  Downloading from $installerUrl ..."
+        $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+        $fileSize = (Get-Item $installerPath).Length / 1MB
+        Log "  Downloaded: $([math]::Round($fileSize, 1)) MB"
+        Log "  Installing Python (this may take a minute)..."
         Start-Process -FilePath $installerPath -ArgumentList "/quiet", "InstallAllUsers=0", "PrependPath=1" -Wait
         Remove-Item $installerPath -ErrorAction SilentlyContinue
     } catch {
@@ -75,27 +184,35 @@ if (-not $pythonExe) {
     }
     Log "  Python installed: $pythonExe"
 } else {
-    Log "  Found Python: $pythonExe"
+    # Get Python version
+    try {
+        $pyVer = & $pythonExe --version 2>&1
+        Log "  Found Python: $pythonExe ($pyVer)"
+    } catch {
+        Log "  Found Python: $pythonExe"
+    }
 }
 
 # ---------------------------------------------------------------------------
-# Step 2: Install requests via pip
+# Step 4: Install requests via pip
 # ---------------------------------------------------------------------------
-Log "[2/7] Installing Python requests..."
+Log "[4/8] Installing Python dependencies..."
 $pipExe = Join-Path (Split-Path $pythonExe) "Scripts\pip.exe"
 if (-not (Test-Path $pipExe)) { $pipExe = $pythonExe; $pipArgs = @("-m", "pip", "install", "requests") }
 else { $pipArgs = @("install", "requests") }
-& $pipExe @pipArgs 2>&1 | Out-Null
+$pipOutput = & $pipExe @pipArgs 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Log "  ERROR: pip install failed (exit code $LASTEXITCODE). Check your internet connection."
+    Log "  ERROR: pip install failed (exit code $LASTEXITCODE)."
+    Log "  Output: $pipOutput"
+    Log "  Check your internet connection and try again."
     exit 1
 }
-Log "  requests installed."
+Log "  requests package installed."
 
 # ---------------------------------------------------------------------------
-# Step 3: Deploy dc1_daemon.py with API key baked in
+# Step 5: Deploy dc1_daemon.py with API key baked in
 # ---------------------------------------------------------------------------
-Log "[3/7] Deploying daemon script..."
+Log "[5/8] Deploying daemon script..."
 $templatePath = Join-Path $InstallDir "dc1_daemon.py"
 if (Test-Path $templatePath) {
     $daemonContent = Get-Content $templatePath -Raw
@@ -105,14 +222,14 @@ if (Test-Path $templatePath) {
     Log "  dc1_daemon.py deployed with API key."
 } else {
     Log "  WARNING: dc1_daemon.py template not found at $templatePath — generating inline."
-    # Fallback: generate daemon inline (same code as dc1_daemon.py template)
+    # Fallback: generate minimal daemon inline
     $daemonPy = @"
 import requests, time, datetime, socket, subprocess, sys, platform
 
 API_KEY = "$ApiKey"
 API_URL = "$ApiUrl"
 INTERVAL = 30
-DAEMON_VERSION = "1.1.0"
+DAEMON_VERSION = "2.1.0"
 
 def get_gpu_info():
     info = {
@@ -175,17 +292,28 @@ if __name__ == "__main__":
 }
 
 # ---------------------------------------------------------------------------
-# Step 4: Write config.json
+# Step 6: Write config.json
 # ---------------------------------------------------------------------------
-Log "[4/7] Writing config.json..."
-$config = @{ api_key = $ApiKey; run_mode = $RunMode; api_url = $ApiUrl } | ConvertTo-Json
+Log "[6/8] Writing config.json..."
+$configObj = @{
+    api_key = $ApiKey
+    run_mode = $RunMode
+    api_url = $ApiUrl
+    scheduled_start = $ScheduledStart
+    scheduled_end = $ScheduledEnd
+    gpu_name = $GpuName
+    gpu_vram_mb = [int]$GpuVram
+    installed_at = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss")
+    installer_version = "2.1.0"
+}
+$config = $configObj | ConvertTo-Json -Depth 2
 Set-Content -Path (Join-Path $InstallDir "config.json") -Value $config -Encoding UTF8
 Log "  config.json saved."
 
 # ---------------------------------------------------------------------------
-# Step 5: Register scheduled task (mode-dependent)
+# Step 7: Register scheduled task (mode-dependent)
 # ---------------------------------------------------------------------------
-Log "[5/7] Configuring run mode: $RunMode..."
+Log "[7/8] Configuring run mode: $RunMode..."
 $taskName = "DC1ProviderDaemon"
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
@@ -195,9 +323,9 @@ $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest 
 
 if ($RunMode -eq 'manual') {
     # Manual mode: no scheduled task — create start/stop scripts
-    $startScript = "@echo off`r`necho Starting DC1 Provider Daemon...`r`nstart /min `"$pythonExe`" `"$InstallDir\dc1_daemon.py`"`r`necho Done. Check your dashboard.`r`ntimeout /t 3"
+    $startScript = "@echo off`r`necho Starting DC1 Provider Daemon...`r`nstart /min `"DC1 Daemon`" `"$pythonExe`" `"$InstallDir\dc1_daemon.py`"`r`necho Done. Your GPU is now earning.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\start-dc1.bat" -Value $startScript -Encoding ASCII
-    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq dc1_daemon*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
     Log "  Manual mode — no auto-start task created."
     Log "  Start earning: double-click $InstallDir\start-dc1.bat"
@@ -209,9 +337,9 @@ if ($RunMode -eq 'manual') {
     $triggerTime = (Get-Date -Hour $startHour -Minute $startMin -Second 0).ToString("HH:mm")
     $trigger = New-ScheduledTaskTrigger -Daily -At $triggerTime
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
-    Log "  Scheduled mode — runs daily at $triggerTime."
+    Log "  Scheduled mode — runs daily at $triggerTime (until $ScheduledEnd)."
     # Stop script for when user wakes up
-    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`ntaskkill /F /IM python.exe 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
 } else {
     # Always-on (default): start at every login
@@ -221,47 +349,59 @@ if ($RunMode -eq 'manual') {
 }
 
 # ---------------------------------------------------------------------------
-# Step 6: Create dashboard shortcut on Desktop
+# Step 8: Create dashboard shortcut + start daemon + verify
 # ---------------------------------------------------------------------------
-Log "[6/7] Creating desktop shortcut..."
+Log "[8/8] Final setup..."
+
+# Create dashboard shortcut
 $dashUrl = "$ApiUrl/provider?key=$ApiKey"
 $shortcutContent = "@echo off`r`nstart `"`" `"$dashUrl`""
 Set-Content -Path "$env:USERPROFILE\Desktop\DC1 - My Earnings.bat" -Value $shortcutContent -Encoding ASCII
 Log "  Desktop shortcut created: 'DC1 - My Earnings'"
 
-# ---------------------------------------------------------------------------
-# Step 7: Start daemon + test heartbeat
-# ---------------------------------------------------------------------------
-Log "[7/7] Starting daemon and testing heartbeat..."
+# Start daemon (unless manual mode)
 if ($RunMode -eq 'manual') {
     Log "  Manual mode — skipping auto-start. Use start-dc1.bat when ready."
-} elseif ($RunMode -eq 'scheduled') {
-    Log "  Scheduled mode — daemon will start at scheduled time. Starting once now for verification..."
-    Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 5
 } else {
+    Log "  Starting daemon..."
     Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 5
-    Log "  Daemon started."
-}
 
-# Test heartbeat
-try {
-    $body = @{
-        api_key = $ApiKey
-        provider_hostname = $env:COMPUTERNAME
-        provider_ip = $null
-        gpu_status = @{ gpu_name = "test"; gpu_vram_mib = 0 }
-    } | ConvertTo-Json
-    $response = Invoke-WebRequest -Uri "$ApiUrl/api/providers/heartbeat" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 10
-    if ($response.StatusCode -eq 200) {
-        Log "  Heartbeat test: SUCCESS (200)"
-    } else {
-        Log "  Heartbeat test: Unexpected status $($response.StatusCode)"
+    # Verify daemon started and first heartbeat succeeded
+    try {
+        $body = @{
+            api_key = $ApiKey
+            provider_hostname = $env:COMPUTERNAME
+            provider_ip = $null
+            gpu_status = @{
+                gpu_name = if ($gpu.detected) { $gpu.name } else { $GpuName }
+                gpu_vram_mib = if ($gpu.detected) { $gpu.vram_mb } else { [int]$GpuVram }
+                daemon_version = "2.1.0"
+            }
+        } | ConvertTo-Json -Depth 3
+        $response = Invoke-WebRequest -Uri "$ApiUrl/api/providers/heartbeat" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 10
+        if ($response.StatusCode -eq 200) {
+            Log "  Heartbeat verified: SUCCESS"
+        } else {
+            Log "  Heartbeat returned: $($response.StatusCode)"
+        }
+    } catch {
+        Log "  WARNING: Heartbeat verification failed — $_"
+        Log ""
+        Log "  Troubleshooting:"
+        Log "    1. Check internet connection"
+        Log "    2. Check if firewall is blocking outbound connections"
+        Log "    3. Check if antivirus is blocking python.exe"
+        Log "    4. Try: $pythonExe $InstallDir\dc1_daemon.py"
     }
-} catch {
-    Log "  Heartbeat test: FAILED — $_"
-    Log "  The daemon is installed but could not reach the API. Check connectivity."
 }
 
-Log "=== Setup complete ==="
+Log ""
+Log "============================================="
+Log "  DC1 Setup Complete!"
+Log "============================================="
+Log "  GPU:       $(if ($gpu.detected) { "$($gpu.name) ($($gpu.vram_mb) MB)" } else { "$GpuName ($GpuVram MB)" })"
+Log "  Mode:      $RunMode"
+Log "  Dashboard: $dashUrl"
+Log "  Log file:  $logFile"
+Log "============================================="

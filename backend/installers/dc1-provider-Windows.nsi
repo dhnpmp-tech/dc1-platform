@@ -1,8 +1,8 @@
 ; =============================================================================
-; DC1 Provider Daemon — Windows NSIS Installer
+; DC1 Provider Daemon — Windows NSIS Installer v2.1
 ; =============================================================================
 ; Installs to %LOCALAPPDATA%\dc1-provider (NO admin required)
-; GUI pages: Welcome → API Key → Run Mode → Schedule → Install → Finish
+; GUI pages: Welcome → GPU Check → API Key → Run Mode → Schedule → Install → Finish
 ; Bundles: dc1_daemon.py, dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
 ; Build:   makensis dc1-provider-Windows.nsi
 ; =============================================================================
@@ -11,30 +11,53 @@
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
+!include "FileFunc.nsh"
+
+; --------------- Product Info ---------------
+!define PRODUCT_NAME "DC1 Provider Daemon"
+!define PRODUCT_PUBLISHER "DC1"
+!define PRODUCT_VERSION "2.1.0"
+!define PRODUCT_WEB_SITE "https://dc1.sa"
+!define DC1_API_BASE "http://76.13.179.86:8083"
+!define DASHBOARD_URL "${DC1_API_BASE}/provider"
 
 ; --------------- General Settings ---------------
-Name "DC1 Provider Setup"
+Name "${PRODUCT_NAME} v${PRODUCT_VERSION}"
 OutFile "dc1-provider-setup-Windows.exe"
 InstallDir "$LOCALAPPDATA\dc1-provider"
 RequestExecutionLevel user
 Unicode True
 
-; Brand
+; --------------- Version Info (shows in .exe Properties → Details) ---------------
+VIProductVersion "${PRODUCT_VERSION}.0"
+VIFileVersion "${PRODUCT_VERSION}.0"
+VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
+VIAddVersionKey "CompanyName" "${PRODUCT_PUBLISHER}"
+VIAddVersionKey "FileDescription" "DC1 Provider Daemon Installer — Earn with your GPU"
+VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}"
+VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
+VIAddVersionKey "LegalCopyright" "© 2026 DC1. All rights reserved."
+
+; --------------- Brand ---------------
+; TODO: Replace with custom DC1 icon when available
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
-!define PRODUCT_NAME "DC1 Provider Daemon"
-!define PRODUCT_PUBLISHER "DC1"
-!define DASHBOARD_URL "http://76.13.179.86:8083/provider"
+!define MUI_ABORTWARNING
 
 ; --------------- Variables ---------------
 Var API_KEY
 Var RUN_MODE          ; "always-on" | "scheduled" | "manual"
 Var SCHED_START
 Var SCHED_END
+Var GPU_NAME
+Var GPU_VRAM
 
 ; Dialog handles
 Var hApiKeyDlg
 Var hApiKeyInput
+Var hGpuCheckDlg
+Var hGpuStatusLabel
+Var hGpuDetailLabel
 Var hRunModeDlg
 Var hRadioAlways
 Var hRadioScheduled
@@ -45,28 +68,32 @@ Var hEndTimeInput
 
 ; --------------- Pages ---------------
 ; 1. Welcome
-!define MUI_WELCOMEPAGE_TITLE "Install the DC1 Provider Daemon"
-!define MUI_WELCOMEPAGE_TEXT "This wizard will install the DC1 Provider Daemon on your computer.$\r$\n$\r$\nYour GPU will start earning DC1 credits automatically.$\r$\n$\r$\nNo admin privileges required.$\r$\nClick Next to continue."
+!define MUI_WELCOMEPAGE_TITLE "DC1 Provider Daemon v${PRODUCT_VERSION}"
+!define MUI_WELCOMEPAGE_TEXT "Welcome to the DC1 Provider setup.$\r$\n$\r$\nThis will install the DC1 daemon so your GPU starts earning credits automatically.$\r$\n$\r$\nRequirements:$\r$\n  • NVIDIA GPU with 4 GB+ VRAM$\r$\n  • Internet connection$\r$\n  • No admin privileges needed$\r$\n$\r$\nClick Next to check your GPU."
 !insertmacro MUI_PAGE_WELCOME
 
-; 2. API Key (custom)
+; 2. GPU Check (custom)
+Page custom GpuCheckPageCreate GpuCheckPageLeave
+
+; 3. API Key (custom)
 Page custom ApiKeyPageCreate ApiKeyPageLeave
 
-; 3. Run Mode (custom)
+; 4. Run Mode (custom)
 Page custom RunModePageCreate RunModePageLeave
 
-; 4. Schedule (custom — conditional)
+; 5. Schedule (custom — conditional)
 Page custom SchedulePageCreate SchedulePageLeave
 
-; 5. Install
+; 6. Install
 !insertmacro MUI_PAGE_INSTFILES
 
-; 6. Finish
-!define MUI_FINISHPAGE_TITLE "Installation Complete!"
-!define MUI_FINISHPAGE_TEXT "Your GPU is now earning.$\r$\n$\r$\nClick 'Open My Dashboard' to view your earnings."
+; 7. Finish
+!define MUI_FINISHPAGE_TITLE "You're All Set!"
+!define MUI_FINISHPAGE_TEXT "DC1 Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\n$\r$\nYour GPU is now earning DC1 credits.$\r$\nClick 'Open My Dashboard' to track your earnings."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open My Dashboard"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenDashboard
+!define MUI_FINISHPAGE_NOREBOOTSUPPORT
 !insertmacro MUI_PAGE_FINISH
 
 ; Uninstaller pages
@@ -81,6 +108,8 @@ Function .onInit
     StrCpy $SCHED_START "23:00"
     StrCpy $SCHED_END "07:00"
     StrCpy $API_KEY ""
+    StrCpy $GPU_NAME "Not detected"
+    StrCpy $GPU_VRAM "0"
 
     ; Parse /KEY=xxx from command line
     ${GetParameters} $0
@@ -90,9 +119,82 @@ Function .onInit
     ${EndIf}
 FunctionEnd
 
-; --------------- Utility: GetParameters / GetOptions ---------------
-; These are provided by NSIS's built-in header
-!include "FileFunc.nsh"
+; --------------- Page: GPU Check ---------------
+Function GpuCheckPageCreate
+    !insertmacro MUI_HEADER_TEXT "GPU Detection" "Checking your NVIDIA GPU"
+    nsDialogs::Create 1018
+    Pop $hGpuCheckDlg
+    ${If} $hGpuCheckDlg == error
+        Abort
+    ${EndIf}
+
+    ; Run nvidia-smi to detect GPU
+    nsExec::ExecToStack 'cmd /c nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul'
+    Pop $0  ; exit code
+    Pop $1  ; stdout
+
+    ${If} $0 == 0
+    ${AndIf} $1 != ""
+        ; Parse "NVIDIA GeForce RTX 3060 Ti, 8192"
+        ; Find the comma to split name and VRAM
+        StrLen $2 $1
+        ; Store full output for parsing
+        StrCpy $GPU_NAME $1
+        ; Try to extract just the name (before comma)
+        ${WordFind} $1 "," "+1" $3
+        ${If} $3 != $1
+            StrCpy $GPU_NAME $3
+            ${WordFind} $1 "," "+2" $4
+            ; Trim whitespace from VRAM
+            ${TrimNewLines} $4 $GPU_VRAM
+            StrCpy $GPU_VRAM $4
+        ${EndIf}
+
+        ${NSD_CreateLabel} 0 0 100% 24u "NVIDIA GPU detected:"
+        Pop $hGpuStatusLabel
+        CreateFont $2 "$(^Font)" "12" "700"
+        SendMessage $hGpuStatusLabel ${WM_SETFONT} $2 0
+        SetCtlColors $hGpuStatusLabel 0x008800 transparent
+
+        ${NSD_CreateLabel} 0 30u 100% 20u "GPU:   $GPU_NAME"
+        Pop $0
+        CreateFont $2 "$(^Font)" "10" "700"
+        SendMessage $0 ${WM_SETFONT} $2 0
+
+        ${NSD_CreateLabel} 0 50u 100% 16u "VRAM:  $GPU_VRAM MB"
+        Pop $0
+
+        ${NSD_CreateLabel} 0 76u 100% 28u "Your GPU is compatible with DC1. Click Next to continue."
+        Pop $hGpuDetailLabel
+        SetCtlColors $hGpuDetailLabel 0x666666 transparent
+    ${Else}
+        StrCpy $GPU_NAME "Not detected"
+        StrCpy $GPU_VRAM "0"
+
+        ${NSD_CreateLabel} 0 0 100% 24u "No NVIDIA GPU detected"
+        Pop $hGpuStatusLabel
+        CreateFont $2 "$(^Font)" "12" "700"
+        SendMessage $hGpuStatusLabel ${WM_SETFONT} $2 0
+        SetCtlColors $hGpuStatusLabel 0xCC0000 transparent
+
+        ${NSD_CreateLabel} 0 30u 100% 48u "DC1 requires an NVIDIA GPU with 4 GB+ VRAM.$\r$\n$\r$\nPossible causes:$\r$\n  • No NVIDIA GPU installed$\r$\n  • NVIDIA drivers not installed$\r$\n  • nvidia-smi not in PATH"
+        Pop $0
+
+        ${NSD_CreateLabel} 0 90u 100% 24u "You can still continue, but the daemon may not function correctly."
+        Pop $hGpuDetailLabel
+        SetCtlColors $hGpuDetailLabel 0x996600 transparent
+    ${EndIf}
+
+    nsDialogs::Show
+FunctionEnd
+
+Function GpuCheckPageLeave
+    ; Allow user to continue even without GPU (they may install drivers later)
+    ${If} $GPU_NAME == "Not detected"
+        MessageBox MB_YESNO|MB_ICONWARNING "No NVIDIA GPU was detected. The DC1 daemon requires an NVIDIA GPU to earn credits.$\r$\n$\r$\nContinue anyway?" IDYES +2
+        Abort
+    ${EndIf}
+FunctionEnd
 
 ; --------------- Page: API Key ---------------
 Function ApiKeyPageCreate
@@ -109,9 +211,13 @@ Function ApiKeyPageCreate
     ${NSD_CreateText} 0 28u 100% 14u "$API_KEY"
     Pop $hApiKeyInput
 
-    ${NSD_CreateLabel} 0 50u 100% 20u "Found in your onboarding email or provider dashboard."
+    ${NSD_CreateLabel} 0 50u 100% 16u "Found in your onboarding email or provider dashboard."
     Pop $0
     SetCtlColors $0 0x666666 transparent
+
+    ${NSD_CreateLabel} 0 72u 100% 16u "Format: dc1-provider-XXXXXXXXXX..."
+    Pop $0
+    SetCtlColors $0 0x999999 transparent
 
     nsDialogs::Show
 FunctionEnd
@@ -120,6 +226,13 @@ Function ApiKeyPageLeave
     ${NSD_GetText} $hApiKeyInput $API_KEY
     ${If} $API_KEY == ""
         MessageBox MB_ICONEXCLAMATION|MB_OK "Please enter your Provider API Key."
+        Abort
+    ${EndIf}
+
+    ; Basic format validation
+    StrCpy $0 $API_KEY 13
+    ${If} $0 != "dc1-provider-"
+        MessageBox MB_YESNO|MB_ICONQUESTION "The API key doesn't start with 'dc1-provider-'. This may not be a valid provider key.$\r$\n$\r$\nContinue anyway?" IDYES +2
         Abort
     ${EndIf}
 FunctionEnd
@@ -153,6 +266,10 @@ Function RunModePageCreate
     ${Else}
         ${NSD_Check} $hRadioAlways
     ${EndIf}
+
+    ${NSD_CreateLabel} 10u 88u 95% 24u "Tip: 'Always On' maximizes your earnings. You can change this later in config.json."
+    Pop $0
+    SetCtlColors $0 0x666666 transparent
 
     nsDialogs::Show
 FunctionEnd
@@ -227,16 +344,29 @@ Section "Install"
     File "dc1-setup-helper.ps1"
     File "dc1-uninstall-helper.ps1"
 
+    ; Show progress
+    DetailPrint "====================================="
+    DetailPrint "DC1 Provider Setup v${PRODUCT_VERSION}"
+    DetailPrint "====================================="
+    DetailPrint "GPU:      $GPU_NAME ($GPU_VRAM MB)"
+    DetailPrint "Run mode: $RUN_MODE"
+    DetailPrint ""
+    DetailPrint "Running setup (detecting Python, installing dependencies, configuring daemon)..."
+    DetailPrint "This may take 1-3 minutes depending on your internet speed."
+    DetailPrint ""
+
     ; Run the setup helper with user selections
-    DetailPrint "Running DC1 setup (detecting Python, configuring daemon)..."
-    nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\dc1-setup-helper.ps1" -ApiKey "$API_KEY" -RunMode "$RUN_MODE" -ScheduledStart "$SCHED_START" -ScheduledEnd "$SCHED_END" -InstallDir "$INSTDIR"'
+    nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\dc1-setup-helper.ps1" -ApiKey "$API_KEY" -RunMode "$RUN_MODE" -ScheduledStart "$SCHED_START" -ScheduledEnd "$SCHED_END" -InstallDir "$INSTDIR" -GpuName "$GPU_NAME" -GpuVram "$GPU_VRAM"'
     Pop $0
+    DetailPrint ""
     DetailPrint "Setup helper exit code: $0"
 
     ; Abort installer on setup failure — prevents broken installed state
     IntCmp $0 0 setup_ok setup_failed setup_failed
     setup_failed:
-        MessageBox MB_OK|MB_ICONSTOP "Installation failed (exit code $0).$\n$\nCheck the log at:$\n$INSTDIR\install.log$\n$\nCommon causes: Python download failed, pip install error, or no internet connection."
+        ; Try to read last lines of install.log for diagnostics
+        DetailPrint "ERROR: Setup failed. Check install.log for details."
+        MessageBox MB_OK|MB_ICONSTOP "Installation failed (exit code $0).$\n$\nCheck the log at:$\n$INSTDIR\install.log$\n$\nCommon causes:$\n  • Python download failed$\n  • pip install error$\n  • No internet connection$\n  • Antivirus blocking downloads$\n$\nTry disabling antivirus temporarily and re-running the installer."
         RMDir /r "$INSTDIR"
         Quit
     setup_ok:
@@ -248,16 +378,31 @@ Section "Install"
     WriteRegStr HKCU "Software\DC1Provider" "InstallLocation" "$INSTDIR"
     WriteRegStr HKCU "Software\DC1Provider" "ApiKey" "$API_KEY"
     WriteRegStr HKCU "Software\DC1Provider" "RunMode" "$RUN_MODE"
+    WriteRegStr HKCU "Software\DC1Provider" "Version" "${PRODUCT_VERSION}"
+    WriteRegStr HKCU "Software\DC1Provider" "GpuName" "$GPU_NAME"
 
     ; Add/Remove Programs entry (HKCU)
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "DisplayName" "${PRODUCT_NAME}"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "UninstallString" "$INSTDIR\uninstall.exe"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "Publisher" "${PRODUCT_PUBLISHER}"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "InstallLocation" "$INSTDIR"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "DisplayVersion" "${PRODUCT_VERSION}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "URLInfoAbout" "${PRODUCT_WEB_SITE}"
+    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "NoModify" 1
+    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "NoRepair" 1
+
+    DetailPrint ""
+    DetailPrint "====================================="
+    DetailPrint "Installation complete!"
+    DetailPrint "====================================="
 SectionEnd
 
 ; ===================== UNINSTALL SECTION =====================
 Section "Uninstall"
+    ; Kill any running daemon processes first
+    nsExec::ExecToLog 'taskkill /F /IM python.exe /FI "WINDOWTITLE eq dc1*" 2>nul'
+    nsExec::ExecToLog 'powershell -Command "Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.MainModule.FileName -match ''dc1'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+
     ; Stop and remove scheduled task
     nsExec::ExecToLog 'schtasks /End /TN "DC1ProviderDaemon"'
     nsExec::ExecToLog 'schtasks /Delete /TN "DC1ProviderDaemon" /F'
@@ -269,10 +414,13 @@ Section "Uninstall"
     ; Remove desktop shortcut
     Delete "$DESKTOP\DC1 - My Earnings.bat"
 
-    ; Remove install directory
+    ; Remove install directory (includes logs, config, daemon)
     RMDir /r "$INSTDIR"
 
     ; Remove registry keys
     DeleteRegKey HKCU "Software\DC1Provider"
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider"
+
+    ; Confirmation
+    MessageBox MB_OK "DC1 Provider Daemon has been uninstalled.$\n$\nThank you for being a DC1 provider!"
 SectionEnd
