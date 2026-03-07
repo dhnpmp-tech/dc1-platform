@@ -230,6 +230,180 @@ async function syncJob(job) {
   return { rentalId, renterUserId, status: rentalData.status };
 }
 
+// ─── RENTER/WALLET SYNC (renters → users + wallets) ──────────────────────────
+
+// Cache SQLite renter_id → Supabase user UUID + wallet UUID
+const renterMap = new Map(); // sqlite_renter_id → { userId, walletId }
+
+async function syncRenter(renter) {
+  // Find or create user record
+  const { data: existingUsers, error: uqe } = await supabase
+    .from('users').select('id, type').eq('email', renter.email).limit(1);
+  if (uqe) throw new Error('Renter user query failed: ' + uqe.message);
+
+  let userId;
+  if (existingUsers && existingUsers.length > 0) {
+    userId = existingUsers[0].id;
+    // Upgrade type if currently 'provider'
+    if (existingUsers[0].type === 'provider') {
+      await supabase.from('users').update({ type: 'both', updated_at: new Date().toISOString() }).eq('id', userId);
+    }
+  } else {
+    const { data: nu, error: ie } = await supabase
+      .from('users').insert({
+        email: renter.email, name: renter.name, type: 'renter',
+        created_at: renter.created_at || new Date().toISOString()
+      }).select('id').single();
+    if (ie) throw new Error('Renter user insert failed: ' + ie.message);
+    userId = nu.id;
+  }
+
+  // Find or create wallet
+  const { data: existingWallets, error: wqe } = await supabase
+    .from('wallets').select('id').eq('user_id', userId).limit(1);
+  if (wqe) throw new Error('Wallet query failed: ' + wqe.message);
+
+  const balanceSar = (renter.balance_halala || 0) / 100;
+  const totalSpentSar = (renter.total_spent_halala || 0) / 100;
+
+  // Calculate held amount from running jobs
+  const held = db.get(
+    `SELECT COALESCE(SUM(cost_halala), 0) as held_halala FROM jobs WHERE renter_id = ? AND status = 'running'`,
+    renter.id
+  );
+  const holdSar = (held?.held_halala || 0) / 100;
+
+  const walletData = {
+    balance_sar: balanceSar,
+    balance_usd: balanceSar * 0.27,
+    hold_sar: holdSar,
+    hold_usd: holdSar * 0.27,
+    total_spent_sar: totalSpentSar,
+    total_jobs: renter.total_jobs || 0,
+    wallet_type: 'renter',
+    updated_at: new Date().toISOString()
+  };
+
+  let walletId;
+  if (existingWallets && existingWallets.length > 0) {
+    walletId = existingWallets[0].id;
+    await supabase.from('wallets').update(walletData).eq('id', walletId);
+  } else {
+    const { data: nw, error: wie } = await supabase
+      .from('wallets').insert({
+        ...walletData, user_id: userId, created_at: new Date().toISOString()
+      }).select('id').single();
+    if (wie) throw new Error('Wallet insert failed: ' + wie.message);
+    walletId = nw.id;
+  }
+
+  renterMap.set(renter.id, { userId, walletId });
+  return { userId, walletId, balanceSar };
+}
+
+// ─── PROVIDER WALLET SYNC (provider earnings → wallets) ──────────────────────
+
+async function syncProviderWallet(provider) {
+  const mapping = providerMap.get(provider.id);
+  if (!mapping) return null;
+
+  const { userId } = mapping;
+
+  // Find or create provider wallet
+  const { data: existingWallets, error: wqe } = await supabase
+    .from('wallets').select('id').eq('user_id', userId).eq('wallet_type', 'provider').limit(1);
+  if (wqe) throw new Error('Provider wallet query failed: ' + wqe.message);
+
+  const totalEarnedSar = (provider.total_earnings || 0);
+
+  // Calculate pending withdrawals + already withdrawn
+  const withdrawn = db.get(
+    `SELECT COALESCE(SUM(amount_sar), 0) as total FROM withdrawals WHERE provider_id = ? AND status = 'completed'`,
+    provider.id
+  );
+  const pending = db.get(
+    `SELECT COALESCE(SUM(amount_sar), 0) as total FROM withdrawals WHERE provider_id = ? AND status = 'pending'`,
+    provider.id
+  );
+  const totalWithdrawnSar = withdrawn?.total || 0;
+  const pendingWithdrawalSar = pending?.total || 0;
+  const availableSar = totalEarnedSar - totalWithdrawnSar - pendingWithdrawalSar;
+
+  const walletData = {
+    balance_sar: availableSar,
+    balance_usd: availableSar * 0.27,
+    total_earned_sar: totalEarnedSar,
+    total_withdrawn_sar: totalWithdrawnSar,
+    pending_withdrawal_sar: pendingWithdrawalSar,
+    wallet_type: 'provider',
+    updated_at: new Date().toISOString()
+  };
+
+  if (existingWallets && existingWallets.length > 0) {
+    await supabase.from('wallets').update(walletData).eq('id', existingWallets[0].id);
+    return { walletId: existingWallets[0].id };
+  } else {
+    // Check if renter wallet already exists for this user — don't conflict
+    const { data: anyWallet } = await supabase
+      .from('wallets').select('id, wallet_type').eq('user_id', userId).limit(1);
+
+    if (anyWallet && anyWallet.length > 0 && anyWallet[0].wallet_type === 'renter') {
+      // User has a renter wallet — update it to include provider earnings too
+      await supabase.from('wallets').update({
+        ...walletData, wallet_type: 'both'
+      }).eq('id', anyWallet[0].id);
+      return { walletId: anyWallet[0].id };
+    }
+
+    const { data: nw, error: wie } = await supabase
+      .from('wallets').insert({
+        ...walletData, user_id: userId, created_at: new Date().toISOString()
+      }).select('id').single();
+    if (wie) throw new Error('Provider wallet insert failed: ' + wie.message);
+    return { walletId: nw.id };
+  }
+}
+
+// ─── WITHDRAWAL SYNC (withdrawals → Supabase withdrawals + transactions) ─────
+
+async function syncWithdrawal(withdrawal) {
+  const mapping = providerMap.get(withdrawal.provider_id);
+  if (!mapping) return null;
+
+  const { userId } = mapping;
+
+  // Map SQLite status to Supabase payout_status enum
+  const statusMap = { 'pending': 'pending', 'processing': 'processing', 'completed': 'completed', 'failed': 'failed' };
+  const supabaseStatus = statusMap[withdrawal.status] || 'pending';
+
+  // Sync to withdrawals table
+  const { data: existing, error: eqe } = await supabase
+    .from('withdrawals').select('id').eq('sqlite_withdrawal_id', withdrawal.withdrawal_id).limit(1);
+  if (eqe) throw new Error('Withdrawal query failed: ' + eqe.message);
+
+  const withdrawalData = {
+    provider_id: userId,
+    sqlite_withdrawal_id: withdrawal.withdrawal_id,
+    amount_sar: withdrawal.amount_sar,
+    payout_method: withdrawal.payout_method === 'bank_transfer' ? 'bank_transfer' : 'wallet',
+    payout_details: withdrawal.payout_details ? JSON.parse(withdrawal.payout_details || '{}') : null,
+    status: supabaseStatus,
+    requested_at: withdrawal.requested_at,
+    processed_at: withdrawal.processed_at || null,
+    notes: withdrawal.notes
+  };
+
+  if (existing && existing.length > 0) {
+    await supabase.from('withdrawals').update(withdrawalData).eq('id', existing[0].id);
+  } else {
+    await supabase.from('withdrawals').insert({
+      ...withdrawalData, created_at: new Date().toISOString()
+    });
+  }
+
+  return { status: supabaseStatus };
+}
+
 // ─── MAIN SYNC CYCLE ────────────────────────────────────────────────────────
 
 async function runSyncCycle() {
@@ -271,14 +445,43 @@ async function runSyncCycle() {
       }
     }
 
+    // Phase 3: Sync renters → users + wallets
+    const renters = db.all('SELECT * FROM renters');
+    let rentersSynced = 0, renterErrors = 0;
+    if (renters && renters.length) {
+      console.log('[SYNC] Phase 3a: Syncing ' + renters.length + ' renters → wallets');
+      for (const r of renters) {
+        try { await syncRenter(r); rentersSynced++; } catch (e) { renterErrors++; console.error('[SYNC] Renter error: ' + e.message); }
+      }
+    }
+
+    // Phase 3b: Sync provider wallets (earnings balances)
+    let provWalletsSynced = 0, provWalletErrors = 0;
+    if (providers && providers.length) {
+      console.log('[SYNC] Phase 3b: Syncing provider wallets');
+      for (const p of providers) {
+        try { const r = await syncProviderWallet(p); if (r) provWalletsSynced++; } catch (e) { provWalletErrors++; console.error('[SYNC] Provider wallet error: ' + e.message); }
+      }
+    }
+
+    // Phase 3c: Sync withdrawals
+    const withdrawals = db.all('SELECT * FROM withdrawals ORDER BY requested_at DESC LIMIT 50');
+    let withdrawalsSynced = 0, withdrawalErrors = 0;
+    if (withdrawals && withdrawals.length) {
+      console.log('[SYNC] Phase 3c: Syncing ' + withdrawals.length + ' withdrawals');
+      for (const w of withdrawals) {
+        try { const r = await syncWithdrawal(w); if (r) withdrawalsSynced++; } catch (e) { withdrawalErrors++; console.error('[SYNC] Withdrawal error: ' + e.message); }
+      }
+    }
+
     lastSyncAt = new Date().toISOString();
-    const totalErrors = providerErrors + jobErrors;
+    const totalErrors = providerErrors + jobErrors + renterErrors + provWalletErrors + withdrawalErrors;
     syncStats.total++;
     if (!totalErrors) syncStats.success++; else { syncStats.errors++; syncStats.lastError = new Date().toISOString(); }
 
     const duration = Date.now() - start;
-    console.log(`[SYNC] Done: ${providersSynced} providers, ${jobsSynced} jobs synced | ${totalErrors} errors | ${duration}ms`);
-    return { providersSynced, jobsSynced, providerErrors, jobErrors, duration };
+    console.log(`[SYNC] Done: ${providersSynced} providers, ${jobsSynced} jobs, ${rentersSynced} renters, ${provWalletsSynced} prov-wallets, ${withdrawalsSynced} withdrawals | ${totalErrors} errors | ${duration}ms`);
+    return { providersSynced, jobsSynced, rentersSynced, provWalletsSynced, withdrawalsSynced, providerErrors, jobErrors, renterErrors, withdrawalErrors, duration };
   } finally { syncRunning = false; }
 }
 
