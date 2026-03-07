@@ -1,0 +1,27 @@
+# DC1 Stable Diffusion Worker — Image Generation
+# Pre-installs diffusers + accelerate so jobs start fast
+FROM dc1/base-worker:latest
+
+# Stable Diffusion dependencies
+RUN pip3 install --no-cache-dir \
+    diffusers[torch] \
+    transformers \
+    accelerate \
+    safetensors \
+    scipy \
+    ftfy
+
+# Pre-download SD 2.1 base model weights (~2.5 GB)
+# This makes first job start in seconds instead of minutes
+RUN python3 -c "\
+from diffusers import StableDiffusionPipeline; \
+StableDiffusionPipeline.from_pretrained( \
+    'stabilityai/stable-diffusion-2-1-base', \
+    torch_dtype='auto' \
+); print('SD 2.1 base cached.')"
+
+# Label for DC1 daemon image selection
+LABEL dc1.worker.type="image_generation"
+LABEL dc1.worker.version="1.0"
+
+CMD ["python", "/dc1/job/task.py"]

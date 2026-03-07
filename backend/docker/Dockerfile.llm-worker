@@ -1,0 +1,24 @@
+# DC1 LLM Inference Worker — Text Generation
+# Pre-installs transformers + bitsandbytes for quantized inference
+FROM dc1/base-worker:latest
+
+# LLM inference dependencies
+RUN pip3 install --no-cache-dir \
+    transformers \
+    accelerate \
+    bitsandbytes \
+    sentencepiece \
+    protobuf \
+    scipy
+
+# Pre-download Phi-2 model weights (~5.5 GB) — default model for LLM inference
+RUN python3 -c "\
+from transformers import AutoModelForCausalLM, AutoTokenizer; \
+AutoTokenizer.from_pretrained('microsoft/phi-2', trust_remote_code=True); \
+AutoModelForCausalLM.from_pretrained('microsoft/phi-2', trust_remote_code=True); \
+print('Phi-2 cached.')"
+
+LABEL dc1.worker.type="llm-inference"
+LABEL dc1.worker.version="1.0"
+
+CMD ["python", "/dc1/job/task.py"]

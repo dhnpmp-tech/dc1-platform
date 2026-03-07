@@ -1,6 +1,6 @@
 #!/bin/bash
 # DC1 Provider Setup — Linux/Mac
-# Downloads and installs the DC1 daemon as a background service.
+# Downloads and installs the DC1 daemon + Docker + NVIDIA Container Toolkit.
 #
 # Usage:
 #   curl -sL http://HOST/api/providers/download/setup?key=YOUR_KEY&os=linux | bash
@@ -13,20 +13,20 @@ INSTALL_DIR="/opt/dc1-provider"
 LOG_DIR="$HOME/dc1-provider/logs"
 
 echo "============================================"
-echo "  DC1 Provider Daemon Installer"
+echo "  DC1 Provider Setup v2.0"
 echo "  GPU Compute Marketplace — Saudi Arabia"
 echo "============================================"
 echo ""
 
 # Check for root/sudo
 if [ "$(id -u)" -ne 0 ]; then
-    echo "[!] This script needs sudo for service installation."
+    echo "[!] This script needs sudo for service & Docker installation."
     echo "    Re-running with sudo..."
     exec sudo bash "$0" "$@"
 fi
 
-# Check Python 3
-echo "[1/6] Checking Python 3..."
+# ── Step 1: Python 3 ────────────────────────────────────────────────────
+echo "[1/8] Checking Python 3..."
 if command -v python3 &>/dev/null; then
     PY=$(python3 --version 2>&1)
     echo "  Found: $PY"
@@ -44,53 +44,136 @@ else
     fi
 fi
 
-# Install pip dependencies
-echo "[2/6] Installing Python packages..."
+# ── Step 2: Python packages ────────────────────────────────────────────
+echo "[2/8] Installing Python packages..."
 pip3 install --quiet requests psutil 2>/dev/null || python3 -m pip install --quiet requests psutil 2>/dev/null || true
 
-# Check for PyTorch (optional — needed for GPU benchmarks)
-echo "[3/6] Checking PyTorch..."
-if python3 -c "import torch" 2>/dev/null; then
-    echo "  PyTorch found."
+# ── Step 3: NVIDIA Drivers check ───────────────────────────────────────
+echo "[3/8] Checking NVIDIA drivers..."
+if command -v nvidia-smi &>/dev/null; then
+    DRIVER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+    GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+    echo "  GPU: $GPU"
+    echo "  Driver: $DRIVER"
 else
-    echo "  PyTorch not found. Installing (this may take a few minutes)..."
-    pip3 install --quiet torch --index-url https://download.pytorch.org/whl/cu121 2>/dev/null || \
-    pip3 install --quiet torch 2>/dev/null || \
-    echo "  [WARN] PyTorch install failed — GPU benchmarks won't work. Install manually: pip3 install torch"
+    echo "  [WARN] nvidia-smi not found — NVIDIA drivers may not be installed."
+    echo "  Install from: https://www.nvidia.com/download/index.aspx"
+    echo "  Or on Ubuntu: sudo apt install nvidia-driver-545"
 fi
 
-# Download daemon
-echo "[4/6] Downloading DC1 daemon..."
+# ── Step 4: Docker ──────────────────────────────────────────────────────
+echo "[4/8] Checking Docker..."
+if command -v docker &>/dev/null; then
+    DOCKER_VER=$(docker --version 2>&1)
+    echo "  Found: $DOCKER_VER"
+else
+    echo "  Docker not found. Installing..."
+    if [ "$(uname)" = "Linux" ]; then
+        # Official Docker install script
+        curl -fsSL https://get.docker.com | sh
+        # Add current user to docker group
+        ACTUAL_USER=$(logname 2>/dev/null || echo "$SUDO_USER" || echo "root")
+        usermod -aG docker "$ACTUAL_USER" 2>/dev/null || true
+        systemctl enable docker
+        systemctl start docker
+        echo "  Docker installed. User '$ACTUAL_USER' added to docker group."
+        echo "  NOTE: Log out and back in for docker group to take effect."
+    elif [ "$(uname)" = "Darwin" ]; then
+        echo "  [INFO] Install Docker Desktop from: https://docker.com/products/docker-desktop"
+        echo "  Then re-run this script."
+        exit 1
+    fi
+fi
+
+# ── Step 5: NVIDIA Container Toolkit ────────────────────────────────────
+echo "[5/8] Checking NVIDIA Container Toolkit..."
+if docker info 2>/dev/null | grep -q "nvidia"; then
+    echo "  NVIDIA Container Toolkit already configured."
+elif [ "$(uname)" = "Linux" ]; then
+    echo "  Installing NVIDIA Container Toolkit..."
+
+    # Add NVIDIA Container Toolkit repo
+    distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+        gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null || true
+
+    curl -fsSL "https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list" | \
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+        tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null 2>/dev/null || true
+
+    # Try apt first (Ubuntu/Debian), then yum (RHEL/CentOS)
+    if command -v apt-get &>/dev/null; then
+        apt-get update -qq 2>/dev/null
+        apt-get install -y -qq nvidia-container-toolkit 2>/dev/null || echo "  [WARN] NVIDIA CT install via apt failed"
+    elif command -v yum &>/dev/null; then
+        yum install -y nvidia-container-toolkit 2>/dev/null || echo "  [WARN] NVIDIA CT install via yum failed"
+    fi
+
+    # Configure Docker to use NVIDIA runtime
+    nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
+    systemctl restart docker 2>/dev/null || true
+
+    # Verify
+    if docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi &>/dev/null; then
+        echo "  NVIDIA Container Toolkit installed and verified!"
+    else
+        echo "  [WARN] NVIDIA CT installed but GPU passthrough test failed."
+        echo "  The daemon will fall back to bare-metal execution."
+    fi
+else
+    echo "  [INFO] NVIDIA Container Toolkit only available on Linux."
+    echo "  macOS will use bare-metal execution."
+fi
+
+# ── Step 6: Pull DC1 Worker Images ─────────────────────────────────────
+echo "[6/8] Pulling DC1 worker images..."
+if command -v docker &>/dev/null; then
+    # For now, build from local Dockerfiles if registry not set
+    # In production, these would be: docker pull ghcr.io/dhnpmp-tech/dc1-sd-worker:latest
+    echo "  [INFO] Worker images will be built on first job or pulled from DC1 registry."
+    echo "  Pre-pulling NVIDIA base image..."
+    docker pull nvidia/cuda:12.2.0-runtime-ubuntu22.04 2>/dev/null && \
+        echo "  NVIDIA CUDA base image cached." || \
+        echo "  [WARN] Could not pull NVIDIA base image. Will pull on first job."
+fi
+
+# ── Step 7: Download daemon + create service ────────────────────────────
+echo "[7/8] Downloading DC1 daemon..."
 mkdir -p "$INSTALL_DIR" "$LOG_DIR"
 curl -sL "${DC1_API_URL}/api/providers/download/daemon?key=${DC1_API_KEY}" -o "${INSTALL_DIR}/dc1-daemon.py"
 chmod +x "${INSTALL_DIR}/dc1-daemon.py"
 echo "  Installed to ${INSTALL_DIR}/dc1-daemon.py"
 
-# Create config
+# Save config
 cat > "${INSTALL_DIR}/config.json" << CONF
 {
   "api_key": "${DC1_API_KEY}",
   "api_url": "${DC1_API_URL}",
-  "daemon_version": "1.0.0"
+  "daemon_version": "2.0.0",
+  "run_mode": "always-on",
+  "force_bare_metal": false
 }
 CONF
 
 # Create systemd service (Linux) or launchd plist (Mac)
-echo "[5/6] Creating background service..."
+echo "[8/8] Creating background service..."
 
 if [ "$(uname)" = "Linux" ] && command -v systemctl &>/dev/null; then
+    ACTUAL_USER=$(logname 2>/dev/null || echo "$SUDO_USER" || echo "root")
+    ACTUAL_HOME=$(eval echo ~"$ACTUAL_USER")
     cat > /etc/systemd/system/dc1-provider.service << SVC
 [Unit]
 Description=DC1 Provider Daemon
-After=network.target
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple
-User=$(logname 2>/dev/null || echo root)
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/dc1-daemon.py --key ${DC1_API_KEY} --url ${DC1_API_URL}
+User=$ACTUAL_USER
+ExecStart=/usr/bin/python3 ${INSTALL_DIR}/dc1-daemon.py
 Restart=always
 RestartSec=10
-Environment=HOME=$(eval echo ~$(logname 2>/dev/null || echo root))
+Environment=HOME=$ACTUAL_HOME
 
 [Install]
 WantedBy=multi-user.target
@@ -102,8 +185,9 @@ SVC
     echo "  systemd service created and started."
 
 elif [ "$(uname)" = "Darwin" ]; then
-    PLIST_PATH="$HOME/Library/LaunchAgents/com.dc1.provider.plist"
-    mkdir -p "$HOME/Library/LaunchAgents"
+    ACTUAL_HOME="$HOME"
+    PLIST_PATH="$ACTUAL_HOME/Library/LaunchAgents/com.dc1.provider.plist"
+    mkdir -p "$ACTUAL_HOME/Library/LaunchAgents"
     cat > "$PLIST_PATH" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -114,8 +198,6 @@ elif [ "$(uname)" = "Darwin" ]; then
     <array>
         <string>/usr/bin/python3</string>
         <string>${INSTALL_DIR}/dc1-daemon.py</string>
-        <string>--key</string><string>${DC1_API_KEY}</string>
-        <string>--url</string><string>${DC1_API_URL}</string>
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
@@ -128,24 +210,27 @@ PLIST
     echo "  launchd agent created and loaded."
 else
     echo "  [WARN] No service manager found. Run manually:"
-    echo "    python3 ${INSTALL_DIR}/dc1-daemon.py --key ${DC1_API_KEY} --url ${DC1_API_URL}"
+    echo "    python3 ${INSTALL_DIR}/dc1-daemon.py"
 fi
 
-# Status check
-echo "[6/6] Verifying..."
+# Status
 sleep 3
 echo ""
 echo "============================================"
-echo "  DC1 Provider Daemon — INSTALLED"
+echo "  DC1 Provider Daemon v2.0 — INSTALLED"
 echo "============================================"
-echo "  Daemon: ${INSTALL_DIR}/dc1-daemon.py"
-echo "  Logs:   ${LOG_DIR}/daemon.log"
-echo "  Key:    ${DC1_API_KEY:0:20}..."
+echo "  Daemon:  ${INSTALL_DIR}/dc1-daemon.py"
+echo "  Config:  ${INSTALL_DIR}/config.json"
+echo "  Logs:    ${LOG_DIR}/daemon.log"
+echo "  Key:     ${DC1_API_KEY:0:20}..."
 echo ""
-echo "  Check status:"
-echo "    Linux:  systemctl status dc1-provider"
-echo "    Mac:    launchctl list | grep dc1"
-echo "    Logs:   tail -f ${LOG_DIR}/daemon.log"
+echo "  Docker:  $(docker --version 2>/dev/null || echo 'not installed')"
+echo "  GPU:     $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'not detected')"
+echo ""
+echo "  Commands:"
+echo "    Status: systemctl status dc1-provider"
+echo "    Logs:   journalctl -u dc1-provider -f"
+echo "    Stop:   systemctl stop dc1-provider"
 echo ""
 echo "  Dashboard: ${DC1_API_URL}/api/providers/status/${DC1_API_KEY}"
 echo "============================================"

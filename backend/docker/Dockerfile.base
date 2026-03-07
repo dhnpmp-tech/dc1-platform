@@ -1,0 +1,29 @@
+# DC1 Base Worker — CUDA 12.2 + Python 3.10 + PyTorch
+# All other worker images extend this
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev git wget curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Symlink python
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# PyTorch (CUDA 12.1 wheels work on 12.2 runtime)
+RUN pip3 install --no-cache-dir \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Common ML utilities
+RUN pip3 install --no-cache-dir \
+    requests psutil numpy pillow
+
+# Working directory for DC1 tasks
+WORKDIR /dc1/job
+
+# Default: run whatever script is mounted
+CMD ["python", "/dc1/job/task.py"]

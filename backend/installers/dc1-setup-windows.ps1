@@ -1,5 +1,5 @@
-# DC1 Provider Setup — Windows
-# Downloads and installs the DC1 daemon as a scheduled task.
+# DC1 Provider Setup v2.0 — Windows
+# Downloads and installs the DC1 daemon + Docker Desktop + NVIDIA Container Toolkit.
 #
 # Usage:
 #   powershell -c "irm http://HOST/api/providers/download/setup?key=KEY&os=windows | iex"
@@ -12,13 +12,13 @@ $INSTALL_DIR = "$env:LOCALAPPDATA\DC1Provider"
 $LOG_DIR = "$env:USERPROFILE\dc1-provider\logs"
 
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  DC1 Provider Daemon Installer (Windows)" -ForegroundColor Cyan
+Write-Host "  DC1 Provider Setup v2.0 (Windows)" -ForegroundColor Cyan
 Write-Host "  GPU Compute Marketplace — Saudi Arabia" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Step 1: Check Python
-Write-Host "[1/6] Checking Python 3..." -ForegroundColor Yellow
+# ── Step 1: Python ──────────────────────────────────────────────────────
+Write-Host "[1/8] Checking Python 3..." -ForegroundColor Yellow
 $python = $null
 foreach ($cmd in @("python3", "python", "py")) {
     try {
@@ -43,29 +43,90 @@ if (-not $python) {
     }
 }
 
-# Step 2: Install pip packages
-Write-Host "[2/6] Installing Python packages..." -ForegroundColor Yellow
+# ── Step 2: Pip packages ────────────────────────────────────────────────
+Write-Host "[2/8] Installing Python packages..." -ForegroundColor Yellow
 & $python -m pip install --quiet requests psutil 2>$null
 
-# Step 3: Check PyTorch
-Write-Host "[3/6] Checking PyTorch..." -ForegroundColor Yellow
-$hasTorch = & $python -c "import torch; print('ok')" 2>$null
-if ($hasTorch -eq "ok") {
-    Write-Host "  PyTorch found."
-} else {
-    Write-Host "  Installing PyTorch (this may take a few minutes)..." -ForegroundColor Yellow
-    & $python -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cu121 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        & $python -m pip install --quiet torch 2>$null
+# ── Step 3: NVIDIA Drivers ──────────────────────────────────────────────
+Write-Host "[3/8] Checking NVIDIA drivers..." -ForegroundColor Yellow
+try {
+    $nvsmi = & nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1
+    if ($nvsmi -and -not ($nvsmi -match "failed|error")) {
+        Write-Host "  GPU: $nvsmi"
+    } else {
+        Write-Host "  [WARN] NVIDIA GPU not detected. Install drivers from:" -ForegroundColor Yellow
+        Write-Host "    https://www.nvidia.com/download/index.aspx" -ForegroundColor Yellow
     }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [WARN] PyTorch install failed. GPU benchmarks won't work." -ForegroundColor Yellow
-        Write-Host "  Install manually: pip install torch" -ForegroundColor Yellow
+} catch {
+    Write-Host "  [WARN] nvidia-smi not found. Install NVIDIA drivers first." -ForegroundColor Yellow
+}
+
+# ── Step 4: Docker Desktop ──────────────────────────────────────────────
+Write-Host "[4/8] Checking Docker..." -ForegroundColor Yellow
+$dockerInstalled = $false
+try {
+    $dockerVer = & docker --version 2>&1
+    if ($dockerVer -match "Docker version") {
+        Write-Host "  Found: $dockerVer"
+        $dockerInstalled = $true
+    }
+} catch {}
+
+if (-not $dockerInstalled) {
+    Write-Host "  Docker Desktop not found. Installing..." -ForegroundColor Yellow
+    try {
+        # Try winget first
+        winget install Docker.DockerDesktop --accept-source-agreements --accept-package-agreements -s winget
+        Write-Host "  Docker Desktop installed." -ForegroundColor Green
+        Write-Host "  [IMPORTANT] You need to:" -ForegroundColor Yellow
+        Write-Host "    1. Restart your computer" -ForegroundColor Yellow
+        Write-Host "    2. Launch Docker Desktop" -ForegroundColor Yellow
+        Write-Host "    3. Enable 'Use WSL 2' in Docker settings" -ForegroundColor Yellow
+        Write-Host "    4. Re-run this installer" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Alternatively, download from: https://docker.com/products/docker-desktop" -ForegroundColor Yellow
+    } catch {
+        Write-Host "  [WARN] Could not auto-install Docker Desktop." -ForegroundColor Yellow
+        Write-Host "  Download from: https://docker.com/products/docker-desktop" -ForegroundColor Yellow
+        Write-Host "  Enable WSL 2 backend + NVIDIA GPU support in settings." -ForegroundColor Yellow
     }
 }
 
-# Step 4: Download daemon
-Write-Host "[4/6] Downloading DC1 daemon..." -ForegroundColor Yellow
+# ── Step 5: NVIDIA Container Toolkit (Windows uses Docker Desktop GPU support) ──
+Write-Host "[5/8] Checking NVIDIA Container Toolkit (Docker GPU support)..." -ForegroundColor Yellow
+if ($dockerInstalled) {
+    try {
+        $gpuTest = & docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi --query-gpu=name --format=csv,noheader 2>&1
+        if ($gpuTest -and -not ($gpuTest -match "error|Error")) {
+            Write-Host "  Docker GPU passthrough working: $gpuTest" -ForegroundColor Green
+        } else {
+            Write-Host "  [WARN] Docker GPU passthrough not working." -ForegroundColor Yellow
+            Write-Host "  Ensure Docker Desktop has 'Use WSL 2 based engine' enabled." -ForegroundColor Yellow
+            Write-Host "  Windows 11 + latest NVIDIA drivers required for GPU containers." -ForegroundColor Yellow
+            Write-Host "  The daemon will fall back to bare-metal execution." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "  [WARN] Could not test Docker GPU. Ensure Docker Desktop is running." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [SKIP] Docker not installed yet. GPU containers will be configured after Docker setup." -ForegroundColor Yellow
+}
+
+# ── Step 6: Pre-pull base images ────────────────────────────────────────
+Write-Host "[6/8] Pulling DC1 base images..." -ForegroundColor Yellow
+if ($dockerInstalled) {
+    try {
+        & docker pull nvidia/cuda:12.2.0-runtime-ubuntu22.04 2>$null
+        Write-Host "  NVIDIA CUDA base image cached."
+    } catch {
+        Write-Host "  [WARN] Could not pull base image. Will pull on first job." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [SKIP] Docker not available. Images will be pulled after Docker setup." -ForegroundColor Yellow
+}
+
+# ── Step 7: Download daemon ─────────────────────────────────────────────
+Write-Host "[7/8] Downloading DC1 daemon..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
 New-Item -ItemType Directory -Path $LOG_DIR -Force | Out-Null
 
@@ -77,17 +138,19 @@ Write-Host "  Installed to $INSTALL_DIR\dc1-daemon.py"
 $config = @{
     api_key = $DC1_API_KEY
     api_url = $DC1_API_URL
-    daemon_version = "1.0.0"
+    daemon_version = "2.0.0"
+    run_mode = "always-on"
+    force_bare_metal = $false
 } | ConvertTo-Json
 $config | Out-File "$INSTALL_DIR\config.json" -Encoding UTF8
 
-# Step 5: Create scheduled task
-Write-Host "[5/6] Creating Windows scheduled task..." -ForegroundColor Yellow
+# ── Step 8: Scheduled task ──────────────────────────────────────────────
+Write-Host "[8/8] Creating Windows scheduled task..." -ForegroundColor Yellow
 
 $taskName = "DC1 Provider Daemon"
 $taskAction = New-ScheduledTaskAction `
     -Execute $python `
-    -Argument "$INSTALL_DIR\dc1-daemon.py --key $DC1_API_KEY --url $DC1_API_URL" `
+    -Argument "$INSTALL_DIR\dc1-daemon.py" `
     -WorkingDirectory $INSTALL_DIR
 
 $taskTrigger = New-ScheduledTaskTrigger -AtLogon
@@ -105,27 +168,34 @@ Register-ScheduledTask `
     -Action $taskAction `
     -Trigger $taskTrigger `
     -Settings $taskSettings `
-    -Description "DC1 GPU compute provider daemon" `
+    -Description "DC1 GPU compute provider daemon v2.0 (Docker-enabled)" `
     -RunLevel Limited
 
 Write-Host "  Scheduled task '$taskName' created."
 
-# Step 6: Start daemon now
-Write-Host "[6/6] Starting daemon..." -ForegroundColor Yellow
+# Start daemon now
 Start-ScheduledTask -TaskName $taskName
 Start-Sleep -Seconds 3
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  DC1 Provider Daemon — INSTALLED" -ForegroundColor Green
+Write-Host "  DC1 Provider Daemon v2.0 — INSTALLED" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  Daemon: $INSTALL_DIR\dc1-daemon.py"
-Write-Host "  Logs:   $LOG_DIR\daemon.log"
-Write-Host "  Key:    $($DC1_API_KEY.Substring(0,20))..."
+Write-Host "  Daemon:  $INSTALL_DIR\dc1-daemon.py"
+Write-Host "  Config:  $INSTALL_DIR\config.json"
+Write-Host "  Logs:    $LOG_DIR\daemon.log"
+Write-Host "  Key:     $($DC1_API_KEY.Substring(0,[Math]::Min(20,$DC1_API_KEY.Length)))..."
 Write-Host ""
-Write-Host "  Check status:"
-Write-Host "    Get-ScheduledTask -TaskName '$taskName'"
-Write-Host "    Get-Content $LOG_DIR\daemon.log -Tail 20"
+if ($dockerInstalled) {
+    Write-Host "  Docker:  INSTALLED" -ForegroundColor Green
+} else {
+    Write-Host "  Docker:  NOT INSTALLED — install Docker Desktop and re-run" -ForegroundColor Yellow
+}
+Write-Host ""
+Write-Host "  Commands:" -ForegroundColor White
+Write-Host "    Status: Get-ScheduledTask -TaskName '$taskName'"
+Write-Host "    Logs:   Get-Content $LOG_DIR\daemon.log -Tail 20"
+Write-Host "    Stop:   Stop-ScheduledTask -TaskName '$taskName'"
 Write-Host ""
 Write-Host "  Dashboard: $DC1_API_URL/api/providers/status/$DC1_API_KEY"
 Write-Host "============================================" -ForegroundColor Green
