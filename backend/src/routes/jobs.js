@@ -96,8 +96,9 @@ router.post('/submit', requireRenter, (req, res) => {
     const timeout = Math.min(max_duration_seconds || 600, 3600);
     const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString();
 
-    // HMAC-sign task_spec if present
-    const taskSpecHmac = task_spec ? signTaskSpec(task_spec) : null;
+    // Stringify task_spec if it's an object, then HMAC-sign
+    const taskSpecStr = task_spec ? (typeof task_spec === 'string' ? task_spec : JSON.stringify(task_spec)) : null;
+    const taskSpecHmac = taskSpecStr ? signTaskSpec(taskSpecStr) : null;
 
     const result = db.run(
       `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, status, submitted_at, duration_minutes,
@@ -105,7 +106,7 @@ router.post('/submit', requireRenter, (req, res) => {
        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       job_id, provider_id, req.renter.id, job_type, now, duration_minutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
-      task_spec || null,
+      taskSpecStr,
       taskSpecHmac,
       timeout,
       timeoutAt,

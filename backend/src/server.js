@@ -7,8 +7,29 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
 
-// Middleware
-app.use(cors());
+// ── CORS Lockdown ─────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  'https://dc1-platform.vercel.app',
+  'https://dc1-platform-dc11.vercel.app',
+  'https://dc1-platform-git-main-dc11.vercel.app',
+  'http://76.13.179.86:8083',
+  'http://76.13.179.86:8084',
+  'http://localhost:3000',
+  'http://localhost:8083',
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (daemon, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    // Allow exact matches
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    // Allow Vercel preview deploys (*.vercel.app)
+    if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) return callback(null, true);
+    console.warn(`[cors] Blocked origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
