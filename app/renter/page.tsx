@@ -2,28 +2,36 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { supabase } from '../../lib/supabase'
 
+// Express backend for auth + writes only
 const API_BASE = process.env.NEXT_PUBLIC_DC1_API || 'http://76.13.179.86:8083'
 
-interface Provider {
-  id: number
+interface Machine {
+  id: string
   name: string
-  gpu_model: string
-  vram_gb: number | null
-  vram_mib: number | null
+  gpu_type: string
+  gpu_vram_gb: number | null
+  gpu_utilization_pct: number | null
+  gpu_temperature_c: number | null
   status: string
+  online: boolean
   location: string | null
-  reliability_score: number | null
+  hourly_rate_sar: number | null
+  last_heartbeat: string | null
+  uptime_pct_30d: number | null
 }
 
-interface Job {
-  id: number
-  job_id: string
-  job_type: string
+interface Rental {
+  id: string
+  job_name: string
   status: string
-  submitted_at: string
-  completed_at: string | null
-  actual_cost_halala: number | null
+  started_at: string | null
+  ended_at: string | null
+  total_cost_sar: number | null
+  tags: any
+  machine_id: string
+  machines?: { gpu_type: string }
 }
 
 interface RenterProfile {
@@ -34,39 +42,67 @@ interface RenterProfile {
   balance_halala: number
   total_spent_halala: number
   total_jobs: number
-  created_at: string
 }
 
 export default function RenterDashboard() {
-  const [providers, setProviders] = useState<Provider[]>([])
-  const [filteredProviders, setFilteredProviders] = useState<Provider[]>([])
+  const [machines, setMachines] = useState<Machine[]>([])
+  const [filteredMachines, setFilteredMachines] = useState<Machine[]>([])
+  const [rentals, setRentals] = useState<Rental[]>([])
   const [renter, setRenter] = useState<RenterProfile | null>(null)
-  const [recentJobs, setRecentJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [filter, setFilter] = useState({
     minVram: 0,
-    maxVram: 100,
+    maxPrice: 10,
     status: 'all',
   })
 
-  // Load available providers (public endpoint — no auth required)
-  const loadProviders = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/renters/available-providers`)
-      if (!res.ok) throw new Error('Failed to load providers')
-      const data = await res.json()
-      setProviders(data.providers || [])
-    } catch (err: any) {
-      console.error('Provider fetch error:', err)
-      setError('Could not connect to DC1 backend. Is the API running?')
+  // ─── Supabase reads (real-time) ──────────────────────────────────────────
+
+  const loadMachines = useCallback(async () => {
+    const { data, error: err } = await supabase
+      .from('machines')
+      .select('*')
+      .in('status', ['active', 'verified'])
+      .order('online', { ascending: false })
+      .order('last_heartbeat', { ascending: false })
+
+    if (err) {
+      console.error('Supabase machines error:', err)
+      return
     }
+    setMachines(data || [])
   }, [])
 
-  // Load renter profile + recent jobs (requires API key)
-  const loadRenterData = useCallback(async (key: string) => {
+  const loadRentals = useCallback(async (renterEmail: string) => {
+    // Look up renter's Supabase user ID by email
+    const { data: users } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', renterEmail)
+      .limit(1)
+
+    if (!users || users.length === 0) return
+
+    const { data, error: err } = await supabase
+      .from('rentals')
+      .select('*, machines(gpu_type)')
+      .eq('renter_id', users[0].id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (err) {
+      console.error('Supabase rentals error:', err)
+      return
+    }
+    setRentals(data || [])
+  }, [])
+
+  // ─── Express backend for auth ────────────────────────────────────────────
+
+  const loadRenterProfile = useCallback(async (key: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/renters/me?key=${encodeURIComponent(key)}`)
       if (res.status === 404) {
@@ -76,60 +112,70 @@ export default function RenterDashboard() {
       if (!res.ok) throw new Error('Failed to load renter data')
       const data = await res.json()
       setRenter(data.renter)
-      setRecentJobs(data.recent_jobs || [])
       setIsAuthenticated(true)
-      // Persist key for session
       sessionStorage.setItem('dc1_renter_key', key)
+
+      // Now load rentals from Supabase using the renter's email
+      if (data.renter?.email) {
+        await loadRentals(data.renter.email)
+      }
       return true
     } catch (err: any) {
-      console.error('Renter data error:', err)
-      setError('Could not load your profile. Check your API key.')
+      console.error('Renter profile error:', err)
+      setError('Could not load your profile. Is the backend running?')
       return false
     }
-  }, [])
+  }, [loadRentals])
 
-  // Apply VRAM filters to provider list
-  const applyFilters = useCallback((providerList: Provider[]) => {
-    const filtered = providerList.filter((p) => {
-      const vram = p.vram_gb || 0
-      const matchesMinVram = vram >= filter.minVram
-      const matchesMaxVram = vram <= filter.maxVram
-      const matchesStatus = filter.status === 'all' || p.status === filter.status
-      return matchesMinVram && matchesMaxVram && matchesStatus
+  // ─── Apply filters ───────────────────────────────────────────────────────
+
+  const applyFilters = useCallback((machineList: Machine[]) => {
+    const filtered = machineList.filter((m) => {
+      const vram = m.gpu_vram_gb || 0
+      const rate = m.hourly_rate_sar || 0
+      const matchesVram = vram >= filter.minVram
+      const matchesPrice = rate <= filter.maxPrice
+      const matchesStatus = filter.status === 'all' || (filter.status === 'online' ? m.online : !m.online)
+      return matchesVram && matchesPrice && matchesStatus
     })
-    setFilteredProviders(filtered)
+    setFilteredMachines(filtered)
   }, [filter])
 
-  // On mount: load providers, check for saved key
+  // ─── Lifecycle ───────────────────────────────────────────────────────────
+
   useEffect(() => {
     const init = async () => {
-      await loadProviders()
+      await loadMachines()
       const savedKey = sessionStorage.getItem('dc1_renter_key')
       if (savedKey) {
         setApiKey(savedKey)
-        await loadRenterData(savedKey)
+        await loadRenterProfile(savedKey)
       }
       setLoading(false)
     }
     init()
-  }, [loadProviders, loadRenterData])
 
-  // Re-filter when providers or filter changes
-  useEffect(() => {
-    applyFilters(providers)
-  }, [providers, applyFilters])
+    // Real-time subscription: machine status changes
+    const subscription = supabase
+      .channel('renter-gpu-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'machines' }, () => {
+        loadMachines()
+      })
+      .subscribe()
 
-  // Poll providers every 30s
+    return () => { subscription.unsubscribe() }
+  }, [loadMachines, loadRenterProfile])
+
+  // Re-filter when machines or filter state changes
   useEffect(() => {
-    const interval = setInterval(loadProviders, 30000)
-    return () => clearInterval(interval)
-  }, [loadProviders])
+    applyFilters(machines)
+  }, [machines, applyFilters])
 
   const handleLogin = async () => {
     if (!apiKey.trim()) return
     setError(null)
     setLoading(true)
-    await loadRenterData(apiKey.trim())
+    await loadRenterProfile(apiKey.trim())
     setLoading(false)
   }
 
@@ -137,9 +183,7 @@ export default function RenterDashboard() {
     setFilter(prev => ({ ...prev, [key]: value }))
   }
 
-  const formatSAR = (halala: number) => {
-    return (halala / 100).toFixed(2)
-  }
+  const formatSAR = (sar: number) => sar.toFixed(2)
 
   if (loading) {
     return (
@@ -176,7 +220,7 @@ export default function RenterDashboard() {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* API Key Login (if not authenticated) */}
+        {/* API Key Login */}
         {!isAuthenticated && (
           <div className="bg-gray-900 rounded-lg border border-dc-cyan/30 p-6 mb-8">
             <h3 className="text-dc-cyan font-bold mb-2">Renter Login</h3>
@@ -204,14 +248,14 @@ export default function RenterDashboard() {
           </div>
         )}
 
-        {/* Stats (show renter data if authenticated, otherwise just provider count) */}
+        {/* Stats */}
         <div className="grid md:grid-cols-3 gap-6 mb-8">
           {isAuthenticated && renter && (
             <>
               <div className="bg-gradient-to-br from-dc-cyan/10 to-transparent border border-dc-cyan/30 rounded-lg p-6">
                 <p className="text-gray-400 text-sm">Total Spent</p>
                 <h2 className="text-3xl font-bold text-dc-cyan">
-                  &#xFDFC;{formatSAR(renter.total_spent_halala || 0)}
+                  &#xFDFC;{formatSAR((renter.total_spent_halala || 0) / 100)}
                 </h2>
                 <p className="text-xs text-gray-500 mt-2">Lifetime spending</p>
               </div>
@@ -224,8 +268,12 @@ export default function RenterDashboard() {
           )}
           <div className={`bg-gradient-to-br from-green-500/10 to-transparent border border-green-500/20 rounded-lg p-6 ${!isAuthenticated ? 'md:col-span-3' : ''}`}>
             <p className="text-gray-400 text-sm">Available GPUs</p>
-            <h2 className="text-3xl font-bold text-green-400">{filteredProviders.length}</h2>
-            <p className="text-xs text-gray-500 mt-2">Online &amp; ready to rent</p>
+            <h2 className="text-3xl font-bold text-green-400">
+              {machines.filter(m => m.online).length}
+            </h2>
+            <p className="text-xs text-gray-500 mt-2">
+              Online now &middot; {filteredMachines.length} matching filters &middot; updates in real-time
+            </p>
           </div>
         </div>
 
@@ -245,13 +293,14 @@ export default function RenterDashboard() {
               />
             </div>
             <div>
-              <label className="text-sm text-gray-400 mb-2 block">Max VRAM (GB)</label>
+              <label className="text-sm text-gray-400 mb-2 block">Max Price (SAR/hr)</label>
               <input
                 type="number"
                 min="0"
                 max="100"
-                value={filter.maxVram}
-                onChange={(e) => handleFilterChange('maxVram', parseInt(e.target.value) || 100)}
+                step="0.01"
+                value={filter.maxPrice}
+                onChange={(e) => handleFilterChange('maxPrice', parseFloat(e.target.value) || 10)}
                 className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:border-dc-cyan focus:outline-none"
               />
             </div>
@@ -262,24 +311,24 @@ export default function RenterDashboard() {
                 onChange={(e) => handleFilterChange('status', e.target.value)}
                 className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:border-dc-cyan focus:outline-none"
               >
-                <option value="all">All Online</option>
-                <option value="online">Online</option>
+                <option value="all">All</option>
+                <option value="online">Online Only</option>
               </select>
             </div>
           </div>
         </div>
 
         {/* GPU Marketplace */}
-        {filteredProviders.length > 0 ? (
+        {filteredMachines.length > 0 ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            {filteredProviders.map((provider) => (
-              <div key={provider.id} className="bg-gray-900 rounded-lg border border-gray-700 hover:border-dc-cyan/50 overflow-hidden transition-all group">
+            {filteredMachines.map((machine) => (
+              <div key={machine.id} className="bg-gray-900 rounded-lg border border-gray-700 hover:border-dc-cyan/50 overflow-hidden transition-all group">
                 <div className="bg-gradient-to-r from-dc-cyan/20 to-transparent p-4 border-b border-gray-700">
                   <h3 className="text-lg font-bold text-white group-hover:text-dc-cyan transition">
-                    {provider.gpu_model || 'Unknown GPU'}
+                    {machine.gpu_type || 'Unknown GPU'}
                   </h3>
-                  {provider.name && (
-                    <p className="text-xs text-gray-400 mt-1">{provider.name}</p>
+                  {machine.name && (
+                    <p className="text-xs text-gray-400 mt-1">{machine.name}</p>
                   )}
                 </div>
                 <div className="p-4">
@@ -287,29 +336,51 @@ export default function RenterDashboard() {
                     <div>
                       <p className="text-xs text-gray-500">VRAM</p>
                       <p className="text-lg font-bold text-dc-cyan">
-                        {provider.vram_gb ? `${provider.vram_gb}GB` : provider.vram_mib ? `${provider.vram_mib}MiB` : 'N/A'}
+                        {machine.gpu_vram_gb ? `${machine.gpu_vram_gb}GB` : 'N/A'}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Reliability</p>
+                      <p className="text-xs text-gray-500">Rate</p>
                       <p className="text-lg font-bold text-dc-gold">
-                        {provider.reliability_score != null ? `${(provider.reliability_score * 100).toFixed(0)}%` : 'New'}
+                        &#xFDFC;{machine.hourly_rate_sar || '0.38'}/hr
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs text-gray-500">GPU Load</p>
+                      <p className="text-sm text-white">
+                        {machine.gpu_utilization_pct != null ? `${machine.gpu_utilization_pct}%` : 'Idle'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Uptime (30d)</p>
+                      <p className="text-sm text-white">
+                        {machine.uptime_pct_30d != null ? `${Number(machine.uptime_pct_30d).toFixed(0)}%` : 'New'}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mb-4">
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-900/30 text-green-400">
-                      {provider.status}
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      machine.online
+                        ? 'bg-green-900/30 text-green-400'
+                        : 'bg-gray-700 text-gray-400'
+                    }`}>
+                      {machine.online ? 'Online' : 'Offline'}
                     </span>
-                    {provider.location && (
-                      <span className="text-xs text-gray-500">{provider.location}</span>
+                    {machine.location && (
+                      <span className="text-xs text-gray-500">{machine.location}</span>
                     )}
                   </div>
                   <Link
-                    href={`/jobs/submit?provider=${provider.id}&gpu=${encodeURIComponent(provider.gpu_model || '')}&vram=${provider.vram_gb || 0}`}
-                    className="block w-full bg-dc-cyan text-dc-black font-bold py-2 rounded hover:bg-dc-cyan/90 transition text-center"
+                    href={`/jobs/submit?provider=${machine.id}&gpu=${encodeURIComponent(machine.gpu_type || '')}&vram=${machine.gpu_vram_gb || 0}`}
+                    className={`block w-full font-bold py-2 rounded transition text-center ${
+                      machine.online
+                        ? 'bg-dc-cyan text-dc-black hover:bg-dc-cyan/90'
+                        : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                    }`}
                   >
-                    Rent This GPU
+                    {machine.online ? 'Rent This GPU' : 'Currently Offline'}
                   </Link>
                 </div>
               </div>
@@ -320,8 +391,8 @@ export default function RenterDashboard() {
             <svg className="mx-auto h-16 w-16 text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h9a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0017.25 4.5h-9A2.25 2.25 0 006 6.75v10.5A2.25 2.25 0 008.25 19.5z" />
             </svg>
-            <h3 className="text-xl font-bold text-white mb-2">No GPUs available right now</h3>
-            <p className="text-gray-400 mb-6">Check back soon — providers come online throughout the day.</p>
+            <h3 className="text-xl font-bold text-white mb-2">No GPUs match your filters</h3>
+            <p className="text-gray-400 mb-6">Try adjusting the filters or check back soon — providers come online throughout the day.</p>
             <div className="flex justify-center gap-4">
               <Link
                 href="/provider-onboarding"
@@ -339,43 +410,47 @@ export default function RenterDashboard() {
           </div>
         )}
 
-        {/* Recent Jobs (only if authenticated) */}
+        {/* Recent Rentals (Supabase real-time) */}
         {isAuthenticated && (
           <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-700">
-              <h2 className="text-dc-cyan text-xl font-bold">Recent Jobs</h2>
+              <h2 className="text-dc-cyan text-xl font-bold">Recent Rentals</h2>
             </div>
             <div className="divide-y divide-gray-700">
-              {recentJobs.length > 0 ? (
-                recentJobs.slice(0, 10).map((job) => (
-                  <div key={job.id} className="px-6 py-4 flex justify-between items-center hover:bg-gray-800/50">
-                    <div>
-                      <p className="text-white font-semibold">{job.job_type}</p>
-                      <p className="text-xs text-gray-500">
-                        {job.job_id} &middot; {new Date(job.submitted_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        job.status === 'completed' ? 'bg-green-900/30 text-green-400' :
-                        job.status === 'running' ? 'bg-blue-900/30 text-blue-400' :
-                        job.status === 'failed' ? 'bg-red-900/30 text-red-400' :
-                        job.status === 'cancelled' ? 'bg-gray-700 text-gray-400' :
-                        'bg-yellow-900/30 text-yellow-400'
-                      }`}>
-                        {job.status}
-                      </span>
-                      {job.actual_cost_halala != null && (
-                        <p className="text-sm text-gray-400 mt-1">
-                          &#xFDFC;{formatSAR(job.actual_cost_halala)}
+              {rentals.length > 0 ? (
+                rentals.slice(0, 10).map((rental) => {
+                  const tags = typeof rental.tags === 'string' ? JSON.parse(rental.tags) : rental.tags;
+                  return (
+                    <div key={rental.id} className="px-6 py-4 flex justify-between items-center hover:bg-gray-800/50">
+                      <div>
+                        <p className="text-white font-semibold">
+                          {tags?.job_type || 'Compute'} — {rental.machines?.gpu_type || 'GPU'}
                         </p>
-                      )}
+                        <p className="text-xs text-gray-500">
+                          {rental.job_name} &middot; {rental.started_at ? new Date(rental.started_at).toLocaleDateString() : 'Pending'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          rental.status === 'completed' ? 'bg-green-900/30 text-green-400' :
+                          rental.status === 'active' ? 'bg-blue-900/30 text-blue-400' :
+                          rental.status === 'cancelled' ? 'bg-red-900/30 text-red-400' :
+                          'bg-yellow-900/30 text-yellow-400'
+                        }`}>
+                          {rental.status}
+                        </span>
+                        {rental.total_cost_sar != null && (
+                          <p className="text-sm text-gray-400 mt-1">
+                            &#xFDFC;{Number(rental.total_cost_sar).toFixed(2)}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="px-6 py-12 text-center">
-                  <p className="text-gray-400">No jobs yet — submit your first job to get started.</p>
+                  <p className="text-gray-400">No rentals yet — submit your first job to get started.</p>
                 </div>
               )}
             </div>

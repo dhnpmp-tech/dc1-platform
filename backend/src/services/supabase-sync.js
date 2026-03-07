@@ -1,4 +1,6 @@
 // DC1 SQLite -> Supabase Sync Bridge
+// Syncs: providers → users + machines + machine_metrics
+//        jobs    → rentals + transactions
 const { createClient } = require('@supabase/supabase-js');
 const db = require('../db');
 
@@ -11,6 +13,9 @@ let supabase = null;
 let syncRunning = false;
 let lastSyncAt = null;
 let syncStats = { total: 0, success: 0, errors: 0, lastError: null };
+
+// Cache SQLite provider_id → Supabase user UUID + machine UUID mappings
+const providerMap = new Map(); // sqlite_provider_id → { userId, machineId }
 
 function init() {
   if (!SUPABASE_SERVICE_KEY) {
@@ -43,6 +48,8 @@ function parseGpuStatus(s) {
   if (!s) return null;
   try { return typeof s === 'string' ? JSON.parse(s) : s; } catch { return null; }
 }
+
+// ─── PROVIDER SYNC (providers → users + machines + machine_metrics) ─────────
 
 async function syncProvider(provider) {
   const gpuStatus = parseGpuStatus(provider.gpu_status);
@@ -97,25 +104,181 @@ async function syncProvider(provider) {
       online: true, uptime_status: 'up', timestamp: new Date().toISOString()
     });
   }
+
+  // Cache mapping for job sync
+  providerMap.set(provider.id, { userId, machineId });
+
   return { userId, machineId, online, machineStatus };
 }
+
+// ─── JOB SYNC (jobs → rentals + transactions) ──────────────────────────────
+
+function mapRentalStatus(jobStatus) {
+  const statusMap = {
+    'pending': 'pending', 'running': 'active', 'completed': 'completed',
+    'failed': 'cancelled', 'cancelled': 'cancelled', 'timed_out': 'cancelled'
+  };
+  return statusMap[jobStatus] || 'pending';
+}
+
+async function syncJob(job) {
+  // We need the Supabase UUIDs for provider and renter
+  const providerMapping = providerMap.get(job.provider_id);
+  if (!providerMapping) {
+    // Provider hasn't been synced yet — skip this job for now
+    return null;
+  }
+
+  const { userId: providerUserId, machineId } = providerMapping;
+
+  // Get or create renter user in Supabase
+  let renterUserId;
+  if (job.renter_id) {
+    const renter = db.get('SELECT * FROM renters WHERE id = ?', job.renter_id);
+    if (renter) {
+      const { data: existingRenter, error: rqe } = await supabase
+        .from('users').select('id').eq('email', renter.email).limit(1);
+      if (rqe) throw new Error('Renter user query failed: ' + rqe.message);
+
+      if (existingRenter && existingRenter.length > 0) {
+        renterUserId = existingRenter[0].id;
+      } else {
+        const { data: newRenter, error: rie } = await supabase
+          .from('users').insert({ email: renter.email, name: renter.name, type: 'renter' })
+          .select('id').single();
+        if (rie) throw new Error('Renter user insert failed: ' + rie.message);
+        renterUserId = newRenter.id;
+      }
+    }
+  }
+
+  // If no renter mapping, use provider as placeholder (Gate 0 self-test jobs)
+  if (!renterUserId) renterUserId = providerUserId;
+
+  // Calculate costs in SAR (halala → SAR)
+  const costSar = job.cost_halala ? job.cost_halala / 100 : 0;
+  const actualCostSar = job.actual_cost_halala ? job.actual_cost_halala / 100 : null;
+  const providerPayoutSar = job.provider_earned_halala ? job.provider_earned_halala / 100 : null;
+  const dc1SpreadSar = job.dc1_fee_halala ? job.dc1_fee_halala / 100 : null;
+  const durationHours = job.duration_minutes ? job.duration_minutes / 60 : null;
+  const actualHours = job.actual_duration_minutes ? job.actual_duration_minutes / 60 : null;
+
+  // Check if rental already exists (use job_id in job_name field as lookup key)
+  const { data: existingRental, error: erq } = await supabase
+    .from('rentals').select('id').eq('job_name', job.job_id).limit(1);
+  if (erq) throw new Error('Rental query failed: ' + erq.message);
+
+  const rentalData = {
+    machine_id: machineId,
+    renter_id: renterUserId,
+    provider_id: providerUserId,
+    job_name: job.job_id,
+    status: mapRentalStatus(job.status),
+    started_at: job.started_at || job.submitted_at,
+    ended_at: job.completed_at || null,
+    estimated_hours: durationHours,
+    actual_hours: actualHours,
+    hourly_rate_sar: 0.38,
+    hourly_rate_usd: 0.10,
+    total_cost_sar: actualCostSar || costSar,
+    total_cost_usd: (actualCostSar || costSar) * 0.27, // approx SAR→USD
+    provider_payout_sar: providerPayoutSar,
+    dc1_spread_sar: dc1SpreadSar,
+    tags: JSON.stringify({ job_type: job.job_type, sqlite_id: job.id }),
+  };
+
+  let rentalId;
+  if (existingRental && existingRental.length > 0) {
+    rentalId = existingRental[0].id;
+    await supabase.from('rentals').update(rentalData).eq('id', rentalId);
+  } else {
+    const { data: newRental, error: rie } = await supabase
+      .from('rentals').insert({ ...rentalData, created_at: new Date().toISOString() })
+      .select('id').single();
+    if (rie) throw new Error('Rental insert failed: ' + rie.message);
+    rentalId = newRental.id;
+  }
+
+  // Sync transaction for completed jobs (if not already synced)
+  if (job.status === 'completed' && (actualCostSar || costSar) > 0) {
+    // Check if renter has a wallet
+    const { data: wallets } = await supabase
+      .from('wallets').select('id').eq('user_id', renterUserId).limit(1);
+
+    if (wallets && wallets.length > 0) {
+      const walletId = wallets[0].id;
+      // Check if transaction already exists for this rental
+      const { data: existingTx } = await supabase
+        .from('transactions').select('id').eq('rental_id', rentalId).eq('type', 'rental').limit(1);
+
+      if (!existingTx || existingTx.length === 0) {
+        await supabase.from('transactions').insert({
+          wallet_id: walletId,
+          amount_sar: actualCostSar || costSar,
+          amount_usd: (actualCostSar || costSar) * 0.27,
+          type: 'rental',
+          status: 'completed',
+          rental_id: rentalId,
+          description: `Job ${job.job_id} (${job.job_type})`,
+          created_at: job.completed_at || new Date().toISOString(),
+          completed_at: job.completed_at || new Date().toISOString()
+        });
+      }
+    }
+  }
+
+  return { rentalId, renterUserId, status: rentalData.status };
+}
+
+// ─── MAIN SYNC CYCLE ────────────────────────────────────────────────────────
 
 async function runSyncCycle() {
   if (!supabase || syncRunning) return null;
   syncRunning = true;
   const start = Date.now();
   try {
+    // Phase 1: Sync providers → users + machines
     const providers = db.all('SELECT * FROM providers');
-    if (!providers || !providers.length) return { synced: 0, errors: 0, duration: Date.now() - start };
-    console.log('[SYNC] Syncing ' + providers.length + ' providers');
-    let synced = 0, errors = 0;
-    for (const p of providers) {
-      try { await syncProvider(p); synced++; } catch (e) { errors++; console.error('[SYNC] Error: ' + e.message); }
+    let providersSynced = 0, providerErrors = 0;
+    if (providers && providers.length) {
+      console.log('[SYNC] Phase 1: Syncing ' + providers.length + ' providers');
+      for (const p of providers) {
+        try { await syncProvider(p); providersSynced++; } catch (e) { providerErrors++; console.error('[SYNC] Provider error: ' + e.message); }
+      }
     }
+
+    // Phase 2: Sync recent jobs → rentals + transactions
+    // Only sync jobs from last 24 hours (or all active jobs) to avoid huge backlogs
+    const recentJobs = db.all(`
+      SELECT * FROM jobs
+      WHERE status IN ('pending', 'running')
+         OR (completed_at IS NOT NULL AND completed_at > datetime('now', '-24 hours'))
+         OR (submitted_at > datetime('now', '-24 hours'))
+      ORDER BY submitted_at DESC
+      LIMIT 100
+    `);
+    let jobsSynced = 0, jobErrors = 0;
+    if (recentJobs && recentJobs.length) {
+      console.log('[SYNC] Phase 2: Syncing ' + recentJobs.length + ' jobs');
+      for (const j of recentJobs) {
+        try {
+          const result = await syncJob(j);
+          if (result) jobsSynced++;
+        } catch (e) {
+          jobErrors++;
+          console.error('[SYNC] Job error (' + j.job_id + '): ' + e.message);
+        }
+      }
+    }
+
     lastSyncAt = new Date().toISOString();
-    syncStats.total++; if (!errors) syncStats.success++; else syncStats.errors++;
-    console.log('[SYNC] Done: ' + synced + ' synced, ' + errors + ' errors, ' + (Date.now()-start) + 'ms');
-    return { synced, errors, duration: Date.now() - start };
+    const totalErrors = providerErrors + jobErrors;
+    syncStats.total++;
+    if (!totalErrors) syncStats.success++; else { syncStats.errors++; syncStats.lastError = new Date().toISOString(); }
+
+    const duration = Date.now() - start;
+    console.log(`[SYNC] Done: ${providersSynced} providers, ${jobsSynced} jobs synced | ${totalErrors} errors | ${duration}ms`);
+    return { providersSynced, jobsSynced, providerErrors, jobErrors, duration };
   } finally { syncRunning = false; }
 }
 
@@ -135,5 +298,6 @@ function startPeriodicSync() {
 function stopPeriodicSync() { if (syncInterval) { clearInterval(syncInterval); syncInterval = null; } }
 
 module.exports = { init, runSyncCycle, markStaleOffline, startPeriodicSync, stopPeriodicSync,
-  getStatus: () => ({ initialized: !!supabase, running: syncRunning, lastSyncAt, stats: syncStats, intervalMs: SYNC_INTERVAL_MS, heartbeatTimeoutS: HEARTBEAT_TIMEOUT_S })
+  getStatus: () => ({ initialized: !!supabase, running: syncRunning, lastSyncAt, stats: syncStats, intervalMs: SYNC_INTERVAL_MS, heartbeatTimeoutS: HEARTBEAT_TIMEOUT_S }),
+  getProviderMap: () => Object.fromEntries(providerMap)
 };
