@@ -221,6 +221,23 @@ db.exec(`
   )
 `);
 
+// ─── WITHDRAWALS TABLE ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS withdrawals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    withdrawal_id TEXT NOT NULL UNIQUE,
+    provider_id INTEGER NOT NULL,
+    amount_sar REAL NOT NULL,
+    payout_method TEXT DEFAULT 'bank_transfer',
+    payout_details TEXT,
+    status TEXT DEFAULT 'pending',
+    requested_at TEXT NOT NULL,
+    processed_at TEXT,
+    notes TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+
 // ─── HEARTBEAT LOG TABLE ───
 db.exec(`
   CREATE TABLE IF NOT EXISTS heartbeat_log (

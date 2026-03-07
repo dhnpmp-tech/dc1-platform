@@ -89,6 +89,25 @@ router.post('/submit', requireRenter, (req, res) => {
     }
 
     const cost_halala = calculateCostHalala(job_type, duration_minutes);
+
+    // ── Pre-pay balance check ──────────────────────────────────────────
+    // Renter must have enough balance to cover estimated job cost
+    if (req.renter.balance_halala < cost_halala) {
+      return res.status(402).json({
+        error: 'Insufficient balance',
+        balance_halala: req.renter.balance_halala,
+        required_halala: cost_halala,
+        shortfall_halala: cost_halala - req.renter.balance_halala,
+        message: `Top up at least ${Math.ceil((cost_halala - req.renter.balance_halala) / 100)} SAR to submit this job. POST /api/renters/topup`
+      });
+    }
+
+    // Hold (deduct) estimated cost from renter balance upfront
+    db.run(
+      `UPDATE renters SET balance_halala = balance_halala - ? WHERE id = ?`,
+      cost_halala, req.renter.id
+    );
+
     const now = new Date().toISOString();
     const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 

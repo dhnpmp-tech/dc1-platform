@@ -44,6 +44,16 @@ const registerLimiter = rateLimit({
 });
 app.use('/api/providers/register', registerLimiter);
 
+// Heartbeat: 4 per minute per IP (daemon sends every 30s = 2/min normally)
+const heartbeatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 4,
+  message: { error: 'Heartbeat rate limit exceeded. Normal interval is 30s.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/providers/heartbeat', heartbeatLimiter);
+
 // Job submission: 30 per IP per minute
 const jobSubmitLimiter = rateLimit({
   windowMs: 60 * 1000,

@@ -589,6 +589,25 @@ router.post('/job-result', (req, res) => {
             db.run(`UPDATE providers SET current_job_id = NULL WHERE id = ?`, provider.id);
         }
 
+        // ── Renter billing settlement ──────────────────────────────────
+        // Pre-pay hold was deducted at submit time (cost_halala).
+        // Now settle: refund difference if actual < estimated, or charge extra.
+        if (job.renter_id) {
+            const estimatedCost = job.cost_halala || 0;
+            const delta = estimatedCost - actualCostHalala; // positive = refund, negative = extra charge
+            if (delta !== 0) {
+                db.run(
+                    `UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?`,
+                    delta, job.renter_id
+                );
+            }
+            // Update renter spending stats
+            db.run(
+                `UPDATE renters SET total_spent_halala = total_spent_halala + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
+                actualCostHalala, job.renter_id
+            );
+        }
+
         res.json({
             success: true,
             job_id,
@@ -670,5 +689,110 @@ router.get('/download/setup', (req, res) => {
     }
 });
 
-module.exports = router;
+// ============================================================================
+// GET /api/providers/earnings — Provider checks earnings balance
+// ============================================================================
+router.get('/earnings', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
 
+        const provider = db.get('SELECT id, name, total_earnings, total_jobs FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        // Get pending withdrawal amount
+        const pending = db.get(
+            `SELECT COALESCE(SUM(amount_sar), 0) as pending_sar FROM withdrawals WHERE provider_id = ? AND status = 'pending'`,
+            provider.id
+        ) || { pending_sar: 0 };
+
+        // Get completed withdrawals total
+        const completed = db.get(
+            `SELECT COALESCE(SUM(amount_sar), 0) as withdrawn_sar FROM withdrawals WHERE provider_id = ? AND status = 'completed'`,
+            provider.id
+        ) || { withdrawn_sar: 0 };
+
+        const availableSar = provider.total_earnings - (pending.pending_sar || 0) - (completed.withdrawn_sar || 0);
+
+        res.json({
+            provider_id: provider.id,
+            name: provider.name,
+            total_earned_sar: provider.total_earnings,
+            pending_withdrawal_sar: pending.pending_sar || 0,
+            withdrawn_sar: completed.withdrawn_sar || 0,
+            available_sar: Math.max(0, availableSar),
+            total_jobs: provider.total_jobs
+        });
+    } catch (error) {
+        console.error('Earnings check error:', error);
+        res.status(500).json({ error: 'Earnings check failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/withdraw — Provider requests earnings withdrawal
+// ============================================================================
+router.post('/withdraw', (req, res) => {
+    try {
+        const { api_key, amount_sar, payout_method, payout_details } = req.body;
+        if (!api_key) return res.status(400).json({ error: 'api_key required' });
+
+        const provider = db.get('SELECT id, name, total_earnings FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        if (!amount_sar || amount_sar <= 0) {
+            return res.status(400).json({ error: 'amount_sar must be > 0' });
+        }
+
+        // Minimum withdrawal: 10 SAR
+        if (amount_sar < 10) {
+            return res.status(400).json({ error: 'Minimum withdrawal is 10 SAR' });
+        }
+
+        // Check available balance (total_earnings minus pending/completed withdrawals)
+        const pending = db.get(
+            `SELECT COALESCE(SUM(amount_sar), 0) as pending_sar FROM withdrawals WHERE provider_id = ? AND status = 'pending'`,
+            provider.id
+        ) || { pending_sar: 0 };
+
+        const completed = db.get(
+            `SELECT COALESCE(SUM(amount_sar), 0) as withdrawn_sar FROM withdrawals WHERE provider_id = ? AND status = 'completed'`,
+            provider.id
+        ) || { withdrawn_sar: 0 };
+
+        const availableSar = provider.total_earnings - (pending.pending_sar || 0) - (completed.withdrawn_sar || 0);
+
+        if (amount_sar > availableSar) {
+            return res.status(402).json({
+                error: 'Insufficient available earnings',
+                available_sar: Math.max(0, availableSar),
+                requested_sar: amount_sar
+            });
+        }
+
+        const now = new Date().toISOString();
+        const withdrawal_id = 'wd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+
+        db.run(
+            `INSERT INTO withdrawals (withdrawal_id, provider_id, amount_sar, payout_method, payout_details, status, requested_at)
+             VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+            withdrawal_id, provider.id, amount_sar,
+            payout_method || 'bank_transfer',
+            payout_details ? JSON.stringify(payout_details) : null,
+            now
+        );
+
+        res.status(201).json({
+            success: true,
+            withdrawal_id,
+            amount_sar,
+            status: 'pending',
+            message: 'Withdrawal request submitted. Processing takes 1-3 business days.'
+        });
+    } catch (error) {
+        console.error('Withdrawal error:', error);
+        res.status(500).json({ error: 'Withdrawal request failed' });
+    }
+});
+
+module.exports = router;

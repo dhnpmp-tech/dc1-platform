@@ -106,4 +106,79 @@ router.get('/available-providers', (req, res) => {
   }
 });
 
+// POST /api/renters/topup — Add balance to renter account
+// In production this would be connected to a payment gateway (Stripe/Tap).
+// For Gate 1 we accept direct top-up with amount_halala.
+router.post('/topup', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
+
+    const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const { amount_halala, amount_sar } = req.body;
+    // Accept either halala or SAR (convert SAR → halala)
+    const topup = amount_halala || (amount_sar ? Math.round(amount_sar * 100) : 0);
+
+    if (!topup || topup <= 0) {
+      return res.status(400).json({ error: 'Provide amount_halala (int) or amount_sar (float), must be > 0' });
+    }
+
+    if (topup > 100000) { // max 1000 SAR per top-up
+      return res.status(400).json({ error: 'Max top-up is 1000 SAR (100000 halala) per transaction' });
+    }
+
+    const now = new Date().toISOString();
+    db.run(
+      `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
+      topup, now, renter.id
+    );
+
+    const updated = db.get('SELECT balance_halala FROM renters WHERE id = ?', renter.id);
+
+    res.json({
+      success: true,
+      topped_up_halala: topup,
+      topped_up_sar: topup / 100,
+      new_balance_halala: updated.balance_halala,
+      new_balance_sar: updated.balance_halala / 100
+    });
+  } catch (error) {
+    console.error('Renter topup error:', error);
+    res.status(500).json({ error: 'Top-up failed' });
+  }
+});
+
+// GET /api/renters/balance — Quick balance check
+router.get('/balance', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id, balance_halala, total_spent_halala, total_jobs FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    // Calculate held amount (running jobs estimated cost)
+    const held = db.get(
+      `SELECT COALESCE(SUM(cost_halala), 0) as held_halala FROM jobs WHERE renter_id = ? AND status = 'running'`,
+      renter.id
+    );
+
+    res.json({
+      balance_halala: renter.balance_halala,
+      balance_sar: renter.balance_halala / 100,
+      held_halala: held.held_halala,
+      held_sar: held.held_halala / 100,
+      available_halala: renter.balance_halala,  // held already deducted at submit
+      total_spent_halala: renter.total_spent_halala,
+      total_spent_sar: renter.total_spent_halala / 100,
+      total_jobs: renter.total_jobs
+    });
+  } catch (error) {
+    console.error('Renter balance error:', error);
+    res.status(500).json({ error: 'Balance check failed' });
+  }
+});
+
 module.exports = router;
