@@ -577,7 +577,7 @@ router.post('/job-result', (req, res) => {
              actual_duration_minutes = ?, actual_cost_halala = ?,
              provider_earned_halala = ?, dc1_fee_halala = ?
              WHERE id = ?`,
-            newStatus, JSON.stringify(result || {}), jobError || null, now,
+            newStatus, typeof result === 'string' ? result : JSON.stringify(result || {}), jobError || null, now,
             actualMinutes, actualCostHalala, providerEarned, dc1Fee, job.id
         );
 

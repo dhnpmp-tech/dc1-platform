@@ -43,7 +43,7 @@ API_URL = "INJECT_URL_HERE"
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
 DAEMON_VERSION = "3.0.0"
-MAX_STDOUT = 10240         # 10 KB stdout capture (up from 1KB)
+MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 600          # 10 min default job timeout
 
 # ─── SETUP LOGGING ──────────────────────────────────────────────────────────
