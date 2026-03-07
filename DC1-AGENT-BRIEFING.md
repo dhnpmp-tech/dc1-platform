@@ -1,5 +1,5 @@
 # DC1 Platform — Agent Briefing Document
-> Last updated: 2026-03-07 | Branch: `main` | Commit: ce5a348
+> Last updated: 2026-03-07 | Branch: `main` | Commit: be91b72
 
 ## What Is DC1
 
@@ -171,7 +171,7 @@ total_spent_halala, total_jobs, created_at, updated_at
 
 ## Billing Model
 
-- Rates in halala/minute: llm-inference=15, training=25, rendering=20, default=10
+- Rates in halala/minute: llm-inference=15, training=25, rendering=20, image_generation=20, default=10
 - 75/25 split: provider gets floor(75%), DC1 gets remainder
 - Job completion recalculates cost based on actual elapsed time, not estimate
 - Provider earnings stored in SAR (halala/100)
@@ -435,11 +435,150 @@ Full test results:
 - ✅ Job output → `"Job not found"` for non-existent job (correct 404)
 - ✅ Supabase sync running — 30 providers, 7 jobs, 0 errors
 
+## What Was Just Built (commit be91b72 — QA Security Fixes)
+
+### 31. Security: Code Injection Prevention (`jobs.js`)
+- **Model whitelist** — `ALLOWED_SD_MODELS` (5 models) and `ALLOWED_LLM_MODELS` (5 models)
+  - Unknown models fall back to defaults (SD 2.1 base / Phi-2)
+  - Prevents `model: "'; import os; os.system('rm -rf /'); '"` injection
+- **pyEscape()** function — sanitizes strings for Python single-quoted string embedding:
+  1. Escapes backslashes first (`\` → `\\`)
+  2. Then single quotes (`'` → `\'`)
+  3. Then newlines (`\n` → space, `\r` → removed)
+  - Order matters: backslashes MUST be escaped before quotes
+
+### 32. Billing Rate Fix (`jobs.js`)
+- `/api/jobs/:id/result` endpoint had hardcoded ternary that missed `image_generation`
+- Was: `training=25, rendering=20, else=15` (image_generation fell to 15)
+- Now: `COST_RATES[job.job_type] || COST_RATES['default']` (image_generation=20)
+
+### 33. Route Ordering Fix (`jobs.js`)
+- `GET /api/jobs/verify-hmac` was defined AFTER `GET /api/jobs/:job_id`
+- Express matched "verify-hmac" as a `job_id` parameter → 404
+- Moved `/verify-hmac` and `/active` before all `/:job_id` parameterized routes
+
+### 34. Python f-string Variable Fix (`jobs.js`)
+- Image gen script had `f"[dc1] Generating {width}x${height}"`
+- `{width}` was a Python f-string reference to undefined variable
+- Fixed to `${width}x${height}` (both JS template substitutions)
+
+### 35. Daemon Docker Cache Fix (`dc1_daemon.py`)
+- Startup `check_docker()` call didn't assign to `_docker_status` global
+- First heartbeat's `get_gpu_info()` → `is_docker_available()` would re-run full Docker check
+- Fixed: `_docker_status = check_docker()` at startup
+
+### 36. VPS Deployment Verified
+- QA fixes deployed to VPS (PM2 process 5 restarted)
+- Health check confirmed: `{"status":"ok","timestamp":"2026-03-07T10:09:03.235Z"}`
+- All 3 files updated: jobs.js (80 lines changed), dc1_daemon.py (8 lines), agent briefing
+
+## E2E Test Scenario: Image Generation Pipeline
+
+### Best Test: Renter Submits Image Gen → Provider Daemon Executes → Output Retrieved
+
+**Prerequisites:**
+1. A provider must be registered and have a daemon heartbeating (status: `online`)
+2. A renter must be registered with sufficient balance (at least 200 halala for ~10 min job)
+3. Provider machine needs: NVIDIA GPU with ≥6GB VRAM, Python 3, PyTorch, diffusers library
+4. If Docker mode: Docker + NVIDIA Container Toolkit + `dc1/sd-worker:latest` image built
+
+**Step-by-step test flow:**
+
+```
+1. RENTER SETUP
+   POST /api/renters/register
+   Body: {"name":"Test Renter","email":"test@dc1.sa"}
+   → Save the api_key returned
+
+   POST /api/renters/topup
+   Header: x-renter-key: <key>
+   Body: {"amount_sar": 50}
+   → Balance now 5000 halala
+
+2. PROVIDER SETUP (on GPU machine)
+   # Option A: Run installer one-liner
+   curl -sL "http://76.13.179.86:8083/api/providers/download/setup?key=PROVIDER_KEY&os=linux" | sudo bash
+
+   # Option B: Run daemon directly (for testing)
+   curl -sL "http://76.13.179.86:8083/api/providers/download/daemon?key=PROVIDER_KEY" -o dc1-daemon.py
+   python3 dc1-daemon.py
+
+   → Wait for heartbeat to appear (check provider status)
+   GET /api/providers/status/PROVIDER_KEY
+   → Should show: status="online", gpu_name="RTX ...", daemon_version="2.0.0"
+
+3. SUBMIT IMAGE GENERATION JOB
+   POST /api/jobs/submit
+   Header: x-renter-key: <renter_key>
+   Body: {
+     "provider_id": "<provider_id>",
+     "job_type": "image_generation",
+     "params": {
+       "prompt": "A futuristic cityscape of Riyadh at sunset, cyberpunk style",
+       "negative_prompt": "blurry, low quality",
+       "steps": 20,
+       "width": 512,
+       "height": 512,
+       "seed": 42
+     },
+     "duration_minutes": 10
+   }
+   → Returns: job_id, status="pending", cost_halala (deducted from balance)
+   → Backend auto-generates full SD Python script via generateImageGenScript()
+
+4. DAEMON PICKS UP JOB (automatic, within 30s)
+   → Daemon polls GET /api/jobs/assigned?key=PROVIDER_KEY
+   → Receives job with task_spec (auto-generated Python script)
+   → Executes via Docker: docker run --gpus all dc1/sd-worker python /dc1/job/task.py
+   → Or bare-metal: python3 _dc1_task_<id>.py
+   → Script loads SD model, generates image, outputs DC1_RESULT_JSON:{base64 PNG}
+
+5. RESULT REPORTED (automatic)
+   → Daemon POST /api/jobs/<id>/result with stdout (up to 5MB base64 image)
+   → Backend parses DC1_RESULT_JSON, calculates billing, settles balance
+
+6. FETCH OUTPUT
+   GET /api/jobs/<job_id>/output
+   Accept: application/json
+   → Returns: {"type":"image","format":"png","data":"base64...","billing":{...}}
+
+   GET /api/jobs/<job_id>/output
+   Accept: image/png
+   → Returns: raw PNG binary (viewable in browser)
+
+7. VERIFY BILLING
+   GET /api/renters/balance
+   Header: x-renter-key: <key>
+   → Balance should be: 5000 - actual_cost_halala (refund if faster than estimate)
+
+   GET /api/providers/earnings
+   Header: x-provider-key: <provider_key>
+   → Should show earned amount = 75% of job cost
+```
+
+**Current blocker:** No provider is currently heartbeating with an active daemon. To run this test, you need a machine with an NVIDIA GPU to run the daemon. Alternatively, you can simulate the daemon's behavior by manually calling the API endpoints in sequence.
+
+**Quick smoke test (no GPU needed):**
+```
+# 1. Submit job (will fail with "Provider not online" if no daemon — that's correct)
+curl -X POST http://76.13.179.86:8083/api/jobs/submit \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: dc1-renter-d1f00fc37ee3a0898b2dc88f33bf54b3" \
+  -d '{"provider_id":"test","job_type":"image_generation","params":{"prompt":"A red sports car"},"duration_minutes":5}'
+
+# 2. Check output endpoint (returns 404 — correct for non-existent job)
+curl http://76.13.179.86:8083/api/jobs/nonexistent/output
+
+# 3. Health check
+curl http://76.13.179.86:8083/api/health
+```
+
 ## What Still Needs Building
 
 ### High Priority (Gate 1 remaining)
-1. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
-2. **Build + push Docker images** — run `build-images.sh` on a machine with GPU + Docker, push to GHCR
+1. **Get a provider daemon online** — Need at least one GPU machine running the daemon to test full E2E flow (image gen, billing settlement)
+2. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
+3. **Build + push Docker images** — run `build-images.sh` on a machine with GPU + Docker, push to GHCR
 
 ### Medium Priority
 3. **Admin token rotation** — expiring admin tokens instead of static
@@ -534,6 +673,8 @@ The daemon (`dc1_daemon.py` v2.0) is a single Python file that runs as a backgro
 
 | Commit | Description |
 |--------|-------------|
+| `be91b72` | QA security fixes: code injection, billing rate, route order, daemon cache |
+| `5f1676d` | Agent briefing: Docker execution, image gen, daemon v2.0 |
 | `ce5a348` | Docker-based job execution + NVIDIA Container Toolkit + installer v2.0 |
 | `d9e154d` | Image generation templates + output endpoint + 10mb body limit |
 | `e8edea4` | Agent briefing: Supabase sync Phase 3, enums, wallets |
