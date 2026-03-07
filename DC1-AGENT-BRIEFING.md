@@ -1,5 +1,5 @@
 # DC1 Platform — Agent Briefing Document
-> Last updated: 2026-03-07 | Branch: `main` | Commit: be91b72
+> Last updated: 2026-03-07 | Branch: `main` | Commit: 1c90368
 
 ## What Is DC1
 
@@ -472,6 +472,50 @@ Full test results:
 - Health check confirmed: `{"status":"ok","timestamp":"2026-03-07T10:09:03.235Z"}`
 - All 3 files updated: jobs.js (80 lines changed), dc1_daemon.py (8 lines), agent briefing
 
+### 37. Bug #7: Params Field Ignored in Job Submit (`jobs.js`)
+- `req.body.params` was never destructured — template generator always got empty `params = {}`
+- Fix: Added `params: bodyParams` to destructuring with priority logic: bodyParams > task_spec > defaults
+- Commit: `9f0b2f5`
+
+### 38. Bug #8+9: job_id String Lookup Returning 404 (`jobs.js`)
+- `GET /api/jobs/:job_id` only searched `WHERE id = ?` (numeric), not string job_ids
+- Fix: Changed all 4 parameterized routes to `WHERE id = ? OR job_id = ?`
+- Affected routes: GET /:job_id, POST /:job_id/result, POST /:job_id/complete, POST /:job_id/cancel
+- Commit: `9f0b2f5`
+
+### 39. Bug #10: Jobs Auto-Transitioned to 'running' at Submit (`jobs.js`)
+- Lines 359-363 immediately set `status = 'running'` after INSERT
+- Daemon polls for `pending` jobs, so it never found them
+- Fix: Removed auto-transition; jobs now stay `pending` until daemon picks them up
+- Commit: `38a6d7c`
+
+### 40. Bug #11: Daemon Poll Query Only Searched 'running' (`jobs.js`)
+- The `/api/jobs/assigned` endpoint searched `status = 'running'`
+- Fix: Changed to `IN ('pending', 'running')` with proper transition logic
+- Note: The old endpoint in providers.js was already correct
+- Commit: `38a6d7c`
+
+### 41. Bug #13: Billing Rate Mismatch in providers.js (`providers.js`)
+- The `POST /api/providers/job-result` endpoint had hardcoded rates missing `image_generation` (20 halala/min)
+- Fell back to default 10 halala/min instead of correct 20
+- Fix: Imported shared `COST_RATES` from jobs.js module
+- Commit: `1c90368`
+
+### 42. E2E Test Results — Full Pipeline Verified ✅
+- **Submit**: `POST /api/jobs/submit` → job created as `pending`, 200 halala pre-charged
+- **Daemon poll**: `GET /api/providers/:key/jobs` → job picked up, transitioned to `running`
+- **Result submit**: `POST /api/providers/job-result` → job completed, billing settled
+- **Billing**: 20 halala actual (1 min × 20 halala/min image_generation rate)
+- **Split**: Provider 15 halala (75%), DC1 5 halala (25%)
+- **Refund**: 180 halala returned to renter (200 pre-charge - 20 actual)
+- **Note**: Yazan's daemon v1.1.0 is heartbeating but NOT polling for jobs (old version). E2E tested by simulating daemon API calls.
+
+### 43. Daemon Compatibility Finding
+- Yazan's daemon (provider 26, RTX 3060 Ti) has `daemon_version` = empty in DB
+- Daemon is heartbeating every 30s but does NOT have job polling thread
+- Need to get Yazan to download updated daemon (v1.1+ with job polling)
+- The daemon download endpoint (`GET /api/providers/download/daemon`) should serve the latest version
+
 ## E2E Test Scenario: Image Generation Pipeline
 
 ### Best Test: Renter Submits Image Gen → Provider Daemon Executes → Output Retrieved
@@ -673,6 +717,10 @@ The daemon (`dc1_daemon.py` v2.0) is a single Python file that runs as a backgro
 
 | Commit | Description |
 |--------|-------------|
+| `1c90368` | Fix billing rate mismatch in provider job-result endpoint (Bug #13) |
+| `38a6d7c` | Fix job submit auto-running + daemon poll query (Bugs #10-11) |
+| `9f0b2f5` | Fix params extraction + job_id lookup across all routes (Bugs #7-9) |
+| `b831e8b` | Agent briefing: QA fixes + E2E test scenario |
 | `be91b72` | QA security fixes: code injection, billing rate, route order, daemon cache |
 | `5f1676d` | Agent briefing: Docker execution, image gen, daemon v2.0 |
 | `ce5a348` | Docker-based job execution + NVIDIA Container Toolkit + installer v2.0 |
@@ -697,3 +745,6 @@ The daemon (`dc1_daemon.py` v2.0) is a single Python file that runs as a backgro
 - Job timeout enforcement and recovery engine both run on 30s intervals — they don't conflict but could be merged
 - The renter page uses `sessionStorage` for API key persistence (cleared on tab close — intentional for security)
 - Frontend `NEXT_PUBLIC_*` env vars are baked at build time on Vercel — must be set before deploy
+- **SQLite DB path on VPS**: `/root/dc1-platform/backend/data/providers.db` (NOT `backend/dc1.db` or `backend/providers.db`)
+- Two daemon poll endpoints exist: OLD `GET /api/providers/:api_key/jobs` (providers.js, used by v1.1 daemon) and NEW `GET /api/jobs/assigned?key=` (jobs.js, for v2.0 daemon)
+- Yazan's daemon (provider 26) heartbeats but doesn't poll for jobs — needs daemon update
