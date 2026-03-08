@@ -277,6 +277,29 @@ export default function RenterDashboard() {
           </div>
         </div>
 
+        {/* LLM Playground CTA */}
+        {isAuthenticated && (
+          <div className="mb-8">
+            <Link
+              href="/renter/playground"
+              className="block bg-gradient-to-r from-[#00D9FF]/10 to-[#00D9FF]/5 border border-[#00D9FF]/30 rounded-xl p-6 hover:border-[#00D9FF]/50 transition group"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-[#00D9FF] font-bold text-lg flex items-center gap-2">
+                    <span className="text-2xl">&#9889;</span>
+                    LLM Playground
+                  </h3>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Run AI models on real GPU hardware — type a prompt, get a response, see the execution proof.
+                  </p>
+                </div>
+                <span className="text-[#00D9FF] text-xl group-hover:translate-x-1 transition-transform">&rarr;</span>
+              </div>
+            </Link>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="bg-gray-900 rounded-lg border border-gray-700 p-6 mb-8">
           <h3 className="text-dc-cyan font-bold mb-4">GPU Marketplace Filters</h3>
