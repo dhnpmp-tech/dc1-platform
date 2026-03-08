@@ -42,9 +42,11 @@ API_URL = "INJECT_URL_HERE"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.0.0"
+DAEMON_VERSION = "3.1.0"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
-JOB_TIMEOUT = 600          # 10 min default job timeout
+JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
+RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
+RESULT_POST_RETRIES = 3    # Retry result submission up to 3 times
 
 # ─── SETUP LOGGING ──────────────────────────────────────────────────────────
 
@@ -468,14 +470,22 @@ def run_bare_metal_job(task_spec):
 
     log.info(f"Bare-metal exec: {temp_path}")
 
+    # Write stderr to file to prevent pipe buffer deadlock (64KB limit)
+    stderr_path = temp_path + ".stderr"
     try:
-        result = subprocess.run(
-            [sys.executable, temp_path],
-            capture_output=True, text=True, timeout=JOB_TIMEOUT
-        )
+        with open(stderr_path, "w") as stderr_file:
+            result = subprocess.run(
+                [sys.executable, "-u", temp_path],  # -u: unbuffered stdout
+                stdout=subprocess.PIPE, stderr=stderr_file,
+                text=True, timeout=JOB_TIMEOUT
+            )
 
         stdout = result.stdout[:MAX_STDOUT]
-        stderr = result.stderr[:MAX_STDOUT]
+        stderr = ""
+        try:
+            with open(stderr_path, "r") as f:
+                stderr = f.read()[:2000]
+        except: pass
 
         if result.returncode == 0:
             return {"success": True, "result": stdout, "stderr": stderr}
@@ -561,20 +571,30 @@ def poll_and_execute():
     def _run():
         outcome = execute_job(job)
 
-        # Submit result
+        # Submit result with retry logic
         result_url = f"{API_URL}/api/providers/job-result"
-        try:
-            code, resp = http_post(result_url, {
-                "api_key": API_KEY,
-                "job_id": job_id,
-                "result": outcome.get("result", {}),
-                "success": outcome.get("success", False),
-                "error": outcome.get("error"),
-                "metrics": outcome.get("metrics"),
-            }, timeout=30)
-            log.info(f"Job {job_id} result submitted (HTTP {code}): {resp.get('status', 'unknown')}")
-        except Exception as e:
-            log.error(f"Job result submission failed: {e}")
+        payload = {
+            "api_key": API_KEY,
+            "job_id": job_id,
+            "result": outcome.get("result", {}),
+            "success": outcome.get("success", False),
+            "error": outcome.get("error"),
+            "metrics": outcome.get("metrics"),
+        }
+        result_size = len(str(payload.get("result", "")))
+        log.info(f"Job {job_id} submitting result ({result_size} bytes)...")
+
+        for attempt in range(1, RESULT_POST_RETRIES + 1):
+            try:
+                code, resp = http_post(result_url, payload, timeout=RESULT_POST_TIMEOUT)
+                log.info(f"Job {job_id} result submitted (HTTP {code}, attempt {attempt})")
+                break
+            except Exception as e:
+                log.error(f"Job result submission attempt {attempt}/{RESULT_POST_RETRIES} failed: {e}")
+                if attempt < RESULT_POST_RETRIES:
+                    time.sleep(5 * attempt)  # Backoff: 5s, 10s
+                else:
+                    log.error(f"Job {job_id} result LOST after {RESULT_POST_RETRIES} attempts")
 
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()

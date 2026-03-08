@@ -139,7 +139,19 @@ router.post('/heartbeat', (req, res) => {
           daemonVersion, pythonVersion, osInfo
         );
 
-        return res.json({ success: true, message: 'Heartbeat received', timestamp: now });
+        // Store daemon version on provider record for job assignment checks
+        if (daemonVersion) {
+            db.run('UPDATE providers SET daemon_version = ? WHERE id = ?', daemonVersion, p.id);
+        }
+
+        // Tell daemon if update is available
+        const MIN_DAEMON_VERSION = '3.1.0';
+        const needsUpdate = !daemonVersion || daemonVersion < MIN_DAEMON_VERSION;
+        return res.json({
+            success: true, message: 'Heartbeat received', timestamp: now,
+            update_available: needsUpdate,
+            min_version: MIN_DAEMON_VERSION,
+        });
         
     } catch (error) {
         console.error('Heartbeat error:', error);

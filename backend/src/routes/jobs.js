@@ -643,13 +643,43 @@ router.get('/:job_id/output', (req, res) => {
 
     // Try to parse structured DC1_RESULT_JSON from the result
     let structured = null;
-    const jsonMatch = job.result.match(/DC1_RESULT_JSON:(.+)$/m);
+    // Match the DC1_RESULT_JSON marker — greedy to capture the full JSON object
+    const jsonMatch = job.result.match(/DC1_RESULT_JSON:({[\s\S]+})\s*$/);
     if (jsonMatch) {
-      try { structured = JSON.parse(jsonMatch[1]); } catch {}
+      try {
+        structured = JSON.parse(jsonMatch[1]);
+      } catch (e) {
+        console.warn(`Job ${job.job_id} DC1_RESULT_JSON parse failed: ${e.message} (length: ${jsonMatch[1].length})`);
+      }
     }
 
     // If structured image result, serve as image or JSON based on Accept header
     if (structured && structured.type === 'image' && structured.data) {
+      // Base64 integrity validation — catch truncated images early
+      const b64 = structured.data;
+      const b64clean = b64.replace(/[\s\r\n]/g, '');
+      const isValidBase64 = /^[A-Za-z0-9+/]*={0,2}$/.test(b64clean);
+      const expectedMinBytes = (structured.width || 256) * (structured.height || 256) * 0.05; // ~5% of raw size minimum for compressed PNG
+      const actualBytes = Math.floor(b64clean.length * 3 / 4);
+      const isTruncated = !isValidBase64 || actualBytes < expectedMinBytes;
+
+      if (isTruncated) {
+        return res.status(206).json({
+          error: 'Image data appears truncated or corrupted',
+          type: 'image',
+          expected_dimensions: `${structured.width}x${structured.height}`,
+          base64_length: b64clean.length,
+          decoded_bytes: actualBytes,
+          expected_min_bytes: Math.round(expectedMinBytes),
+          valid_base64: isValidBase64,
+          hint: 'The provider daemon may have truncated stdout. Ensure daemon version >= 3.1.0',
+          billing: {
+            actual_cost_halala: job.actual_cost_halala,
+            actual_cost_sar: job.actual_cost_halala ? (job.actual_cost_halala / 100).toFixed(2) : null
+          }
+        });
+      }
+
       const wantsJson = (req.headers.accept || '').includes('application/json');
       if (wantsJson) {
         return res.json({
@@ -664,6 +694,7 @@ router.get('/:job_id/output', (req, res) => {
           total_time_s: structured.total_time_s,
           device: structured.device,
           image_base64: structured.data,
+          image_bytes: actualBytes,
           billing: {
             actual_cost_halala: job.actual_cost_halala,
             actual_cost_sar: job.actual_cost_halala ? (job.actual_cost_halala / 100).toFixed(2) : null
@@ -677,6 +708,7 @@ router.get('/:job_id/output', (req, res) => {
       res.set('X-DC1-Prompt', structured.prompt?.substring(0, 200));
       res.set('X-DC1-Seed', String(structured.seed || ''));
       res.set('X-DC1-GenTime', String(structured.gen_time_s || ''));
+      res.set('X-DC1-ImageBytes', String(actualBytes));
       return res.send(imgBuf);
     }
 
