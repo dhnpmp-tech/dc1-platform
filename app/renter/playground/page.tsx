@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 
-// Use Next.js rewrite proxy (/api/dc1/*) to avoid mixed-content (HTTPS→HTTP) browser blocks.
-// Falls back to direct HTTP for local dev or when NEXT_PUBLIC_DC1_API is set.
-const API_BASE = process.env.NEXT_PUBLIC_DC1_API || (typeof window !== 'undefined' && window.location.protocol === 'https:' ? '' : 'http://76.13.179.86:8083');
-const API_PREFIX = API_BASE === '' ? '/api/dc1' : `${API_BASE}/api`;
+// On HTTPS (Vercel), use Next.js rewrite proxy to avoid mixed-content browser blocks.
+// On HTTP (local dev), hit the VPS directly.
+const API_PREFIX = typeof window !== 'undefined' && window.location.protocol === 'https:'
+  ? '/api/dc1'
+  : 'http://76.13.179.86:8083/api';
 const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
 
 const MODELS = [
