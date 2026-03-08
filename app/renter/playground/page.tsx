@@ -53,6 +53,7 @@ interface ProofData {
 }
 
 type Phase = 'idle' | 'submitting' | 'polling' | 'done' | 'error';
+type ProgressPhase = 'downloading_model' | 'installing_deps' | 'loading_model' | 'generating' | 'formatting' | null;
 
 export default function LlmPlayground() {
   // Auth
@@ -78,6 +79,7 @@ export default function LlmPlayground() {
   const [proof, setProof] = useState<ProofData | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [showRawLog, setShowRawLog] = useState(false);
+  const [progressPhase, setProgressPhase] = useState<ProgressPhase>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Auth ──────────────────────────────────────────────────────────
@@ -161,6 +163,7 @@ export default function LlmPlayground() {
     setProof(null);
     setErrorMsg('');
     setPollCount(0);
+    setProgressPhase(null);
 
     try {
       const res = await fetch(`${API_PREFIX}/jobs/submit`, {
@@ -205,7 +208,16 @@ export default function LlmPlayground() {
       try {
         const res = await fetch(`${API_PREFIX}/jobs/${jobId}/output`);
 
-        if (res.status === 202) return; // still running
+        if (res.status === 202) {
+          // Parse progress phase for live status display
+          try {
+            const statusData = await res.json();
+            if (statusData.progress_phase) {
+              setProgressPhase(statusData.progress_phase as ProgressPhase);
+            }
+          } catch { /* ignore parse errors */ }
+          return;
+        }
         if (res.status === 204) return; // completed but no output yet
 
         if (res.ok) {
@@ -407,10 +419,42 @@ export default function LlmPlayground() {
             ) : phase === 'polling' ? (
               <span className="flex items-center justify-center gap-2">
                 <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                Running on GPU... ({pollCount * 3}s)
+                {progressPhase === 'downloading_model' ? `Downloading model... (${pollCount * 3}s)` :
+                 progressPhase === 'installing_deps' ? `Installing dependencies... (${pollCount * 3}s)` :
+                 progressPhase === 'loading_model' ? `Loading model onto GPU... (${pollCount * 3}s)` :
+                 progressPhase === 'generating' ? `Generating response... (${pollCount * 3}s)` :
+                 progressPhase === 'formatting' ? `Formatting output... (${pollCount * 3}s)` :
+                 `Running on GPU... (${pollCount * 3}s)`}
               </span>
             ) : 'Run Inference'}
           </button>
+
+          {/* Progress Steps */}
+          {phase === 'polling' && (
+            <div className="mt-4 bg-white/5 border border-white/10 rounded-xl p-4">
+              <div className="flex items-center gap-3 text-sm">
+                {(['installing_deps', 'downloading_model', 'loading_model', 'generating'] as const).map((step, i) => {
+                  const labels: Record<string, string> = {
+                    installing_deps: 'Deps',
+                    downloading_model: 'Download',
+                    loading_model: 'Load GPU',
+                    generating: 'Generate',
+                  };
+                  const stepOrder = ['installing_deps', 'downloading_model', 'loading_model', 'generating'];
+                  const currentIdx = progressPhase ? stepOrder.indexOf(progressPhase) : -1;
+                  const isActive = step === progressPhase;
+                  const isDone = currentIdx > i;
+                  return (
+                    <div key={step} className="flex items-center gap-2">
+                      <div className={`w-2.5 h-2.5 rounded-full ${isActive ? 'bg-[#00D9FF] animate-pulse' : isDone ? 'bg-green-400' : 'bg-white/20'}`} />
+                      <span className={isActive ? 'text-[#00D9FF] font-medium' : isDone ? 'text-green-400/80' : 'text-white/30'}>{labels[step]}</span>
+                      {i < 3 && <span className="text-white/10 mx-1">→</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Error ─────────────────────────────────────────────── */}
@@ -483,7 +527,7 @@ export default function LlmPlayground() {
 
             {/* Run Another */}
             <button
-              onClick={() => { setPhase('idle'); setResult(null); setProof(null); setPrompt(''); }}
+              onClick={() => { setPhase('idle'); setResult(null); setProof(null); setPrompt(''); setProgressPhase(null); }}
               className="w-full py-3 rounded-xl font-semibold border border-[#00D9FF]/30 text-[#00D9FF] hover:bg-[#00D9FF]/10 transition"
             >
               Run Another Prompt

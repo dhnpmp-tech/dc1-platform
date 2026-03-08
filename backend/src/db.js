@@ -218,6 +218,9 @@ const migrations = [
   'ALTER TABLE recovery_events ADD COLUMN completed_at TEXT',
   'ALTER TABLE recovery_events ADD COLUMN resolved_at TEXT',
   'ALTER TABLE recovery_events ADD COLUMN notes TEXT',
+  // Job progress phase — daemon reports download/load/generate phases in real-time
+  'ALTER TABLE jobs ADD COLUMN progress_phase TEXT',
+  'ALTER TABLE jobs ADD COLUMN progress_updated_at TEXT',
 ];
 
 migrations.forEach(sql => {

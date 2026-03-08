@@ -173,11 +173,11 @@ function generateLlmInferenceScript(params) {
 
   return `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""DC1 LLM Inference v2 - chat templates + proper response extraction"""
+"""DC1 LLM Inference v3 - chat templates + phase markers for progress tracking"""
 import torch, json, sys, time
 
 t0 = time.time()
-print("[dc1] Loading model: ${model}", flush=True)
+print("[dc1-phase] installing_deps", flush=True)
 
 try:
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -191,10 +191,13 @@ except ImportError:
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32
 
+print("[dc1-phase] downloading_model", flush=True)
+print("[dc1] Downloading/loading model: ${model}", flush=True)
 tokenizer = AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
+print("[dc1-phase] loading_model", flush=True)
 model = AutoModelForCausalLM.from_pretrained(
     '${model}', torch_dtype=dtype,
     device_map="auto" if device == "cuda" else None,
@@ -222,6 +225,7 @@ print(f"[dc1] Prompt formatted ({len(formatted)} chars)", flush=True)
 inputs = tokenizer(formatted, return_tensors="pt").to(device)
 input_len = inputs["input_ids"].shape[1]
 
+print("[dc1-phase] generating", flush=True)
 print(f"[dc1] Generating up to ${maxTokens} tokens...", flush=True)
 t1 = time.time()
 with torch.no_grad():
@@ -639,6 +643,34 @@ router.post('/:job_id/cancel', (req, res) => {
   }
 });
 
+// POST /api/jobs/:job_id/progress — Daemon reports execution phase (downloading, loading, generating)
+router.post('/:job_id/progress', (req, res) => {
+  try {
+    const { api_key, phase } = req.body;
+    if (!api_key || !phase) return res.status(400).json({ error: 'api_key and phase required' });
+
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+    if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+    const job = db.get('SELECT * FROM jobs WHERE (id = ? OR job_id = ?) AND provider_id = ?',
+      req.params.job_id, req.params.job_id, provider.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const validPhases = ['downloading_model', 'installing_deps', 'loading_model', 'generating', 'formatting'];
+    if (!validPhases.includes(phase)) {
+      return res.status(400).json({ error: `Invalid phase. Valid: ${validPhases.join(', ')}` });
+    }
+
+    const now = new Date().toISOString();
+    db.run('UPDATE jobs SET progress_phase = ?, progress_updated_at = ? WHERE id = ?', phase, now, job.id);
+    console.log(`[progress] Job ${job.job_id}: ${phase}`);
+    res.json({ success: true, phase });
+  } catch (error) {
+    console.error('Job progress error:', error);
+    res.status(500).json({ error: 'Failed to update progress' });
+  }
+});
+
 // GET /api/jobs/:job_id/output — serve job result (image, text, etc.)
 // Renter or anyone with the job_id can fetch the output
 router.get('/:job_id/output', (req, res) => {
@@ -647,9 +679,22 @@ router.get('/:job_id/output', (req, res) => {
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
     if (job.status !== 'completed') {
+      // Build phase-aware status message
+      const phaseMessages = {
+        'downloading_model': 'Downloading model weights...',
+        'installing_deps': 'Installing dependencies...',
+        'loading_model': 'Loading model onto GPU...',
+        'generating': 'Generating response...',
+        'formatting': 'Formatting output...',
+      };
+      const message = (job.progress_phase && phaseMessages[job.progress_phase])
+        ? phaseMessages[job.progress_phase]
+        : (job.status === 'running' ? 'Job running...' : `Job status: ${job.status}`);
+
       return res.status(202).json({
         status: job.status,
-        message: job.status === 'running' ? 'Job still running...' : `Job status: ${job.status}`,
+        message,
+        progress_phase: job.progress_phase || null,
         job_id: job.job_id,
         submitted_at: job.submitted_at,
         started_at: job.started_at
