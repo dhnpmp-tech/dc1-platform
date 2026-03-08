@@ -1,6 +1,7 @@
 # =============================================================================
-# DC1 Provider Daemon — Setup Helper v2.1
+# DC1 Provider Daemon — Setup Helper v2.2
 # Called by the NSIS installer with user selections from the GUI pages.
+# Bundles daemon v3.2.0 with watchdog, auto-update, event logging.
 # =============================================================================
 param(
     [Parameter(Mandatory=$true)] [string]$ApiKey,
@@ -28,7 +29,8 @@ function Log {
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 Log "============================================="
-Log "  DC1 Provider Setup Helper v2.1"
+Log "  DC1 Provider Setup Helper v2.2"
+Log "  Daemon version: 3.2.0"
 Log "============================================="
 Log "ApiKey:     $($ApiKey.Substring(0, [Math]::Min(20, $ApiKey.Length)))..."
 Log "RunMode:    $RunMode"
@@ -50,7 +52,7 @@ try {
         gpu_status = @{
             gpu_name = $GpuName
             gpu_vram_mib = [int]$GpuVram
-            daemon_version = "setup-2.1"
+            daemon_version = "setup-2.2"
         }
     } | ConvertTo-Json -Depth 3
     $response = Invoke-WebRequest -Uri $statusUrl -Method POST -Body $testBody -ContentType "application/json" -UseBasicParsing -TimeoutSec 15
@@ -222,14 +224,16 @@ if (Test-Path $templatePath) {
     Log "  dc1_daemon.py deployed with API key."
 } else {
     Log "  WARNING: dc1_daemon.py template not found at $templatePath — generating inline."
-    # Fallback: generate minimal daemon inline
+    Log "  NOTE: This is a minimal fallback daemon. The full v3.2.0 daemon should be bundled by the installer."
+    Log "  The daemon will auto-update itself to the full version on first update check."
+    # Fallback: generate minimal daemon inline (will auto-update to full v3.2.0)
     $daemonPy = @"
 import requests, time, datetime, socket, subprocess, sys, platform
 
 API_KEY = "$ApiKey"
 API_URL = "$ApiUrl"
 INTERVAL = 30
-DAEMON_VERSION = "2.1.0"
+DAEMON_VERSION = "2.2.0-fallback"
 
 def get_gpu_info():
     info = {
@@ -304,7 +308,8 @@ $configObj = @{
     gpu_name = $GpuName
     gpu_vram_mb = [int]$GpuVram
     installed_at = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss")
-    installer_version = "2.1.0"
+    installer_version = "2.2.0"
+    daemon_version = "3.2.0"
 }
 $config = $configObj | ConvertTo-Json -Depth 2
 Set-Content -Path (Join-Path $InstallDir "config.json") -Value $config -Encoding UTF8
@@ -323,9 +328,11 @@ $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest 
 
 if ($RunMode -eq 'manual') {
     # Manual mode: no scheduled task — create start/stop scripts
-    $startScript = "@echo off`r`necho Starting DC1 Provider Daemon...`r`nstart /min `"DC1 Daemon`" `"$pythonExe`" `"$InstallDir\dc1_daemon.py`"`r`necho Done. Your GPU is now earning.`r`ntimeout /t 3"
+    # v3.2.0: daemon runs as watchdog parent + worker child, so start normally (watchdog handles restarts)
+    $startScript = "@echo off`r`necho Starting DC1 Provider Daemon (v3.2.0 with auto-recovery)...`r`nstart /min `"DC1 Daemon`" `"$pythonExe`" `"$InstallDir\dc1_daemon.py`"`r`necho Done. Your GPU is now earning.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\start-dc1.bat" -Value $startScript -Encoding ASCII
-    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    # v3.2.0: kill by command-line match to catch both watchdog and worker processes
+    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
     Log "  Manual mode — no auto-start task created."
     Log "  Start earning: double-click $InstallDir\start-dc1.bat"
@@ -338,8 +345,8 @@ if ($RunMode -eq 'manual') {
     $trigger = New-ScheduledTaskTrigger -Daily -At $triggerTime
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
     Log "  Scheduled mode — runs daily at $triggerTime (until $ScheduledEnd)."
-    # Stop script for when user wakes up
-    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    # Stop script for when user wakes up — kills both watchdog and worker processes
+    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
 } else {
     # Always-on (default): start at every login
@@ -376,7 +383,7 @@ if ($RunMode -eq 'manual') {
             gpu_status = @{
                 gpu_name = if ($gpu.detected) { $gpu.name } else { $GpuName }
                 gpu_vram_mib = if ($gpu.detected) { $gpu.vram_mb } else { [int]$GpuVram }
-                daemon_version = "2.1.0"
+                daemon_version = "3.2.0"
             }
         } | ConvertTo-Json -Depth 3
         $response = Invoke-WebRequest -Uri "$ApiUrl/api/providers/heartbeat" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 10

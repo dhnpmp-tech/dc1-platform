@@ -1,9 +1,9 @@
 ; =============================================================================
-; DC1 Provider Daemon — Windows NSIS Installer v2.1
+; DC1 Provider Daemon — Windows NSIS Installer v2.2
 ; =============================================================================
 ; Installs to %LOCALAPPDATA%\dc1-provider (NO admin required)
 ; GUI pages: Welcome → GPU Check → API Key → Run Mode → Schedule → Install → Finish
-; Bundles: dc1_daemon.py, dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
+; Bundles: dc1_daemon.py (v3.2.0), dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
 ; Build:   makensis dc1-provider-Windows.nsi
 ; =============================================================================
 
@@ -12,11 +12,13 @@
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
 !include "FileFunc.nsh"
+!include "WordFunc.nsh"
+!include "TextFunc.nsh"
 
 ; --------------- Product Info ---------------
 !define PRODUCT_NAME "DC1 Provider Daemon"
 !define PRODUCT_PUBLISHER "DC1"
-!define PRODUCT_VERSION "2.1.0"
+!define PRODUCT_VERSION "2.2.0"
 !define PRODUCT_WEB_SITE "https://dc1.sa"
 !define DC1_API_BASE "http://76.13.179.86:8083"
 !define DASHBOARD_URL "${DC1_API_BASE}/provider"
@@ -68,7 +70,7 @@ Var hEndTimeInput
 ; --------------- Pages ---------------
 ; 1. Welcome
 !define MUI_WELCOMEPAGE_TITLE "DC1 Provider Daemon v${PRODUCT_VERSION}"
-!define MUI_WELCOMEPAGE_TEXT "Welcome to the DC1 Provider setup.$\r$\n$\r$\nThis will install the DC1 daemon so your GPU starts earning credits automatically.$\r$\n$\r$\nRequirements:$\r$\n  • NVIDIA GPU with 4 GB+ VRAM$\r$\n  • Internet connection$\r$\n  • No admin privileges needed$\r$\n$\r$\nClick Next to check your GPU."
+!define MUI_WELCOMEPAGE_TEXT "Welcome to the DC1 Provider setup.$\r$\n$\r$\nThis will install the DC1 daemon so your GPU starts earning credits automatically.$\r$\n$\r$\nWhat's new in v${PRODUCT_VERSION}:$\r$\n  • Auto-recovery: daemon restarts on crashes$\r$\n  • Auto-updates: stays current automatically$\r$\n  • Smart GPU guard: only accepts jobs your GPU can handle$\r$\n  • Connection monitoring: tracks bandwidth quality$\r$\n$\r$\nRequirements:$\r$\n  • NVIDIA GPU with 4 GB+ VRAM$\r$\n  • Internet connection$\r$\n  • No admin privileges needed$\r$\n$\r$\nClick Next to check your GPU."
 !insertmacro MUI_PAGE_WELCOME
 
 ; 2. GPU Check (custom)
@@ -88,7 +90,7 @@ Page custom SchedulePageCreate SchedulePageLeave
 
 ; 7. Finish
 !define MUI_FINISHPAGE_TITLE "You're All Set!"
-!define MUI_FINISHPAGE_TEXT "DC1 Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\n$\r$\nYour GPU is now earning DC1 credits.$\r$\nClick 'Open My Dashboard' to track your earnings."
+!define MUI_FINISHPAGE_TEXT "DC1 Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\nDaemon: v3.2.0 (auto-updating)$\r$\n$\r$\nYour GPU is now earning DC1 credits.$\r$\nThe daemon will auto-recover from crashes and update itself.$\r$\nClick 'Open My Dashboard' to track your earnings."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open My Dashboard"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenDashboard
@@ -190,7 +192,7 @@ FunctionEnd
 Function GpuCheckPageLeave
     ; Allow user to continue even without GPU (they may install drivers later)
     ${If} $GPU_NAME == "Not detected"
-        MessageBox MB_YESNO|MB_ICONWARNING "No NVIDIA GPU was detected. The DC1 daemon requires an NVIDIA GPU to earn credits.$\r$\n$\r$\nContinue anyway?" IDYES +2
+        MessageBox MB_YESNO|MB_ICONEXCLAMATION "No NVIDIA GPU was detected. The DC1 daemon requires an NVIDIA GPU to earn credits.$\r$\n$\r$\nContinue anyway?" IDYES +2
         Abort
     ${EndIf}
 FunctionEnd

@@ -43,8 +43,8 @@ from datetime import datetime
 
 # ─── CONFIGURATION (injected by download endpoint) ──────────────────────────
 
-API_KEY = "INJECT_KEY_HERE"
-API_URL = "INJECT_URL_HERE"
+API_KEY = "{{API_KEY}}"
+API_URL = "{{API_URL}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
