@@ -57,7 +57,7 @@ export default function LlmPlayground() {
   const [authChecking, setAuthChecking] = useState(true);
 
   // Form
-  const [model, setModel] = useState(MODELS[0].id);
+  const [model, setModel] = useState<string>(MODELS[0].id);
   const [prompt, setPrompt] = useState('');
   const [maxTokens, setMaxTokens] = useState(256);
   const [temperature, setTemperature] = useState(0.7);
@@ -189,7 +189,7 @@ export default function LlmPlayground() {
           if (data.type === 'text' && data.response) {
             setResult(data);
             // Fetch admin proof data
-            fetchProof(jobId);
+            if (jobId) fetchProof(jobId);
             setPhase('done');
           }
         } else if (res.status === 404) {
