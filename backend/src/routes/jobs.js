@@ -27,6 +27,7 @@ function requireRenter(req, res, next) {
 // Cost rates in halala per minute by job type
 const COST_RATES = {
   'llm-inference': 15,    // 15 halala/min
+  'llm_inference': 15,    // alias
   'training': 25,         // 25 halala/min
   'rendering': 20,        // 20 halala/min
   'image_generation': 20, // 20 halala/min
@@ -250,6 +251,7 @@ print("DC1_RESULT_JSON:" + json.dumps(output))
 const JOB_TEMPLATES = {
   'image_generation': generateImageGenScript,
   'llm-inference': generateLlmInferenceScript,
+  'llm_inference': generateLlmInferenceScript,  // underscore alias (avoids daemon Docker path for llm-inference)
 };
 
 function calculateCostHalala(jobType, durationMinutes) {
