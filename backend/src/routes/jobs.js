@@ -161,43 +161,98 @@ print("DC1_RESULT_JSON:" + json.dumps(output))
 function generateLlmInferenceScript(params) {
   const prompt = pyEscape(params.prompt || 'What is the capital of Saudi Arabia?');
   const maxTokens = Math.min(Math.max(parseInt(params.max_tokens) || 512, 32), 4096);
-  const rawModel = String(params.model || 'microsoft/phi-2');
-  const model = ALLOWED_LLM_MODELS.includes(rawModel) ? rawModel : 'microsoft/phi-2';
+  const rawModel = String(params.model || 'TinyLlama/TinyLlama-1.1B-Chat-v1.0');
+  const model = ALLOWED_LLM_MODELS.includes(rawModel) ? rawModel : 'TinyLlama/TinyLlama-1.1B-Chat-v1.0';
   const temperature = Math.min(Math.max(parseFloat(params.temperature) || 0.7, 0.1), 2.0);
+
+  // Determine if model needs 4-bit quantization (7B+ params need it for 8GB VRAM cards)
+  const needs4bit = model.includes('Mistral-7B') || model.includes('gemma-7b');
+  // Determine chat template format based on model
+  const isChatModel = model.includes('Chat') || model.includes('Instruct');
 
   return `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""DC1 LLM Inference - auto-generated task script"""
-import torch, json, sys, time
+"""DC1 LLM Inference v2 - auto-generated task script with chat templates"""
+import torch, json, sys, time, os
 
 t0 = time.time()
 print("[dc1] Loading model: ${model}", flush=True)
 
+# ── Install dependencies if needed ───────────────────────────────────
 try:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 except ImportError:
     print("[dc1] Installing transformers...", flush=True)
     import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers", "accelerate", "bitsandbytes", "-q"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install",
+        "transformers", "accelerate", "bitsandbytes", "sentencepiece", "-q"])
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
+${needs4bit ? `# ── 4-bit quantization for large models (fits in 8GB VRAM) ────────
+try:
+    from transformers import BitsAndBytesConfig
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+    )
+    print("[dc1] Using 4-bit quantization (NF4) for VRAM efficiency", flush=True)
+except ImportError:
+    print("[dc1] bitsandbytes not available, trying float16...", flush=True)
+    bnb_config = None
+` : `bnb_config = None`}
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32
 
+# ── Load tokenizer ───────────────────────────────────────────────────
 tokenizer = AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(
-    '${model}',
-    torch_dtype=dtype,
-    device_map="auto" if device == "cuda" else None,
-    trust_remote_code=True
-)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
+# ── Load model ───────────────────────────────────────────────────────
+load_kwargs = {
+    "trust_remote_code": True,
+    "device_map": "auto" if device == "cuda" else None,
+}
+if bnb_config:
+    load_kwargs["quantization_config"] = bnb_config
+else:
+    load_kwargs["torch_dtype"] = dtype
+
+model = AutoModelForCausalLM.from_pretrained('${model}', **load_kwargs)
 print(f"[dc1] Model loaded in {time.time()-t0:.1f}s on {device}", flush=True)
 
-prompt = '${prompt}'
-inputs = tokenizer(prompt, return_tensors="pt").to(device)
+# ── Format prompt with chat template ─────────────────────────────────
+user_prompt = '${prompt}'
 
-print(f"[dc1] Generating up to ${maxTokens} tokens...", flush=True)
+${isChatModel ? `# Chat model — use proper chat template
+messages = [{"role": "user", "content": user_prompt}]
+try:
+    # Use the tokenizer's built-in chat template (works for TinyLlama, Mistral, etc.)
+    formatted = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    print(f"[dc1] Using chat template: {formatted[:80]}...", flush=True)
+except Exception as e:
+    print(f"[dc1] Chat template failed ({e}), using manual format", flush=True)
+    # Fallback manual templates
+    model_name = '${model}'.lower()
+    if 'tinyllama' in model_name:
+        formatted = f"<|user|>\\n{user_prompt}\\n<|assistant|>\\n"
+    elif 'mistral' in model_name:
+        formatted = f"[INST] {user_prompt} [/INST]"
+    elif 'gemma' in model_name:
+        formatted = f"<start_of_turn>user\\n{user_prompt}<end_of_turn>\\n<start_of_turn>model\\n"
+    else:
+        formatted = f"User: {user_prompt}\\nAssistant:"
+` : `# Base model — use simple completion format
+formatted = f"Question: {user_prompt}\\nAnswer:"
+`}
+
+inputs = tokenizer(formatted, return_tensors="pt", padding=True).to(device)
+input_length = inputs["input_ids"].shape[1]
+
+print(f"[dc1] Generating up to ${maxTokens} tokens (input: {input_length} tokens)...", flush=True)
 t1 = time.time()
 
 with torch.no_grad():
@@ -207,23 +262,32 @@ with torch.no_grad():
         temperature=${temperature},
         do_sample=True,
         top_p=0.9,
-        pad_token_id=tokenizer.eos_token_id
+        repetition_penalty=1.1,
+        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
     )
 
-text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+# ── Extract ONLY the generated text (strip the input prompt) ─────────
+generated_ids = outputs[0][input_length:]
+response = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
 gen_time = time.time() - t1
-tokens_generated = outputs.shape[1] - inputs["input_ids"].shape[1]
+tokens_generated = len(generated_ids)
+
+print(f"[dc1] Generated {tokens_generated} tokens in {gen_time:.1f}s", flush=True)
 
 output = {
     "type": "text",
-    "prompt": prompt,
-    "response": text,
+    "prompt": user_prompt,
+    "response": response,
+    "full_text": full_text[:2000],
     "model": '${model}',
     "tokens_generated": tokens_generated,
     "tokens_per_second": round(tokens_generated / gen_time, 1) if gen_time > 0 else 0,
     "gen_time_s": round(gen_time, 1),
     "total_time_s": round(time.time()-t0, 1),
-    "device": device
+    "device": device,
+    "quantization": "4bit-nf4" if bnb_config else "float16"
 }
 print("DC1_RESULT_JSON:" + json.dumps(output))
 `;
