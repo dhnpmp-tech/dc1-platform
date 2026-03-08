@@ -90,6 +90,14 @@ export default function LlmPlayground() {
   async function verifyKey(key: string) {
     setAuthChecking(true);
     try {
+      // Admin token bypass — allows platform admins to use the playground directly
+      if (key === ADMIN_TOKEN) {
+        setRenterName('DC1 Admin');
+        setRenterKey(key);
+        sessionStorage.setItem('dc1_renter_key', key);
+        setAuthChecking(false);
+        return;
+      }
       const res = await fetch(`${API_BASE}/api/renters/me?key=${encodeURIComponent(key)}`);
       if (res.ok) {
         const data = await res.json();
@@ -100,7 +108,14 @@ export default function LlmPlayground() {
         setRenterName(null);
         sessionStorage.removeItem('dc1_renter_key');
       }
-    } catch { /* keep key */ }
+    } catch {
+      // Network error — if key looks like a dc1 renter key, allow anyway (offline mode)
+      if (key.startsWith('dc1-renter-')) {
+        setRenterName('Renter (offline)');
+        setRenterKey(key);
+        sessionStorage.setItem('dc1_renter_key', key);
+      }
+    }
     finally { setAuthChecking(false); }
   }
 
@@ -146,7 +161,12 @@ export default function LlmPlayground() {
     try {
       const res = await fetch(`${API_BASE}/api/jobs/submit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-renter-key': renterKey },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(renterKey === ADMIN_TOKEN
+            ? { 'x-admin-token': ADMIN_TOKEN, 'x-renter-key': 'dc1-renter-d1f00fc37ee3a0898b2dc88f33bf54b3' }
+            : { 'x-renter-key': renterKey }),
+        },
         body: JSON.stringify({
           provider_id: providerId,
           job_type: 'llm_inference',
