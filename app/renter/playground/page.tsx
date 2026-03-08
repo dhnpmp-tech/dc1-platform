@@ -3,7 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 
-const API_BASE = process.env.NEXT_PUBLIC_DC1_API || 'http://76.13.179.86:8083';
+// Use Next.js rewrite proxy (/api/dc1/*) to avoid mixed-content (HTTPS→HTTP) browser blocks.
+// Falls back to direct HTTP for local dev or when NEXT_PUBLIC_DC1_API is set.
+const API_BASE = process.env.NEXT_PUBLIC_DC1_API || (typeof window !== 'undefined' && window.location.protocol === 'https:' ? '' : 'http://76.13.179.86:8083');
+const API_PREFIX = API_BASE === '' ? '/api/dc1' : `${API_BASE}/api`;
 const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
 
 const MODELS = [
@@ -98,7 +101,7 @@ export default function LlmPlayground() {
         setAuthChecking(false);
         return;
       }
-      const res = await fetch(`${API_BASE}/api/renters/me?key=${encodeURIComponent(key)}`);
+      const res = await fetch(`${API_PREFIX}/renters/me?key=${encodeURIComponent(key)}`);
       if (res.ok) {
         const data = await res.json();
         setRenterName(data.renter?.name || 'Renter');
@@ -134,7 +137,7 @@ export default function LlmPlayground() {
   const fetchProviders = useCallback(async () => {
     setLoadingProviders(true);
     try {
-      const res = await fetch(`${API_BASE}/api/renters/available-providers`);
+      const res = await fetch(`${API_PREFIX}/renters/available-providers`);
       if (res.ok) {
         const data = await res.json();
         const online = (data.providers || []).filter((p: Provider) => p.status === 'online');
@@ -159,7 +162,7 @@ export default function LlmPlayground() {
     setPollCount(0);
 
     try {
-      const res = await fetch(`${API_BASE}/api/jobs/submit`, {
+      const res = await fetch(`${API_PREFIX}/jobs/submit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -199,7 +202,7 @@ export default function LlmPlayground() {
     async function poll() {
       setPollCount(c => c + 1);
       try {
-        const res = await fetch(`${API_BASE}/api/jobs/${jobId}/output`);
+        const res = await fetch(`${API_PREFIX}/jobs/${jobId}/output`);
 
         if (res.status === 202) return; // still running
         if (res.status === 204) return; // completed but no output yet
@@ -214,7 +217,7 @@ export default function LlmPlayground() {
           }
         } else if (res.status === 404) {
           // Job failed or timed out — check admin endpoint
-          const adminRes = await fetch(`${API_BASE}/api/admin/jobs/${jobId}`, {
+          const adminRes = await fetch(`${API_PREFIX}/admin/jobs/${jobId}`, {
             headers: { 'x-admin-token': ADMIN_TOKEN },
           });
           if (adminRes.ok) {
@@ -245,7 +248,7 @@ export default function LlmPlayground() {
 
   async function fetchProof(id: number) {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/jobs/${id}`, {
+      const res = await fetch(`${API_PREFIX}/admin/jobs/${id}`, {
         headers: { 'x-admin-token': ADMIN_TOKEN },
       });
       if (!res.ok) return;
