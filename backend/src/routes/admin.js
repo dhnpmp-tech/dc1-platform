@@ -233,4 +233,125 @@ router.get('/jobs/:id', (req, res) => {
   }
 });
 
+// ============================================================================
+// GET /api/admin/daemon-health - Daemon fleet health dashboard
+// ============================================================================
+router.get('/daemon-health', (req, res) => {
+  try {
+    const hoursRaw = parseInt(req.query.hours, 10) || 24;
+    const hours = Math.min(Math.max(hoursRaw, 1), 720);  // Clamp 1h - 30 days
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+
+    // Validate provider_id if provided
+    let providerFilter = null;
+    if (req.query.provider_id) {
+      providerFilter = parseInt(req.query.provider_id, 10);
+      if (isNaN(providerFilter) || providerFilter <= 0) {
+        return res.status(400).json({ error: 'Invalid provider_id — must be a positive integer' });
+      }
+    }
+
+    // 1. Recent events (last N hours)
+    let eventsQuery = `SELECT * FROM daemon_events WHERE received_at > ? `;
+    const eventsParams = [since];
+    if (providerFilter) {
+      eventsQuery += `AND provider_id = ? `;
+      eventsParams.push(providerFilter);
+    }
+    eventsQuery += `ORDER BY received_at DESC LIMIT 200`;
+    const events = db.all(eventsQuery, ...eventsParams);
+
+    // 2. Crash summary per provider
+    const crashes = db.all(`
+      SELECT provider_id, COUNT(*) as crash_count,
+             MAX(event_timestamp) as last_crash,
+             GROUP_CONCAT(DISTINCT daemon_version) as versions_seen
+      FROM daemon_events
+      WHERE event_type IN ('daemon_crash', 'watchdog_restart', 'watchdog_givingup')
+        AND received_at > ?
+      GROUP BY provider_id
+      ORDER BY crash_count DESC
+    `, since);
+
+    // 3. Version distribution across providers
+    const versions = db.all(`
+      SELECT daemon_version, COUNT(DISTINCT provider_id) as provider_count,
+             MAX(event_timestamp) as last_seen
+      FROM daemon_events
+      WHERE event_type = 'daemon_start'
+        AND received_at > ?
+      GROUP BY daemon_version
+      ORDER BY daemon_version DESC
+    `, since);
+
+    // 4. Job success/failure rates
+    const jobStats = db.all(`
+      SELECT event_type, COUNT(*) as count
+      FROM daemon_events
+      WHERE event_type IN ('job_success', 'job_failure')
+        AND received_at > ?
+      GROUP BY event_type
+    `, since);
+
+    // 5. Event type breakdown
+    const eventBreakdown = db.all(`
+      SELECT event_type, severity, COUNT(*) as count
+      FROM daemon_events
+      WHERE received_at > ?
+      GROUP BY event_type, severity
+      ORDER BY count DESC
+    `, since);
+
+    // 6. Bandwidth reports (latest per provider)
+    const bandwidth = db.all(`
+      SELECT d.provider_id, d.details, d.event_timestamp
+      FROM daemon_events d
+      INNER JOIN (
+        SELECT provider_id, MAX(event_timestamp) as max_ts
+        FROM daemon_events
+        WHERE event_type = 'bandwidth_report' AND received_at > ?
+        GROUP BY provider_id
+      ) latest ON d.provider_id = latest.provider_id AND d.event_timestamp = latest.max_ts
+      WHERE d.event_type = 'bandwidth_report'
+      ORDER BY d.provider_id
+    `, since);
+
+    // 7. Provider online status (from providers table)
+    const providers = db.all(`
+      SELECT id, name, gpu_model, status, daemon_version,
+             last_heartbeat, gpu_name_detected
+      FROM providers
+      ORDER BY last_heartbeat DESC
+    `);
+
+    const successCount = jobStats.find(s => s.event_type === 'job_success')?.count || 0;
+    const failCount = jobStats.find(s => s.event_type === 'job_failure')?.count || 0;
+    const totalJobs = successCount + failCount;
+
+    res.json({
+      period_hours: parseInt(hours),
+      generated_at: new Date().toISOString(),
+      summary: {
+        total_events: events.length,
+        total_crashes: crashes.reduce((sum, c) => sum + c.crash_count, 0),
+        total_jobs: totalJobs,
+        job_success_rate: totalJobs > 0 ? `${((successCount / totalJobs) * 100).toFixed(1)}%` : 'N/A',
+        providers_online: providers.filter(p => p.status === 'online').length,
+        providers_total: providers.length,
+      },
+      crashes,
+      versions,
+      job_stats: { success: successCount, failure: failCount, total: totalJobs },
+      event_breakdown: eventBreakdown,
+      bandwidth,
+      providers,
+      recent_events: events.slice(0, 50),  // Only return first 50 in list
+    });
+
+  } catch (error) {
+    console.error('Daemon health dashboard error:', error);
+    res.status(500).json({ error: 'Dashboard query failed' });
+  }
+});
+
 module.exports = router;

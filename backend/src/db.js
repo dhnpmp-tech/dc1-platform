@@ -81,6 +81,24 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS daemon_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER,
+    event_type TEXT NOT NULL,
+    severity TEXT DEFAULT 'info',
+    daemon_version TEXT,
+    job_id TEXT,
+    hostname TEXT,
+    os_info TEXT,
+    python_version TEXT,
+    details TEXT,
+    event_timestamp TEXT,
+    received_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS benchmark_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider_id INTEGER NOT NULL,

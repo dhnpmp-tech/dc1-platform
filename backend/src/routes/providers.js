@@ -10,6 +10,21 @@ const db = require('../db');
 // Import shared billing rates from jobs module
 const { COST_RATES } = require('./jobs');
 
+// Minimum daemon version required — daemons older than this get update_available: true
+const MIN_DAEMON_VERSION = '3.2.0';
+
+// Semantic version comparison: returns -1 (v1<v2), 0 (equal), 1 (v1>v2)
+function compareVersions(v1, v2) {
+    const p1 = (v1 || '0').split('.').map(Number);
+    const p2 = (v2 || '0').split('.').map(Number);
+    for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+        const a = p1[i] || 0, b = p2[i] || 0;
+        if (a < b) return -1;
+        if (a > b) return 1;
+    }
+    return 0;
+}
+
 // ============================================================================
 // POST /api/providers/register - Register new provider
 // ============================================================================
@@ -144,9 +159,8 @@ router.post('/heartbeat', (req, res) => {
             db.run('UPDATE providers SET daemon_version = ? WHERE id = ?', daemonVersion, p.id);
         }
 
-        // Tell daemon if update is available
-        const MIN_DAEMON_VERSION = '3.1.0';
-        const needsUpdate = !daemonVersion || daemonVersion < MIN_DAEMON_VERSION;
+        // Tell daemon if update is available (semantic version comparison)
+        const needsUpdate = !daemonVersion || compareVersions(daemonVersion, MIN_DAEMON_VERSION) < 0;
         return res.json({
             success: true, message: 'Heartbeat received', timestamp: now,
             update_available: needsUpdate,
@@ -156,6 +170,50 @@ router.post('/heartbeat', (req, res) => {
     } catch (error) {
         console.error('Heartbeat error:', error);
         res.status(500).json({ error: 'Heartbeat failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/daemon-event - Log daemon events (crashes, job results, etc.)
+// ============================================================================
+router.post('/daemon-event', (req, res) => {
+    try {
+        const { api_key, event_type, severity, daemon_version, timestamp,
+                hostname, os_info, python_version, details, job_id } = req.body;
+
+        if (!api_key || !event_type) {
+            return res.status(400).json({ error: 'Missing api_key or event_type' });
+        }
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        db.run(`INSERT INTO daemon_events
+            (provider_id, event_type, severity, daemon_version, job_id,
+             hostname, os_info, python_version, details, event_timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            provider.id,
+            event_type,
+            severity || 'info',
+            daemon_version || null,
+            job_id || null,
+            hostname || null,
+            os_info || null,
+            python_version || null,
+            (details || '').substring(0, 5000),  // Cap at 5KB
+            timestamp || new Date().toISOString()
+        );
+
+        // Log critical events to console for immediate visibility
+        if (severity === 'critical' || severity === 'error') {
+            console.warn(`[DAEMON EVENT] provider=${provider.id} type=${event_type} severity=${severity}: ${(details || '').substring(0, 200)}`);
+        }
+
+        res.json({ success: true, event_type, provider_id: provider.id });
+
+    } catch (error) {
+        console.error('Daemon event error:', error);
+        res.status(500).json({ error: 'Event logging failed' });
     }
 });
 
@@ -642,7 +700,7 @@ router.post('/job-result', (req, res) => {
 // ============================================================================
 router.get('/download/daemon', (req, res) => {
     try {
-        const { key } = req.query;
+        const { key, check_only } = req.query;
         if (!key) return res.status(400).json({ error: 'API key required' });
 
         const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
@@ -653,14 +711,28 @@ router.get('/download/daemon', (req, res) => {
             return res.status(404).json({ error: 'Daemon file not found' });
         }
 
-        let script = fs.readFileSync(daemonPath, 'utf-8');
+        // Extract version from the daemon file
+        const script = fs.readFileSync(daemonPath, 'utf-8');
+        const versionMatch = script.match(/DAEMON_VERSION\s*=\s*"([^"]+)"/);
+        const currentVersion = versionMatch ? versionMatch[1] : 'unknown';
+
+        // check_only mode: return version info without downloading the file
+        if (check_only === 'true') {
+            return res.json({
+                version: currentVersion,
+                min_version: MIN_DAEMON_VERSION,
+                download_url: `/api/providers/download/daemon?key=${key}`,
+            });
+        }
+
+        // Full download: inject API key and URL
         const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
-        script = script.replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`);
-        script = script.replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
+        let injected = script.replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`);
+        injected = injected.replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 
         res.setHeader('Content-Type', 'text/x-python');
         res.setHeader('Content-Disposition', 'attachment; filename="dc1-daemon.py"');
-        res.send(script);
+        res.send(injected);
     } catch (error) {
         console.error('Daemon download error:', error);
         res.status(500).json({ error: 'Download failed' });
