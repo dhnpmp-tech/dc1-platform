@@ -726,9 +726,13 @@ router.get('/download/daemon', (req, res) => {
         }
 
         // Full download: inject API key and URL
+        // Supports both placeholder styles: {{API_KEY}} (v3.2.0+) and INJECT_KEY_HERE (legacy)
         const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
-        let injected = script.replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`);
-        injected = injected.replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
+        let injected = script
+            .replace('API_KEY = "{{API_KEY}}"', `API_KEY = "${key}"`)
+            .replace('API_URL = "{{API_URL}}"', `API_URL = "${apiUrl}"`)
+            .replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`)
+            .replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 
         res.setHeader('Content-Type', 'text/x-python');
         res.setHeader('Content-Disposition', 'attachment; filename="dc1-daemon.py"');
