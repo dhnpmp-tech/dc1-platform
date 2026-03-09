@@ -82,13 +82,13 @@ export default function GpuPlayground() {
   const [jobType, setJobType] = useState<JobType>('llm_inference');
 
   // LLM Form
-  const [llmModel, setLlmModel] = useState(LLM_MODELS[0].id);
+  const [llmModel, setLlmModel] = useState<string>(LLM_MODELS[0].id);
   const [prompt, setPrompt] = useState('');
   const [maxTokens, setMaxTokens] = useState(256);
   const [temperature, setTemperature] = useState(0.7);
 
   // Image Gen Form
-  const [sdModel, setSdModel] = useState(SD_MODELS[0].id);
+  const [sdModel, setSdModel] = useState<string>(SD_MODELS[0].id);
   const [negativePrompt, setNegativePrompt] = useState('');
   const [steps, setSteps] = useState(30);
   const [imgWidth, setImgWidth] = useState(512);
