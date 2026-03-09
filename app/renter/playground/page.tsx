@@ -257,11 +257,11 @@ export default function GpuPlayground() {
           const data = await res.json();
           if (data.type === 'text' && data.response) {
             setResult(data);
-            fetchProof(jobId);
+            if (jobId) fetchProof(jobId);
             setPhase('done');
           } else if (data.type === 'image' && data.image_base64) {
             setResult(data);
-            fetchProof(jobId);
+            if (jobId) fetchProof(jobId);
             setPhase('done');
           }
         } else if (res.status === 404) {
