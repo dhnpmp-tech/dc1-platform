@@ -67,7 +67,15 @@ interface DaemonInfo {
   hostname: string;
   os: string;
   python: string;
-  last_seen: string;
+  last_seen?: string;
+  gpu_name?: string;
+  gpu_vram_mib?: number;
+  free_vram_mib?: number;
+  gpu_temp_c?: number;
+  gpu_util_pct?: number;
+  driver_version?: string;
+  provider_status?: string;
+  last_heartbeat?: string;
 }
 
 interface DaemonEvent {
