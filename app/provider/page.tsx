@@ -325,12 +325,17 @@ function ProviderDashboardInner() {
           )}
         </div>
 
-        {/* Earnings History — inline */}
-        <div className="bg-[#252525] rounded-lg border border-gray-800 p-4">
-          <h3 className="text-[#00A8E1] font-semibold mb-3">📊 Earnings History</h3>
-          <p className="text-gray-500 text-sm">Detailed earnings history coming soon. Your totals are shown above.</p>
-          <p className="text-gray-600 text-xs mt-2">Payouts processed weekly to your registered account.</p>
-        </div>
+        {/* Earnings & History Link */}
+        <a href={`/provider/earnings?key=${key}`}
+          className="block w-full bg-[#252525] rounded-lg border border-[#FFD700]/20 p-4 hover:border-[#FFD700]/40 transition group">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-[#FFD700] font-semibold">📊 Earnings, Jobs & Daemon Logs</h3>
+              <p className="text-gray-500 text-sm mt-1">Daily breakdown, job history, daemon status, withdrawals</p>
+            </div>
+            <span className="text-[#FFD700]/50 group-hover:text-[#FFD700] text-xl transition">&rarr;</span>
+          </div>
+        </a>
       </div>
     </div>
   );

@@ -885,4 +885,183 @@ router.post('/withdraw', (req, res) => {
     }
 });
 
+// ============================================================================
+// GET /api/providers/job-history — Provider's completed job history with earnings
+// ============================================================================
+router.get('/job-history', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id, name FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+        const offset = parseInt(req.query.offset) || 0;
+
+        const jobs = db.all(
+            `SELECT j.id, j.job_id, j.job_type, j.status, j.submitted_at, j.started_at,
+                    j.completed_at, j.progress_phase, j.error,
+                    j.actual_cost_halala, j.cost_halala,
+                    j.provider_earned_halala, j.dc1_fee_halala,
+                    j.actual_duration_minutes, j.duration_minutes,
+                    r.name as renter_name
+             FROM jobs j
+             LEFT JOIN renters r ON j.renter_id = r.id
+             WHERE j.provider_id = ? AND j.status IN ('completed', 'failed', 'cancelled')
+             ORDER BY j.completed_at DESC
+             LIMIT ? OFFSET ?`,
+            provider.id, limit, offset
+        );
+
+        const totals = db.get(
+            `SELECT COUNT(*) as total_jobs,
+                    SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed_jobs,
+                    SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed_jobs,
+                    COALESCE(SUM(CASE WHEN status='completed' THEN provider_earned_halala ELSE 0 END), 0) as total_earned_halala
+             FROM jobs WHERE provider_id = ?`,
+            provider.id
+        );
+
+        res.json({
+            provider_id: provider.id,
+            ...totals,
+            total_earned_sar: ((totals.total_earned_halala || 0) / 100).toFixed(2),
+            success_rate: totals.total_jobs > 0
+                ? Math.round((totals.completed_jobs / totals.total_jobs) * 100)
+                : 0,
+            jobs: jobs.map(j => ({
+                ...j,
+                earned_sar: j.provider_earned_halala ? (j.provider_earned_halala / 100).toFixed(2) : '0.00',
+                cost_sar: j.actual_cost_halala ? (j.actual_cost_halala / 100).toFixed(2) : '0.00'
+            }))
+        });
+    } catch (error) {
+        console.error('Provider job history error:', error);
+        res.status(500).json({ error: 'Failed to fetch job history' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/earnings-daily — Daily earnings breakdown for charts
+// ============================================================================
+router.get('/earnings-daily', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const days = Math.min(parseInt(req.query.days) || 30, 90);
+        const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        const daily = db.all(
+            `SELECT DATE(completed_at) as day,
+                    COUNT(*) as jobs,
+                    SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed,
+                    COALESCE(SUM(CASE WHEN status='completed' THEN provider_earned_halala ELSE 0 END), 0) as earned_halala,
+                    COALESCE(SUM(CASE WHEN status='completed' THEN actual_duration_minutes ELSE 0 END), 0) as total_minutes
+             FROM jobs
+             WHERE provider_id = ? AND completed_at >= ?
+             GROUP BY DATE(completed_at)
+             ORDER BY day DESC`,
+            provider.id, sinceDate
+        );
+
+        res.json({
+            provider_id: provider.id,
+            days_requested: days,
+            daily: daily.map(d => ({
+                ...d,
+                earned_sar: (d.earned_halala / 100).toFixed(2)
+            }))
+        });
+    } catch (error) {
+        console.error('Earnings daily error:', error);
+        res.status(500).json({ error: 'Failed to fetch daily earnings' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/daemon-logs — Recent daemon events/logs
+// ============================================================================
+router.get('/daemon-logs', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+        const severity = req.query.severity; // optional filter: error, warning, info
+
+        let query = `SELECT id, event_type, severity, daemon_version, job_id,
+                            hostname, os_info, python_version, details, event_timestamp
+                     FROM daemon_events
+                     WHERE provider_id = ?`;
+        const params = [provider.id];
+
+        if (severity) {
+            query += ` AND severity = ?`;
+            params.push(severity);
+        }
+
+        query += ` ORDER BY event_timestamp DESC LIMIT ?`;
+        params.push(limit);
+
+        const events = db.all(query, ...params);
+
+        // Get latest daemon info
+        const latestEvent = db.get(
+            `SELECT daemon_version, hostname, os_info, python_version, event_timestamp
+             FROM daemon_events WHERE provider_id = ? AND daemon_version IS NOT NULL
+             ORDER BY event_timestamp DESC LIMIT 1`,
+            provider.id
+        );
+
+        res.json({
+            provider_id: provider.id,
+            daemon_info: latestEvent ? {
+                version: latestEvent.daemon_version,
+                hostname: latestEvent.hostname,
+                os: latestEvent.os_info,
+                python: latestEvent.python_version,
+                last_seen: latestEvent.event_timestamp
+            } : null,
+            events
+        });
+    } catch (error) {
+        console.error('Daemon logs error:', error);
+        res.status(500).json({ error: 'Failed to fetch daemon logs' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/withdrawal-history — Withdrawal requests
+// ============================================================================
+router.get('/withdrawal-history', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const withdrawals = db.all(
+            `SELECT withdrawal_id, amount_sar, payout_method, status, requested_at, processed_at
+             FROM withdrawals WHERE provider_id = ?
+             ORDER BY requested_at DESC LIMIT 50`,
+            provider.id
+        );
+
+        res.json({ provider_id: provider.id, withdrawals });
+    } catch (error) {
+        console.error('Withdrawal history error:', error);
+        res.status(500).json({ error: 'Failed to fetch withdrawals' });
+    }
+});
+
 module.exports = router;
