@@ -17,6 +17,8 @@ interface RenterInfo {
   organization: string;
   balance_halala: number;
   api_key: string;
+  total_spent_halala?: number;
+  total_jobs?: number;
 }
 
 interface Provider {
@@ -145,7 +147,8 @@ function RenterDashboard() {
       if (jobsRes.ok) {
         const meData = await jobsRes.json();
         if (meData.renter) setRenter(meData.renter);
-        if (meData.jobs) setJobs(meData.jobs);
+        if (meData.recent_jobs) setJobs(meData.recent_jobs);
+        else if (meData.jobs) setJobs(meData.jobs);
       }
     } catch { /* ignore */ }
     finally { setLoadingData(false); }
@@ -232,8 +235,11 @@ function RenterDashboard() {
   const onlineProviders = providers.filter(p => p.status === 'online');
   const completedJobs = jobs.filter(j => j.status === 'completed');
   const failedJobs = jobs.filter(j => j.status === 'failed');
-  const totalSpentHalala = completedJobs.reduce((sum, j) => sum + (j.actual_cost_halala || j.cost_halala || 0), 0);
+  const runningJobs = jobs.filter(j => j.status === 'running');
+  // Use renter-level stats if available (more accurate), fallback to local calc
+  const totalSpentHalala = renter.total_spent_halala || completedJobs.reduce((sum, j) => sum + (j.actual_cost_halala || j.cost_halala || 0), 0);
   const totalSpentSar = totalSpentHalala / 100;
+  const totalJobsCount = renter.total_jobs || jobs.length;
 
   // ── Dashboard ────────────────────────────────────────────────
   return (
@@ -295,7 +301,7 @@ function RenterDashboard() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard label="Balance" value={`${balanceSar.toFixed(2)} SAR`} sub={`${renter.balance_halala} halala`} color="cyan" />
               <KpiCard label="Total Spent" value={`${totalSpentSar.toFixed(2)} SAR`} sub={`${completedJobs.length} completed jobs`} color="gold" />
-              <KpiCard label="Jobs Run" value={String(jobs.length)} sub={`${completedJobs.length} ✓  ${failedJobs.length} ✗`} color="white" />
+              <KpiCard label="Jobs Run" value={String(totalJobsCount)} sub={`${completedJobs.length} ✓  ${failedJobs.length} ✗  ${runningJobs.length} ⏳`} color="white" />
               <KpiCard label="Online GPUs" value={String(onlineProviders.length)} sub={`${providers.length} total registered`} color="green" />
             </div>
 
