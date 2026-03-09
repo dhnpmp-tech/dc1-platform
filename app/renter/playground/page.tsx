@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 
-const API_BASE = process.env.NEXT_PUBLIC_DC1_API || 'http://76.13.179.86:8083';
+const API_BASE = typeof window !== 'undefined' && window.location.protocol === 'https:'
+  ? '/api/dc1'
+  : 'http://76.13.179.86:8083';
 const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
 
 type JobType = 'llm_inference' | 'image_generation';
