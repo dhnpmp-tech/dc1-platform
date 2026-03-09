@@ -1,4 +1,4 @@
-# DC1 Provider Setup v2.0 — Windows
+# DC1 Provider Setup v3.3.0 — Windows
 # Downloads and installs the DC1 daemon + Docker Desktop + NVIDIA Container Toolkit.
 #
 # Usage:
@@ -12,7 +12,7 @@ $INSTALL_DIR = "$env:LOCALAPPDATA\DC1Provider"
 $LOG_DIR = "$env:USERPROFILE\dc1-provider\logs"
 
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  DC1 Provider Setup v2.0 (Windows)" -ForegroundColor Cyan
+Write-Host "  DC1 Provider Setup v3.3.0 (Windows)" -ForegroundColor Cyan
 Write-Host "  GPU Compute Marketplace — Saudi Arabia" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
@@ -138,7 +138,7 @@ Write-Host "  Installed to $INSTALL_DIR\dc1-daemon.py"
 $config = @{
     api_key = $DC1_API_KEY
     api_url = $DC1_API_URL
-    daemon_version = "2.0.0"
+    daemon_version = "3.3.0"
     run_mode = "always-on"
     force_bare_metal = $false
 } | ConvertTo-Json
@@ -179,7 +179,7 @@ Start-Sleep -Seconds 3
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  DC1 Provider Daemon v2.0 — INSTALLED" -ForegroundColor Green
+Write-Host "  DC1 Provider Daemon v3.3.0 — INSTALLED" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  Daemon:  $INSTALL_DIR\dc1-daemon.py"
 Write-Host "  Config:  $INSTALL_DIR\config.json"

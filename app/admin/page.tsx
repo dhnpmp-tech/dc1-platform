@@ -26,6 +26,7 @@ interface Provider {
   total_earnings: number
   total_jobs: number
   uptime_percent: number | null
+  uptime_24h: number | null
   is_paused: number
   run_mode: string | null
   created_at: string
@@ -773,7 +774,18 @@ export default function AdminDashboard() {
                         <td className="px-4 py-3">
                           <p className={`${p.is_online ? 'text-green-400' : 'text-gray-500'} text-sm`}>{relativeTime(p.last_heartbeat)}</p>
                         </td>
-                        <td className="px-4 py-3 text-gray-400">—</td>
+                        <td className="px-4 py-3">
+                          {p.uptime_24h !== null && p.uptime_24h !== undefined ? (
+                            <div className="flex flex-col gap-1">
+                              <span className={`text-sm font-medium ${p.uptime_24h >= 90 ? 'text-green-400' : p.uptime_24h >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{p.uptime_24h}%</span>
+                              <div className="w-16 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${p.uptime_24h >= 90 ? 'bg-green-400' : p.uptime_24h >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${p.uptime_24h}%` }} />
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-600 text-sm">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                           {gpuUtil !== null && p.is_online ? (
                             <div className="flex flex-col gap-1">

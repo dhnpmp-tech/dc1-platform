@@ -42,6 +42,9 @@ router.get('/providers', (req, res) => {
     );
 
     const now = new Date();
+    const since24h = new Date(Date.now() - 24*60*60*1000).toISOString();
+    const expectedIn24h = (24 * 60 * 60) / 30; // 2880 heartbeats at 30s interval
+
     const enriched = providers.map(p => {
       let gpu_status_parsed = null;
       try { gpu_status_parsed = p.gpu_status ? JSON.parse(p.gpu_status) : null; } catch(e) {}
@@ -50,12 +53,22 @@ router.get('/providers', (req, res) => {
       const minutesSinceHeartbeat = lastBeat ? (now - lastBeat) / 60000 : null;
       const isOnline = minutesSinceHeartbeat !== null && minutesSinceHeartbeat < 5;
 
+      // Calculate 24h uptime from heartbeat_log
+      let uptime_24h = null;
+      try {
+        const hbRow = db.get('SELECT COUNT(*) as cnt FROM heartbeat_log WHERE provider_id = ? AND received_at > ?', p.id, since24h);
+        if (hbRow && hbRow.cnt > 0) {
+          uptime_24h = Math.min(100, Math.round((hbRow.cnt / expectedIn24h) * 100));
+        }
+      } catch(e) {}
+
       return {
         ...p,
         gpu_status: gpu_status_parsed,
         is_online: isOnline,
         minutes_since_heartbeat: minutesSinceHeartbeat !== null ? Math.round(minutesSinceHeartbeat) : null,
-        status: isOnline ? 'online' : (p.last_heartbeat ? 'offline' : 'registered')
+        status: isOnline ? 'online' : (p.last_heartbeat ? 'offline' : 'registered'),
+        uptime_24h
       };
     });
 

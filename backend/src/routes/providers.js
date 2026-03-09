@@ -492,9 +492,9 @@ router.get('/download', async (req, res) => {
         const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-        const isLinux = platform === 'linux';
-        const templateFile = isLinux ? 'daemon.sh' : 'daemon.ps1';
-        const downloadName = isLinux ? 'dc1-setup.sh' : 'dc1-setup.ps1';
+        const isUnix = platform === 'linux' || platform === 'mac' || platform === 'darwin';
+        const templateFile = isUnix ? 'daemon.sh' : 'daemon.ps1';
+        const downloadName = isUnix ? 'dc1-setup.sh' : 'dc1-setup.ps1';
         const templatePath = path.join(__dirname, '../../installers', templateFile);
 
         if (!fs.existsSync(templatePath)) {

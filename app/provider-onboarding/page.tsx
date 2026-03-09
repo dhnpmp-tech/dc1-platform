@@ -40,6 +40,7 @@ export default function ProviderOnboarding() {
   const [consent1, setConsent1] = useState(false);
   const [consent2, setConsent2] = useState(false);
   const [hwCheckDone, setHwCheckDone] = useState(false);
+  const [hwCheckResult, setHwCheckResult] = useState<{ passed: boolean; gpu: string; error?: string } | null>(null);
   const [runMode, setRunMode] = useState<'always-on' | 'manual' | 'scheduled'>('always-on');
   const [schedStart, setSchedStart] = useState('23:00');
   const [schedEnd, setSchedEnd] = useState('07:00');
@@ -56,12 +57,77 @@ export default function ProviderOnboarding() {
     setDetectedOS(detectOS());
   }, []);
 
-  // Step 2: auto-pass hardware check after 2s
+  // Step 2: real GPU detection via WebGPU API (falls back to basic check)
   useEffect(() => {
-    if (step === 2) {
-      const t = setTimeout(() => setHwCheckDone(true), 2000);
-      return () => clearTimeout(t);
+    if (step !== 2) return;
+    let cancelled = false;
+
+    async function detectGPU() {
+      try {
+        // Try WebGPU first (Chrome 113+, Edge 113+)
+        if ('gpu' in navigator) {
+          const gpu = (navigator as any).gpu;
+          const adapter = await gpu.requestAdapter();
+          if (adapter) {
+            const info = await adapter.requestAdapterInfo?.() || {};
+            const name = info.device || info.description || 'GPU detected via WebGPU';
+            if (!cancelled) {
+              setHwCheckResult({ passed: true, gpu: name });
+              setHwCheckDone(true);
+            }
+            return;
+          }
+        }
+        // Try WebGL fallback
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        if (gl) {
+          const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+          const renderer = debugInfo
+            ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+            : gl.getParameter(gl.RENDERER);
+          const isNvidia = /nvidia|geforce|rtx|gtx|quadro|tesla/i.test(renderer);
+          const isAmd = /amd|radeon/i.test(renderer);
+          const isDedicated = isNvidia || isAmd || /a100|h100|v100/i.test(renderer);
+
+          if (!cancelled) {
+            if (isDedicated) {
+              setHwCheckResult({ passed: true, gpu: renderer });
+            } else {
+              // Could be integrated GPU or software renderer
+              setHwCheckResult({
+                passed: false,
+                gpu: renderer,
+                error: `Detected "${renderer}" — DC1 requires a dedicated NVIDIA GPU with 8GB+ VRAM. If you have one, your browser may not be reporting it correctly. You can still proceed and the daemon will verify on install.`,
+              });
+            }
+            setHwCheckDone(true);
+          }
+          return;
+        }
+        // No GPU API available
+        if (!cancelled) {
+          setHwCheckResult({
+            passed: false,
+            gpu: 'Unknown',
+            error: 'Could not detect your GPU from the browser. This is normal — the daemon will verify your hardware during installation.',
+          });
+          setHwCheckDone(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setHwCheckResult({
+            passed: false,
+            gpu: 'Unknown',
+            error: 'GPU detection failed. The daemon will verify your hardware during installation.',
+          });
+          setHwCheckDone(true);
+        }
+      }
     }
+
+    detectGPU();
+    return () => { cancelled = true; };
   }, [step]);
 
   // Step 4: poll for connection with 5-minute timeout
@@ -128,7 +194,7 @@ export default function ProviderOnboarding() {
       setApiKey(key);
 
       // Download the correct installer for detected OS
-      const platform = detectedOS === 'windows' ? 'windows' : 'linux';
+      const platform = detectedOS === 'windows' ? 'windows' : detectedOS === 'mac' ? 'mac' : 'linux';
       window.location.href = `/api/providers/download?key=${key}&platform=${platform}`;
       setStep(4);
     } catch {
@@ -139,7 +205,7 @@ export default function ProviderOnboarding() {
 
   const osLabels: Record<string, { label: string; platform: string; icon: string }> = {
     windows: { label: 'Windows', platform: 'windows', icon: '🪟' },
-    mac: { label: 'macOS', platform: 'linux', icon: '🍎' },
+    mac: { label: 'macOS', platform: 'mac', icon: '🍎' },
     linux: { label: 'Linux', platform: 'linux', icon: '🐧' },
   };
 
@@ -214,15 +280,35 @@ export default function ProviderOnboarding() {
             {!hwCheckDone ? (
               <div className="flex items-center gap-3 text-gray-400">
                 <div className="w-5 h-5 border-2 border-[#00A8E1] border-t-transparent rounded-full animate-spin" />
-                Checking your GPU...
+                Detecting your GPU...
               </div>
-            ) : (
+            ) : hwCheckResult?.passed ? (
               <div className="space-y-4">
-                <p className="text-green-400">✅ We&apos;ll verify your GPU automatically when you install. Minimum: NVIDIA 8GB+ VRAM.</p>
+                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+                  <p className="text-green-400 font-semibold">✅ GPU Detected</p>
+                  <p className="text-green-300/80 text-sm mt-1">{hwCheckResult.gpu}</p>
+                  <p className="text-gray-400 text-xs mt-2">Final verification happens when the daemon starts. Minimum: NVIDIA 8GB+ VRAM.</p>
+                </div>
                 {step === 2 && (
                   <button onClick={() => setStep(3)}
                     className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200] transition">
                     Continue →
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                  <p className="text-yellow-400 font-semibold">⚠️ GPU Not Confirmed</p>
+                  {hwCheckResult?.gpu && hwCheckResult.gpu !== 'Unknown' && (
+                    <p className="text-yellow-300/80 text-sm mt-1">Detected: {hwCheckResult.gpu}</p>
+                  )}
+                  <p className="text-gray-400 text-sm mt-2">{hwCheckResult?.error}</p>
+                </div>
+                {step === 2 && (
+                  <button onClick={() => setStep(3)}
+                    className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200] transition">
+                    Continue Anyway →
                   </button>
                 )}
               </div>

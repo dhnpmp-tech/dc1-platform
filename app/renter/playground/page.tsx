@@ -433,14 +433,15 @@ export default function LlmPlayground() {
           {phase === 'polling' && (
             <div className="mt-4 bg-white/5 border border-white/10 rounded-xl p-4">
               <div className="flex items-center gap-3 text-sm">
-                {(['installing_deps', 'downloading_model', 'loading_model', 'generating'] as const).map((step, i) => {
+                {(['installing_deps', 'downloading_model', 'loading_model', 'generating', 'formatting'] as const).map((step, i) => {
                   const labels: Record<string, string> = {
                     installing_deps: 'Deps',
                     downloading_model: 'Download',
                     loading_model: 'Load GPU',
                     generating: 'Generate',
+                    formatting: 'Format',
                   };
-                  const stepOrder = ['installing_deps', 'downloading_model', 'loading_model', 'generating'];
+                  const stepOrder = ['installing_deps', 'downloading_model', 'loading_model', 'generating', 'formatting'];
                   const currentIdx = progressPhase ? stepOrder.indexOf(progressPhase) : -1;
                   const isActive = step === progressPhase;
                   const isDone = currentIdx > i;
@@ -448,7 +449,7 @@ export default function LlmPlayground() {
                     <div key={step} className="flex items-center gap-2">
                       <div className={`w-2.5 h-2.5 rounded-full ${isActive ? 'bg-[#00D9FF] animate-pulse' : isDone ? 'bg-green-400' : 'bg-white/20'}`} />
                       <span className={isActive ? 'text-[#00D9FF] font-medium' : isDone ? 'text-green-400/80' : 'text-white/30'}>{labels[step]}</span>
-                      {i < 3 && <span className="text-white/10 mx-1">→</span>}
+                      {i < 4 && <span className="text-white/10 mx-1">→</span>}
                     </div>
                   );
                 })}

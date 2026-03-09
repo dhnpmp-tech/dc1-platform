@@ -29,8 +29,8 @@ function Log {
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 Log "============================================="
-Log "  DC1 Provider Setup Helper v2.2"
-Log "  Daemon version: 3.2.0"
+Log "  DC1 Provider Setup Helper v3.3.0"
+Log "  Daemon version: 3.3.0"
 Log "============================================="
 Log "ApiKey:     $($ApiKey.Substring(0, [Math]::Min(20, $ApiKey.Length)))..."
 Log "RunMode:    $RunMode"
@@ -52,7 +52,7 @@ try {
         gpu_status = @{
             gpu_name = $GpuName
             gpu_vram_mib = [int]$GpuVram
-            daemon_version = "setup-2.2"
+            daemon_version = "setup-3.3.0"
         }
     } | ConvertTo-Json -Depth 3
     $response = Invoke-WebRequest -Uri $statusUrl -Method POST -Body $testBody -ContentType "application/json" -UseBasicParsing -TimeoutSec 15
@@ -308,8 +308,8 @@ $configObj = @{
     gpu_name = $GpuName
     gpu_vram_mb = [int]$GpuVram
     installed_at = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss")
-    installer_version = "2.2.0"
-    daemon_version = "3.2.0"
+    installer_version = "3.3.0"
+    daemon_version = "3.3.0"
 }
 $config = $configObj | ConvertTo-Json -Depth 2
 Set-Content -Path (Join-Path $InstallDir "config.json") -Value $config -Encoding UTF8
@@ -383,7 +383,7 @@ if ($RunMode -eq 'manual') {
             gpu_status = @{
                 gpu_name = if ($gpu.detected) { $gpu.name } else { $GpuName }
                 gpu_vram_mib = if ($gpu.detected) { $gpu.vram_mb } else { [int]$GpuVram }
-                daemon_version = "3.2.0"
+                daemon_version = "3.3.0"
             }
         } | ConvertTo-Json -Depth 3
         $response = Invoke-WebRequest -Uri "$ApiUrl/api/providers/heartbeat" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 10
