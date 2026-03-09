@@ -5,7 +5,7 @@ import Link from 'next/link';
 
 const API_BASE = typeof window !== 'undefined' && window.location.protocol === 'https:'
   ? '/api/dc1'
-  : 'http://76.13.179.86:8083';
+  : 'http://76.13.179.86:8083/api';
 const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
 
 type JobType = 'llm_inference' | 'image_generation';
@@ -128,7 +128,7 @@ export default function GpuPlayground() {
   async function verifyKey(key: string) {
     setAuthChecking(true);
     try {
-      const res = await fetch(`${API_BASE}/api/renters/me?key=${encodeURIComponent(key)}`);
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`);
       if (res.ok) {
         const data = await res.json();
         setRenterName(data.renter?.name || 'Renter');
@@ -158,7 +158,7 @@ export default function GpuPlayground() {
   const fetchProviders = useCallback(async () => {
     setLoadingProviders(true);
     try {
-      const res = await fetch(`${API_BASE}/api/renters/available-providers`);
+      const res = await fetch(`${API_BASE}/renters/available-providers`);
       if (res.ok) {
         const data = await res.json();
         const online = (data.providers || []).filter((p: Provider) => p.status === 'online');
@@ -196,7 +196,7 @@ export default function GpuPlayground() {
         };
 
     try {
-      const res = await fetch(`${API_BASE}/api/jobs/submit`, {
+      const res = await fetch(`${API_BASE}/jobs/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': renterKey },
         body: JSON.stringify({
@@ -232,7 +232,7 @@ export default function GpuPlayground() {
       setPollCount(c => c + 1);
       try {
         // Check progress phase from admin endpoint
-        const adminCheck = await fetch(`${API_BASE}/api/admin/jobs/${jobId}`, {
+        const adminCheck = await fetch(`${API_BASE}/admin/jobs/${jobId}`, {
           headers: { 'x-admin-token': ADMIN_TOKEN },
         });
         if (adminCheck.ok) {
@@ -248,7 +248,7 @@ export default function GpuPlayground() {
 
         // Check output
         const acceptHeader = jobType === 'image_generation' ? 'application/json' : 'application/json';
-        const res = await fetch(`${API_BASE}/api/jobs/${jobId}/output`, {
+        const res = await fetch(`${API_BASE}/jobs/${jobId}/output`, {
           headers: { 'Accept': acceptHeader },
         });
 
@@ -267,7 +267,7 @@ export default function GpuPlayground() {
             setPhase('done');
           }
         } else if (res.status === 404) {
-          const adminRes = await fetch(`${API_BASE}/api/admin/jobs/${jobId}`, {
+          const adminRes = await fetch(`${API_BASE}/admin/jobs/${jobId}`, {
             headers: { 'x-admin-token': ADMIN_TOKEN },
           });
           if (adminRes.ok) {
@@ -298,7 +298,7 @@ export default function GpuPlayground() {
 
   async function fetchProof(id: number) {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/jobs/${id}`, {
+      const res = await fetch(`${API_BASE}/admin/jobs/${id}`, {
         headers: { 'x-admin-token': ADMIN_TOKEN },
       });
       if (!res.ok) return;
