@@ -543,6 +543,49 @@ router.get('/verify-hmac', (req, res) => {
   }
 });
 
+// ============================================================================
+// GET /api/jobs/history — Renter's recent job history
+// IMPORTANT: Must be BEFORE /:job_id to avoid param catch
+// ============================================================================
+router.get('/history', (req, res) => {
+  try {
+    const renterKey = req.headers['x-renter-key'];
+    if (!renterKey) return res.status(401).json({ error: 'Renter API key required' });
+
+    const renter = db.get('SELECT * FROM renters WHERE api_key = ?', renterKey);
+    if (!renter) return res.status(401).json({ error: 'Invalid renter key' });
+
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const jobs = db.all(
+      `SELECT j.id, j.job_id, j.job_type, j.status, j.submitted_at, j.started_at,
+              j.completed_at, j.progress_phase, j.error, j.actual_cost_halala,
+              j.cost_halala, j.actual_duration_minutes, j.duration_minutes,
+              j.refunded_at,
+              p.name as provider_name, p.gpu_model as provider_gpu
+       FROM jobs j
+       LEFT JOIN providers p ON j.provider_id = p.id
+       WHERE j.renter_id = ?
+       ORDER BY j.submitted_at DESC
+       LIMIT ?`,
+      renter.id, limit
+    );
+
+    res.json({
+      balance_halala: renter.balance_halala || 0,
+      balance_sar: ((renter.balance_halala || 0) / 100).toFixed(2),
+      total_jobs: jobs.length,
+      jobs: jobs.map(j => ({
+        ...j,
+        cost_sar: j.actual_cost_halala ? (j.actual_cost_halala / 100).toFixed(2) : (j.cost_halala ? (j.cost_halala / 100).toFixed(2) : '0.00'),
+        refunded: !!j.refunded_at
+      }))
+    });
+  } catch (error) {
+    console.error('Job history error:', error);
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
 // GET /api/jobs/:job_id
 router.get('/:job_id', (req, res) => {
   try {
@@ -678,6 +721,20 @@ router.get('/:job_id/output', (req, res) => {
     const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
+    // Failed/cancelled/timed-out jobs — return 410 Gone with error details
+    if (job.status === 'failed' || job.status === 'cancelled') {
+      return res.status(410).json({
+        status: job.status,
+        error: job.error || (job.status === 'cancelled' ? 'Job was cancelled' : 'Job failed'),
+        job_id: job.job_id,
+        submitted_at: job.submitted_at,
+        started_at: job.started_at,
+        completed_at: job.completed_at,
+        progress_phase: job.progress_phase || null,
+        refunded: job.refunded_at ? true : false
+      });
+    }
+
     if (job.status !== 'completed') {
       // Build phase-aware status message
       const phaseMessages = {
@@ -697,7 +754,10 @@ router.get('/:job_id/output', (req, res) => {
         progress_phase: job.progress_phase || null,
         job_id: job.job_id,
         submitted_at: job.submitted_at,
-        started_at: job.started_at
+        started_at: job.started_at,
+        progress_updated_at: job.progress_updated_at || null,
+        timeout_at: job.timeout_at || null,
+        cost_halala: job.cost_halala || 0
       });
     }
 
@@ -821,9 +881,17 @@ function enforceJobTimeouts() {
 
     for (const job of timedOut) {
       db.run(
-        `UPDATE jobs SET status = 'failed', error = 'Job timed out', completed_at = ? WHERE id = ?`,
+        `UPDATE jobs SET status = 'failed', error = 'Job timed out — provider may be offline or model too large', completed_at = ? WHERE id = ?`,
         now, job.id
       );
+      // Refund renter for timed-out jobs
+      if (job.renter_id && job.cost_halala > 0) {
+        try {
+          db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+          db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+          console.log(`[timeout] Refunded ${job.cost_halala} halala to renter ${job.renter_id} for job ${job.job_id}`);
+        } catch(e) { console.error('[timeout] Refund error:', e); }
+      }
       console.log(`[timeout] Job ${job.job_id} timed out (provider ${job.provider_id})`);
     }
 

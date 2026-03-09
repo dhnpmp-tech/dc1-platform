@@ -221,6 +221,8 @@ const migrations = [
   // Job progress phase — daemon reports download/load/generate phases in real-time
   'ALTER TABLE jobs ADD COLUMN progress_phase TEXT',
   'ALTER TABLE jobs ADD COLUMN progress_updated_at TEXT',
+  // Refund tracking for failed/timed-out jobs
+  'ALTER TABLE jobs ADD COLUMN refunded_at TEXT',
 ];
 
 migrations.forEach(sql => {
