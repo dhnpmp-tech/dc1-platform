@@ -1014,23 +1014,35 @@ router.get('/daemon-logs', (req, res) => {
 
         const events = db.all(query, ...params);
 
-        // Get latest daemon info
-        const latestEvent = db.get(
-            `SELECT daemon_version, hostname, os_info, python_version, event_timestamp
-             FROM daemon_events WHERE provider_id = ? AND daemon_version IS NOT NULL
-             ORDER BY event_timestamp DESC LIMIT 1`,
+        // Get LIVE daemon info from provider heartbeat (most accurate source)
+        const providerRecord = db.get(
+            `SELECT gpu_status, last_heartbeat, provider_hostname, status, daemon_version
+             FROM providers WHERE id = ?`,
             provider.id
         );
 
+        let daemon_info = null;
+        if (providerRecord) {
+            const gpu = providerRecord.gpu_status ? JSON.parse(providerRecord.gpu_status) : {};
+            daemon_info = {
+                version: gpu.daemon_version || providerRecord.daemon_version || null,
+                hostname: providerRecord.provider_hostname || gpu.hostname || null,
+                os: gpu.os_info || null,
+                python: gpu.python_version || null,
+                gpu_name: gpu.gpu_name || null,
+                gpu_vram_mib: gpu.gpu_vram_mib || null,
+                free_vram_mib: gpu.free_vram_mib || null,
+                gpu_temp_c: gpu.temp_c || null,
+                gpu_util_pct: gpu.gpu_util_pct != null ? gpu.gpu_util_pct : null,
+                driver_version: gpu.driver_version || null,
+                provider_status: providerRecord.status,
+                last_heartbeat: providerRecord.last_heartbeat
+            };
+        }
+
         res.json({
             provider_id: provider.id,
-            daemon_info: latestEvent ? {
-                version: latestEvent.daemon_version,
-                hostname: latestEvent.hostname,
-                os: latestEvent.os_info,
-                python: latestEvent.python_version,
-                last_seen: latestEvent.event_timestamp
-            } : null,
+            daemon_info,
             events
         });
     } catch (error) {

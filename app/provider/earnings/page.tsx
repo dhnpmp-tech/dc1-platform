@@ -288,19 +288,43 @@ function EarningsInner() {
         {/* ── Tab: Daemon ─────────────────────────────────────────── */}
         {tab === 'daemon' && (
           <div className="space-y-4">
-            {/* Daemon Info Card */}
+            {/* Live Daemon Info Card */}
             <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-              <h3 className="text-sm text-white/60 mb-3">Daemon Information</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm text-white/60">Daemon Information</h3>
+                {daemonInfo?.provider_status && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                    daemonInfo.provider_status === 'online' ? 'bg-green-400/10 text-green-400' :
+                    daemonInfo.provider_status === 'offline' ? 'bg-red-400/10 text-red-400' :
+                    'bg-yellow-400/10 text-yellow-400'
+                  }`}>{daemonInfo.provider_status.toUpperCase()}</span>
+                )}
+              </div>
               {daemonInfo ? (
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <InfoRow label="Version" value={daemonInfo.version || '—'} />
-                  <InfoRow label="Hostname" value={daemonInfo.hostname || '—'} />
-                  <InfoRow label="OS" value={daemonInfo.os || '—'} />
-                  <InfoRow label="Python" value={daemonInfo.python || '—'} />
-                  <InfoRow label="Last Report" value={daemonInfo.last_seen ? new Date(daemonInfo.last_seen).toLocaleString() : '—'} />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <InfoRow label="Daemon Version" value={daemonInfo.version || '—'} />
+                    <InfoRow label="Hostname" value={daemonInfo.hostname || '—'} />
+                    <InfoRow label="OS" value={daemonInfo.os || '—'} />
+                    <InfoRow label="Python" value={daemonInfo.python || '—'} />
+                    <InfoRow label="Last Heartbeat" value={daemonInfo.last_heartbeat ? new Date(daemonInfo.last_heartbeat).toLocaleString() : '—'} />
+                    <InfoRow label="GPU Driver" value={daemonInfo.driver_version || '—'} />
+                  </div>
+                  {/* GPU stats from live heartbeat */}
+                  {daemonInfo.gpu_name && (
+                    <div className="border-t border-white/5 pt-3">
+                      <h4 className="text-xs text-[#FFD700]/60 mb-2">GPU Status (Live)</h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <InfoRow label="GPU" value={daemonInfo.gpu_name} />
+                        <InfoRow label="VRAM" value={daemonInfo.gpu_vram_mib ? `${daemonInfo.free_vram_mib || 0} / ${daemonInfo.gpu_vram_mib} MiB free` : '—'} />
+                        <InfoRow label="Temperature" value={daemonInfo.gpu_temp_c != null ? `${daemonInfo.gpu_temp_c}°C` : '—'} />
+                        <InfoRow label="Utilization" value={daemonInfo.gpu_util_pct != null ? `${daemonInfo.gpu_util_pct}%` : '—'} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <p className="text-white/30 text-sm">No daemon events recorded yet. Start the daemon to see info here.</p>
+                <p className="text-white/30 text-sm">No heartbeat received yet. Start the daemon to see info here.</p>
               )}
             </div>
 
