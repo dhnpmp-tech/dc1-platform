@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-const API_BASE = process.env.NEXT_PUBLIC_DC1_API || 'http://76.13.179.86:8083';
+// Use same proxy as renter dashboard on HTTPS (Vercel) so all renter API calls work
+const API_BASE =
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? '/api/dc1'
+    : 'http://76.13.179.86:8083/api';
 
 const JOB_TYPES = [
   { value: 'llm-inference', label: 'LLM Inference', rate: 15 },
@@ -89,7 +93,7 @@ export default function JobSubmitForm() {
   async function verifyRenterKey(key: string) {
     setAuthChecking(true);
     try {
-      const res = await fetch(`${API_BASE}/api/renters/me?key=${encodeURIComponent(key)}`);
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`);
       if (res.ok) {
         const data = await res.json();
         setRenterName(data.renter?.name || 'Renter');
@@ -132,7 +136,7 @@ export default function JobSubmitForm() {
     if (form.requiredVramGb < 8) return;
     setLoadingGpus(true);
     try {
-      const res = await fetch(`${API_BASE}/api/renters/available-providers`);
+      const res = await fetch(`${API_BASE}/renters/available-providers`);
       if (!res.ok) throw new Error('Failed to fetch GPUs');
       const data = await res.json();
       const fetched: MatchingGpu[] = (data.providers || [])
@@ -209,7 +213,7 @@ export default function JobSubmitForm() {
         }
       }
 
-      const res = await fetch(`${API_BASE}/api/jobs/submit`, {
+      const res = await fetch(`${API_BASE}/jobs/submit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

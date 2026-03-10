@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
-const API_BASE = process.env.NEXT_PUBLIC_DC1_API || 'http://76.13.179.86:8083';
+// Use same proxy as dashboard on HTTPS (Vercel) so registration works without mixed content/CORS
+const API_BASE =
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? '/api/dc1'
+    : 'http://76.13.179.86:8083/api';
 
 interface RegistrationResult {
   renter_id: number;
@@ -28,7 +32,7 @@ export default function RenterRegisterPage() {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/renters/register`, {
+      const res = await fetch(`${API_BASE}/renters/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
