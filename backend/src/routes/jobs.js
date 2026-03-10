@@ -337,8 +337,8 @@ router.post('/submit', requireRenter, (req, res) => {
     const now = new Date().toISOString();
     const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
-    // Job timeout: default 10 minutes, max 1 hour
-    const timeout = Math.min(max_duration_seconds || 600, 3600);
+    // Job timeout: default 30 minutes, max 1 hour
+    const timeout = Math.min(max_duration_seconds || 1800, 3600);
     const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
 
     // ── Auto-generate task script from template if job_type has one ─────
