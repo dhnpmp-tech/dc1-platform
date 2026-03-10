@@ -380,24 +380,38 @@ export default function ProviderOnboarding() {
               </div>
             )}
             {apiKey && step >= 4 && (
-              <div className="mt-3 flex flex-wrap gap-3">
-                {(['windows', 'mac', 'linux'] as const).map(os => {
-                  const info = osLabels[os];
-                  const isDetected = os === detectedOS;
-                  return (
+              <div className="mt-3 space-y-2">
+                <div className="flex flex-wrap gap-3">
+                  {(['windows', 'mac', 'linux'] as const).map(os => {
+                    const info = osLabels[os];
+                    const isDetected = os === detectedOS;
+                    return (
+                      <a
+                        key={os}
+                        href={`/api/providers/download?key=${apiKey}&platform=${info.platform}`}
+                        className={`text-sm px-3 py-1.5 rounded-lg border transition ${
+                          isDetected
+                            ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700] font-semibold'
+                            : 'border-gray-700 text-[#00A8E1] hover:border-gray-500'
+                        }`}
+                      >
+                        {info.icon} {info.label} {isDetected && '(detected)'}
+                      </a>
+                    );
+                  })}
+                </div>
+                {detectedOS === 'windows' && (
+                  <p className="text-sm text-gray-400">
+                    Prefer a single .exe?{' '}
                     <a
-                      key={os}
-                      href={`/api/providers/download?key=${apiKey}&platform=${info.platform}`}
-                      className={`text-sm px-3 py-1.5 rounded-lg border transition ${
-                        isDetected
-                          ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700] font-semibold'
-                          : 'border-gray-700 text-[#00A8E1] hover:border-gray-500'
-                      }`}
+                      href="/api/providers/download-windows-exe"
+                      className="text-[#00A8E1] hover:underline"
                     >
-                      {info.icon} {info.label} {isDetected && '(detected)'}
+                      Download DC1 Provider Setup (Windows .exe)
                     </a>
-                  );
-                })}
+                    {' '}— you’ll enter your API key during install. Daemon v3.3.0.
+                  </p>
+                )}
               </div>
             )}
           </div>

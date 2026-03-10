@@ -34,6 +34,7 @@ interface Provider {
   gpu_model: string;
   vram_gb: number;
   status: string;
+  cached_models?: string[];
 }
 
 interface JobResult {

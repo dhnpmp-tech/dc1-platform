@@ -3,7 +3,7 @@
 ; =============================================================================
 ; Installs to %LOCALAPPDATA%\dc1-provider (NO admin required)
 ; GUI pages: Welcome → GPU Check → API Key → Run Mode → Schedule → Install → Finish
-; Bundles: dc1_daemon.py (v3.2.0), dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
+; Bundles: dc1_daemon.py (v3.3.0), dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
 ; Build:   makensis dc1-provider-Windows.nsi
 ; =============================================================================
 
@@ -18,7 +18,7 @@
 ; --------------- Product Info ---------------
 !define PRODUCT_NAME "DC1 Provider Daemon"
 !define PRODUCT_PUBLISHER "DC1"
-!define PRODUCT_VERSION "2.2.0"
+!define PRODUCT_VERSION "3.3.0"
 !define PRODUCT_WEB_SITE "https://dc1.sa"
 !define DC1_API_BASE "http://76.13.179.86:8083"
 !define DASHBOARD_URL "${DC1_API_BASE}/provider"
@@ -90,7 +90,7 @@ Page custom SchedulePageCreate SchedulePageLeave
 
 ; 7. Finish
 !define MUI_FINISHPAGE_TITLE "You're All Set!"
-!define MUI_FINISHPAGE_TEXT "DC1 Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\nDaemon: v3.2.0 (auto-updating)$\r$\n$\r$\nYour GPU is now earning DC1 credits.$\r$\nThe daemon will auto-recover from crashes and update itself.$\r$\nClick 'Open My Dashboard' to track your earnings."
+!define MUI_FINISHPAGE_TEXT "DC1 Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\nDaemon: v3.3.0 (auto-updating)$\r$\n$\r$\nYour GPU is now earning DC1 credits.$\r$\nThe daemon will auto-recover from crashes and update itself.$\r$\nClick 'Open My Dashboard' to track your earnings."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open My Dashboard"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenDashboard
