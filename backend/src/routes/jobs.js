@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const crypto = require('crypto');
 
 // Cost rates in halala per minute by job type
 const COST_RATES = {
@@ -21,10 +22,129 @@ function splitBilling(totalHalala) {
   return { provider, dc1: totalHalala - provider };
 }
 
+/**
+ * Convert a deterministic seed string into a stable UUID v4-shaped hex string.
+ * Same input always produces the same UUID — used as idempotency key for wallet ops.
+ */
+function deterministicUuid(seed) {
+  const hash = crypto.createHash('sha256').update(seed).digest('hex');
+  return [
+    hash.slice(0, 8),
+    hash.slice(8, 12),
+    '4' + hash.slice(13, 16),
+    (((parseInt(hash.slice(16, 18), 16) & 0x3f) | 0x80).toString(16)) + hash.slice(18, 20),
+    hash.slice(20, 32),
+  ].join('-');
+}
+
+// ── Lazy-load supabase client (avoids circular dependency at startup) ─────────
+function getSupabase() {
+  try {
+    return require('../services/supabase-sync').getClient();
+  } catch { return null; }
+}
+
+/**
+ * Look up a Supabase user UUID by email.
+ * Returns null if not found or if Supabase unavailable.
+ */
+async function resolveSupabaseUserId(supabase, email) {
+  if (!supabase || !email) return null;
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .limit(1);
+    if (error || !data?.length) return null;
+    return data[0].id;
+  } catch { return null; }
+}
+
+/**
+ * Fire-and-forget wallet debit (renter) + credit (provider) on job completion.
+ * Errors are logged but NEVER block the HTTP response — billing is eventually
+ * consistent via syncJobs() if the direct call fails here.
+ */
+async function applyWalletBilling({ jobId, actualCostHalala, providerEarned, renterEmail, providerEmail }) {
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn('[BILLING] Supabase client not available — wallet billing deferred to sync');
+    return;
+  }
+
+  try {
+    // ── Debit renter ──────────────────────────────────────────────────────────
+    if (renterEmail && actualCostHalala > 0) {
+      const renterUserId = await resolveSupabaseUserId(supabase, renterEmail);
+      if (renterUserId) {
+        const idemKey = deterministicUuid('dc1-renter-debit-' + jobId);
+        const { error } = await supabase.rpc('debit_wallet_atomic', {
+          p_user_id:         renterUserId,
+          p_amount_halala:   actualCostHalala,
+          p_reason:          'job_completion',
+          p_job_id:          null,   // SQLite job_id is text, not UUID
+          p_idempotency_key: idemKey,
+        });
+        if (error) {
+          console.warn('[BILLING] Renter debit failed for ' + jobId + ': ' + error.message);
+        } else {
+          console.log('[BILLING] Renter debited ' + actualCostHalala + ' halala for job ' + jobId);
+        }
+      } else {
+        console.warn('[BILLING] Renter user not found in Supabase for email: ' + renterEmail);
+      }
+    }
+  } catch (e) {
+    console.error('[BILLING] Renter debit error for ' + jobId + ':', e.message);
+  }
+
+  try {
+    // ── Credit provider ───────────────────────────────────────────────────────
+    if (providerEmail && providerEarned > 0) {
+      const providerUserId = await resolveSupabaseUserId(supabase, providerEmail);
+      if (providerUserId) {
+        const idemKey = deterministicUuid('dc1-provider-credit-' + jobId);
+        const { error } = await supabase.rpc('credit_wallet_atomic', {
+          p_user_id:         providerUserId,
+          p_amount_halala:   providerEarned,
+          p_reason:          'provider_earning',
+          p_idempotency_key: idemKey,
+        });
+        if (error) {
+          // credit_wallet_atomic may not exist yet — fall back to direct insert
+          const { error: insertErr } = await supabase
+            .from('billing_transactions')
+            .insert({
+              id:            idemKey,
+              user_id:       providerUserId,
+              type:          'credit',
+              amount_halala: providerEarned,
+              reason:        'provider_earning',
+              job_id:        null,
+              created_at:    new Date().toISOString(),
+            });
+          if (insertErr && !insertErr.message.includes('duplicate')) {
+            console.warn('[BILLING] Provider credit insert failed for ' + jobId + ': ' + insertErr.message);
+          } else {
+            console.log('[BILLING] Provider credited ' + providerEarned + ' halala for job ' + jobId + ' (direct insert)');
+          }
+        } else {
+          console.log('[BILLING] Provider credited ' + providerEarned + ' halala for job ' + jobId);
+        }
+      } else {
+        console.warn('[BILLING] Provider user not found in Supabase for email: ' + providerEmail);
+      }
+    }
+  } catch (e) {
+    console.error('[BILLING] Provider credit error for ' + jobId + ':', e.message);
+  }
+}
+
 // POST /api/jobs/submit
 router.post('/submit', (req, res) => {
   try {
-    const { provider_id, job_type, duration_minutes, gpu_requirements } = req.body;
+    const { provider_id, job_type, duration_minutes, gpu_requirements, renter_email } = req.body;
 
     if (!provider_id || !job_type || !duration_minutes) {
       return res.status(400).json({ error: 'Missing required fields: provider_id, job_type, duration_minutes' });
@@ -61,11 +181,12 @@ router.post('/submit', (req, res) => {
     const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
     const result = db.run(
-      `INSERT INTO jobs (job_id, provider_id, job_type, status, submitted_at, duration_minutes, cost_halala, gpu_requirements, notes, created_at)
-       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO jobs (job_id, provider_id, job_type, status, submitted_at, duration_minutes, cost_halala, gpu_requirements, notes, renter_email, created_at)
+       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
       job_id, provider_id, job_type, now, duration_minutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
       null,
+      renter_email || null,
       now
     );
 
@@ -89,6 +210,7 @@ router.post('/submit', (req, res) => {
         started_at: job.started_at,
         duration_minutes: job.duration_minutes,
         cost_halala: job.cost_halala,
+        renter_email: job.renter_email || null,
         gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null
       }
     });
@@ -159,7 +281,6 @@ router.post('/:job_id/complete', (req, res) => {
     );
 
     // Provider earnings updated from actual billing — 75% floor split, not full renter charge
-    // provider_earned = splitBilling(actual_cost_halala).provider (computed at line 147)
     db.run(
       `UPDATE providers SET
         total_jobs = total_jobs + 1,
@@ -167,6 +288,19 @@ router.post('/:job_id/complete', (req, res) => {
        WHERE id = ?`,
       provider_earned / 100, job.provider_id
     );
+
+    // ── Async wallet billing ── fire-and-forget, errors are logged not thrown ──
+    // Fetch provider email for Supabase user resolution
+    const provider = db.get('SELECT email FROM providers WHERE id = ?', job.provider_id);
+    const jobId = job.job_id || String(job.id);
+
+    applyWalletBilling({
+      jobId,
+      actualCostHalala: actual_cost_halala,
+      providerEarned:   provider_earned,
+      renterEmail:      job.renter_email || null,
+      providerEmail:    provider?.email   || null,
+    }).catch(e => console.error('[BILLING] Unhandled wallet error for ' + jobId + ':', e.message));
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
     updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
@@ -182,6 +316,7 @@ router.post('/:job_id/complete', (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Job complete error:', error);
     res.status(500).json({ error: 'Failed to complete job' });
   }
 });

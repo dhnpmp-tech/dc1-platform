@@ -160,6 +160,9 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN actual_duration_minutes INTEGER',
   'ALTER TABLE jobs ADD COLUMN provider_earned_halala INTEGER',
   'ALTER TABLE jobs ADD COLUMN dc1_fee_halala INTEGER',
+  // wallet-bridge: renter identity for Supabase billing integration
+  'ALTER TABLE jobs ADD COLUMN renter_email TEXT',
+  'ALTER TABLE jobs ADD COLUMN renter_supabase_user_id TEXT',
   // provider self-service columns
   'ALTER TABLE providers ADD COLUMN run_mode TEXT DEFAULT \'always-on\'',
   'ALTER TABLE providers ADD COLUMN scheduled_start TEXT DEFAULT \'23:00\'',

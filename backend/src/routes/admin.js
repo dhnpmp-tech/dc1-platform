@@ -233,4 +233,150 @@ router.get('/jobs/:id', (req, res) => {
   }
 });
 
+// ── Wallet helpers ────────────────────────────────────────────────────────────
+
+const { createClient: _createClient } = require('@supabase/supabase-js');
+const _crypto = require('crypto');
+
+function _getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return _createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+}
+
+function _sarToHalala(sar) {
+  return Math.round(parseFloat(sar) * 100);
+}
+
+async function _getWalletBalance(supabase, userId) {
+  const { data: credits } = await supabase
+    .from('billing_transactions').select('amount_halala')
+    .eq('user_id', userId).eq('type', 'credit');
+  const { data: debits } = await supabase
+    .from('billing_transactions').select('amount_halala')
+    .eq('user_id', userId).eq('type', 'debit');
+  const { data: reservations } = await supabase
+    .from('billing_reservations').select('amount_halala')
+    .eq('user_id', userId).eq('status', 'held');
+
+  const total    = (credits ?? []).reduce((s, r) => s + r.amount_halala, 0)
+                 - (debits  ?? []).reduce((s, r) => s + r.amount_halala, 0);
+  const reserved = (reservations ?? []).reduce((s, r) => s + r.amount_halala, 0);
+  return { total, reserved, available: total - reserved };
+}
+
+// POST /api/admin/wallet/credit
+// Body: { email: string, amount_sar: number, reason?: string }
+// Auth: x-admin-token (handled by router-level middleware above)
+router.post('/wallet/credit', async (req, res) => {
+  try {
+    const { email, amount_sar, reason } = req.body;
+
+    if (!email || !amount_sar) {
+      return res.status(400).json({ error: 'Missing required fields: email, amount_sar' });
+    }
+
+    const amountSar = parseFloat(amount_sar);
+    if (isNaN(amountSar) || amountSar <= 0) {
+      return res.status(400).json({ error: 'amount_sar must be a positive number' });
+    }
+
+    const supabase = _getSupabaseAdmin();
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase not configured — set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY' });
+    }
+
+    // Look up user by email in Supabase
+    const { data: users, error: userErr } = await supabase
+      .from('users')
+      .select('id, email, name, type')
+      .eq('email', email)
+      .limit(1);
+
+    if (userErr) {
+      return res.status(500).json({ error: 'User lookup failed: ' + userErr.message });
+    }
+    if (!users || !users.length) {
+      return res.status(404).json({ error: 'User not found in Supabase for email: ' + email });
+    }
+
+    const user = users[0];
+    const amountHalala = _sarToHalala(amountSar);
+    const txId = _crypto.randomUUID();
+
+    // Insert credit transaction (idempotent via unique txId)
+    const { error: creditErr } = await supabase
+      .from('billing_transactions')
+      .insert({
+        id:            txId,
+        user_id:       user.id,
+        type:          'credit',
+        amount_halala: amountHalala,
+        reason:        reason || 'admin_credit',
+        job_id:        null,
+        created_at:    new Date().toISOString(),
+      });
+
+    if (creditErr) {
+      return res.status(500).json({ error: 'Credit failed: ' + creditErr.message });
+    }
+
+    // Fetch updated balance
+    const balance = await _getWalletBalance(supabase, user.id);
+
+    console.log('[ADMIN] Wallet credit: ' + amountSar + ' SAR (' + amountHalala + ' halala) → ' + email + ' (reason: ' + (reason || 'admin_credit') + ')');
+
+    res.json({
+      success: true,
+      user: { id: user.id, email: user.email, name: user.name },
+      credit: {
+        amount_sar: amountSar,
+        amount_halala: amountHalala,
+        reason: reason || 'admin_credit',
+        transaction_id: txId,
+      },
+      balance: {
+        total_halala:     balance.total,
+        reserved_halala:  balance.reserved,
+        available_halala: balance.available,
+        total_sar:        (balance.total    / 100).toFixed(2),
+        available_sar:    (balance.available / 100).toFixed(2),
+      },
+    });
+  } catch (error) {
+    console.error('Admin wallet credit error:', error);
+    res.status(500).json({ error: 'Wallet credit failed' });
+  }
+});
+
+// GET /api/admin/wallet/:email — Check wallet balance for any user by email
+router.get('/wallet/:email', async (req, res) => {
+  try {
+    const supabase = _getSupabaseAdmin();
+    if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+
+    const { data: users, error } = await supabase
+      .from('users').select('id, email, name').eq('email', req.params.email).limit(1);
+    if (error) return res.status(500).json({ error: error.message });
+    if (!users?.length) return res.status(404).json({ error: 'User not found: ' + req.params.email });
+
+    const user = users[0];
+    const balance = await _getWalletBalance(supabase, user.id);
+
+    res.json({
+      user,
+      balance: {
+        total_halala:     balance.total,
+        reserved_halala:  balance.reserved,
+        available_halala: balance.available,
+        total_sar:        (balance.total    / 100).toFixed(2),
+        available_sar:    (balance.available / 100).toFixed(2),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Balance lookup failed' });
+  }
+});
+
 module.exports = router;
