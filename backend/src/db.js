@@ -223,6 +223,8 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN progress_updated_at TEXT',
   // Refund tracking for failed/timed-out jobs
   'ALTER TABLE jobs ADD COLUMN refunded_at TEXT',
+  // Cached HuggingFace models — daemon reports which models are pre-downloaded
+  'ALTER TABLE providers ADD COLUMN cached_models TEXT',
 ];
 
 migrations.forEach(sql => {

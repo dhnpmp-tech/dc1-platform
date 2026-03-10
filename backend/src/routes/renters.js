@@ -82,7 +82,7 @@ router.get('/available-providers', (req, res) => {
   try {
     const providers = db.all(
       `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, status, location,
-              run_mode, reliability_score
+              run_mode, reliability_score, cached_models
        FROM providers WHERE status = 'online' AND is_paused = 0
        ORDER BY gpu_vram_mib DESC`
     );
@@ -96,7 +96,8 @@ router.get('/available-providers', (req, res) => {
         vram_mib: p.gpu_vram_mib,
         status: p.status,
         location: p.location,
-        reliability_score: p.reliability_score
+        reliability_score: p.reliability_score,
+        cached_models: p.cached_models ? JSON.parse(p.cached_models) : []
       })),
       total: providers.length
     });

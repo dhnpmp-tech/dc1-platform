@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DC1 Provider Daemon v3.2.0 — GPU Compute Marketplace
+DC1 Provider Daemon v3.3.0 — GPU Compute Marketplace
 Runs as a background service on provider machines.
 
 Features:
@@ -16,6 +16,8 @@ Features:
   - Crash watchdog with auto-restart (max 5 restarts in 10 min)
   - Event logging to backend (crashes, job results, daemon lifecycle)
   - Self-updating: downloads new daemon from backend when update_available
+  - Model pre-caching: downloads LLM weights on startup for fast first inference
+  - Real-time job progress: reports execution phase (downloading/loading/generating) to backend
 
 Usage:
   python3 dc1-daemon.py                    # Uses injected key
@@ -48,7 +50,7 @@ API_URL = "{{API_URL}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.2.0"
+DAEMON_VERSION = "3.3.0"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
@@ -824,8 +826,21 @@ def run_docker_job(job_type, task_spec, job_dir):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-def run_bare_metal_job(task_spec):
-    """Execute job as a bare-metal subprocess (no Docker)."""
+def report_job_progress(job_id, phase):
+    """Report job execution phase to backend for live UI updates."""
+    url = f"{API_URL}/api/jobs/{job_id}/progress"
+    payload = {"api_key": API_KEY, "phase": phase}
+    try:
+        code, resp = http_post(url, payload, timeout=5)
+        if code == 200:
+            log.info(f"Progress reported: job={job_id} phase={phase}")
+        else:
+            log.debug(f"Progress report HTTP {code}: {resp}")
+    except Exception as e:
+        log.debug(f"Progress report failed (non-critical): {e}")
+
+def run_bare_metal_job(task_spec, job_id=None):
+    """Execute job as a bare-metal subprocess with real-time phase reporting."""
     script = task_spec if isinstance(task_spec, str) else task_spec.get("script", "")
     if not script:
         return {"success": False, "error": "No script in task_spec"}
@@ -837,28 +852,59 @@ def run_bare_metal_job(task_spec):
 
     log.info(f"Bare-metal exec: {temp_path}")
 
-    # Write stderr to file to prevent pipe buffer deadlock (64KB limit)
+    # Stream stdout line-by-line to detect [dc1-phase] markers and report progress
     stderr_path = temp_path + ".stderr"
+    stdout_chunks = []
     try:
         with open(stderr_path, "w") as stderr_file:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 [sys.executable, "-u", temp_path],  # -u: unbuffered stdout
                 stdout=subprocess.PIPE, stderr=stderr_file,
-                text=True, timeout=JOB_TIMEOUT
+                text=True
             )
 
-        stdout = result.stdout[:MAX_STDOUT]
+            # Read stdout line by line with timeout
+            start_time = time.time()
+            while True:
+                # Check timeout
+                if time.time() - start_time > JOB_TIMEOUT:
+                    proc.kill()
+                    return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
+
+                line = proc.stdout.readline()
+                if not line and proc.poll() is not None:
+                    break
+                if line:
+                    stdout_chunks.append(line)
+                    # Detect phase markers and report to backend
+                    if job_id and line.startswith("[dc1-phase]"):
+                        phase = line.strip().split("]", 1)[1].strip()
+                        # Report async to not block the job
+                        threading.Thread(
+                            target=report_job_progress,
+                            args=(job_id, phase),
+                            daemon=True
+                        ).start()
+                    # Log dc1 markers
+                    if line.startswith("[dc1]"):
+                        log.info(f"  {line.strip()}")
+
+            returncode = proc.wait(timeout=10)
+
+        stdout = "".join(stdout_chunks)[:MAX_STDOUT]
         stderr = ""
         try:
             with open(stderr_path, "r") as f:
                 stderr = f.read()[:2000]
         except: pass
 
-        if result.returncode == 0:
+        if returncode == 0:
             return {"success": True, "result": stdout, "stderr": stderr}
         else:
-            return {"success": False, "error": f"Exit code {result.returncode}: {stderr[:500]}"}
+            return {"success": False, "error": f"Exit code {returncode}: {stderr[:500]}"}
     except subprocess.TimeoutExpired:
+        try: proc.kill()
+        except: pass
         return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -899,7 +945,7 @@ def execute_job(job):
                 job_dir = tempfile.mkdtemp(prefix="dc1-job-")
                 return run_docker_job(job_type, task_spec, job_dir)
             else:
-                return run_bare_metal_job(task_spec)
+                return run_bare_metal_job(task_spec, job_id=job_id)
         else:
             # No script — fall back to benchmark
             log.info(f"No script in task_spec — running default benchmark")
@@ -1058,10 +1104,72 @@ def auto_verify():
     except Exception as e:
         log.debug(f"Auto-verify request: {e}")
 
+# ─── MODEL PRE-CACHE ──────────────────────────────────────────────────────────
+
+# Default models to pre-cache (small ones that fit on most GPUs)
+PRECACHE_MODELS = [
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+]
+
+def precache_models():
+    """
+    Pre-download LLM model weights on daemon startup so first inference is fast.
+    Only downloads if transformers is available and CUDA is present.
+    """
+    try:
+        import importlib
+        transformers_spec = importlib.util.find_spec("transformers")
+        if transformers_spec is None:
+            log.info("[precache] transformers not installed — skipping model pre-cache")
+            return
+
+        import torch
+        if not torch.cuda.is_available():
+            log.info("[precache] No CUDA device — skipping model pre-cache")
+            return
+
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+
+        for model_id in PRECACHE_MODELS:
+            try:
+                log.info(f"[precache] Checking model: {model_id}")
+                report_event("model_precache_start", f"Pre-caching model: {model_id}")
+
+                # Download tokenizer (small, fast)
+                log.info(f"[precache] Downloading tokenizer: {model_id}")
+                AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+
+                # Download model weights (the big download)
+                log.info(f"[precache] Downloading model weights: {model_id}")
+                AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float16,
+                    device_map="auto",
+                    trust_remote_code=True
+                )
+
+                log.info(f"[precache] Model ready: {model_id}")
+                report_event("model_precache_done", f"Model cached: {model_id}")
+
+                # Free GPU memory after caching (the model files are on disk now)
+                del AutoModelForCausalLM  # force GC
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
+                # Re-import for next iteration
+                from transformers import AutoModelForCausalLM
+
+            except Exception as e:
+                log.warning(f"[precache] Failed to cache {model_id}: {e}")
+                report_event("model_precache_failed", f"Failed: {model_id} — {e}", severity="warning")
+
+    except Exception as e:
+        log.warning(f"[precache] Pre-cache setup failed: {e}")
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="DC1 Provider Daemon v3.2")
+    parser = argparse.ArgumentParser(description="DC1 Provider Daemon v3.3")
     parser.add_argument("--key", help="Override API key")
     parser.add_argument("--url", help="Override API URL")
     parser.add_argument("--no-watchdog", action="store_true", help="Run without crash watchdog")
@@ -1135,15 +1243,19 @@ def main():
         if not checks["pytorch"]: missing.append("PyTorch")
         log.warning(f"Readiness: PARTIAL — missing: {', '.join(missing)}")
 
-    # Step 4: Send initial heartbeat
+    # Step 4: Pre-cache LLM models (so first inference is fast)
+    log.info("Pre-caching LLM models...")
+    precache_models()
+
+    # Step 5: Send initial heartbeat
     log.info("Sending initial heartbeat...")
     send_heartbeat()
 
-    # Step 5: Auto-verify GPU on first run
+    # Step 6: Auto-verify GPU on first run
     log.info("Checking verification status...")
     auto_verify()
 
-    # Step 6: Start background threads
+    # Step 7: Start background threads
     log.info("Starting heartbeat thread (every %ds)...", HEARTBEAT_INTERVAL)
     hb_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="DC1-Heartbeat")
     hb_thread.start()

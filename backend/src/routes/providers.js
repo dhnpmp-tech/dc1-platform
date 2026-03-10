@@ -11,7 +11,7 @@ const db = require('../db');
 const { COST_RATES } = require('./jobs');
 
 // Minimum daemon version required — daemons older than this get update_available: true
-const MIN_DAEMON_VERSION = '3.2.0';
+const MIN_DAEMON_VERSION = '3.3.0';
 
 // Semantic version comparison: returns -1 (v1<v2), 0 (equal), 1 (v1>v2)
 function compareVersions(v1, v2) {
@@ -118,8 +118,8 @@ router.get('/installer', (req, res) => {
 // ============================================================================
 router.post('/heartbeat', (req, res) => {
     try {
-        const { api_key, gpu_status, uptime, provider_ip, provider_hostname } = req.body;
-        
+        const { api_key, gpu_status, uptime, provider_ip, provider_hostname, cached_models } = req.body;
+
         const gs = gpu_status || {};
         const gpuName = gs.gpu_name || null;
         const gpuVramMib = (gs.gpu_vram_mib != null) ? gs.gpu_vram_mib : null;
@@ -141,10 +141,13 @@ router.post('/heartbeat', (req, res) => {
           gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = 'online',
           gpu_name_detected = COALESCE(?, gpu_name_detected),
           gpu_vram_mib = COALESCE(?, gpu_vram_mib),
-          gpu_driver = COALESCE(?, gpu_driver)
+          gpu_driver = COALESCE(?, gpu_driver),
+          cached_models = COALESCE(?, cached_models)
           WHERE id = ?`,
           JSON.stringify(gpu_status), provider_ip || null, provider_hostname || null, now,
-          gpuName, gpuVramMib, gpuDriver, p.id
+          gpuName, gpuVramMib, gpuDriver,
+          cached_models ? JSON.stringify(cached_models) : null,
+          p.id
         );
 
         db.run(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info)

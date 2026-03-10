@@ -1169,7 +1169,7 @@ def precache_models():
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="DC1 Provider Daemon v3.2")
+    parser = argparse.ArgumentParser(description="DC1 Provider Daemon v3.3")
     parser.add_argument("--key", help="Override API key")
     parser.add_argument("--url", help="Override API URL")
     parser.add_argument("--no-watchdog", action="store_true", help="Run without crash watchdog")
