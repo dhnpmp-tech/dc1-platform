@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const crypto = require('crypto');
+const { deterministicUuid } = require('../utils/crypto');
 
 // Cost rates in halala per minute by job type
 const COST_RATES = {
@@ -20,21 +20,6 @@ function calculateCostHalala(jobType, durationMinutes) {
 function splitBilling(totalHalala) {
   const provider = Math.floor(totalHalala * 0.75);
   return { provider, dc1: totalHalala - provider };
-}
-
-/**
- * Convert a deterministic seed string into a stable UUID v4-shaped hex string.
- * Same input always produces the same UUID — used as idempotency key for wallet ops.
- */
-function deterministicUuid(seed) {
-  const hash = crypto.createHash('sha256').update(seed).digest('hex');
-  return [
-    hash.slice(0, 8),
-    hash.slice(8, 12),
-    '4' + hash.slice(13, 16),
-    (((parseInt(hash.slice(16, 18), 16) & 0x3f) | 0x80).toString(16)) + hash.slice(18, 20),
-    hash.slice(20, 32),
-  ].join('-');
 }
 
 // ── Lazy-load supabase client (avoids circular dependency at startup) ─────────

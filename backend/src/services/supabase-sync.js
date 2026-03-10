@@ -2,7 +2,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const db = require('../db');
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://rwxqcqgjszvbwcyjfpc.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://rwxqcqgjszvbwcyjfpec.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SYNC_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS || '30000', 10);
 const HEARTBEAT_TIMEOUT_S = 90;
@@ -42,23 +42,7 @@ function setSyncState(key, value) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Convert a deterministic text key (e.g. job_id) into a stable UUID v4-shaped
- * hex string. Used as idempotency key for billing_transactions inserts.
- * Same input ALWAYS produces the same UUID — prevents double-crediting.
- */
-function deterministicUuid(seed) {
-  const crypto = require('crypto');
-  const hash = crypto.createHash('sha256').update(seed).digest('hex');
-  // Construct UUID v4 layout (version nibble = 4, variant bits = 10xx)
-  return [
-    hash.slice(0, 8),
-    hash.slice(8, 12),
-    '4' + hash.slice(13, 16),
-    (((parseInt(hash.slice(16, 18), 16) & 0x3f) | 0x80).toString(16)) + hash.slice(18, 20),
-    hash.slice(20, 32),
-  ].join('-');
-}
+const { deterministicUuid } = require('../utils/crypto');
 
 function mapMachineStatus(sqliteStatus, lastHeartbeat) {
   if (lastHeartbeat) {
@@ -203,9 +187,8 @@ async function syncJobs() {
     try {
       // Resolve Supabase IDs
       const providerUserId = await resolveSupabaseUserId(job.provider_email);
-      const renterUserId   = await resolveSupabaseUserId(
-        job.renter_email || job.renter_supabase_user_id ? null : null // email path
-      );
+      const renterUserId   = job.renter_supabase_user_id
+        || await resolveSupabaseUserId(job.renter_email);
 
       const actualCost    = job.actual_cost_halala || job.cost_halala || 0;
       const providerEarned = job.provider_earned_halala || Math.floor(actualCost * 0.75);
