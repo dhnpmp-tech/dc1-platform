@@ -585,11 +585,15 @@ router.get('/:api_key/jobs', (req, res) => {
             return res.json({ job: null });
         }
 
-    // NOTE: Do NOT mark as picked up here. The daemon calls /api/jobs/assigned
-    // which handles the actual pickup (sets picked_up_at, status=running, etc.)
-    // Previously this endpoint also set picked_up_at, causing a race condition
-    // where /assigned would never find the job (it requires picked_up_at IS NULL).
-
+        // Mark as picked up
+        const now = new Date().toISOString();
+        db.run(
+            `UPDATE jobs SET picked_up_at = ?, status = 'running', started_at = COALESCE(started_at, ?),
+             timeout_at = datetime(?, '+' || COALESCE(max_duration_seconds, 600) || ' seconds')
+             WHERE id = ?`,
+            now, now, now, job.id
+        );
+        db.run(`UPDATE providers SET current_job_id = ? WHERE id = ?`, job.job_id, provider.id);
 
         // Parse task_spec if it's a string
         let taskSpec = job.task_spec;
