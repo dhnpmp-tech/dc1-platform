@@ -1,441 +1,856 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DC1 Provider Registration</title>
+    <title>DC1 — Become a Provider</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-primary: #0B0F1A;
+            --bg-secondary: #111827;
+            --bg-card: #1A1F2E;
+            --bg-input: #141926;
+            --border: #2A3040;
+            --border-hover: #3D4663;
+            --text-primary: #F1F5F9;
+            --text-secondary: #94A3B8;
+            --text-muted: #64748B;
+            --accent: #6366F1;
+            --accent-hover: #818CF8;
+            --accent-glow: rgba(99, 102, 241, 0.25);
+            --success: #34D399;
+            --success-bg: rgba(52, 211, 153, 0.1);
+            --warning: #FBBF24;
+            --error: #F87171;
+            --error-bg: rgba(248, 113, 113, 0.08);
+            --gradient-start: #6366F1;
+            --gradient-end: #8B5CF6;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
-            color: #ffffff;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Subtle animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at 30% 20%, rgba(99,102,241,0.08) 0%, transparent 50%),
+                        radial-gradient(ellipse at 70% 80%, rgba(139,92,246,0.06) 0%, transparent 50%);
+            animation: drift 20s ease-in-out infinite alternate;
+            z-index: 0;
+            pointer-events: none;
+        }
+        @keyframes drift {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            100% { transform: translate(-5%, 3%) rotate(2deg); }
+        }
+
+        /* Nav */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(11, 15, 26, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(42, 48, 64, 0.5);
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+        .logo-mark {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            font-weight: 800;
+            font-size: 16px;
+            color: #fff;
+            letter-spacing: -0.5px;
         }
-        
-        .container {
-            width: 100%;
-            max-width: 600px;
-            background: #111111;
-            border: 2px solid #FFD700;
-            border-radius: 10px;
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.3px;
+        }
+        .nav-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            background: var(--accent-glow);
+            color: var(--accent-hover);
+            border: 1px solid rgba(99,102,241,0.3);
+        }
+
+        /* Layout */
+        .page {
+            position: relative;
+            z-index: 1;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 100px 24px 60px;
+        }
+
+        /* Hero */
+        .hero {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(52, 211, 153, 0.1);
+            border: 1px solid rgba(52, 211, 153, 0.2);
+            color: var(--success);
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .hero-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .hero h1 {
+            font-size: 40px;
+            font-weight: 800;
+            letter-spacing: -1.2px;
+            line-height: 1.15;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #F1F5F9 0%, #CBD5E1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            font-size: 17px;
+            color: var(--text-secondary);
+            max-width: 480px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* Stats row */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-top: 32px;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Card */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
             padding: 40px;
-            box-shadow: 0 20px 60px rgba(255, 215, 0, 0.1);
+            position: relative;
+            overflow: hidden;
         }
-        
-        h1 {
-            color: #FFD700;
-            margin-bottom: 10px;
-            font-size: 28px;
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(99,102,241,0.4), transparent);
         }
-        
-        .subtitle {
-            color: #00D9FF;
-            margin-bottom: 30px;
-            font-size: 14px;
+
+        /* GPU Detect banner */
+        .detect-banner {
+            display: none;
+            background: rgba(99,102,241,0.06);
+            border: 1px solid rgba(99,102,241,0.15);
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 28px;
         }
-        
+        .detect-banner.show { display: flex; }
+        .detect-banner .detect-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: var(--accent-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 16px;
+        }
+        .detect-banner .detect-content {
+            flex: 1;
+            margin-left: 14px;
+        }
+        .detect-banner .detect-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .detect-banner .detect-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .detect-banner .detect-spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+            align-self: center;
+        }
+        .detect-banner.matched { border-color: rgba(52,211,153,0.25); background: rgba(52,211,153,0.06); }
+        .detect-banner.matched .detect-icon { background: rgba(52,211,153,0.15); }
+        .detect-banner.matched .detect-title { color: var(--success); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Form elements */
+        .form-section {
+            margin-bottom: 28px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
         .form-group {
             margin-bottom: 20px;
         }
-        
         label {
             display: block;
             margin-bottom: 8px;
-            color: #FFD700;
+            font-size: 13px;
             font-weight: 500;
-            font-size: 14px;
+            color: var(--text-secondary);
+            letter-spacing: 0.01em;
         }
-        
+        label .badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            background: var(--accent-glow);
+            color: var(--accent-hover);
+            margin-left: 6px;
+            vertical-align: middle;
+        }
         input, select {
             width: 100%;
-            padding: 12px;
-            border: 1px solid #333333;
-            border-radius: 5px;
-            background: #222222;
-            color: #ffffff;
+            padding: 11px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-family: inherit;
             font-size: 14px;
-            transition: all 0.3s;
-        }
-        
-        input:focus, select:focus {
+            transition: all 0.2s;
             outline: none;
-            border-color: #00D9FF;
-            background: #1a1a1a;
-            box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
         }
-        
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 30px;
+        input::placeholder { color: var(--text-muted); }
+        input:focus, select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
-        
-        button {
-            flex: 1;
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%2364748B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            padding-right: 36px;
+        }
+
+        /* GPU Grid */
+        .gpu-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            padding-left: 2px;
+        }
+        .gpu-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .gpu-chip {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            background: var(--bg-input);
+        }
+        .gpu-chip:hover {
+            border-color: var(--border-hover);
+            background: rgba(99,102,241,0.04);
+        }
+        .gpu-chip.selected {
+            border-color: var(--accent);
+            background: rgba(99,102,241,0.08);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+        .gpu-chip .gpu-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .gpu-chip .gpu-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .gpu-chip.other {
+            border-style: dashed;
+        }
+
+        /* Submit */
+        .submit-btn {
+            width: 100%;
             padding: 14px;
             border: none;
-            border-radius: 5px;
-            font-size: 16px;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            color: #fff;
             transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+            margin-top: 8px;
         }
-        
-        .btn-submit {
-            background: #FFD700;
-            color: #000000;
+        .submit-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.35);
         }
-        
-        .btn-submit:hover:not(:disabled) {
-            background: #FFC700;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(255, 215, 0, 0.3);
-        }
-        
-        .btn-submit:disabled {
+        .submit-btn:active:not(:disabled) { transform: translateY(0); }
+        .submit-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
-        
-        .status {
-            padding: 20px;
-            border-radius: 5px;
-            margin-top: 20px;
-            display: none;
-        }
-        
-        .status.show {
-            display: block;
-        }
-        
-        .status.success {
-            background: rgba(0, 217, 255, 0.1);
-            border: 1px solid #00D9FF;
-            color: #00D9FF;
-        }
-        
-        .status.error {
-            background: rgba(255, 0, 0, 0.1);
-            border: 1px solid #ff4444;
-            color: #ff4444;
-        }
-        
+
+        /* Status messages */
+        .status { margin-top: 24px; display: none; }
+        .status.show { display: block; }
         .status.loading {
-            background: rgba(255, 215, 0, 0.1);
-            border: 1px solid #FFD700;
-            color: #FFD700;
             text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
         }
-        
-        .status h3 {
-            margin-bottom: 10px;
+        .status.loading .loader {
+            width: 28px;
+            height: 28px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
         }
-        
-        .status p {
-            margin: 8px 0;
+        .status.success {
+            background: rgba(52, 211, 153, 0.06);
+            border: 1px solid rgba(52, 211, 153, 0.15);
+            border-radius: 12px;
+            padding: 28px;
+        }
+        .status.error {
+            background: var(--error-bg);
+            border: 1px solid rgba(248, 113, 113, 0.2);
+            border-radius: 12px;
+            padding: 16px 20px;
+            color: var(--error);
             font-size: 14px;
         }
-        
-        .status code {
-            display: block;
-            background: #000000;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 3px;
-            font-family: monospace;
-            font-size: 12px;
-            overflow-x: auto;
-        }
-        
-        .copy-btn {
-            padding: 8px 12px;
-            background: #00D9FF;
-            color: #000000;
-            border: none;
-            border-radius: 3px;
-            font-size: 12px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        
-        .download-link {
-            display: inline-block;
-            margin-top: 10px;
-            padding: 10px 20px;
-            background: #FFD700;
-            color: #000000;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        
-        .download-link:hover {
-            background: #FFC700;
-            transform: translateY(-2px);
-        }
-        
-        .gpu-list {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 15px 0;
-        }
-        
-        .gpu-option {
-            padding: 12px;
-            border: 1px solid #333333;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-align: center;
-        }
-        
-        .gpu-option:hover {
-            border-color: #00D9FF;
-            background: rgba(0, 217, 255, 0.1);
-        }
-        
-        .gpu-option.selected {
-            border-color: #FFD700;
-            background: rgba(255, 215, 0, 0.1);
-        }
-        
-        .info-box {
-            background: rgba(0, 217, 255, 0.1);
-            border-left: 3px solid #00D9FF;
-            padding: 15px;
+
+        /* Success state */
+        .success-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
             margin-bottom: 20px;
-            border-radius: 3px;
+        }
+        .success-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: rgba(52,211,153,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        .success-header h3 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .success-header p {
             font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        .api-key-box {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+        .api-key-box code {
+            flex: 1;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 13px;
+            color: var(--accent-hover);
+            word-break: break-all;
+        }
+        .copy-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .copy-btn:hover { border-color: var(--accent); color: var(--accent-hover); }
+        .copy-btn.copied { border-color: var(--success); color: var(--success); }
+
+        .install-section h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .install-section p {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+        .cmd-block {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+        .cmd-block .cmd-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .cmd-block code {
+            display: block;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+            word-break: break-all;
+            line-height: 1.5;
+        }
+        .cmd-block .cmd-footer {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+
+        /* Status tracker */
+        .status-tracker {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 20px;
+        }
+        .tracker-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .tracker-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+        .tracker-dot.active { background: var(--accent); animation: pulse 2s ease-in-out infinite; }
+        .tracker-dot.online { background: var(--success); }
+        .tracker-text {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .tracker-steps {
+            display: flex;
+            gap: 6px;
+        }
+        .tracker-step {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--bg-card);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .tracker-step.done {
+            background: rgba(99,102,241,0.1);
+            color: var(--accent-hover);
+            border-color: rgba(99,102,241,0.2);
+        }
+        .tracker-step.active {
+            background: rgba(52,211,153,0.1);
+            color: var(--success);
+            border-color: rgba(52,211,153,0.2);
+        }
+        .tracker-note {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 10px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-bottom: 20px;
+        }
+        .footer p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .footer a {
+            color: var(--accent-hover);
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .hero h1 { font-size: 28px; }
+            .card { padding: 24px; }
+            .form-row { grid-template-columns: 1fr; }
+            .gpu-grid { grid-template-columns: repeat(2, 1fr); }
+            .stats { gap: 24px; }
+            .stat-value { font-size: 20px; }
+            .nav { padding: 12px 16px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔗 Become a DC1 Provider</h1>
-        <p class="subtitle">Earn ﷼ by sharing your GPU compute power</p>
-        
-        <div class="info-box">
-            💡 <strong>Quick setup:</strong> Takes 5 minutes. No coding required. Automatic earnings every hour.
+    <!-- Nav -->
+    <nav class="nav">
+        <a href="/" class="logo">
+            <div class="logo-mark">D1</div>
+            <span class="logo-text">DC1</span>
+        </a>
+        <span class="nav-badge">Provider Network</span>
+    </nav>
+
+    <main class="page">
+        <!-- Hero -->
+        <div class="hero">
+            <div class="hero-badge">Accepting new providers</div>
+            <h1>Share your GPU,<br>earn every hour</h1>
+            <p>Join the DC1 decentralized compute network. Connect your GPU in 5 minutes — no coding required.</p>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">14</div>
+                    <div class="stat-label">GPU Models</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">5 min</div>
+                    <div class="stat-label">Setup time</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">24/7</div>
+                    <div class="stat-label">Auto earnings</div>
+                </div>
+            </div>
         </div>
 
-        <!-- GPU Autodetect Banner -->
-        <div id="gpu-detect-banner" style="display:none; background:rgba(255,215,0,0.08); border:1px solid #FFD700; border-radius:8px; padding:16px; margin-bottom:20px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <span style="font-size:24px;">🔍</span>
-                <div style="flex:1;">
-                    <strong style="color:#FFD700;" id="detect-title">Detecting your GPU...</strong>
-                    <p style="color:#999;font-size:12px;margin-top:4px;" id="detect-subtitle">Scanning via WebGL renderer</p>
+        <!-- Form Card -->
+        <div class="card">
+            <!-- GPU Detect Banner -->
+            <div class="detect-banner" id="gpu-detect-banner">
+                <div class="detect-icon" id="detect-icon">&#128270;</div>
+                <div class="detect-content">
+                    <div class="detect-title" id="detect-title">Detecting your GPU...</div>
+                    <div class="detect-subtitle" id="detect-subtitle">Scanning via WebGL renderer</div>
                 </div>
-                <div id="detect-spinner" style="width:20px;height:20px;border:2px solid #333;border-top-color:#FFD700;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                <div class="detect-spinner" id="detect-spinner"></div>
             </div>
-        </div>
-        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 
-        <form id="providerForm">
-            <div class="form-group">
-                <label>Your Full Name</label>
-                <input type="text" id="name" placeholder="e.g., Fadi Al-Muhairi" required>
-            </div>
-            
-            <div class="form-group">
-                <label>Email Address</label>
-                <input type="email" id="email" placeholder="e.g., fadi@example.com" required>
-            </div>
-            
-            <div class="form-group">
-                <label>Your GPU Model <span id="gpu-detected-badge" style="display:none;background:#FFD700;color:#000;padding:2px 8px;border-radius:10px;font-size:11px;margin-left:8px;">AUTO-DETECTED</span></label>
-                <div class="gpu-list" id="gpu-list">
-                    <!-- NVIDIA Consumer -->
-                    <div class="gpu-option" data-gpu="RTX 5090" data-vram="32" data-rate="1.80">
-                        <strong>RTX 5090</strong><br><small>32GB • ﷼1.80/hr</small>
+            <form id="providerForm">
+                <!-- Name & Email -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Full name</label>
+                        <input type="text" id="name" placeholder="Fadi Al-Muhairi" required>
                     </div>
-                    <div class="gpu-option" data-gpu="RTX 5080" data-vram="16" data-rate="1.20">
-                        <strong>RTX 5080</strong><br><small>16GB • ﷼1.20/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="RTX 4090" data-vram="24" data-rate="1.00">
-                        <strong>RTX 4090</strong><br><small>24GB • ﷼1.00/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="RTX 4080" data-vram="16" data-rate="0.80">
-                        <strong>RTX 4080</strong><br><small>16GB • ﷼0.80/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="RTX 4070 Ti" data-vram="12" data-rate="0.60">
-                        <strong>RTX 4070 Ti</strong><br><small>12GB • ﷼0.60/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="RTX 3090" data-vram="24" data-rate="0.75">
-                        <strong>RTX 3090</strong><br><small>24GB • ﷼0.75/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="RTX 3080" data-vram="10" data-rate="0.55">
-                        <strong>RTX 3080</strong><br><small>10GB • ﷼0.55/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="RTX 3060 Ti" data-vram="8" data-rate="0.40">
-                        <strong>RTX 3060 Ti</strong><br><small>8GB • ﷼0.40/hr</small>
-                    </div>
-                    <!-- NVIDIA Data Center -->
-                    <div class="gpu-option" data-gpu="H100" data-vram="80" data-rate="3.50">
-                        <strong>H100</strong><br><small>80GB • ﷼3.50/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="A100" data-vram="40" data-rate="2.00">
-                        <strong>A100</strong><br><small>40/80GB • ﷼2.00/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="L40S" data-vram="48" data-rate="1.60">
-                        <strong>L40S</strong><br><small>48GB • ﷼1.60/hr</small>
-                    </div>
-                    <!-- AMD -->
-                    <div class="gpu-option" data-gpu="RX 7900 XTX" data-vram="24" data-rate="0.70">
-                        <strong>RX 7900 XTX</strong><br><small>24GB • ﷼0.70/hr</small>
-                    </div>
-                    <div class="gpu-option" data-gpu="MI300X" data-vram="192" data-rate="4.00">
-                        <strong>MI300X</strong><br><small>192GB • ﷼4.00/hr</small>
-                    </div>
-                    <!-- Other -->
-                    <div class="gpu-option" data-gpu="other" id="gpu-other-option" style="border-style:dashed;">
-                        <strong>Other GPU</strong><br><small>Enter manually</small>
+                    <div class="form-group">
+                        <label>Email address</label>
+                        <input type="email" id="email" placeholder="fadi@example.com" required>
                     </div>
                 </div>
-                <input type="hidden" id="gpu_model" required>
-                <div id="gpu-custom-input" style="display:none;margin-top:10px;">
-                    <input type="text" id="gpu_custom" placeholder="e.g., RTX 4060, Tesla V100, Apple M3 Ultra..." style="border-color:#FFD700;">
+
+                <!-- GPU Selection -->
+                <div class="form-group">
+                    <label>GPU Model <span class="badge" id="gpu-detected-badge" style="display:none;">AUTO-DETECTED</span></label>
+
+                    <div class="gpu-section-title">NVIDIA Consumer</div>
+                    <div class="gpu-grid">
+                        <div class="gpu-chip" data-gpu="RTX 5090" data-vram="32" data-rate="1.80">
+                            <div class="gpu-name">RTX 5090</div>
+                            <div class="gpu-meta">32GB · ﷼1.80/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="RTX 5080" data-vram="16" data-rate="1.20">
+                            <div class="gpu-name">RTX 5080</div>
+                            <div class="gpu-meta">16GB · ﷼1.20/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="RTX 4090" data-vram="24" data-rate="1.00">
+                            <div class="gpu-name">RTX 4090</div>
+                            <div class="gpu-meta">24GB · ﷼1.00/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="RTX 4080" data-vram="16" data-rate="0.80">
+                            <div class="gpu-name">RTX 4080</div>
+                            <div class="gpu-meta">16GB · ﷼0.80/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="RTX 4070 Ti" data-vram="12" data-rate="0.60">
+                            <div class="gpu-name">RTX 4070 Ti</div>
+                            <div class="gpu-meta">12GB · ﷼0.60/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="RTX 3090" data-vram="24" data-rate="0.75">
+                            <div class="gpu-name">RTX 3090</div>
+                            <div class="gpu-meta">24GB · ﷼0.75/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="RTX 3080" data-vram="10" data-rate="0.55">
+                            <div class="gpu-name">RTX 3080</div>
+                            <div class="gpu-meta">10GB · ﷼0.55/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="RTX 3060 Ti" data-vram="8" data-rate="0.40">
+                            <div class="gpu-name">RTX 3060 Ti</div>
+                            <div class="gpu-meta">8GB · ﷼0.40/hr</div>
+                        </div>
+                    </div>
+
+                    <div class="gpu-section-title">Data Center / HPC</div>
+                    <div class="gpu-grid">
+                        <div class="gpu-chip" data-gpu="H100" data-vram="80" data-rate="3.50">
+                            <div class="gpu-name">H100</div>
+                            <div class="gpu-meta">80GB · ﷼3.50/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="A100" data-vram="40" data-rate="2.00">
+                            <div class="gpu-name">A100</div>
+                            <div class="gpu-meta">40/80GB · ﷼2.00/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="L40S" data-vram="48" data-rate="1.60">
+                            <div class="gpu-name">L40S</div>
+                            <div class="gpu-meta">48GB · ﷼1.60/hr</div>
+                        </div>
+                    </div>
+
+                    <div class="gpu-section-title">AMD</div>
+                    <div class="gpu-grid">
+                        <div class="gpu-chip" data-gpu="RX 7900 XTX" data-vram="24" data-rate="0.70">
+                            <div class="gpu-name">RX 7900 XTX</div>
+                            <div class="gpu-meta">24GB · ﷼0.70/hr</div>
+                        </div>
+                        <div class="gpu-chip" data-gpu="MI300X" data-vram="192" data-rate="4.00">
+                            <div class="gpu-name">MI300X</div>
+                            <div class="gpu-meta">192GB · ﷼4.00/hr</div>
+                        </div>
+                        <div class="gpu-chip other" data-gpu="other" id="gpu-other-option">
+                            <div class="gpu-name">Other GPU</div>
+                            <div class="gpu-meta">Enter manually</div>
+                        </div>
+                    </div>
+
+                    <input type="hidden" id="gpu_model" required>
+                    <div id="gpu-custom-input" style="display:none;margin-top:10px;">
+                        <input type="text" id="gpu_custom" placeholder="e.g., RTX 4060, Tesla V100, Apple M3 Ultra...">
+                    </div>
                 </div>
-            </div>
-            
-            <div class="form-group">
-                <label>Your Operating System</label>
-                <select id="os" required>
-                    <option value="">Select your OS...</option>
-                    <option value="Windows">Windows (10/11)</option>
-                    <option value="Mac">macOS (Intel/Apple Silicon)</option>
-                    <option value="Linux">Linux (Ubuntu/Debian)</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label>Phone (Optional)</label>
-                <input type="tel" id="phone" placeholder="e.g., +966 55 123 4567">
-            </div>
-            
-            <div class="button-group">
-                <button type="submit" class="btn-submit" id="submitBtn">
-                    Register & Download Installer
+
+                <!-- OS & Phone -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Operating System</label>
+                        <select id="os" required>
+                            <option value="">Select your OS...</option>
+                            <option value="Windows">Windows (10/11)</option>
+                            <option value="Mac">macOS (Intel/Apple Silicon)</option>
+                            <option value="Linux">Linux (Ubuntu/Debian)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Phone <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+                        <input type="tel" id="phone" placeholder="+966 55 123 4567">
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    Register &amp; Download Installer
                 </button>
-            </div>
-        </form>
-        
-        <div id="status"></div>
-    </div>
-    
+            </form>
+
+            <div id="status" class="status"></div>
+        </div>
+
+        <div class="footer">
+            <p>DC1 Decentralized Compute Network · <a href="https://dc1st.com">dc1st.com</a></p>
+        </div>
+    </main>
+
     <script>
-        // =====================================================================
+        // ===================================================================
         // GPU AUTODETECT via WebGL
-        // =====================================================================
+        // ===================================================================
         const GPU_KEYWORDS = {
-            'RTX 5090': ['5090'],
-            'RTX 5080': ['5080'],
-            'RTX 4090': ['4090'],
-            'RTX 4080': ['4080'],
+            'RTX 5090': ['5090'], 'RTX 5080': ['5080'],
+            'RTX 4090': ['4090'], 'RTX 4080': ['4080'],
             'RTX 4070 Ti': ['4070 ti', '4070ti'],
-            'RTX 3090': ['3090'],
-            'RTX 3080': ['3080'],
+            'RTX 3090': ['3090'], 'RTX 3080': ['3080'],
             'RTX 3060 Ti': ['3060 ti', '3060ti'],
-            'H100': ['h100'],
-            'A100': ['a100'],
-            'L40S': ['l40s', 'l40'],
+            'H100': ['h100'], 'A100': ['a100'], 'L40S': ['l40s', 'l40'],
             'RX 7900 XTX': ['7900 xtx', '7900xtx'],
             'MI300X': ['mi300x', 'mi300'],
         };
 
         function detectGPU() {
             const banner = document.getElementById('gpu-detect-banner');
-            banner.style.display = 'block';
-
+            banner.classList.add('show');
             try {
                 const canvas = document.createElement('canvas');
                 const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
                 if (!gl) throw new Error('WebGL not supported');
-
                 const ext = gl.getExtension('WEBGL_debug_renderer_info');
                 let renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
                 let vendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
-
                 if (!renderer || renderer === 'WebKit WebGL' || renderer.includes('SwiftShader') || renderer.includes('llvmpipe')) {
-                    throw new Error('Generic/software renderer detected');
+                    throw new Error('Generic renderer');
                 }
-
-                // Try to match to a known GPU
                 const rendererLower = renderer.toLowerCase();
                 let matchedGPU = null;
-
                 for (const [gpuName, keywords] of Object.entries(GPU_KEYWORDS)) {
-                    if (keywords.some(kw => rendererLower.includes(kw))) {
-                        matchedGPU = gpuName;
-                        break;
-                    }
+                    if (keywords.some(kw => rendererLower.includes(kw))) { matchedGPU = gpuName; break; }
                 }
-
                 if (matchedGPU) {
-                    // Auto-select the matched GPU card
-                    const option = document.querySelector(`.gpu-option[data-gpu="${matchedGPU}"]`);
-                    if (option) {
-                        document.querySelectorAll('.gpu-option').forEach(o => o.classList.remove('selected'));
-                        option.classList.add('selected');
-                        option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    const chip = document.querySelector(`.gpu-chip[data-gpu="${matchedGPU}"]`);
+                    if (chip) {
+                        document.querySelectorAll('.gpu-chip').forEach(c => c.classList.remove('selected'));
+                        chip.classList.add('selected');
+                        chip.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                         document.getElementById('gpu_model').value = matchedGPU;
                     }
-
                     document.getElementById('detect-title').textContent = `Detected: ${matchedGPU}`;
-                    document.getElementById('detect-subtitle').textContent = `Renderer: ${renderer} (${vendor})`;
+                    document.getElementById('detect-subtitle').textContent = `${vendor} · ${renderer}`;
                     document.getElementById('detect-spinner').style.display = 'none';
+                    document.getElementById('detect-icon').textContent = '\u2705';
                     document.getElementById('gpu-detected-badge').style.display = 'inline';
-                    banner.style.borderColor = '#4ade80';
-                    banner.style.background = 'rgba(74,222,128,0.08)';
-                    document.getElementById('detect-title').style.color = '#4ade80';
+                    banner.classList.add('matched');
                 } else {
-                    // Detected a GPU but can't match it to our list
-                    document.getElementById('detect-title').textContent = `GPU Found: ${renderer}`;
-                    document.getElementById('detect-subtitle').textContent = `Not in our catalog yet — please select the closest match or choose "Other GPU"`;
+                    document.getElementById('detect-title').textContent = `GPU: ${renderer}`;
+                    document.getElementById('detect-subtitle').textContent = 'Not in catalog — select the closest match or choose "Other GPU"';
                     document.getElementById('detect-spinner').style.display = 'none';
-                    banner.style.borderColor = '#00D9FF';
+                    document.getElementById('detect-icon').textContent = '\u26A0\uFE0F';
                 }
             } catch (e) {
                 document.getElementById('detect-title').textContent = 'Could not auto-detect GPU';
-                document.getElementById('detect-subtitle').textContent = 'Please select your GPU manually below';
+                document.getElementById('detect-subtitle').textContent = 'Please select your GPU below';
                 document.getElementById('detect-spinner').style.display = 'none';
-                banner.style.borderColor = '#666';
-                banner.style.background = 'rgba(100,100,100,0.08)';
-                document.getElementById('detect-title').style.color = '#999';
+                document.getElementById('detect-icon').textContent = '\uD83D\uDD0D';
+                banner.style.borderColor = 'var(--border)';
+                banner.style.background = 'transparent';
             }
         }
 
-        // =====================================================================
-        // OS AUTODETECT
-        // =====================================================================
         function detectOS() {
             const ua = navigator.userAgent.toLowerCase();
-            const osSelect = document.getElementById('os');
-            if (ua.includes('win')) osSelect.value = 'Windows';
-            else if (ua.includes('mac')) osSelect.value = 'Mac';
-            else if (ua.includes('linux') || ua.includes('ubuntu') || ua.includes('debian')) osSelect.value = 'Linux';
+            const sel = document.getElementById('os');
+            if (ua.includes('win')) sel.value = 'Windows';
+            else if (ua.includes('mac')) sel.value = 'Mac';
+            else if (ua.includes('linux') || ua.includes('ubuntu')) sel.value = 'Linux';
         }
 
-        // Run autodetect on page load
         detectGPU();
         detectOS();
 
-        // =====================================================================
-        // GPU Selection handlers
-        // =====================================================================
-        document.querySelectorAll('.gpu-option').forEach(option => {
-            option.addEventListener('click', function() {
-                document.querySelectorAll('.gpu-option').forEach(o => o.classList.remove('selected'));
+        // ===================================================================
+        // GPU Selection
+        // ===================================================================
+        document.querySelectorAll('.gpu-chip').forEach(chip => {
+            chip.addEventListener('click', function() {
+                document.querySelectorAll('.gpu-chip').forEach(c => c.classList.remove('selected'));
                 this.classList.add('selected');
-
                 const customInput = document.getElementById('gpu-custom-input');
                 if (this.dataset.gpu === 'other') {
                     customInput.style.display = 'block';
@@ -448,25 +863,27 @@
             });
         });
 
-        // Sync custom GPU input to hidden field
         document.getElementById('gpu_custom').addEventListener('input', function() {
             document.getElementById('gpu_model').value = this.value;
         });
-        
+
+        // ===================================================================
+        // Form submit
+        // ===================================================================
         document.getElementById('providerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
             const statusDiv = document.getElementById('status');
             const submitBtn = document.getElementById('submitBtn');
-            
+
             if (!document.getElementById('gpu_model').value) {
-                showStatus(statusDiv, 'error', 'Please select a GPU model');
+                showStatus(statusDiv, 'error', 'Please select a GPU model.');
                 return;
             }
-            
+
             submitBtn.disabled = true;
-            showStatus(statusDiv, 'loading', 'Processing your registration...');
-            
+            submitBtn.textContent = 'Registering...';
+            showStatus(statusDiv, 'loading', '<div class="loader"></div><p>Setting up your provider account...</p>');
+
             try {
                 const data = {
                     name: document.getElementById('name').value,
@@ -475,90 +892,94 @@
                     os: document.getElementById('os').value,
                     phone: document.getElementById('phone').value || null
                 };
-                
+
                 const response = await fetch('/api/providers/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-                
-                if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || 'Registration failed'); }
-                
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Registration failed');
+                }
+
                 const result = await response.json();
                 const apiKey = result.api_key;
-                
                 const apiUrl = window.location.origin;
+
                 const successHTML = `
-            <h3>\u2705 Registration Successful!</h3>
-            <p><strong>Welcome to DC1, ${data.name}!</strong></p>
-            <div style="background:#1a1a2e;border:2px solid #FFD700;border-radius:8px;padding:16px;margin:16px 0;">
-              <p style="margin:0 0 8px;color:#ccc;">Your API Key (save this!):</p>
-              <div style="display:flex;align-items:center;gap:8px;">
-                <code style="color:#FFD700;font-size:1.1em;word-break:break-all;flex:1;">${apiKey}</code>
-                <button type="button" class="copy-btn" onclick="copyToClipboard('${apiKey}')" style="white-space:nowrap;">
-                  \ud83d\udccb Copy Key
-                </button>
-              </div>
-            </div>
+                    <div class="success-header">
+                        <div class="success-icon">\u2705</div>
+                        <div>
+                            <h3>Welcome to DC1, ${data.name}</h3>
+                            <p>Your provider account is ready</p>
+                        </div>
+                    </div>
 
-            <h4 style="margin-top:24px;color:#00D9FF;">Install the DC1 Daemon</h4>
-            <p style="color:#888;font-size:0.9em;margin:8px 0;">One command installs everything: Python packages, GPU checks, and a background service. Your API key is baked in.</p>
+                    <label style="margin-bottom:6px;">Your API Key</label>
+                    <div class="api-key-box">
+                        <code>${apiKey}</code>
+                        <button type="button" class="copy-btn" onclick="copyText('${apiKey}', this)">Copy</button>
+                    </div>
 
-            <div style="background:#0d1117;border:1px solid #333;border-radius:8px;padding:16px;margin:12px 0;">
-              <p style="color:#00D9FF;margin:0 0 8px;font-weight:bold;">\ud83d\udc27 Linux / macOS:</p>
-              <p style="color:#888;margin:0 0 8px;font-size:0.85em;">Open Terminal and paste:</p>
-              <code id="cmd-linux" style="color:#8be9fd;display:block;margin:4px 0;word-break:break-all;">curl -sL ${apiUrl}/api/providers/download/setup?key=${apiKey}&os=linux | sudo bash</code>
-              <button type="button" class="copy-btn" onclick="copyToClipboard(document.getElementById('cmd-linux').textContent)" style="margin-top:8px;">
-                \ud83d\udccb Copy
-              </button>
-            </div>
+                    <div class="install-section">
+                        <h4>Install the DC1 Daemon</h4>
+                        <p>One command installs everything. Your API key is baked in.</p>
 
-            <div style="background:#0d1117;border:1px solid #333;border-radius:8px;padding:16px;margin:12px 0;">
-              <p style="color:#00D9FF;margin:0 0 8px;font-weight:bold;">\ud83d\udda5\ufe0f Windows (PowerShell):</p>
-              <p style="color:#888;margin:0 0 8px;font-size:0.85em;">Open PowerShell as Admin and paste:</p>
-              <code id="cmd-win" style="color:#8be9fd;display:block;margin:4px 0;word-break:break-all;">powershell -c "irm '${apiUrl}/api/providers/download/setup?key=${apiKey}&os=windows' | iex"</code>
-              <button type="button" class="copy-btn" onclick="copyToClipboard(document.getElementById('cmd-win').textContent)" style="margin-top:8px;">
-                \ud83d\udccb Copy
-              </button>
-            </div>
+                        <div class="cmd-block">
+                            <div class="cmd-label">\uD83D\uDC27 Linux / macOS</div>
+                            <code id="cmd-linux">curl -sL ${apiUrl}/api/providers/download/setup?key=${apiKey}&os=linux | sudo bash</code>
+                            <div class="cmd-footer">
+                                <button type="button" class="copy-btn" onclick="copyText(document.getElementById('cmd-linux').textContent, this)">Copy</button>
+                            </div>
+                        </div>
 
-            <div id="status-checker" style="background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:16px;margin-top:16px;">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-                <div id="status-dot" style="width:12px;height:12px;border-radius:50%;background:#666;"></div>
-                <span id="status-text" style="color:#ccc;font-weight:bold;">Waiting for daemon...</span>
-              </div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                <span id="step-registered" style="padding:4px 10px;border-radius:12px;font-size:12px;background:#FFD700;color:#000;">Registered</span>
-                <span id="step-installing" style="padding:4px 10px;border-radius:12px;font-size:12px;background:#333;color:#666;">Installing</span>
-                <span id="step-online" style="padding:4px 10px;border-radius:12px;font-size:12px;background:#333;color:#666;">Online</span>
-                <span id="step-ready" style="padding:4px 10px;border-radius:12px;font-size:12px;background:#333;color:#666;">Ready</span>
-              </div>
-              <p style="color:#888;font-size:0.85em;margin-top:8px;">Checking status every 5 seconds...</p>
-            </div>
-          `;
+                        <div class="cmd-block">
+                            <div class="cmd-label">\uD83D\uDDA5\uFE0F Windows (PowerShell as Admin)</div>
+                            <code id="cmd-win">powershell -c "irm '${apiUrl}/api/providers/download/setup?key=${apiKey}&os=windows' | iex"</code>
+                            <div class="cmd-footer">
+                                <button type="button" class="copy-btn" onclick="copyText(document.getElementById('cmd-win').textContent, this)">Copy</button>
+                            </div>
+                        </div>
+                    </div>
 
-                // Start status polling after showing success
-                setTimeout(() => startStatusPolling(apiKey), 2000);
-                
+                    <div class="status-tracker">
+                        <div class="tracker-header">
+                            <div class="tracker-dot active" id="status-dot"></div>
+                            <span class="tracker-text" id="status-text">Waiting for daemon...</span>
+                        </div>
+                        <div class="tracker-steps">
+                            <span class="tracker-step done" id="step-registered">Registered</span>
+                            <span class="tracker-step" id="step-installing">Installing</span>
+                            <span class="tracker-step" id="step-online">Online</span>
+                            <span class="tracker-step" id="step-ready">Ready</span>
+                        </div>
+                        <div class="tracker-note">Checking status every 5 seconds...</div>
+                    </div>
+                `;
+
                 showStatus(statusDiv, 'success', successHTML);
-                
+                setTimeout(() => startStatusPolling(apiKey), 2000);
+
             } catch (error) {
                 showStatus(statusDiv, 'error', `Registration failed: ${error.message}`);
                 submitBtn.disabled = false;
+                submitBtn.textContent = 'Register & Download Installer';
             }
         });
-        
+
         function showStatus(div, type, content) {
             div.className = `status show ${type}`;
             div.innerHTML = content;
         }
-        
-        function copyToClipboard(text) {
+
+        function copyText(text, btn) {
             navigator.clipboard.writeText(text).then(() => {
-                const btn = event.target;
                 const orig = btn.textContent;
                 btn.textContent = 'Copied!';
-                setTimeout(() => btn.textContent = orig, 1500);
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
             });
         }
 
@@ -568,7 +989,6 @@
                     const res = await fetch(`/api/providers/status/${apiKey}`);
                     if (!res.ok) return;
                     const data = await res.json();
-
                     const dot = document.getElementById('status-dot');
                     const text = document.getElementById('status-text');
                     const steps = {
@@ -576,28 +996,21 @@
                         online: document.getElementById('step-online'),
                         ready: document.getElementById('step-ready'),
                     };
-
                     const status = data.status || 'registered';
-
                     if (status === 'online' || status === 'connected') {
-                        dot.style.background = '#4ade80';
+                        dot.className = 'tracker-dot online';
                         text.textContent = 'Daemon is online!';
-                        text.style.color = '#4ade80';
-                        steps.installing.style.background = '#4ade80'; steps.installing.style.color = '#000';
-                        steps.online.style.background = '#4ade80'; steps.online.style.color = '#000';
+                        text.style.color = 'var(--success)';
+                        steps.installing.className = 'tracker-step done';
+                        steps.online.className = 'tracker-step active';
                     }
-
                     if (data.readiness_status === 'ready') {
-                        dot.style.background = '#FFD700';
                         text.textContent = 'Ready for jobs!';
-                        text.style.color = '#FFD700';
-                        steps.ready.style.background = '#FFD700'; steps.ready.style.color = '#000';
-                        return; // Stop polling
+                        steps.ready.className = 'tracker-step active';
+                        return;
                     }
-
                     if (status === 'registered' && data.last_heartbeat) {
-                        steps.installing.style.background = '#FFD700'; steps.installing.style.color = '#000';
-                        dot.style.background = '#FFD700';
+                        steps.installing.className = 'tracker-step done';
                         text.textContent = 'Installing...';
                     }
                 } catch {}
@@ -608,4 +1021,3 @@
     </script>
 </body>
 </html>
-
