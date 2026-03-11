@@ -170,7 +170,7 @@ function RenterDashboard() {
       });
       if (res.ok) {
         const data = await res.json();
-        setTopupMsg(`Added ${topupAmount} SAR. New balance: ${((data.new_balance || 0) / 100).toFixed(2)} SAR`);
+        setTopupMsg(`Added ${topupAmount} SAR. New balance: ${((data.new_balance_halala || 0) / 100).toFixed(2)} SAR`);
         verifyKey(renterKey); // refresh balance
       } else {
         const err = await res.json().catch(() => ({}));

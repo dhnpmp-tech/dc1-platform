@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
 function timeAgo(dateStr: string | null | undefined): string {
@@ -44,9 +44,11 @@ interface ProviderData {
 }
 
 function ProviderDashboardInner() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const keyParam = searchParams.get('key');
-  const [key, setKey] = useState(keyParam || '');
+  const [key, setKey] = useState('');
   const [inputKey, setInputKey] = useState('');
   const [data, setData] = useState<ProviderData | null>(null);
   const [modeOpen, setModeOpen] = useState(false);
@@ -58,6 +60,40 @@ function ProviderDashboardInner() {
   const [schedEnd, setSchedEnd] = useState('07:00');
 
   const [error, setError] = useState<string | null>(null);
+  const PROVIDER_KEY_STORAGE = 'dc1_provider_key';
+
+  useEffect(() => {
+    const fromUrl = (keyParam || '').trim();
+    const fromStorage = localStorage.getItem(PROVIDER_KEY_STORAGE) || '';
+    const resolved = fromUrl || fromStorage;
+    if (resolved && key !== resolved) {
+      setKey(resolved);
+      setInputKey(resolved);
+    }
+    if (resolved) {
+      localStorage.setItem(PROVIDER_KEY_STORAGE, resolved);
+      if (!fromUrl) {
+        router.replace(`${pathname}?key=${encodeURIComponent(resolved)}`);
+      }
+    }
+  }, [keyParam, key, pathname, router]);
+
+  const applyProviderKey = useCallback((raw: string) => {
+    const next = raw.trim();
+    if (!next) return;
+    localStorage.setItem(PROVIDER_KEY_STORAGE, next);
+    setKey(next);
+    setInputKey(next);
+    router.replace(`${pathname}?key=${encodeURIComponent(next)}`);
+  }, [pathname, router]);
+
+  const clearProviderKey = useCallback(() => {
+    localStorage.removeItem(PROVIDER_KEY_STORAGE);
+    setKey('');
+    setInputKey('');
+    setError(null);
+    router.replace(pathname);
+  }, [pathname, router]);
 
   const fetchData = useCallback(async () => {
     if (!key) return;
@@ -72,13 +108,14 @@ function ProviderDashboardInner() {
         return;
       }
       const d = await res.json();
-      setData(d);
+      const p = d?.provider || d;
+      setData(p);
       setError(null);
-      if (d.gpu_cap) setGpuCap(d.gpu_cap);
-      if (d.vram_reserve !== undefined) setVramReserve(d.vram_reserve);
-      if (d.temp_limit) setTempLimit(d.temp_limit);
-      if (d.scheduled_start) setSchedStart(d.scheduled_start);
-      if (d.scheduled_end) setSchedEnd(d.scheduled_end);
+      if (p.gpu_usage_cap_pct !== undefined) setGpuCap(p.gpu_usage_cap_pct);
+      if (p.vram_reserve_gb !== undefined) setVramReserve(p.vram_reserve_gb);
+      if (p.temp_limit_c !== undefined) setTempLimit(p.temp_limit_c);
+      if (p.scheduled_start) setSchedStart(p.scheduled_start);
+      if (p.scheduled_end) setSchedEnd(p.scheduled_end);
     } catch {
       setError('server');
     }
@@ -100,7 +137,7 @@ function ProviderDashboardInner() {
           <input value={inputKey} onChange={e => setInputKey(e.target.value)}
             className="w-full bg-[#252525] border border-gray-700 rounded-lg px-4 py-3 mb-3 focus:border-[#FFD700] focus:outline-none"
             placeholder="dc1-provider-..." />
-          <button onClick={() => setKey(inputKey)}
+          <button onClick={() => applyProviderKey(inputKey)}
             className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200]">Go</button>
         </div>
       </div>
@@ -120,7 +157,7 @@ function ProviderDashboardInner() {
           </p>
           <div className="space-y-3">
             <button
-              onClick={() => { setKey(''); setError(null); }}
+              onClick={clearProviderKey}
               className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200] transition"
             >
               Try Another Key
@@ -155,11 +192,21 @@ function ProviderDashboardInner() {
     );
   }
 
-  const statusBadge = data?.is_paused
-    ? { icon: '⏸', label: 'PAUSED', color: 'text-yellow-400' }
-    : data?.status === 'online'
-      ? { icon: '🟢', label: 'ONLINE', color: 'text-green-400' }
-      : { icon: '🔴', label: 'OFFLINE', color: 'text-red-400' };
+  const hasLoadedProvider = data !== null;
+  const awaitingDaemon =
+    hasLoadedProvider &&
+    !data?.last_heartbeat &&
+    !data?.is_paused &&
+    data?.status !== 'online';
+  const statusBadge = !hasLoadedProvider
+    ? { icon: '⏳', label: 'LOADING', color: 'text-gray-300' }
+    : data?.is_paused
+      ? { icon: '⏸', label: 'PAUSED', color: 'text-yellow-400' }
+      : awaitingDaemon
+        ? { icon: '🟡', label: 'AWAITING DAEMON', color: 'text-yellow-300' }
+        : data?.status === 'online'
+          ? { icon: '🟢', label: 'ONLINE', color: 'text-green-400' }
+          : { icon: '🔴', label: 'OFFLINE', color: 'text-red-400' };
 
   const tempColor = (data?.gpu_temp || 0) < 70 ? 'text-green-400' : (data?.gpu_temp || 0) < 80 ? 'text-yellow-400' : 'text-red-400';
   const tempLabel = (data?.gpu_temp || 0) < 70 ? 'Safe' : (data?.gpu_temp || 0) < 80 ? 'Warm' : 'Hot';
@@ -192,7 +239,12 @@ function ProviderDashboardInner() {
     await fetch('/api/providers/preferences', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, gpu_cap: gpuCap, vram_reserve: vramReserve, temp_limit: tempLimit }),
+      body: JSON.stringify({
+        key,
+        gpu_usage_cap_pct: gpuCap,
+        vram_reserve_gb: vramReserve,
+        temp_limit_c: tempLimit
+      }),
     });
     fetchData();
   };
@@ -210,6 +262,11 @@ function ProviderDashboardInner() {
               <span className="text-xl font-bold">{data?.name || 'Loading...'}</span>
             </div>
             <p className="text-gray-400 text-sm">{data?.gpu_model || 'GPU'}</p>
+            {awaitingDaemon && (
+              <p className="text-yellow-300/90 text-xs mt-1">
+                No daemon heartbeat yet. Start the provider daemon with this key to go online.
+              </p>
+            )}
           </div>
           <div className="relative">
             <button onClick={() => setModeOpen(!modeOpen)}

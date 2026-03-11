@@ -3,14 +3,15 @@ const router = express.Router();
 const db = require('../db');
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
-// Requires DC1_ADMIN_TOKEN env var when set. Falls back to open if not configured
-// (backwards-compatible for local dev). Set in production before public launch.
+// Requires DC1_ADMIN_TOKEN env var.
 router.use((req, res, next) => {
   const adminToken = process.env.DC1_ADMIN_TOKEN;
-  if (!adminToken) return next(); // not configured — allow (dev/Gate 0)
   const provided =
     req.headers['x-admin-token'] ||
     (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!adminToken) {
+    return res.status(503).json({ error: 'Admin token not configured' });
+  }
   if (provided !== adminToken) {
     return res.status(401).json({ error: 'Admin access denied' });
   }

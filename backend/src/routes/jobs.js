@@ -10,6 +10,33 @@ function signTaskSpec(taskSpec) {
   return crypto.createHmac('sha256', HMAC_SECRET).update(taskSpec).digest('hex');
 }
 
+function isAdmin(req) {
+  const provided = req.headers['x-admin-token'] || '';
+  const expected = process.env.DC1_ADMIN_TOKEN;
+  return !!expected && provided === expected;
+}
+
+function getRenterFromReq(req) {
+  const key = req.headers['x-renter-key'] || req.query.renter_key;
+  if (!key) return null;
+  return db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active') || null;
+}
+
+function getProviderFromReq(req) {
+  const key = req.headers['x-provider-key'] || req.query.key || req.body?.api_key;
+  if (!key) return null;
+  return db.get('SELECT id FROM providers WHERE api_key = ?', key) || null;
+}
+
+function canReadJob(req, job) {
+  if (isAdmin(req)) return true;
+  const renter = getRenterFromReq(req);
+  if (renter && job.renter_id && renter.id === job.renter_id) return true;
+  const provider = getProviderFromReq(req);
+  if (provider && job.provider_id && provider.id === job.provider_id) return true;
+  return false;
+}
+
 // Renter auth middleware — validates renter API key from header or query
 function requireRenter(req, res, next) {
   const key = req.headers['x-renter-key'] || req.query.renter_key;
@@ -440,6 +467,12 @@ router.post('/:job_id/result', (req, res) => {
   try {
     const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!isAdmin(req)) {
+      const provider = getProviderFromReq(req);
+      if (!provider || provider.id !== job.provider_id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
 
     // Guard against duplicate settlement — only settle a running job once
     if (job.status !== 'running') {
@@ -586,6 +619,9 @@ router.get('/:job_id', (req, res) => {
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
+    if (!canReadJob(req, job)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
     res.json({ job });
   } catch (error) {
@@ -602,6 +638,12 @@ router.post('/:job_id/complete', (req, res) => {
     }
     if (job.status !== 'running') {
       return res.status(400).json({ error: 'Job is not running', current_status: job.status });
+    }
+    if (!isAdmin(req)) {
+      const renter = getRenterFromReq(req);
+      if (!renter || renter.id !== job.renter_id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
     }
 
     const now = new Date().toISOString();
@@ -661,6 +703,12 @@ router.post('/:job_id/cancel', (req, res) => {
     const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
+    }
+    if (!isAdmin(req)) {
+      const renter = getRenterFromReq(req);
+      if (!renter || renter.id !== job.renter_id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
     }
     if (job.status === 'completed' || job.status === 'cancelled') {
       return res.status(400).json({ error: `Cannot cancel job with status: ${job.status}` });

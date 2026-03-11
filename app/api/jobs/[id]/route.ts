@@ -3,11 +3,18 @@ import { NextResponse } from 'next/server';
 const BACKEND = process.env.BACKEND_URL || 'http://76.13.179.86:8083';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const res = await fetch(`${BACKEND}/api/jobs/${params.id}`);
+    const renterKey = request.headers.get('x-renter-key');
+    const providerKey = request.headers.get('x-provider-key');
+    const res = await fetch(`${BACKEND}/api/jobs/${params.id}`, {
+      headers: {
+        ...(renterKey ? { 'x-renter-key': renterKey } : {}),
+        ...(providerKey ? { 'x-provider-key': providerKey } : {}),
+      },
+    });
 
     if (!res.ok) {
       if (res.status === 404) {

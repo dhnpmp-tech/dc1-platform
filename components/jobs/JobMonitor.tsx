@@ -46,6 +46,7 @@ function Skeleton({ className = '' }: { className?: string }) {
 }
 
 export default function JobMonitor({ jobId }: { jobId: string }) {
+  const renterKey = typeof window !== 'undefined' ? sessionStorage.getItem('dc1_renter_key') || '' : '';
   const [status, setStatus] = useState<JobStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +56,9 @@ export default function JobMonitor({ jobId }: { jobId: string }) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`/api/jobs/${jobId}/status`);
+      const res = await fetch(`/api/jobs/${jobId}/status`, {
+        headers: renterKey ? { 'x-renter-key': renterKey } : undefined,
+      });
       if (!res.ok) throw new Error('Failed to fetch status');
       const data = await res.json();
       if (data.success) {
@@ -91,7 +94,10 @@ export default function JobMonitor({ jobId }: { jobId: string }) {
   async function handleComplete() {
     setCompleting(true);
     try {
-      const res = await fetch(`/api/jobs/${jobId}/complete`, { method: 'POST' });
+      const res = await fetch(`/api/jobs/${jobId}/complete`, {
+        method: 'POST',
+        headers: renterKey ? { 'x-renter-key': renterKey } : undefined,
+      });
       if (!res.ok) throw new Error('Failed to complete job');
       const data = await res.json();
       if (data.success) {

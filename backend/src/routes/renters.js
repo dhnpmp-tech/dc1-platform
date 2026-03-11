@@ -88,17 +88,28 @@ router.get('/available-providers', (req, res) => {
     );
 
     res.json({
-      providers: providers.map(p => ({
-        id: p.id,
-        name: p.name,
-        gpu_model: p.gpu_name_detected || p.gpu_model,
-        vram_gb: p.gpu_vram_mib ? Math.round(p.gpu_vram_mib / 1024) : null,
-        vram_mib: p.gpu_vram_mib,
-        status: p.status,
-        location: p.location,
-        reliability_score: p.reliability_score,
-        cached_models: p.cached_models ? JSON.parse(p.cached_models) : []
-      })),
+      providers: providers.map(p => {
+        let parsedCachedModels = [];
+        if (p.cached_models) {
+          try {
+            parsedCachedModels = JSON.parse(p.cached_models);
+          } catch (e) {
+            parsedCachedModels = [];
+          }
+        }
+
+        return {
+          id: p.id,
+          name: p.name,
+          gpu_model: p.gpu_name_detected || p.gpu_model,
+          vram_gb: p.gpu_vram_mib ? Math.round(p.gpu_vram_mib / 1024) : null,
+          vram_mib: p.gpu_vram_mib,
+          status: p.status,
+          location: p.location,
+          reliability_score: p.reliability_score,
+          cached_models: parsedCachedModels
+        };
+      }),
       total: providers.length
     });
   } catch (error) {
