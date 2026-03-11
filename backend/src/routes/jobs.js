@@ -161,7 +161,7 @@ print("DC1_RESULT_JSON:" + json.dumps(output))
 
 function generateLlmInferenceScript(params) {
   const prompt = pyEscape(params.prompt || 'What is the capital of Saudi Arabia?');
-  const maxTokens = Math.min(Math.max(parseInt(params.max_tokens) || 512, 32), 4096);
+  const maxTokens = Math.min(Math.max(parseInt(params.max_tokens) || 256, 32), 4096);
   const rawModel = String(params.model || 'TinyLlama/TinyLlama-1.1B-Chat-v1.0');
   const model = ALLOWED_LLM_MODELS.includes(rawModel) ? rawModel : 'TinyLlama/TinyLlama-1.1B-Chat-v1.0';
   const temperature = Math.min(Math.max(parseFloat(params.temperature) || 0.7, 0.1), 2.0);
@@ -173,20 +173,13 @@ function generateLlmInferenceScript(params) {
 
   return `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""DC1 LLM Inference v3 - chat templates + phase markers for progress tracking"""
+"""DC1 LLM Inference v4 - chat templates + phase markers for progress tracking"""
 import torch, json, sys, time
 
 t0 = time.time()
 print("[dc1-phase] installing_deps", flush=True)
 
-try:
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-except ImportError:
-    print("[dc1] Installing transformers + accelerate...", flush=True)
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install",
-        "transformers", "accelerate", "-q"])
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32

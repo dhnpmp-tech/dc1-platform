@@ -64,7 +64,7 @@ import requests, time, datetime, socket, subprocess, sys, platform, threading
 API_KEY = "$API_KEY"
 API_URL = "$API_URL"
 INTERVAL = 30
-DAEMON_VERSION = "1.1.0"
+DAEMON_VERSION = "1.2.0"
 
 def get_gpu_info():
     info = {
@@ -131,7 +131,7 @@ def check_and_run_job():
         with open(tmp, "w") as f:
             f.write(task)
         t0 = datetime.datetime.now()
-        proc = subprocess.run([sys.executable, tmp], capture_output=True, text=True, timeout=300)
+        proc = subprocess.run([sys.executable, tmp], capture_output=True, text=True, timeout=900)
         duration_s = int((datetime.datetime.now() - t0).total_seconds())
         result_text = (proc.stdout or "").strip()[-1000:] or "completed"
         error_text = (proc.stderr or "").strip()[-500:] if proc.returncode != 0 else None
@@ -143,10 +143,10 @@ def check_and_run_job():
             json={"result": result_text, "error": error_text, "duration_seconds": duration_s}, timeout=10)
         print(f"[{datetime.datetime.now()}] Job {job_id} done in {duration_s}s")
     except subprocess.TimeoutExpired:
-        print(f"[{datetime.datetime.now()}] Job {job.get('id')} timed out after 300s — reporting")
+        print(f"[{datetime.datetime.now()}] Job {job.get('id')} timed out after 900s — reporting")
         try:
             requests.post(f"{API_URL}/api/jobs/{job.get('id')}/result",
-                json={"error": "Job timed out after 300 seconds", "duration_seconds": 300}, timeout=10)
+                json={"error": "Job timed out after 900 seconds", "duration_seconds": 900}, timeout=10)
         except Exception:
             pass
         try:
