@@ -1,0 +1,61 @@
+# DC1 Platform  Cursor Agent Rules
+
+## MANDATORY: Cross-Agent Communication Protocol
+
+You are working in a multi-agent environment. Other AI agents (Claude-Cowork, Codex, Nexus) also modify this codebase.
+
+### BEFORE every task:
+1. `git pull origin main`
+2. Read `AGENT_LOG.md` in the repo root  this tells you what other agents changed recently
+3. Check for breaking changes or dependencies that affect your work
+
+### AFTER every code change:
+1. Commit with conventional messages: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
+2. Append a log entry to `AGENT_LOG.md`:
+   ```
+   ## [YYYY-MM-DD HH:MM UTC] Cursor  Short Summary
+   - **Commit**: `hash`  What changed
+   - **Files**: files touched
+   - **Impact**: what other agents need to know
+   ```
+3. Commit the AGENT_LOG.md update separately
+4. `git push origin main`
+
+**NEVER skip updating AGENT_LOG.md. Other agents depend on it.**
+
+## Architecture Overview
+
+- Express.js backend on port 8083
+- SQLite database (better-sqlite3) at `backend/data/providers.db`
+- PM2 process manager for all services
+- VPS: Hostinger (76.13.179.86)
+- Provider daemon: `dc1_daemon.py` v3.3.0 (Python, auto-updates from backend)
+- Installer: `daemon.ps1` v2.0.0 (thin PowerShell installer)
+
+## Key Directories
+
+- `backend/src/routes/`  Express API routes (providers.js is the main one)
+- `backend/public/`  Static frontend files (provider-onboarding.html)
+- `backend/installers/`  daemon.ps1 thin installer
+- `backend/src/daemon/`  dc1_daemon.py universal daemon
+- `backend/data/`  SQLite databases
+
+## Code Style
+
+- Backend: Node.js/Express, async/await, no TypeScript
+- Frontend: Vanilla HTML/CSS/JS (no framework)
+- Database: Raw SQL via better-sqlite3 (no ORM)
+- Error handling: Always return JSON with `error` field on failure
+
+## Other Agents
+
+| Agent | Role | What they change |
+|-------|------|-----------------|
+| Claude-Cowork | VPS/deploy | Live server fixes, PM2, config |
+| Codex | GitHub PRs | Automated code fixes, PR reviews |
+| Nexus | Orchestrator | Multi-agent task routing |
+
+## Reference Issues
+
+- #34: Daemon consolidation architecture
+- #35: Cross-agent communication protocol (this protocol)
