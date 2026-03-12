@@ -17,9 +17,6 @@ const LLM_MODELS = [
 
 const SD_MODELS = [
   { id: 'CompVis/stable-diffusion-v1-4', label: 'Stable Diffusion v1.4', vram: '~3.5 GB', speed: 'Fast' },
-  { id: 'stable-diffusion-v1-5/stable-diffusion-v1-5', label: 'Stable Diffusion v1.5', vram: '~4 GB', speed: 'Fast' },
-  { id: 'stabilityai/stable-diffusion-2-1', label: 'Stable Diffusion v2.1', vram: '~5 GB', speed: 'Medium' },
-  { id: 'stabilityai/stable-diffusion-xl-base-1.0', label: 'SDXL Base 1.0', vram: '~7 GB', speed: 'Slow' },
 ] as const;
 
 const COST_RATES: Record<JobType, number> = {
