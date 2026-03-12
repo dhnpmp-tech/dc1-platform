@@ -365,7 +365,7 @@ router.get('/me', async (req, res) => {
             } catch (_) {}
         }
 
-        res.json({
+        const payload = {
             provider: {
                 id: provider.id,
                 name: provider.name,
@@ -388,7 +388,8 @@ router.get('/me', async (req, res) => {
                 week_earnings_halala: weekEarnings.total,
                 active_job: activeJob || null
             }
-        });
+        };
+        res.json(payload);
     } catch (error) {
         console.error('Provider me error:', error);
         res.status(500).json({ error: 'Failed to fetch provider data' });

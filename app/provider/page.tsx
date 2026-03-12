@@ -1,350 +1,336 @@
-'use client';
+'use client'
 
-import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import DashboardLayout from '../components/layout/DashboardLayout'
+import StatusBadge from '../components/ui/StatusBadge'
+import StatCard from '../components/ui/StatCard'
 
-function timeAgo(dateStr: string | null | undefined): string {
-  if (!dateStr) return 'N/A';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  return `${Math.floor(diff / 3600000)}h ago`;
-}
-
-function halalaToSAR(halala: number | undefined | null): string {
-  return `﷼${((halala || 0) / 100).toFixed(2)}`;
-}
-
+// Mock data interface
 interface ProviderData {
-  name?: string;
-  gpu_model?: string;
-  status?: string;
-  is_paused?: boolean;
-  run_mode?: string;
-  scheduled_start?: string;
-  scheduled_end?: string;
-  gpu_temp?: number;
-  gpu_usage?: number;
-  vram_used?: number;
-  vram_total?: number;
-  uptime_percent?: number;
-  last_heartbeat?: string;
-  earnings_today?: number;
-  earnings_week?: number;
-  earnings_total?: number;
-  jobs_done?: number;
-  active_job?: {
-    job_type?: string;
-    started_at?: string;
-  } | null;
-  gpu_cap?: number;
-  vram_reserve?: number;
-  temp_limit?: number;
+  id: string
+  name: string
+  status: 'online' | 'offline'
+  todayEarnings: number
+  totalEarnings: number
+  jobsCompleted: number
+  gpuUptime: number
+  gpuModel: string
+  temperature: number
+  gpuUsage: number
+  vramUsage: number
+  activeJob?: {
+    id: string
+    jobType: string
+    status: string
+    startTime: string
+  }
+  recentJobs: Array<{
+    id: string
+    jobType: string
+    duration: number
+    earnings: number
+    status: 'completed' | 'failed'
+    completedAt: string
+  }>
 }
 
-function ProviderDashboardInner() {
-  const searchParams = useSearchParams();
-  const keyParam = searchParams.get('key');
-  const [key, setKey] = useState(keyParam || '');
-  const [inputKey, setInputKey] = useState('');
-  const [data, setData] = useState<ProviderData | null>(null);
-  const [modeOpen, setModeOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [gpuCap, setGpuCap] = useState(80);
-  const [vramReserve, setVramReserve] = useState(1);
-  const [tempLimit, setTempLimit] = useState(85);
-  const [schedStart, setSchedStart] = useState('23:00');
-  const [schedEnd, setSchedEnd] = useState('07:00');
+// SVG Icon components
+const HomeIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 5v14a1 1 0 001 1h12a1 1 0 001-1V5m-9 9h4" />
+  </svg>
+)
 
-  const [error, setError] = useState<string | null>(null);
+const LightningIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+  </svg>
+)
 
-  const fetchData = useCallback(async () => {
-    if (!key) return;
-    try {
-      const res = await fetch(`/api/providers/me?key=${key}`);
-      if (res.status === 404) {
-        setError('invalid-key');
-        return;
-      }
-      if (!res.ok) {
-        setError('server');
-        return;
-      }
-      const d = await res.json();
-      setData(d);
-      setError(null);
-      if (d.gpu_cap) setGpuCap(d.gpu_cap);
-      if (d.vram_reserve !== undefined) setVramReserve(d.vram_reserve);
-      if (d.temp_limit) setTempLimit(d.temp_limit);
-      if (d.scheduled_start) setSchedStart(d.scheduled_start);
-      if (d.scheduled_end) setSchedEnd(d.scheduled_end);
-    } catch {
-      setError('server');
-    }
-  }, [key]);
+const CurrencyIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+)
+
+const GearIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+)
+
+// Provider nav items
+const getNavItems = () => [
+  { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
+  { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
+  { label: 'Earnings', href: '/provider/earnings', icon: <CurrencyIcon /> },
+  { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
+]
+
+// Mock data generator
+const generateMockData = (): ProviderData => ({
+  id: 'provider-001',
+  name: 'Alex Provider',
+  status: 'online',
+  todayEarnings: 152.50,
+  totalEarnings: 4328.75,
+  jobsCompleted: 287,
+  gpuUptime: 94.8,
+  gpuModel: 'NVIDIA RTX 4090',
+  temperature: 68,
+  gpuUsage: 78,
+  vramUsage: 58,
+  activeJob: {
+    id: 'job-12345',
+    jobType: 'Model Training',
+    status: 'running',
+    startTime: '2 hours ago'
+  },
+  recentJobs: [
+    { id: 'job-5', jobType: 'Data Processing', duration: 45, earnings: 28.50, status: 'completed', completedAt: '1 hour ago' },
+    { id: 'job-4', jobType: 'Model Inference', duration: 120, earnings: 42.00, status: 'completed', completedAt: '3 hours ago' },
+    { id: 'job-3', jobType: 'GPU Rendering', duration: 90, earnings: 31.50, status: 'completed', completedAt: '5 hours ago' },
+    { id: 'job-2', jobType: 'ML Training', duration: 180, earnings: 50.00, status: 'completed', completedAt: 'Yesterday' },
+    { id: 'job-1', jobType: 'Data Analysis', duration: 60, earnings: 21.00, status: 'completed', completedAt: '2 days ago' },
+  ]
+})
+
+// Temperature gauge color
+const getTempColor = (temp: number): string => {
+  if (temp < 70) return 'bg-status-success'
+  if (temp < 80) return 'bg-status-warning'
+  return 'bg-status-error'
+}
+
+export default function ProviderDashboard() {
+  const router = useRouter()
+  const [providerData, setProviderData] = useState<ProviderData | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchData();
-    if (!key) return;
-    const i = setInterval(fetchData, 30000);
-    return () => clearInterval(i);
-  }, [key, fetchData]);
+    const initializeDashboard = async () => {
+      // Check for API key
+      const apiKey = localStorage.getItem('dc1_provider_key')
+      if (!apiKey) {
+        router.push('/provider/register')
+        return
+      }
 
-  if (!key) {
-    return (
-      <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">
-        <div className="max-w-sm w-full px-4">
-          <h1 className="text-2xl font-bold mb-4">Provider Dashboard</h1>
-          <p className="text-gray-400 mb-4">Enter your provider key:</p>
-          <input value={inputKey} onChange={e => setInputKey(e.target.value)}
-            className="w-full bg-[#252525] border border-gray-700 rounded-lg px-4 py-3 mb-3 focus:border-[#FFD700] focus:outline-none"
-            placeholder="dc1-provider-..." />
-          <button onClick={() => setKey(inputKey)}
-            className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200]">Go</button>
-        </div>
-      </div>
-    );
-  }
+      // In a real app, this would fetch from /api/providers/me
+      // For now, use mock data
+      try {
+        // Simulating API call
+        await new Promise(resolve => setTimeout(resolve, 500))
+        setProviderData(generateMockData())
+      } catch (error) {
+        console.error('Failed to load provider data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  // Error state — invalid key or server error
-  if (error === 'invalid-key') {
+    initializeDashboard()
+  }, [router])
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">
-        <div className="max-w-sm w-full px-4 text-center">
-          <p className="text-5xl mb-4">🔑</p>
-          <h1 className="text-2xl font-bold mb-3 text-red-400">Invalid Provider Key</h1>
-          <p className="text-gray-400 mb-6">
-            This key wasn&apos;t found. Check your onboarding email or contact{' '}
-            <a href="mailto:support@dc1st.com" className="text-[#00A8E1] underline">support@dc1st.com</a>
-          </p>
-          <div className="space-y-3">
-            <button
-              onClick={() => { setKey(''); setError(null); }}
-              className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200] transition"
-            >
-              Try Another Key
-            </button>
-            <a
-              href="/provider-onboarding"
-              className="block w-full py-3 rounded-lg font-semibold border border-gray-700 text-gray-300 hover:border-gray-500 transition text-center"
-            >
-              Register as Provider
-            </a>
+      <DashboardLayout navItems={getNavItems()} role="provider" userName="Provider">
+        <div className="space-y-6">
+          <div className="h-8 w-48 bg-dc1-surface-l2 rounded skeleton" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-32 bg-dc1-surface-l2 rounded skeleton" />
+            ))}
           </div>
         </div>
-      </div>
-    );
+      </DashboardLayout>
+    )
   }
 
-  if (error === 'server') {
+  if (!providerData) {
     return (
-      <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">
-        <div className="max-w-sm w-full px-4 text-center">
-          <p className="text-5xl mb-4">⚠️</p>
-          <h1 className="text-2xl font-bold mb-3 text-yellow-400">Connection Error</h1>
-          <p className="text-gray-400 mb-6">Could not reach the server. Please try again.</p>
-          <button
-            onClick={() => { setError(null); fetchData(); }}
-            className="w-full py-3 rounded-lg font-semibold bg-[#FFD700] text-black hover:bg-[#e6c200] transition"
-          >
-            Retry
-          </button>
+      <DashboardLayout navItems={getNavItems()} role="provider" userName="Provider">
+        <div className="card">
+          <p className="text-dc1-text-secondary">Failed to load provider data</p>
         </div>
-      </div>
-    );
+      </DashboardLayout>
+    )
   }
-
-  const statusBadge = data?.is_paused
-    ? { icon: '⏸', label: 'PAUSED', color: 'text-yellow-400' }
-    : data?.status === 'online'
-      ? { icon: '🟢', label: 'ONLINE', color: 'text-green-400' }
-      : { icon: '🔴', label: 'OFFLINE', color: 'text-red-400' };
-
-  const tempColor = (data?.gpu_temp || 0) < 70 ? 'text-green-400' : (data?.gpu_temp || 0) < 80 ? 'text-yellow-400' : 'text-red-400';
-  const tempLabel = (data?.gpu_temp || 0) < 70 ? 'Safe' : (data?.gpu_temp || 0) < 80 ? 'Warm' : 'Hot';
-
-  const changeMode = async (mode: string) => {
-    setModeOpen(false);
-    await fetch('/api/providers/preferences', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        key, run_mode: mode,
-        scheduled_start: mode === 'scheduled' ? schedStart : undefined,
-        scheduled_end: mode === 'scheduled' ? schedEnd : undefined,
-      }),
-    });
-    fetchData();
-  };
-
-  const togglePause = async () => {
-    const endpoint = data?.is_paused ? '/api/providers/resume' : '/api/providers/pause';
-    await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
-    fetchData();
-  };
-
-  const saveSettings = async () => {
-    await fetch('/api/providers/preferences', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, gpu_cap: gpuCap, vram_reserve: vramReserve, temp_limit: tempLimit }),
-    });
-    fetchData();
-  };
-
-  const modeLabel = data?.run_mode === 'scheduled' ? 'Scheduled' : data?.run_mode === 'manual' ? 'Manual' : 'Always-on';
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] text-white">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className={`text-lg font-bold ${statusBadge.color}`}>{statusBadge.icon} {statusBadge.label}</span>
-              <span className="text-xl font-bold">{data?.name || 'Loading...'}</span>
+    <DashboardLayout navItems={getNavItems()} role="provider" userName={providerData.name}>
+      <div className="space-y-8">
+        {/* Page Header */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <h1 className="text-3xl font-bold text-dc1-text-primary">Provider Dashboard</h1>
+          <StatusBadge status={providerData.status} />
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            label="Today's Earnings"
+            value={`$${providerData.todayEarnings.toFixed(2)}`}
+            accent="amber"
+            icon={<CurrencyIcon />}
+          />
+          <StatCard
+            label="Total Earnings"
+            value={`$${providerData.totalEarnings.toFixed(2)}`}
+            accent="success"
+            icon={<CurrencyIcon />}
+          />
+          <StatCard
+            label="Jobs Completed"
+            value={providerData.jobsCompleted}
+            accent="default"
+            icon={<LightningIcon />}
+          />
+          <StatCard
+            label="GPU Uptime"
+            value={`${providerData.gpuUptime}%`}
+            accent="info"
+            icon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            }
+          />
+        </div>
+
+        {/* GPU Health Section */}
+        <div className="card">
+          <h2 className="section-heading mb-6">GPU Health</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* GPU Model */}
+            <div>
+              <p className="text-sm text-dc1-text-secondary mb-2">GPU Model</p>
+              <p className="text-lg font-semibold text-dc1-text-primary">{providerData.gpuModel}</p>
             </div>
-            <p className="text-gray-400 text-sm">{data?.gpu_model || 'GPU'}</p>
-          </div>
-          <div className="relative">
-            <button onClick={() => setModeOpen(!modeOpen)}
-              className="bg-[#252525] border border-gray-700 rounded-lg px-4 py-2 text-sm hover:border-[#FFD700] transition">
-              Mode: {modeLabel} <span className="ml-1">▾</span>
-            </button>
-            {modeOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-[#252525] border border-gray-700 rounded-lg overflow-hidden z-10 min-w-[200px]">
-                {['always-on', 'manual', 'scheduled'].map(m => (
-                  <button key={m} onClick={() => changeMode(m)}
-                    className={`block w-full text-left px-4 py-2 text-sm hover:bg-[#333] ${data?.run_mode === m ? 'text-[#FFD700]' : ''}`}>
-                    {m === 'always-on' ? 'Always-on' : m === 'manual' ? 'Manual' : 'Scheduled'}
-                  </button>
-                ))}
-                {data?.run_mode === 'scheduled' && (
-                  <div className="px-4 py-2 border-t border-gray-700 flex gap-2">
-                    <input type="time" value={schedStart} onChange={e => setSchedStart(e.target.value)}
-                      className="bg-[#333] border border-gray-600 rounded px-2 py-1 text-sm text-white w-24" />
-                    <input type="time" value={schedEnd} onChange={e => setSchedEnd(e.target.value)}
-                      className="bg-[#333] border border-gray-600 rounded px-2 py-1 text-sm text-white w-24" />
+
+            {/* Temperature Gauge */}
+            <div>
+              <p className="text-sm text-dc1-text-secondary mb-2">Temperature</p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="h-2 bg-dc1-surface-l2 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${getTempColor(providerData.temperature)} transition-all`}
+                      style={{ width: `${Math.min(providerData.temperature, 100)}%` }}
+                    />
                   </div>
-                )}
+                </div>
+                <span className="text-sm font-semibold text-dc1-text-primary w-12 text-right">
+                  {providerData.temperature}°C
+                </span>
               </div>
-            )}
+            </div>
+
+            {/* Status Indicator */}
+            <div>
+              <p className="text-sm text-dc1-text-secondary mb-2">Status</p>
+              <StatusBadge status="online" />
+            </div>
+          </div>
+
+          {/* Usage Bars */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-dc1-border">
+            {/* GPU Usage */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-dc1-text-secondary">GPU Usage</p>
+                <span className="text-sm font-semibold text-dc1-text-primary">{providerData.gpuUsage}%</span>
+              </div>
+              <div className="h-2 bg-dc1-surface-l2 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-dc1-amber transition-all"
+                  style={{ width: `${providerData.gpuUsage}%` }}
+                />
+              </div>
+            </div>
+
+            {/* VRAM Usage */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-dc1-text-secondary">VRAM Usage</p>
+                <span className="text-sm font-semibold text-dc1-text-primary">{providerData.vramUsage}%</span>
+              </div>
+              <div className="h-2 bg-dc1-surface-l2 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-status-info transition-all"
+                  style={{ width: `${providerData.vramUsage}%` }}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* GPU Health */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
-            <p className="text-gray-400 text-sm mb-1">Temperature</p>
-            <p className={`text-2xl font-bold ${tempColor}`}>{data?.gpu_temp ?? '--'}°C</p>
-            <p className={`text-sm ${tempColor}`}>{tempLabel}</p>
-          </div>
-          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
-            <p className="text-gray-400 text-sm mb-1">GPU Usage</p>
-            <p className="text-2xl font-bold text-[#00A8E1]">{data?.gpu_usage ?? '--'}%</p>
-            <p className="text-sm text-gray-400">{data?.active_job ? 'DC1 job' : 'Idle'}</p>
-          </div>
-          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
-            <p className="text-gray-400 text-sm mb-1">VRAM</p>
-            <p className="text-2xl font-bold">{data?.vram_used ?? '--'} / {data?.vram_total ?? '--'} GB</p>
-          </div>
-        </div>
-
-        {/* Connection */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
-            <p className="text-gray-400 text-sm mb-1">Stability</p>
-            <p className="text-xl font-bold">{data?.uptime_percent ?? '--'}%</p>
-          </div>
-          <div className="bg-[#252525] rounded-lg p-4 border border-gray-800">
-            <p className="text-gray-400 text-sm mb-1">Last Heartbeat</p>
-            <p className="text-xl font-bold">{timeAgo(data?.last_heartbeat)}</p>
-          </div>
-        </div>
-
-        {/* Earnings */}
-        <div className="bg-[#252525] rounded-lg p-4 border border-[#FFD700]/30 mb-6">
-          <h3 className="text-[#FFD700] font-semibold mb-3">💰 Earnings</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div><p className="text-gray-400 text-xs">Today</p><p className="text-lg font-bold text-[#FFD700]">{halalaToSAR(data?.earnings_today)}</p></div>
-            <div><p className="text-gray-400 text-xs">This Week</p><p className="text-lg font-bold text-[#FFD700]">{halalaToSAR(data?.earnings_week)}</p></div>
-            <div><p className="text-gray-400 text-xs">All Time</p><p className="text-lg font-bold text-[#FFD700]">{halalaToSAR(data?.earnings_total)}</p></div>
-            <div><p className="text-gray-400 text-xs">Jobs Done</p><p className="text-lg font-bold">{data?.jobs_done ?? 0}</p></div>
-          </div>
-        </div>
-
-        {/* Current Job */}
-        {data?.active_job && (
-          <div className="bg-[#252525] rounded-lg p-4 border border-[#00A8E1]/30 mb-6">
-            <h3 className="text-[#00A8E1] font-semibold mb-2">🔄 Current Job</h3>
-            <p className="text-sm"><span className="text-gray-400">Type:</span> {data.active_job.job_type}</p>
-            <p className="text-sm"><span className="text-gray-400">Started:</span> {timeAgo(data.active_job.started_at)}</p>
-            <p className="text-sm text-[#FFD700]">Earning ﷼0.10/min</p>
-          </div>
-        )}
-
-        {/* Controls */}
-        <button onClick={togglePause}
-          className={`w-full py-4 rounded-lg font-bold text-lg mb-4 transition ${data?.is_paused ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-amber-500 hover:bg-amber-400 text-black'}`}>
-          {data?.is_paused ? '▶ Resume — Start Earning' : '⏸ Pause — I need my GPU'}
-        </button>
-
-        {/* GPU Protection Settings */}
-        <div className="bg-[#252525] rounded-lg border border-gray-800 mb-6">
-          <button onClick={() => setSettingsOpen(!settingsOpen)}
-            className="w-full px-4 py-3 text-left font-semibold flex justify-between items-center">
-            ⚙ GPU Protection Settings <span>{settingsOpen ? '▴' : '▾'}</span>
-          </button>
-          {settingsOpen && (
-            <div className="px-4 pb-4 space-y-4">
-              <div>
-                <label className="text-sm text-gray-400 flex justify-between"><span>GPU Usage Cap</span><span>{gpuCap}%</span></label>
-                <input type="range" min={10} max={100} value={gpuCap} onChange={e => setGpuCap(+e.target.value)}
-                  className="w-full accent-[#FFD700]" />
+        {/* Current Job Section */}
+        <div className="card">
+          <h2 className="section-heading mb-4">Current Job</h2>
+          {providerData.activeJob ? (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-sm text-dc1-text-secondary mb-1">Job Type</p>
+                  <p className="text-lg font-semibold text-dc1-text-primary">{providerData.activeJob.jobType}</p>
+                </div>
+                <StatusBadge status="running" />
               </div>
-              <div>
-                <label className="text-sm text-gray-400 flex justify-between"><span>VRAM Reserve</span><span>{vramReserve} GB</span></label>
-                <input type="range" min={0} max={8} value={vramReserve} onChange={e => setVramReserve(+e.target.value)}
-                  className="w-full accent-[#FFD700]" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-dc1-text-secondary mb-1">Job ID</p>
+                  <p className="text-sm font-mono text-dc1-amber">{providerData.activeJob.id}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-dc1-text-secondary mb-1">Started</p>
+                  <p className="text-sm text-dc1-text-primary">{providerData.activeJob.startTime}</p>
+                </div>
               </div>
-              <div>
-                <label className="text-sm text-gray-400 flex justify-between"><span>Temperature Limit</span><span>{tempLimit}°C</span></label>
-                <input type="range" min={60} max={100} value={tempLimit} onChange={e => setTempLimit(+e.target.value)}
-                  className="w-full accent-[#FFD700]" />
-              </div>
-              <button onClick={saveSettings}
-                className="w-full py-2 rounded-lg bg-[#FFD700] text-black font-semibold hover:bg-[#e6c200] transition">
-                Save Settings
-              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-dc1-text-secondary">No active jobs</p>
             </div>
           )}
         </div>
 
-        {/* Earnings & History Link */}
-        <a href={`/provider/earnings?key=${key}`}
-          className="block w-full bg-[#252525] rounded-lg border border-[#FFD700]/20 p-4 hover:border-[#FFD700]/40 transition group">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-[#FFD700] font-semibold">📊 Earnings, Jobs & Daemon Logs</h3>
-              <p className="text-gray-500 text-sm mt-1">Daily breakdown, job history, daemon status, withdrawals</p>
-            </div>
-            <span className="text-[#FFD700]/50 group-hover:text-[#FFD700] text-xl transition">&rarr;</span>
+        {/* Recent Activity Section */}
+        <div className="card">
+          <h2 className="section-heading mb-6">Recent Activity</h2>
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Job Type</th>
+                  <th>Duration</th>
+                  <th>Earnings</th>
+                  <th>Status</th>
+                  <th>Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providerData.recentJobs.map((job) => (
+                  <tr key={job.id}>
+                    <td>{job.jobType}</td>
+                    <td>{job.duration} min</td>
+                    <td className="font-semibold text-status-success">${job.earnings.toFixed(2)}</td>
+                    <td>
+                      <StatusBadge
+                        status={job.status === 'completed' ? 'completed' : 'failed'}
+                        size="sm"
+                      />
+                    </td>
+                    <td className="text-dc1-text-secondary">{job.completedAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </a>
+        </div>
       </div>
-    </div>
-  );
-}
-
-export default function ProviderDashboard() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">Loading...</div>}>
-      <ProviderDashboardInner />
-    </Suspense>
-  );
+    </DashboardLayout>
+  )
 }

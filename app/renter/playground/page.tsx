@@ -6,7 +6,6 @@ import Link from 'next/link';
 const API_BASE = typeof window !== 'undefined' && window.location.protocol === 'https:'
   ? '/api/dc1'
   : 'http://76.13.179.86:8083/api';
-const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
 
 type JobType = 'llm_inference' | 'image_generation';
 
@@ -232,13 +231,13 @@ export default function GpuPlayground() {
     async function poll() {
       setPollCount(c => c + 1);
       try {
-        // Check progress phase from admin endpoint
-        const adminCheck = await fetch(`${API_BASE}/admin/jobs/${jobId}`, {
-          headers: { 'x-admin-token': ADMIN_TOKEN },
+        // Check current job state using renter credentials
+        const jobCheck = await fetch(`${API_BASE}/jobs/${jobId}`, {
+          headers: { 'x-renter-key': renterKey },
         });
-        if (adminCheck.ok) {
-          const adminData = await adminCheck.json();
-          const job = adminData.job || adminData;
+        if (jobCheck.ok) {
+          const jobData = await jobCheck.json();
+          const job = jobData.job || {};
           if (job.progress_phase) setProgressPhase(job.progress_phase);
           if (job.status === 'failed') {
             setErrorMsg(job.error || 'Job failed on provider');
@@ -268,12 +267,12 @@ export default function GpuPlayground() {
             setPhase('done');
           }
         } else if (res.status === 404) {
-          const adminRes = await fetch(`${API_BASE}/admin/jobs/${jobId}`, {
-            headers: { 'x-admin-token': ADMIN_TOKEN },
+          const jobRes = await fetch(`${API_BASE}/jobs/${jobId}`, {
+            headers: { 'x-renter-key': renterKey },
           });
-          if (adminRes.ok) {
-            const adminData = await adminRes.json();
-            const job = adminData.job || adminData;
+          if (jobRes.ok) {
+            const data = await jobRes.json();
+            const job = data.job || {};
             if (job.status === 'failed') {
               setErrorMsg(job.error || 'Job failed on provider');
               setPhase('error');
@@ -299,27 +298,25 @@ export default function GpuPlayground() {
 
   async function fetchProof(id: number) {
     try {
-      const res = await fetch(`${API_BASE}/admin/jobs/${id}`, {
-        headers: { 'x-admin-token': ADMIN_TOKEN },
+      const res = await fetch(`${API_BASE}/jobs/${id}`, {
+        headers: { 'x-renter-key': renterKey },
       });
       if (!res.ok) return;
       const data = await res.json();
-      const job = data.job;
-      const prov = data.provider || {};
-      const billing = data.billing || {};
+      const job = data.job || {};
 
       setProof({
         job_id: job.job_id || `#${job.id}`,
-        provider_name: prov.name || 'Unknown',
-        provider_gpu: prov.gpu_name_detected || prov.gpu_model || 'Unknown',
-        provider_hostname: prov.provider_hostname || '',
+        provider_name: 'Restricted',
+        provider_gpu: 'Restricted',
+        provider_hostname: '',
         status: job.status,
         started_at: job.started_at || '',
         completed_at: job.completed_at || '',
         actual_duration_minutes: job.actual_duration_minutes || 0,
-        cost_halala: billing.cost_halala || job.actual_cost_halala || 0,
-        provider_earned_halala: billing.provider_cut_halala || job.provider_earned_halala || 0,
-        dc1_fee_halala: billing.dc1_cut_halala || job.dc1_fee_halala || 0,
+        cost_halala: job.actual_cost_halala || 0,
+        provider_earned_halala: job.provider_earned_halala || 0,
+        dc1_fee_halala: job.dc1_fee_halala || 0,
         raw_log: job.result || '',
       });
 

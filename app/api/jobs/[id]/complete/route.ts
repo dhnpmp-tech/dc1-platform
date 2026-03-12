@@ -3,15 +3,19 @@ import { NextRequest, NextResponse } from 'next/server';
 const BACKEND = process.env.BACKEND_URL || 'http://76.13.179.86:8083';
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
+    const renterKey = request.headers.get('x-renter-key');
     const res = await fetch(`${BACKEND}/api/jobs/${id}/complete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(renterKey ? { 'x-renter-key': renterKey } : {}),
+      },
     });
 
     const data = await res.json();

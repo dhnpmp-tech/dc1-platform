@@ -227,7 +227,11 @@ function analyzeVerification(provider, challenge, result) {
 router.post('/challenge', (req, res) => {
   try {
     const adminToken = req.headers['x-admin-token'] || req.body.admin_token;
-    const expectedToken = process.env.DC1_ADMIN_TOKEN || '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
+    const expectedToken = process.env.DC1_ADMIN_TOKEN;
+
+    if (!expectedToken) {
+      return res.status(503).json({ error: 'Admin token not configured' });
+    }
 
     if (adminToken !== expectedToken) {
       return res.status(403).json({ error: 'Admin token required' });
