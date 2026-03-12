@@ -1,0 +1,62 @@
+import Link from 'next/link'
+import Footer from '@/app/components/layout/Footer'
+
+const supportChannels = [
+  { title: 'Email Support', description: 'For account issues, billing questions, and general inquiries.', contact: 'support@dc1st.com', icon: '✉' },
+  { title: 'Abuse Reports', description: 'Report policy violations or suspicious activity.', contact: 'abuse@dc1st.com', icon: '⚠' },
+  { title: 'Privacy Requests', description: 'Data access, correction, or deletion requests.', contact: 'privacy@dc1st.com', icon: '🔒' },
+]
+
+const faqs = [
+  { q: 'How do I get my API key?', a: 'Your API key is generated automatically when you register as a provider or renter. It is shown once on the registration success screen — save it securely.' },
+  { q: 'I lost my API key. How do I recover it?', a: 'Contact support@dc1st.com with your registered email address. We will verify your identity and issue a new key.' },
+  { q: 'My daemon shows as offline. What should I do?', a: 'Ensure the Python process is running (check with `ps aux | grep dc1_daemon`). Verify your internet connection and that no firewall blocks outbound HTTPS.' },
+  { q: 'How is billing calculated?', a: 'LLM inference is billed at 15 halala/minute, image generation at 20 halala/minute. Providers receive 75% and DC1 retains 25%.' },
+  { q: 'Can I use DC1 for cryptocurrency mining?', a: 'No. Cryptocurrency mining is prohibited under our Acceptable Use Policy and will result in account termination.' },
+]
+
+export default function SupportPage() {
+  return (
+    <div className="min-h-screen bg-dc1-void">
+      <header className="bg-dc1-surface-l1 border-b border-dc1-border">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-3">
+            <img src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp" alt="DC1" className="h-8 w-auto" />
+            <span className="text-lg font-bold text-dc1-text-primary">DC1</span>
+          </Link>
+          <Link href="/login" className="text-sm text-dc1-amber hover:underline">Sign In</Link>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Support</h1>
+        <p className="text-dc1-text-secondary mb-10">Get help with the DC1 platform.</p>
+
+        {/* Contact channels */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          {supportChannels.map((ch) => (
+            <div key={ch.title} className="card">
+              <div className="text-2xl mb-3">{ch.icon}</div>
+              <h2 className="text-lg font-semibold text-dc1-text-primary mb-2">{ch.title}</h2>
+              <p className="text-sm text-dc1-text-secondary mb-3">{ch.description}</p>
+              <a href={`mailto:${ch.contact}`} className="text-sm text-dc1-amber hover:underline">{ch.contact}</a>
+            </div>
+          ))}
+        </div>
+
+        {/* FAQ */}
+        <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">Frequently Asked Questions</h2>
+        <div className="space-y-4">
+          {faqs.map((faq, i) => (
+            <div key={i} className="card">
+              <h3 className="text-base font-semibold text-dc1-text-primary mb-2">{faq.q}</h3>
+              <p className="text-sm text-dc1-text-secondary">{faq.a}</p>
+            </div>
+          ))}
+        </div>
+      </main>
+
+      <Footer />
+    </div>
+  )
+}
