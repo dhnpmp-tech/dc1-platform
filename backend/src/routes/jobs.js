@@ -911,6 +911,74 @@ router.get('/:job_id/output', (req, res) => {
   }
 });
 
+// GET /api/jobs/:job_id/output/:format — serve image in specific format (png, jpeg, webp)
+router.get('/:job_id/output/:format', (req, res) => {
+  try {
+    const { format } = req.params;
+    const validFormats = ['png', 'jpeg', 'jpg', 'webp'];
+    if (!validFormats.includes(format.toLowerCase())) {
+      return res.status(400).json({ error: `Invalid format: ${format}. Supported: png, jpeg, webp` });
+    }
+
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.status !== 'completed') return res.status(400).json({ error: 'Job not completed' });
+    if (!job.result) return res.status(204).json({ error: 'No output data' });
+
+    const jsonMatch = job.result.match(/DC1_RESULT_JSON:({[\s\S]+})\s*$/);
+    if (!jsonMatch) return res.status(400).json({ error: 'No structured image data found' });
+
+    let structured;
+    try { structured = JSON.parse(jsonMatch[1]); } catch(e) {
+      return res.status(500).json({ error: 'Failed to parse image data' });
+    }
+    if (!structured || structured.type !== 'image' || !structured.data) {
+      return res.status(400).json({ error: 'Job is not an image generation job' });
+    }
+
+    const imgBuf = Buffer.from(structured.data, 'base64');
+    const normalizedFormat = format.toLowerCase() === 'jpg' ? 'jpeg' : format.toLowerCase();
+
+    if (normalizedFormat === 'png') {
+      // Serve raw PNG directly — no conversion needed
+      res.set('Content-Type', 'image/png');
+      res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
+      res.set('Content-Length', imgBuf.length);
+      return res.send(imgBuf);
+    }
+
+    // For JPEG and WebP, try sharp if available, fallback to raw PNG
+    try {
+      const sharp = require('sharp');
+      sharp(imgBuf)
+        .toFormat(normalizedFormat, normalizedFormat === 'jpeg' ? { quality: 90 } : { quality: 85 })
+        .toBuffer()
+        .then(converted => {
+          res.set('Content-Type', `image/${normalizedFormat}`);
+          res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.${normalizedFormat === 'jpeg' ? 'jpg' : normalizedFormat}"`);
+          res.set('Content-Length', converted.length);
+          res.send(converted);
+        })
+        .catch(err => {
+          console.warn(`[output] Sharp conversion failed for ${normalizedFormat}, serving PNG:`, err.message);
+          res.set('Content-Type', 'image/png');
+          res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
+          res.set('Content-Length', imgBuf.length);
+          res.send(imgBuf);
+        });
+    } catch(e) {
+      // sharp not installed — serve PNG as fallback
+      res.set('Content-Type', 'image/png');
+      res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
+      res.set('Content-Length', imgBuf.length);
+      res.send(imgBuf);
+    }
+  } catch (error) {
+    console.error('Job output format error:', error);
+    res.status(500).json({ error: 'Failed to fetch job output' });
+  }
+});
+
 // Timeout enforcement — called by recovery engine every 30s
 function enforceJobTimeouts() {
   try {
