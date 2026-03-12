@@ -454,7 +454,7 @@ export default function RenterDashboard() {
       const labels: Record<string, string> = {
         downloading_model: 'Downloading model...',
         loading_model: 'Loading model to GPU...',
-        generating: 'Generating image...',
+        generating: jobType === 'image_generation' ? 'Generating image...' : 'Running inference...',
         formatting: 'Formatting output...',
       }
       return `${labels[progressPhase] || progressPhase} (${elapsed})`
