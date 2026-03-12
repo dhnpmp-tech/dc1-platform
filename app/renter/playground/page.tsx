@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 const API_BASE = typeof window !== 'undefined' && window.location.protocol === 'https:'
@@ -84,7 +85,18 @@ interface HistoryJob {
 type Phase = 'idle' | 'submitting' | 'polling' | 'done' | 'error';
 type ViewMode = 'new' | 'history';
 
-export default function GpuPlayground() {
+export default function GpuPlaygroundPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0d1117] flex items-center justify-center"><div className="animate-spin h-8 w-8 border-2 border-[#FFD700] border-t-transparent rounded-full" /></div>}>
+      <GpuPlayground />
+    </Suspense>
+  );
+}
+
+function GpuPlayground() {
+  const searchParams = useSearchParams();
+  const preselectedProvider = searchParams.get('provider');
+
   // Auth
   const [renterKey, setRenterKey] = useState('');
   const [renterName, setRenterName] = useState<string | null>(null);
@@ -282,7 +294,15 @@ export default function GpuPlayground() {
         const data = await res.json();
         const online = (data.providers || []).filter((p: Provider) => p.status === 'online');
         setProviders(online);
-        if (online.length > 0 && !providerId) setProviderId(online[0].id);
+        if (online.length > 0 && !providerId) {
+          // If provider was passed via URL query param (from marketplace), pre-select it
+          const preId = preselectedProvider ? Number(preselectedProvider) : null;
+          if (preId && online.some((p: Provider) => p.id === preId)) {
+            setProviderId(preId);
+          } else {
+            setProviderId(online[0].id);
+          }
+        }
       }
     } catch { /* ignore */ }
     finally { setLoadingProviders(false); }

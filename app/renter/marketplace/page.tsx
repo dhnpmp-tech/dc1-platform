@@ -114,7 +114,7 @@ export default function MarketplacePage() {
                   </div>
                 </div>
                 <div className="mt-4 pt-3 border-t border-dc1-border">
-                  <Link href="/renter" className="btn btn-primary w-full text-center text-sm">
+                  <Link href={`/renter/playground?provider=${p.id}`} className="btn btn-primary w-full text-center text-sm">
                     Use This GPU
                   </Link>
                 </div>
