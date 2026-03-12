@@ -50,7 +50,7 @@ API_URL = "{{API_URL}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.3.0"
+DAEMON_VERSION = "3.3.1"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
