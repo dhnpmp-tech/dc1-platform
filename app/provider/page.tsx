@@ -110,6 +110,11 @@ export default function ProviderDashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const API_BASE =
+      typeof window !== 'undefined' && window.location.protocol === 'https:'
+        ? '/api/dc1'
+        : 'http://76.13.179.86:8083/api'
+
     const initializeDashboard = async () => {
       // Check for API key
       const apiKey = localStorage.getItem('dc1_provider_key')
@@ -118,14 +123,54 @@ export default function ProviderDashboard() {
         return
       }
 
-      // In a real app, this would fetch from /api/providers/me
-      // For now, use mock data
       try {
-        // Simulating API call
-        await new Promise(resolve => setTimeout(resolve, 500))
-        setProviderData(generateMockData())
+        // Fetch real provider data from VPS
+        const res = await fetch(`${API_BASE}/providers/me`, {
+          headers: { 'x-provider-key': apiKey },
+        })
+
+        if (!res.ok) {
+          // Invalid key — clear and redirect
+          localStorage.removeItem('dc1_provider_key')
+          router.push('/login')
+          return
+        }
+
+        const data = await res.json()
+        const provider = data.provider || {}
+
+        // Map real data to ProviderData shape, filling gaps with defaults
+        setProviderData({
+          id: String(provider.id || ''),
+          name: provider.name || 'Provider',
+          status: provider.status === 'online' || provider.status === 'idle' ? 'online' : 'offline',
+          todayEarnings: (provider.today_earnings_halala || 0) / 100,
+          totalEarnings: (provider.total_earnings_halala || 0) / 100,
+          jobsCompleted: provider.jobs_completed || 0,
+          gpuUptime: provider.uptime_percent || 0,
+          gpuModel: provider.gpu_model || 'Unknown GPU',
+          temperature: provider.gpu_temp || 0,
+          gpuUsage: provider.gpu_usage || 0,
+          vramUsage: provider.vram_usage || 0,
+          activeJob: provider.active_job ? {
+            id: provider.active_job.job_id,
+            jobType: provider.active_job.job_type,
+            status: provider.active_job.status,
+            startTime: provider.active_job.started_at || '',
+          } : undefined,
+          recentJobs: (data.recent_jobs || []).map((j: any) => ({
+            id: j.job_id || String(j.id),
+            jobType: j.job_type || 'Unknown',
+            duration: j.actual_duration_minutes || 0,
+            earnings: (j.provider_earned_halala || 0) / 100,
+            status: j.status === 'completed' ? 'completed' : 'failed',
+            completedAt: j.completed_at || '',
+          })),
+        })
       } catch (error) {
         console.error('Failed to load provider data:', error)
+        // Fallback to mock data if API unreachable
+        setProviderData(generateMockData())
       } finally {
         setLoading(false)
       }

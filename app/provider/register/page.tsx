@@ -4,17 +4,17 @@ import { useState, useEffect } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 
+const API_BASE =
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? '/api/dc1'
+    : 'http://76.13.179.86:8083/api'
+
 interface RegistrationFormData {
   fullName: string
   email: string
   gpuModel: string
   operatingSystem: string
   phone: string
-}
-
-interface RegistrationResponse {
-  apiKey: string
-  providerId: string
 }
 
 interface StatusStep {
@@ -78,22 +78,31 @@ export default function ProviderRegisterPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/providers/register', {
+      const response = await fetch(`${API_BASE}/providers/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.fullName,
+          email: formData.email,
+          gpu_model: formData.gpuModel,
+          os: formData.operatingSystem,
+          phone: formData.phone || undefined,
+        }),
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.message || 'Registration failed')
+        throw new Error(errorData.error || 'Registration failed')
       }
 
-      const data: RegistrationResponse = await response.json()
-      setApiKey(data.apiKey)
-      setProviderId(data.providerId)
+      const data = await response.json()
+      setApiKey(data.api_key)
+      setProviderId(String(data.provider_id))
+
+      // Store provider key for dashboard access
+      localStorage.setItem('dc1_provider_key', data.api_key)
 
       // Mark first step as completed
       setStatusSteps((prev) =>
@@ -101,7 +110,7 @@ export default function ProviderRegisterPage() {
       )
 
       setShowSuccess(true)
-      startStatusPolling(data.apiKey)
+      startStatusPolling(data.api_key)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -109,32 +118,38 @@ export default function ProviderRegisterPage() {
     }
   }
 
-  // Poll status endpoint
+  // Poll provider status via heartbeat
   const startStatusPolling = (key: string) => {
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/providers/status/${key}`)
+        const response = await fetch(`${API_BASE}/providers/me`, {
+          headers: { 'x-provider-key': key },
+        })
         if (!response.ok) return
 
         const data = await response.json()
+        const provider = data.provider || {}
 
-        // Update status based on response
-        if (data.status) {
-          setStatusSteps((prev) =>
-            prev.map((s) => {
-              if (s.step <= data.currentStep) {
-                return {
-                  ...s,
-                  status: s.step === data.currentStep ? 'in-progress' : 'completed',
-                }
-              }
-              return s
-            })
-          )
+        // Determine current step based on provider status
+        let currentStep = 1 // registered
+        if (provider.status === 'online' || provider.status === 'idle') {
+          currentStep = 4 // fully connected and ready
+        } else if (provider.last_heartbeat) {
+          currentStep = 3 // connected (sent heartbeat)
+        } else if (provider.status === 'registered') {
+          currentStep = 1 // just registered, waiting for daemon
         }
 
+        setStatusSteps((prev) =>
+          prev.map((s) => {
+            if (s.step < currentStep) return { ...s, status: 'completed' }
+            if (s.step === currentStep) return { ...s, status: 'in-progress' }
+            return s
+          })
+        )
+
         // Stop polling if all steps are completed
-        if (data.currentStep >= 4) {
+        if (currentStep >= 4) {
           setStatusSteps((prev) =>
             prev.map((s) => ({ ...s, status: 'completed' }))
           )
@@ -267,12 +282,12 @@ export default function ProviderRegisterPage() {
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
                       <code className="text-dc1-amber">
-                        curl -fsSL https://dc1st.com/daemon/install.sh | bash -s {apiKey}
+                        curl -fsSL http://76.13.179.86:8083/api/providers/download/daemon?key={apiKey} -o dc1_daemon.py && python3 dc1_daemon.py
                       </code>
                       <button
                         onClick={() =>
                           copyToClipboard(
-                            `curl -fsSL https://dc1st.com/daemon/install.sh | bash -s ${apiKey}`,
+                            `curl -fsSL http://76.13.179.86:8083/api/providers/download/daemon?key=${apiKey} -o dc1_daemon.py && python3 dc1_daemon.py`,
                             1
                           )
                         }
@@ -317,12 +332,12 @@ export default function ProviderRegisterPage() {
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
                       <code className="text-dc1-amber">
-                        irm https://dc1st.com/daemon/install.ps1 | iex; Install-DC1Daemon -ApiKey {apiKey}
+                        irm http://76.13.179.86:8083/api/providers/download/installer?key={apiKey} | iex
                       </code>
                       <button
                         onClick={() =>
                           copyToClipboard(
-                            `irm https://dc1st.com/daemon/install.ps1 | iex; Install-DC1Daemon -ApiKey ${apiKey}`,
+                            `irm http://76.13.179.86:8083/api/providers/download/installer?key=${apiKey} | iex`,
                             2
                           )
                         }

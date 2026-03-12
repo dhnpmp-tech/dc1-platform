@@ -5,56 +5,89 @@ import { useRouter } from 'next/navigation'
 import Header from '@/app/components/layout/Header'
 import Footer from '@/app/components/layout/Footer'
 
+const API_BASE =
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? '/api/dc1'
+    : 'http://76.13.179.86:8083/api'
+
 type Role = 'provider' | 'renter' | 'admin'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [role, setRole] = useState<Role>('provider')
+  const [apiKey, setApiKey] = useState('')
+  const [role, setRole] = useState<Role>('renter')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (!apiKey.trim()) {
+      setError('Please enter your API key')
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      // Demo mode: any email/password combination works
-      // In production, this would call an actual auth API
-      if (!email.trim() || !password.trim()) {
-        setError('Please enter both email and password')
-        setIsLoading(false)
-        return
-      }
+      if (role === 'renter') {
+        // Verify renter API key against real backend
+        const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey.trim())}`)
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error || 'Invalid API key')
+        }
+        const data = await res.json()
+        if (!data.renter) throw new Error('Renter not found')
 
-      // Simulate auth delay
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      // Store mock session data
-      const sessionData = {
-        email,
-        role,
-        token: `${role}_token_${Date.now()}`,
-        userName: email.split('@')[0],
-      }
-
-      if (role === 'admin') {
-        localStorage.setItem('dc1_admin_token', sessionData.token)
-        localStorage.setItem('dc1_user_data', JSON.stringify(sessionData))
-        router.push('/admin')
-      } else if (role === 'provider') {
-        localStorage.setItem('dc1_provider_token', sessionData.token)
-        localStorage.setItem('dc1_user_data', JSON.stringify(sessionData))
-        router.push('/provider')
-      } else if (role === 'renter') {
-        localStorage.setItem('dc1_renter_token', sessionData.token)
-        localStorage.setItem('dc1_user_data', JSON.stringify(sessionData))
+        localStorage.setItem('dc1_renter_key', apiKey.trim())
+        localStorage.setItem('dc1_user_data', JSON.stringify({
+          role: 'renter',
+          userName: data.renter.name,
+          email: data.renter.email,
+        }))
         router.push('/renter')
+
+      } else if (role === 'provider') {
+        // Verify provider API key against real backend
+        const res = await fetch(`${API_BASE}/providers/me`, {
+          headers: { 'x-provider-key': apiKey.trim() },
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error || 'Invalid API key')
+        }
+        const data = await res.json()
+        if (!data.provider) throw new Error('Provider not found')
+
+        localStorage.setItem('dc1_provider_key', apiKey.trim())
+        localStorage.setItem('dc1_user_data', JSON.stringify({
+          role: 'provider',
+          userName: data.provider.name,
+          email: data.provider.email,
+        }))
+        router.push('/provider')
+
+      } else if (role === 'admin') {
+        // Admin uses hardcoded token for now
+        const res = await fetch(`${API_BASE}/admin/stats`, {
+          headers: { 'x-admin-key': apiKey.trim() },
+        })
+        if (!res.ok) {
+          throw new Error('Invalid admin key')
+        }
+
+        localStorage.setItem('dc1_admin_token', apiKey.trim())
+        localStorage.setItem('dc1_user_data', JSON.stringify({
+          role: 'admin',
+          userName: 'Admin',
+        }))
+        router.push('/admin')
       }
     } catch (err) {
-      setError('An error occurred during login. Please try again.')
+      setError(err instanceof Error ? err.message : 'Authentication failed')
+    } finally {
       setIsLoading(false)
     }
   }
@@ -79,14 +112,14 @@ export default function LoginPage() {
               Sign In
             </h1>
             <p className="text-sm text-dc1-text-secondary text-center mb-6">
-              Access your DC1 Dashboard
+              Enter your API key to access your dashboard
             </p>
 
             {/* Role Selector */}
             <div className="mb-6">
               <label className="label">Account Type</label>
               <div className="flex gap-3">
-                {(['provider', 'renter', 'admin'] as const).map((r) => (
+                {(['renter', 'provider', 'admin'] as const).map((r) => (
                   <label key={r} className="flex items-center gap-2 flex-1 cursor-pointer">
                     <input
                       type="radio"
@@ -111,32 +144,16 @@ export default function LoginPage() {
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label htmlFor="email" className="label">
-                  Email Address
+                <label htmlFor="apiKey" className="label">
+                  API Key
                 </label>
                 <input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input"
-                  disabled={isLoading}
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="password" className="label">
-                  Password
-                </label>
-                <input
-                  id="password"
+                  id="apiKey"
                   type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input"
+                  placeholder={role === 'renter' ? 'dc1-renter-...' : role === 'provider' ? 'dc1-provider-...' : 'admin key'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="input font-mono"
                   disabled={isLoading}
                   required
                 />
@@ -147,30 +164,19 @@ export default function LoginPage() {
                 disabled={isLoading}
                 className="btn btn-primary w-full"
               >
-                {isLoading ? 'Signing In...' : 'Sign In'}
+                {isLoading ? 'Verifying...' : 'Sign In'}
               </button>
             </form>
 
-            {/* Demo note */}
+            {/* Help text */}
             <div className="mt-6 pt-6 border-t border-dc1-border/30">
               <p className="text-xs text-dc1-text-secondary text-center mb-3">
-                Demo Mode: Use any email and password to login
+                Your API key was provided when you registered. Check your records or contact support.
               </p>
-              <div className="space-y-2">
-                <p className="text-xs text-dc1-text-secondary">
-                  <span className="font-semibold text-dc1-amber">Provider:</span> any@email.com / password
-                </p>
-                <p className="text-xs text-dc1-text-secondary">
-                  <span className="font-semibold text-dc1-amber">Renter:</span> any@email.com / password
-                </p>
-                <p className="text-xs text-dc1-text-secondary">
-                  <span className="font-semibold text-dc1-amber">Admin:</span> any@email.com / password
-                </p>
-              </div>
             </div>
 
             {/* Register links */}
-            <div className="mt-6 space-y-2 text-center text-sm">
+            <div className="mt-4 space-y-2 text-center text-sm">
               <p className="text-dc1-text-secondary">
                 New to DC1?{' '}
                 <a href="/provider/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">
@@ -178,9 +184,9 @@ export default function LoginPage() {
                 </a>
               </p>
               <p className="text-dc1-text-secondary">
-                Want to rent?{' '}
+                Want to rent GPUs?{' '}
                 <a href="/renter/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">
-                  Start Renting
+                  Register as Renter
                 </a>
               </p>
             </div>
