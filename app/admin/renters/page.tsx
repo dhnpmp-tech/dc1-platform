@@ -163,7 +163,7 @@ export default function RentersPage() {
                     <td className="text-sm">{r.total_jobs || 0}</td>
                     <td className="text-sm">{r.total_spent ? `${(r.total_spent / 100).toFixed(2)} SAR` : '—'}</td>
                     <td>
-                      <StatusBadge status={r.status === 'suspended' ? 'error' : 'online'}
+                      <StatusBadge status={r.status === 'suspended' ? 'warning' : 'online'}
                         label={r.status === 'suspended' ? 'Suspended' : 'Active'} />
                     </td>
                     <td className="space-x-2 flex">

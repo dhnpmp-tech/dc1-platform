@@ -116,26 +116,10 @@ export default function FleetHealthPage() {
         <>
           {/* Stat Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <StatCard
-              title="Total Events"
-              value={summary.total_events || 0}
-              unit=""
-            />
-            <StatCard
-              title="Total Crashes"
-              value={summary.total_crashes || 0}
-              unit=""
-            />
-            <StatCard
-              title="Job Success Rate"
-              value={summary.job_success_rate ? `${(summary.job_success_rate * 100).toFixed(1)}` : '0'}
-              unit="%"
-            />
-            <StatCard
-              title="Providers Online"
-              value={`${summary.providers_online || 0} / ${summary.providers_total || 0}`}
-              unit=""
-            />
+            <StatCard label="Total Events" value={String(summary.total_events || 0)} accent="default" />
+            <StatCard label="Total Crashes" value={String(summary.total_crashes || 0)} accent="error" />
+            <StatCard label="Job Success Rate" value={summary.job_success_rate || 'N/A'} accent="success" />
+            <StatCard label="Providers Online" value={`${summary.providers_online || 0} / ${summary.providers_total || 0}`} accent="amber" />
           </div>
 
           {/* Version Distribution */}

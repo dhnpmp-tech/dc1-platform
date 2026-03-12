@@ -90,7 +90,7 @@ export default function ProviderDetailPage() {
           <p className="text-dc1-text-secondary">{p.email} &middot; {p.gpu_model || p.gpu_name_detected || 'No GPU'}</p>
         </div>
         <div className="flex items-center gap-3">
-          <StatusBadge status={p.status === 'suspended' ? 'error' : p.is_online ? 'online' : 'offline'}
+          <StatusBadge status={p.status === 'suspended' ? 'warning' : p.is_online ? 'online' : 'offline'}
             label={p.status === 'suspended' ? 'Suspended' : p.is_online ? 'Online' : 'Offline'} />
           {p.status === 'suspended' ? (
             <button onClick={() => handleAction('unsuspend')} disabled={actionLoading}

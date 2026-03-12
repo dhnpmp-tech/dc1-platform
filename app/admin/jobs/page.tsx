@@ -79,14 +79,14 @@ export default function JobsPage() {
     return true
   })
 
-  const getStatusBadgeType = (status: string): 'online' | 'offline' | 'success' | 'error' | 'warning' | 'info' => {
+  const getStatusBadgeType = (status: string): 'online' | 'offline' | 'active' | 'inactive' | 'pending' | 'running' | 'completed' | 'failed' | 'paused' | 'warning' => {
     switch (status) {
-      case 'completed': return 'success'
-      case 'failed': return 'error'
-      case 'running': return 'info'
-      case 'pending': return 'warning'
+      case 'completed': return 'completed'
+      case 'failed': return 'failed'
+      case 'running': return 'running'
+      case 'pending': return 'pending'
       case 'cancelled': return 'offline'
-      case 'assigned': return 'info'
+      case 'assigned': return 'active'
       default: return 'offline'
     }
   }
@@ -106,11 +106,11 @@ export default function JobsPage() {
   }
 
   const stats = [
-    { label: 'Total Jobs', value: data?.total || 0, color: 'blue' },
-    { label: 'Completed', value: data?.completed || 0, color: 'green' },
-    { label: 'Failed', value: data?.failed || 0, color: 'red' },
-    { label: 'Active', value: (data?.pending || 0) + (data?.assigned || 0) + (data?.running || 0), color: 'yellow' },
-    { label: 'Total Revenue', value: `${((data?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`, color: 'amber' },
+    { label: 'Total Jobs', value: String(data?.total || 0), accent: 'default' as const },
+    { label: 'Completed', value: String(data?.completed || 0), accent: 'success' as const },
+    { label: 'Failed', value: String(data?.failed || 0), accent: 'error' as const },
+    { label: 'Active', value: String((data?.pending || 0) + (data?.assigned || 0) + (data?.running || 0)), accent: 'info' as const },
+    { label: 'Total Revenue', value: `${((data?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`, accent: 'amber' as const },
   ]
 
   return (
@@ -126,7 +126,7 @@ export default function JobsPage() {
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           {stats.map((stat, idx) => (
-            <StatCard key={idx} label={stat.label} value={stat.value} color={stat.color} />
+            <StatCard key={idx} label={stat.label} value={stat.value} accent={stat.accent} />
           ))}
         </div>
       )}

@@ -117,30 +117,10 @@ export default function SecurityPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          title="Total Events"
-          value={summary?.total_events ?? 0}
-          trend={undefined}
-          color="blue"
-        />
-        <StatCard
-          title="High Severity"
-          value={summary?.high_severity ?? 0}
-          trend={undefined}
-          color="red"
-        />
-        <StatCard
-          title="Medium Severity"
-          value={summary?.medium_severity ?? 0}
-          trend={undefined}
-          color="yellow"
-        />
-        <StatCard
-          title="Flagged Providers"
-          value={summary?.flagged_providers ?? 0}
-          trend={undefined}
-          color="orange"
-        />
+        <StatCard label="Total Events" value={String(summary?.total_events ?? 0)} accent="info" />
+        <StatCard label="High Severity" value={String(summary?.high_severity ?? 0)} accent="error" />
+        <StatCard label="Medium Severity" value={String(summary?.medium_severity ?? 0)} accent="amber" />
+        <StatCard label="Flagged Providers" value={String(summary?.flagged_providers ?? 0)} accent="default" />
       </div>
 
       {/* Events Table */}

@@ -145,7 +145,7 @@ export default function ProvidersPage() {
                     </td>
                     <td className="text-sm text-dc1-amber">{p.gpu_model || p.gpu_name_detected || '—'}</td>
                     <td>
-                      <StatusBadge status={p.status === 'suspended' ? 'error' : p.is_online ? 'online' : 'offline'}
+                      <StatusBadge status={p.status === 'suspended' ? 'warning' : p.is_online ? 'online' : 'offline'}
                         label={p.status === 'suspended' ? 'Suspended' : p.is_online ? 'Online' : p.last_heartbeat ? 'Offline' : 'Registered'} />
                     </td>
                     <td className="text-sm">{p.uptime_24h !== null ? `${p.uptime_24h}%` : '—'}</td>
