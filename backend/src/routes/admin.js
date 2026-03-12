@@ -596,4 +596,166 @@ router.post('/jobs/:id/cancel', (req, res) => {
   }
 });
 
+// ============================================================================
+// GET /api/admin/security/events - Security & audit events
+// ============================================================================
+router.get('/security/events', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const events = [];
+
+    // 1. Failed/timed-out jobs (high severity)
+    const failedJobs = db.all(
+      `SELECT j.id, j.job_id, j.status, j.error, j.completed_at as timestamp,
+              j.provider_id, p.name as provider_name, j.renter_id, r.name as renter_name
+       FROM jobs j
+       LEFT JOIN providers p ON j.provider_id = p.id
+       LEFT JOIN renters r ON j.renter_id = r.id
+       WHERE j.status = 'failed'
+       ORDER BY j.completed_at DESC LIMIT ?`, limit
+    );
+    failedJobs.forEach(j => {
+      events.push({
+        id: j.id,
+        timestamp: j.timestamp,
+        event_type: 'job_failure',
+        severity: j.error?.includes('timed out') ? 'medium' : 'high',
+        provider_id: j.provider_id,
+        provider_name: j.provider_name,
+        details: `Job ${j.job_id} failed: ${j.error || 'Unknown error'} (Renter: ${j.renter_name || 'Unknown'})`
+      });
+    });
+
+    // 2. Provider disconnections (medium severity)
+    const disconnected = db.all(
+      `SELECT id, name, last_heartbeat, provider_ip
+       FROM providers
+       WHERE last_heartbeat IS NOT NULL
+         AND datetime(last_heartbeat) < datetime('now', '-5 minutes')
+       ORDER BY last_heartbeat DESC LIMIT ?`, limit
+    );
+    disconnected.forEach(p => {
+      events.push({
+        id: 10000 + p.id,
+        timestamp: p.last_heartbeat,
+        event_type: 'provider_disconnect',
+        severity: 'medium',
+        provider_id: p.id,
+        provider_name: p.name,
+        details: `Provider went offline. Last heartbeat: ${p.last_heartbeat}. IP: ${p.provider_ip || 'Unknown'}`
+      });
+    });
+
+    // 3. Daemon crash events (high severity)
+    try {
+      const crashes = db.all(
+        `SELECT de.id, de.event_timestamp as timestamp, de.provider_id, de.details, de.severity,
+                p.name as provider_name
+         FROM daemon_events de
+         LEFT JOIN providers p ON de.provider_id = p.id
+         WHERE de.event_type IN ('daemon_crash', 'watchdog_restart', 'watchdog_givingup')
+         ORDER BY de.event_timestamp DESC LIMIT ?`, limit
+      );
+      crashes.forEach(c => {
+        events.push({
+          id: 20000 + c.id,
+          timestamp: c.timestamp,
+          event_type: c.details?.includes('watchdog') ? 'watchdog_restart' : 'daemon_crash',
+          severity: c.severity || 'high',
+          provider_id: c.provider_id,
+          provider_name: c.provider_name,
+          details: c.details || 'Daemon crash detected'
+        });
+      });
+    } catch(e) { /* daemon_events table may not exist yet */ }
+
+    // 4. Suspended accounts (low severity, informational)
+    const suspended = db.all(
+      `SELECT id, name, 'provider' as account_type, updated_at as timestamp FROM providers WHERE status = 'suspended'
+       UNION ALL
+       SELECT id, name, 'renter' as account_type, created_at as timestamp FROM renters WHERE status = 'suspended'`
+    );
+    suspended.forEach(s => {
+      events.push({
+        id: 30000 + s.id,
+        timestamp: s.timestamp,
+        event_type: 'account_suspended',
+        severity: 'low',
+        provider_id: s.account_type === 'provider' ? s.id : null,
+        provider_name: s.name,
+        details: `${s.account_type.charAt(0).toUpperCase() + s.account_type.slice(1)} "${s.name}" is suspended`
+      });
+    });
+
+    // 5. Refunded jobs (medium severity)
+    const refunded = db.all(
+      `SELECT j.id, j.job_id, j.refunded_at as timestamp, j.cost_halala,
+              j.provider_id, p.name as provider_name, r.name as renter_name
+       FROM jobs j
+       LEFT JOIN providers p ON j.provider_id = p.id
+       LEFT JOIN renters r ON j.renter_id = r.id
+       WHERE j.refunded_at IS NOT NULL
+       ORDER BY j.refunded_at DESC LIMIT ?`, limit
+    );
+    refunded.forEach(j => {
+      events.push({
+        id: 40000 + j.id,
+        timestamp: j.timestamp,
+        event_type: 'job_refunded',
+        severity: 'medium',
+        provider_id: j.provider_id,
+        provider_name: j.provider_name,
+        details: `Refunded ${j.cost_halala} halala (${(j.cost_halala/100).toFixed(2)} SAR) for job ${j.job_id} to ${j.renter_name}`
+      });
+    });
+
+    // Sort all events by timestamp descending, limit
+    events.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+    res.json({ events: events.slice(0, limit) });
+  } catch (error) {
+    console.error('Security events error:', error);
+    res.status(500).json({ error: 'Failed to fetch security events' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/security/summary - Security summary stats
+// ============================================================================
+router.get('/security/summary', (req, res) => {
+  try {
+    const failedJobs = db.get('SELECT COUNT(*) as cnt FROM jobs WHERE status = ?', 'failed') || { cnt: 0 };
+
+    let crashCount = 0;
+    try {
+      const cc = db.get(
+        `SELECT COUNT(*) as cnt FROM daemon_events WHERE event_type IN ('daemon_crash', 'watchdog_restart', 'watchdog_givingup')`
+      );
+      crashCount = cc?.cnt || 0;
+    } catch(e) {}
+
+    const disconnectedProviders = db.get(
+      `SELECT COUNT(*) as cnt FROM providers
+       WHERE last_heartbeat IS NOT NULL AND datetime(last_heartbeat) < datetime('now', '-5 minutes')`
+    ) || { cnt: 0 };
+
+    const suspendedAccounts = db.get(
+      `SELECT
+        (SELECT COUNT(*) FROM providers WHERE status = 'suspended') +
+        (SELECT COUNT(*) FROM renters WHERE status = 'suspended') as cnt`
+    ) || { cnt: 0 };
+
+    const totalEvents = failedJobs.cnt + crashCount + disconnectedProviders.cnt + suspendedAccounts.cnt;
+
+    res.json({
+      total_events: totalEvents,
+      high_severity: failedJobs.cnt + crashCount,
+      medium_severity: disconnectedProviders.cnt,
+      flagged_providers: disconnectedProviders.cnt + (db.get("SELECT COUNT(*) as cnt FROM providers WHERE status = 'suspended'") || { cnt: 0 }).cnt
+    });
+  } catch (error) {
+    console.error('Security summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch security summary' });
+  }
+});
+
 module.exports = router;

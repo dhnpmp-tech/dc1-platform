@@ -62,8 +62,8 @@ export default function SecurityPage() {
     try {
       setLoading(true)
       const [eventsRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/security/events?limit=50`),
-        fetch(`${API_BASE}/security/summary`)
+        fetch(`${API_BASE}/admin/security/events?limit=50`, { headers: { 'x-admin-token': token || '' } }),
+        fetch(`${API_BASE}/admin/security/summary`, { headers: { 'x-admin-token': token || '' } })
       ])
 
       if (eventsRes.status === 401 || summaryRes.status === 401) {
