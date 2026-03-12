@@ -204,6 +204,7 @@ export default function RenterDashboard() {
         if (data.renter) {
           setRenter(data.renter)
           setRenterKey(key)
+          localStorage.setItem('dc1_renter_key', key)
           fetchGPUs()
           fetchJobs(key)
         } else {
