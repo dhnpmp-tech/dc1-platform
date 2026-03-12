@@ -13,7 +13,6 @@ type JobType = 'llm_inference' | 'image_generation';
 const LLM_MODELS = [
   { id: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0', label: 'TinyLlama 1.1B Chat', vram: '~2 GB', speed: 'Fast' },
   { id: 'microsoft/phi-2', label: 'Microsoft Phi-2 (2.7B)', vram: '~5 GB', speed: 'Medium' },
-  { id: 'mistralai/Mistral-7B-Instruct-v0.2', label: 'Mistral 7B Instruct', vram: '~14 GB', speed: 'Slow' },
 ] as const;
 
 const SD_MODELS = [

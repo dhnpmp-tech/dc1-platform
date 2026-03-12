@@ -51,6 +51,25 @@ function requireRenter(req, res, next) {
   next();
 }
 
+// ── Queue helper: promote next queued job for a provider ─────────────────────
+function promoteNextQueuedJob(providerId) {
+  const nextQueued = db.get(
+    `SELECT * FROM jobs WHERE provider_id = ? AND status = 'queued' ORDER BY created_at ASC LIMIT 1`,
+    [providerId]
+  );
+  if (nextQueued) {
+    const timeout = nextQueued.max_duration_seconds || 1800;
+    const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
+    db.run(
+      `UPDATE jobs SET status = 'pending', timeout_at = ? WHERE id = ?`,
+      [timeoutAt, nextQueued.id]
+    );
+    console.log(`[Queue] Auto-promoted job ${nextQueued.job_id} from queued → pending for provider ${providerId}`);
+    return nextQueued;
+  }
+  return null;
+}
+
 // Cost rates in halala per minute by job type
 const COST_RATES = {
   'llm-inference': 15,    // 15 halala/min
@@ -312,14 +331,12 @@ router.post('/submit', requireRenter, (req, res) => {
       return res.status(400).json({ error: 'Provider is not online', provider_status: provider.status });
     }
 
-    // Check provider doesn't already have a running job
-    const existingJob = db.get(
-      `SELECT id FROM jobs WHERE provider_id = ? AND status = 'running'`,
+    // Check if provider is busy (has a running or pending job)
+    const busyJob = db.get(
+      `SELECT id, job_id, status FROM jobs WHERE provider_id = ? AND status IN ('running', 'pending')`,
       provider_id
     );
-    if (existingJob) {
-      return res.status(409).json({ error: 'Provider already has a running job', existing_job_id: existingJob.id });
-    }
+    const isQueued = !!busyJob; // Will create as 'queued' instead of 'pending'
 
     // Validate GPU requirements if specified
     if (gpu_requirements) {
@@ -388,22 +405,34 @@ router.post('/submit', requireRenter, (req, res) => {
     const taskSpecStr = finalTaskSpec ? (typeof finalTaskSpec === 'string' ? finalTaskSpec : JSON.stringify(finalTaskSpec)) : null;
     const taskSpecHmac = taskSpecStr ? signTaskSpec(taskSpecStr) : null;
 
+    // If provider is busy, job goes into 'queued'; otherwise 'pending' (ready for daemon)
+    const initialStatus = isQueued ? 'queued' : 'pending';
+
     const result = db.run(
       `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, status, submitted_at, duration_minutes,
         cost_halala, gpu_requirements, task_spec, task_spec_hmac, max_duration_seconds, timeout_at, notes, created_at)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      job_id, provider_id, req.renter.id, job_type, now, duration_minutes, cost_halala,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      job_id, provider_id, req.renter.id, job_type, initialStatus, now, duration_minutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
       taskSpecStr,
       taskSpecHmac,
       timeout,
-      timeoutAt,
+      isQueued ? null : timeoutAt, // Don't start timeout clock for queued jobs
       null,
       now
     );
 
-    // Job stays 'pending' until daemon picks it up and sets 'running'
     const job = db.get('SELECT * FROM jobs WHERE id = ?', result.lastInsertRowid);
+
+    // Calculate queue position if queued
+    let queue_position = null;
+    if (isQueued) {
+      const ahead = db.get(
+        `SELECT COUNT(*) as cnt FROM jobs WHERE provider_id = ? AND status IN ('queued', 'pending', 'running') AND id < ?`,
+        provider_id, job.id
+      );
+      queue_position = ahead ? ahead.cnt : 1;
+    }
 
     res.status(201).json({
       success: true,
@@ -419,10 +448,12 @@ router.post('/submit', requireRenter, (req, res) => {
         duration_minutes: job.duration_minutes,
         cost_halala: job.cost_halala,
         max_duration_seconds: timeout,
-        timeout_at: timeoutAt,
+        timeout_at: job.timeout_at,
         gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
-        task_spec_signed: !!taskSpecHmac
-      }
+        task_spec_signed: !!taskSpecHmac,
+        queue_position: queue_position
+      },
+      ...(isQueued ? { queued: true, message: `Provider is busy. Your job is #${queue_position} in queue and will run automatically when the provider is free.` } : {})
     });
   } catch (error) {
     console.error('Job submit error:', error);
@@ -519,6 +550,9 @@ router.post('/:job_id/result', (req, res) => {
       [providerEarned / 100, job.provider_id]
     );
 
+    // ── Auto-dispatch: promote next queued job for this provider ──────
+    const promoted = promoteNextQueuedJob(job.provider_id);
+
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', [job.id]);
     res.json({
       success: true,
@@ -527,7 +561,8 @@ router.post('/:job_id/result', (req, res) => {
         actual_cost_halala: actualCostHalala,
         provider_earned_halala: providerEarned,
         dc1_fee_halala: dc1Fee
-      }
+      },
+      ...(promoted ? { next_job_promoted: { job_id: promoted.job_id, renter_id: promoted.renter_id } } : {})
     });
   } catch (error) {
     console.error('Job result error:', error);
@@ -539,11 +574,28 @@ router.post('/:job_id/result', (req, res) => {
 router.get('/active', (req, res) => {
   try {
     const jobs = db.all(
-      `SELECT * FROM jobs WHERE status IN ('pending', 'running') ORDER BY submitted_at DESC`
+      `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`
     );
     res.json({ jobs });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch active jobs' });
+  }
+});
+
+// GET /api/jobs/queue/:provider_id — show queue for a provider
+router.get('/queue/:provider_id', (req, res) => {
+  try {
+    const jobs = db.all(
+      `SELECT j.id, j.job_id, j.renter_id, j.job_type, j.status, j.submitted_at, j.duration_minutes, j.cost_halala,
+              r.name as renter_name
+       FROM jobs j LEFT JOIN renters r ON j.renter_id = r.id
+       WHERE j.provider_id = ? AND j.status IN ('queued', 'pending', 'running')
+       ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'queued' THEN 2 END, j.created_at ASC`,
+      [req.params.provider_id]
+    );
+    res.json({ queue: jobs, total: jobs.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch queue' });
   }
 });
 
@@ -623,6 +675,16 @@ router.get('/:job_id', (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
+
+    // Add queue position for queued jobs
+    if (job.status === 'queued') {
+      const ahead = db.get(
+        `SELECT COUNT(*) as cnt FROM jobs WHERE provider_id = ? AND status IN ('queued', 'pending', 'running') AND created_at < ?`,
+        job.provider_id, job.created_at
+      );
+      job.queue_position = ahead ? ahead.cnt : 1;
+    }
+
     res.json({ job });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch job' });
@@ -719,6 +781,15 @@ router.post('/:job_id/cancel', (req, res) => {
       `UPDATE jobs SET status = 'cancelled', completed_at = ? WHERE id = ?`,
       now, job.id
     );
+
+    // Refund renter for cancelled job
+    if (job.renter_id && job.cost_halala > 0) {
+      db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+      db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+    }
+
+    // Auto-dispatch: promote next queued job for this provider
+    promoteNextQueuedJob(job.provider_id);
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
     res.json({ success: true, job: updated });
@@ -1002,6 +1073,8 @@ function enforceJobTimeouts() {
         } catch(e) { console.error('[timeout] Refund error:', e); }
       }
       console.log(`[timeout] Job ${job.job_id} timed out (provider ${job.provider_id})`);
+      // Auto-dispatch: promote next queued job for this provider
+      promoteNextQueuedJob(job.provider_id);
     }
 
     return timedOut.length;
