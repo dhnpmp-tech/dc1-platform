@@ -215,13 +215,13 @@ export default function ProviderDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             label="Today's Earnings"
-            value={`$${providerData.todayEarnings.toFixed(2)}`}
+            value={`${providerData.todayEarnings.toFixed(2)} SAR`}
             accent="amber"
             icon={<CurrencyIcon />}
           />
           <StatCard
             label="Total Earnings"
-            value={`$${providerData.totalEarnings.toFixed(2)}`}
+            value={`${providerData.totalEarnings.toFixed(2)} SAR`}
             accent="success"
             icon={<CurrencyIcon />}
           />
@@ -355,20 +355,22 @@ export default function ProviderDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {providerData.recentJobs.map((job) => (
+                {providerData.recentJobs.length > 0 ? providerData.recentJobs.map((job) => (
                   <tr key={job.id}>
                     <td>{job.jobType}</td>
-                    <td>{job.duration} min</td>
-                    <td className="font-semibold text-status-success">${job.earnings.toFixed(2)}</td>
+                    <td>{job.duration > 0 ? `${job.duration} min` : '<1 min'}</td>
+                    <td className="font-semibold text-status-success">{job.earnings > 0 ? `${job.earnings.toFixed(2)} SAR` : '—'}</td>
                     <td>
                       <StatusBadge
                         status={job.status === 'completed' ? 'completed' : 'failed'}
                         size="sm"
                       />
                     </td>
-                    <td className="text-dc1-text-secondary">{job.completedAt}</td>
+                    <td className="text-dc1-text-secondary">{job.completedAt ? new Date(job.completedAt).toLocaleString() : '—'}</td>
                   </tr>
-                ))}
+                )) : (
+                  <tr><td colSpan={5} className="text-center text-dc1-text-secondary py-6">No jobs yet</td></tr>
+                )}
               </tbody>
             </table>
           </div>

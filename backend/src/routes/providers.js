@@ -338,17 +338,24 @@ router.get('/me', async (req, res) => {
         const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
 
         const todayEarnings = db.get(
-            `SELECT COALESCE(SUM(cost_halala), 0) as total FROM jobs WHERE provider_id = ? AND status = 'completed' AND completed_at >= ?`,
+            `SELECT COALESCE(SUM(provider_earned_halala), 0) as total FROM jobs WHERE provider_id = ? AND status = 'completed' AND completed_at >= ?`,
             provider.id, todayStart.toISOString()
         );
         const weekEarnings = db.get(
-            `SELECT COALESCE(SUM(cost_halala), 0) as total FROM jobs WHERE provider_id = ? AND status = 'completed' AND completed_at >= ?`,
+            `SELECT COALESCE(SUM(provider_earned_halala), 0) as total FROM jobs WHERE provider_id = ? AND status = 'completed' AND completed_at >= ?`,
             provider.id, weekStart.toISOString()
         );
 
         // Active job
         const activeJob = db.get(
             `SELECT id, job_id, job_type, started_at, cost_halala FROM jobs WHERE provider_id = ? AND status = 'running' LIMIT 1`,
+            provider.id
+        );
+
+        // Recent completed/failed jobs for activity table
+        const recentJobs = db.all(
+            `SELECT id, job_id, job_type, status, submitted_at, completed_at, actual_cost_halala, provider_earned_halala, dc1_fee_halala
+             FROM jobs WHERE provider_id = ? ORDER BY submitted_at DESC LIMIT 20`,
             provider.id
         );
 
@@ -387,7 +394,8 @@ router.get('/me', async (req, res) => {
                 today_earnings_halala: todayEarnings.total,
                 week_earnings_halala: weekEarnings.total,
                 active_job: activeJob || null
-            }
+            },
+            recent_jobs: recentJobs
         };
         res.json(payload);
     } catch (error) {
