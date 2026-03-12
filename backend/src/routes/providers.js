@@ -71,6 +71,36 @@ router.post('/register', async (req, res) => {
 });
 
 // ============================================================================
+// POST /api/providers/login-email - Login with email instead of API key
+// ============================================================================
+router.post('/login-email', (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        const provider = db.get('SELECT * FROM providers WHERE LOWER(email) = LOWER(?)', email.trim());
+        if (!provider) {
+            return res.status(404).json({ error: 'No provider account found with this email. Register first at /provider/register' });
+        }
+
+        res.json({
+            success: true,
+            api_key: provider.api_key,
+            provider: {
+                id: provider.id,
+                name: provider.name,
+                email: provider.email,
+                gpu_model: provider.gpu_model,
+                status: provider.status,
+            }
+        });
+    } catch (error) {
+        console.error('Provider email login error:', error);
+        res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/installer - Download installer (with validation)
 // ============================================================================
 router.get('/installer', (req, res) => {

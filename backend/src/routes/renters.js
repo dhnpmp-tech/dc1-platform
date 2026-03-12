@@ -193,4 +193,47 @@ router.get('/balance', (req, res) => {
   }
 });
 
+// POST /api/renters/login-email — Login with email instead of API key
+router.post('/login-email', (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    const renter = db.get('SELECT * FROM renters WHERE email = ? AND status = ?', email.trim().toLowerCase(), 'active');
+    if (!renter) {
+      // Also try case-insensitive
+      const renterCI = db.get('SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?', email.trim(), 'active');
+      if (!renterCI) {
+        return res.status(404).json({ error: 'No renter account found with this email. Register first at /renter/register' });
+      }
+      return res.json({
+        success: true,
+        api_key: renterCI.api_key,
+        renter: {
+          id: renterCI.id,
+          name: renterCI.name,
+          email: renterCI.email,
+          organization: renterCI.organization,
+          balance_halala: renterCI.balance_halala,
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      api_key: renter.api_key,
+      renter: {
+        id: renter.id,
+        name: renter.name,
+        email: renter.email,
+        organization: renter.organization,
+        balance_halala: renter.balance_halala,
+      }
+    });
+  } catch (error) {
+    console.error('Renter email login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
 module.exports = router;

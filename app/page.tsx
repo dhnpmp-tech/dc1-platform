@@ -76,6 +76,12 @@ export default function HomePage() {
                 Rent GPUs
               </Link>
             </div>
+            <p className="text-dc1-text-secondary text-sm mt-6">
+              Already have an account?{' '}
+              <Link href="/login" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold underline underline-offset-2">
+                Sign in here
+              </Link>
+            </p>
           </div>
         </div>
       </section>
