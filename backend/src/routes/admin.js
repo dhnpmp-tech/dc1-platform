@@ -368,4 +368,232 @@ router.get('/daemon-health', (req, res) => {
   }
 });
 
+// ============================================================================
+// GET /api/admin/renters - List all renters with stats
+// ============================================================================
+router.get('/renters', (req, res) => {
+  try {
+    const renters = db.all(
+      `SELECT id, name, email, organization, balance_halala, status, created_at
+       FROM renters ORDER BY created_at DESC`
+    );
+    const enriched = renters.map(r => {
+      const jobStats = db.get(
+        `SELECT COUNT(*) as total_jobs,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs,
+                SUM(cost_halala) as total_spent_halala
+         FROM jobs WHERE renter_id = ?`, r.id
+      ) || {};
+      return { ...r, ...jobStats };
+    });
+    res.json({
+      total: enriched.length,
+      active: enriched.filter(r => r.status === 'active').length,
+      suspended: enriched.filter(r => r.status === 'suspended').length,
+      renters: enriched
+    });
+  } catch (error) {
+    console.error('Admin renters error:', error);
+    res.status(500).json({ error: 'Failed to fetch renters' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/renters/:id - Renter detail
+// ============================================================================
+router.get('/renters/:id', (req, res) => {
+  try {
+    const renter = db.get(
+      'SELECT id, name, email, organization, balance_halala, status, created_at FROM renters WHERE id = ?',
+      req.params.id
+    );
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const jobs = db.all(
+      'SELECT * FROM jobs WHERE renter_id = ? ORDER BY created_at DESC LIMIT 50',
+      req.params.id
+    );
+    const jobStats = db.get(
+      `SELECT COUNT(*) as total_jobs,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs,
+              SUM(cost_halala) as total_spent_halala
+       FROM jobs WHERE renter_id = ?`, req.params.id
+    ) || {};
+
+    res.json({ renter, jobs, stats: jobStats });
+  } catch (error) {
+    console.error('Admin renter detail error:', error);
+    res.status(500).json({ error: 'Failed to fetch renter detail' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/providers/:id/suspend - Suspend provider
+// ============================================================================
+router.post('/providers/:id/suspend', (req, res) => {
+  try {
+    const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+    db.run('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?',
+      'suspended', new Date().toISOString(), req.params.id);
+    res.json({ success: true, message: `Provider ${provider.name} suspended` });
+  } catch (error) {
+    console.error('Suspend provider error:', error);
+    res.status(500).json({ error: 'Failed to suspend provider' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/providers/:id/unsuspend - Unsuspend provider
+// ============================================================================
+router.post('/providers/:id/unsuspend', (req, res) => {
+  try {
+    const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+    db.run('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?',
+      'offline', new Date().toISOString(), req.params.id);
+    res.json({ success: true, message: `Provider ${provider.name} unsuspended` });
+  } catch (error) {
+    console.error('Unsuspend provider error:', error);
+    res.status(500).json({ error: 'Failed to unsuspend provider' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/renters/:id/suspend - Suspend renter
+// ============================================================================
+router.post('/renters/:id/suspend', (req, res) => {
+  try {
+    const renter = db.get('SELECT id, name, status FROM renters WHERE id = ?', req.params.id);
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+    db.run('UPDATE renters SET status = ? WHERE id = ?', 'suspended', req.params.id);
+    res.json({ success: true, message: `Renter ${renter.name} suspended` });
+  } catch (error) {
+    console.error('Suspend renter error:', error);
+    res.status(500).json({ error: 'Failed to suspend renter' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/renters/:id/unsuspend - Unsuspend renter
+// ============================================================================
+router.post('/renters/:id/unsuspend', (req, res) => {
+  try {
+    const renter = db.get('SELECT id, name, status FROM renters WHERE id = ?', req.params.id);
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+    db.run('UPDATE renters SET status = ? WHERE id = ?', 'active', req.params.id);
+    res.json({ success: true, message: `Renter ${renter.name} reactivated` });
+  } catch (error) {
+    console.error('Unsuspend renter error:', error);
+    res.status(500).json({ error: 'Failed to unsuspend renter' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/renters/:id/balance - Admin balance adjustment
+// ============================================================================
+router.post('/renters/:id/balance', (req, res) => {
+  try {
+    const { amount_halala, reason } = req.body;
+    if (!amount_halala || typeof amount_halala !== 'number') {
+      return res.status(400).json({ error: 'amount_halala (number) is required' });
+    }
+    const renter = db.get('SELECT id, name, balance_halala FROM renters WHERE id = ?', req.params.id);
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const newBalance = renter.balance_halala + amount_halala;
+    if (newBalance < 0) return res.status(400).json({ error: 'Balance cannot go below 0' });
+
+    db.run('UPDATE renters SET balance_halala = ? WHERE id = ?', newBalance, req.params.id);
+    res.json({
+      success: true,
+      renter_id: renter.id,
+      name: renter.name,
+      previous_balance: renter.balance_halala,
+      adjustment: amount_halala,
+      new_balance: newBalance,
+      reason: reason || 'Admin adjustment'
+    });
+  } catch (error) {
+    console.error('Balance adjustment error:', error);
+    res.status(500).json({ error: 'Failed to adjust balance' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/jobs - List all jobs with filters
+// ============================================================================
+router.get('/jobs', (req, res) => {
+  try {
+    const { status, type, provider_id, renter_id, limit: limitParam } = req.query;
+    let query = `SELECT j.*, p.name as provider_name, p.gpu_model,
+                        r.name as renter_name
+                 FROM jobs j
+                 LEFT JOIN providers p ON j.provider_id = p.id
+                 LEFT JOIN renters r ON j.renter_id = r.id
+                 WHERE 1=1`;
+    const params = [];
+    if (status) { query += ' AND j.status = ?'; params.push(status); }
+    if (type) { query += ' AND j.job_type = ?'; params.push(type); }
+    if (provider_id) { query += ' AND j.provider_id = ?'; params.push(provider_id); }
+    if (renter_id) { query += ' AND j.renter_id = ?'; params.push(renter_id); }
+    query += ' ORDER BY j.created_at DESC';
+    const limit = Math.min(parseInt(limitParam) || 100, 500);
+    query += ' LIMIT ?';
+    params.push(limit);
+
+    const jobs = db.all(query, ...params);
+    const statsRow = db.get(
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+              SUM(CASE WHEN status IN ('pending','assigned','running') THEN 1 ELSE 0 END) as active,
+              SUM(cost_halala) as total_revenue_halala
+       FROM jobs`
+    ) || {};
+
+    res.json({ stats: statsRow, jobs });
+  } catch (error) {
+    console.error('Admin jobs list error:', error);
+    res.status(500).json({ error: 'Failed to fetch jobs' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/jobs/:id/cancel - Force cancel a job with refund
+// ============================================================================
+router.post('/jobs/:id/cancel', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.id, req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.status === 'completed' || job.status === 'cancelled') {
+      return res.status(400).json({ error: `Job already ${job.status}` });
+    }
+
+    db.run('UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?',
+      'cancelled', new Date().toISOString(), job.id);
+
+    // Refund renter if job had a cost
+    let refunded = 0;
+    if (job.cost_halala && job.cost_halala > 0 && job.renter_id) {
+      db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?',
+        job.cost_halala, job.renter_id);
+      refunded = job.cost_halala;
+    }
+
+    res.json({
+      success: true,
+      job_id: job.job_id || job.id,
+      previous_status: job.status,
+      new_status: 'cancelled',
+      refunded_halala: refunded
+    });
+  } catch (error) {
+    console.error('Admin cancel job error:', error);
+    res.status(500).json({ error: 'Failed to cancel job' });
+  }
+});
+
 module.exports = router;
