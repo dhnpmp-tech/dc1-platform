@@ -102,13 +102,13 @@ export default function BillingPage() {
           <div className="table-container">
             <table className="table">
               <thead>
-                <tr><th>Job ID</th><th>Type</th><th>Status</th><th>Duration</th><th>Cost</th><th>Date</th></tr>
+                <tr><th>Job ID</th><th>Type</th><th>Status</th><th>Cost</th><th>Submitted</th><th>Completed</th></tr>
               </thead>
               <tbody>
                 {jobs.map((job: any) => (
                   <tr key={job.id}>
-                    <td className="font-mono text-sm text-dc1-amber">#{job.id}</td>
-                    <td className="text-sm">{job.job_type === 'image_gen' ? 'Image Gen' : 'LLM'}</td>
+                    <td className="font-mono text-sm text-dc1-amber">{job.job_id || `#${job.id}`}</td>
+                    <td className="text-sm">{job.job_type === 'image_generation' ? 'Image Gen' : job.job_type === 'llm_inference' ? 'LLM' : job.job_type}</td>
                     <td className="text-sm">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                         job.status === 'completed' ? 'bg-green-500/20 text-green-400' :
@@ -117,9 +117,9 @@ export default function BillingPage() {
                         'bg-gray-500/20 text-gray-400'
                       }`}>{job.status}</span>
                     </td>
-                    <td className="text-sm text-dc1-text-secondary">{job.execution_time_ms ? `${(job.execution_time_ms / 1000).toFixed(1)}s` : '—'}</td>
-                    <td className="text-sm font-medium">{job.total_cost_halala ? `${(job.total_cost_halala / 100).toFixed(2)} SAR` : '—'}</td>
-                    <td className="text-sm text-dc1-text-secondary">{job.created_at ? new Date(job.created_at).toLocaleDateString() : '—'}</td>
+                    <td className="text-sm font-medium">{job.actual_cost_halala ? `${(job.actual_cost_halala / 100).toFixed(2)} SAR` : '—'}</td>
+                    <td className="text-sm text-dc1-text-secondary">{job.submitted_at ? new Date(job.submitted_at).toLocaleDateString() : '—'}</td>
+                    <td className="text-sm text-dc1-text-secondary">{job.completed_at ? new Date(job.completed_at).toLocaleDateString() : '—'}</td>
                   </tr>
                 ))}
               </tbody>

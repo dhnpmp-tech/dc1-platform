@@ -798,7 +798,7 @@ def run_docker_job(job_type, task_spec, job_dir):
         return {"success": False, "error": "No script in task_spec"}
 
     task_path = os.path.join(job_dir, "task.py")
-    with open(task_path, "w") as f:
+    with open(task_path, "w", encoding="utf-8") as f:
         f.write(script)
 
     log.info(f"Docker exec: image={image}, job_dir={job_dir}")
@@ -809,7 +809,7 @@ def run_docker_job(job_type, task_spec, job_dir):
              "--memory", "16g", "--shm-size", "2g",
              "-v", f"{job_dir}:/dc1/job",
              image, "python", "/dc1/job/task.py"],
-            capture_output=True, text=True, timeout=JOB_TIMEOUT
+            capture_output=True, text=True, encoding="utf-8", timeout=JOB_TIMEOUT
         )
 
         stdout = result.stdout[:MAX_STDOUT]
@@ -846,7 +846,7 @@ def run_bare_metal_job(task_spec, job_id=None):
         return {"success": False, "error": "No script in task_spec"}
 
     # Write to temp file and execute
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(script)
         temp_path = f.name
 
@@ -856,11 +856,11 @@ def run_bare_metal_job(task_spec, job_id=None):
     stderr_path = temp_path + ".stderr"
     stdout_chunks = []
     try:
-        with open(stderr_path, "w") as stderr_file:
+        with open(stderr_path, "w", encoding="utf-8") as stderr_file:
             proc = subprocess.Popen(
                 [sys.executable, "-u", temp_path],  # -u: unbuffered stdout
                 stdout=subprocess.PIPE, stderr=stderr_file,
-                text=True
+                text=True, encoding="utf-8"
             )
 
             # Read stdout line by line with timeout
@@ -894,7 +894,7 @@ def run_bare_metal_job(task_spec, job_id=None):
         stdout = "".join(stdout_chunks)[:MAX_STDOUT]
         stderr = ""
         try:
-            with open(stderr_path, "r") as f:
+            with open(stderr_path, "r", encoding="utf-8") as f:
                 stderr = f.read()[:2000]
         except: pass
 
