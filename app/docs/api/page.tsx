@@ -4,7 +4,7 @@ export default function ApiDocsPage() {
   return (
     <LegalPage title="API Reference" lastUpdated="March 12, 2026">
       <h2>Base URL</h2>
-      <p>All API endpoints are available at <strong>https://dc1st.com/api/dc1</strong> (proxied) or directly at <strong>http://76.13.179.86:8083/api</strong>.</p>
+      <p>All API endpoints are available at <strong>https://dc1-platform.vercel.app/api/dc1</strong> (proxied) or directly at <strong>http://76.13.179.86:8083/api</strong>.</p>
 
       <h2>Authentication</h2>
       <p>Most endpoints require an API key. Providers pass their key as a <strong>?key=</strong> query parameter. Admin endpoints require an <strong>x-admin-token</strong> header.</p>

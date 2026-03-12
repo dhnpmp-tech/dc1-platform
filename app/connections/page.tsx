@@ -32,7 +32,7 @@ interface AgentHeartbeat {
 }
 
 const mockServices: ServiceStatus[] = [
-  { name: 'dc1st.com API', status: 'online', uptime: 99.94, latencyMs: 42, lastError: null },
+  { name: 'dc1-platform.vercel.app API', status: 'online', uptime: 99.94, latencyMs: 42, lastError: null },
   { name: 'Supabase DB', status: 'online', uptime: 99.99, latencyMs: 18, lastError: null },
   { name: 'GitHub', status: 'online', uptime: 99.97, latencyMs: 65, lastError: null },
   { name: 'AWS S3', status: 'online', uptime: 99.99, latencyMs: 31, lastError: null },
