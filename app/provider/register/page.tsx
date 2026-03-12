@@ -122,9 +122,7 @@ export default function ProviderRegisterPage() {
   const startStatusPolling = (key: string) => {
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`${API_BASE}/providers/me`, {
-          headers: { 'x-provider-key': key },
-        })
+        const response = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(key)}`)
         if (!response.ok) return
 
         const data = await response.json()
@@ -332,12 +330,12 @@ export default function ProviderRegisterPage() {
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
                       <code className="text-dc1-amber">
-                        irm http://76.13.179.86:8083/api/providers/download/installer?key={apiKey} | iex
+                        irm http://76.13.179.86:8083/api/providers/download/setup?key={apiKey}&os=windows | iex
                       </code>
                       <button
                         onClick={() =>
                           copyToClipboard(
-                            `irm http://76.13.179.86:8083/api/providers/download/installer?key=${apiKey} | iex`,
+                            `irm http://76.13.179.86:8083/api/providers/download/setup?key=${apiKey}&os=windows | iex`,
                             2
                           )
                         }

@@ -125,9 +125,7 @@ export default function ProviderDashboard() {
 
       try {
         // Fetch real provider data from VPS
-        const res = await fetch(`${API_BASE}/providers/me`, {
-          headers: { 'x-provider-key': apiKey },
-        })
+        const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey)}`)
 
         if (!res.ok) {
           // Invalid key — clear and redirect
@@ -146,7 +144,7 @@ export default function ProviderDashboard() {
           status: provider.status === 'online' || provider.status === 'idle' ? 'online' : 'offline',
           todayEarnings: (provider.today_earnings_halala || 0) / 100,
           totalEarnings: (provider.total_earnings_halala || 0) / 100,
-          jobsCompleted: provider.jobs_completed || 0,
+          jobsCompleted: provider.total_jobs || 0,
           gpuUptime: provider.uptime_percent || 0,
           gpuModel: provider.gpu_model || 'Unknown GPU',
           temperature: provider.gpu_temp || 0,

@@ -51,9 +51,7 @@ export default function LoginPage() {
 
       } else if (role === 'provider') {
         // Verify provider API key against real backend
-        const res = await fetch(`${API_BASE}/providers/me`, {
-          headers: { 'x-provider-key': apiKey.trim() },
-        })
+        const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey.trim())}`)
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
           throw new Error(data.error || 'Invalid API key')
@@ -71,8 +69,8 @@ export default function LoginPage() {
 
       } else if (role === 'admin') {
         // Admin uses hardcoded token for now
-        const res = await fetch(`${API_BASE}/admin/stats`, {
-          headers: { 'x-admin-key': apiKey.trim() },
+        const res = await fetch(`${API_BASE}/admin/dashboard`, {
+          headers: { 'x-admin-token': apiKey.trim() },
         })
         if (!res.ok) {
           throw new Error('Invalid admin key')
