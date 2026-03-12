@@ -1,624 +1,336 @@
-'use client';
+'use client'
 
-import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
-import Link from 'next/link';
+import { useState, useEffect } from 'react'
+import DashboardLayout from '../components/layout/DashboardLayout'
+import StatCard from '../components/ui/StatCard'
+import StatusBadge from '../components/ui/StatusBadge'
 
-const API_BASE = typeof window !== 'undefined' && window.location.protocol === 'https:'
-  ? '/api/dc1'
-  : 'http://76.13.179.86:8083/api';
+const API_BASE =
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? '/api/dc1'
+    : 'http://76.13.179.86:8083/api'
 
-// ── Interfaces ────────────────────────────────────────────────────
 interface RenterInfo {
-  id: number;
-  name: string;
-  email: string;
-  organization: string;
-  balance_halala: number;
-  api_key: string;
-  total_spent_halala?: number;
-  total_jobs?: number;
+  id: number
+  name: string
+  email: string
+  organization: string
+  balance_halala: number
+  api_key: string
+  total_spent_halala?: number
+  total_jobs?: number
 }
 
-interface Provider {
-  id: number;
-  name: string;
-  gpu_model: string;
-  vram_gb: number;
-  vram_mib: number;
-  status: string;
+interface GPU {
+  id: number
+  provider_id: number
+  provider_name: string
+  gpu_model: string
+  vram_gb: number
+  price_per_hour: number
+  status: 'online' | 'offline'
 }
 
-interface RenterJob {
-  id: number;
-  job_id: string;
-  job_type: string;
-  status: string;
-  submitted_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  error: string | null;
-  actual_cost_halala: number | null;
-  cost_halala: number;
-  actual_duration_minutes: number | null;
-  duration_minutes: number;
-  provider_id: number;
+interface Job {
+  id: string
+  job_type: string
+  status: 'running' | 'completed' | 'pending' | 'failed'
+  cost: number
+  duration: number
+  submitted_at: string
 }
 
-type Tab = 'overview' | 'jobs' | 'playground' | 'topup';
+// SVG Icon Components
+const HomeIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 11l4-4m0 0l4 4m-4-4V5" />
+  </svg>
+)
 
-// ── Main Component with Suspense ──────────────────────────────────
-export default function RenterDashboardPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-[#00D9FF] border-t-transparent rounded-full" />
-      </div>
-    }>
-      <RenterDashboard />
-    </Suspense>
-  );
-}
+const MarketplaceIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+  </svg>
+)
 
-function RenterDashboard() {
-  const searchParams = useSearchParams();
-  const keyFromUrl = searchParams.get('key');
+const JobsIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+  </svg>
+)
 
-  // Auth
-  const [renterKey, setRenterKey] = useState('');
-  const [renter, setRenter] = useState<RenterInfo | null>(null);
-  const [authChecking, setAuthChecking] = useState(true);
+const BillingIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m4 0h1M9 19h6a2 2 0 002-2V5a2 2 0 00-2-2H9a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>
+)
 
-  // Navigation
-  const [tab, setTab] = useState<Tab>('overview');
+export default function RenterDashboard() {
+  const [renter, setRenter] = useState<RenterInfo | null>(null)
+  const [gpus, setGpus] = useState<GPU[]>([])
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [authChecking, setAuthChecking] = useState(true)
+  const [renterKey, setRenterKey] = useState('')
 
-  // Data
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [jobs, setJobs] = useState<RenterJob[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
-
-  // Top-up
-  const [topupAmount, setTopupAmount] = useState(10);
-  const [topupLoading, setTopupLoading] = useState(false);
-  const [topupMsg, setTopupMsg] = useState('');
-
-  const inputCls = 'w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00D9FF]/60 transition';
-
-  // ── Auth ──────────────────────────────────────────────────────
+  // Check authentication
   useEffect(() => {
-    const saved = keyFromUrl || (typeof window !== 'undefined' ? sessionStorage.getItem('dc1_renter_key') : null);
-    if (saved) {
-      setRenterKey(saved);
-      verifyKey(saved);
+    const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
+    if (key) {
+      setRenterKey(key)
+      verifyKey(key)
     } else {
-      setAuthChecking(false);
+      setAuthChecking(false)
     }
-  }, []);
+  }, [])
 
-  async function verifyKey(key: string) {
-    setAuthChecking(true);
+  const verifyKey = async (key: string) => {
+    setAuthChecking(true)
     try {
-      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`);
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json()
         if (data.renter) {
-          setRenter(data.renter);
-          setRenterKey(key);
-          sessionStorage.setItem('dc1_renter_key', key);
+          setRenter(data.renter)
+          setRenterKey(key)
+          // Fetch additional data
+          fetchGPUs()
+          fetchJobs(key)
         } else {
-          setRenter(null);
-          sessionStorage.removeItem('dc1_renter_key');
+          setRenter(null)
+          localStorage.removeItem('dc1_renter_key')
         }
       } else {
-        setRenter(null);
-        sessionStorage.removeItem('dc1_renter_key');
+        setRenter(null)
+        localStorage.removeItem('dc1_renter_key')
       }
-    } catch { /* ignore */ }
-    finally { setAuthChecking(false); }
+    } catch (err) {
+      console.error('Auth error:', err)
+      setRenter(null)
+    } finally {
+      setAuthChecking(false)
+    }
   }
 
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (renterKey.trim()) verifyKey(renterKey.trim());
-  }
-
-  function logout() {
-    sessionStorage.removeItem('dc1_renter_key');
-    setRenter(null);
-    setRenterKey('');
-  }
-
-  // ── Data Fetching ────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    if (!renter) return;
-    setLoadingData(true);
+  const fetchGPUs = async () => {
     try {
-      const [provRes, jobsRes] = await Promise.all([
-        fetch(`${API_BASE}/renters/available-providers`),
-        fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(renterKey)}`),
-      ]);
-
-      if (provRes.ok) {
-        const provData = await provRes.json();
-        setProviders(provData.providers || []);
-      }
-
-      if (jobsRes.ok) {
-        const meData = await jobsRes.json();
-        if (meData.renter) setRenter(meData.renter);
-        if (meData.recent_jobs) setJobs(meData.recent_jobs);
-        else if (meData.jobs) setJobs(meData.jobs);
-      }
-    } catch { /* ignore */ }
-    finally { setLoadingData(false); }
-  }, [renter, renterKey]);
-
-  useEffect(() => {
-    if (renter) fetchData();
-  }, [renter]);
-
-  // ── Top Up ───────────────────────────────────────────────────
-  async function handleTopup() {
-    setTopupLoading(true);
-    setTopupMsg('');
-    try {
-      const res = await fetch(`${API_BASE}/renters/topup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-renter-key': renterKey },
-        body: JSON.stringify({ amount_halala: topupAmount * 100 }),
-      });
+      const res = await fetch(`${API_BASE}/renters/available-providers`)
       if (res.ok) {
-        const data = await res.json();
-        setTopupMsg(`Added ${topupAmount} SAR. New balance: ${((data.new_balance_halala || 0) / 100).toFixed(2)} SAR`);
-        verifyKey(renterKey); // refresh balance
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setTopupMsg(`Error: ${err.error || 'Failed to top up'}`);
+        const data = await res.json()
+        const gpusData = data.providers?.map((p: any) => ({
+          id: p.id,
+          provider_id: p.id,
+          provider_name: p.name,
+          gpu_model: p.gpu_model,
+          vram_gb: p.vram_gb,
+          price_per_hour: 0.5,
+          status: 'online' as const,
+        })) || []
+        setGpus(gpusData)
       }
-    } catch {
-      setTopupMsg('Network error');
-    } finally { setTopupLoading(false); }
+    } catch (err) {
+      console.error('Failed to fetch GPUs:', err)
+    }
   }
 
-  // ── Auth Gate ────────────────────────────────────────────────
+  const fetchJobs = async (key: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
+      if (res.ok) {
+        const data = await res.json()
+        const jobsData = data.recent_jobs?.map((j: any) => ({
+          id: j.job_id,
+          job_type: j.job_type,
+          status: j.status,
+          cost: j.cost_halala / 100,
+          duration: j.duration_minutes,
+          submitted_at: j.submitted_at,
+        })) || []
+        setJobs(jobsData)
+      }
+    } catch (err) {
+      console.error('Failed to fetch jobs:', err)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('dc1_renter_key')
+    setRenter(null)
+    setRenterKey('')
+    window.location.href = '/'
+  }
+
+  // Navigation items
+  const navItems = [
+    { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
+    { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
+  ]
+
   if (authChecking) {
     return (
-      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-[#00D9FF] border-t-transparent rounded-full" />
+      <div className="min-h-screen bg-dc1-void flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full" />
       </div>
-    );
+    )
   }
 
   if (!renter) {
     return (
-      <div className="min-h-screen bg-[#0d1117] text-white">
-        <div className="max-w-md mx-auto px-4 pt-20">
-          <Link href="/" className="text-white/40 text-sm hover:text-[#00D9FF] transition mb-8 block">&larr; Home</Link>
-
-          <div className="text-center mb-10">
-            <div className="inline-flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00D9FF] to-[#0088CC] flex items-center justify-center text-lg font-bold text-[#0d1117]">D1</div>
-            </div>
-            <h1 className="text-3xl font-bold mb-2">Renter Dashboard</h1>
-            <p className="text-white/50 text-sm">Access your GPU compute dashboard. Enter your renter API key.</p>
+      <div className="min-h-screen bg-dc1-void flex items-center justify-center px-4">
+        <div className="max-w-md w-full text-center">
+          <div className="mb-6">
+            <svg className="w-16 h-16 text-dc1-amber mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
           </div>
+          <h1 className="text-2xl font-bold text-dc1-text-primary mb-2">Welcome Back</h1>
+          <p className="text-dc1-text-secondary mb-8">
+            Sign in with your API key to access your renter dashboard.
+          </p>
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form
+            onSubmit={e => {
+              e.preventDefault()
+              const keyInput = (e.target as HTMLFormElement).querySelector('input')?.value
+              if (keyInput) {
+                verifyKey(keyInput)
+              }
+            }}
+            className="space-y-4"
+          >
             <input
-              type="text"
-              placeholder="dc1-renter-..."
-              className={inputCls}
-              value={renterKey}
-              onChange={e => setRenterKey(e.target.value)}
+              type="password"
+              placeholder="Enter your API key"
+              className="input"
+              required
             />
-            <button
-              type="submit"
-              disabled={!renterKey.trim()}
-              className="w-full py-3 rounded-lg font-semibold bg-[#00D9FF] text-[#0d1117] hover:bg-[#00D9FF]/90 disabled:opacity-40 transition"
-            >
-              Login
+            <button type="submit" className="btn btn-primary w-full">
+              Sign In
             </button>
           </form>
 
-          <div className="mt-8 text-center">
-            <p className="text-white/30 text-sm">Don&apos;t have an account?</p>
-            <Link href="/renter/register" className="text-[#00D9FF] text-sm hover:underline">Register as a Renter</Link>
-          </div>
+          <p className="text-sm text-dc1-text-secondary mt-6">
+            Don't have an account?{' '}
+            <a href="/renter/register" className="text-dc1-amber hover:underline">
+              Register here
+            </a>
+          </p>
         </div>
       </div>
-    );
+    )
   }
 
-  // ── Computed Values ──────────────────────────────────────────
-  const balanceSar = (renter.balance_halala || 0) / 100;
-  const onlineProviders = providers.filter(p => p.status === 'online');
-  const completedJobs = jobs.filter(j => j.status === 'completed');
-  const failedJobs = jobs.filter(j => j.status === 'failed');
-  const runningJobs = jobs.filter(j => j.status === 'running');
-  // Use renter-level stats if available (more accurate), fallback to local calc
-  const totalSpentHalala = renter.total_spent_halala || completedJobs.reduce((sum, j) => sum + (j.actual_cost_halala || j.cost_halala || 0), 0);
-  const totalSpentSar = totalSpentHalala / 100;
-  const totalJobsCount = renter.total_jobs || jobs.length;
-
-  // ── Dashboard ────────────────────────────────────────────────
-  return (
-    <div className="min-h-screen bg-[#0d1117] text-white">
-      {/* Top Bar */}
-      <div className="border-b border-white/10 bg-[#0d1117]/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2 text-white/60 hover:text-[#00D9FF] transition">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00D9FF] to-[#0088CC] flex items-center justify-center text-xs font-bold text-[#0d1117]">D1</div>
-            </Link>
-            <div className="w-px h-6 bg-white/10" />
-            <span className="font-semibold text-sm">Renter Dashboard</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-400" />
-                <span className="text-sm text-white/60">{renter.name}</span>
-              </div>
-              <span className="text-xs text-[#FFD700] font-medium">{balanceSar.toFixed(2)} SAR</span>
-            </div>
-            <button onClick={logout} className="text-xs text-white/30 hover:text-white/50 border border-white/10 rounded-lg px-3 py-1.5 transition">Logout</button>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="border-b border-white/10">
-        <div className="max-w-6xl mx-auto px-4 flex gap-1">
-          {([
-            { id: 'overview' as Tab, label: 'Overview', icon: '📊' },
-            { id: 'jobs' as Tab, label: 'Job History', icon: '📋' },
-            { id: 'playground' as Tab, label: 'Playground', icon: '🚀' },
-            { id: 'topup' as Tab, label: 'Top Up', icon: '💳' },
-          ]).map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
-                tab === t.id
-                  ? 'border-[#00D9FF] text-[#00D9FF]'
-                  : 'border-transparent text-white/40 hover:text-white/60'
-              }`}
-            >
-              <span className="mr-1.5">{t.icon}</span>{t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-6xl mx-auto px-4 py-6">
-
-        {/* ── OVERVIEW TAB ──────────────────────────────────────── */}
-        {tab === 'overview' && (
-          <div className="space-y-6">
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <KpiCard label="Balance" value={`${balanceSar.toFixed(2)} SAR`} sub={`${renter.balance_halala} halala`} color="cyan" />
-              <KpiCard label="Total Spent" value={`${totalSpentSar.toFixed(2)} SAR`} sub={`${completedJobs.length} completed jobs`} color="gold" />
-              <KpiCard label="Jobs Run" value={String(totalJobsCount)} sub={`${completedJobs.length} ✓  ${failedJobs.length} ✗  ${runningJobs.length} ⏳`} color="white" />
-              <KpiCard label="Online GPUs" value={String(onlineProviders.length)} sub={`${providers.length} total registered`} color="green" />
-            </div>
-
-            {/* Quick Actions */}
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* Playground CTA */}
-              <button
-                onClick={() => setTab('playground')}
-                className="text-left bg-gradient-to-br from-[#00D9FF]/10 via-[#00D9FF]/5 to-transparent border border-[#00D9FF]/30 rounded-xl p-6 hover:border-[#00D9FF]/60 transition group"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-lg bg-[#00D9FF]/20 flex items-center justify-center text-lg">🚀</div>
-                  <div>
-                    <h3 className="font-bold text-[#00D9FF] group-hover:text-white transition">LLM Playground</h3>
-                    <p className="text-white/40 text-xs">Run AI inference on real GPUs</p>
-                  </div>
-                </div>
-                <p className="text-white/50 text-sm">Type a prompt, pick a GPU, get AI-generated responses with verifiable execution proof showing it ran on real hardware.</p>
-              </button>
-
-              {/* Image Gen CTA */}
-              <button
-                onClick={() => setTab('playground')}
-                className="text-left bg-gradient-to-br from-[#A855F7]/10 via-[#A855F7]/5 to-transparent border border-[#A855F7]/30 rounded-xl p-6 hover:border-[#A855F7]/60 transition group"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-lg bg-[#A855F7]/20 flex items-center justify-center text-lg">🎨</div>
-                  <div>
-                    <h3 className="font-bold text-[#A855F7] group-hover:text-white transition">Image Generation</h3>
-                    <p className="text-white/40 text-xs">Stable Diffusion on real GPUs</p>
-                  </div>
-                </div>
-                <p className="text-white/50 text-sm">Generate images with Stable Diffusion models. Choose resolution, steps, and seed. Download high-quality PNG results.</p>
-              </button>
-            </div>
-
-            {/* Available GPUs */}
-            <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-                <h2 className="font-semibold text-sm">Available GPU Providers</h2>
-                <button onClick={fetchData} className="text-xs text-[#00D9FF] hover:underline">Refresh</button>
-              </div>
-              {providers.length === 0 ? (
-                <div className="px-6 py-8 text-center text-white/30 text-sm">No providers registered yet.</div>
-              ) : (
-                <div className="divide-y divide-white/5">
-                  {providers.map(p => (
-                    <div key={p.id} className="px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-2.5 h-2.5 rounded-full ${p.status === 'online' ? 'bg-green-400' : 'bg-white/20'}`} />
-                        <div>
-                          <span className="font-medium text-sm">{p.gpu_model}</span>
-                          <span className="text-white/30 text-xs ml-2">{p.name}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-xs text-white/40">{p.vram_gb || Math.round((p.vram_mib || 0) / 1024)} GB VRAM</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${p.status === 'online' ? 'bg-green-400/10 text-green-400' : 'bg-white/5 text-white/30'}`}>
-                          {p.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Recent Jobs */}
-            {jobs.length > 0 && (
-              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-                  <h2 className="font-semibold text-sm">Recent Jobs</h2>
-                  <button onClick={() => setTab('jobs')} className="text-xs text-[#00D9FF] hover:underline">View All →</button>
-                </div>
-                <div className="divide-y divide-white/5">
-                  {jobs.slice(0, 5).map(j => (
-                    <JobRow key={j.id} job={j} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── JOBS TAB ──────────────────────────────────────────── */}
-        {tab === 'jobs' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-bold">Job History</h2>
-              <span className="text-xs text-white/40">{jobs.length} total jobs</span>
-            </div>
-
-            {jobs.length === 0 ? (
-              <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-12 text-center">
-                <p className="text-white/40 text-sm mb-4">No jobs submitted yet.</p>
-                <button onClick={() => setTab('playground')} className="text-[#00D9FF] text-sm hover:underline">Go to Playground →</button>
-              </div>
-            ) : (
-              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-                {/* Header */}
-                <div className="grid grid-cols-12 gap-2 px-6 py-3 bg-white/[0.02] text-xs text-white/40 font-medium border-b border-white/10">
-                  <div className="col-span-1">#</div>
-                  <div className="col-span-2">Type</div>
-                  <div className="col-span-3">Submitted</div>
-                  <div className="col-span-2">Duration</div>
-                  <div className="col-span-2">Cost</div>
-                  <div className="col-span-2">Status</div>
-                </div>
-                <div className="divide-y divide-white/5">
-                  {jobs.map(j => (
-                    <JobRow key={j.id} job={j} detailed />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── PLAYGROUND TAB ────────────────────────────────────── */}
-        {tab === 'playground' && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold">GPU Playground</h2>
-                <p className="text-white/40 text-xs">Run LLM inference or generate images on real GPU hardware</p>
-              </div>
-              <Link
-                href="/renter/playground"
-                className="text-xs text-[#00D9FF] border border-[#00D9FF]/30 rounded-lg px-3 py-1.5 hover:bg-[#00D9FF]/10 transition"
-              >
-                Open Full Page ↗
-              </Link>
-            </div>
-            {/* Embed the playground in an iframe */}
-            <div className="rounded-xl border border-white/10 overflow-hidden" style={{ height: 'calc(100vh - 200px)', minHeight: '600px' }}>
-              <iframe
-                src={`/renter/playground`}
-                className="w-full h-full border-0"
-                style={{ background: '#0d1117' }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* ── TOP UP TAB ────────────────────────────────────────── */}
-        {tab === 'topup' && (
-          <div className="max-w-lg mx-auto space-y-6">
-            <div className="text-center mb-6">
-              <h2 className="text-lg font-bold mb-1">Top Up Balance</h2>
-              <p className="text-white/40 text-sm">Add funds to your DC1 account (demo mode — no real payment)</p>
-            </div>
-
-            {/* Current Balance */}
-            <div className="bg-gradient-to-br from-[#00D9FF]/10 to-transparent border border-[#00D9FF]/20 rounded-xl p-6 text-center">
-              <p className="text-white/50 text-sm mb-1">Current Balance</p>
-              <p className="text-3xl font-bold text-[#00D9FF]">{balanceSar.toFixed(2)} SAR</p>
-              <p className="text-white/30 text-xs mt-1">{renter.balance_halala} halala</p>
-            </div>
-
-            {/* Amount Selection */}
-            <div>
-              <label className="block text-sm text-white/60 mb-2">Select Amount (SAR)</label>
-              <div className="grid grid-cols-4 gap-2 mb-3">
-                {[5, 10, 25, 50].map(amt => (
-                  <button
-                    key={amt}
-                    onClick={() => setTopupAmount(amt)}
-                    className={`py-3 rounded-lg text-sm font-semibold transition ${
-                      topupAmount === amt
-                        ? 'bg-[#00D9FF] text-[#0d1117]'
-                        : 'bg-white/5 border border-white/10 text-white/60 hover:border-white/20'
-                    }`}
-                  >
-                    {amt} SAR
-                  </button>
-                ))}
-              </div>
-              <input
-                type="number"
-                min={1}
-                max={1000}
-                value={topupAmount}
-                onChange={e => setTopupAmount(Number(e.target.value))}
-                className={inputCls}
-                placeholder="Custom amount"
-              />
-            </div>
-
-            {/* Cost Breakdown */}
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm space-y-2">
-              <div className="flex justify-between text-white/50">
-                <span>Amount</span>
-                <span>{topupAmount} SAR</span>
-              </div>
-              <div className="flex justify-between text-white/50">
-                <span>Equivalent</span>
-                <span>{topupAmount * 100} halala</span>
-              </div>
-              <div className="border-t border-white/10 pt-2 flex justify-between font-medium">
-                <span>New Balance</span>
-                <span className="text-[#00D9FF]">{(balanceSar + topupAmount).toFixed(2)} SAR</span>
-              </div>
-            </div>
-
-            {/* Estimated Usage */}
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm">
-              <p className="text-white/50 mb-2">Estimated Usage</p>
-              <div className="space-y-1 text-xs text-white/40">
-                <div className="flex justify-between">
-                  <span>LLM Inference (15 halala/min)</span>
-                  <span>~{Math.floor((topupAmount * 100) / 15)} minutes</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Image Generation (20 halala/min)</span>
-                  <span>~{Math.floor((topupAmount * 100) / 20)} minutes</span>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleTopup}
-              disabled={topupLoading || topupAmount < 1}
-              className="w-full py-3.5 rounded-xl font-semibold bg-[#00D9FF] text-[#0d1117] hover:bg-[#00D9FF]/90 disabled:opacity-40 transition text-lg"
-            >
-              {topupLoading ? 'Processing...' : `Add ${topupAmount} SAR`}
-            </button>
-
-            {topupMsg && (
-              <div className={`text-sm text-center py-2 rounded-lg ${topupMsg.startsWith('Error') ? 'text-red-400 bg-red-500/10' : 'text-green-400 bg-green-500/10'}`}>
-                {topupMsg}
-              </div>
-            )}
-
-            <p className="text-white/20 text-xs text-center">Demo mode: funds are added instantly without real payment processing.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Sub-Components ────────────────────────────────────────────────
-
-function KpiCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: 'cyan' | 'gold' | 'white' | 'green' }) {
-  const colors = {
-    cyan: 'from-[#00D9FF]/10 border-[#00D9FF]/20 text-[#00D9FF]',
-    gold: 'from-[#FFD700]/10 border-[#FFD700]/20 text-[#FFD700]',
-    white: 'from-white/5 border-white/10 text-white',
-    green: 'from-green-400/10 border-green-400/20 text-green-400',
-  };
-  return (
-    <div className={`bg-gradient-to-br ${colors[color]} to-transparent border rounded-xl p-5`}>
-      <p className="text-white/40 text-xs mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${colors[color].split(' ').pop()}`}>{value}</p>
-      <p className="text-white/30 text-xs mt-1">{sub}</p>
-    </div>
-  );
-}
-
-function JobRow({ job, detailed }: { job: RenterJob; detailed?: boolean }) {
-  const statusColors: Record<string, string> = {
-    completed: 'bg-green-400/10 text-green-400',
-    failed: 'bg-red-400/10 text-red-400',
-    running: 'bg-[#00D9FF]/10 text-[#00D9FF]',
-    pending: 'bg-yellow-400/10 text-yellow-400',
-    timeout: 'bg-orange-400/10 text-orange-400',
-  };
-
-  const jobTypeLabels: Record<string, { label: string; color: string }> = {
-    llm_inference: { label: 'LLM', color: 'text-[#00D9FF]' },
-    image_generation: { label: 'Image', color: 'text-[#A855F7]' },
-    'llm-test': { label: 'Test', color: 'text-white/50' },
-    diagnostic: { label: 'Diag', color: 'text-white/50' },
-    benchmark: { label: 'Bench', color: 'text-white/50' },
-  };
-
-  const typeInfo = jobTypeLabels[job.job_type] || { label: job.job_type, color: 'text-white/50' };
-  const cost = job.actual_cost_halala || job.cost_halala || 0;
-  const costSar = (cost / 100).toFixed(2);
-  const duration = job.actual_duration_minutes || job.duration_minutes || 0;
-
-  const fmtDate = (d: string | null) => {
-    if (!d) return '—';
-    const dt = new Date(d);
-    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  };
-
-  if (detailed) {
-    return (
-      <div className="grid grid-cols-12 gap-2 px-6 py-3 text-sm items-center hover:bg-white/[0.02] transition">
-        <div className="col-span-1 text-white/30 text-xs">#{job.id}</div>
-        <div className={`col-span-2 ${typeInfo.color} text-xs font-medium`}>{typeInfo.label}</div>
-        <div className="col-span-3 text-white/50 text-xs">{fmtDate(job.submitted_at)}</div>
-        <div className="col-span-2 text-white/50 text-xs">{duration > 0 ? `${duration} min` : '—'}</div>
-        <div className="col-span-2 text-white/70 text-xs">{cost > 0 ? `${costSar} SAR` : '—'}</div>
-        <div className="col-span-2">
-          <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[job.status] || 'bg-white/5 text-white/30'}`}>
-            {job.status}
-          </span>
-        </div>
-      </div>
-    );
-  }
+  const balance = renter.balance_halala / 100
+  const totalSpent = (renter.total_spent_halala || 0) / 100
+  const totalJobs = renter.total_jobs || 0
+  const onlineGPUs = gpus.filter(g => g.status === 'online').length
 
   return (
-    <div className="px-6 py-3 flex items-center justify-between hover:bg-white/[0.02] transition">
-      <div className="flex items-center gap-3">
-        <span className={`text-xs font-medium ${typeInfo.color}`}>{typeInfo.label}</span>
-        <span className="text-white/30 text-xs">#{job.id}</span>
-        <span className="text-white/50 text-xs">{fmtDate(job.submitted_at)}</span>
+    <DashboardLayout navItems={navItems} role="renter" userName={renter.name}>
+      <div className="space-y-8">
+        {/* Stats Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard label="Account Balance" value={`$${balance.toFixed(2)}`} accent="amber" />
+          <StatCard label="Total Spent" value={`$${totalSpent.toFixed(2)}`} accent="default" />
+          <StatCard label="Jobs Run" value={totalJobs.toString()} accent="default" />
+          <StatCard label="Online GPUs" value={onlineGPUs.toString()} accent="success" />
+        </div>
+
+        {/* Available GPUs Section */}
+        <section>
+          <h2 className="section-heading mb-4">Available GPUs</h2>
+          <div className="table-container">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>GPU Model</th>
+                  <th>VRAM</th>
+                  <th>Price/Hour</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gpus.length > 0 ? (
+                  gpus.map(gpu => (
+                    <tr key={gpu.id}>
+                      <td className="font-medium">{gpu.provider_name}</td>
+                      <td>{gpu.gpu_model}</td>
+                      <td>{gpu.vram_gb}GB</td>
+                      <td className="text-dc1-amber font-semibold">${gpu.price_per_hour.toFixed(2)}</td>
+                      <td>
+                        <StatusBadge status={gpu.status} />
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-dc1-text-secondary">
+                      No GPUs available at the moment
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Recent Jobs Section */}
+        <section>
+          <h2 className="section-heading mb-4">Recent Jobs</h2>
+          <div className="table-container">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Job ID</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Cost</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.length > 0 ? (
+                  jobs.map(job => (
+                    <tr key={job.id}>
+                      <td className="font-mono text-sm">{job.id.slice(0, 8)}</td>
+                      <td>{job.job_type}</td>
+                      <td>
+                        <StatusBadge status={job.status} />
+                      </td>
+                      <td className="text-dc1-amber font-semibold">${job.cost.toFixed(2)}</td>
+                      <td>{job.duration}m</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-dc1-text-secondary">
+                      No jobs yet. Start by submitting a job!
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Quick Actions */}
+        <section>
+          <h2 className="section-heading mb-4">Quick Actions</h2>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <a href="/renter/jobs/submit" className="btn btn-primary flex-1">
+              Submit New Job
+            </a>
+            <a href="/renter/marketplace" className="btn btn-secondary flex-1">
+              Browse Marketplace
+            </a>
+            <a href="/renter/billing" className="btn btn-outline flex-1">
+              Manage Billing
+            </a>
+          </div>
+        </section>
       </div>
-      <div className="flex items-center gap-3">
-        {cost > 0 && <span className="text-white/50 text-xs">{costSar} SAR</span>}
-        <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[job.status] || 'bg-white/5 text-white/30'}`}>
-          {job.status}
-        </span>
-      </div>
-    </div>
-  );
+    </DashboardLayout>
+  )
 }

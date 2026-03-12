@@ -1,0 +1,152 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useState } from 'react'
+
+export interface NavItem {
+  label: string
+  href: string
+  icon: React.ReactNode
+}
+
+interface DashboardSidebarProps {
+  navItems: NavItem[]
+  role: 'provider' | 'renter' | 'admin'
+  userName?: string
+}
+
+const roleLabels = {
+  provider: 'Provider Dashboard',
+  renter: 'Renter Dashboard',
+  admin: 'Admin Panel',
+}
+
+export default function DashboardSidebar({ navItems, role, userName }: DashboardSidebarProps) {
+  const pathname = usePathname()
+  const [collapsed, setCollapsed] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  const isActive = (href: string) => {
+    if (href === `/${role}`) return pathname === `/${role}`
+    return pathname.startsWith(href)
+  }
+
+  const sidebarContent = (
+    <>
+      {/* Logo & Role */}
+      <div className="flex items-center gap-3 px-4 py-5 border-b border-dc1-border">
+        <Link href="/" className="shrink-0">
+          <img
+            src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp"
+            alt="DC1"
+            className="h-8 w-auto"
+          />
+        </Link>
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-dc1-text-primary truncate">DC1</p>
+            <p className="text-xs text-dc1-amber truncate">{roleLabels[role]}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        {navItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={() => setMobileOpen(false)}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 group ${
+              isActive(item.href)
+                ? 'bg-dc1-amber/10 text-dc1-amber border-l-2 border-dc1-amber -ml-px'
+                : 'text-dc1-text-secondary hover:text-dc1-text-primary hover:bg-dc1-surface-l2'
+            }`}
+            title={collapsed ? item.label : undefined}
+          >
+            <span className="shrink-0 w-5 h-5 flex items-center justify-center">
+              {item.icon}
+            </span>
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </Link>
+        ))}
+      </nav>
+
+      {/* User section */}
+      <div className="border-t border-dc1-border px-4 py-4">
+        {!collapsed && userName && (
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-full bg-dc1-amber/20 flex items-center justify-center text-dc1-amber text-sm font-bold">
+              {userName.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-dc1-text-primary truncate">{userName}</p>
+              <p className="text-xs text-dc1-text-muted capitalize">{role}</p>
+            </div>
+          </div>
+        )}
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-sm text-dc1-text-muted hover:text-dc1-text-secondary transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          {!collapsed && <span>Sign Out</span>}
+        </Link>
+      </div>
+    </>
+  )
+
+  return (
+    <>
+      {/* Mobile topbar */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-dc1-void/95 backdrop-blur-md border-b border-dc1-border h-14 flex items-center px-4 gap-3">
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="p-2 rounded-md text-dc1-text-secondary hover:text-dc1-text-primary hover:bg-dc1-surface-l2"
+          aria-label="Toggle sidebar"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <img src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp" alt="DC1" className="h-7" />
+        <span className="text-sm font-semibold text-dc1-amber">{roleLabels[role]}</span>
+      </div>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed top-0 left-0 z-50 h-screen bg-dc1-surface-l1 border-r border-dc1-border
+          flex flex-col transition-all duration-300
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+          lg:translate-x-0 lg:static lg:z-auto
+          ${collapsed ? 'w-16' : 'w-64'}
+        `}
+      >
+        {sidebarContent}
+
+        {/* Collapse toggle - desktop only */}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 bg-dc1-surface-l2 border border-dc1-border rounded-full items-center justify-center text-dc1-text-muted hover:text-dc1-text-primary hover:bg-dc1-surface-l3 transition-colors"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <svg className={`w-3 h-3 transition-transform ${collapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      </aside>
+    </>
+  )
+}
