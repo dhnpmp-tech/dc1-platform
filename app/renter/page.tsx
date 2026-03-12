@@ -249,14 +249,20 @@ export default function RenterDashboard() {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
       if (res.ok) {
         const data = await res.json()
-        const jobsData = data.recent_jobs?.map((j: any) => ({
-          id: j.job_id,
-          job_type: j.job_type,
-          status: j.status,
-          cost: j.cost_halala / 100,
-          duration: j.duration_minutes,
-          submitted_at: j.submitted_at,
-        })) || []
+        const jobsData = data.recent_jobs?.map((j: any) => {
+          let duration = 0
+          if (j.completed_at && j.submitted_at) {
+            duration = Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
+          }
+          return {
+            id: j.job_id || `#${j.id}`,
+            job_type: j.job_type,
+            status: j.status,
+            cost: (j.actual_cost_halala || 0) / 100,
+            duration,
+            submitted_at: j.submitted_at,
+          }
+        }) || []
         setJobs(jobsData)
       }
     } catch (err) {
@@ -632,8 +638,8 @@ export default function RenterDashboard() {
                           <td>
                             <StatusBadge status={job.status} />
                           </td>
-                          <td className="text-dc1-amber font-semibold">${job.cost.toFixed(2)}</td>
-                          <td>{job.duration}m</td>
+                          <td className="text-dc1-amber font-semibold">{job.cost > 0 ? `${job.cost.toFixed(2)} SAR` : '—'}</td>
+                          <td>{job.duration > 0 ? (job.duration >= 60 ? `${Math.floor(job.duration / 60)}m ${job.duration % 60}s` : `${job.duration}s`) : '—'}</td>
                         </tr>
                       ))
                     ) : (
