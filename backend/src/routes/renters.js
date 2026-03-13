@@ -22,7 +22,7 @@ router.post('/register', (req, res) => {
 
     const result = db.run(
       `INSERT INTO renters (name, email, api_key, organization, status, balance_halala, created_at)
-       VALUES (?, ?, ?, ?, 'active', 0, ?)`,
+       VALUES (?, ?, ?, ?, 'active', 1000, ?)`,
       name, email, api_key, organization || null, now
     );
 
