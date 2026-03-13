@@ -41,10 +41,10 @@ const features = [
 ]
 
 const stats = [
-  { value: '500+', label: 'GPUs Available' },
-  { value: '10K+', label: 'Jobs Completed' },
-  { value: '99.9%', label: 'Uptime' },
+  { value: '75/25', label: 'Provider / DC1 Split' },
   { value: '< 5s', label: 'Job Dispatch' },
+  { value: '0%', label: 'Idle GPU Waste' },
+  { value: '100%', label: 'Bare Metal Performance' },
 ]
 
 export default function HomePage() {

@@ -30,6 +30,31 @@ function splitBilling(totalHalala) {
 // === GET /api/admin/providers - All providers (api_key intentionally excluded) ===
 router.get('/providers', (req, res) => {
   try {
+    const page = Math.max(parseInt(req.query.page) || 0, 0); // 0 = all (legacy), 1+ = paginated
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const search = (req.query.search || '').trim().toLowerCase();
+    const statusFilter = req.query.status || '';
+
+    let where = '1=1';
+    const wParams = [];
+    if (search) {
+      where += ` AND (LOWER(name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(gpu_model) LIKE ?)`;
+      wParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    if (statusFilter === 'online') { where += ` AND last_heartbeat > datetime('now', '-5 minutes')`; }
+    else if (statusFilter === 'offline') { where += ` AND last_heartbeat IS NOT NULL AND last_heartbeat <= datetime('now', '-5 minutes')`; }
+    else if (statusFilter === 'registered') { where += ` AND last_heartbeat IS NULL`; }
+    else if (statusFilter === 'suspended') { where += ` AND status = 'suspended'`; }
+
+    const countRow = db.get(`SELECT COUNT(*) as total FROM providers WHERE ${where}`, ...wParams);
+    const total = countRow?.total || 0;
+
+    let paginationSql = '';
+    if (page > 0) {
+      const offset = (page - 1) * limit;
+      paginationSql = `LIMIT ${limit} OFFSET ${offset}`;
+    }
+
     // api_key omitted from SELECT — never expose raw credentials in admin responses
     const providers = db.all(
       `SELECT id, name, email, gpu_model, gpu_count, vram_gb, os,
@@ -37,9 +62,10 @@ router.get('/providers', (req, res) => {
               last_heartbeat, gpu_name_detected, gpu_vram_mib, gpu_driver,
               gpu_compute, total_earnings, total_jobs, uptime_percent,
               run_mode, is_paused, created_at, updated_at
-       FROM providers ORDER BY
+       FROM providers WHERE ${where} ORDER BY
          CASE WHEN status = 'online' THEN 0 ELSE 1 END,
-         last_heartbeat DESC, created_at DESC`
+         last_heartbeat DESC, created_at DESC ${paginationSql}`,
+      ...wParams
     );
 
     const now = new Date();
@@ -73,13 +99,17 @@ router.get('/providers', (req, res) => {
       };
     });
 
-    res.json({
-      total: enriched.length,
+    const response = {
+      total,
       online: enriched.filter(p => p.is_online).length,
       offline: enriched.filter(p => !p.is_online && p.last_heartbeat).length,
       registered: enriched.filter(p => !p.last_heartbeat).length,
       providers: enriched
-    });
+    };
+    if (page > 0) {
+      response.pagination = { page, limit, total, total_pages: Math.ceil(total / limit) };
+    }
+    res.json(response);
   } catch (error) {
     console.error('Admin providers error:', error);
     res.status(500).json({ error: 'Failed to fetch providers' });
@@ -114,11 +144,39 @@ router.get('/dashboard', (req, res) => {
        ORDER BY last_heartbeat DESC LIMIT 10`
     );
 
+    // Renter stats
+    const renterStats = db.get('SELECT COUNT(*) as total, SUM(CASE WHEN status = \'active\' THEN 1 ELSE 0 END) as active, COALESCE(SUM(balance_halala), 0) as total_balance FROM renters') || {};
+
+    // Job + revenue stats
+    const todayStart = new Date(now); todayStart.setUTCHours(0,0,0,0);
+    const jobStats = db.get(`
+      SELECT COUNT(*) as total_jobs,
+             SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+             SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+             SUM(CASE WHEN status IN ('pending','running','queued') THEN 1 ELSE 0 END) as active_jobs,
+             COALESCE(SUM(CASE WHEN status = 'completed' THEN actual_cost_halala ELSE 0 END), 0) as total_revenue,
+             COALESCE(SUM(CASE WHEN status = 'completed' THEN dc1_fee_halala ELSE 0 END), 0) as total_dc1_fees
+      FROM jobs
+    `) || {};
+    const todayRevenue = db.get(`SELECT COALESCE(SUM(actual_cost_halala), 0) as revenue, COALESCE(SUM(dc1_fee_halala), 0) as dc1_fees, COUNT(*) as jobs FROM jobs WHERE status = 'completed' AND completed_at >= ?`, todayStart.toISOString()) || {};
+
     res.json({
       stats: {
         total_providers: total.count,
         online_now: online.count,
         offline: total.count - online.count,
+        total_renters: renterStats.total || 0,
+        active_renters: renterStats.active || 0,
+        total_renter_balance_halala: renterStats.total_balance || 0,
+        total_jobs: jobStats.total_jobs || 0,
+        completed_jobs: jobStats.completed || 0,
+        failed_jobs: jobStats.failed || 0,
+        active_jobs: jobStats.active_jobs || 0,
+        total_revenue_halala: jobStats.total_revenue || 0,
+        total_dc1_fees_halala: jobStats.total_dc1_fees || 0,
+        today_revenue_halala: todayRevenue.revenue || 0,
+        today_dc1_fees_halala: todayRevenue.dc1_fees || 0,
+        today_jobs: todayRevenue.jobs || 0,
         timestamp: now.toISOString()
       },
       gpu_breakdown: gpuModels,
@@ -373,9 +431,29 @@ router.get('/daemon-health', (req, res) => {
 // ============================================================================
 router.get('/renters', (req, res) => {
   try {
+    const page = Math.max(parseInt(req.query.page) || 0, 0);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const search = (req.query.search || '').trim().toLowerCase();
+    const statusFilter = req.query.status || '';
+
+    let where = '1=1';
+    const wParams = [];
+    if (search) {
+      where += ` AND (LOWER(name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(organization) LIKE ?)`;
+      wParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    if (statusFilter) { where += ` AND status = ?`; wParams.push(statusFilter); }
+
+    const countRow = db.get(`SELECT COUNT(*) as total FROM renters WHERE ${where}`, ...wParams);
+    const total = countRow?.total || 0;
+
+    let paginationSql = '';
+    if (page > 0) { paginationSql = `LIMIT ${limit} OFFSET ${(page - 1) * limit}`; }
+
     const renters = db.all(
       `SELECT id, name, email, organization, balance_halala, status, created_at
-       FROM renters ORDER BY created_at DESC`
+       FROM renters WHERE ${where} ORDER BY created_at DESC ${paginationSql}`,
+      ...wParams
     );
     const enriched = renters.map(r => {
       const jobStats = db.get(
@@ -387,12 +465,14 @@ router.get('/renters', (req, res) => {
       ) || {};
       return { ...r, ...jobStats };
     });
-    res.json({
-      total: enriched.length,
+    const response = {
+      total,
       active: enriched.filter(r => r.status === 'active').length,
       suspended: enriched.filter(r => r.status === 'suspended').length,
       renters: enriched
-    });
+    };
+    if (page > 0) { response.pagination = { page, limit, total, total_pages: Math.ceil(total / limit) }; }
+    res.json(response);
   } catch (error) {
     console.error('Admin renters error:', error);
     res.status(500).json({ error: 'Failed to fetch renters' });
@@ -527,34 +607,43 @@ router.post('/renters/:id/balance', (req, res) => {
 // ============================================================================
 router.get('/jobs', (req, res) => {
   try {
-    const { status, type, provider_id, renter_id, limit: limitParam } = req.query;
-    let query = `SELECT j.*, p.name as provider_name, p.gpu_model,
-                        r.name as renter_name
-                 FROM jobs j
-                 LEFT JOIN providers p ON j.provider_id = p.id
-                 LEFT JOIN renters r ON j.renter_id = r.id
-                 WHERE 1=1`;
-    const params = [];
-    if (status) { query += ' AND j.status = ?'; params.push(status); }
-    if (type) { query += ' AND j.job_type = ?'; params.push(type); }
-    if (provider_id) { query += ' AND j.provider_id = ?'; params.push(provider_id); }
-    if (renter_id) { query += ' AND j.renter_id = ?'; params.push(renter_id); }
-    query += ' ORDER BY j.created_at DESC';
-    const limit = Math.min(parseInt(limitParam) || 100, 500);
-    query += ' LIMIT ?';
-    params.push(limit);
+    const { status, type, provider_id, renter_id } = req.query;
+    const page = Math.max(parseInt(req.query.page) || 0, 0);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const search = (req.query.search || '').trim().toLowerCase();
 
-    const jobs = db.all(query, ...params);
+    let where = '1=1';
+    const params = [];
+    if (status) { where += ' AND j.status = ?'; params.push(status); }
+    if (type) { where += ' AND j.job_type = ?'; params.push(type); }
+    if (provider_id) { where += ' AND j.provider_id = ?'; params.push(provider_id); }
+    if (renter_id) { where += ' AND j.renter_id = ?'; params.push(renter_id); }
+    if (search) {
+      where += ` AND (LOWER(j.job_id) LIKE ? OR LOWER(p.name) LIKE ? OR LOWER(r.name) LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const countRow = db.get(`SELECT COUNT(*) as total FROM jobs j LEFT JOIN providers p ON j.provider_id = p.id LEFT JOIN renters r ON j.renter_id = r.id WHERE ${where}`, ...params);
+    const total = countRow?.total || 0;
+
+    let paginationSql = '';
+    if (page > 0) { paginationSql = `LIMIT ${limit} OFFSET ${(page - 1) * limit}`; }
+    else { paginationSql = `LIMIT ${limit}`; }
+
+    const jobs = db.all(`SELECT j.*, p.name as provider_name, p.gpu_model, r.name as renter_name FROM jobs j LEFT JOIN providers p ON j.provider_id = p.id LEFT JOIN renters r ON j.renter_id = r.id WHERE ${where} ORDER BY j.created_at DESC ${paginationSql}`, ...params);
+
     const statsRow = db.get(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
               SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-              SUM(CASE WHEN status IN ('pending','assigned','running') THEN 1 ELSE 0 END) as active,
+              SUM(CASE WHEN status IN ('pending','assigned','running','queued') THEN 1 ELSE 0 END) as active,
               SUM(cost_halala) as total_revenue_halala
        FROM jobs`
     ) || {};
 
-    res.json({ stats: statsRow, jobs });
+    const response = { stats: statsRow, jobs };
+    if (page > 0) { response.pagination = { page, limit, total, total_pages: Math.ceil(total / limit) }; }
+    res.json(response);
   } catch (error) {
     console.error('Admin jobs list error:', error);
     res.status(500).json({ error: 'Failed to fetch jobs' });
@@ -755,6 +844,174 @@ router.get('/security/summary', (req, res) => {
   } catch (error) {
     console.error('Security summary error:', error);
     res.status(500).json({ error: 'Failed to fetch security summary' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/finance/summary - Financial overview
+// ============================================================================
+router.get('/finance/summary', (req, res) => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now); todayStart.setUTCHours(0,0,0,0);
+    const weekStart = new Date(todayStart.getTime() - 7*24*60*60*1000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // All-time totals
+    const allTime = db.get(`
+      SELECT COALESCE(SUM(actual_cost_halala), 0) as total_revenue,
+             COALESCE(SUM(provider_earned_halala), 0) as total_provider_payouts,
+             COALESCE(SUM(dc1_fee_halala), 0) as total_dc1_fees,
+             COUNT(*) as total_jobs,
+             SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs
+      FROM jobs WHERE status = 'completed'
+    `) || {};
+
+    // Today
+    const today = db.get(`
+      SELECT COALESCE(SUM(actual_cost_halala), 0) as revenue,
+             COALESCE(SUM(dc1_fee_halala), 0) as dc1_fees,
+             COUNT(*) as jobs
+      FROM jobs WHERE status = 'completed' AND completed_at >= ?
+    `, todayStart.toISOString()) || {};
+
+    // This week
+    const week = db.get(`
+      SELECT COALESCE(SUM(actual_cost_halala), 0) as revenue,
+             COALESCE(SUM(dc1_fee_halala), 0) as dc1_fees,
+             COUNT(*) as jobs
+      FROM jobs WHERE status = 'completed' AND completed_at >= ?
+    `, weekStart.toISOString()) || {};
+
+    // This month
+    const month = db.get(`
+      SELECT COALESCE(SUM(actual_cost_halala), 0) as revenue,
+             COALESCE(SUM(dc1_fee_halala), 0) as dc1_fees,
+             COUNT(*) as jobs
+      FROM jobs WHERE status = 'completed' AND completed_at >= ?
+    `, monthStart.toISOString()) || {};
+
+    // Renter balances (money held)
+    const renterBalances = db.get(`
+      SELECT COALESCE(SUM(balance_halala), 0) as total_held,
+             COUNT(*) as total_renters,
+             SUM(CASE WHEN balance_halala > 0 THEN 1 ELSE 0 END) as funded_renters
+      FROM renters WHERE status = 'active'
+    `) || {};
+
+    // Pending withdrawals
+    const withdrawals = db.get(`
+      SELECT COALESCE(SUM(CASE WHEN status = 'pending' THEN amount_sar ELSE 0 END), 0) as pending_sar,
+             COALESCE(SUM(CASE WHEN status = 'approved' THEN amount_sar ELSE 0 END), 0) as approved_sar,
+             COALESCE(SUM(CASE WHEN status = 'completed' THEN amount_sar ELSE 0 END), 0) as paid_sar,
+             COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count
+      FROM withdrawals
+    `) || {};
+
+    // Top 5 providers by earnings
+    const topProviders = db.all(`
+      SELECT p.id, p.name, p.gpu_model,
+             COALESCE(SUM(j.provider_earned_halala), 0) as total_earned,
+             COUNT(j.id) as job_count
+      FROM providers p
+      LEFT JOIN jobs j ON j.provider_id = p.id AND j.status = 'completed'
+      GROUP BY p.id
+      HAVING total_earned > 0
+      ORDER BY total_earned DESC LIMIT 5
+    `);
+
+    // Top 5 renters by spend
+    const topRenters = db.all(`
+      SELECT r.id, r.name, r.email, r.balance_halala,
+             COALESCE(SUM(j.actual_cost_halala), 0) as total_spent,
+             COUNT(j.id) as job_count
+      FROM renters r
+      LEFT JOIN jobs j ON j.renter_id = r.id AND j.status = 'completed'
+      GROUP BY r.id
+      HAVING total_spent > 0
+      ORDER BY total_spent DESC LIMIT 5
+    `);
+
+    // Daily revenue for last 14 days
+    const dailyRevenue = db.all(`
+      SELECT DATE(completed_at) as day,
+             COALESCE(SUM(actual_cost_halala), 0) as revenue,
+             COALESCE(SUM(dc1_fee_halala), 0) as dc1_fees,
+             COALESCE(SUM(provider_earned_halala), 0) as provider_payouts,
+             COUNT(*) as jobs
+      FROM jobs
+      WHERE status = 'completed' AND completed_at >= DATE('now', '-14 days')
+      GROUP BY DATE(completed_at)
+      ORDER BY day ASC
+    `);
+
+    // Reconciliation check — jobs where split doesn't add up
+    const discrepancies = db.all(`
+      SELECT id, job_id, actual_cost_halala, provider_earned_halala, dc1_fee_halala
+      FROM jobs
+      WHERE status = 'completed'
+        AND actual_cost_halala IS NOT NULL
+        AND (provider_earned_halala + dc1_fee_halala) != actual_cost_halala
+      LIMIT 10
+    `);
+
+    res.json({
+      all_time: allTime,
+      today,
+      this_week: week,
+      this_month: month,
+      renter_balances: renterBalances,
+      withdrawals,
+      top_providers: topProviders,
+      top_renters: topRenters,
+      daily_revenue: dailyRevenue,
+      discrepancies,
+      generated_at: now.toISOString()
+    });
+  } catch (error) {
+    console.error('Finance summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch finance summary' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/finance/transactions - Paginated billing transactions
+// ============================================================================
+router.get('/finance/transactions', (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+    const { type, renter_id, provider_id } = req.query;
+
+    let where = "WHERE j.status = 'completed' AND j.actual_cost_halala > 0";
+    const params = [];
+    if (type) { where += ' AND j.job_type = ?'; params.push(type); }
+    if (renter_id) { where += ' AND j.renter_id = ?'; params.push(renter_id); }
+    if (provider_id) { where += ' AND j.provider_id = ?'; params.push(provider_id); }
+
+    const countRow = db.get(`SELECT COUNT(*) as total FROM jobs j ${where}`, ...params);
+    const total = countRow?.total || 0;
+
+    const transactions = db.all(`
+      SELECT j.id, j.job_id, j.job_type, j.completed_at, j.actual_cost_halala,
+             j.provider_earned_halala, j.dc1_fee_halala, j.actual_duration_minutes,
+             p.name as provider_name, r.name as renter_name
+      FROM jobs j
+      LEFT JOIN providers p ON j.provider_id = p.id
+      LEFT JOIN renters r ON j.renter_id = r.id
+      ${where}
+      ORDER BY j.completed_at DESC
+      LIMIT ? OFFSET ?
+    `, ...params, limit, offset);
+
+    res.json({
+      transactions,
+      pagination: { page, limit, total, total_pages: Math.ceil(total / limit) }
+    });
+  } catch (error) {
+    console.error('Finance transactions error:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
   }
 });
 

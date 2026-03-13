@@ -62,12 +62,14 @@ export default function AdminDashboard() {
   const ShieldIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>)
   const CpuIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>)
   const BoltIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>)
+  const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 
   const navItems: NavItem[] = [
     { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
     { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
     { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
     { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
     { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
     { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
   ]
@@ -93,12 +95,20 @@ export default function AdminDashboard() {
         <div className="text-dc1-text-secondary">Loading dashboard data...</div>
       ) : (
         <>
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          {/* Provider Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <StatCard label="Total Providers" value={String(stats?.total_providers || 0)} accent="default" />
             <StatCard label="Online Now" value={String(stats?.online_now || 0)} accent="success" />
-            <StatCard label="Offline" value={String(stats?.offline || 0)} accent="info" />
-            <StatCard label="GPU Models" value={String(totalGpus)} accent="amber" />
+            <StatCard label="Total Renters" value={String(stats?.total_renters || 0)} accent="info" />
+            <StatCard label="Active Jobs" value={String(stats?.active_jobs || 0)} accent="amber" />
+          </div>
+
+          {/* Revenue Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <StatCard label="Total Revenue" value={`${((stats?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`} accent="success" />
+            <StatCard label="DC1 Fees" value={`${((stats?.total_dc1_fees_halala || 0) / 100).toFixed(2)} SAR`} accent="amber" />
+            <StatCard label="Today Revenue" value={`${((stats?.today_revenue_halala || 0) / 100).toFixed(2)} SAR`} accent="info" />
+            <StatCard label="Jobs Completed" value={String(stats?.completed_jobs || 0)} accent="default" />
           </div>
 
           {/* GPU Fleet */}
