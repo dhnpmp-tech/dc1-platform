@@ -516,8 +516,9 @@ router.post('/providers/:id/suspend', (req, res) => {
   try {
     const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', req.params.id);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
-    db.run('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?',
-      'suspended', new Date().toISOString(), req.params.id);
+    const now = new Date().toISOString();
+    db.run('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?', 'suspended', now, req.params.id);
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'provider_suspended', 'provider', provider.id, `Suspended provider "${provider.name}"`, now); } catch(e) {}
     res.json({ success: true, message: `Provider ${provider.name} suspended` });
   } catch (error) {
     console.error('Suspend provider error:', error);
@@ -532,8 +533,9 @@ router.post('/providers/:id/unsuspend', (req, res) => {
   try {
     const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', req.params.id);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
-    db.run('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?',
-      'offline', new Date().toISOString(), req.params.id);
+    const now = new Date().toISOString();
+    db.run('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?', 'offline', now, req.params.id);
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'provider_unsuspended', 'provider', provider.id, `Unsuspended provider "${provider.name}"`, now); } catch(e) {}
     res.json({ success: true, message: `Provider ${provider.name} unsuspended` });
   } catch (error) {
     console.error('Unsuspend provider error:', error);
@@ -549,6 +551,7 @@ router.post('/renters/:id/suspend', (req, res) => {
     const renter = db.get('SELECT id, name, status FROM renters WHERE id = ?', req.params.id);
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
     db.run('UPDATE renters SET status = ? WHERE id = ?', 'suspended', req.params.id);
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'renter_suspended', 'renter', renter.id, `Suspended renter "${renter.name}"`, new Date().toISOString()); } catch(e) {}
     res.json({ success: true, message: `Renter ${renter.name} suspended` });
   } catch (error) {
     console.error('Suspend renter error:', error);
@@ -564,6 +567,7 @@ router.post('/renters/:id/unsuspend', (req, res) => {
     const renter = db.get('SELECT id, name, status FROM renters WHERE id = ?', req.params.id);
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
     db.run('UPDATE renters SET status = ? WHERE id = ?', 'active', req.params.id);
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'renter_unsuspended', 'renter', renter.id, `Reactivated renter "${renter.name}"`, new Date().toISOString()); } catch(e) {}
     res.json({ success: true, message: `Renter ${renter.name} reactivated` });
   } catch (error) {
     console.error('Unsuspend renter error:', error);
@@ -587,6 +591,7 @@ router.post('/renters/:id/balance', (req, res) => {
     if (newBalance < 0) return res.status(400).json({ error: 'Balance cannot go below 0' });
 
     db.run('UPDATE renters SET balance_halala = ? WHERE id = ?', newBalance, req.params.id);
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'balance_adjusted', 'renter', renter.id, `Adjusted balance by ${amount_halala} halala for "${renter.name}": ${reason || 'No reason'}`, new Date().toISOString()); } catch(e) {}
     res.json({
       success: true,
       renter_id: renter.id,
@@ -844,6 +849,159 @@ router.get('/security/summary', (req, res) => {
   } catch (error) {
     console.error('Security summary error:', error);
     res.status(500).json({ error: 'Failed to fetch security summary' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/withdrawals - List all withdrawal requests
+// ============================================================================
+router.get('/withdrawals', (req, res) => {
+  try {
+    const statusFilter = req.query.status || '';
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+
+    let where = '1=1';
+    const params = [];
+    if (statusFilter) { where += ' AND w.status = ?'; params.push(statusFilter); }
+
+    const countRow = db.get(`SELECT COUNT(*) as total FROM withdrawals w WHERE ${where}`, ...params);
+    const total = countRow?.total || 0;
+
+    const withdrawals = db.all(`
+      SELECT w.*, p.name as provider_name, p.email as provider_email,
+             p.total_earnings as provider_total_earnings
+      FROM withdrawals w
+      LEFT JOIN providers p ON w.provider_id = p.id
+      WHERE ${where}
+      ORDER BY CASE WHEN w.status = 'pending' THEN 0 ELSE 1 END, w.requested_at DESC
+      LIMIT ? OFFSET ?
+    `, ...params, limit, offset);
+
+    const summary = db.get(`
+      SELECT COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+             COALESCE(SUM(CASE WHEN status = 'pending' THEN amount_sar ELSE 0 END), 0) as pending_total,
+             COALESCE(SUM(CASE WHEN status = 'approved' THEN amount_sar ELSE 0 END), 0) as approved_total,
+             COALESCE(SUM(CASE WHEN status = 'completed' THEN amount_sar ELSE 0 END), 0) as paid_total,
+             COALESCE(SUM(CASE WHEN status = 'rejected' THEN amount_sar ELSE 0 END), 0) as rejected_total
+      FROM withdrawals
+    `) || {};
+
+    res.json({
+      withdrawals,
+      summary,
+      pagination: { page, limit, total, total_pages: Math.ceil(total / limit) }
+    });
+  } catch (error) {
+    console.error('Admin withdrawals error:', error);
+    res.status(500).json({ error: 'Failed to fetch withdrawals' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/withdrawals/:id/approve - Approve withdrawal
+// ============================================================================
+router.post('/withdrawals/:id/approve', (req, res) => {
+  try {
+    const w = db.get('SELECT * FROM withdrawals WHERE id = ? OR withdrawal_id = ?', req.params.id, req.params.id);
+    if (!w) return res.status(404).json({ error: 'Withdrawal not found' });
+    if (w.status !== 'pending') return res.status(400).json({ error: `Cannot approve — status is ${w.status}` });
+
+    const now = new Date().toISOString();
+    db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
+      'approved', now, req.body.notes || 'Approved by admin', w.id);
+
+    // Log to audit
+    try {
+      db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?)`,
+        'withdrawal_approved', 'withdrawal', w.id,
+        `Approved ${w.amount_sar} SAR for provider ${w.provider_id}`, now);
+    } catch(e) { /* audit table may not exist yet */ }
+
+    res.json({ success: true, withdrawal_id: w.withdrawal_id, new_status: 'approved', amount_sar: w.amount_sar });
+  } catch (error) {
+    console.error('Approve withdrawal error:', error);
+    res.status(500).json({ error: 'Failed to approve withdrawal' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/withdrawals/:id/reject - Reject withdrawal
+// ============================================================================
+router.post('/withdrawals/:id/reject', (req, res) => {
+  try {
+    const w = db.get('SELECT * FROM withdrawals WHERE id = ? OR withdrawal_id = ?', req.params.id, req.params.id);
+    if (!w) return res.status(404).json({ error: 'Withdrawal not found' });
+    if (w.status !== 'pending') return res.status(400).json({ error: `Cannot reject — status is ${w.status}` });
+
+    const now = new Date().toISOString();
+    db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
+      'rejected', now, req.body.reason || 'Rejected by admin', w.id);
+
+    try {
+      db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?)`,
+        'withdrawal_rejected', 'withdrawal', w.id,
+        `Rejected ${w.amount_sar} SAR for provider ${w.provider_id}: ${req.body.reason || 'No reason'}`, now);
+    } catch(e) {}
+
+    res.json({ success: true, withdrawal_id: w.withdrawal_id, new_status: 'rejected', reason: req.body.reason || '' });
+  } catch (error) {
+    console.error('Reject withdrawal error:', error);
+    res.status(500).json({ error: 'Failed to reject withdrawal' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/withdrawals/:id/complete - Mark withdrawal as paid
+// ============================================================================
+router.post('/withdrawals/:id/complete', (req, res) => {
+  try {
+    const w = db.get('SELECT * FROM withdrawals WHERE id = ? OR withdrawal_id = ?', req.params.id, req.params.id);
+    if (!w) return res.status(404).json({ error: 'Withdrawal not found' });
+    if (w.status !== 'approved') return res.status(400).json({ error: `Can only complete approved withdrawals — status is ${w.status}` });
+
+    const now = new Date().toISOString();
+    db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
+      'completed', now, req.body.notes || 'Payment sent', w.id);
+
+    try {
+      db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?)`,
+        'withdrawal_completed', 'withdrawal', w.id,
+        `Paid ${w.amount_sar} SAR to provider ${w.provider_id}`, now);
+    } catch(e) {}
+
+    res.json({ success: true, withdrawal_id: w.withdrawal_id, new_status: 'completed', amount_sar: w.amount_sar });
+  } catch (error) {
+    console.error('Complete withdrawal error:', error);
+    res.status(500).json({ error: 'Failed to complete withdrawal' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/audit - Audit log
+// ============================================================================
+router.get('/audit', (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = (page - 1) * limit;
+
+    let entries = [];
+    let total = 0;
+    try {
+      const countRow = db.get('SELECT COUNT(*) as total FROM admin_audit_log');
+      total = countRow?.total || 0;
+      entries = db.all('SELECT * FROM admin_audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?', limit, offset);
+    } catch(e) { /* table may not exist yet */ }
+
+    res.json({ entries, pagination: { page, limit, total, total_pages: Math.ceil(total / limit) } });
+  } catch (error) {
+    console.error('Audit log error:', error);
+    res.status(500).json({ error: 'Failed to fetch audit log' });
   }
 });
 
