@@ -60,3 +60,14 @@
 ---
 
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
+
+## [2026-03-13 12:00 UTC] Claude-Cowork — Add Withdrawals nav to admin pages
+
+- **Commit**: `3e128e0`
+- **Files**: 10 admin page files updated (app/admin/page.tsx, fleet/page.tsx, jobs/page.tsx, providers/page.tsx, renters/page.tsx, security/page.tsx, finance/page.tsx, jobs/[id]/page.tsx, providers/[id]/page.tsx, renters/[id]/page.tsx)
+- **What changed**:
+  - Added WalletIcon SVG component definition to all 10 admin pages
+  - Added Withdrawals nav item `{ label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> }` positioned after Finance and before Security in navItems arrays
+  - All pages now have consistent navigation with link to /admin/withdrawals
+- **Impact**: Admin pages now display Withdrawals navigation link with wallet icon
+
