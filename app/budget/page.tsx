@@ -257,6 +257,27 @@ export default function BudgetPage() {
               })}
         </div>
 
+        {/* Model Cost Breakdown */}
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+            Model Cost Rates
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { model: 'Sonnet', input: '$3.00', output: '$15.00', color: '#00d4ff' },
+              { model: 'Haiku', input: '$0.25', output: '$1.25', color: '#00c853' },
+              { model: 'Opus', input: '$15.00', output: '$75.00', color: '#ffd700' },
+              { model: 'MiniMax', input: '$0.40', output: '$1.60', color: '#bb86fc' },
+            ].map((m) => (
+              <div key={m.model} className="text-center p-3 bg-[#21262d] rounded-lg">
+                <div className="font-bold text-sm" style={{ color: m.color }}>{m.model}</div>
+                <div className="text-xs text-gray-500 mt-1">In: {m.input}/M</div>
+                <div className="text-xs text-gray-500">Out: {m.output}/M</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Weekly Trend */}
         <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">

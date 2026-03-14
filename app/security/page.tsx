@@ -29,7 +29,113 @@ const typeLabels: Record<string, string> = {
   new_registration: '🆕 New Registration',
   suspicious_toggle: '⚠️ Suspicious Toggle',
   active_threat: '🚨 Active Threat',
+  provider_offline: '🔌 Provider Offline',
+  provider_online: '✅ Provider Online',
+  long_offline: '⏰ Extended Offline',
 };
+
+const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
+
+function getApiBase(): string {
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return '/api/dc1';
+  }
+  return 'http://76.13.179.86:8083/api';
+}
+
+// Derive security events from real provider data
+function deriveSecurityEvents(providers: Array<{
+  id: number; name: string; status: string; is_online: boolean;
+  last_heartbeat?: string; created_at?: string; is_paused?: boolean;
+  minutes_since_heartbeat?: number | null;
+}>): SecurityEvent[] {
+  const events: SecurityEvent[] = [];
+  const now = new Date();
+
+  for (const p of providers) {
+    // New registration (created within last 24h)
+    if (p.created_at) {
+      const createdAt = new Date(p.created_at);
+      const hoursSinceCreation = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSinceCreation < 24) {
+        events.push({
+          type: 'new_registration',
+          severity: 'info',
+          provider_id: p.id,
+          provider_name: p.name,
+          description: `New provider registered: ${p.name}`,
+          timestamp: p.created_at,
+        });
+      }
+    }
+
+    // Offline provider with recent heartbeat = potential issue
+    if (!p.is_online && p.last_heartbeat) {
+      const lastHB = new Date(p.last_heartbeat);
+      const minutesSince = p.minutes_since_heartbeat ?? Math.round((now.getTime() - lastHB.getTime()) / 60_000);
+
+      if (minutesSince < 30) {
+        // Recently went offline — warning
+        events.push({
+          type: 'failed_heartbeat',
+          severity: 'warning',
+          provider_id: p.id,
+          provider_name: p.name,
+          description: `Lost heartbeat ${minutesSince} min ago — was recently online`,
+          timestamp: p.last_heartbeat,
+        });
+      } else if (minutesSince < 1440) {
+        // Offline for hours
+        events.push({
+          type: 'provider_offline',
+          severity: 'info',
+          provider_id: p.id,
+          provider_name: p.name,
+          description: `Offline for ${Math.round(minutesSince / 60)}h — last heartbeat: ${lastHB.toLocaleString()}`,
+          timestamp: p.last_heartbeat,
+        });
+      } else {
+        // Extended offline (>24h)
+        events.push({
+          type: 'long_offline',
+          severity: 'warning',
+          provider_id: p.id,
+          provider_name: p.name,
+          description: `Extended offline: ${Math.round(minutesSince / 1440)}d since last heartbeat`,
+          timestamp: p.last_heartbeat,
+        });
+      }
+    }
+
+    // Online provider = good event
+    if (p.is_online) {
+      events.push({
+        type: 'provider_online',
+        severity: 'info',
+        provider_id: p.id,
+        provider_name: p.name,
+        description: `Provider is online and healthy`,
+        timestamp: p.last_heartbeat || now.toISOString(),
+      });
+    }
+
+    // Paused provider
+    if (p.is_paused) {
+      events.push({
+        type: 'suspicious_toggle',
+        severity: 'info',
+        provider_id: p.id,
+        provider_name: p.name,
+        description: 'Provider is paused — not receiving jobs',
+        timestamp: p.last_heartbeat || now.toISOString(),
+      });
+    }
+  }
+
+  // Sort by timestamp descending (most recent first)
+  events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return events;
+}
 
 export default function SecurityPage() {
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -37,23 +143,41 @@ export default function SecurityPage() {
   const [loading, setLoading] = useState(true);
   const [flagging, setFlagging] = useState<number | null>(null);
   const [lastRefresh, setLastRefresh] = useState<string>('');
+  const [dataSource, setDataSource] = useState<'live' | 'fallback'>('fallback');
 
   const fetchData = useCallback(async () => {
+    const API = getApiBase();
+    const headers: Record<string, string> = { 'x-admin-token': ADMIN_TOKEN };
+
     try {
-      const [eventsRes, summaryRes] = await Promise.all([
-        fetch('/api/security?endpoint=events'),
-        fetch('/api/security?endpoint=summary'),
-      ]);
-      const eventsData = await eventsRes.json();
-      const summaryData = await summaryRes.json();
-      setEvents(eventsData.events || []);
+      const res = await fetch(`${API}/admin/providers?page=0`, { headers });
+      if (!res.ok) throw new Error('API error');
+      const data = await res.json();
+      const providers = data.providers || [];
+
+      const derivedEvents = deriveSecurityEvents(providers);
+      setEvents(derivedEvents);
+
+      const summaryData: SecuritySummary = {
+        total: derivedEvents.length,
+        critical: derivedEvents.filter(e => e.severity === 'critical').length,
+        warning: derivedEvents.filter(e => e.severity === 'warning').length,
+        info: derivedEvents.filter(e => e.severity === 'info').length,
+      };
       setSummary(summaryData);
+      setDataSource('live');
       setLastRefresh(new Date().toLocaleTimeString());
     } catch {
-      // backend offline — keep stale data
+      // API offline — show empty state
+      if (events.length === 0) {
+        setEvents([]);
+        setSummary({ total: 0, critical: 0, warning: 0, info: 0 });
+      }
+      setDataSource('fallback');
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -65,10 +189,14 @@ export default function SecurityPage() {
   const handleFlag = async (providerId: number) => {
     setFlagging(providerId);
     try {
-      await fetch(`/api/security?providerId=${providerId}`, { method: 'POST' });
+      const API = getApiBase();
+      await fetch(`${API}/admin/providers/${providerId}/suspend`, {
+        method: 'POST',
+        headers: { 'x-admin-token': ADMIN_TOKEN, 'Content-Type': 'application/json' },
+      });
       await fetchData();
     } catch {
-      // ignore
+      // ignore — may not have suspend endpoint yet
     } finally {
       setFlagging(null);
     }
@@ -80,6 +208,12 @@ export default function SecurityPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#00d4ff]">🛡️ Security Guards View</h1>
         <div className="flex items-center gap-3">
+          {dataSource === 'live' && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-[#00c853]/10 text-[#00c853]">LIVE</span>
+          )}
+          {dataSource === 'fallback' && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-[#ffab00]/10 text-[#ffab00]">API Offline</span>
+          )}
           <span className="text-xs text-gray-500">Auto-refresh 30s</span>
           {lastRefresh && <span className="text-xs text-gray-600">Last: {lastRefresh}</span>}
           <button
@@ -92,7 +226,7 @@ export default function SecurityPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Total Events', value: summary.total, color: 'text-white' },
           { label: 'Critical', value: summary.critical, color: 'text-[#ff5252]' },
@@ -120,46 +254,50 @@ export default function SecurityPage() {
             ✅ No security events — all clear
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-gray-500 border-b border-[#30363d]">
-                <th className="text-left px-4 py-2">Timestamp</th>
-                <th className="text-left px-4 py-2">Provider</th>
-                <th className="text-left px-4 py-2">Event</th>
-                <th className="text-left px-4 py-2">Severity</th>
-                <th className="text-left px-4 py-2">Description</th>
-                <th className="text-left px-4 py-2">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event, i) => (
-                <tr key={`${event.provider_id}-${event.type}-${i}`} className="border-b border-[#30363d]/50 hover:bg-[#21262d]">
-                  <td className="px-4 py-3 text-gray-400 text-xs font-mono">
-                    {new Date(event.timestamp).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-[#00d4ff] text-xs">
-                    #{event.provider_id} {event.provider_name}
-                  </td>
-                  <td className="px-4 py-3 text-xs">{typeLabels[event.type] || event.type}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${severityColors[event.severity]}`}>
-                      {event.severity}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-300 text-xs">{event.description}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => handleFlag(event.provider_id)}
-                      disabled={flagging === event.provider_id}
-                      className="px-2 py-1 rounded text-xs bg-[#ff5252]/10 text-[#ff5252] hover:bg-[#ff5252]/20 transition-colors disabled:opacity-50"
-                    >
-                      {flagging === event.provider_id ? '...' : '🚩 Flag'}
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-[#30363d]">
+                  <th className="text-left px-4 py-2">Timestamp</th>
+                  <th className="text-left px-4 py-2">Provider</th>
+                  <th className="text-left px-4 py-2">Event</th>
+                  <th className="text-left px-4 py-2">Severity</th>
+                  <th className="text-left px-4 py-2">Description</th>
+                  <th className="text-left px-4 py-2">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {events.map((event, i) => (
+                  <tr key={`${event.provider_id}-${event.type}-${i}`} className="border-b border-[#30363d]/50 hover:bg-[#21262d]">
+                    <td className="px-4 py-3 text-gray-400 text-xs font-mono whitespace-nowrap">
+                      {new Date(event.timestamp).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-[#00d4ff] text-xs whitespace-nowrap">
+                      #{event.provider_id} {event.provider_name}
+                    </td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">{typeLabels[event.type] || event.type}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${severityColors[event.severity]}`}>
+                        {event.severity}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-300 text-xs">{event.description}</td>
+                    <td className="px-4 py-3">
+                      {event.severity !== 'info' && (
+                        <button
+                          onClick={() => handleFlag(event.provider_id)}
+                          disabled={flagging === event.provider_id}
+                          className="px-2 py-1 rounded text-xs bg-[#ff5252]/10 text-[#ff5252] hover:bg-[#ff5252]/20 transition-colors disabled:opacity-50"
+                        >
+                          {flagging === event.provider_id ? '...' : '🚩 Flag'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

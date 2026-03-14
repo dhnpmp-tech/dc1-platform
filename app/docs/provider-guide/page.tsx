@@ -7,7 +7,7 @@ export default function ProviderGuidePage() {
       <p>As a DC1 provider, you share your GPU hardware to earn revenue from compute jobs. This guide walks you through the entire process from registration to earning.</p>
 
       <h2>Step 1: Register</h2>
-      <p>Visit <a href="/provider/register">dc1-platform.vercel.app/provider/register</a> and fill in your details: name, email, GPU model, and operating system. After registration, you will receive a unique API key — save this key securely, it is your authentication credential.</p>
+      <p>Visit <a href="/provider/register">dcp.sa/provider/register</a> and fill in your details: name, email, GPU model, and operating system. After registration, you will receive a unique API key — save this key securely, it is your authentication credential.</p>
 
       <h2>Step 2: Install the Daemon</h2>
       <p>After registration, you will see platform-specific install commands:</p>
@@ -29,7 +29,7 @@ export default function ProviderGuidePage() {
       </ul>
 
       <h2>Earnings</h2>
-      <p>You receive 75% of compute revenue. Earnings are tracked in real-time on your provider dashboard at <a href="/provider">dc1-platform.vercel.app/provider</a>. The dashboard shows today&apos;s earnings, weekly earnings, total earnings, and completed jobs.</p>
+      <p>You receive 75% of compute revenue. Earnings are tracked in real-time on your provider dashboard at <a href="/provider">dcp.sa/provider</a>. The dashboard shows today&apos;s earnings, weekly earnings, total earnings, and completed jobs.</p>
 
       <h2>Managing Your Provider</h2>
       <ul>
@@ -47,7 +47,7 @@ export default function ProviderGuidePage() {
       </ul>
 
       <h2>Troubleshooting</h2>
-      <p>If your daemon shows as offline, check that the Python process is running and that your firewall allows outbound HTTPS connections. For further help, visit <a href="/support">dc1-platform.vercel.app/support</a>.</p>
+      <p>If your daemon shows as offline, check that the Python process is running and that your firewall allows outbound HTTPS connections. For further help, visit <a href="/support">dcp.sa/support</a>.</p>
     </LegalPage>
   )
 }

@@ -57,7 +57,7 @@ export default function Footer() {
             &copy; {new Date().getFullYear()} DC Power Solutions Company. CR: 7053667775. All rights reserved.
           </p>
           <p className="text-xs text-dc1-text-muted">
-            dc1-platform.vercel.app
+            dcp.sa
           </p>
         </div>
       </div>
