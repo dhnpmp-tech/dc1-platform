@@ -41,6 +41,8 @@ export default function FinanceDashboard() {
   const [txnPage, setTxnPage] = useState(1)
   const [txnPagination, setTxnPagination] = useState<any>(null)
   const [error, setError] = useState('')
+  const [recon, setRecon] = useState<any>(null)
+  const [reconDays, setReconDays] = useState(7)
 
   useEffect(() => {
     const token = localStorage.getItem('dc1_admin_token')
@@ -50,23 +52,26 @@ export default function FinanceDashboard() {
 
     const load = async () => {
       try {
-        const [sumRes, txnRes] = await Promise.all([
+        const [sumRes, txnRes, reconRes] = await Promise.all([
           fetch(`${API_BASE}/admin/finance/summary`, { headers }),
           fetch(`${API_BASE}/admin/finance/transactions?page=${txnPage}&limit=15`, { headers }),
+          fetch(`${API_BASE}/admin/finance/reconciliation?days=${reconDays}`, { headers }),
         ])
-        if (!sumRes.ok || !txnRes.ok) throw new Error('Failed to load')
+        if (!sumRes.ok || !txnRes.ok || !reconRes.ok) throw new Error('Failed to load')
         const sumData = await sumRes.json()
         const txnData = await txnRes.json()
+        const reconData = await reconRes.json()
         setData(sumData)
         setTxns(txnData.transactions || [])
         setTxnPagination(txnData.pagination || null)
+        setRecon(reconData)
       } catch (err: any) { setError(err.message) }
       finally { setLoading(false) }
     }
     load()
     const interval = setInterval(load, 30000)
     return () => clearInterval(interval)
-  }, [router, txnPage])
+  }, [router, txnPage, reconDays])
 
   if (loading) return (
     <DashboardLayout navItems={navItems} role="admin" userName="Admin">
@@ -274,6 +279,125 @@ export default function FinanceDashboard() {
                   {d.job_id}: cost={d.actual_cost_halala} | provider={d.provider_earned_halala} + dc1={d.dc1_fee_halala} = {(d.provider_earned_halala || 0) + (d.dc1_fee_halala || 0)}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Financial Reconciliation */}
+        {recon && (
+          <div className="space-y-6">
+            <div className="card">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="section-heading">Financial Reconciliation</h2>
+                <div className="flex gap-2">
+                  {[7, 14, 30, 90].map(days => (
+                    <button
+                      key={days}
+                      onClick={() => setReconDays(days)}
+                      className={`px-3 py-1 text-sm rounded border ${
+                        reconDays === days
+                          ? 'bg-dc1-amber text-dc1-void border-dc1-amber'
+                          : 'bg-dc1-surface-l2 text-dc1-text-secondary border-dc1-border hover:text-dc1-text-primary'
+                      }`}
+                    >
+                      {days}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-dc1-text-muted mb-4">Period: {recon.since ? new Date(recon.since).toLocaleDateString() : 'N/A'} — last {recon.period_days} days</p>
+
+              {/* Summary Stat Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+                <StatCard label="Total Jobs" value={String(recon.summary?.total_completed_jobs || 0)} accent="default" />
+                <StatCard label="Total Billed" value={`${halalaToSar(recon.summary?.total_billed_halala || 0)} SAR`} accent="default" />
+                <StatCard
+                  label="Split Mismatches"
+                  value={String(recon.summary?.split_mismatches || 0)}
+                  accent={recon.summary?.split_mismatches > 0 ? 'error' : 'success'}
+                />
+                <StatCard
+                  label="Missing Billing"
+                  value={String(recon.summary?.missing_billing || 0)}
+                  accent={recon.summary?.missing_billing > 0 ? 'error' : 'success'}
+                />
+                <StatCard
+                  label="Provider Drift"
+                  value={String(recon.summary?.provider_drift_count || 0)}
+                  accent={recon.summary?.provider_drift_count > 0 ? 'error' : 'success'}
+                />
+                <StatCard
+                  label="Renter Drift"
+                  value={String(recon.summary?.renter_drift_count || 0)}
+                  accent={recon.summary?.renter_drift_count > 0 ? 'error' : 'success'}
+                />
+              </div>
+
+              {/* Provider Earnings Drift Table */}
+              {recon.issues?.provider_earnings_drift?.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">Provider Earnings Drift</h3>
+                  <div className="overflow-x-auto">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Provider</th>
+                          <th>Email</th>
+                          <th>Recorded (SAR)</th>
+                          <th>Computed (SAR)</th>
+                          <th>Drift (SAR)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recon.issues.provider_earnings_drift.map((p: any) => (
+                          <tr key={p.id}>
+                            <td className="text-sm font-medium text-dc1-text-primary">{p.name}</td>
+                            <td className="text-sm text-dc1-text-secondary">{p.email}</td>
+                            <td className="text-sm">{halalaToSar(p.recorded_earnings_halala)}</td>
+                            <td className="text-sm">{halalaToSar(p.computed_earnings_halala)}</td>
+                            <td className="text-sm font-semibold" style={{ color: p.drift !== 0 ? '#ef4444' : '#10b981' }}>
+                              {halalaToSar(p.drift)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Renter Spend Drift Table */}
+              {recon.issues?.renter_spend_drift?.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">Renter Spend Drift</h3>
+                  <div className="overflow-x-auto">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Renter</th>
+                          <th>Email</th>
+                          <th>Recorded (SAR)</th>
+                          <th>Computed (SAR)</th>
+                          <th>Drift (SAR)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recon.issues.renter_spend_drift.map((r: any) => (
+                          <tr key={r.id}>
+                            <td className="text-sm font-medium text-dc1-text-primary">{r.name}</td>
+                            <td className="text-sm text-dc1-text-secondary">{r.email}</td>
+                            <td className="text-sm">{halalaToSar(r.recorded_spent)}</td>
+                            <td className="text-sm">{halalaToSar(r.computed_spent)}</td>
+                            <td className="text-sm font-semibold" style={{ color: r.drift !== 0 ? '#ef4444' : '#10b981' }}>
+                              {halalaToSar(r.drift)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

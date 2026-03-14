@@ -52,6 +52,9 @@ export default function SecurityPage() {
   const [events, setEvents] = useState<SecurityEvent[]>([])
   const [summary, setSummary] = useState<SecuritySummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [auditLog, setAuditLog] = useState<any[]>([])
+  const [auditPagination, setAuditPagination] = useState<any>(null)
+  const [auditPage, setAuditPage] = useState(1)
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -61,6 +64,12 @@ export default function SecurityPage() {
     const interval = setInterval(fetchSecurityData, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (token) {
+      fetchAuditLog()
+    }
+  }, [auditPage])
 
   const fetchSecurityData = async () => {
     try {
@@ -86,6 +95,40 @@ export default function SecurityPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchAuditLog = async () => {
+    try {
+      const auditRes = await fetch(`${API_BASE}/admin/audit?page=${auditPage}&limit=20`, {
+        headers: { 'x-admin-token': token || '' }
+      })
+
+      if (auditRes.status === 401) {
+        localStorage.removeItem('dc1_admin_token')
+        router.push('/login')
+        return
+      }
+
+      const auditJson = await auditRes.json()
+      setAuditLog(auditJson.audit_log || [])
+      setAuditPagination(auditJson.pagination || null)
+    } catch (err) {
+      console.error('Error fetching audit log:', err)
+    }
+  }
+
+  const getActionColor = (action: string) => {
+    const lowerAction = action?.toLowerCase() || ''
+    if (lowerAction.includes('suspend') || lowerAction.includes('reject')) {
+      return 'bg-red-600/20 text-red-400'
+    } else if (lowerAction.includes('approve') || lowerAction.includes('complete')) {
+      return 'bg-green-600/20 text-green-400'
+    } else if (lowerAction.includes('rotate')) {
+      return 'bg-amber-600/20 text-amber-400'
+    } else if (lowerAction.includes('balance')) {
+      return 'bg-blue-600/20 text-blue-400'
+    }
+    return 'bg-gray-600/20 text-gray-400'
   }
 
   const getSeverityColor = (severity: string) => {
@@ -131,39 +174,103 @@ export default function SecurityPage() {
       {loading ? (
         <div className="text-dc1-text-secondary">Loading security events...</div>
       ) : (
-        <div className="card">
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Event Type</th>
-                  <th>Severity</th>
-                  <th>Provider</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((event: SecurityEvent) => (
-                  <tr key={event.id}>
-                    <td className="text-sm text-dc1-text-secondary">{formatTime(event.timestamp)}</td>
-                    <td className="text-sm font-medium">{event.event_type}</td>
-                    <td>
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getSeverityColor(event.severity)}`}>
-                        {event.severity?.charAt(0).toUpperCase() + event.severity?.slice(1) || 'Unknown'}
-                      </span>
-                    </td>
-                    <td className="text-sm">{event.provider_name || event.provider_id || '—'}</td>
-                    <td className="text-sm text-dc1-text-secondary max-w-xs truncate">{event.details}</td>
+        <>
+          <div className="card mb-8">
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Event Type</th>
+                    <th>Severity</th>
+                    <th>Provider</th>
+                    <th>Details</th>
                   </tr>
-                ))}
-                {events.length === 0 && (
-                  <tr><td colSpan={5} className="text-dc1-text-muted text-sm text-center">No security events found</td></tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {events.map((event: SecurityEvent) => (
+                    <tr key={event.id}>
+                      <td className="text-sm text-dc1-text-secondary">{formatTime(event.timestamp)}</td>
+                      <td className="text-sm font-medium">{event.event_type}</td>
+                      <td>
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getSeverityColor(event.severity)}`}>
+                          {event.severity?.charAt(0).toUpperCase() + event.severity?.slice(1) || 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="text-sm">{event.provider_name || event.provider_id || '—'}</td>
+                      <td className="text-sm text-dc1-text-secondary max-w-xs truncate">{event.details}</td>
+                    </tr>
+                  ))}
+                  {events.length === 0 && (
+                    <tr><td colSpan={5} className="text-dc1-text-muted text-sm text-center">No security events found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+
+          {/* Audit Log Table */}
+          <div className="card">
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold text-dc1-text-primary">Admin Audit Log</h2>
+              <p className="text-sm text-dc1-text-secondary">Track administrative actions and changes</p>
+            </div>
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLog.map((entry: any) => (
+                    <tr key={entry.id}>
+                      <td className="text-sm text-dc1-text-secondary">{formatTime(entry.timestamp)}</td>
+                      <td>
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getActionColor(entry.action)}`}>
+                          {entry.action?.replace(/_/g, ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="text-sm font-medium">{entry.target_type} #{entry.target_id}</td>
+                      <td className="text-sm text-dc1-text-secondary max-w-xs truncate">{entry.details}</td>
+                    </tr>
+                  ))}
+                  {auditLog.length === 0 && (
+                    <tr><td colSpan={4} className="text-dc1-text-muted text-sm text-center">No audit log entries found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {auditPagination && auditPagination.total_pages > 1 && (
+              <div className="mt-6 flex items-center justify-between border-t border-dc1-border pt-4">
+                <div className="text-sm text-dc1-text-secondary">
+                  Page {auditPagination.page} of {auditPagination.total_pages} ({auditPagination.total} total entries)
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAuditPage(Math.max(1, auditPage - 1))}
+                    disabled={auditPage === 1}
+                    className="px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setAuditPage(Math.min(auditPagination.total_pages, auditPage + 1))}
+                    disabled={auditPage === auditPagination.total_pages}
+                    className="px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </DashboardLayout>
   )

@@ -33,6 +33,7 @@ const navItems = [
 export default function FleetHealthPage() {
   const router = useRouter()
   const [data, setData] = useState<any>(null)
+  const [health, setHealth] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [timePeriod, setTimePeriod] = useState(24)
 
@@ -67,6 +68,19 @@ export default function FleetHealthPage() {
       setData(json)
     } catch (err) {
       console.error(err)
+    }
+
+    // Fetch system health status
+    try {
+      const healthRes = await fetch(`${API_BASE}/admin/health`, {
+        headers: { 'x-admin-token': token! }
+      })
+      if (healthRes.ok) {
+        const healthJson = await healthRes.json()
+        setHealth(healthJson)
+      }
+    } catch (err) {
+      console.error('Failed to fetch system health:', err)
     } finally { setLoading(false) }
   }
 
@@ -113,6 +127,67 @@ export default function FleetHealthPage() {
           ))}
         </div>
       </div>
+
+      {/* System Health Status Banner */}
+      {health && (
+        <div className={`card mb-6 border-l-4 ${
+          health.status === 'healthy' ? 'border-l-green-500' :
+          health.status === 'degraded' ? 'border-l-yellow-500' :
+          'border-l-red-500'
+        }`}>
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-3 h-3 rounded-full ${
+                health.status === 'healthy' ? 'bg-green-500' :
+                health.status === 'degraded' ? 'bg-yellow-500' :
+                'bg-red-500'
+              }`}></div>
+              <div>
+                <h3 className="text-lg font-bold text-dc1-text-primary">
+                  System Status: {health.status.charAt(0).toUpperCase() + health.status.slice(1)}
+                </h3>
+                <p className="text-xs text-dc1-text-secondary">{new Date(health.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">Database</div>
+              <div className={`text-sm font-bold ${health.checks?.database === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                {health.checks?.database || 'unknown'}
+              </div>
+            </div>
+            <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">Providers Online</div>
+              <div className="text-sm font-bold text-dc1-amber">{health.checks?.providers?.online || 0} / {health.checks?.providers?.total || 0}</div>
+            </div>
+            <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">Active Jobs</div>
+              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.jobs?.active || 0}</div>
+            </div>
+            <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">Stuck Jobs</div>
+              <div className={`text-sm font-bold ${(health.checks?.jobs?.stuck || 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                {health.checks?.jobs?.stuck || 0}
+              </div>
+            </div>
+            <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">Failed (1h)</div>
+              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.errors?.failed_last_hour || 0}</div>
+            </div>
+            <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">Critical Events</div>
+              <div className={`text-sm font-bold ${(health.checks?.errors?.critical_events || 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                {health.checks?.errors?.critical_events || 0}
+              </div>
+            </div>
+            <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">Pending Withdrawals</div>
+              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.withdrawals?.pending || 0}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-dc1-text-secondary">Loading fleet health data...</div>
