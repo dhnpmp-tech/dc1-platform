@@ -118,6 +118,25 @@
 
 ---
 
+## [2026-03-14 10:30 UTC] Claude-Cowork — Phase 4: Advanced dashboard features (P8-P10, R7-R9)
+
+- **Commit**: `3702168`
+- **Files**: `app/provider/jobs/[id]/page.tsx` (NEW), `app/provider/page.tsx`, `app/provider/jobs/page.tsx`, `app/provider/settings/page.tsx`, `app/renter/jobs/[id]/page.tsx` (NEW), `app/renter/settings/page.tsx` (NEW), `app/renter/analytics/page.tsx` (NEW), `app/renter/page.tsx`, `app/renter/jobs/page.tsx`, `app/renter/marketplace/page.tsx`, `app/renter/billing/page.tsx`
+- **What changed**:
+  - **P8**: Provider job detail page at `/provider/jobs/[id]` — earnings breakdown (75/25 split), job parameters, error display, 10s auto-refresh
+  - **P9**: 7-day earnings bar chart on Provider dashboard using `earnings-daily` API
+  - **P10**: Notification preferences section in Provider settings — 6 notification types
+  - **R7**: Renter settings page at `/renter/settings` — profile, account stats, API key management (show/copy/rotate)
+  - **R8**: Renter analytics page at `/renter/analytics` — daily spending chart, job type breakdown, success rate, outcome stats
+  - **R9**: Renter job detail page at `/renter/jobs/[id]` — output display (LLM text + image gen), performance metrics, retry button
+  - Added Settings nav item to all renter sidebar navigations (6 pages updated)
+  - Linked job tables to detail pages in both dashboards
+- **Impact**: All planned dashboard improvement items now complete. Both dashboards feature-complete.
+- **Breaking**: None
+- **New pages**: 4 (`provider/jobs/[id]`, `renter/jobs/[id]`, `renter/settings`, `renter/analytics`)
+
+---
+
 ## [2026-03-14 09:30 UTC] Claude-Cowork — Phase 3: Dashboard consistency & polish (P3-P5, R4-R5)
 
 - **Commit**: `6a0cf9c`
