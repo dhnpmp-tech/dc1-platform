@@ -236,4 +236,29 @@ router.post('/login-email', (req, res) => {
   }
 });
 
+// POST /api/renters/rotate-key — Rotate API key (renter self-service)
+router.post('/rotate-key', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'Current API key required (x-renter-key header or key query)' });
+
+    const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const newKey = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
+    db.run('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?',
+      newKey, new Date().toISOString(), renter.id);
+
+    res.json({
+      success: true,
+      message: 'API key rotated. Save the new key — the old one is now invalid.',
+      api_key: newKey,
+      renter_id: renter.id
+    });
+  } catch (error) {
+    console.error('Renter key rotation error:', error);
+    res.status(500).json({ error: 'Key rotation failed' });
+  }
+});
+
 module.exports = router;

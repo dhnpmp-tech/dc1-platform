@@ -64,7 +64,11 @@ export default function WithdrawalsPage() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchData() }, [page, filter])
+  useEffect(() => {
+    fetchData()
+    const interval = setInterval(fetchData, 30000)
+    return () => clearInterval(interval)
+  }, [page, filter])
 
   const handleAction = async (id: number, action: 'approve' | 'reject' | 'complete', body?: any) => {
     setActionLoading(id)

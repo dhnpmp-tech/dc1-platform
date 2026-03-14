@@ -44,6 +44,8 @@ export default function ProvidersPage() {
   useEffect(() => {
     if (!token) { router.push('/login'); return }
     fetchProviders()
+    const interval = setInterval(fetchProviders, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const fetchProviders = async () => {

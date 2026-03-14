@@ -36,7 +36,19 @@ router.post('/register', async (req, res) => {
         if (!name || !email || !gpu_model || !os) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
-        
+
+        // Check for similar existing accounts (fuzzy duplicate detection)
+        const similar = db.all(
+            `SELECT id, name, email, status FROM providers
+             WHERE LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)
+             LIMIT 3`,
+            email.trim(), name.trim()
+        );
+        if (similar.length > 0) {
+            const matches = similar.map(s => `${s.name} (${s.email}, ${s.status})`).join('; ');
+            console.warn(`[registration] Potential duplicate for "${name}" <${email}>: ${matches}`);
+        }
+
         // Generate unique API key
         const api_key = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
         
@@ -1115,6 +1127,33 @@ router.get('/withdrawal-history', (req, res) => {
     } catch (error) {
         console.error('Withdrawal history error:', error);
         res.status(500).json({ error: 'Failed to fetch withdrawals' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/rotate-key — Rotate API key (provider self-service)
+// ============================================================================
+router.post('/rotate-key', (req, res) => {
+    try {
+        const key = req.headers['x-provider-key'] || req.query.key;
+        if (!key) return res.status(400).json({ error: 'Current API key required (x-provider-key header or key query)' });
+
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const newKey = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
+        db.run('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?',
+            newKey, new Date().toISOString(), provider.id);
+
+        res.json({
+            success: true,
+            message: 'API key rotated. Save the new key — the old one is now invalid.',
+            api_key: newKey,
+            provider_id: provider.id
+        });
+    } catch (error) {
+        console.error('Provider key rotation error:', error);
+        res.status(500).json({ error: 'Key rotation failed' });
     }
 });
 

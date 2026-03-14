@@ -48,6 +48,8 @@ export default function RentersPage() {
   useEffect(() => {
     if (!token) { router.push('/login'); return }
     fetchRenters()
+    const interval = setInterval(fetchRenters, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const fetchRenters = async () => {

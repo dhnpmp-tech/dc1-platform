@@ -44,6 +44,8 @@ export default function JobsPage() {
   useEffect(() => {
     if (!token) { router.push('/login'); return }
     fetchJobs()
+    const interval = setInterval(fetchJobs, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const fetchJobs = async () => {

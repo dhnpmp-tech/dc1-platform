@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
 
@@ -849,6 +850,46 @@ router.get('/security/summary', (req, res) => {
   } catch (error) {
     console.error('Security summary error:', error);
     res.status(500).json({ error: 'Failed to fetch security summary' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/providers/:id/rotate-key - Force-rotate provider API key
+// ============================================================================
+router.post('/providers/:id/rotate-key', (req, res) => {
+  try {
+    const provider = db.get('SELECT id, name FROM providers WHERE id = ?', req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const newKey = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
+    const now = new Date().toISOString();
+    db.run('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?', newKey, now, provider.id);
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'key_rotated', 'provider', provider.id, `Force-rotated API key for "${provider.name}"`, now); } catch(e) {}
+
+    res.json({ success: true, provider_id: provider.id, name: provider.name, new_api_key: newKey });
+  } catch (error) {
+    console.error('Admin rotate provider key error:', error);
+    res.status(500).json({ error: 'Key rotation failed' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/renters/:id/rotate-key - Force-rotate renter API key
+// ============================================================================
+router.post('/renters/:id/rotate-key', (req, res) => {
+  try {
+    const renter = db.get('SELECT id, name FROM renters WHERE id = ?', req.params.id);
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const newKey = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
+    const now = new Date().toISOString();
+    db.run('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?', newKey, now, renter.id);
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'key_rotated', 'renter', renter.id, `Force-rotated API key for "${renter.name}"`, now); } catch(e) {}
+
+    res.json({ success: true, renter_id: renter.id, name: renter.name, new_api_key: newKey });
+  } catch (error) {
+    console.error('Admin rotate renter key error:', error);
+    res.status(500).json({ error: 'Key rotation failed' });
   }
 });
 
