@@ -100,6 +100,24 @@
 
 ---
 
+## [2026-03-14 08:15 UTC] Claude-Cowork — Dashboard improvements: quick wins + high-impact features
+
+- **Commit**: `fa94802`
+- **Files**: `app/provider/page.tsx`, `app/provider/settings/page.tsx`, `app/renter/page.tsx`, `app/renter/billing/page.tsx`, `app/renter/marketplace/page.tsx`
+- **What changed**:
+  - **P6**: Added "This Week" earnings stat card to provider dashboard (5-col grid, wired to `week_earnings_halala`)
+  - **P7**: Removed dead `generateMockData()` function from provider dashboard
+  - **P1**: Added Pause/Resume GPU toggle button to provider dashboard header (POST /providers/pause and /resume)
+  - **P2**: Built GPU Preferences panel in provider Settings: run mode, schedule, GPU cap, VRAM reserve, temp limit (POST /providers/preferences)
+  - **R1**: Fixed currency display from "$" to "SAR" on renter dashboard stat cards
+  - **R6**: Added 30s auto-refresh interval to renter dashboard
+  - **R2**: Added Top-Up / Add Funds section to renter Billing page (POST /renters/topup)
+  - **R3**: Wrapped Marketplace in DashboardLayout with full sidebar nav, added reliability score + cached models
+- **Impact**: 8 dashboard improvements completed. Provider and renter UX significantly enhanced.
+- **Breaking**: None
+
+---
+
 ## [2026-03-14 07:40 UTC] Claude-Cowork — Phase 4 Final: Headless API Migration
 
 - **Commit**: (pending push)
