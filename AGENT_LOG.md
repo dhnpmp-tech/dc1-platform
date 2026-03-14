@@ -73,6 +73,19 @@
 
 ---
 
+## [2026-03-14 05:50 UTC] Claude-Cowork — Admin page enhancements: health banner, audit log, reconciliation
+
+- **Commit**: `6ec2685`
+- **Files**: `app/admin/fleet/page.tsx`, `app/admin/security/page.tsx`, `app/admin/finance/page.tsx`
+- **What changed**:
+  - **Fleet Health**: Added system health status banner — DB status, online providers, active/stuck jobs, errors, pending withdrawals
+  - **Security**: Added Admin Audit Log section with paginated table from `/admin/audit`
+  - **Finance**: Added Financial Reconciliation section with period selector and provider/renter drift tables from `/admin/finance/reconciliation`
+- **Impact**: All admin pages now wired to live backend data
+- **Breaking**: None
+
+---
+
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
 ## [2026-03-13 12:00 UTC] Claude-Cowork — Add Withdrawals nav to admin pages
