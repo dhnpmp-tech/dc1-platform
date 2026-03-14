@@ -256,3 +256,18 @@
 - **Security**: Removed hardcoded admin token `9ca7c...` from 5 client-side files. This was a critical exposure risk.
 - **Impact**: All internal pages now use proper auth flow; support page has working contact form; provider registration consolidated to single entry point
 
+## [2026-03-15 11:00 UTC] Claude-Cowork — Add Analytics to renter nav + shared API utility
+
+- **Commit**: (pending)
+- **Files changed**:
+  - `lib/api.ts` — NEW: shared API utility (getApiBase, getMcBase, getMcToken, getAdminToken, getProviderKey, getRenterKey)
+  - `app/renter/page.tsx` — Added Analytics nav item with ChartIcon
+  - `app/renter/marketplace/page.tsx` — Same
+  - `app/renter/jobs/page.tsx` — Same
+  - `app/renter/jobs/[id]/page.tsx` — Same
+  - `app/renter/settings/page.tsx` — Same
+  - `app/renter/billing/page.tsx` — Same (inline SVG variant)
+  - `app/renter/analytics/page.tsx` — Added Analytics to its own nav
+- **Breaking changes**: None
+- **Impact**: Analytics page now accessible from renter sidebar navigation across all renter pages; shared API utility created for future consolidation
+

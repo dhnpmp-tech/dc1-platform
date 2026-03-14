@@ -72,6 +72,7 @@ const navItems = [
   { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
   { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
   { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
+  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
   { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
 ]
 
