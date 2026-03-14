@@ -84,6 +84,8 @@ export default function ProviderDashboard() {
   const [providerData, setProviderData] = useState<ProviderData | null>(null)
   const [loading, setLoading] = useState(true)
   const [togglingPause, setTogglingPause] = useState(false)
+  const [dailyEarnings, setDailyEarnings] = useState<Array<{ day: string; earned_halala: number; completed: number }>>([])
+
 
   const handlePauseResume = async () => {
     if (!providerData) return
@@ -176,6 +178,14 @@ export default function ProviderDashboard() {
             completedAt: j.completed_at || '',
           })),
         })
+        // Fetch daily earnings for chart
+        try {
+          const dailyRes = await fetch(`${API_BASE}/providers/earnings-daily?key=${encodeURIComponent(apiKey)}&days=7`)
+          if (dailyRes.ok) {
+            const dailyData = await dailyRes.json()
+            setDailyEarnings(dailyData.daily || [])
+          }
+        } catch { /* ignore chart data failure */ }
       } catch (error) {
         console.error('Failed to load provider data:', error)
       } finally {
@@ -359,6 +369,35 @@ export default function ProviderDashboard() {
             </div>
           </div>
         </div>
+
+        {/* 7-Day Earnings Chart */}
+        {dailyEarnings.length > 0 && (
+          <div className="card">
+            <h2 className="section-heading mb-4">Last 7 Days</h2>
+            <div className="flex items-end gap-2 h-32">
+              {(() => {
+                const maxEarning = Math.max(...dailyEarnings.map(d => d.earned_halala), 1)
+                return dailyEarnings.slice(0, 7).reverse().map(d => {
+                  const pct = Math.max(4, (d.earned_halala / maxEarning) * 100)
+                  const sar = (d.earned_halala / 100).toFixed(2)
+                  return (
+                    <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
+                      <span className="text-[10px] text-dc1-amber font-medium">{sar}</span>
+                      <div
+                        className="w-full bg-gradient-to-t from-dc1-amber/60 to-dc1-amber rounded-t transition-all"
+                        style={{ height: `${pct}%`, minHeight: '4px' }}
+                      />
+                      <span className="text-[10px] text-dc1-text-muted">
+                        {new Date(d.day + 'T00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+                      </span>
+                      <span className="text-[9px] text-dc1-text-muted">{d.completed}j</span>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+          </div>
+        )}
 
         {/* Current Job Section */}
         <div className="card">

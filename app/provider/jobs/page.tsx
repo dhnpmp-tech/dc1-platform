@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 
@@ -156,14 +157,16 @@ export default function ProviderJobsPage() {
                 jobs.map(j => (
                   <tr key={j.id}>
                     <td className="text-sm text-dc1-text-secondary">
-                      {j.completed_at
-                        ? new Date(j.completed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : j.submitted_at
-                        ? new Date(j.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : '—'}
+                      <Link href={`/provider/jobs/${j.id}`} className="hover:text-dc1-amber transition">
+                        {j.completed_at
+                          ? new Date(j.completed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : j.submitted_at
+                          ? new Date(j.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </Link>
                     </td>
                     <td>
-                      <span className="text-sm">{(j.job_type || '').replace(/_/g, ' ')}</span>
+                      <Link href={`/provider/jobs/${j.id}`} className="text-sm hover:text-dc1-amber transition">{(j.job_type || '').replace(/_/g, ' ')}</Link>
                     </td>
                     <td className="text-sm text-dc1-text-secondary">{j.renter_name || '—'}</td>
                     <td className="text-sm text-dc1-text-secondary">

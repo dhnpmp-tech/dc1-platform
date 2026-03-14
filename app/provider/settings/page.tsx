@@ -397,6 +397,39 @@ export default function ProviderSettingsPage() {
           </button>
         </div>
 
+        {/* Notification Preferences */}
+        <div className="card p-6 space-y-5">
+          <div>
+            <h2 className="section-heading">Notification Preferences</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">Choose what alerts you want to receive</p>
+          </div>
+
+          {[
+            { key: 'job_completed', label: 'Job Completed', desc: 'Get notified when a job finishes on your GPU' },
+            { key: 'job_failed', label: 'Job Failed', desc: 'Alert when a job fails or errors out' },
+            { key: 'earnings_milestone', label: 'Earnings Milestones', desc: 'Celebrate when you hit earning targets' },
+            { key: 'daemon_offline', label: 'Daemon Offline', desc: 'Warning when your daemon loses connection' },
+            { key: 'gpu_temp_warning', label: 'GPU Temperature Warning', desc: 'Alert when GPU exceeds safe temperature' },
+            { key: 'withdrawal_processed', label: 'Withdrawal Processed', desc: 'Confirmation when a withdrawal completes' },
+          ].map(item => (
+            <label key={item.key} className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                defaultChecked={item.key !== 'earnings_milestone'}
+                className="mt-1 w-4 h-4 rounded border-dc1-border bg-dc1-surface-l2 accent-dc1-amber"
+              />
+              <div>
+                <span className="text-sm font-medium text-dc1-text-primary">{item.label}</span>
+                <p className="text-xs text-dc1-text-muted">{item.desc}</p>
+              </div>
+            </label>
+          ))}
+
+          <p className="text-xs text-dc1-text-muted border-t border-dc1-border pt-3">
+            Email notifications will be sent to your registered email address. More notification channels coming soon.
+          </p>
+        </div>
+
         {/* Danger Zone */}
         <div className="card p-6 border-status-error/20 space-y-4">
           <h2 className="text-lg font-semibold text-status-error">Account Actions</h2>
