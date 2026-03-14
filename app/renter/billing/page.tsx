@@ -16,10 +16,16 @@ export default function BillingPage() {
   const [renter, setRenter] = useState<any>(null)
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [showKey, setShowKey] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [rotating, setRotating] = useState(false)
+  const [rotateConfirm, setRotateConfirm] = useState(false)
+  const [apiKey, setApiKey] = useState('')
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
     if (!key) { router.push('/login'); return }
+    setApiKey(key)
 
     const fetchData = async () => {
       try {
@@ -36,6 +42,34 @@ export default function BillingPage() {
     }
     fetchData()
   }, [router])
+
+  const copyApiKey = () => {
+    navigator.clipboard.writeText(apiKey)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleRotateKey = async () => {
+    setRotating(true)
+    try {
+      const res = await fetch(`${API_BASE}/renters/rotate-key`, {
+        method: 'POST',
+        headers: { 'x-renter-key': apiKey },
+      })
+      if (!res.ok) throw new Error('Failed to rotate key')
+      const data = await res.json()
+      const newKey = data.api_key
+      localStorage.setItem('dc1_renter_key', newKey)
+      setApiKey(newKey)
+      setShowKey(true)
+      setRotateConfirm(false)
+    } catch (err) {
+      console.error('Key rotation failed:', err)
+      alert('Failed to rotate API key. Please try again.')
+    } finally {
+      setRotating(false)
+    }
+  }
 
   const navItems = [
     { label: 'Dashboard', href: '/renter', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg> },
@@ -124,6 +158,42 @@ export default function BillingPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* API Key Management */}
+      <div className="card mt-8">
+        <h2 className="section-heading mb-4">API Key</h2>
+        <p className="text-sm text-dc1-text-secondary mb-3">Your API key authenticates requests to the DC1 platform.</p>
+        <div className="flex items-center gap-2 mb-4">
+          <code className="flex-1 text-sm font-mono text-dc1-amber bg-dc1-surface-l3 border border-dc1-border rounded-lg p-3 break-all">
+            {showKey ? apiKey : '••••••••••••••••••••••••••••••••'}
+          </code>
+          <div className="flex flex-col gap-2">
+            <button onClick={() => setShowKey(!showKey)} className="px-3 py-1.5 rounded text-sm bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary border border-dc1-border">
+              {showKey ? 'Hide' : 'Show'}
+            </button>
+            <button onClick={copyApiKey} className="px-3 py-1.5 rounded text-sm bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary border border-dc1-border">
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </div>
+        {!rotateConfirm ? (
+          <button onClick={() => setRotateConfirm(true)} className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+            Rotate API Key
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-status-error">This will invalidate your current key. Any integrations using it will stop working.</p>
+            <div className="flex gap-2">
+              <button onClick={handleRotateKey} disabled={rotating} className="px-3 py-1.5 rounded text-sm font-medium bg-status-error/20 text-status-error hover:bg-status-error/30 transition disabled:opacity-50">
+                {rotating ? 'Rotating...' : 'Confirm Rotate'}
+              </button>
+              <button onClick={() => setRotateConfirm(false)} className="px-3 py-1.5 rounded text-sm text-dc1-text-secondary hover:text-dc1-text-primary transition">
+                Cancel
+              </button>
+            </div>
           </div>
         )}
       </div>

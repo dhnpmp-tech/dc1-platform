@@ -167,14 +167,14 @@ export default function ProviderDashboard() {
         })
       } catch (error) {
         console.error('Failed to load provider data:', error)
-        // Fallback to mock data if API unreachable
-        setProviderData(generateMockData())
       } finally {
         setLoading(false)
       }
     }
 
     initializeDashboard()
+    const interval = setInterval(initializeDashboard, 30000)
+    return () => clearInterval(interval)
   }, [router])
 
   if (loading) {

@@ -54,6 +54,8 @@ export default function ProviderSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [showKey, setShowKey] = useState(false)
+  const [rotating, setRotating] = useState(false)
+  const [rotateConfirm, setRotateConfirm] = useState(false)
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_provider_key')
@@ -90,6 +92,32 @@ export default function ProviderSettingsPage() {
     navigator.clipboard.writeText(provider.api_key)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleRotateKey = async () => {
+    if (!provider) return
+    setRotating(true)
+    try {
+      const res = await fetch(`${API_BASE}/providers/rotate-key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-provider-key': provider.api_key,
+        },
+      })
+      if (!res.ok) throw new Error('Failed to rotate key')
+      const data = await res.json()
+      const newKey = data.api_key
+      localStorage.setItem('dc1_provider_key', newKey)
+      setProvider({ ...provider, api_key: newKey })
+      setShowKey(true)
+      setRotateConfirm(false)
+    } catch (err) {
+      console.error('Key rotation failed:', err)
+      alert('Failed to rotate API key. Please try again.')
+    } finally {
+      setRotating(false)
+    }
   }
 
   const handleLogout = () => {
@@ -172,6 +200,37 @@ export default function ProviderSettingsPage() {
                 {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-dc1-border/30">
+            {!rotateConfirm ? (
+              <button
+                onClick={() => setRotateConfirm(true)}
+                className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors"
+              >
+                Rotate API Key
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-status-error">
+                  This will invalidate your current key. Your daemon will need to be reconfigured with the new key.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleRotateKey}
+                    disabled={rotating}
+                    className="px-3 py-1.5 rounded text-sm font-medium bg-status-error/20 text-status-error hover:bg-status-error/30 transition disabled:opacity-50"
+                  >
+                    {rotating ? 'Rotating...' : 'Confirm Rotate'}
+                  </button>
+                  <button
+                    onClick={() => setRotateConfirm(false)}
+                    className="px-3 py-1.5 rounded text-sm text-dc1-text-secondary hover:text-dc1-text-primary transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
