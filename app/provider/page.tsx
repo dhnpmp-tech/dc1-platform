@@ -20,6 +20,8 @@ interface ProviderData {
   gpuUsage: number
   vramUsage: number
   isPaused: boolean
+  lastHeartbeat: string
+  daemonVersion: string
   activeJob?: {
     id: string
     jobType: string
@@ -148,6 +150,8 @@ export default function ProviderDashboard() {
           name: provider.name || 'Provider',
           status: provider.status === 'online' || provider.status === 'idle' ? 'online' : 'offline',
           isPaused: Boolean(provider.is_paused),
+          lastHeartbeat: provider.last_heartbeat || '',
+          daemonVersion: provider.daemon_version || '',
           todayEarnings: (provider.today_earnings_halala || 0) / 100,
           weekEarnings: (provider.week_earnings_halala || 0) / 100,
           totalEarnings: (provider.total_earnings_halala || 0) / 100,
@@ -297,10 +301,30 @@ export default function ProviderDashboard() {
               </div>
             </div>
 
-            {/* Status Indicator */}
+            {/* Daemon Connection */}
             <div>
-              <p className="text-sm text-dc1-text-secondary mb-2">Status</p>
-              <StatusBadge status="online" />
+              <p className="text-sm text-dc1-text-secondary mb-2">Daemon Status</p>
+              {(() => {
+                const hb = providerData.lastHeartbeat
+                const isConnected = hb ? (Date.now() - new Date(hb).getTime()) < 120000 : false
+                const isStale = hb ? (Date.now() - new Date(hb).getTime()) < 300000 : false
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-status-success animate-pulse' : isStale ? 'bg-status-warning' : 'bg-status-error'}`} />
+                    <span className="text-sm font-medium text-dc1-text-primary">
+                      {isConnected ? 'Connected' : isStale ? 'Stale' : 'Disconnected'}
+                    </span>
+                    {providerData.daemonVersion && (
+                      <span className="text-xs text-dc1-text-muted ml-1">v{providerData.daemonVersion}</span>
+                    )}
+                  </div>
+                )
+              })()}
+              {providerData.lastHeartbeat && (
+                <p className="text-xs text-dc1-text-muted mt-1">
+                  Last seen: {new Date(providerData.lastHeartbeat).toLocaleString()}
+                </p>
+              )}
             </div>
           </div>
 

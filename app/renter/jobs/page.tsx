@@ -88,6 +88,8 @@ export default function RenterJobsPage() {
     }
 
     fetchData()
+    const interval = setInterval(fetchData, 30000)
+    return () => clearInterval(interval)
   }, [router])
 
   if (loading) {
@@ -106,7 +108,12 @@ export default function RenterJobsPage() {
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-dc1-text-primary">My Jobs</h1>
+        <div>
+          <h1 className="text-3xl font-bold text-dc1-text-primary">My Jobs</h1>
+          <p className="text-dc1-text-secondary text-sm mt-1">
+            {jobs.length} job{jobs.length !== 1 ? 's' : ''} total — auto-refreshes every 30s
+          </p>
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -174,8 +181,8 @@ export default function RenterJobsPage() {
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-dc1-text-secondary">
                     No jobs yet. Head to the{' '}
-                    <a href="/renter/playground" className="text-dc1-amber hover:underline">GPU Playground</a>
-                    {' '}to run your first job!
+                    <a href="/renter/playground" className="text-dc1-amber hover:underline">GPU Playground</a>{' '}
+                    to run your first job!
                   </td>
                 </tr>
               )}
