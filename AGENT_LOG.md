@@ -187,3 +187,26 @@
   - All pages now have consistent navigation with link to /admin/withdrawals
 - **Impact**: Admin pages now display Withdrawals navigation link with wallet icon
 
+## [2026-03-14 18:30 UTC] Claude-Cowork — Browser testing all dashboard features + nav fix
+
+- **Commit**: `d985e88`
+- **Files**: `app/renter/jobs/[id]/page.tsx`
+- **What changed**:
+  - Added GearIcon SVG and Settings nav item to renter job detail page sidebar (was missing from Phase 4 commit)
+- **Testing completed** (all on dc1-platform.vercel.app):
+  - Provider Dashboard: daemon status badge, 7-day earnings chart, pause/resume, stats — PASS
+  - Provider Earnings: DashboardLayout, 4 tabs (Earnings/Job History/Daemon/Withdrawals), daily chart — PASS
+  - Provider Jobs: job list with detail links — PASS
+  - Provider Job Detail (/provider/jobs/59): job info, earnings breakdown (75/25 split) — PASS
+  - Provider Settings: profile, API key mgmt, GPU prefs, notification preferences — PASS
+  - Renter Dashboard: clean overview, no embedded playground, stats, GPU table, recent jobs — PASS
+  - Renter Jobs: detail links, auto-refresh — PASS
+  - Renter Job Detail (/renter/jobs/38): job info, error display, retry button — PASS
+  - Renter Settings: profile, account summary, API key show/copy/rotate — PASS
+  - Renter Analytics: stats, daily spending chart, job type breakdown, job outcomes — PASS
+  - Renter Marketplace: filter, GPU listing, Settings nav — PASS
+  - Renter Billing: add funds UI, Settings nav — PASS
+  - Renter Playground: standalone auth (sessionStorage), LLM/image gen, model selector — PASS
+- **Issue found**: dc1st.com is NOT connected to dc1-platform Vercel project (no domains configured). dc1st.com points to a separate landing page. App URL is dc1-platform.vercel.app
+- **Impact**: Minor nav consistency fix; all dashboard features from improvement plan verified working
+
