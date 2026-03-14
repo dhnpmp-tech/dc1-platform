@@ -86,6 +86,20 @@
 
 ---
 
+## [2026-03-14 06:15 UTC] Claude-Cowork — Complete 4B + 4C: bulk ops, CSP, webhook/Telegram alerting
+
+- **Commit**: `386c783`
+- **Files**: `backend/src/server.js`, `backend/src/routes/admin.js`, `backend/src/routes/providers.js`, `backend/src/services/notifications.js` (NEW), `app/admin/providers/page.tsx`, `app/admin/renters/page.tsx`
+- **What changed**:
+  - **4B Bulk Ops**: Multi-select checkboxes on providers + renters pages. Bulk suspend/unsuspend providers, bulk suspend/unsuspend/credit renters. Backend: `POST /admin/bulk/providers`, `POST /admin/bulk/renters` with audit logging
+  - **4C CSP**: Added Content-Security-Policy header to server.js
+  - **4C Notifications**: Created `notifications.js` service — supports generic webhooks + Telegram Bot API. Admin endpoints: `GET/POST /admin/notifications/config`, `POST /admin/notifications/test`. Config stored in `notification_config` table (auto-created). Auto-alerts fire on critical daemon events (crashes, errors)
+- **Impact**: Phase 4B and 4C now fully complete. All security hardening, bulk operations, and alerting infrastructure in place.
+- **Breaking**: None
+- **New table**: `notification_config` (auto-created on first access)
+
+---
+
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
 ## [2026-03-13 12:00 UTC] Claude-Cowork — Add Withdrawals nav to admin pages
