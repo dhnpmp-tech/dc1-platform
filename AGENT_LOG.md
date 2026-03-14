@@ -59,6 +59,20 @@
 
 ---
 
+## [2026-03-14 05:35 UTC] Claude-Cowork — Phase 4C: Health monitoring, reconciliation, security hardening
+
+- **Commit**: `6ea6dfd`
+- **Files**: `backend/src/server.js`, `backend/src/routes/admin.js`
+- **What changed**:
+  - **server.js**: Added security headers middleware (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy) and input sanitization middleware (strips HTML tags + null bytes from all req.body/req.query strings)
+  - **admin.js**: Added `GET /admin/health` endpoint (DB check, online providers, active/stuck jobs, recent errors, critical daemon events, pending withdrawals — returns healthy/degraded status)
+  - **admin.js**: Added `GET /admin/finance/reconciliation` endpoint (split mismatches, missing billing data, provider earnings drift, renter spend drift — configurable `?days=` param up to 90)
+- **Impact**: Completes Phase 4C security hardening. All admin endpoints now behind security headers + sanitized inputs. Health and reconciliation endpoints live on VPS.
+- **Breaking**: None
+- **Deployed**: Yes — VPS pm2 restarted, both endpoints verified working
+
+---
+
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
 ## [2026-03-13 12:00 UTC] Claude-Cowork — Add Withdrawals nav to admin pages
