@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface FleetData {
   total_providers: number;
@@ -49,7 +50,9 @@ const statusColors: Record<string, string> = {
   suspended: 'text-[#ff5252]',
 };
 
-const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
+function getAdminToken(): string | null {
+  return typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null;
+}
 
 function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
@@ -80,6 +83,7 @@ function buildUtilTrend(providers: ProviderInfo[]): UtilBucket[] {
 }
 
 export default function IntelligencePage() {
+  const router = useRouter();
   const [fleet, setFleet] = useState<FleetData | null>(null);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [utilization, setUtilization] = useState<UtilBucket[]>([]);
@@ -89,7 +93,9 @@ export default function IntelligencePage() {
 
   const fetchData = useCallback(async () => {
     const API = getApiBase();
-    const headers: Record<string, string> = { 'x-admin-token': ADMIN_TOKEN };
+    const token = getAdminToken();
+    if (!token) { router.push('/login'); return; }
+    const headers: Record<string, string> = { 'x-admin-token': token };
 
     try {
       const [dashRes, provRes] = await Promise.all([
@@ -97,6 +103,11 @@ export default function IntelligencePage() {
         fetch(`${API}/admin/providers?page=0`, { headers }),
       ]);
 
+      if (dashRes.status === 401 || provRes.status === 401) {
+        localStorage.removeItem('dc1_admin_token');
+        router.push('/login');
+        return;
+      }
       if (!dashRes.ok || !provRes.ok) throw new Error('API error');
 
       const dashData = await dashRes.json();

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardLayout from '../components/DashboardLayout';
 
@@ -32,7 +33,9 @@ const statusColors: Record<string, string> = {
   cancelled: 'bg-[#ffab00]/10 text-[#ffab00]',
 };
 
-const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
+function getAdminToken(): string | null {
+  return typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null;
+}
 
 function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
@@ -51,6 +54,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function JobsPage() {
+  const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,12 +73,15 @@ export default function JobsPage() {
       // Also fetch recent completed jobs from admin endpoint
       let allJobs = data.jobs || [];
       try {
-        const adminRes = await fetch(`${API}/admin/dashboard`, {
-          headers: { 'x-admin-token': ADMIN_TOKEN },
-        });
-        if (adminRes.ok) {
-          // admin dashboard includes stats we can use
-          setDataSource('live');
+        const token = getAdminToken();
+        if (token) {
+          const adminRes = await fetch(`${API}/admin/dashboard`, {
+            headers: { 'x-admin-token': token },
+          });
+          if (adminRes.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return; }
+          if (adminRes.ok) {
+            setDataSource('live');
+          }
         }
       } catch {
         // admin API not available

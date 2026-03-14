@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import DashboardLayout from '../components/DashboardLayout';
 import Link from 'next/link';
 
@@ -26,7 +27,9 @@ interface PlatformStats {
   totalRenters: number;
 }
 
-const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
+function getAdminToken(): string | null {
+  return typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null;
+}
 
 function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
@@ -64,6 +67,7 @@ function timeAgo(date: Date): string {
 }
 
 export default function MonitorPage() {
+  const router = useRouter();
   const [services, setServices] = useState<ServiceHealth[]>(() =>
     SERVICE_DEFS.map((s) => ({
       name: s.name,
@@ -79,13 +83,15 @@ export default function MonitorPage() {
   const checkAll = useCallback(async () => {
     const API = getApiBase();
     const now = new Date();
+    const token = getAdminToken();
+    if (!token) { router.push('/login'); return; }
     const results: { name: string; status: 'healthy' | 'degraded' | 'down'; responseTimeMs: number | null }[] = [];
 
     // Check VPS API
     try {
       const start = performance.now();
       const res = await fetch(`${API}/admin/dashboard`, {
-        headers: { 'x-admin-token': ADMIN_TOKEN },
+        headers: { 'x-admin-token': token },
         signal: AbortSignal.timeout(5000),
       });
       const latency = Math.round(performance.now() - start);

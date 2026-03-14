@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface SecurityEvent {
   type: string;
@@ -34,7 +35,9 @@ const typeLabels: Record<string, string> = {
   long_offline: '⏰ Extended Offline',
 };
 
-const ADMIN_TOKEN = '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b';
+function getAdminToken(): string | null {
+  return typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null;
+}
 
 function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
@@ -138,6 +141,7 @@ function deriveSecurityEvents(providers: Array<{
 }
 
 export default function SecurityPage() {
+  const router = useRouter();
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [summary, setSummary] = useState<SecuritySummary>({ total: 0, critical: 0, warning: 0, info: 0 });
   const [loading, setLoading] = useState(true);
@@ -147,10 +151,13 @@ export default function SecurityPage() {
 
   const fetchData = useCallback(async () => {
     const API = getApiBase();
-    const headers: Record<string, string> = { 'x-admin-token': ADMIN_TOKEN };
+    const token = getAdminToken();
+    if (!token) { router.push('/login'); return; }
+    const headers: Record<string, string> = { 'x-admin-token': token };
 
     try {
       const res = await fetch(`${API}/admin/providers?page=0`, { headers });
+      if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return; }
       if (!res.ok) throw new Error('API error');
       const data = await res.json();
       const providers = data.providers || [];
@@ -190,9 +197,11 @@ export default function SecurityPage() {
     setFlagging(providerId);
     try {
       const API = getApiBase();
+      const token = getAdminToken();
+      if (!token) return;
       await fetch(`${API}/admin/providers/${providerId}/suspend`, {
         method: 'POST',
-        headers: { 'x-admin-token': ADMIN_TOKEN, 'Content-Type': 'application/json' },
+        headers: { 'x-admin-token': token, 'Content-Type': 'application/json' },
       });
       await fetchData();
     } catch {

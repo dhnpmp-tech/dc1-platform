@@ -241,3 +241,18 @@
 - **Breaking changes**: None
 - **Impact**: Job tracker, agent detail, agent list, and system monitor now use real VPS/MC APIs instead of mock/non-existent endpoints
 
+## [2026-03-15 10:00 UTC] Claude-Cowork — Security fix + support form + provider consolidation
+
+- **Commit**: (pending)
+- **Files changed**:
+  - `app/intelligence/page.tsx` — Removed hardcoded admin token, uses `localStorage.getItem('dc1_admin_token')` + 401 redirect
+  - `app/security/page.tsx` — Same admin token fix + 401 handling on flag action
+  - `app/connections/page.tsx` — Same admin token fix
+  - `app/jobs/page.tsx` — Same admin token fix
+  - `app/monitor/page.tsx` — Same admin token fix
+  - `app/support/page.tsx` — Added contact form (name, email, category, message) with API fallback to mailto
+  - `app/provider-onboarding/page.tsx` — Replaced 469-line duplicate wizard with redirect to `/provider/register`
+- **Breaking changes**: Internal MC pages now require admin login (localStorage token) — no more anonymous access via hardcoded token
+- **Security**: Removed hardcoded admin token `9ca7c...` from 5 client-side files. This was a critical exposure risk.
+- **Impact**: All internal pages now use proper auth flow; support page has working contact form; provider registration consolidated to single entry point
+
