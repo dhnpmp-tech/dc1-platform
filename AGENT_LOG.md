@@ -175,6 +175,25 @@
 
 ---
 
+## [2026-03-14 15:15 UTC] Claude-Cowork — Wire internal dashboards to real APIs + misc improvements
+
+- **Commit**: `cf13e53`
+- **Files**: `app/intelligence/page.tsx`, `app/connections/page.tsx`, `app/security/page.tsx`, `app/docs/api/page.tsx`, `app/docs/page.tsx`, `app/docs/provider-guide/page.tsx`, `app/docs/renter-guide/page.tsx` (NEW), `app/not-found.tsx` (NEW), `app/budget/page.tsx`, `app/components/DashboardLayout.tsx`, `app/components/layout/Footer.tsx`, `app/tokens/page.tsx`
+- **What changed**:
+  - **I1**: Intelligence dashboard now fetches from `GET /admin/dashboard` + `GET /admin/providers` — shows real provider fleet stats, GPU distribution, provider cards with driver/compute/VRAM, and fleet activity chart. Shows LIVE/Offline badge.
+  - **I2**: Connections monitor now pings real VPS API + Mission Control for live service health checks. Hardware section shows real registered providers from admin API. Agent heartbeats remain static (agent roster).
+  - **I3**: Security dashboard derives events from real provider data — new registrations (<24h), failed heartbeats, extended offline, online status. Flag button wired to admin suspend endpoint.
+  - **D1**: Created `/docs/renter-guide` — complete quickstart guide (account creation, browsing GPUs, first job, billing, API examples).
+  - **D2**: Enhanced API docs with curl examples, error response shapes, HTTP status codes, example responses for all endpoints.
+  - **P1a**: Custom 404 page with DC1 branding, 4 quick nav cards, support/docs links.
+  - **P2d**: All domain references updated from `dc1-platform.vercel.app` to `dcp.sa` (Footer, docs, connections).
+  - **P3**: Internal DashboardLayout nav standardized (Dashboard→Mission Control, added Budget, removed Token Usage). DC1 design tokens applied.
+  - **P5**: `/tokens` now redirects to `/budget`. Budget page has Model Cost Rates section (Sonnet/Haiku/Opus/MiniMax).
+- **Impact**: All 3 internal dashboards (Intelligence, Connections, Security) now wire to real VPS admin API with graceful fallback. 2 new pages created. API docs significantly improved. Domain references updated for dcp.sa launch.
+- **Breaking**: None. All pages gracefully handle API offline state.
+
+---
+
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
 ## [2026-03-13 12:00 UTC] Claude-Cowork — Add Withdrawals nav to admin pages
