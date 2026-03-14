@@ -258,7 +258,7 @@
 
 ## [2026-03-15 11:00 UTC] Claude-Cowork — Add Analytics to renter nav + shared API utility
 
-- **Commit**: (pending)
+- **Commit**: `1948bb1`
 - **Files changed**:
   - `lib/api.ts` — NEW: shared API utility (getApiBase, getMcBase, getMcToken, getAdminToken, getProviderKey, getRenterKey)
   - `app/renter/page.tsx` — Added Analytics nav item with ChartIcon
