@@ -6,12 +6,12 @@ import DashboardLayout from '../components/layout/DashboardLayout'
 import StatusBadge from '../components/ui/StatusBadge'
 import StatCard from '../components/ui/StatCard'
 
-// Mock data interface
 interface ProviderData {
   id: string
   name: string
   status: 'online' | 'offline'
   todayEarnings: number
+  weekEarnings: number
   totalEarnings: number
   jobsCompleted: number
   gpuUptime: number
@@ -19,6 +19,7 @@ interface ProviderData {
   temperature: number
   gpuUsage: number
   vramUsage: number
+  isPaused: boolean
   activeJob?: {
     id: string
     jobType: string
@@ -69,34 +70,6 @@ const getNavItems = () => [
   { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
 ]
 
-// Mock data generator
-const generateMockData = (): ProviderData => ({
-  id: 'provider-001',
-  name: 'Alex Provider',
-  status: 'online',
-  todayEarnings: 152.50,
-  totalEarnings: 4328.75,
-  jobsCompleted: 287,
-  gpuUptime: 94.8,
-  gpuModel: 'NVIDIA RTX 4090',
-  temperature: 68,
-  gpuUsage: 78,
-  vramUsage: 58,
-  activeJob: {
-    id: 'job-12345',
-    jobType: 'Model Training',
-    status: 'running',
-    startTime: '2 hours ago'
-  },
-  recentJobs: [
-    { id: 'job-5', jobType: 'Data Processing', duration: 45, earnings: 28.50, status: 'completed', completedAt: '1 hour ago' },
-    { id: 'job-4', jobType: 'Model Inference', duration: 120, earnings: 42.00, status: 'completed', completedAt: '3 hours ago' },
-    { id: 'job-3', jobType: 'GPU Rendering', duration: 90, earnings: 31.50, status: 'completed', completedAt: '5 hours ago' },
-    { id: 'job-2', jobType: 'ML Training', duration: 180, earnings: 50.00, status: 'completed', completedAt: 'Yesterday' },
-    { id: 'job-1', jobType: 'Data Analysis', duration: 60, earnings: 21.00, status: 'completed', completedAt: '2 days ago' },
-  ]
-})
-
 // Temperature gauge color
 const getTempColor = (temp: number): string => {
   if (temp < 70) return 'bg-status-success'
@@ -108,6 +81,38 @@ export default function ProviderDashboard() {
   const router = useRouter()
   const [providerData, setProviderData] = useState<ProviderData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [togglingPause, setTogglingPause] = useState(false)
+
+  const handlePauseResume = async () => {
+    if (!providerData) return
+    const apiKey = localStorage.getItem('dc1_provider_key')
+    if (!apiKey) return
+    const API_BASE =
+      typeof window !== 'undefined' && window.location.protocol === 'https:'
+        ? '/api/dc1'
+        : 'http://76.13.179.86:8083/api'
+    const endpoint = providerData.isPaused ? 'resume' : 'pause'
+    setTogglingPause(true)
+    try {
+      const res = await fetch(`${API_BASE}/providers/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: apiKey }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setProviderData({
+          ...providerData,
+          isPaused: endpoint === 'pause',
+          status: data.status === 'online' || data.status === 'idle' ? 'online' : 'offline',
+        })
+      }
+    } catch (err) {
+      console.error('Pause/resume failed:', err)
+    } finally {
+      setTogglingPause(false)
+    }
+  }
 
   useEffect(() => {
     const API_BASE =
@@ -142,7 +147,9 @@ export default function ProviderDashboard() {
           id: String(provider.id || ''),
           name: provider.name || 'Provider',
           status: provider.status === 'online' || provider.status === 'idle' ? 'online' : 'offline',
+          isPaused: Boolean(provider.is_paused),
           todayEarnings: (provider.today_earnings_halala || 0) / 100,
+          weekEarnings: (provider.week_earnings_halala || 0) / 100,
           totalEarnings: (provider.total_earnings_halala || 0) / 100,
           jobsCompleted: provider.total_jobs || 0,
           gpuUptime: provider.uptime_percent || 0,
@@ -208,15 +215,34 @@ export default function ProviderDashboard() {
         {/* Page Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h1 className="text-3xl font-bold text-dc1-text-primary">Provider Dashboard</h1>
-          <StatusBadge status={providerData.status} />
+          <div className="flex items-center gap-3">
+            <StatusBadge status={providerData.isPaused ? 'paused' : providerData.status} />
+            <button
+              onClick={handlePauseResume}
+              disabled={togglingPause}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 ${
+                providerData.isPaused
+                  ? 'bg-status-success/20 text-status-success hover:bg-status-success/30 border border-status-success/30'
+                  : 'bg-status-warning/20 text-status-warning hover:bg-status-warning/30 border border-status-warning/30'
+              }`}
+            >
+              {togglingPause ? 'Updating...' : providerData.isPaused ? 'Resume GPU' : 'Pause GPU'}
+            </button>
+          </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <StatCard
             label="Today's Earnings"
             value={`${providerData.todayEarnings.toFixed(2)} SAR`}
             accent="amber"
+            icon={<CurrencyIcon />}
+          />
+          <StatCard
+            label="This Week"
+            value={`${providerData.weekEarnings.toFixed(2)} SAR`}
+            accent="info"
             icon={<CurrencyIcon />}
           />
           <StatCard

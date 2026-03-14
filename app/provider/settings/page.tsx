@@ -56,6 +56,16 @@ export default function ProviderSettingsPage() {
   const [showKey, setShowKey] = useState(false)
   const [rotating, setRotating] = useState(false)
   const [rotateConfirm, setRotateConfirm] = useState(false)
+  const [prefs, setPrefs] = useState({
+    run_mode: 'always-on',
+    scheduled_start: '23:00',
+    scheduled_end: '07:00',
+    gpu_usage_cap_pct: 80,
+    vram_reserve_gb: 1,
+    temp_limit_c: 85,
+  })
+  const [savingPrefs, setSavingPrefs] = useState(false)
+  const [prefsSaved, setPrefsSaved] = useState(false)
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_provider_key')
@@ -73,9 +83,18 @@ export default function ProviderSettingsPage() {
           return
         }
         const data = await res.json()
+        const p = data.provider
         setProvider({
-          ...data.provider,
+          ...p,
           api_key: apiKey,
+        })
+        setPrefs({
+          run_mode: p.run_mode || 'always-on',
+          scheduled_start: p.scheduled_start || '23:00',
+          scheduled_end: p.scheduled_end || '07:00',
+          gpu_usage_cap_pct: p.gpu_usage_cap_pct != null ? p.gpu_usage_cap_pct : 80,
+          vram_reserve_gb: p.vram_reserve_gb != null ? p.vram_reserve_gb : 1,
+          temp_limit_c: p.temp_limit_c != null ? p.temp_limit_c : 85,
         })
       } catch (err) {
         console.error('Failed to load settings:', err)
@@ -117,6 +136,31 @@ export default function ProviderSettingsPage() {
       alert('Failed to rotate API key. Please try again.')
     } finally {
       setRotating(false)
+    }
+  }
+
+  const handleSavePreferences = async () => {
+    if (!provider) return
+    setSavingPrefs(true)
+    setPrefsSaved(false)
+    try {
+      const res = await fetch(`${API_BASE}/providers/preferences`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: provider.api_key, ...prefs }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to save preferences')
+        return
+      }
+      setPrefsSaved(true)
+      setTimeout(() => setPrefsSaved(false), 3000)
+    } catch (err) {
+      console.error('Save preferences failed:', err)
+      alert('Failed to save preferences. Please try again.')
+    } finally {
+      setSavingPrefs(false)
     }
   }
 
@@ -232,6 +276,125 @@ export default function ProviderSettingsPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* GPU Preferences */}
+        <div className="card p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-dc1-text-primary">GPU Preferences</h2>
+            {prefsSaved && <span className="text-sm text-status-success font-medium">Saved!</span>}
+          </div>
+
+          {/* Run Mode */}
+          <div>
+            <label className="text-sm text-dc1-text-secondary mb-2 block">Run Mode</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['always-on', 'scheduled', 'manual'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setPrefs({ ...prefs, run_mode: mode })}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${
+                    prefs.run_mode === mode
+                      ? 'border-dc1-amber bg-dc1-amber/10 text-dc1-amber'
+                      : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:border-dc1-amber/30'
+                  }`}
+                >
+                  {mode === 'always-on' ? 'Always On' : mode === 'scheduled' ? 'Scheduled' : 'Manual'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Schedule (only if scheduled mode) */}
+          {prefs.run_mode === 'scheduled' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm text-dc1-text-secondary mb-1 block">Start Time</label>
+                <input
+                  type="time"
+                  value={prefs.scheduled_start}
+                  onChange={e => setPrefs({ ...prefs, scheduled_start: e.target.value })}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-dc1-text-secondary mb-1 block">End Time</label>
+                <input
+                  type="time"
+                  value={prefs.scheduled_end}
+                  onChange={e => setPrefs({ ...prefs, scheduled_end: e.target.value })}
+                  className="input"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* GPU Usage Cap */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-sm text-dc1-text-secondary">GPU Usage Cap</label>
+              <span className="text-sm font-semibold text-dc1-text-primary">{prefs.gpu_usage_cap_pct}%</span>
+            </div>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              step={5}
+              value={prefs.gpu_usage_cap_pct}
+              onChange={e => setPrefs({ ...prefs, gpu_usage_cap_pct: Number(e.target.value) })}
+              className="w-full accent-dc1-amber"
+            />
+            <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
+              <span>10%</span>
+              <span>100%</span>
+            </div>
+          </div>
+
+          {/* VRAM Reserve */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-sm text-dc1-text-secondary">VRAM Reserve</label>
+              <span className="text-sm font-semibold text-dc1-text-primary">{prefs.vram_reserve_gb} GB</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={16}
+              step={0.5}
+              value={prefs.vram_reserve_gb}
+              onChange={e => setPrefs({ ...prefs, vram_reserve_gb: Number(e.target.value) })}
+              className="w-full accent-dc1-amber"
+            />
+            <p className="text-xs text-dc1-text-muted mt-1">Amount of VRAM to keep free for your own use</p>
+          </div>
+
+          {/* Temperature Limit */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-sm text-dc1-text-secondary">Temperature Limit</label>
+              <span className={`text-sm font-semibold ${prefs.temp_limit_c >= 90 ? 'text-status-error' : prefs.temp_limit_c >= 80 ? 'text-status-warning' : 'text-dc1-text-primary'}`}>
+                {prefs.temp_limit_c}°C
+              </span>
+            </div>
+            <input
+              type="range"
+              min={50}
+              max={100}
+              step={1}
+              value={prefs.temp_limit_c}
+              onChange={e => setPrefs({ ...prefs, temp_limit_c: Number(e.target.value) })}
+              className="w-full accent-dc1-amber"
+            />
+            <p className="text-xs text-dc1-text-muted mt-1">Daemon will throttle jobs if GPU exceeds this temperature</p>
+          </div>
+
+          <button
+            onClick={handleSavePreferences}
+            disabled={savingPrefs}
+            className="btn btn-primary w-full disabled:opacity-50"
+          >
+            {savingPrefs ? 'Saving...' : 'Save Preferences'}
+          </button>
         </div>
 
         {/* Danger Zone */}

@@ -21,6 +21,9 @@ export default function BillingPage() {
   const [rotating, setRotating] = useState(false)
   const [rotateConfirm, setRotateConfirm] = useState(false)
   const [apiKey, setApiKey] = useState('')
+  const [topupAmount, setTopupAmount] = useState('')
+  const [topupLoading, setTopupLoading] = useState(false)
+  const [topupSuccess, setTopupSuccess] = useState(false)
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
@@ -71,6 +74,38 @@ export default function BillingPage() {
     }
   }
 
+  const handleTopup = async () => {
+    const amountSar = parseFloat(topupAmount)
+    if (!amountSar || amountSar <= 0) return
+    setTopupLoading(true)
+    setTopupSuccess(false)
+    try {
+      const res = await fetch(`${API_BASE}/renters/topup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
+        body: JSON.stringify({ amount_sar: amountSar }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Top-up failed')
+        return
+      }
+      const data = await res.json()
+      setTopupSuccess(true)
+      setTopupAmount('')
+      // Refresh renter data
+      if (data.new_balance_halala != null) {
+        setRenter((prev: any) => prev ? { ...prev, balance_halala: data.new_balance_halala } : prev)
+      }
+      setTimeout(() => setTopupSuccess(false), 4000)
+    } catch (err) {
+      console.error('Top-up failed:', err)
+      alert('Top-up failed. Please try again.')
+    } finally {
+      setTopupLoading(false)
+    }
+  }
+
   const navItems = [
     { label: 'Dashboard', href: '/renter', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg> },
     { label: 'Marketplace', href: '/renter/marketplace', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg> },
@@ -108,6 +143,51 @@ export default function BillingPage() {
         <StatCard label="Balance" value={`${balance.toFixed(2)} SAR`} accent="amber" />
         <StatCard label="Total Spent" value={`${totalSpent.toFixed(2)} SAR`} accent="default" />
         <StatCard label="Total Jobs" value={String(totalJobs)} accent="info" />
+      </div>
+
+      {/* Add Funds */}
+      <div className="card mb-8">
+        <h2 className="section-heading mb-4">Add Funds</h2>
+        <p className="text-sm text-dc1-text-secondary mb-4">Top up your account balance to run GPU jobs.</p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              {[5, 10, 25, 50].map(amt => (
+                <button
+                  key={amt}
+                  onClick={() => setTopupAmount(String(amt))}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${
+                    topupAmount === String(amt)
+                      ? 'border-dc1-amber bg-dc1-amber/10 text-dc1-amber'
+                      : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:border-dc1-amber/30'
+                  }`}
+                >
+                  {amt} SAR
+                </button>
+              ))}
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                placeholder="Custom"
+                value={topupAmount}
+                onChange={e => setTopupAmount(e.target.value)}
+                className="input w-28"
+              />
+            </div>
+          </div>
+          <button
+            onClick={handleTopup}
+            disabled={topupLoading || !topupAmount || parseFloat(topupAmount) <= 0}
+            className="btn btn-primary px-6 disabled:opacity-50"
+          >
+            {topupLoading ? 'Processing...' : 'Add Funds'}
+          </button>
+        </div>
+        {topupSuccess && (
+          <p className="text-sm text-status-success mt-3 font-medium">Funds added successfully! Balance updated.</p>
+        )}
+        <p className="text-xs text-dc1-text-muted mt-3">Payment integration coming soon. Currently admin-verified top-ups.</p>
       </div>
 
       {/* Rate card */}

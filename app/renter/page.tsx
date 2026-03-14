@@ -184,12 +184,17 @@ export default function RenterDashboard() {
   const [progressPhase, setProgressPhase] = useState<string>('')
   const pollRef = useRef<NodeJS.Timeout | null>(null)
 
-  // ── Auth ─────────────────────────────────────────────────────────
+  // ── Auth + Auto-refresh ──────────────────────────────────────────
   useEffect(() => {
     const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
     if (key) {
       setRenterKey(key)
       verifyKey(key)
+      // Auto-refresh every 30 seconds
+      const interval = setInterval(() => {
+        verifyKey(key)
+      }, 30000)
+      return () => clearInterval(interval)
     } else {
       setAuthChecking(false)
     }
@@ -543,8 +548,8 @@ export default function RenterDashboard() {
       <div className="space-y-8">
         {/* Stats Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Account Balance" value={`$${balance.toFixed(2)}`} accent="amber" />
-          <StatCard label="Total Spent" value={`$${totalSpent.toFixed(2)}`} accent="default" />
+          <StatCard label="Account Balance" value={`${balance.toFixed(2)} SAR`} accent="amber" />
+          <StatCard label="Total Spent" value={`${totalSpent.toFixed(2)} SAR`} accent="default" />
           <StatCard label="Jobs Run" value={totalJobs.toString()} accent="default" />
           <StatCard label="Online GPUs" value={onlineGPUs.toString()} accent="success" />
         </div>
