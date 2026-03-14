@@ -100,6 +100,30 @@
 
 ---
 
+## [2026-03-14 07:40 UTC] Claude-Cowork — Phase 4 Final: Headless API Migration
+
+- **Commit**: (pending push)
+- **Files**: `backend/src/server.js`
+- **What changed**:
+  - **Removed HTML serving**: Stripped `express.static` for public dir, removed `/provider-onboarding` route, removed `/docs` route, removed `/` HTML redirect
+  - **Root route**: Now returns JSON API info (`service`, `version`, `status`, `frontend`, `docs`, `timestamp`) instead of serving `provider-onboarding.html`
+  - **Health check**: Updated service name to `dc1-platform-api` with `mode: headless`
+  - **CSP simplified**: Changed from full browser CSP to strict API-only CSP (`default-src 'none'; frame-ancestors 'none'`)
+  - **Console logs**: Updated startup messages to reflect headless API mode
+  - **Preserved**: `/installers` static serving for daemon downloads, all `/api/*` routes unchanged
+- **Verified on VPS**:
+  - `GET /` returns JSON API info (200)
+  - `GET /api/health` returns `{ mode: "headless" }` (200)
+  - `GET /admin/dashboard` works with auth (200)
+  - `GET /provider-onboarding.html` returns 404
+  - `GET /docs` returns 404
+  - `GET /admin.html` returns 404
+  - `GET /installers/daemon.sh` and `daemon.ps1` still accessible (200)
+- **Impact**: VPS is now a pure headless API server. All frontend served by Next.js on Vercel (dc1st.com). Phase 4 migration plan is **COMPLETE**.
+- **Breaking**: Anyone bookmarking `http://76.13.179.86:8083/provider-onboarding.html` or `/docs` directly will get 404 — they should use `dc1st.com` instead.
+
+---
+
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
 ## [2026-03-13 12:00 UTC] Claude-Cowork — Add Withdrawals nav to admin pages

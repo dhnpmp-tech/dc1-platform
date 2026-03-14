@@ -40,7 +40,8 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://dc1st.com https://*.vercel.app; font-src 'self' data:; frame-ancestors 'none'");
+  // Headless API: strict CSP — no scripts/styles needed
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   next();
 });
 
@@ -113,15 +114,11 @@ const generalLimiter = rateLimit({
 });
 app.use('/api/', generalLimiter);
 
-// Serve static files (provider-onboarding.html etc)
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Phase 4 Final: VPS is headless API only — no HTML serving
+// Static HTML files (provider-onboarding.html, admin.html, docs.html) removed.
+// All frontend is served by Next.js on Vercel (dc1st.com).
 
-// Clean URL route for provider onboarding
-app.get('/provider-onboarding', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public/provider-onboarding.html'));
-});
-
-// Serve installer files for download
+// Serve installer files for download (daemon binaries — still needed)
 app.use('/installers', express.static(path.join(__dirname, '..', 'installers')));
 
 // API Routes
@@ -167,12 +164,19 @@ app.use('/api/fallback', fallbackRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'dc1-provider-onboarding', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'dc1-platform-api', mode: 'headless', timestamp: new Date().toISOString() });
 });
 
-// Default route -> onboarding form
+// Default route -> API info (headless mode)
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'provider-onboarding.html'));
+  res.json({
+    service: 'dc1-platform-api',
+    version: '4.0.0',
+    status: 'ok',
+    frontend: 'https://dc1st.com',
+    docs: 'https://dc1st.com/docs',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Start recovery cycle every 30 seconds
@@ -190,12 +194,7 @@ const { startLoop: startFallbackLoop } = require('./services/fallback-loop');
 startFallbackLoop();
 
 app.listen(PORT, () => {
-  console.log(`DC1 Provider Onboarding server running on port ${PORT}`);
-  console.log(`Form: http://localhost:${PORT}/provider-onboarding.html`);
-  console.log(`API:  http://localhost:${PORT}/api/providers`);
-});
-
-// Audit & Operations documentation page
-app.get('/docs', (req, res) => {
-    res.sendFile(require('path').join(__dirname, '../public/docs.html'));
+  console.log(`DC1 Platform API (headless) running on port ${PORT}`);
+  console.log(`API:  http://localhost:${PORT}/api`);
+  console.log(`Health: http://localhost:${PORT}/api/health`);
 });
