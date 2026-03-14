@@ -243,7 +243,7 @@
 
 ## [2026-03-15 10:00 UTC] Claude-Cowork — Security fix + support form + provider consolidation
 
-- **Commit**: (pending)
+- **Commit**: `f53d7a7`
 - **Files changed**:
   - `app/intelligence/page.tsx` — Removed hardcoded admin token, uses `localStorage.getItem('dc1_admin_token')` + 401 redirect
   - `app/security/page.tsx` — Same admin token fix + 401 handling on flag action
