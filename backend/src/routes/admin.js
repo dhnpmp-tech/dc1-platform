@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
+const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../services/notifications');
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
 // Requires DC1_ADMIN_TOKEN env var.
@@ -605,6 +606,77 @@ router.post('/renters/:id/balance', (req, res) => {
   } catch (error) {
     console.error('Balance adjustment error:', error);
     res.status(500).json({ error: 'Failed to adjust balance' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/bulk/providers - Bulk actions on providers
+// ============================================================================
+router.post('/bulk/providers', (req, res) => {
+  try {
+    const { ids, action } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+    if (!['suspend', 'unsuspend'].includes(action)) return res.status(400).json({ error: 'action must be suspend or unsuspend' });
+
+    const now = new Date().toISOString();
+    let success = 0, failed = 0;
+
+    for (const id of ids) {
+      try {
+        const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', id);
+        if (!provider) { failed++; continue; }
+        if (action === 'suspend') {
+          db.run('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?', 'suspended', now, id);
+        } else {
+          db.run('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?', 'offline', now, id);
+        }
+        try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)',
+          `bulk_provider_${action}`, 'provider', id, `Bulk ${action}: "${provider.name}"`, now); } catch(e) {}
+        success++;
+      } catch (e) { failed++; }
+    }
+
+    res.json({ success: true, action, processed: success, failed, total: ids.length });
+  } catch (error) {
+    console.error('Bulk provider action error:', error);
+    res.status(500).json({ error: 'Bulk action failed' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/bulk/renters - Bulk actions on renters
+// ============================================================================
+router.post('/bulk/renters', (req, res) => {
+  try {
+    const { ids, action, amount_halala, reason } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+    if (!['suspend', 'unsuspend', 'credit'].includes(action)) return res.status(400).json({ error: 'action must be suspend, unsuspend, or credit' });
+    if (action === 'credit' && (!amount_halala || typeof amount_halala !== 'number')) return res.status(400).json({ error: 'amount_halala required for credit' });
+
+    const now = new Date().toISOString();
+    let success = 0, failed = 0;
+
+    for (const id of ids) {
+      try {
+        const renter = db.get('SELECT id, name, status, balance_halala FROM renters WHERE id = ?', id);
+        if (!renter) { failed++; continue; }
+        if (action === 'suspend') {
+          db.run('UPDATE renters SET status = ? WHERE id = ?', 'suspended', id);
+        } else if (action === 'unsuspend') {
+          db.run('UPDATE renters SET status = ? WHERE id = ?', 'active', id);
+        } else if (action === 'credit') {
+          db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', amount_halala, id);
+        }
+        try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)',
+          `bulk_renter_${action}`, 'renter', id, `Bulk ${action}: "${renter.name}"${action === 'credit' ? ` +${amount_halala} halala: ${reason || 'bulk credit'}` : ''}`, now); } catch(e) {}
+        success++;
+      } catch (e) { failed++; }
+    }
+
+    res.json({ success: true, action, processed: success, failed, total: ids.length });
+  } catch (error) {
+    console.error('Bulk renter action error:', error);
+    res.status(500).json({ error: 'Bulk action failed' });
   }
 });
 
@@ -1373,6 +1445,60 @@ router.get('/finance/reconciliation', (req, res) => {
     console.error('Reconciliation error:', error);
     res.status(500).json({ error: 'Failed to run reconciliation' });
   }
+});
+
+// ── Notification Config ──────────────────────────────────────────────────
+router.get('/notifications/config', (req, res) => {
+  try {
+    const config = getNotifConfig();
+    if (!config) return res.json({ enabled: false });
+    // Don't expose full tokens
+    res.json({
+      enabled: !!config.enabled,
+      webhook_url: config.webhook_url || '',
+      telegram_configured: !!(config.telegram_bot_token && config.telegram_chat_id),
+      telegram_chat_id: config.telegram_chat_id || '',
+      updated_at: config.updated_at,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get notification config' });
+  }
+});
+
+router.post('/notifications/config', (req, res) => {
+  try {
+    const { webhook_url, telegram_bot_token, telegram_chat_id, enabled } = req.body;
+    const now = new Date().toISOString();
+    getNotifConfig(); // ensure table + row exists
+    const updates = [];
+    const params = [];
+    if (webhook_url !== undefined) { updates.push('webhook_url = ?'); params.push(webhook_url || null); }
+    if (telegram_bot_token !== undefined) { updates.push('telegram_bot_token = ?'); params.push(telegram_bot_token || null); }
+    if (telegram_chat_id !== undefined) { updates.push('telegram_chat_id = ?'); params.push(telegram_chat_id || null); }
+    if (enabled !== undefined) { updates.push('enabled = ?'); params.push(enabled ? 1 : 0); }
+    updates.push('updated_at = ?'); params.push(now);
+    if (updates.length > 1) {
+      db.run(`UPDATE notification_config SET ${updates.join(', ')} WHERE id = 1`, ...params);
+    }
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)',
+      'notification_config_updated', 'system', 0, `Updated notification config: enabled=${enabled}`, now); } catch(e) {}
+    res.json({ success: true, message: 'Notification config updated' });
+  } catch (error) {
+    console.error('Notification config error:', error);
+    res.status(500).json({ error: 'Failed to update config' });
+  }
+});
+
+router.post('/notifications/test', (req, res) => {
+  (async () => {
+    try {
+      const result = await sendAlert('test_alert', 'This is a test alert from DC1 Admin Panel. If you see this, notifications are working!');
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error('Test notification error:', error);
+      res.status(500).json({ error: 'Failed to send test notification' });
+    }
+  })();
 });
 
 module.exports = router;

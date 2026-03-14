@@ -38,6 +38,8 @@ export default function ProvidersPage() {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -69,6 +71,37 @@ export default function ProvidersPage() {
       await fetchProviders()
     } catch (err) { console.error(err) }
     finally { setActionLoading(null) }
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map((p: any) => p.id)))
+    }
+  }
+
+  const handleBulkAction = async (action: 'suspend' | 'unsuspend') => {
+    if (selected.size === 0) return
+    setBulkLoading(true)
+    try {
+      await fetch(`${API_BASE}/admin/bulk/providers`, {
+        method: 'POST',
+        headers: { 'x-admin-token': token!, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), action }),
+      })
+      setSelected(new Set())
+      await fetchProviders()
+    } catch (err) { console.error(err) }
+    finally { setBulkLoading(false) }
   }
 
   const providers = data?.providers || []
@@ -122,6 +155,27 @@ export default function ProvidersPage() {
         </div>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selected.size > 0 && (
+        <div className="card mb-4 flex items-center justify-between">
+          <span className="text-sm text-dc1-text-primary font-medium">{selected.size} selected</span>
+          <div className="flex gap-2">
+            <button onClick={() => handleBulkAction('suspend')} disabled={bulkLoading}
+              className="text-xs px-3 py-1.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50 font-medium">
+              {bulkLoading ? 'Processing...' : 'Bulk Suspend'}
+            </button>
+            <button onClick={() => handleBulkAction('unsuspend')} disabled={bulkLoading}
+              className="text-xs px-3 py-1.5 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 font-medium">
+              {bulkLoading ? 'Processing...' : 'Bulk Reactivate'}
+            </button>
+            <button onClick={() => setSelected(new Set())}
+              className="text-xs px-3 py-1.5 rounded bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary font-medium">
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-dc1-text-secondary">Loading providers...</div>
       ) : (
@@ -130,6 +184,10 @@ export default function ProvidersPage() {
             <table className="table">
               <thead>
                 <tr>
+                  <th className="w-10">
+                    <input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length}
+                      onChange={toggleAll} className="rounded border-dc1-border" />
+                  </th>
                   <th>Provider</th>
                   <th>GPU</th>
                   <th>Status</th>
@@ -142,7 +200,11 @@ export default function ProvidersPage() {
               </thead>
               <tbody>
                 {filtered.map((p: any) => (
-                  <tr key={p.id}>
+                  <tr key={p.id} className={selected.has(p.id) ? 'bg-dc1-amber/5' : ''}>
+                    <td className="w-10">
+                      <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)}
+                        className="rounded border-dc1-border" />
+                    </td>
                     <td>
                       <Link href={`/admin/providers/${p.id}`} className="text-dc1-amber hover:underline font-medium">
                         {p.name}
@@ -180,7 +242,7 @@ export default function ProvidersPage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="text-dc1-text-muted text-sm text-center">No providers found</td></tr>
+                  <tr><td colSpan={9} className="text-dc1-text-muted text-sm text-center">No providers found</td></tr>
                 )}
               </tbody>
             </table>

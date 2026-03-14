@@ -42,6 +42,11 @@ export default function RentersPage() {
   const [creditAmount, setCreditAmount] = useState('')
   const [creditReason, setCreditReason] = useState('')
   const [creditLoading, setCreditLoading] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkCreditModal, setBulkCreditModal] = useState(false)
+  const [bulkCreditAmount, setBulkCreditAmount] = useState('')
+  const [bulkCreditReason, setBulkCreditReason] = useState('')
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -93,6 +98,57 @@ export default function RentersPage() {
     finally { setCreditLoading(false) }
   }
 
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map((r: any) => r.id)))
+    }
+  }
+
+  const handleBulkAction = async (action: 'suspend' | 'unsuspend' | 'credit') => {
+    if (selected.size === 0) return
+    if (action === 'credit') { setBulkCreditModal(true); return }
+    setBulkLoading(true)
+    try {
+      await fetch(`${API_BASE}/admin/bulk/renters`, {
+        method: 'POST',
+        headers: { 'x-admin-token': token!, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), action }),
+      })
+      setSelected(new Set())
+      await fetchRenters()
+    } catch (err) { console.error(err) }
+    finally { setBulkLoading(false) }
+  }
+
+  const handleBulkCredit = async () => {
+    if (!bulkCreditAmount || !bulkCreditReason) return
+    setBulkLoading(true)
+    try {
+      const amountHalala = Math.round(parseFloat(bulkCreditAmount) * 100)
+      await fetch(`${API_BASE}/admin/bulk/renters`, {
+        method: 'POST',
+        headers: { 'x-admin-token': token!, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), action: 'credit', amount_halala: amountHalala, reason: bulkCreditReason }),
+      })
+      setSelected(new Set())
+      setBulkCreditModal(false)
+      setBulkCreditAmount('')
+      setBulkCreditReason('')
+      await fetchRenters()
+    } catch (err) { console.error(err) }
+    finally { setBulkLoading(false) }
+  }
+
   const renters = data?.renters || []
   const filtered = renters.filter((r: any) => {
     if (filter === 'active' && r.status !== 'active') return false
@@ -138,6 +194,31 @@ export default function RentersPage() {
         </div>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selected.size > 0 && (
+        <div className="card mb-4 flex items-center justify-between">
+          <span className="text-sm text-dc1-text-primary font-medium">{selected.size} selected</span>
+          <div className="flex gap-2">
+            <button onClick={() => handleBulkAction('credit')} disabled={bulkLoading}
+              className="text-xs px-3 py-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 disabled:opacity-50 font-medium">
+              Bulk Credit
+            </button>
+            <button onClick={() => handleBulkAction('suspend')} disabled={bulkLoading}
+              className="text-xs px-3 py-1.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50 font-medium">
+              {bulkLoading ? 'Processing...' : 'Bulk Suspend'}
+            </button>
+            <button onClick={() => handleBulkAction('unsuspend')} disabled={bulkLoading}
+              className="text-xs px-3 py-1.5 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 font-medium">
+              {bulkLoading ? 'Processing...' : 'Bulk Reactivate'}
+            </button>
+            <button onClick={() => setSelected(new Set())}
+              className="text-xs px-3 py-1.5 rounded bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary font-medium">
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-dc1-text-secondary">Loading renters...</div>
       ) : (
@@ -146,6 +227,10 @@ export default function RentersPage() {
             <table className="table">
               <thead>
                 <tr>
+                  <th className="w-10">
+                    <input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length}
+                      onChange={toggleAll} className="rounded border-dc1-border" />
+                  </th>
                   <th>Renter</th>
                   <th>Organization</th>
                   <th>Balance</th>
@@ -157,7 +242,11 @@ export default function RentersPage() {
               </thead>
               <tbody>
                 {filtered.map((r: any) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={selected.has(r.id) ? 'bg-dc1-amber/5' : ''}>
+                    <td className="w-10">
+                      <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)}
+                        className="rounded border-dc1-border" />
+                    </td>
                     <td>
                       <Link href={`/admin/renters/${r.id}`} className="text-dc1-amber hover:underline font-medium">
                         {r.name}
@@ -200,7 +289,7 @@ export default function RentersPage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="text-dc1-text-muted text-sm text-center">No renters found</td></tr>
+                  <tr><td colSpan={8} className="text-dc1-text-muted text-sm text-center">No renters found</td></tr>
                 )}
               </tbody>
             </table>
@@ -248,6 +337,37 @@ export default function RentersPage() {
                   className="px-4 py-2 rounded text-sm font-medium bg-dc1-amber text-black hover:bg-yellow-500 disabled:opacity-50"
                 >
                   {creditLoading ? 'Processing...' : 'Confirm Credit'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Bulk Credit Modal */}
+      {bulkCreditModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-dc1-surface-l1 rounded-lg p-6 w-96 shadow-lg">
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">Bulk Credit: {selected.size} Renters</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">Amount per account (SAR)</label>
+                <input type="number" step="0.01" placeholder="0.00" className="input w-full"
+                  value={bulkCreditAmount} onChange={e => setBulkCreditAmount(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">Reason</label>
+                <input type="text" placeholder="e.g., Promotion, Bonus..." className="input w-full"
+                  value={bulkCreditReason} onChange={e => setBulkCreditReason(e.target.value)} />
+              </div>
+              <p className="text-xs text-dc1-text-muted">Total: {bulkCreditAmount ? `${(parseFloat(bulkCreditAmount) * selected.size).toFixed(2)} SAR across ${selected.size} accounts` : '—'}</p>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => { setBulkCreditModal(false); setBulkCreditAmount(''); setBulkCreditReason('') }}
+                  className="px-4 py-2 rounded text-sm font-medium bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary">
+                  Cancel
+                </button>
+                <button onClick={handleBulkCredit} disabled={bulkLoading || !bulkCreditAmount || !bulkCreditReason}
+                  className="px-4 py-2 rounded text-sm font-medium bg-dc1-amber text-black hover:bg-yellow-500 disabled:opacity-50">
+                  {bulkLoading ? 'Processing...' : 'Confirm Bulk Credit'}
                 </button>
               </div>
             </div>

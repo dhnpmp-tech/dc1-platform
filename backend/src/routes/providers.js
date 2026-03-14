@@ -6,6 +6,7 @@ const router = express.Router();
 
 // Database (use existing connection)
 const db = require('../db');
+const { sendAlert } = require('../services/notifications');
 
 // Import shared billing rates from jobs module
 const { COST_RATES } = require('./jobs');
@@ -252,6 +253,12 @@ router.post('/daemon-event', (req, res) => {
         // Log critical events to console for immediate visibility
         if (severity === 'critical' || severity === 'error') {
             console.warn(`[DAEMON EVENT] provider=${provider.id} type=${event_type} severity=${severity}: ${(details || '').substring(0, 200)}`);
+            // Fire async alert — don't block response
+            const provName = db.get('SELECT name FROM providers WHERE id = ?', provider.id)?.name || `ID ${provider.id}`;
+            sendAlert(
+              event_type === 'crash' ? 'provider_crash' : 'critical_error',
+              `Provider: ${provName} (ID ${provider.id})\nEvent: ${event_type}\nSeverity: ${severity}\nHost: ${hostname || 'unknown'}\n\n${(details || '').substring(0, 500)}`
+            ).catch(() => {});
         }
 
         res.json({ success: true, event_type, provider_id: provider.id });
