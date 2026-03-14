@@ -33,6 +33,34 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));  // Large limit for base64 image results (512x512 PNG ~ 500KB base64)
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ── Security Headers ────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// ── Input Sanitization ──────────────────────────────────────────────────
+// Strip HTML tags and null bytes from all string inputs
+function sanitize(obj) {
+  if (typeof obj === 'string') return obj.replace(/\0/g, '').replace(/<[^>]*>/g, '').trim();
+  if (Array.isArray(obj)) return obj.map(sanitize);
+  if (obj && typeof obj === 'object') {
+    const clean = {};
+    for (const [k, v] of Object.entries(obj)) clean[k] = sanitize(v);
+    return clean;
+  }
+  return obj;
+}
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') req.body = sanitize(req.body);
+  if (req.query && typeof req.query === 'object') req.query = sanitize(req.query);
+  next();
+});
+
 // ── Rate Limiting ───────────────────────────────────────────────────────
 // Registration: 5 attempts per IP per hour (prevents spam)
 const registerLimiter = rateLimit({

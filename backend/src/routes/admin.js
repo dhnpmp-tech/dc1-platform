@@ -1214,4 +1214,165 @@ router.get('/finance/transactions', (req, res) => {
   }
 });
 
+// ── Health Monitoring ─────────────────────────────────────────────────
+router.get('/health', (req, res) => {
+  try {
+    // DB check
+    const dbCheck = db.get("SELECT COUNT(*) as count FROM providers");
+    const dbOk = dbCheck !== undefined;
+
+    // Provider stats
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const onlineProviders = db.get(
+      "SELECT COUNT(*) as count FROM providers WHERE last_heartbeat > ? AND status = 'active'",
+      fiveMinAgo
+    )?.count || 0;
+    const totalProviders = db.get("SELECT COUNT(*) as count FROM providers WHERE status = 'active'")?.count || 0;
+
+    // Active jobs
+    const activeJobs = db.get(
+      "SELECT COUNT(*) as count FROM jobs WHERE status IN ('queued', 'pending', 'running')"
+    )?.count || 0;
+    const stuckJobs = db.get(
+      "SELECT COUNT(*) as count FROM jobs WHERE status = 'running' AND started_at < ?",
+      new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    )?.count || 0;
+
+    // Recent errors (last hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const recentErrors = db.get(
+      "SELECT COUNT(*) as count FROM jobs WHERE status = 'failed' AND completed_at > ?",
+      oneHourAgo
+    )?.count || 0;
+
+    // Daemon events (critical/error in last hour)
+    let criticalEvents = 0;
+    try {
+      criticalEvents = db.get(
+        "SELECT COUNT(*) as count FROM daemon_events WHERE severity IN ('critical', 'error') AND event_timestamp > ?",
+        oneHourAgo
+      )?.count || 0;
+    } catch (e) { /* daemon_events may not exist */ }
+
+    // Withdrawal backlog
+    const pendingWithdrawals = db.get(
+      "SELECT COUNT(*) as count FROM withdrawals WHERE status = 'pending'"
+    )?.count || 0;
+
+    const healthy = dbOk && stuckJobs === 0 && criticalEvents === 0;
+
+    res.json({
+      status: healthy ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      checks: {
+        database: dbOk ? 'ok' : 'error',
+        providers: { online: onlineProviders, total: totalProviders },
+        jobs: { active: activeJobs, stuck: stuckJobs },
+        errors: { failed_last_hour: recentErrors, critical_events: criticalEvents },
+        withdrawals: { pending: pendingWithdrawals }
+      }
+    });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({ status: 'error', error: error.message });
+  }
+});
+
+// ── Financial Reconciliation ─────────────────────────────────────────
+router.get('/finance/reconciliation', (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 7, 90);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Jobs where provider_earned + dc1_fee != actual_cost
+    const splitMismatches = db.all(`
+      SELECT j.id, j.job_id, j.job_type, j.actual_cost_halala,
+             j.provider_earned_halala, j.dc1_fee_halala, j.completed_at,
+             p.name as provider_name, r.name as renter_name,
+             (j.provider_earned_halala + j.dc1_fee_halala) as computed_total,
+             (j.actual_cost_halala - j.provider_earned_halala - j.dc1_fee_halala) as discrepancy
+      FROM jobs j
+      LEFT JOIN providers p ON j.provider_id = p.id
+      LEFT JOIN renters r ON j.renter_id = r.id
+      WHERE j.status = 'completed'
+        AND j.actual_cost_halala > 0
+        AND j.completed_at > ?
+        AND (j.provider_earned_halala + j.dc1_fee_halala) != j.actual_cost_halala
+      ORDER BY j.completed_at DESC
+      LIMIT 100
+    `, since);
+
+    // 2. Jobs with missing billing data
+    const missingBilling = db.all(`
+      SELECT j.id, j.job_id, j.job_type, j.completed_at,
+             j.actual_cost_halala, j.provider_earned_halala, j.dc1_fee_halala,
+             p.name as provider_name
+      FROM jobs j
+      LEFT JOIN providers p ON j.provider_id = p.id
+      WHERE j.status = 'completed'
+        AND j.completed_at > ?
+        AND (j.actual_cost_halala IS NULL OR j.actual_cost_halala = 0
+             OR j.provider_earned_halala IS NULL OR j.dc1_fee_halala IS NULL)
+      ORDER BY j.completed_at DESC
+      LIMIT 100
+    `, since);
+
+    // 3. Provider earnings vs job totals
+    const providerMismatches = db.all(`
+      SELECT p.id, p.name, p.email,
+             ROUND(p.total_earnings * 100) as recorded_earnings_halala,
+             COALESCE(SUM(j.provider_earned_halala), 0) as computed_earnings_halala,
+             ROUND(p.total_earnings * 100) - COALESCE(SUM(j.provider_earned_halala), 0) as drift
+      FROM providers p
+      LEFT JOIN jobs j ON j.provider_id = p.id AND j.status = 'completed' AND j.provider_earned_halala > 0
+      GROUP BY p.id
+      HAVING ABS(drift) > 1
+      ORDER BY ABS(drift) DESC
+      LIMIT 50
+    `);
+
+    // 4. Renter spend vs job totals
+    const renterMismatches = db.all(`
+      SELECT r.id, r.name, r.email,
+             r.total_spent_halala as recorded_spent,
+             COALESCE(SUM(j.actual_cost_halala), 0) as computed_spent,
+             r.total_spent_halala - COALESCE(SUM(j.actual_cost_halala), 0) as drift
+      FROM renters r
+      LEFT JOIN jobs j ON j.renter_id = r.id AND j.status = 'completed' AND j.actual_cost_halala > 0
+      GROUP BY r.id
+      HAVING ABS(drift) > 1
+      ORDER BY ABS(drift) DESC
+      LIMIT 50
+    `);
+
+    // 5. Summary stats
+    const totalCompleted = db.get(
+      "SELECT COUNT(*) as count, SUM(actual_cost_halala) as total_billed FROM jobs WHERE status = 'completed' AND completed_at > ?",
+      since
+    );
+
+    res.json({
+      period_days: days,
+      since,
+      summary: {
+        total_completed_jobs: totalCompleted?.count || 0,
+        total_billed_halala: totalCompleted?.total_billed || 0,
+        split_mismatches: splitMismatches.length,
+        missing_billing: missingBilling.length,
+        provider_drift_count: providerMismatches.length,
+        renter_drift_count: renterMismatches.length
+      },
+      issues: {
+        split_mismatches: splitMismatches,
+        missing_billing: missingBilling,
+        provider_earnings_drift: providerMismatches,
+        renter_spend_drift: renterMismatches
+      }
+    });
+  } catch (error) {
+    console.error('Reconciliation error:', error);
+    res.status(500).json({ error: 'Failed to run reconciliation' });
+  }
+});
+
 module.exports = router;
