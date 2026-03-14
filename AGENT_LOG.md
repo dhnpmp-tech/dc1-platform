@@ -231,7 +231,7 @@
 
 ## [2026-03-14 12:00 UTC] Claude-Cowork — Phase 2+3: Job & Agent pages wired to real APIs
 
-- **Commit**: (pending)
+- **Commit**: `4c040ea`
 - **Files changed**:
   - `app/jobs/page.tsx` — Rewrote to fetch from real `/api/dc1/jobs/active` + admin dashboard, DashboardLayout, split-view with sidebar job list + detail panel, 15s auto-refresh, cost in SAR, timeline
   - `app/jobs/submit/page.tsx` — Fixed import path from relative to `@/components/jobs/JobSubmitForm`
