@@ -229,3 +229,15 @@
 - **Issue found**: dc1st.com is NOT connected to dc1-platform Vercel project (no domains configured). dc1st.com points to a separate landing page. App URL is dc1-platform.vercel.app
 - **Impact**: Minor nav consistency fix; all dashboard features from improvement plan verified working
 
+## [2026-03-14 12:00 UTC] Claude-Cowork — Phase 2+3: Job & Agent pages wired to real APIs
+
+- **Commit**: (pending)
+- **Files changed**:
+  - `app/jobs/page.tsx` — Rewrote to fetch from real `/api/dc1/jobs/active` + admin dashboard, DashboardLayout, split-view with sidebar job list + detail panel, 15s auto-refresh, cost in SAR, timeline
+  - `app/jobs/submit/page.tsx` — Fixed import path from relative to `@/components/jobs/JobSubmitForm`
+  - `app/agents/[id]/page.tsx` — Added Mission Control API integration: fetches live tasks per agent from MC `/api/tasks`, renders "Live Tasks" table with status badges, 30s auto-refresh, MC online/offline indicator
+  - `app/agents/page.tsx` — Added aggregate stats row (Total Agents, Active Now, Tasks Done, Completion %)
+  - `app/monitor/page.tsx` — Rewrote to ping real VPS API + Mission Control endpoints for health status, shows live platform stats
+- **Breaking changes**: None
+- **Impact**: Job tracker, agent detail, agent list, and system monitor now use real VPS/MC APIs instead of mock/non-existent endpoints
+

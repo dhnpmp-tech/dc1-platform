@@ -143,6 +143,29 @@ export default function AgentsPage() {
           )}
         </div>
 
+        {/* Aggregate stats */}
+        {Object.keys(agentStats).length > 0 && (() => {
+          const allStats = Object.values(agentStats);
+          const totalDone = allStats.reduce((s, a) => s + a.doneTasks, 0);
+          const totalTasks = allStats.reduce((s, a) => s + a.totalTasks, 0);
+          const activeCount = allStats.filter(a => a.status === 'BUILDING' || a.status === 'ACTIVE').length;
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Total Agents', value: AGENTS.length.toString(), color: 'text-[#00d4ff]' },
+                { label: 'Active Now', value: activeCount.toString(), color: 'text-[#00c853]' },
+                { label: 'Tasks Done', value: `${totalDone}/${totalTasks}`, color: 'text-[#FFD700]' },
+                { label: 'Completion', value: totalTasks > 0 ? `${Math.round((totalDone / totalTasks) * 100)}%` : '—', color: 'text-[#bb86fc]' },
+              ].map(s => (
+                <div key={s.label} className="bg-[#161b22] border border-[#30363d] rounded-lg p-3 text-center">
+                  <div className="text-xs text-gray-500">{s.label}</div>
+                  <div className={`text-xl font-bold ${s.color}`}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {loading && Object.keys(agentStats).length === 0
             ? Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)

@@ -1,8 +1,24 @@
 'use client';
 
 import { useParams } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 
-// TODO: wire to GET /api/agents/:id/intelligence
+const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
+const MC_TOKEN = typeof window !== 'undefined'
+  ? (process.env.NEXT_PUBLIC_MC_TOKEN || 'dc1-mc-gate0-2026')
+  : 'dc1-mc-gate0-2026';
+
+interface MCTask {
+  id: string;
+  title: string;
+  status: string;
+  assigned_to_name: string;
+  completed_at: string | null;
+  updated_at: string | null;
+}
+
+// Wire to Mission Control tasks API for live data
 
 // MOCKED DATA
 interface AgentProfile {
@@ -191,17 +207,59 @@ export default function AgentDetailPage() {
   const agentId = (params.id as string)?.toUpperCase();
   const agent = mockAgents[agentId];
 
+  // Live tasks from Mission Control API
+  const [liveTasks, setLiveTasks] = useState<MCTask[]>([]);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  const fetchLiveTasks = useCallback(async () => {
+    if (!agentId) return;
+    try {
+      const res = await fetch(`${MC_BASE}/tasks`, {
+        headers: { Authorization: `Bearer ${MC_TOKEN}` },
+      });
+      if (!res.ok) throw new Error(`MC API ${res.status}`);
+      const tasks: MCTask[] = await res.json();
+      const agentTasks = tasks.filter(
+        (t) => t.assigned_to_name?.toUpperCase() === agentId
+      );
+      agentTasks.sort((a, b) => {
+        const aTime = a.updated_at || '';
+        const bTime = b.updated_at || '';
+        return bTime.localeCompare(aTime);
+      });
+      setLiveTasks(agentTasks);
+      setLiveError(null);
+    } catch (err: unknown) {
+      setLiveError(err instanceof Error ? err.message : 'MC API unavailable');
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    fetchLiveTasks();
+    const interval = setInterval(fetchLiveTasks, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLiveTasks]);
+
   if (!agent) {
     return (
       <div className="flex items-center justify-center h-96 text-gray-500">
         <div className="text-center">
           <div className="text-4xl mb-3">🤖</div>
-          <div>Agent "{agentId}" not found</div>
+          <div>Agent &quot;{agentId}&quot; not found</div>
           <div className="text-xs mt-2">Available: {Object.keys(mockAgents).join(', ')}</div>
+          <Link href="/agents" className="text-[#00d4ff] text-sm mt-2 inline-block hover:underline">← Back to Agents</Link>
         </div>
       </div>
     );
   }
+
+  const liveTaskStatusColors: Record<string, string> = {
+    done: 'bg-[#00c853]/10 text-[#00c853]',
+    completed: 'bg-[#00c853]/10 text-[#00c853]',
+    in_progress: 'bg-[#00d4ff]/10 text-[#00d4ff]',
+    building: 'bg-[#bb86fc]/10 text-[#bb86fc]',
+    pending: 'bg-[#ffab00]/10 text-[#ffab00]',
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -233,6 +291,51 @@ export default function AgentDetailPage() {
           <div className="text-xs text-gray-500">{agent.currentTask.progress}% · Est. completion: {new Date(agent.currentTask.estimatedCompletion).toLocaleTimeString()}</div>
         </div>
       )}
+
+      {/* Live Tasks from Mission Control */}
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#30363d] flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Live Tasks (Mission Control)</h2>
+          <div className="flex items-center gap-2">
+            {liveError ? (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#ffab00]/10 text-[#ffab00]">MC Offline</span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#00c853]/10 text-[#00c853]">LIVE</span>
+            )}
+            <span className="text-xs text-gray-600">{liveTasks.length} tasks</span>
+          </div>
+        </div>
+        {liveError ? (
+          <div className="p-4 text-xs text-gray-500">Mission Control API unavailable — {liveError}</div>
+        ) : liveTasks.length === 0 ? (
+          <div className="p-4 text-xs text-gray-500">No tasks assigned to {agent.name} in Mission Control</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-[#30363d]">
+                <th className="text-left px-4 py-2">Task</th>
+                <th className="text-left px-4 py-2">Status</th>
+                <th className="text-left px-4 py-2">Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {liveTasks.map((t) => (
+                <tr key={t.id} className="border-b border-[#30363d]/50 hover:bg-[#21262d]">
+                  <td className="px-4 py-2.5 text-gray-300">{t.title}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`px-2 py-0.5 rounded text-xs ${liveTaskStatusColors[t.status] || 'bg-gray-500/10 text-gray-400'}`}>
+                      {t.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-500">
+                    {t.completed_at ? new Date(t.completed_at).toLocaleString() : t.updated_at ? new Date(t.updated_at).toLocaleString() : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {/* Performance metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

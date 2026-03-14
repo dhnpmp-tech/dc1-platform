@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Suspense } from 'react';
-import JobSubmitForm from '../../../components/jobs/JobSubmitForm';
+import JobSubmitForm from '@/components/jobs/JobSubmitForm';
 
 export default function SubmitJobPage() {
   return (
