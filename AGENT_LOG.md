@@ -118,6 +118,20 @@
 
 ---
 
+## [2026-03-14 09:30 UTC] Claude-Cowork — Phase 3: Dashboard consistency & polish (P3-P5, R4-R5)
+
+- **Commit**: `6a0cf9c`
+- **Files**: `app/provider/earnings/page.tsx`, `app/provider/page.tsx`, `app/renter/page.tsx`, `app/renter/jobs/page.tsx`
+- **What changed**:
+  - **P3+P4**: Rewrote Provider Earnings page — now uses DashboardLayout with full sidebar nav, localStorage auth (redirects to login if no key), DC1 design tokens (replacing hardcoded hex colors), StatCard components, StatusBadge, and 60s auto-refresh. Removed query-param auth pattern.
+  - **P5**: Added daemon connection status badge to Provider dashboard GPU Health section — shows Connected (green pulse, <2min), Stale (yellow, <5min), or Disconnected (red) based on `last_heartbeat`. Also shows daemon version.
+  - **R4**: Consolidated duplicate Playground — removed the full embedded playground from Renter dashboard (1012→280 lines). Dashboard now has clean overview with GPU table, recent jobs, and quick action links to standalone `/renter/playground`.
+  - **R5**: Added 30s auto-refresh to Renter Jobs page + subtitle with job count
+- **Impact**: All dashboard pages now use consistent DashboardLayout, auth patterns, and design tokens. Renter dashboard drastically simplified.
+- **Breaking**: Provider Earnings page no longer uses `?key=` query param — uses localStorage instead. Old bookmarked links with `?key=` will show login redirect.
+
+---
+
 ## [2026-03-14 07:40 UTC] Claude-Cowork — Phase 4 Final: Headless API Migration
 
 - **Commit**: (pending push)
