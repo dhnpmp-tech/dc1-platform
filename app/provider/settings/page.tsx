@@ -31,10 +31,18 @@ const GearIcon = () => (
   </svg>
 )
 
+const GpuIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2h-2M9 3a2 2 0 012-2h2a2 2 0 012 2M9 3h6" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6M9 16h6M9 8h6" />
+  </svg>
+)
+
 const navItems = [
   { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
   { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
   { label: 'Earnings', href: '/provider/earnings', icon: <CurrencyIcon /> },
+  { label: 'GPU Metrics', href: '/provider/gpu', icon: <GpuIcon /> },
   { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
 ]
 
