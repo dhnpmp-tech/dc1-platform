@@ -148,7 +148,6 @@ class InMemoryDB {
   }
 
   _update(sql, params) {
-    // Tokenise: UPDATE table SET col=?, col=? WHERE condition
     const tableM = sql.match(/UPDATE\s+(\w+)\s+SET\s/i);
     if (!tableM) return;
     const table = tableM[1];
@@ -157,60 +156,93 @@ class InMemoryDB {
     const setM = sql.match(/SET\s+([\s\S]+?)\s+WHERE\s+([\s\S]+)$/i);
     if (!setM) return;
 
-    const setClauses = setM[1].split(',').map(s => s.trim());
+    // Split SET clause by comma (respects quoted strings)
+    const setClauses = this._splitValueTokens(setM[1]);
     const whereClause = setM[2].trim();
 
-    // Parse set values
-    const setCols = setCols_parse(setClauses);
-    // Parse where condition
-    const whereFilter = where_parse(whereClause);
-
+    // Parse each SET assignment; track which ?-params are consumed
     let pi = 0;
-    const setValues = {};
-    for (const col of setCols) {
-      if (col.val === '?') setValues[col.name] = params[pi++];
-      else setValues[col.name] = col.val;
+    const setUpdates = [];
+    for (const clause of setClauses) {
+      const eqI = clause.indexOf('=');
+      if (eqI === -1) continue;
+      const name     = clause.slice(0, eqI).trim();
+      const valExpr  = clause.slice(eqI + 1).trim();
+
+      if (valExpr === '?') {
+        setUpdates.push({ name, type: 'literal', val: params[pi++] });
+      } else if (/^'(.*)'$/s.test(valExpr)) {
+        // Quoted string literal — strip surrounding quotes
+        setUpdates.push({ name, type: 'literal', val: valExpr.slice(1, -1) });
+      } else if (/^NULL$/i.test(valExpr)) {
+        setUpdates.push({ name, type: 'literal', val: null });
+      } else if (/^(\w+)\s*\+\s*\?$/.test(valExpr)) {
+        // col + ? (arithmetic add with param)
+        const idx = pi++;
+        setUpdates.push({ name, type: 'arith', op: '+', col: valExpr.match(/^(\w+)/)[1], paramIdx: idx });
+      } else if (/^(\w+)\s*-\s*\?$/.test(valExpr)) {
+        // col - ? (arithmetic subtract with param)
+        const idx = pi++;
+        setUpdates.push({ name, type: 'arith', op: '-', col: valExpr.match(/^(\w+)/)[1], paramIdx: idx });
+      } else if (/^(\w+)\s*\+\s*(\d+(?:\.\d+)?)$/.test(valExpr)) {
+        // col + literal_number
+        const m = valExpr.match(/^(\w+)\s*\+\s*(\d+(?:\.\d+)?)$/);
+        setUpdates.push({ name, type: 'arith_lit', op: '+', col: m[1], litVal: Number(m[2]) });
+      } else if (/^-?\d+(\.\d+)?$/.test(valExpr)) {
+        setUpdates.push({ name, type: 'literal', val: Number(valExpr) });
+      } else {
+        // Unknown expression — store as-is (best-effort)
+        setUpdates.push({ name, type: 'literal', val: valExpr });
+      }
     }
+
+    // Build WHERE filter using remaining params
+    const whereParams = params.slice(pi);
+    const whereFilter = this._makeWhereFilter(whereClause, whereParams);
 
     this._tables[table] = this._tables[table].map(row => {
-      if (whereFilter(row, params.slice(pi))) {
-        return Object.assign({}, row, setValues);
+      if (!whereFilter(row)) return row;
+      const newRow = Object.assign({}, row);
+      for (const upd of setUpdates) {
+        if (upd.type === 'literal') {
+          newRow[upd.name] = upd.val;
+        } else if (upd.type === 'arith') {
+          const base = row[upd.col] != null ? Number(row[upd.col]) : 0;
+          const delta = Number(params[upd.paramIdx]);
+          newRow[upd.name] = upd.op === '+' ? base + delta : base - delta;
+        } else if (upd.type === 'arith_lit') {
+          const base = row[upd.col] != null ? Number(row[upd.col]) : 0;
+          newRow[upd.name] = upd.op === '+' ? base + upd.litVal : base - upd.litVal;
+        }
       }
-      return row;
+      return newRow;
     });
+  }
 
-    function setCols_parse(clauses) {
-      return clauses.map(c => {
-        const eqI = c.indexOf('=');
-        return { name: c.slice(0, eqI).trim(), val: c.slice(eqI + 1).trim() };
+  // Builds a single-call filter function for a WHERE clause + bound params array.
+  _makeWhereFilter(wc, wParams) {
+    return (row) => {
+      let wi = 0;
+      const parts = wc.split(/\s+AND\s+/i);
+      return parts.every(part => {
+        const inM = part.match(/(\w+)\s+IN\s*\(([^)]+)\)/i);
+        if (inM) {
+          const col = inM[1];
+          const placeholders = inM[2].split(',').map(s => s.trim());
+          const vals = placeholders.map(p => p === '?' ? String(wParams[wi++]) : p.replace(/'/g, ''));
+          return vals.some(v => String(row[col]) === v);
+        }
+        const nullM = part.match(/(\w+)\s+IS\s+NULL/i);
+        if (nullM) return row[nullM[1]] == null;
+        const notNullM = part.match(/(\w+)\s+IS\s+NOT\s+NULL/i);
+        if (notNullM) return row[notNullM[1]] != null;
+        const eqM = part.match(/(\w+)\s*=\s*\?/);
+        if (eqM) { const v = wParams[wi++]; return row[eqM[1]] === v || String(row[eqM[1]]) === String(v); }
+        const eqLitM = part.match(/(\w+)\s*=\s*'([^']*)'/);
+        if (eqLitM) return String(row[eqLitM[1]]) === eqLitM[2];
+        return true;
       });
-    }
-
-    function where_parse(wc) {
-      // Support: col = ? (AND col = ?)* and col IN (?,?) and col IS NULL
-      return (row, wParams) => {
-        let pwi = 0;
-        const parts = wc.split(/\s+AND\s+/i);
-        return parts.every(part => {
-          const inM = part.match(/(\w+)\s+IN\s*\(([^)]+)\)/i);
-          if (inM) {
-            const col = inM[1];
-            const placeholders = inM[2].split(',').map(s => s.trim());
-            const vals = placeholders.map(p => p === '?' ? params[pi++] : p.replace(/'/g, ''));
-            return vals.includes(String(row[col])) || vals.includes(row[col]);
-          }
-          const nullM = part.match(/(\w+)\s+IS\s+NULL/i);
-          if (nullM) return row[nullM[1]] == null;
-          const notNullM = part.match(/(\w+)\s+IS\s+NOT\s+NULL/i);
-          if (notNullM) return row[notNullM[1]] != null;
-          const eqM = part.match(/(\w+)\s*=\s*\?/);
-          if (eqM) { const v = params[pi++]; return String(row[eqM[1]]) === String(v) || row[eqM[1]] === v; }
-          const eqLitM = part.match(/(\w+)\s*=\s*'([^']*)'/);
-          if (eqLitM) return String(row[eqLitM[1]]) === eqLitM[2];
-          return true;
-        });
-      };
-    }
+    };
   }
 
   _query(sql, params) {
@@ -241,9 +273,9 @@ class InMemoryDB {
     const whereM = sql.match(/WHERE\s+([\s\S]+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i);
     if (!whereM) return rows;
     const wc = whereM[1].trim();
-    let pi = 0;
 
     return rows.filter(row => {
+      let pi = 0; // reset per-row so each row evaluates params from index 0
       const parts = wc.split(/\s+AND\s+/i);
       return parts.every(part => {
         const inM = part.match(/(\w+)\s+IN\s*\(([^)]+)\)/i);
