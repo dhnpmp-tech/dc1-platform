@@ -2,10 +2,14 @@
 
 ## READ FIRST
 You are an AI agent managed by Paperclip, working on the DC1 Platform.
-Before doing anything, read these files in order:
-1. This file (context about the platform)
-2. `AGENT_LOG.md` (what other agents recently changed)
-3. `DC1-AGENT-BRIEFING.md` (comprehensive technical reference)
+You run INSIDE a Docker container as the node user. Do NOT run any git commands.
+
+Before doing anything:
+1. Read this file fully (platform context)
+2. Read `AGENT_LOG.md` (what other agents recently changed) — use the Read tool, NOT git
+3. For deep technical details, read `DC1-AGENT-BRIEFING.md`
+
+CRITICAL: Never run git pull, git push, git commit, or any git commands. They will fail with permission errors.
 
 ## What Is DC1
 DC1 is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPUs, install a Python daemon, and earn SAR. Renters submit compute jobs (LLM inference, image gen, training) that run on provider hardware. DC1 takes 25% fee; providers earn 75%. Currency: SAR (halala = 1/100 SAR).
@@ -67,17 +71,62 @@ DC1 is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPU
 4. Provider price controls (can't set own rates)
 5. WebSocket live updates (currently polling)
 
+## MANDATORY: Paperclip Heartbeat Procedure
+
+You are managed by Paperclip and run in **heartbeats**. Each heartbeat, follow these steps IN ORDER using curl:
+
+### Step 1: Check inbox for assigned issues
+```bash
+curl -s -H "Authorization: Bearer $PAPERCLIP_API_KEY" "$PAPERCLIP_API_URL/api/agents/me/inbox-lite"
+```
+
+### Step 2: Pick the highest priority issue and check it out
+Work on in_progress first, then todo. Skip blocked.
+```bash
+curl -s -X POST -H "Authorization: Bearer $PAPERCLIP_API_KEY" -H "Content-Type: application/json" -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" "$PAPERCLIP_API_URL/api/issues/{issueId}/checkout" -d "{\"agentId\": \"$PAPERCLIP_AGENT_ID\", \"expectedStatuses\": [\"todo\", \"backlog\"]}"
+```
+
+### Step 3: Get issue context
+```bash
+curl -s -H "Authorization: Bearer $PAPERCLIP_API_KEY" "$PAPERCLIP_API_URL/api/issues/{issueId}/heartbeat-context"
+```
+
+### Step 4: Do the actual work
+Read the codebase files mentioned in the issue description. Write code, make changes to fix the issue.
+
+### Step 5: Update the issue status when done
+```bash
+curl -s -X PATCH -H "Authorization: Bearer $PAPERCLIP_API_KEY" -H "Content-Type: application/json" -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" "$PAPERCLIP_API_URL/api/issues/{issueId}" -d "{\"status\": \"done\", \"comment\": \"What was done.\"}"
+```
+
+### CRITICAL RULES
+- All env vars ($PAPERCLIP_API_KEY, $PAPERCLIP_API_URL, $PAPERCLIP_AGENT_ID, $PAPERCLIP_RUN_ID) are auto-injected
+- Use Authorization: Bearer $PAPERCLIP_API_KEY on ALL API calls
+- Always include X-Paperclip-Run-Id header on writes
+- Your FIRST action every heartbeat MUST be to check your inbox via curl
+- If no issues assigned, exit quietly
+
 ## Cross-Agent Protocol
 
+### IMPORTANT: No Git Commands Inside Paperclip
+You are running inside a Docker container with a READ-ONLY volume mount of the DC1 repo.
+Do NOT run `git pull`, `git push`, `git commit`, or any git commands — they will fail.
+The codebase is automatically kept in sync via the host volume mount.
+
 ### Before starting work:
-1. `git pull origin main`
-2. Read `AGENT_LOG.md`
+1. Read `AGENT_LOG.md` (understand what other agents changed)
+2. Read relevant source files for your task
 3. Check for conflicts with other agents' recent changes
 
 ### After completing work:
-1. Conventional commits: feat:, fix:, docs:, refactor:, test:, chore:
-2. Append timestamped entry to `AGENT_LOG.md`
-3. `git push origin main`
+1. Report your changes via Paperclip issue comments
+2. Note any files you would modify and what changes are needed
+3. The CEO or Claude-Cowork agent will commit and push changes from outside the container
+
+### If you need to make code changes:
+- Write the changes to files in your working directory
+- The host volume mount will reflect your changes on the VPS
+- Do NOT attempt git operations — they will error with permission denied
 
 ### Agent Roster
 | Agent | Role | Adapter |

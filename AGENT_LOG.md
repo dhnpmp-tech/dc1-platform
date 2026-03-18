@@ -196,6 +196,51 @@
 
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
+## [2026-03-17 23:41 UTC] DevOps Automator — DCP-8, DCP-12, DCP-13
+
+### DCP-8: Docker container isolation for job execution
+- **Files**: `backend/installers/dc1_daemon.py`, `backend/installers/dc1-daemon.py`, `backend/docker/Dockerfile.general-worker` (NEW), `backend/docker/build-images.sh`
+- **What changed**:
+  - `run_docker_job()` in both daemons: added `--network none` (no internet inside container), `--name dc1-job-{job_id}` (reliable timeout kill), `--security-opt no-new-privileges:true`, `:ro` read-only volume mount, `shutil.rmtree` cleanup in `finally`
+  - Updated image map from GHCR paths to local `dc1/sd-worker`, `dc1/llm-worker`, `dc1/general-worker`
+  - Added `job_id` param through `execute_job` → `run_docker_job` for unique container naming
+  - Created `Dockerfile.general-worker` (extends base-worker with scipy/matplotlib/pandas/sklearn/opencv)
+  - Updated `build-images.sh` to build all 4 images (added step 4: `dc1/general-worker`)
+- **Breaking**: Providers with Docker available now run jobs in isolated containers with no network access. `--network none` means job scripts cannot reach the internet.
+
+### DCP-12: Hardcoded URLs → environment variables
+- **Files**: `next.config.js`, `lib/api.ts`, `backend/src/server.js`, `.env.example`
+- **What changed**:
+  - `next.config.js`: proxy rewrite now uses `process.env.BACKEND_URL` (fallback: VPS IP)
+  - `lib/api.ts`: `VPS_DIRECT`/`MC_DIRECT` read from `NEXT_PUBLIC_DC1_API`/`NEXT_PUBLIC_MC_URL`
+  - `backend/src/server.js`: CORS origins no longer hardcode `76.13.179.86`; added `CORS_ORIGINS` env var for injecting extra allowed origins
+  - `.env.example`: comprehensive documentation of all env vars including `DC1_HMAC_SECRET`, `CORS_ORIGINS`
+- **Action required**: Set `BACKEND_URL=https://api.dcp.sa` in Vercel project settings once HTTPS is live
+
+### DCP-13: HTTPS with nginx reverse proxy
+- **Files**: `infra/nginx/dc1-api.conf` (NEW), `infra/nginx/setup-https.sh` (NEW), `backend/installers/daemon.ps1`, `backend/installers/daemon.sh`, `backend/installers/dc1-setup-helper.ps1`
+- **What changed**:
+  - `infra/nginx/dc1-api.conf`: nginx site config — HTTP→HTTPS redirect, port 443 http2, Let's Encrypt SSL (`api.dcp.sa`), Mozilla Intermediate TLS, HSTS, 60MB upload limit, 900s proxy timeout, WebSocket headers
+  - `infra/nginx/setup-https.sh`: one-shot setup script — installs nginx+certbot, ACME webroot challenge, obtains cert, deploys config, sets up auto-renewal (systemd timer / cron fallback), opens ufw
+  - Installer script defaults updated: `http://76.13.179.86:8083` → `https://api.dcp.sa`
+- **Pre-requisite**: DNS `api.dcp.sa → 76.13.179.86` must be propagated before running setup-https.sh
+- **Action required by Claude-Cowork**: Once DNS is live, run: `sudo bash infra/nginx/setup-https.sh api.dcp.sa admin@dcp.sa` on VPS
+
+## [2026-03-17 23:26 UTC] Security Engineer — DCP-3: task_spec RCE fix + DCP-4: rate limit audit
+
+- **Issues**: DCP-3 (Critical RCE), DCP-4 (Rate Limiting)
+- **Files**: `backend/installers/dc1-daemon.py`, `backend/installers/dc1_daemon.py`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/src/server.js`
+- **What changed**:
+  - **DCP-3 (RCE)**: Daemon claimed HMAC verification but never implemented it. Added `HMAC_SECRET = "{{HMAC_SECRET}}"` constant to both daemon files, implemented `verify_task_spec_hmac()` using `hmac.compare_digest()`, added HMAC guard in `poll_and_execute()` that rejects and reports jobs with missing/invalid signatures
+  - **DCP-3**: Backend now injects `HMAC_SECRET` into daemon at download time (`providers.js`)
+  - **DCP-3**: Blocked raw Python `task_spec` from renter submissions (400 error with guidance). Removed raw-Python passthrough from template dispatch
+  - **DCP-3**: Added job type whitelist (`ALLOWED_JOB_TYPES`) to reject unknown types at submission
+  - **DCP-3**: Added provider key auth + job ownership check to `/api/jobs/verify-hmac`. Added `/api/jobs/verify-hmac-local` for legacy daemon fallback
+  - **DCP-3**: Removed `DC1_ADMIN_TOKEN` from HMAC_SECRET fallback (secrets must not share roles); added startup warning if `DC1_HMAC_SECRET` not set
+  - **DCP-4**: Existing limits were already in place (provider register, heartbeat, job submit, admin, general catch-all). Added missing specific limiters for `/api/renters/register` (5/IP/hour) and `/api/renters/topup` (10/IP/minute)
+- **Breaking**: Providers must re-download daemon to get HMAC_SECRET injected. Existing deployed daemons will reject all jobs until re-downloaded. `DC1_HMAC_SECRET` must be set as env var before PM2 restart.
+- **Action required by Claude-Cowork**: (1) Set `DC1_HMAC_SECRET=$(openssl rand -hex 32)` in VPS env (pm2 ecosystem config or .env). (2) Restart `dc1-provider-onboarding` with PM2. (3) Notify providers to re-download daemon.
+
 ## [2026-03-13 12:00 UTC] Claude-Cowork — Add Withdrawals nav to admin pages
 
 - **Commit**: `3e128e0`
