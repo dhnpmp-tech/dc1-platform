@@ -1,0 +1,22 @@
+{
+  "id": "ollama",
+  "name": "Ollama LLM",
+  "description": "Run local LLMs via Ollama for smaller models (3B–13B). Supports llama3, mistral, phi3, gemma, and other popular quantized models.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Model (HuggingFace small)", "default": "TinyLlama/TinyLlama-1.1B-Chat-v1.0", "required": true },
+    { "key": "MAX_TOKENS", "label": "Max Tokens", "default": "256", "required": false }
+  ],
+  "params": {
+    "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "prompt": "Explain what a GPU is in one sentence.",
+    "max_tokens": 256
+  },
+  "min_vram_gb": 4,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["llm", "ollama", "small-models", "inference", "quantized"],
+  "sort_order": 5,
+  "icon": "🦙",
+  "difficulty": "easy"
+}

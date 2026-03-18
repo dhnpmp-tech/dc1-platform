@@ -1,0 +1,25 @@
+{
+  "id": "pytorch-training",
+  "name": "PyTorch Training",
+  "description": "Run a PyTorch training job on GPU. Supports custom training scripts with dataset mounts, checkpointing, and mixed-precision training (FP16/BF16).",
+  "image": "dc1/general-worker:latest",
+  "job_type": "training",
+  "env_vars": [
+    { "key": "BATCH_SIZE", "label": "Batch Size", "default": "32", "required": false },
+    { "key": "EPOCHS", "label": "Epochs", "default": "10", "required": false },
+    { "key": "LEARNING_RATE", "label": "Learning Rate", "default": "0.001", "required": false },
+    { "key": "AMP", "label": "Mixed Precision (FP16)", "default": "true", "required": false }
+  ],
+  "params": {
+    "batch_size": 32,
+    "epochs": 10,
+    "learning_rate": 0.001,
+    "amp": true
+  },
+  "min_vram_gb": 8,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["training", "pytorch", "ml", "deep-learning"],
+  "sort_order": 4,
+  "icon": "🔥",
+  "difficulty": "intermediate"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "jupyter-gpu",
+  "name": "Jupyter GPU Notebook",
+  "description": "GPU-accelerated Jupyter notebook server with PyTorch, CUDA, and popular ML libraries pre-installed. Ideal for interactive GPU development.",
+  "image": "dc1/general-worker:latest",
+  "job_type": "training",
+  "env_vars": [
+    { "key": "NOTEBOOK_TOKEN", "label": "Notebook Access Token", "default": "dc1jupyter", "required": false },
+    { "key": "PORT", "label": "Port", "default": "8888", "required": false }
+  ],
+  "params": {
+    "script_type": "jupyter",
+    "token": "dc1jupyter"
+  },
+  "min_vram_gb": 4,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["jupyter", "notebook", "interactive", "development", "training"],
+  "sort_order": 3,
+  "icon": "📓",
+  "difficulty": "easy"
+}

@@ -1,0 +1,31 @@
+{
+  "id": "custom-container",
+  "name": "Custom Container",
+  "description": "Bring your own Docker image. Run any GPU workload using an approved base image. Your custom Python script runs inside the container with GPU access.",
+  "image": "custom",
+  "job_type": "training",
+  "env_vars": [
+    { "key": "DOCKER_IMAGE", "label": "Docker Image (from approved list)", "default": "dc1/general-worker:latest", "required": true }
+  ],
+  "params": {
+    "image_override": "dc1/general-worker:latest",
+    "script": "import torch\nprint(f'GPU available: {torch.cuda.is_available()}')\nif torch.cuda.is_available():\n    print(f'Device: {torch.cuda.get_device_name(0)}')\n    print(f'VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')\n"
+  },
+  "approved_images": [
+    "dc1/general-worker:latest",
+    "dc1/llm-worker:latest",
+    "dc1/sd-worker:latest",
+    "dc1/base-worker:latest",
+    "pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime",
+    "pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime",
+    "nvcr.io/nvidia/pytorch:24.01-py3",
+    "nvcr.io/nvidia/tensorflow:24.01-tf2-py3",
+    "tensorflow/tensorflow:2.15.0-gpu"
+  ],
+  "min_vram_gb": 4,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["custom", "advanced", "bring-your-own", "flexible"],
+  "sort_order": 6,
+  "icon": "📦",
+  "difficulty": "advanced"
+}

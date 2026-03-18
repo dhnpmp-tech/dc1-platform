@@ -1,0 +1,26 @@
+{
+  "id": "stable-diffusion",
+  "name": "Stable Diffusion",
+  "description": "Image generation with Stable Diffusion. Generate high-quality images from text prompts using AUTOMATIC1111-compatible models.",
+  "image": "dc1/sd-worker:latest",
+  "job_type": "image_generation",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Model ID (HuggingFace)", "default": "CompVis/stable-diffusion-v1-4", "required": true },
+    { "key": "STEPS", "label": "Diffusion Steps", "default": "30", "required": false },
+    { "key": "WIDTH", "label": "Image Width", "default": "512", "required": false },
+    { "key": "HEIGHT", "label": "Image Height", "default": "512", "required": false }
+  ],
+  "params": {
+    "prompt": "A futuristic GPU data center in the desert, photorealistic",
+    "model": "CompVis/stable-diffusion-v1-4",
+    "steps": 30,
+    "width": 512,
+    "height": 512
+  },
+  "min_vram_gb": 4,
+  "estimated_price_sar_per_hour": 12.0,
+  "tags": ["image-gen", "diffusion", "creative", "art"],
+  "sort_order": 2,
+  "icon": "🎨",
+  "difficulty": "easy"
+}

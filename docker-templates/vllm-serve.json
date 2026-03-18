@@ -1,0 +1,24 @@
+{
+  "id": "vllm-serve",
+  "name": "vLLM Serve",
+  "description": "OpenAI-compatible LLM serving API. Deploy Mistral, Llama, Qwen, and other models with high-throughput batched inference.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Model ID (HuggingFace)", "default": "mistralai/Mistral-7B-Instruct-v0.2", "required": true },
+    { "key": "MAX_TOKENS", "label": "Max Tokens", "default": "512", "required": false },
+    { "key": "TEMPERATURE", "label": "Temperature", "default": "0.7", "required": false }
+  ],
+  "params": {
+    "model": "mistralai/Mistral-7B-Instruct-v0.2",
+    "prompt": "Hello, tell me about GPU compute.",
+    "max_tokens": 512,
+    "temperature": 0.7
+  },
+  "min_vram_gb": 16,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["llm", "inference", "api", "openai-compatible"],
+  "sort_order": 1,
+  "icon": "🤖",
+  "difficulty": "easy"
+}
