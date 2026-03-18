@@ -1,0 +1,2613 @@
+openapi: 3.0.3
+info:
+  title: DC1 Platform API
+  version: 4.0.0
+  description: |
+    DC1 is Saudi Arabia's first decentralized GPU compute marketplace.
+    Providers register NVIDIA GPUs, install the Python daemon, and earn SAR.
+    Renters submit compute jobs (LLM inference, image generation, training) that
+    run on provider hardware. DC1 takes 25% fee; providers earn 75%.
+
+    ## Currency
+    All monetary amounts are in **halala** (1 SAR = 100 halala) unless the field
+    name ends in `_sar`.
+
+    ## Auth
+    Three auth schemes are used depending on the caller role:
+
+    | Role | Scheme | How |
+    |------|--------|-----|
+    | Provider | `ProviderApiKey` | `?key=` query param or `x-provider-key` header |
+    | Renter | `RenterApiKey` | `?key=` query param or `x-renter-key` header |
+    | Admin | `AdminToken` | `x-admin-token` header |
+
+    ## Rate Limits
+    | Endpoint | Limit |
+    |----------|-------|
+    | `POST /providers/register` | 5 / IP / hour |
+    | `POST /providers/heartbeat` | 4 / IP / minute |
+    | `POST /renters/register` | 5 / IP / hour |
+    | `POST /jobs/submit` | 30 / IP / minute |
+    | `POST /payments/topup` | 10 / IP / minute |
+    | `GET /api/admin/*` | 100 / IP / minute |
+    | All other `/api/*` | 300 / IP / minute |
+
+  contact:
+    name: DC1 DevRel
+    url: https://dc1st.com/docs
+  x-env-vars:
+    DC1_ADMIN_TOKEN:
+      description: Secret token for admin endpoint auth. Set in PM2 env.
+      required: true
+    DC1_HMAC_SECRET:
+      description: HMAC-SHA256 secret for signing task_spec payloads. Must persist across restarts.
+      required: true
+    MOYASAR_SECRET_KEY:
+      description: Moyasar payment gateway API key (Basic auth). Enables real SAR payments.
+      required: false
+    MOYASAR_WEBHOOK_SECRET:
+      description: HMAC secret for verifying Moyasar webhook signatures. Defaults to MOYASAR_SECRET_KEY.
+      required: false
+    RESEND_API_KEY:
+      description: Resend.com API key for transactional email delivery.
+      required: false
+    FRONTEND_URL:
+      description: Frontend base URL injected into payment callback links. Defaults to https://dc1st.com.
+      required: false
+    BACKEND_URL:
+      description: Backend URL injected into installer scripts. Defaults to http://76.13.179.86:8083.
+      required: false
+    CORS_ORIGINS:
+      description: Comma-separated extra origins to allow in addition to the hardcoded allowlist.
+      required: false
+
+servers:
+  - url: http://76.13.179.86:8083
+    description: Production VPS API
+  - url: http://localhost:8083
+    description: Local development
+
+tags:
+  - name: Providers
+    description: GPU provider registration, daemon management, and earnings
+  - name: Renters
+    description: Renter registration, balance, and account management
+  - name: Jobs
+    description: Job submission, polling, result reporting, and status tracking
+  - name: Payments
+    description: Moyasar SAR payment initiation, webhook handling, and history
+  - name: Admin
+    description: Platform administration — providers, renters, jobs, finance, security
+  - name: System
+    description: Health checks and API info
+
+components:
+  securitySchemes:
+    ProviderApiKey:
+      type: apiKey
+      in: query
+      name: key
+      description: Provider API key. Prefix `dc1-provider-`. Also accepted as `x-provider-key` header.
+    RenterApiKey:
+      type: apiKey
+      in: query
+      name: key
+      description: Renter API key. Prefix `dc1-renter-`. Also accepted as `x-renter-key` header.
+    AdminToken:
+      type: apiKey
+      in: header
+      name: x-admin-token
+      description: Admin token set via DC1_ADMIN_TOKEN env var. Also accepted as Bearer token.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Missing required fields
+
+    Provider:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        gpu_model:
+          type: string
+          example: RTX 3090
+        status:
+          type: string
+          enum: [registered, connected, online, offline, paused, suspended]
+        last_heartbeat:
+          type: string
+          format: date-time
+          nullable: true
+        daemon_version:
+          type: string
+          nullable: true
+        run_mode:
+          type: string
+          enum: [always-on, manual, scheduled]
+        uptime_percent:
+          type: number
+        total_earnings_halala:
+          type: integer
+        total_jobs:
+          type: integer
+        gpu_vram_mib:
+          type: integer
+          nullable: true
+        gpu_count_reported:
+          type: integer
+        gpu_compute_capability:
+          type: string
+          nullable: true
+        gpu_cuda_version:
+          type: string
+          nullable: true
+        is_paused:
+          type: boolean
+        gpu_usage_cap_pct:
+          type: integer
+          description: Max GPU utilization cap (0–100)
+        vram_reserve_gb:
+          type: number
+          description: VRAM reserved for OS/other apps (0–16 GB)
+        temp_limit_c:
+          type: integer
+          description: Max GPU temperature limit (50–100°C)
+
+    Renter:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        organization:
+          type: string
+          nullable: true
+        balance_halala:
+          type: integer
+        total_spent_halala:
+          type: integer
+        total_jobs:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: integer
+        job_id:
+          type: string
+          description: UUID job identifier
+        job_type:
+          type: string
+          enum: [llm-inference, llm_inference, training, rendering, image_generation, vllm_serve, custom]
+        status:
+          type: string
+          enum: [queued, pending, running, completed, failed, cancelled]
+        submitted_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cost_halala:
+          type: integer
+          description: Estimated/reserved cost at submit time
+        actual_cost_halala:
+          type: integer
+          nullable: true
+          description: Actual cost settled at completion
+        provider_earned_halala:
+          type: integer
+          nullable: true
+        dc1_fee_halala:
+          type: integer
+          nullable: true
+
+    Payment:
+      type: object
+      properties:
+        payment_id:
+          type: string
+        amount_sar:
+          type: number
+        amount_halala:
+          type: integer
+        status:
+          type: string
+          enum: [initiated, paid, failed, refunded]
+        source_type:
+          type: string
+          enum: [creditcard, mada, applepay, sandbox]
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+paths:
+
+  # ─── Providers ──────────────────────────────────────────────────────────────
+
+  /api/providers/register:
+    post:
+      tags: [Providers]
+      summary: Register a new GPU provider
+      description: |
+        Creates a new provider account and returns an API key and installer URL.
+        Rate limited to 5 requests per IP per hour.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, gpu_model, os]
+              properties:
+                name:
+                  type: string
+                  example: Ahmed Al-Rashidi
+                email:
+                  type: string
+                  format: email
+                  example: ahmed@example.sa
+                gpu_model:
+                  type: string
+                  example: NVIDIA RTX 3090
+                os:
+                  type: string
+                  enum: [Windows, Linux, Mac]
+                  example: Linux
+                phone:
+                  type: string
+                  nullable: true
+                resource_spec:
+                  type: object
+                  nullable: true
+                  description: Ocean-style resource specification (cpu_count, ram_gb, etc.)
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  provider_id:
+                    type: integer
+                  api_key:
+                    type: string
+                    example: dc1-provider-a1b2c3d4e5f6...
+                  installer_url:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A provider with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/providers/login-email:
+    post:
+      tags: [Providers]
+      summary: Retrieve API key by email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: API key returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  api_key:
+                    type: string
+                  provider:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      email:
+                        type: string
+                      gpu_model:
+                        type: string
+                      status:
+                        type: string
+        '404':
+          description: No provider account found with this email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/providers/me:
+    get:
+      tags: [Providers]
+      summary: Provider self-service dashboard
+      description: Returns full provider profile, GPU metrics, earnings, and recent jobs.
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+          description: Provider API key
+      responses:
+        '200':
+          description: Provider dashboard data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    allOf:
+                      - $ref: '#/components/schemas/Provider'
+                      - type: object
+                        properties:
+                          gpu_metrics:
+                            type: object
+                            properties:
+                              utilization_pct:
+                                type: number
+                              vram_used_mib:
+                                type: integer
+                              temperature_c:
+                                type: number
+                          today_earnings_halala:
+                            type: integer
+                          week_earnings_halala:
+                            type: integer
+                          active_job:
+                            $ref: '#/components/schemas/Job'
+                            nullable: true
+                  recent_jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+        '400':
+          description: API key required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Provider not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/providers/heartbeat:
+    post:
+      tags: [Providers]
+      summary: Provider daemon heartbeat
+      description: |
+        Sent every 30 seconds by the daemon. Updates GPU telemetry, sets provider
+        status to `online`, recomputes reputation score, and returns job assignment
+        signals and update availability.
+
+        Rate limited to 4 per IP per minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_key]
+              properties:
+                api_key:
+                  type: string
+                  example: dc1-provider-a1b2c3d4e5f6...
+                gpu_status:
+                  type: object
+                  description: GPU telemetry snapshot from nvidia-smi
+                  properties:
+                    gpu_name:
+                      type: string
+                    gpu_vram_mib:
+                      type: integer
+                    driver_version:
+                      type: string
+                    gpu_util_pct:
+                      type: number
+                    temp_c:
+                      type: number
+                    power_w:
+                      type: number
+                    free_vram_mib:
+                      type: integer
+                    daemon_version:
+                      type: string
+                    python_version:
+                      type: string
+                    os_info:
+                      type: string
+                    compute_capability:
+                      type: string
+                    cuda_version:
+                      type: string
+                    gpu_count:
+                      type: integer
+                    all_gpus:
+                      type: array
+                      items:
+                        type: object
+                uptime:
+                  type: number
+                  description: Daemon uptime in seconds
+                provider_ip:
+                  type: string
+                provider_hostname:
+                  type: string
+                cached_models:
+                  type: array
+                  items:
+                    type: string
+                resource_spec:
+                  type: object
+      responses:
+        '200':
+          description: Heartbeat acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  update_available:
+                    type: boolean
+                    description: True if daemon version is below minimum required
+                  min_version:
+                    type: string
+                    example: "3.3.0"
+        '401':
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/providers/daemon-event:
+    post:
+      tags: [Providers]
+      summary: Log daemon events (crashes, errors, job lifecycle)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_key, event_type]
+              properties:
+                api_key:
+                  type: string
+                event_type:
+                  type: string
+                  example: crash
+                severity:
+                  type: string
+                  enum: [info, warning, error, critical]
+                  default: info
+                daemon_version:
+                  type: string
+                timestamp:
+                  type: string
+                  format: date-time
+                hostname:
+                  type: string
+                os_info:
+                  type: string
+                python_version:
+                  type: string
+                details:
+                  type: string
+                  maxLength: 5000
+                job_id:
+                  type: string
+      responses:
+        '200':
+          description: Event logged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  event_type:
+                    type: string
+                  provider_id:
+                    type: integer
+        '401':
+          description: Invalid API key
+
+  /api/providers/readiness:
+    post:
+      tags: [Providers]
+      summary: Daemon reports system readiness check
+      description: Called once at daemon startup. Stores CUDA/PyTorch check results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_key]
+              properties:
+                api_key:
+                  type: string
+                daemon_version:
+                  type: string
+                checks:
+                  type: object
+                  properties:
+                    cuda:
+                      type: boolean
+                    pytorch:
+                      type: boolean
+                    vram_gb:
+                      type: number
+                    driver:
+                      type: string
+      responses:
+        '200':
+          description: Readiness recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  readiness_status:
+                    type: string
+                    enum: [ready, failed]
+                  checks:
+                    type: object
+
+  /api/providers/pause:
+    post:
+      tags: [Providers]
+      summary: Pause provider (stop accepting new jobs)
+      security:
+        - ProviderApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key:
+                  type: string
+      responses:
+        '200':
+          description: Provider paused
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+                    example: paused
+
+  /api/providers/resume:
+    post:
+      tags: [Providers]
+      summary: Resume provider (accept jobs again)
+      security:
+        - ProviderApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key:
+                  type: string
+      responses:
+        '200':
+          description: Provider resumed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+                    enum: [online, connected]
+
+  /api/providers/preferences:
+    post:
+      tags: [Providers]
+      summary: Update provider preferences
+      security:
+        - ProviderApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key:
+                  type: string
+                run_mode:
+                  type: string
+                  enum: [always-on, manual, scheduled]
+                scheduled_start:
+                  type: string
+                  example: "23:00"
+                  description: HH:MM — start time for scheduled mode
+                scheduled_end:
+                  type: string
+                  example: "07:00"
+                  description: HH:MM — end time for scheduled mode
+                gpu_usage_cap_pct:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                vram_reserve_gb:
+                  type: number
+                  minimum: 0
+                  maximum: 16
+                temp_limit_c:
+                  type: integer
+                  minimum: 50
+                  maximum: 100
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  preferences:
+                    type: object
+
+  /api/providers/setup:
+    get:
+      tags: [Providers]
+      summary: Download daemon.sh with injected API key (Linux/Mac)
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Shell script with API key pre-filled
+          content:
+            text/x-shellscript:
+              schema:
+                type: string
+
+  /api/providers/setup-windows:
+    get:
+      tags: [Providers]
+      summary: Download daemon.ps1 with injected API key (Windows)
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: PowerShell script with API key pre-filled
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/providers/download:
+    get:
+      tags: [Providers]
+      summary: Download installer script with injected API key
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: platform
+          schema:
+            type: string
+            enum: [linux, mac, darwin, windows]
+      responses:
+        '200':
+          description: Installer script
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/providers/download/daemon:
+    get:
+      tags: [Providers]
+      summary: Download dc1_daemon.py
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: check_only
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: If "true", return version info only without downloading
+      responses:
+        '200':
+          description: Daemon Python script or version info
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  min_version:
+                    type: string
+                  download_url:
+                    type: string
+
+  /api/providers/download-windows-exe:
+    get:
+      tags: [Providers]
+      summary: Download generic Windows .exe installer
+      responses:
+        '200':
+          description: Windows installer binary
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Installer not yet built
+
+  /api/providers/installer:
+    get:
+      tags: [Providers]
+      summary: Download platform-specific installer binary
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: os
+          required: true
+          schema:
+            type: string
+            enum: [Windows, Linux, Mac]
+      responses:
+        '200':
+          description: Installer binary
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/providers/status/{api_key}:
+    get:
+      tags: [Providers]
+      summary: Get provider status by API key (daemon-facing)
+      parameters:
+        - in: path
+          name: api_key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider_id:
+                    type: integer
+                  name:
+                    type: string
+                  status:
+                    type: string
+                  gpu_model:
+                    type: string
+                  last_heartbeat:
+                    type: string
+                    format: date-time
+                  total_earnings:
+                    type: number
+                  total_jobs:
+                    type: integer
+                  uptime_percent:
+                    type: number
+
+  /api/providers/{api_key}/jobs:
+    get:
+      tags: [Providers]
+      summary: Daemon polls for assigned pending jobs
+      description: Returns the oldest pending job assigned to this provider, or `null` if none.
+      parameters:
+        - in: path
+          name: api_key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Next job or null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    nullable: true
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      job_id:
+                        type: string
+                      job_type:
+                        type: string
+                      task_spec:
+                        type: object
+                      task_spec_hmac:
+                        type: string
+                        description: HMAC-SHA256 of task_spec for integrity verification
+                      gpu_requirements:
+                        type: object
+                        nullable: true
+                      duration_minutes:
+                        type: integer
+                      max_duration_seconds:
+                        type: integer
+
+  /api/providers/job-result:
+    post:
+      tags: [Providers]
+      summary: Daemon submits completed job result
+      description: |
+        Called by daemon after job completion or failure. Triggers billing settlement:
+        - On success: provider earns 75%, DC1 takes 25%, renter balance reconciled.
+        - On failure: renter balance refunded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_key, job_id]
+              properties:
+                api_key:
+                  type: string
+                job_id:
+                  type: string
+                success:
+                  type: boolean
+                result:
+                  description: Job output (JSON or string)
+                error:
+                  type: string
+                  nullable: true
+                metrics:
+                  type: object
+                  nullable: true
+      responses:
+        '200':
+          description: Result recorded and billing settled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [completed, failed]
+                  actual_minutes:
+                    type: integer
+                  cost_halala:
+                    type: integer
+                  provider_earned_halala:
+                    type: integer
+                  dc1_fee_halala:
+                    type: integer
+
+  # ─── Renters ────────────────────────────────────────────────────────────────
+
+  /api/renters/register:
+    post:
+      tags: [Renters]
+      summary: Register a new renter account
+      description: |
+        Creates renter account and credits 1000 halala (10 SAR) welcome balance.
+        Rate limited to 5 per IP per hour.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name:
+                  type: string
+                  example: Fatima Al-Saud
+                email:
+                  type: string
+                  format: email
+                  example: fatima@example.sa
+                organization:
+                  type: string
+                  nullable: true
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  renter_id:
+                    type: integer
+                  api_key:
+                    type: string
+                    example: dc1-renter-a1b2c3d4e5f6...
+                  message:
+                    type: string
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/renters/me:
+    get:
+      tags: [Renters]
+      summary: Renter self-service profile and recent jobs
+      security:
+        - RenterApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Renter profile and recent jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  renter:
+                    $ref: '#/components/schemas/Renter'
+                  recent_jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+
+  /api/renters/available-providers:
+    get:
+      tags: [Renters]
+      summary: Browse online GPU providers
+      description: Public endpoint. Returns all providers with `status=online` and `is_paused=false`, sorted by VRAM descending.
+      responses:
+        '200':
+          description: Available providers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        gpu_model:
+                          type: string
+                        vram_gb:
+                          type: integer
+                        vram_mib:
+                          type: integer
+                        gpu_count:
+                          type: integer
+                        driver_version:
+                          type: string
+                        compute_capability:
+                          type: string
+                        cuda_version:
+                          type: string
+                        status:
+                          type: string
+                        is_live:
+                          type: boolean
+                          description: True if heartbeat received within the last 120 seconds
+                        location:
+                          type: string
+                          nullable: true
+                        reliability_score:
+                          type: number
+                          nullable: true
+                        cached_models:
+                          type: array
+                          items:
+                            type: string
+                  total:
+                    type: integer
+
+  /api/renters/balance:
+    get:
+      tags: [Renters]
+      summary: Quick balance check
+      security:
+        - RenterApiKey: []
+      parameters:
+        - name: key
+          in: query
+          schema:
+            type: string
+        - name: x-renter-key
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Balance details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance_halala:
+                    type: integer
+                  balance_sar:
+                    type: number
+                  held_halala:
+                    type: integer
+                    description: Estimated cost held for currently running jobs
+                  held_sar:
+                    type: number
+                  available_halala:
+                    type: integer
+                  total_spent_halala:
+                    type: integer
+                  total_spent_sar:
+                    type: number
+                  total_jobs:
+                    type: integer
+
+  /api/renters/topup:
+    post:
+      tags: [Renters]
+      summary: Direct balance top-up (dev/legacy — use /api/payments/topup for production)
+      description: |
+        Directly credits halala to renter balance. Accepts either `amount_halala`
+        or `amount_sar`. Max 1000 SAR per transaction. Rate limited to 10/min.
+      security:
+        - RenterApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount_halala:
+                  type: integer
+                  description: Amount in halala (mutually exclusive with amount_sar)
+                amount_sar:
+                  type: number
+                  description: Amount in SAR (mutually exclusive with amount_halala)
+      responses:
+        '200':
+          description: Balance credited
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  topped_up_halala:
+                    type: integer
+                  topped_up_sar:
+                    type: number
+                  new_balance_halala:
+                    type: integer
+                  new_balance_sar:
+                    type: number
+
+  /api/renters/login-email:
+    post:
+      tags: [Renters]
+      summary: Retrieve API key by email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: API key returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  api_key:
+                    type: string
+                  renter:
+                    $ref: '#/components/schemas/Renter'
+
+  /api/renters/rotate-key:
+    post:
+      tags: [Renters]
+      summary: Rotate renter API key
+      security:
+        - RenterApiKey: []
+      responses:
+        '200':
+          description: New API key issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  api_key:
+                    type: string
+                  renter_id:
+                    type: integer
+
+  # ─── Jobs ───────────────────────────────────────────────────────────────────
+
+  /api/jobs/submit:
+    post:
+      tags: [Jobs]
+      summary: Submit a compute job
+      description: |
+        Validates renter balance, deducts estimated cost as a pre-pay hold, assigns
+        provider, and queues the job. Rate limited to 30/min.
+
+        **Supported job types and cost rates (halala/min):**
+        | Type | Rate |
+        |------|------|
+        | `llm-inference` | 15 |
+        | `training` | 25 |
+        | `rendering` | 20 |
+        | `image_generation` | 20 |
+        | `vllm_serve` | 20 |
+        | `custom` | 10 |
+      security:
+        - RenterApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [job_type]
+              properties:
+                job_type:
+                  type: string
+                  enum: [llm-inference, llm_inference, training, rendering, image_generation, vllm_serve, custom]
+                  example: image_generation
+                duration_minutes:
+                  type: integer
+                  default: 10
+                  description: Estimated runtime. Used for pre-pay cost calculation.
+                task_spec:
+                  type: object
+                  description: |
+                    Job-specific parameters. For supported types, the API auto-generates
+                    the task script from these params (no custom Python needed).
+
+                    **image_generation params:**
+                    - `prompt` (string)
+                    - `negative_prompt` (string)
+                    - `steps` (int, 5–100)
+                    - `width` / `height` (int, 256–1024)
+                    - `seed` (int)
+                    - `model` (enum — see allowed SD models)
+
+                    **llm-inference params:**
+                    - `prompt` (string)
+                    - `max_tokens` (int, 32–4096)
+                    - `temperature` (float, 0.1–2.0)
+                    - `model` (enum — see allowed LLM models)
+                gpu_requirements:
+                  type: object
+                  nullable: true
+                  description: Optional GPU filter (min_vram_gb, gpu_model, etc.)
+                max_duration_seconds:
+                  type: integer
+                  default: 1800
+                  description: Hard timeout. Job is killed if it exceeds this.
+                priority:
+                  type: integer
+                  enum: [1, 2, 3]
+                  default: 2
+                  description: "1=high, 2=normal, 3=low"
+      responses:
+        '201':
+          description: Job submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending, queued]
+                  provider_id:
+                    type: integer
+                    nullable: true
+                  cost_halala:
+                    type: integer
+                  new_balance_halala:
+                    type: integer
+        '400':
+          description: Invalid request (missing job_type, etc.)
+        '402':
+          description: Insufficient balance
+        '503':
+          description: No providers available
+
+  /api/jobs/{job_id}:
+    get:
+      tags: [Jobs]
+      summary: Get job status and details
+      security:
+        - RenterApiKey: []
+        - ProviderApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+          description: Job UUID
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '403':
+          description: Access denied (not your job)
+        '404':
+          description: Job not found
+
+  /api/jobs/{job_id}/output:
+    get:
+      tags: [Jobs]
+      summary: Fetch job output
+      description: Returns the job result payload. For `image_generation`, includes base64-encoded PNG.
+      security:
+        - RenterApiKey: []
+        - ProviderApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job output
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Varies by job_type. For images contains `data` (base64 PNG). For text contains `response`.
+        '404':
+          description: Job not found or no output yet
+
+  /api/jobs/{job_id}/output/{format}:
+    get:
+      tags: [Jobs]
+      summary: Fetch job output in a specific format
+      security:
+        - RenterApiKey: []
+        - ProviderApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: format
+          required: true
+          schema:
+            type: string
+            enum: [json, png, raw]
+      responses:
+        '200':
+          description: Job output in requested format
+
+  /api/jobs/{job_id}/logs:
+    get:
+      tags: [Jobs]
+      summary: Get job execution logs
+      security:
+        - RenterApiKey: []
+        - ProviderApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      type: object
+    post:
+      tags: [Jobs]
+      summary: Daemon appends log entries for a job
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                logs:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Logs appended
+
+  /api/jobs/{job_id}/progress:
+    post:
+      tags: [Jobs]
+      summary: Daemon reports job progress
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                progress_pct:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                phase:
+                  type: string
+                  description: Phase marker (e.g. downloading_model, generating)
+      responses:
+        '200':
+          description: Progress recorded
+
+  /api/jobs/{job_id}/endpoint-ready:
+    post:
+      tags: [Jobs]
+      summary: Daemon signals that a long-running endpoint is ready
+      description: Used by `vllm_serve` jobs to announce the inference endpoint URL.
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                endpoint_url:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Endpoint URL stored
+
+  /api/jobs/{job_id}/complete:
+    post:
+      tags: [Jobs]
+      summary: Mark job as complete (daemon)
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                result:
+                  description: Job output payload
+      responses:
+        '200':
+          description: Job completed, billing settled
+
+  /api/jobs/{job_id}/fail:
+    post:
+      tags: [Jobs]
+      summary: Mark job as failed (daemon)
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                error:
+                  type: string
+      responses:
+        '200':
+          description: Job failed, renter refunded
+
+  /api/jobs/{job_id}/cancel:
+    post:
+      tags: [Jobs]
+      summary: Cancel a job
+      security:
+        - RenterApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job cancelled
+
+  /api/jobs/history:
+    get:
+      tags: [Jobs]
+      summary: Job history for a renter
+      security:
+        - RenterApiKey: []
+      parameters:
+        - in: query
+          name: key
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Paginated job history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+                      total:
+                        type: integer
+
+  /api/jobs/assigned:
+    get:
+      tags: [Jobs]
+      summary: Get jobs assigned to a provider (daemon polling)
+      security:
+        - ProviderApiKey: []
+      responses:
+        '200':
+          description: Assigned jobs list
+
+  /api/jobs/active:
+    get:
+      tags: [Jobs]
+      summary: Get currently running jobs
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Active jobs
+
+  /api/jobs/queue/{provider_id}:
+    get:
+      tags: [Jobs]
+      summary: View queue for a specific provider
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: provider_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Queued jobs for provider
+
+  # ─── Payments ───────────────────────────────────────────────────────────────
+
+  /api/payments/topup:
+    post:
+      tags: [Payments]
+      summary: Initiate a Moyasar SAR payment
+      description: |
+        Creates a Moyasar payment and returns a hosted checkout URL. Renter must
+        be redirected to `checkout_url` to complete payment. The webhook confirms
+        and credits the balance. Rate limited to 10/min.
+      security:
+        - RenterApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_sar]
+              properties:
+                amount_sar:
+                  type: number
+                  minimum: 1
+                  maximum: 10000
+                  example: 100
+                source_type:
+                  type: string
+                  enum: [creditcard, mada, applepay]
+                  default: creditcard
+                callback_url:
+                  type: string
+                  format: uri
+                  nullable: true
+                  description: Override default redirect URL after payment
+      responses:
+        '200':
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  payment_id:
+                    type: string
+                  amount_sar:
+                    type: number
+                  amount_halala:
+                    type: integer
+                  status:
+                    type: string
+                  checkout_url:
+                    type: string
+                    format: uri
+                  message:
+                    type: string
+        '503':
+          description: Payment gateway not configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  sandbox_hint:
+                    type: string
+
+  /api/payments/topup-sandbox:
+    post:
+      tags: [Payments]
+      summary: Dev-only sandbox balance top-up
+      description: |
+        Directly credits balance without Moyasar. Only available when
+        `MOYASAR_SECRET_KEY` is **not** set (dev/staging environments). Disabled in production.
+      security:
+        - RenterApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_sar]
+              properties:
+                amount_sar:
+                  type: number
+                  minimum: 0.01
+                  maximum: 10000
+      responses:
+        '200':
+          description: Balance credited (sandbox)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  sandbox:
+                    type: boolean
+                  payment_id:
+                    type: string
+                  amount_sar:
+                    type: number
+                  credited_halala:
+                    type: integer
+                  new_balance_sar:
+                    type: number
+                  new_balance_halala:
+                    type: integer
+        '403':
+          description: Sandbox disabled in production
+
+  /api/payments/webhook:
+    post:
+      tags: [Payments]
+      summary: Moyasar payment webhook
+      description: |
+        Receives payment events from Moyasar. Verifies HMAC-SHA256 signature
+        (`x-moyasar-signature` header). Credits balance on `paid` event.
+        Must return 2xx or Moyasar will retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: Moyasar payment ID
+                status:
+                  type: string
+                  enum: [initiated, paid, failed, refunded]
+                amount:
+                  type: integer
+                  description: Amount in halala
+                amount_refunded:
+                  type: integer
+                  nullable: true
+      responses:
+        '200':
+          description: Webhook acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                  action:
+                    type: string
+                    enum: [balance_credited, marked_failed, refund_processed, already_processed, ignored_unknown, status_updated]
+        '401':
+          description: Invalid HMAC signature
+
+  /api/payments/verify/{paymentId}:
+    get:
+      tags: [Payments]
+      summary: Verify payment status (post-redirect polling)
+      description: Fetches live status from Moyasar. Used by frontend to poll after redirect back from checkout.
+      security:
+        - RenterApiKey: []
+      parameters:
+        - in: path
+          name: paymentId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          description: Payment not found or not owned by this renter
+
+  /api/payments/history:
+    get:
+      tags: [Payments]
+      summary: Renter payment history
+      security:
+        - RenterApiKey: []
+      parameters:
+        - in: query
+          name: key
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Paginated payment history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+                      total:
+                        type: integer
+                  summary:
+                    type: object
+                    properties:
+                      total_paid_sar:
+                        type: number
+                      total_paid_halala:
+                        type: integer
+
+  # ─── Admin ──────────────────────────────────────────────────────────────────
+
+  /api/admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Platform overview stats
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stats:
+                    type: object
+                    properties:
+                      total_providers:
+                        type: integer
+                      online_now:
+                        type: integer
+                      total_renters:
+                        type: integer
+                      active_renters:
+                        type: integer
+                      total_jobs:
+                        type: integer
+                      completed_jobs:
+                        type: integer
+                      failed_jobs:
+                        type: integer
+                      active_jobs:
+                        type: integer
+                      total_revenue_halala:
+                        type: integer
+                      total_dc1_fees_halala:
+                        type: integer
+                      today_revenue_halala:
+                        type: integer
+                      today_jobs:
+                        type: integer
+                  gpu_breakdown:
+                    type: array
+                    items:
+                      type: object
+                  recent_signups:
+                    type: array
+                    items:
+                      type: object
+                  recent_heartbeats:
+                    type: array
+                    items:
+                      type: object
+
+  /api/admin/providers:
+    get:
+      tags: [Admin]
+      summary: List all providers
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 0
+          description: Page number (0 = all, 1+ = paginated)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Filter by name, email, or GPU model
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [online, offline, registered, suspended]
+      responses:
+        '200':
+          description: Providers list
+    post:
+      tags: [Admin]
+      summary: Bulk provider operations
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Bulk operation result
+
+  /api/admin/providers/{id}:
+    get:
+      tags: [Admin]
+      summary: Full provider detail with heartbeat metrics
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Provider detail with uptime, metrics, and job history
+
+  /api/admin/providers/{id}/suspend:
+    post:
+      tags: [Admin]
+      summary: Suspend a provider
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Provider suspended
+
+  /api/admin/providers/{id}/unsuspend:
+    post:
+      tags: [Admin]
+      summary: Unsuspend a provider
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Provider unsuspended
+
+  /api/admin/providers/{id}/rotate-key:
+    post:
+      tags: [Admin]
+      summary: Rotate a provider API key (admin override)
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: New API key issued
+
+  /api/admin/renters:
+    get:
+      tags: [Admin]
+      summary: List all renters
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Renters list
+
+  /api/admin/renters/{id}:
+    get:
+      tags: [Admin]
+      summary: Full renter detail
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Renter detail with jobs and payment history
+
+  /api/admin/renters/{id}/suspend:
+    post:
+      tags: [Admin]
+      summary: Suspend a renter
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Renter suspended
+
+  /api/admin/renters/{id}/unsuspend:
+    post:
+      tags: [Admin]
+      summary: Unsuspend a renter
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Renter unsuspended
+
+  /api/admin/renters/{id}/balance:
+    post:
+      tags: [Admin]
+      summary: Admin balance adjustment for a renter
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount_halala:
+                  type: integer
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Balance adjusted
+
+  /api/admin/renters/{id}/rotate-key:
+    post:
+      tags: [Admin]
+      summary: Rotate a renter API key (admin override)
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: New API key issued
+
+  /api/admin/jobs:
+    get:
+      tags: [Admin]
+      summary: List all jobs
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Jobs list
+
+  /api/admin/jobs/{id}:
+    get:
+      tags: [Admin]
+      summary: Full job detail with billing split
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Job ID or job_id UUID
+      responses:
+        '200':
+          description: Job detail with provider info and billing breakdown
+
+  /api/admin/jobs/{id}/cancel:
+    post:
+      tags: [Admin]
+      summary: Force cancel a job
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job cancelled
+
+  /api/admin/daemon-health:
+    get:
+      tags: [Admin]
+      summary: Daemon health report across all providers
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Per-provider daemon health metrics
+
+  /api/admin/finance/summary:
+    get:
+      tags: [Admin]
+      summary: Platform financial summary
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Revenue, fees, and balance breakdown
+
+  /api/admin/finance/transactions:
+    get:
+      tags: [Admin]
+      summary: Financial transactions ledger
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: offset
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Transaction records
+
+  /api/admin/finance/reconciliation:
+    get:
+      tags: [Admin]
+      summary: Financial reconciliation report
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Reconciliation data
+
+  /api/admin/withdrawals:
+    get:
+      tags: [Admin]
+      summary: List provider withdrawal requests
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Withdrawal requests
+
+  /api/admin/withdrawals/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve a withdrawal request
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Withdrawal approved
+
+  /api/admin/withdrawals/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject a withdrawal request
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Withdrawal rejected
+
+  /api/admin/withdrawals/{id}/complete:
+    post:
+      tags: [Admin]
+      summary: Mark withdrawal as completed (payment sent)
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Withdrawal completed
+
+  /api/admin/payments:
+    get:
+      tags: [Admin]
+      summary: List all platform payments
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Payments list
+
+  /api/admin/payments/revenue:
+    get:
+      tags: [Admin]
+      summary: Payment revenue summary
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Revenue from Moyasar payments
+
+  /api/admin/payments/{paymentId}/refund:
+    post:
+      tags: [Admin]
+      summary: Initiate a refund via Moyasar
+      security:
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: paymentId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount_halala:
+                  type: integer
+                  description: Partial refund amount (omit for full refund)
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Refund initiated
+
+  /api/admin/escrow:
+    get:
+      tags: [Admin]
+      summary: Escrow holds overview
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Escrow balances and status
+
+  /api/admin/security/events:
+    get:
+      tags: [Admin]
+      summary: Security event log
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: severity
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Security events
+
+  /api/admin/security/summary:
+    get:
+      tags: [Admin]
+      summary: Security events summary
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Security summary stats
+
+  /api/admin/audit:
+    get:
+      tags: [Admin]
+      summary: Admin audit log
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Audit entries
+
+  /api/admin/notifications/config:
+    get:
+      tags: [Admin]
+      summary: Get notification config (Telegram, email)
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Current notification config
+    post:
+      tags: [Admin]
+      summary: Update notification config
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                telegram_bot_token:
+                  type: string
+                telegram_chat_id:
+                  type: string
+                email_to:
+                  type: string
+      responses:
+        '200':
+          description: Config updated
+
+  /api/admin/notifications/test:
+    post:
+      tags: [Admin]
+      summary: Send a test notification
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Test notification sent
+
+  /api/admin/health:
+    get:
+      tags: [Admin]
+      summary: Detailed system health (DB, sync, queues)
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: System health report
+
+  /api/admin/cleanup/stats:
+    get:
+      tags: [Admin]
+      summary: Data retention cleanup statistics
+      security:
+        - AdminToken: []
+      responses:
+        '200':
+          description: Cleanup stats (rows purged, last run, etc.)
+
+  # ─── System ─────────────────────────────────────────────────────────────────
+
+  /api/health:
+    get:
+      tags: [System]
+      summary: API health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: dc1-platform-api
+                  mode:
+                    type: string
+                    example: headless
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/docs:
+    get:
+      tags: [System]
+      summary: OpenAPI 3.0 spec (this document)
+      responses:
+        '200':
+          description: OpenAPI YAML spec
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /api/docs/ui:
+    get:
+      tags: [System]
+      summary: Swagger UI — interactive API explorer
+      responses:
+        '200':
+          description: Swagger UI HTML page
+          content:
+            text/html:
+              schema:
+                type: string
