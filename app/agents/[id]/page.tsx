@@ -18,9 +18,20 @@ interface MCTask {
   updated_at: string | null;
 }
 
-// Wire to Mission Control tasks API for live data
+interface PaperclipAgent {
+  id: string;
+  name: string;
+  role: string;
+  urlKey: string;
+  status: string;
+  spentMonthlyCents: number;
+  budgetMonthlyCents: number;
+  lastHeartbeatAt: string | null;
+  title: string | null;
+  capabilities: string | null;
+}
 
-// MOCKED DATA
+// Legacy mock agent data (kept for backward-compat with old agent IDs)
 interface AgentProfile {
   name: string;
   role: string;
@@ -57,17 +68,10 @@ const mockAgents: Record<string, AgentProfile> = {
       { time: '17:24', action: 'Building Agent Intelligence view' },
       { time: '17:18', action: 'Completed Security Guards view' },
       { time: '17:10', action: 'Completed Job Execution Tracker' },
-      { time: '16:55', action: 'Completed Token Usage Dashboard' },
-      { time: '16:40', action: 'Completed Connection Monitor' },
-      { time: '16:30', action: 'Created shared components (StatusBadge, DashboardLayout)' },
-      { time: '16:00', action: 'Started SPARK-UI task — 5 dashboard views' },
     ],
     taskHistory: [
       { name: 'Dashboard layout — 6-panel grid', hours: 3.2, tokens: 15000, quality: 9.0 },
       { name: 'Agents sidebar with status', hours: 1.5, tokens: 8000, quality: 8.5 },
-      { name: 'Task pipeline Kanban', hours: 2.0, tokens: 11000, quality: 8.8 },
-      { name: 'Milestones + Health panels', hours: 1.8, tokens: 9500, quality: 8.5 },
-      { name: 'API Access panel', hours: 0.8, tokens: 4000, quality: 9.2 },
     ],
   },
   VOLT: {
@@ -78,49 +82,25 @@ const mockAgents: Record<string, AgentProfile> = {
       { insight: 'Supabase RLS policies need explicit service role bypass for agent ops', category: 'technical' },
       { insight: 'API versioning from day one prevents breaking changes', category: 'process' },
     ],
-    ideas: [
-      { idea: 'GraphQL subscriptions for real-time dashboard data', impact: 'high', feasibility: 'hard' },
-    ],
-    feedback: [
-      { from: 'GUARDIAN', task: 'Auth middleware', type: 'praise', text: 'Solid JWT validation with proper error codes' },
-    ],
-    timeline: [
-      { time: '17:20', action: 'Defining job execution endpoints' },
-      { time: '16:30', action: 'Completed agent CRUD endpoints' },
-      { time: '15:00', action: 'Started API contracts task' },
-    ],
+    ideas: [{ idea: 'GraphQL subscriptions for real-time dashboard data', impact: 'high', feasibility: 'hard' }],
+    feedback: [{ from: 'GUARDIAN', task: 'Auth middleware', type: 'praise', text: 'Solid JWT validation with proper error codes' }],
+    timeline: [{ time: '17:20', action: 'Defining job execution endpoints' }],
     taskHistory: [
       { name: 'Health check daemon — 30s GPU ping', hours: 4.0, tokens: 22000, quality: 9.0 },
       { name: 'Supabase schema deployment', hours: 2.5, tokens: 13000, quality: 9.5 },
-      { name: 'Mission Control API scaffold', hours: 5.0, tokens: 35000, quality: 8.8 },
-      { name: 'Agent registration system', hours: 2.0, tokens: 10000, quality: 9.2 },
-      { name: 'Heartbeat endpoint', hours: 1.0, tokens: 5000, quality: 9.0 },
     ],
   },
   GUARDIAN: {
     name: 'GUARDIAN', role: 'Security Specialist', status: 'online', modelPreference: 'claude-sonnet',
     currentTask: { name: 'Security isolation — container + GPU wipe', progress: 45, startedAt: '2026-02-23T15:00:00Z', estimatedCompletion: '2026-02-24T10:00:00Z' },
     metrics: { tasksCompleted: 8, avgCompletionHrs: 4.2, qualityScore: 9.4, blockerResolutionHrs: 1.2 },
-    learnings: [
-      { insight: 'GPU memory wipe needs nvidia-smi reset + verification read', category: 'technical' },
-      { insight: 'Rate limiting per agent prevents cascade failures', category: 'process' },
-    ],
-    ideas: [
-      { idea: 'Firecracker microVMs for Phase 2 job isolation', impact: 'high', feasibility: 'hard' },
-    ],
-    feedback: [
-      { from: 'VOLT', task: 'API rate limiter', type: 'praise', text: 'Clean middleware, easy to configure per-agent limits' },
-    ],
-    timeline: [
-      { time: '17:15', action: 'Documenting GPU wipe verification procedure' },
-      { time: '16:00', action: 'Completed container network isolation rules' },
-    ],
+    learnings: [{ insight: 'GPU memory wipe needs nvidia-smi reset + verification read', category: 'technical' }],
+    ideas: [{ idea: 'Firecracker microVMs for Phase 2 job isolation', impact: 'high', feasibility: 'hard' }],
+    feedback: [{ from: 'VOLT', task: 'API rate limiter', type: 'praise', text: 'Clean middleware, easy to configure per-agent limits' }],
+    timeline: [{ time: '17:15', action: 'Documenting GPU wipe verification procedure' }],
     taskHistory: [
       { name: 'Guard rules engine', hours: 5.0, tokens: 28000, quality: 9.5 },
-      { name: 'API rate limiter middleware', hours: 3.0, tokens: 15000, quality: 9.2 },
-      { name: 'Token budget enforcement', hours: 2.5, tokens: 12000, quality: 9.0 },
       { name: 'Audit logging system', hours: 4.0, tokens: 20000, quality: 9.6 },
-      { name: 'Security checklist Gate 0', hours: 1.5, tokens: 7000, quality: 9.0 },
     ],
   },
   ATLAS: {
@@ -133,10 +113,7 @@ const mockAgents: Record<string, AgentProfile> = {
     timeline: [{ time: '16:00', action: 'Completed VPS deployment setup' }],
     taskHistory: [
       { name: 'VPS deployment config', hours: 3.0, tokens: 12000, quality: 9.0 },
-      { name: 'Docker compose setup', hours: 2.0, tokens: 8000, quality: 8.8 },
       { name: 'CI/CD pipeline', hours: 4.0, tokens: 18000, quality: 9.2 },
-      { name: 'SSH key management', hours: 1.0, tokens: 4000, quality: 8.5 },
-      { name: 'Monitoring stack', hours: 3.5, tokens: 14000, quality: 8.7 },
     ],
   },
   SYNC: {
@@ -150,9 +127,6 @@ const mockAgents: Record<string, AgentProfile> = {
     taskHistory: [
       { name: 'Test plan Gate 0', hours: 2.0, tokens: 10000, quality: 8.8 },
       { name: 'API smoke tests', hours: 3.0, tokens: 16000, quality: 8.5 },
-      { name: 'Dashboard accessibility audit', hours: 1.5, tokens: 7000, quality: 9.0 },
-      { name: 'Load test plan', hours: 2.5, tokens: 12000, quality: 8.4 },
-      { name: 'Error handling review', hours: 1.5, tokens: 6000, quality: 8.7 },
     ],
   },
   NEXUS: {
@@ -162,23 +136,17 @@ const mockAgents: Record<string, AgentProfile> = {
     learnings: [{ insight: 'Parallel agent work needs clear API contracts before frontend starts', category: 'process' }],
     ideas: [{ idea: 'Automated daily standup summary from agent heartbeats', impact: 'medium', feasibility: 'easy' }],
     feedback: [{ from: 'VOLT', task: 'Task prioritization', type: 'praise', text: 'Clear priorities, no ambiguity' }],
-    timeline: [
-      { time: '17:20', action: 'Reviewing SPARK-UI progress' },
-      { time: '15:00', action: 'Assigned API contracts to VOLT' },
-      { time: '12:00', action: 'Updated milestone tracker' },
-    ],
+    timeline: [{ time: '17:20', action: 'Reviewing SPARK-UI progress' }],
     taskHistory: [
       { name: 'Gate 0 sprint planning', hours: 2.0, tokens: 8000, quality: 9.2 },
-      { name: 'Agent coordination setup', hours: 1.5, tokens: 6000, quality: 9.0 },
       { name: 'Milestone definition', hours: 1.0, tokens: 4000, quality: 9.5 },
-      { name: 'Risk assessment', hours: 2.0, tokens: 9000, quality: 8.8 },
-      { name: 'Stakeholder update', hours: 0.5, tokens: 2000, quality: 9.0 },
     ],
   },
 };
 
 const statusColors: Record<string, string> = {
   online: 'bg-[#00c853]/10 text-[#00c853]',
+  running: 'bg-[#00c853]/10 text-[#00c853]',
   working: 'bg-[#00d4ff]/10 text-[#00d4ff]',
   idle: 'bg-gray-500/10 text-gray-400',
   offline: 'bg-[#ff5252]/10 text-[#ff5252]',
@@ -202,14 +170,153 @@ const feedbackColors: Record<string, string> = {
   issue: 'bg-[#ff5252]/10 text-[#ff5252]',
 };
 
+function timeAgo(dateStr: string): string {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// Live Paperclip agent view component
+function PaperclipAgentView({ agent, liveTasks, liveError }: { agent: PaperclipAgent; liveTasks: MCTask[]; liveError: string | null }) {
+  const spentDollars = agent.spentMonthlyCents / 100;
+  const budgetDollars = agent.budgetMonthlyCents / 100;
+
+  const liveTaskStatusColors: Record<string, string> = {
+    done: 'bg-[#00c853]/10 text-[#00c853]',
+    completed: 'bg-[#00c853]/10 text-[#00c853]',
+    in_progress: 'bg-[#00d4ff]/10 text-[#00d4ff]',
+    building: 'bg-[#bb86fc]/10 text-[#bb86fc]',
+    pending: 'bg-[#ffab00]/10 text-[#ffab00]',
+    blocked: 'bg-[#ff5252]/10 text-[#ff5252]',
+    todo: 'bg-gray-500/10 text-gray-400',
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* Agent header */}
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-full bg-[#00d4ff]/20 flex items-center justify-center text-[#00d4ff] text-xl font-bold">
+          {agent.name[0]}
+        </div>
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">{agent.name}</h1>
+            <span className={`px-2 py-0.5 rounded text-xs ${statusColors[agent.status] || 'bg-gray-500/10 text-gray-400'}`}>
+              {agent.status}
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-[#00d4ff]/10 text-[#00d4ff]">LIVE</span>
+          </div>
+          <div className="text-gray-400 text-sm">
+            {agent.title || agent.role}
+            {agent.lastHeartbeatAt && (
+              <span className="ml-2 text-gray-600">· Last active {timeAgo(agent.lastHeartbeatAt)}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Capabilities */}
+      {agent.capabilities && (
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
+          <h2 className="font-semibold text-sm text-gray-400 mb-2">Capabilities</h2>
+          <p className="text-sm text-gray-300">{agent.capabilities}</p>
+        </div>
+      )}
+
+      {/* Budget metrics */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'Monthly Spend', value: `$${spentDollars.toFixed(2)}` },
+          { label: 'Budget Cap', value: agent.budgetMonthlyCents > 0 ? `$${budgetDollars.toFixed(2)}` : 'No cap' },
+          { label: 'Agent ID', value: agent.urlKey },
+          { label: 'Adapter', value: 'claude_local' },
+        ].map(m => (
+          <div key={m.label} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 text-center">
+            <div className="text-xs text-gray-500">{m.label}</div>
+            <div className="text-lg font-bold text-[#00d4ff] truncate">{m.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Live Tasks */}
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#30363d] flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Live Tasks (Mission Control)</h2>
+          <div className="flex items-center gap-2">
+            {liveError ? (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#ffab00]/10 text-[#ffab00]">MC Offline</span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#00c853]/10 text-[#00c853]">LIVE</span>
+            )}
+            <span className="text-xs text-gray-600">{liveTasks.length} tasks</span>
+          </div>
+        </div>
+        {liveError ? (
+          <div className="p-4 text-xs text-gray-500">Mission Control API unavailable — {liveError}</div>
+        ) : liveTasks.length === 0 ? (
+          <div className="p-4 text-xs text-gray-500">No tasks assigned in Mission Control</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-[#30363d]">
+                <th className="text-left px-4 py-2">Task</th>
+                <th className="text-left px-4 py-2">Status</th>
+                <th className="text-left px-4 py-2">Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {liveTasks.map((t) => (
+                <tr key={t.id} className="border-b border-[#30363d]/50 hover:bg-[#21262d]">
+                  <td className="px-4 py-2.5 text-gray-300">{t.title}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`px-2 py-0.5 rounded text-xs ${liveTaskStatusColors[t.status] || 'bg-gray-500/10 text-gray-400'}`}>
+                      {t.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-500">
+                    {t.completed_at ? new Date(t.completed_at).toLocaleString() : t.updated_at ? new Date(t.updated_at).toLocaleString() : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AgentDetailPage() {
   const params = useParams();
-  const agentId = (params.id as string)?.toUpperCase();
-  const agent = mockAgents[agentId];
+  const agentId = (params.id as string);
+  const agentIdUpper = agentId?.toUpperCase();
+  const mockAgent = mockAgents[agentIdUpper];
 
   // Live tasks from Mission Control API
   const [liveTasks, setLiveTasks] = useState<MCTask[]>([]);
   const [liveError, setLiveError] = useState<string | null>(null);
+
+  // Real Paperclip agent data
+  const [paperclipAgent, setPaperclipAgent] = useState<PaperclipAgent | null>(null);
+  const [paperclipLoading, setPaperclipLoading] = useState(true);
+
+  // Fetch Paperclip agent list to find match
+  useEffect(() => {
+    fetch('/api/paperclip-agents', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then((agents: PaperclipAgent[] | null) => {
+        if (agents) {
+          const match = agents.find(
+            a => a.urlKey === agentId || a.urlKey === agentId?.toLowerCase() || a.name.toUpperCase() === agentIdUpper
+          );
+          if (match) setPaperclipAgent(match);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPaperclipLoading(false));
+  }, [agentId, agentIdUpper]);
 
   const fetchLiveTasks = useCallback(async () => {
     if (!agentId) return;
@@ -220,7 +327,7 @@ export default function AgentDetailPage() {
       if (!res.ok) throw new Error(`MC API ${res.status}`);
       const tasks: MCTask[] = await res.json();
       const agentTasks = tasks.filter(
-        (t) => t.assigned_to_name?.toUpperCase() === agentId
+        (t) => t.assigned_to_name?.toUpperCase() === agentIdUpper
       );
       agentTasks.sort((a, b) => {
         const aTime = a.updated_at || '';
@@ -232,7 +339,7 @@ export default function AgentDetailPage() {
     } catch (err: unknown) {
       setLiveError(err instanceof Error ? err.message : 'MC API unavailable');
     }
-  }, [agentId]);
+  }, [agentId, agentIdUpper]);
 
   useEffect(() => {
     fetchLiveTasks();
@@ -240,18 +347,37 @@ export default function AgentDetailPage() {
     return () => clearInterval(interval);
   }, [fetchLiveTasks]);
 
-  if (!agent) {
+  // Loading state
+  if (paperclipLoading) {
+    return (
+      <div className="max-w-7xl mx-auto flex items-center justify-center h-64">
+        <div className="animate-spin w-8 h-8 border-2 border-[#00d4ff] border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  // Real Paperclip agent found — show live view
+  if (paperclipAgent) {
+    return <PaperclipAgentView agent={paperclipAgent} liveTasks={liveTasks} liveError={liveError} />;
+  }
+
+  // Legacy mock agent fallback
+  if (!mockAgent) {
     return (
       <div className="flex items-center justify-center h-96 text-gray-500">
         <div className="text-center">
           <div className="text-4xl mb-3">🤖</div>
           <div>Agent &quot;{agentId}&quot; not found</div>
-          <div className="text-xs mt-2">Available: {Object.keys(mockAgents).join(', ')}</div>
-          <Link href="/agents" className="text-[#00d4ff] text-sm mt-2 inline-block hover:underline">← Back to Agents</Link>
+          <div className="text-xs mt-2 text-gray-600">
+            Check the agent URL key or use a valid agent identifier
+          </div>
+          <Link href="/agents" className="text-[#00d4ff] text-sm mt-3 inline-block hover:underline">← Back to Agents</Link>
         </div>
       </div>
     );
   }
+
+  const agent = mockAgent;
 
   const liveTaskStatusColors: Record<string, string> = {
     done: 'bg-[#00c853]/10 text-[#00c853]',
