@@ -80,6 +80,7 @@ VRAM_REQUIREMENTS = {
     "training": 6000,           # Fine-tuning needs ~6 GB
     "benchmark": 1000,          # Matrix multiply needs ~1 GB
     "rendering": 2000,          # General GPU rendering
+    "vllm_serve": 14336,        # vLLM 7B model in FP16 needs ~14 GB
 }
 VRAM_DEFAULT_REQUIREMENT = 2000  # Default if job type unknown
 
@@ -682,6 +683,83 @@ def report_readiness(checks):
         log.error(f"Readiness report failed: {e}")
         return None
 
+# ─── OCEAN-STYLE RESOURCE SPEC ───────────────────────────────────────────────
+
+def build_resource_spec(gpu=None):
+    """Build Ocean-style resource_spec JSON for GPU advertisement.
+
+    Schema mirrors Ocean Protocol's DOCKER_COMPUTE_ENVIRONMENTS pattern:
+      {"resources": [{id, total, min, max, type?, ...gpu fields}]}
+    """
+    resources = []
+
+    # CPU resource
+    try:
+        import multiprocessing
+        cpu_count = multiprocessing.cpu_count()
+        resources.append({
+            "id": "cpu",
+            "total": cpu_count,
+            "min": 1,
+            "max": max(1, cpu_count // 2),
+        })
+    except Exception:
+        resources.append({"id": "cpu", "total": 1, "min": 1, "max": 1})
+
+    # RAM resource (GB)
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    ram_kb = int(line.split()[1])
+                    ram_gb = round(ram_kb / 1024 / 1024, 1)
+                    resources.append({
+                        "id": "ram",
+                        "total": ram_gb,
+                        "min": 1,
+                        "max": max(1, int(ram_gb // 2)),
+                    })
+                    break
+    except Exception:
+        resources.append({"id": "ram", "total": 8, "min": 1, "max": 4})
+
+    # Disk resource (GB free on home dir)
+    try:
+        import shutil as _shutil
+        usage = _shutil.disk_usage(str(Path.home()))
+        disk_total_gb = round(usage.total / 1024 / 1024 / 1024, 1)
+        disk_free_gb = round(usage.free / 1024 / 1024 / 1024, 1)
+        resources.append({
+            "id": "disk",
+            "total": disk_total_gb,
+            "free": disk_free_gb,
+            "min": 5,
+            "max": max(5, int(disk_free_gb * 0.8)),
+        })
+    except Exception:
+        resources.append({"id": "disk", "total": 100, "min": 5, "max": 50})
+
+    # GPU resources — one entry per detected GPU
+    if gpu:
+        all_gpus = gpu.get("all_gpus", [gpu])
+        for g in all_gpus:
+            vram_gb = round(g.get("gpu_vram_mib", 0) / 1024, 1)
+            gpu_uuid = g.get("uuid") or f"gpu-nvidia-{g.get('index', 0)}"
+            resources.append({
+                "id": gpu_uuid,
+                "type": "gpu",
+                "total": 1,
+                "min": 1,
+                "max": 1,
+                "model": g.get("gpu_name"),
+                "vram_gb": vram_gb,
+                "cuda_version": g.get("cuda_version"),
+                "compute_capability": g.get("compute_capability"),
+                "driver_version": g.get("driver_version"),
+            })
+
+    return {"resources": resources}
+
 # ─── HEARTBEAT ───────────────────────────────────────────────────────────────
 
 def send_heartbeat():
@@ -714,6 +792,7 @@ def send_heartbeat():
             "gpu_status": gpu_status,
             "provider_ip": None,
             "provider_hostname": platform.node(),
+            "resource_spec": build_resource_spec(gpu),
         }
         # Include bandwidth stats if available
         with _bw_lock:
@@ -974,18 +1053,53 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
     """Execute job inside Docker container with GPU access and network isolation."""
     # Local images built via backend/docker/build-images.sh
     IMAGE_MAP = {
-        "image_generation": "dc1/sd-worker:latest",
-        "llm-inference":    "dc1/llm-worker:latest",
-        "training":         "dc1/general-worker:latest",
-        "rendering":        "dc1/general-worker:latest",
-        "benchmark":        "dc1/general-worker:latest",
+        "image_generation":  "dc1/sd-worker:latest",
+        "llm-inference":     "dc1/llm-worker:latest",
+        "llm_inference":     "dc1/llm-worker:latest",
+        "training":          "dc1/general-worker:latest",
+        "rendering":         "dc1/general-worker:latest",
+        "benchmark":         "dc1/general-worker:latest",
+        "custom_container":  "dc1/general-worker:latest",
     }
+    # Approved Docker images — renter-specified overrides must be in this set
+    APPROVED_IMAGES = {
+        "dc1/general-worker:latest",
+        "dc1/llm-worker:latest",
+        "dc1/sd-worker:latest",
+        "dc1/base-worker:latest",
+        "pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime",
+        "pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime",
+        "nvcr.io/nvidia/pytorch:24.01-py3",
+        "nvcr.io/nvidia/tensorflow:24.01-tf2-py3",
+        "tensorflow/tensorflow:2.15.0-gpu",
+    }
+
     image = IMAGE_MAP.get(job_type, "dc1/general-worker:latest")
 
     # Unique container name for reliable timeout kill
     container_name = f"dc1-job-{job_id or int(time.time())}"
 
-    # Write task_spec as task.py in job directory
+    # Parse task_spec — may be string (Python script) or dict (JSON with image_override/script)
+    if isinstance(task_spec, str):
+        # Try to parse as JSON first (custom_container sends JSON string)
+        try:
+            import json as _json
+            parsed = _json.loads(task_spec)
+            if isinstance(parsed, dict):
+                task_spec = parsed
+        except Exception:
+            pass
+
+    # image_override: renter-specified image for custom_container jobs — validate against whitelist
+    if isinstance(task_spec, dict) and task_spec.get("image_override"):
+        override = task_spec["image_override"].strip()
+        if override in APPROVED_IMAGES:
+            image = override
+            log.info(f"Using renter-specified image override: {image}")
+        else:
+            log.warning(f"Rejected image_override '{override}' — not in approved whitelist. Using default.")
+            report_event("container_image_rejected", {"job_id": job_id, "rejected_image": override, "using": image})
+
     script = task_spec if isinstance(task_spec, str) else task_spec.get("script", "")
     if not script:
         return {"success": False, "error": "No script in task_spec"}
@@ -1226,6 +1340,185 @@ def run_bare_metal_job(task_spec, job_id=None):
         except:
             pass
 
+def _find_free_port(start=8100, end=8199):
+    """Find a free TCP port in [start, end] for vLLM container binding."""
+    import socket
+    for port in range(start, end + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("0.0.0.0", port))
+                return port
+            except OSError:
+                continue
+    return None
+
+
+def _get_public_ip():
+    """Return best-guess public IP for this host (used in endpoint URL reporting)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return None
+
+
+def run_vllm_serve_job(task_spec, job_id=None):
+    """
+    Start a vLLM OpenAI-compatible serving container on a free port.
+    The container stays running until duration_minutes expires or the job is cancelled.
+    Reports endpoint_url to backend once /health responds 200.
+    """
+    import socket
+
+    if isinstance(task_spec, str):
+        try:
+            task_spec = json.loads(task_spec)
+        except Exception:
+            pass
+    if not isinstance(task_spec, dict):
+        return {"success": False, "error": "Invalid task_spec for vllm_serve — expected JSON"}
+
+    model = task_spec.get("model", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    max_model_len = int(task_spec.get("max_model_len", 4096))
+    dtype = task_spec.get("dtype", "float16")
+
+    ALLOWED_VLLM_MODELS = {
+        "mistralai/Mistral-7B-Instruct-v0.2",
+        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "microsoft/Phi-3-mini-4k-instruct",
+        "google/gemma-2b-it",
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    }
+    if model not in ALLOWED_VLLM_MODELS:
+        log.warning(f"Rejected vllm model '{model}' — not in whitelist. Using TinyLlama.")
+        model = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+
+    image = "vllm/vllm-openai:latest"
+    container_name = f"dc1-vllm-{job_id or int(time.time())}"
+
+    port = _find_free_port()
+    if not port:
+        return {"success": False, "error": "No free port available in range 8100-8199"}
+
+    log.info(f"vLLM serve: model={model} port={port} container={container_name}")
+    report_job_progress(job_id, "pulling")
+
+    try:
+        pull = subprocess.run(
+            ["docker", "pull", image],
+            capture_output=True, text=True, timeout=600
+        )
+        if pull.returncode != 0:
+            return {"success": False, "error": f"vLLM image pull failed: {pull.stderr[:200]}", "transient": True}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "vLLM image pull timed out (600s)", "transient": True}
+    except Exception as e:
+        return {"success": False, "error": f"vLLM pull error: {e}", "transient": True}
+
+    report_job_progress(job_id, "loading_model")
+    report_event("container_start", f"Starting vLLM serve: {container_name} model={model} port={port}", job_id=job_id)
+
+    docker_cmd = [
+        "docker", "run", "-d",
+        "--gpus", "all",
+        "--name", container_name,
+        "--network", "bridge",
+        "-p", f"{port}:8000",
+        "--memory", "24g",
+        "--memory-swap", "24g",
+        "--cpus", "8",
+        "--shm-size", "4g",
+        "--security-opt", "no-new-privileges:true",
+        "-e", f"HUGGING_FACE_HUB_TOKEN={os.environ.get('HF_TOKEN', '')}",
+        image,
+        "--model", model,
+        "--dtype", dtype,
+        "--max-model-len", str(max_model_len),
+        "--host", "0.0.0.0",
+        "--port", "8000",
+    ]
+
+    try:
+        start_result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=30)
+        if start_result.returncode != 0:
+            return {"success": False, "error": f"Failed to start vLLM container: {start_result.stderr[:300]}"}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Docker start timed out"}
+    except Exception as e:
+        return {"success": False, "error": f"Docker start error: {e}"}
+
+    health_url = f"http://127.0.0.1:{port}/health"
+    ready = False
+    for attempt in range(60):  # 60 × 5s = 5 minutes
+        time.sleep(5)
+        try:
+            import urllib.request as _urllib
+            with _urllib.urlopen(health_url, timeout=3) as r:
+                if r.status == 200:
+                    ready = True
+                    break
+        except Exception:
+            pass
+        check = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", container_name],
+            capture_output=True, text=True
+        )
+        if check.stdout.strip() != "true":
+            log.error(f"vLLM container {container_name} exited during startup")
+            return {"success": False, "error": "vLLM container exited before becoming healthy"}
+
+    if not ready:
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        return {"success": False, "error": "vLLM endpoint did not become healthy within 5 minutes"}
+
+    public_ip = _get_public_ip()
+    try:
+        http_post(f"{API_URL}/api/jobs/{job_id}/endpoint-ready", {
+            "api_key": API_KEY,
+            "port": port,
+            "provider_ip": public_ip,
+        }, timeout=15)
+    except Exception as e:
+        log.warning(f"Failed to report endpoint-ready: {e}")
+
+    report_job_progress(job_id, "generating")
+    log.info(f"vLLM endpoint ready: http://{public_ip}:{port}/v1")
+
+    poll_interval = 30
+    while True:
+        time.sleep(poll_interval)
+        check = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", container_name],
+            capture_output=True, text=True
+        )
+        if check.stdout.strip() != "true":
+            log.info(f"vLLM container {container_name} stopped externally")
+            break
+        try:
+            code, job_status_resp = http_get(f"{API_URL}/api/jobs/{job_id}?key={API_KEY}")
+            if code == 200:
+                current_status = job_status_resp.get("job", {}).get("status", "running")
+                if current_status not in ("running", "pulling", "assigned"):
+                    log.info(f"Job {job_id} status={current_status} — stopping vLLM container")
+                    break
+        except Exception:
+            pass
+
+    subprocess.run(["docker", "stop", "--time", "10", container_name], capture_output=True)
+    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+    report_event("container_complete", f"vLLM serve job {job_id} completed — container stopped", job_id=job_id)
+    log.info(f"vLLM container {container_name} stopped and removed")
+
+    return {
+        "success": True,
+        "endpoint_url": f"http://{public_ip}:{port}/v1",
+        "model": model,
+        "port": port,
+    }
+
+
 def execute_job(job):
     """Execute a job — Docker preferred, bare-metal fallback, benchmark special case."""
     global _current_job_id
@@ -1247,6 +1540,12 @@ def execute_job(job):
         # Pure benchmark jobs (no script needed)
         if job_type == "benchmark" or (isinstance(task_spec, dict) and task_spec.get("benchmark")):
             return run_gpu_benchmark(task_spec if isinstance(task_spec, dict) else {})
+
+        # vLLM serverless serve — long-running detached container with health polling
+        if job_type == "vllm_serve":
+            if not check_docker():
+                return {"success": False, "error": "Docker not available — vllm_serve requires Docker with NVIDIA Container Toolkit"}
+            return run_vllm_serve_job(task_spec, job_id=job_id)
 
         # Script-based jobs — Docker > bare-metal
         has_script = (isinstance(task_spec, str) and len(task_spec) > 10) or \
