@@ -87,42 +87,60 @@ fi
 
 # ── Step 5: NVIDIA Container Toolkit ────────────────────────────────────
 echo "[5/8] Checking NVIDIA Container Toolkit..."
-if docker info 2>/dev/null | grep -q "nvidia"; then
-    echo "  NVIDIA Container Toolkit already configured."
+
+# Reliable detection: check for nvidia-ctk binary OR docker nvidia runtime
+_nct_installed() {
+    command -v nvidia-ctk &>/dev/null || docker info 2>/dev/null | grep -q "nvidia"
+}
+
+if _nct_installed; then
+    echo "  NVIDIA Container Toolkit already installed."
 elif [ "$(uname)" = "Linux" ]; then
     echo "  Installing NVIDIA Container Toolkit..."
 
-    # Add NVIDIA Container Toolkit repo
-    distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
+    # Use NVIDIA's stable apt repo (works on Ubuntu 20.04, 22.04, 24.04 and Debian)
+    # Ref: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
         gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null || true
 
-    curl -fsSL "https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list" | \
+    curl -fsSL "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list" | \
         sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
         tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null 2>/dev/null || true
 
-    # Try apt first (Ubuntu/Debian), then yum (RHEL/CentOS)
+    # Try apt (Ubuntu/Debian), fall back to yum/dnf (RHEL/CentOS/Rocky)
     if command -v apt-get &>/dev/null; then
         apt-get update -qq 2>/dev/null
-        apt-get install -y -qq nvidia-container-toolkit 2>/dev/null || echo "  [WARN] NVIDIA CT install via apt failed"
+        apt-get install -y -qq nvidia-container-toolkit 2>/dev/null || \
+            echo "  [WARN] NVIDIA CT install via apt failed — check repo access and try manually"
+    elif command -v dnf &>/dev/null; then
+        dnf install -y nvidia-container-toolkit 2>/dev/null || \
+            echo "  [WARN] NVIDIA CT install via dnf failed"
     elif command -v yum &>/dev/null; then
-        yum install -y nvidia-container-toolkit 2>/dev/null || echo "  [WARN] NVIDIA CT install via yum failed"
+        yum install -y nvidia-container-toolkit 2>/dev/null || \
+            echo "  [WARN] NVIDIA CT install via yum failed"
     fi
 
-    # Configure Docker to use NVIDIA runtime
-    nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
-    systemctl restart docker 2>/dev/null || true
+    # Configure Docker to use NVIDIA runtime and restart
+    if command -v nvidia-ctk &>/dev/null; then
+        nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
+        systemctl restart docker 2>/dev/null || true
+        echo "  Docker runtime configured for NVIDIA GPU access."
+    fi
 
-    # Verify
-    if docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi &>/dev/null; then
-        echo "  NVIDIA Container Toolkit installed and verified!"
+    # Verify GPU passthrough inside a container
+    if docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 \
+        nvidia-smi --query-gpu=name --format=csv,noheader &>/dev/null; then
+        GPU_IN_CONTAINER=$(docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 \
+            nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+        echo "  GPU passthrough verified: ${GPU_IN_CONTAINER}"
     else
         echo "  [WARN] NVIDIA CT installed but GPU passthrough test failed."
-        echo "  The daemon will fall back to bare-metal execution."
+        echo "  Ensure NVIDIA drivers (>= 450.x) are installed: https://www.nvidia.com/download/index.aspx"
+        echo "  The daemon will fall back to bare-metal execution until this is resolved."
     fi
 else
-    echo "  [INFO] NVIDIA Container Toolkit only available on Linux."
-    echo "  macOS will use bare-metal execution."
+    echo "  [INFO] NVIDIA Container Toolkit is only available on Linux."
+    echo "  macOS providers will use bare-metal execution mode."
 fi
 
 # ── Step 6: Pull DC1 Worker Images ─────────────────────────────────────

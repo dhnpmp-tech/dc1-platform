@@ -9,6 +9,8 @@ Features:
   - 30s heartbeat to DC1 backend
   - Job polling (every 10s) with dual endpoint support
   - Docker-based execution (NVIDIA Container Toolkit) with bare-metal fallback
+  - Container security hardening: read-only rootfs, cap-drop all, seccomp profile, pids/cpu limits
+  - GPU VRAM leak detection (baseline compare after container exit)
   - Machine verification challenge support (anti-fraud GPU benchmarking)
   - 2MB stdout capture for LLM/image outputs
   - HMAC verification of task_spec before execution
@@ -61,6 +63,13 @@ CRASH_WINDOW = 600         # 10 minute window for counting crashes
 AUTO_UPDATE_CHECK = 300    # Check for updates every 5 minutes
 UPDATE_CRASH_THRESHOLD = 90  # If daemon crashes within 90s of update, rollback
 ROLLBACK_RECHECK_INTERVAL = 600  # After rollback, re-check for updates every 10 min
+
+# ─── CONTAINER SECURITY CONFIG ───────────────────────────────────────────────
+CONTAINER_CPU_LIMIT = "4"          # Max CPU cores per job container
+CONTAINER_MEMORY_LIMIT = "16g"     # Max RAM per job container (swap disabled)
+CONTAINER_PIDS_LIMIT = "256"       # Max PIDs (fork-bomb protection)
+CONTAINER_TMP_SIZE = "1g"          # tmpfs size for /tmp in container
+_SECCOMP_PROFILE_PATH = None       # Cached seccomp profile path (written once)
 BANDWIDTH_CHECK_INTERVAL = 600   # Measure bandwidth every 10 minutes
 BANDWIDTH_TEST_SIZE = 102400     # 100KB test payload for speed measurement
 
@@ -473,37 +482,108 @@ def update_check_loop():
 
 # ─── GPU DETECTION ───────────────────────────────────────────────────────────
 
+def _get_cuda_version():
+    """Get CUDA version from nvidia-smi header line."""
+    try:
+        r = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.splitlines():
+            if "CUDA Version:" in line:
+                parts = line.strip().split("CUDA Version:")
+                if len(parts) == 2:
+                    return parts[1].strip().split()[0]
+    except Exception:
+        pass
+    return None
+
 def detect_gpu():
-    """Detect NVIDIA GPU via nvidia-smi. Returns dict or None."""
+    """Detect NVIDIA GPU(s) via nvidia-smi. Returns dict for GPU 0 (or None), plus all_gpus list."""
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total,memory.free,memory.used,utilization.gpu,temperature.gpu,power.draw,driver_version",
+            ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.free,memory.used,utilization.gpu,temperature.gpu,power.draw,driver_version,compute_cap",
              "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode != 0:
             return None
 
-        line = result.stdout.strip().split("\n")[0]
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 8:
+        cuda_version = _get_cuda_version()
+        all_gpus = []
+        for raw_line in result.stdout.strip().splitlines():
+            parts = [p.strip() for p in raw_line.split(",")]
+            if len(parts) < 10:
+                continue
+            try:
+                all_gpus.append({
+                    "index": int(parts[0]),
+                    "gpu_name": parts[1],
+                    "gpu_vram_mib": int(float(parts[2])),
+                    "free_vram_mib": int(float(parts[3])),
+                    "memory_used_mb": int(float(parts[4])),
+                    "gpu_util_pct": int(float(parts[5])),
+                    "temp_c": int(float(parts[6])),
+                    "power_w": float(parts[7]) if parts[7] not in ("[N/A]", "N/A") else None,
+                    "driver_version": parts[8],
+                    "compute_capability": parts[9],
+                    "cuda_version": cuda_version,
+                })
+            except (ValueError, IndexError):
+                continue
+
+        if not all_gpus:
             return None
 
-        return {
-            "gpu_name": parts[0],
-            "gpu_vram_mib": int(float(parts[1])),
-            "free_vram_mib": int(float(parts[2])),
-            "memory_used_mb": int(float(parts[3])),
-            "gpu_util_pct": int(float(parts[4])),
-            "temp_c": int(float(parts[5])),
-            "power_w": float(parts[6]) if parts[6] != "[N/A]" else None,
-            "driver_version": parts[7],
-        }
+        primary = all_gpus[0]
+        primary["all_gpus"] = all_gpus
+        return primary
     except FileNotFoundError:
         log.warning("nvidia-smi not found — no NVIDIA GPU detected")
         return None
     except Exception as e:
         log.error(f"GPU detection error: {e}")
+        return None
+
+def collect_container_gpu_metrics(container_name):
+    """Sample per-container GPU utilization using nvidia-smi pmon."""
+    try:
+        pid_result = subprocess.run(
+            ["docker", "inspect", "--format={{.State.Pid}}", container_name],
+            capture_output=True, text=True, timeout=5
+        )
+        if pid_result.returncode != 0 or not pid_result.stdout.strip():
+            return None
+        container_pid = pid_result.stdout.strip()
+
+        pmon = subprocess.run(
+            ["nvidia-smi", "pmon", "-c", "1", "-s", "um"],
+            capture_output=True, text=True, timeout=10
+        )
+        if pmon.returncode != 0:
+            return None
+
+        metrics_by_gpu = {}
+        for line in pmon.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            cols = line.split()
+            if len(cols) < 8:
+                continue
+            pid = cols[1]
+            if pid == container_pid:
+                gpu_idx = int(cols[0]) if cols[0].isdigit() else 0
+                try:
+                    metrics_by_gpu[gpu_idx] = {
+                        "gpu_index": gpu_idx,
+                        "sm_pct": int(cols[3]) if cols[3] != "-" else 0,
+                        "mem_pct": int(cols[4]) if cols[4] != "-" else 0,
+                        "used_memory_mib": int(cols[7]) if cols[7] != "-" else 0,
+                    }
+                except (ValueError, IndexError):
+                    continue
+
+        return list(metrics_by_gpu.values()) if metrics_by_gpu else None
+    except Exception as e:
+        log.debug(f"Container GPU metrics error: {e}")
         return None
 
 # ─── DOCKER DETECTION ───────────────────────────────────────────────────────
@@ -621,6 +701,10 @@ def send_heartbeat():
             "daemon_version": DAEMON_VERSION,
             "python_version": platform.python_version(),
             "os_info": f"{platform.system()} {platform.release()}",
+            "all_gpus": gpu.get("all_gpus", []),
+            "gpu_count": len(gpu.get("all_gpus", [])) or 1,
+            "compute_capability": gpu.get("compute_capability"),
+            "cuda_version": gpu.get("cuda_version"),
         }
 
     url = f"{API_URL}/api/providers/heartbeat"
@@ -831,6 +915,61 @@ def run_gpu_benchmark(task_spec):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+def _ensure_seccomp_profile():
+    """Write DC1 GPU-workload seccomp profile to disk once; return its path or None on failure.
+
+    Uses a blacklist (default ALLOW) so CUDA/Python workloads function normally while
+    blocking kernel-level privilege escalation and dangerous syscalls.
+    """
+    global _SECCOMP_PROFILE_PATH
+    if _SECCOMP_PROFILE_PATH and os.path.exists(_SECCOMP_PROFILE_PATH):
+        return _SECCOMP_PROFILE_PATH
+
+    blocked = [
+        # Kernel module loading / live-patching
+        "create_module", "init_module", "finit_module", "delete_module",
+        "get_kernel_syms", "query_module",
+        # Privilege escalation / capability manipulation
+        "ptrace", "acct",
+        # Clock/time manipulation (integrity)
+        "settimeofday", "adjtimex", "clock_adjtime", "clock_settime",
+        # Direct hardware access
+        "iopl", "ioperm",
+        # Namespace / root filesystem escape
+        "mount", "umount2", "pivot_root", "chroot",
+        # Reboot / power control
+        "reboot", "kexec_load", "kexec_file_load",
+        # Swap control
+        "swapon", "swapoff",
+        # Kernel keyring (credential theft)
+        "add_key", "keyctl", "request_key",
+        # Perf events (speculative-execution side channels)
+        "perf_event_open",
+        # Obsolete / unused syscalls that provide no legitimate use
+        "nfsservctl", "getpmsg", "putpmsg", "afs_syscall", "tuxcall", "security",
+        "lookup_dcookie", "vhangup", "sysfs", "_sysctl",
+        # NUMA memory policy manipulation
+        "mbind", "set_mempolicy", "get_mempolicy",
+        # Kernel logging
+        "syslog",
+    ]
+    profile = {
+        "defaultAction": "SCMP_ACT_ALLOW",
+        "syscalls": [{"names": blocked, "action": "SCMP_ACT_ERRNO"}],
+    }
+
+    profile_path = "/tmp/dc1-gpu-seccomp.json"
+    try:
+        with open(profile_path, "w", encoding="utf-8") as f:
+            json.dump(profile, f)
+        _SECCOMP_PROFILE_PATH = profile_path
+        log.info(f"Seccomp profile written to {profile_path} ({len(blocked)} blocked syscalls)")
+    except Exception as e:
+        log.warning(f"Could not write seccomp profile: {e} — container will use Docker default")
+        _SECCOMP_PROFILE_PATH = None
+    return _SECCOMP_PROFILE_PATH
+
+
 def run_docker_job(job_type, task_spec, job_dir, job_id=None):
     """Execute job inside Docker container with GPU access and network isolation."""
     # Local images built via backend/docker/build-images.sh
@@ -857,35 +996,125 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
 
     log.info(f"Docker exec: image={image}, container={container_name}")
 
+    # GPU VRAM baseline — used after completion to detect memory leak / residual allocation
+    gpu_before = detect_gpu()
+    vram_before = gpu_before.get("memory_used_mb") if gpu_before else None
+
+    # Build seccomp profile path (written once per daemon lifetime, reused after)
+    seccomp_path = _ensure_seccomp_profile()
+
+    # Report pulling phase so backend transitions job status to 'pulling'
+    if job_id:
+        report_job_progress(job_id, "pulling")
+
+    # Pre-pull image to separate pull time from execution; pull failures are transient
     try:
+        pull = subprocess.run(
+            ["docker", "pull", image],
+            capture_output=True, text=True, timeout=300
+        )
+        if pull.returncode != 0:
+            log.warning(f"Docker pull failed for {image}: {pull.stderr[:300]}")
+            return {"success": False, "error": f"Docker image pull failed: {pull.stderr[:200]}", "transient": True}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Docker image pull timed out (300s)", "transient": True}
+    except Exception as e:
+        return {"success": False, "error": f"Docker pull error: {e}", "transient": True}
+
+    # Audit: container lifecycle start
+    report_event(
+        "container_start",
+        f"Launching {container_name}: image={image} "
+        f"cpu={CONTAINER_CPU_LIMIT} mem={CONTAINER_MEMORY_LIMIT} pids={CONTAINER_PIDS_LIMIT}",
+        job_id=job_id,
+    )
+
+    start_ts = time.time()
+    try:
+        # Build docker run command with full security hardening
+        docker_cmd = [
+            "docker", "run",
+            "--gpus", "all",
+            "--rm",
+            "--name", container_name,
+            # Network isolation
+            "--network", "none",
+            # Resource limits (CPU, RAM, swap disabled, PID fork-bomb protection)
+            "--memory", CONTAINER_MEMORY_LIMIT,
+            "--memory-swap", CONTAINER_MEMORY_LIMIT,   # swap = memory, so swap headroom = 0
+            "--cpus", CONTAINER_CPU_LIMIT,
+            "--pids-limit", CONTAINER_PIDS_LIMIT,
+            "--shm-size", "2g",
+            # Read-only root filesystem — writable areas supplied via tmpfs
+            "--read-only",
+            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={CONTAINER_TMP_SIZE}",
+            "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",
+            # Drop all Linux capabilities — CUDA device access uses /dev/nvidia* not capabilities
+            "--cap-drop", "all",
+            # Block privilege escalation via setuid/setgid
+            "--security-opt", "no-new-privileges:true",
+            # Mount task script read-only
+            "-v", f"{job_dir}:/dc1/job:ro",
+        ]
+        # Attach custom seccomp profile if successfully written
+        if seccomp_path:
+            docker_cmd += ["--security-opt", f"seccomp={seccomp_path}"]
+
+        docker_cmd += [image, "python", "/dc1/job/task.py"]
+
         result = subprocess.run(
-            [
-                "docker", "run",
-                "--gpus", "all",
-                "--rm",
-                "--name", container_name,
-                "--network", "none",                      # No internet access inside container
-                "--memory", "16g",
-                "--shm-size", "2g",
-                "--security-opt", "no-new-privileges:true",  # Block privilege escalation
-                "-v", f"{job_dir}:/dc1/job:ro",           # Mount task read-only
-                image, "python", "/dc1/job/task.py",
-            ],
+            docker_cmd,
             capture_output=True, text=True, encoding="utf-8", timeout=JOB_TIMEOUT
         )
 
+        duration = round(time.time() - start_ts, 1)
         stdout = result.stdout[:MAX_STDOUT]
         stderr = result.stderr[:MAX_STDOUT]
 
+        # GPU memory wipe check: verify VRAM returns to pre-job baseline after container exits
+        gpu_after = detect_gpu()
+        vram_after = gpu_after.get("memory_used_mb") if gpu_after else None
+        vram_delta = (vram_after - vram_before) if (vram_before is not None and vram_after is not None) else None
+        if vram_delta is not None and vram_delta > 512:
+            # Residual VRAM allocation — log as warning (NVIDIA driver normally frees on container exit)
+            report_event(
+                "container_vram_leak",
+                f"{container_name}: +{vram_delta} MiB residual VRAM after job exit "
+                f"(before={vram_before} after={vram_after})",
+                job_id=job_id, severity="warning",
+            )
+
         if result.returncode == 0:
-            return {"success": True, "result": stdout, "stderr": stderr}
+            gpu_metrics = collect_container_gpu_metrics(container_name)
+            report_event(
+                "container_complete",
+                f"{container_name} succeeded in {duration}s, exit=0, vram_delta={vram_delta}MiB",
+                job_id=job_id,
+            )
+            return {"success": True, "result": stdout, "stderr": stderr,
+                    "metrics": {"container_gpu": gpu_metrics} if gpu_metrics else None}
         else:
+            report_event(
+                "container_complete",
+                f"{container_name} failed in {duration}s, exit={result.returncode}",
+                job_id=job_id, severity="warning",
+            )
             return {"success": False, "error": f"Exit code {result.returncode}: {stderr[:500]}"}
     except subprocess.TimeoutExpired:
         # Kill named container for reliable cleanup
         subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=10)
+        report_event(
+            "container_timeout",
+            f"{container_name} killed after {JOB_TIMEOUT}s timeout",
+            job_id=job_id, severity="error",
+        )
         return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
     except Exception as e:
+        report_event(
+            "container_error",
+            f"{container_name} error: {type(e).__name__}: {e}",
+            job_id=job_id, severity="error",
+        )
         return {"success": False, "error": str(e)}
     finally:
         # Always clean up the temp job directory
@@ -903,6 +1132,24 @@ def report_job_progress(job_id, phase):
             log.debug(f"Progress report HTTP {code}: {resp}")
     except Exception as e:
         log.debug(f"Progress report failed (non-critical): {e}")
+
+def post_job_logs(job_id, stdout, stderr=""):
+    """Send collected job output lines to backend after execution completes."""
+    url = f"{API_URL}/api/jobs/{job_id}/logs"
+    lines = []
+    for line in (stdout or "").splitlines():
+        lines.append({"level": "info", "message": line})
+    for line in (stderr or "").splitlines():
+        lines.append({"level": "error", "message": line})
+    if not lines:
+        return
+    try:
+        payload = {"api_key": API_KEY, "lines": lines[:500]}
+        code, _ = http_post(url, payload, timeout=15)
+        if code != 200:
+            log.debug(f"Job log upload HTTP {code} for {job_id}")
+    except Exception as e:
+        log.debug(f"Job log upload failed (non-critical): {e}")
 
 def run_bare_metal_job(task_spec, job_id=None):
     """Execute job as a bare-metal subprocess with real-time phase reporting."""
@@ -1126,6 +1373,16 @@ def poll_and_execute():
                 f"Job failed after {elapsed}s: {error_msg[:1000]}",
                 job_id=job_id, severity=severity)
 
+        # Stream collected logs to backend (non-blocking, best-effort)
+        stdout_output = outcome.get("result", "") if isinstance(outcome.get("result"), str) else ""
+        stderr_output = outcome.get("stderr", "")
+        if stdout_output or stderr_output:
+            threading.Thread(
+                target=post_job_logs,
+                args=(job_id, stdout_output, stderr_output),
+                daemon=True
+            ).start()
+
         # Submit result with retry logic
         result_url = f"{API_URL}/api/providers/job-result"
         payload = {
@@ -1135,6 +1392,7 @@ def poll_and_execute():
             "success": outcome.get("success", False),
             "error": outcome.get("error"),
             "metrics": outcome.get("metrics"),
+            "transient": outcome.get("transient", False),
         }
         result_size = len(str(payload.get("result", "")))
         log.info(f"Job {job_id} submitting result ({result_size} bytes)...")
