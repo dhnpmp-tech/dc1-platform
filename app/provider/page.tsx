@@ -6,6 +6,18 @@ import DashboardLayout from '../components/layout/DashboardLayout'
 import StatusBadge from '../components/ui/StatusBadge'
 import StatCard from '../components/ui/StatCard'
 
+interface ResourceEntry {
+  id: string
+  type?: string
+  total?: number
+  free?: number
+  model?: string
+  vram_gb?: number
+  cuda_version?: string
+  compute_capability?: string
+  driver_version?: string
+}
+
 interface ProviderData {
   id: string
   name: string
@@ -22,6 +34,10 @@ interface ProviderData {
   isPaused: boolean
   lastHeartbeat: string
   daemonVersion: string
+  gpuCount: number
+  computeCapability: string
+  cudaVersion: string
+  resourceSpec: { resources: ResourceEntry[] } | null
   activeJob?: {
     id: string
     jobType: string
@@ -171,6 +187,10 @@ export default function ProviderDashboard() {
           temperature: provider.gpu_temp || 0,
           gpuUsage: provider.gpu_usage || 0,
           vramUsage: provider.vram_usage || 0,
+          gpuCount: provider.gpu_count_reported || 1,
+          computeCapability: provider.gpu_compute_capability || '',
+          cudaVersion: provider.gpu_cuda_version || '',
+          resourceSpec: provider.resource_spec || null,
           activeJob: provider.active_job ? {
             id: provider.active_job.job_id,
             jobType: provider.active_job.job_type,
@@ -377,6 +397,45 @@ export default function ProviderDashboard() {
             </div>
           </div>
         </div>
+
+        {/* Resource Spec Card */}
+        {providerData.resourceSpec && (
+          <div className="card">
+            <h2 className="section-heading mb-4">Resource Advertisement</h2>
+            <p className="text-xs text-dc1-text-muted mb-4">Ocean-style compute resource schema — advertised to the DC1 marketplace</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {providerData.resourceSpec.resources.map((r, i) => (
+                <div key={i} className="bg-dc1-surface-l2 rounded-lg p-3 border border-dc1-border">
+                  {r.type === 'gpu' ? (
+                    <>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-mono text-dc1-amber bg-dc1-amber/10 px-2 py-0.5 rounded">GPU</span>
+                        <span className="text-sm font-semibold text-dc1-text-primary truncate">{r.model || r.id}</span>
+                      </div>
+                      <div className="space-y-1 text-xs text-dc1-text-secondary">
+                        {r.vram_gb != null && <div className="flex justify-between"><span>VRAM</span><span className="text-dc1-text-primary font-medium">{r.vram_gb} GB</span></div>}
+                        {r.cuda_version && <div className="flex justify-between"><span>CUDA</span><span className="text-dc1-text-primary font-medium">{r.cuda_version}</span></div>}
+                        {r.compute_capability && <div className="flex justify-between"><span>Compute Cap</span><span className="text-dc1-text-primary font-medium">{r.compute_capability}</span></div>}
+                        {r.driver_version && <div className="flex justify-between"><span>Driver</span><span className="text-dc1-text-primary font-medium">{r.driver_version}</span></div>}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-mono text-dc1-text-muted bg-dc1-surface-l3 px-2 py-0.5 rounded uppercase">{r.id}</span>
+                      </div>
+                      <div className="space-y-1 text-xs text-dc1-text-secondary">
+                        {r.total != null && <div className="flex justify-between"><span>Total</span><span className="text-dc1-text-primary font-medium">{r.total}{r.id === 'ram' ? ' GB' : r.id === 'disk' ? ' GB' : ''}</span></div>}
+                        {r.free != null && <div className="flex justify-between"><span>Free</span><span className="text-dc1-text-primary font-medium">{r.free} GB</span></div>}
+                        {r.max != null && <div className="flex justify-between"><span>Allocatable</span><span className="text-dc1-text-primary font-medium">{r.max}{r.id === 'ram' ? ' GB' : r.id === 'disk' ? ' GB' : ' cores'}</span></div>}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 7-Day Earnings Chart */}
         {dailyEarnings.length > 0 && (
