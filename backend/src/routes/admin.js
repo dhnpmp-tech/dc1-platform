@@ -1501,4 +1501,250 @@ router.post('/notifications/test', (req, res) => {
   })();
 });
 
+// ─── Admin: Payments (DCP-31) ─────────────────────────────────────────────────
+
+// GET /api/admin/payments — All payments with filters
+router.get('/payments', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const statusFilter = req.query.status || '';
+    const search = (req.query.search || '').trim().toLowerCase();
+
+    let where = '1=1';
+    const wParams = [];
+    if (statusFilter) {
+      where += ' AND p.status = ?';
+      wParams.push(statusFilter);
+    }
+    if (search) {
+      where += ' AND (LOWER(r.email) LIKE ? OR LOWER(r.name) LIKE ? OR p.payment_id LIKE ?)';
+      wParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const payments = db.all(
+      `SELECT p.id, p.payment_id, p.amount_sar, p.amount_halala, p.status,
+              p.source_type, p.description, p.created_at, p.confirmed_at,
+              p.refunded_at, p.refund_amount_halala,
+              r.id as renter_id, r.name as renter_name, r.email as renter_email
+       FROM payments p
+       JOIN renters r ON r.id = p.renter_id
+       WHERE ${where}
+       ORDER BY p.created_at DESC LIMIT ? OFFSET ?`,
+      ...wParams, limit, offset
+    );
+
+    const total = db.get(
+      `SELECT COUNT(*) as count FROM payments p JOIN renters r ON r.id = p.renter_id WHERE ${where}`,
+      ...wParams
+    );
+
+    // Summary stats
+    const summary = db.get(
+      `SELECT
+         COUNT(*) as total_payments,
+         COALESCE(SUM(CASE WHEN status='paid' THEN amount_halala ELSE 0 END), 0) as total_revenue_halala,
+         COALESCE(SUM(CASE WHEN status='refunded' THEN refund_amount_halala ELSE 0 END), 0) as total_refunded_halala,
+         COUNT(CASE WHEN status='initiated' THEN 1 END) as pending_count,
+         COUNT(CASE WHEN status='paid' THEN 1 END) as paid_count,
+         COUNT(CASE WHEN status='failed' THEN 1 END) as failed_count,
+         COUNT(CASE WHEN status='refunded' THEN 1 END) as refunded_count
+       FROM payments`
+    );
+
+    res.json({
+      payments,
+      pagination: { limit, offset, total: total.count },
+      summary: {
+        ...summary,
+        total_revenue_sar: summary.total_revenue_halala / 100,
+        total_refunded_sar: summary.total_refunded_halala / 100,
+      },
+    });
+  } catch (error) {
+    console.error('Admin payments error:', error);
+    res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+});
+
+// GET /api/admin/payments/revenue — Revenue breakdown by day/month
+router.get('/payments/revenue', (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 365);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const daily = db.all(
+      `SELECT DATE(confirmed_at) as date,
+              COUNT(*) as transactions,
+              COALESCE(SUM(amount_halala), 0) as revenue_halala
+       FROM payments
+       WHERE status = 'paid' AND confirmed_at >= ?
+       GROUP BY DATE(confirmed_at)
+       ORDER BY date DESC`,
+      since
+    );
+
+    const totals = db.get(
+      `SELECT COALESCE(SUM(amount_halala), 0) as total_halala, COUNT(*) as total_transactions
+       FROM payments WHERE status = 'paid' AND confirmed_at >= ?`,
+      since
+    );
+
+    res.json({
+      period_days: days,
+      total_revenue_halala: totals.total_halala,
+      total_revenue_sar: totals.total_halala / 100,
+      total_transactions: totals.total_transactions,
+      daily: daily.map(d => ({ ...d, revenue_sar: d.revenue_halala / 100 })),
+    });
+  } catch (error) {
+    console.error('Admin revenue error:', error);
+    res.status(500).json({ error: 'Failed to fetch revenue data' });
+  }
+});
+
+// POST /api/admin/payments/:paymentId/refund — Initiate Moyasar refund
+router.post('/payments/:paymentId/refund', (req, res) => {
+  const { paymentId } = req.params;
+  const { amount_halala, reason } = req.body;
+
+  const payment = db.get('SELECT * FROM payments WHERE payment_id = ?', paymentId);
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  if (payment.status !== 'paid') {
+    return res.status(400).json({ error: `Cannot refund payment with status: ${payment.status}` });
+  }
+  if (payment.refunded_at) {
+    return res.status(400).json({ error: 'Payment already refunded' });
+  }
+
+  const refundAmount = amount_halala || payment.amount_halala;
+  if (refundAmount > payment.amount_halala) {
+    return res.status(400).json({ error: 'Refund amount exceeds original payment' });
+  }
+
+  // If no Moyasar key, do a manual/internal refund
+  const MOYASAR_SECRET = process.env.MOYASAR_SECRET_KEY || '';
+  if (!MOYASAR_SECRET || payment.payment_id.startsWith('sandbox-')) {
+    const now = new Date().toISOString();
+    db.run(
+      `UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ? WHERE payment_id = ?`,
+      now, refundAmount, paymentId
+    );
+    db.run(
+      `UPDATE renters SET balance_halala = MAX(0, balance_halala - ?), updated_at = ? WHERE id = ?`,
+      refundAmount, now, payment.renter_id
+    );
+    return res.json({
+      success: true,
+      type: 'manual',
+      payment_id: paymentId,
+      refunded_halala: refundAmount,
+      refunded_sar: refundAmount / 100,
+      note: reason || 'Admin-initiated refund',
+    });
+  }
+
+  // Call Moyasar refund API
+  const https = require('https');
+  const auth = Buffer.from(`${MOYASAR_SECRET}:`).toString('base64');
+  const bodyStr = JSON.stringify({ amount: refundAmount });
+  const options = {
+    hostname: 'api.moyasar.com',
+    path: `/v1/payments/${paymentId}/refund`,
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(bodyStr),
+    },
+  };
+
+  const apiReq = https.request(options, apiRes => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      try {
+        const result = JSON.parse(data);
+        if (apiRes.statusCode >= 400) {
+          return res.status(502).json({ error: 'Moyasar refund failed', details: result });
+        }
+        const now = new Date().toISOString();
+        db.run(
+          `UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ?, gateway_response = ? WHERE payment_id = ?`,
+          now, refundAmount, JSON.stringify(result), paymentId
+        );
+        db.run(
+          `UPDATE renters SET balance_halala = MAX(0, balance_halala - ?), updated_at = ? WHERE id = ?`,
+          refundAmount, now, payment.renter_id
+        );
+        res.json({ success: true, type: 'moyasar', payment_id: paymentId, refunded_halala: refundAmount, refunded_sar: refundAmount / 100 });
+      } catch {
+        res.status(502).json({ error: 'Invalid Moyasar refund response' });
+      }
+    });
+  });
+  apiReq.on('error', err => res.status(502).json({ error: 'Moyasar API unreachable', details: err.message }));
+  apiReq.write(bodyStr);
+  apiReq.end();
+});
+
+// ============================================================================
+// GET /api/admin/escrow — Escrow holds overview (DCP-32)
+// ============================================================================
+router.get('/escrow', requireAdmin, (req, res) => {
+  try {
+    const { status, provider_id } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+
+    let where = 'WHERE 1=1';
+    const params = [];
+    if (status) { where += ' AND e.status = ?'; params.push(status); }
+    if (provider_id) { where += ' AND e.provider_id = ?'; params.push(parseInt(provider_id)); }
+
+    const holds = db.all(
+      `SELECT e.id, e.job_id, e.renter_api_key, e.provider_id, e.amount_halala, e.status,
+              e.created_at, e.expires_at, e.resolved_at,
+              p.name as provider_name,
+              r.name as renter_name
+       FROM escrow_holds e
+       LEFT JOIN providers p ON e.provider_id = p.id
+       LEFT JOIN renters r ON r.api_key = e.renter_api_key
+       ${where}
+       ORDER BY e.created_at DESC LIMIT ?`,
+      ...params, limit
+    );
+
+    const summary = db.get(
+      `SELECT
+         COUNT(*) as total,
+         COALESCE(SUM(CASE WHEN status = 'held' THEN amount_halala END), 0) as held_halala,
+         COALESCE(SUM(CASE WHEN status = 'locked' THEN amount_halala END), 0) as locked_halala,
+         COALESCE(SUM(CASE WHEN status = 'released_provider' THEN amount_halala END), 0) as released_provider_halala,
+         COALESCE(SUM(CASE WHEN status = 'released_renter' THEN amount_halala END), 0) as released_renter_halala,
+         COALESCE(SUM(CASE WHEN status = 'expired' THEN amount_halala END), 0) as expired_halala,
+         COUNT(CASE WHEN status = 'held' THEN 1 END) as held_count,
+         COUNT(CASE WHEN status = 'locked' THEN 1 END) as locked_count
+       FROM escrow_holds`
+    );
+
+    res.json({
+      summary: {
+        ...summary,
+        held_sar: ((summary.held_halala || 0) / 100).toFixed(2),
+        locked_sar: ((summary.locked_halala || 0) / 100).toFixed(2),
+        released_provider_sar: ((summary.released_provider_halala || 0) / 100).toFixed(2),
+        released_renter_sar: ((summary.released_renter_halala || 0) / 100).toFixed(2),
+      },
+      holds: holds.map(h => ({
+        ...h,
+        amount_sar: (h.amount_halala / 100).toFixed(2),
+        renter_api_key: h.renter_api_key ? h.renter_api_key.slice(0, 16) + '...' : null,
+      }))
+    });
+  } catch (error) {
+    console.error('Admin escrow error:', error);
+    res.status(500).json({ error: 'Failed to fetch escrow data' });
+  }
+});
+
 module.exports = router;

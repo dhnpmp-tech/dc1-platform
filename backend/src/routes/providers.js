@@ -31,8 +31,8 @@ function compareVersions(v1, v2) {
 // ============================================================================
 router.post('/register', async (req, res) => {
     try {
-        const { name, email, gpu_model, os, phone } = req.body;
-        
+        const { name, email, gpu_model, os, phone, resource_spec } = req.body;
+
         // Validate inputs
         if (!name || !email || !gpu_model || !os) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -52,15 +52,25 @@ router.post('/register', async (req, res) => {
 
         // Generate unique API key
         const api_key = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
-        
+
         // Generate unique provider ID
         const provider_id = 'prov-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-        
+
+        // Validate resource_spec if provided
+        let resourceSpecJson = null;
+        if (resource_spec) {
+            try {
+                resourceSpecJson = typeof resource_spec === 'string'
+                    ? resource_spec
+                    : JSON.stringify(resource_spec);
+            } catch (_) {}
+        }
+
         // Save to database
         const result = await db.run(
-            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [name, email, gpu_model, os, api_key, 'registered', new Date().toISOString()]
+            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, created_at, resource_spec)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [name, email, gpu_model, os, api_key, 'registered', new Date().toISOString(), resourceSpecJson]
         );
         
         // Generate installer URL
@@ -161,7 +171,7 @@ router.get('/installer', (req, res) => {
 // ============================================================================
 router.post('/heartbeat', (req, res) => {
     try {
-        const { api_key, gpu_status, uptime, provider_ip, provider_hostname, cached_models } = req.body;
+        const { api_key, gpu_status, uptime, provider_ip, provider_hostname, cached_models, resource_spec } = req.body;
 
         const gs = gpu_status || {};
         const gpuName = gs.gpu_name || null;
@@ -219,6 +229,14 @@ router.post('/heartbeat', (req, res) => {
                 allGpus ? JSON.stringify(allGpus) : null,
                 p.id
             );
+        }
+
+        // Update Ocean-style resource_spec when daemon provides it
+        if (resource_spec) {
+            const resourceSpecJson = typeof resource_spec === 'string'
+                ? resource_spec
+                : JSON.stringify(resource_spec);
+            db.run('UPDATE providers SET resource_spec = ? WHERE id = ?', resourceSpecJson, p.id);
         }
 
         // Store daemon version on provider record for job assignment checks
@@ -442,6 +460,12 @@ router.get('/me', async (req, res) => {
             } catch (_) {}
         }
 
+        // Parse resource_spec JSON for response
+        let resourceSpec = null;
+        if (provider.resource_spec) {
+            try { resourceSpec = JSON.parse(provider.resource_spec); } catch (_) {}
+        }
+
         const payload = {
             provider: {
                 id: provider.id,
@@ -449,7 +473,12 @@ router.get('/me', async (req, res) => {
                 status: provider.status,
                 gpu_model: provider.gpu_model,
                 gpu_vram_mib: provider.gpu_vram_mib || 0,
+                gpu_count_reported: provider.gpu_count_reported || 1,
+                gpu_compute_capability: provider.gpu_compute_capability || null,
+                gpu_cuda_version: provider.gpu_cuda_version || null,
+                resource_spec: resourceSpec,
                 last_heartbeat: provider.last_heartbeat || null,
+                daemon_version: provider.daemon_version || null,
                 run_mode: provider.run_mode || 'always-on',
                 scheduled_start: provider.scheduled_start || '23:00',
                 scheduled_end: provider.scheduled_end || '07:00',
@@ -871,10 +900,13 @@ router.get('/earnings', (req, res) => {
         const api_key = req.query.key || req.headers['x-provider-key'];
         if (!api_key) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT id, name, total_earnings, total_jobs FROM providers WHERE api_key = ?', api_key);
+        const provider = db.get(
+            'SELECT id, name, total_earnings, total_jobs, claimable_earnings_halala FROM providers WHERE api_key = ?',
+            api_key
+        );
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
-        // Get pending withdrawal amount
+        // Get pending withdrawal amount (in halala — convert from SAR column)
         const pending = db.get(
             `SELECT COALESCE(SUM(amount_sar), 0) as pending_sar FROM withdrawals WHERE provider_id = ? AND status = 'pending'`,
             provider.id
@@ -886,16 +918,43 @@ router.get('/earnings', (req, res) => {
             provider.id
         ) || { withdrawn_sar: 0 };
 
-        const availableSar = provider.total_earnings - (pending.pending_sar || 0) - (completed.withdrawn_sar || 0);
+        // Prefer escrow-based halala tracking (DCP-32); fall back to total_earnings SAR for pre-escrow providers
+        const claimableHalala = provider.claimable_earnings_halala || 0;
+        const totalEarnedHalala = claimableHalala > 0
+            ? claimableHalala
+            : Math.round((provider.total_earnings || 0) * 100);
+        const pendingHalala = Math.round((pending.pending_sar || 0) * 100);
+        const withdrawnHalala = Math.round((completed.withdrawn_sar || 0) * 100);
+        const availableHalala = Math.max(0, totalEarnedHalala - pendingHalala - withdrawnHalala);
+
+        // Escrow breakdown: active holds and recent releases
+        const escrowSummary = db.get(
+            `SELECT
+               COUNT(CASE WHEN status = 'held' THEN 1 END) as held_count,
+               COALESCE(SUM(CASE WHEN status = 'held' THEN amount_halala END), 0) as held_halala,
+               COUNT(CASE WHEN status = 'locked' THEN 1 END) as locked_count,
+               COALESCE(SUM(CASE WHEN status = 'locked' THEN amount_halala END), 0) as locked_halala
+             FROM escrow_holds WHERE provider_id = ?`,
+            provider.id
+        ) || {};
 
         res.json({
             provider_id: provider.id,
             name: provider.name,
             total_earned_sar: provider.total_earnings,
+            total_earned_halala: totalEarnedHalala,
+            claimable_earnings_halala: claimableHalala,
             pending_withdrawal_sar: pending.pending_sar || 0,
             withdrawn_sar: completed.withdrawn_sar || 0,
-            available_sar: Math.max(0, availableSar),
-            total_jobs: provider.total_jobs
+            available_sar: (availableHalala / 100).toFixed(2),
+            available_halala: availableHalala,
+            total_jobs: provider.total_jobs,
+            escrow: {
+                held_jobs: escrowSummary.held_count || 0,
+                held_halala: escrowSummary.held_halala || 0,
+                locked_jobs: escrowSummary.locked_count || 0,
+                locked_halala: escrowSummary.locked_halala || 0,
+            }
         });
     } catch (error) {
         console.error('Earnings check error:', error);
@@ -911,7 +970,10 @@ router.post('/withdraw', (req, res) => {
         const { api_key, amount_sar, payout_method, payout_details } = req.body;
         if (!api_key) return res.status(400).json({ error: 'api_key required' });
 
-        const provider = db.get('SELECT id, name, total_earnings FROM providers WHERE api_key = ?', api_key);
+        const provider = db.get(
+            'SELECT id, name, total_earnings, claimable_earnings_halala FROM providers WHERE api_key = ?',
+            api_key
+        );
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         if (!amount_sar || amount_sar <= 0) {
@@ -923,7 +985,7 @@ router.post('/withdraw', (req, res) => {
             return res.status(400).json({ error: 'Minimum withdrawal is 10 SAR' });
         }
 
-        // Check available balance (total_earnings minus pending/completed withdrawals)
+        // Compute available balance using escrow-based halala tracking (DCP-32)
         const pending = db.get(
             `SELECT COALESCE(SUM(amount_sar), 0) as pending_sar FROM withdrawals WHERE provider_id = ? AND status = 'pending'`,
             provider.id
@@ -934,12 +996,21 @@ router.post('/withdraw', (req, res) => {
             provider.id
         ) || { withdrawn_sar: 0 };
 
-        const availableSar = provider.total_earnings - (pending.pending_sar || 0) - (completed.withdrawn_sar || 0);
+        // Prefer escrow-based halala balance; fall back to total_earnings SAR for legacy providers
+        const claimableHalala = provider.claimable_earnings_halala || 0;
+        const totalEarnedHalala = claimableHalala > 0
+            ? claimableHalala
+            : Math.round((provider.total_earnings || 0) * 100);
+        const pendingHalala = Math.round((pending.pending_sar || 0) * 100);
+        const withdrawnHalala = Math.round((completed.withdrawn_sar || 0) * 100);
+        const availableHalala = Math.max(0, totalEarnedHalala - pendingHalala - withdrawnHalala);
+        const availableSar = availableHalala / 100;
 
         if (amount_sar > availableSar) {
             return res.status(402).json({
                 error: 'Insufficient available earnings',
-                available_sar: Math.max(0, availableSar),
+                available_sar: availableSar.toFixed(2),
+                available_halala: availableHalala,
                 requested_sar: amount_sar
             });
         }

@@ -85,6 +85,7 @@ const COST_RATES = {
   'training': 25,         // 25 halala/min
   'rendering': 20,        // 20 halala/min
   'image_generation': 20, // 20 halala/min
+  'vllm_serve': 20,       // 20 halala/min (~12 SAR/hr) — long-running LLM serving
   'default': 10           // 10 halala/min
 };
 
@@ -298,11 +299,38 @@ print("DC1_RESULT_JSON:" + json.dumps(output))
 `;
 }
 
+// custom_container: pass image_override + optional script through to daemon as JSON task_spec
+function generateCustomContainerSpec(params) {
+  const imageOverride = params.image_override || 'dc1/general-worker:latest';
+  const script = params.script || 'import torch\nprint(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \'none\'}")\n';
+  // Return JSON string — daemon handles task_spec as JSON when it detects it
+  return JSON.stringify({ image_override: imageOverride, script });
+}
+
+// vllm_serve: start a vLLM OpenAI-compatible serving endpoint on the provider GPU
+// Returns a JSON task_spec that the daemon interprets as a long-running serve job
+const ALLOWED_VLLM_MODELS = [
+  'mistralai/Mistral-7B-Instruct-v0.2',
+  'meta-llama/Meta-Llama-3-8B-Instruct',
+  'microsoft/Phi-3-mini-4k-instruct',
+  'google/gemma-2b-it',
+  'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+];
+function generateVllmServeSpec(params) {
+  const rawModel = String(params.model || 'TinyLlama/TinyLlama-1.1B-Chat-v1.0');
+  const model = ALLOWED_VLLM_MODELS.includes(rawModel) ? rawModel : 'TinyLlama/TinyLlama-1.1B-Chat-v1.0';
+  const maxModelLen = Math.min(Math.max(parseInt(params.max_model_len) || 4096, 512), 32768);
+  const dtype = ['float16', 'bfloat16', 'float32'].includes(params.dtype) ? params.dtype : 'float16';
+  return JSON.stringify({ serve_mode: true, model, max_model_len: maxModelLen, dtype });
+}
+
 // Map job types to their template generators
 const JOB_TEMPLATES = {
   'image_generation': generateImageGenScript,
   'llm-inference': generateLlmInferenceScript,
   'llm_inference': generateLlmInferenceScript,  // underscore alias (avoids daemon Docker path for llm-inference)
+  'custom_container': generateCustomContainerSpec,
+  'vllm_serve': generateVllmServeSpec,
 };
 
 function calculateCostHalala(jobType, durationMinutes) {
@@ -317,7 +345,7 @@ function splitBilling(totalHalala) {
 }
 
 // Whitelisted job types — renters may only submit these types
-const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark']);
+const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark', 'custom_container', 'vllm_serve']);
 
 // POST /api/jobs/submit — requires renter auth
 router.post('/submit', requireRenter, (req, res) => {
@@ -421,7 +449,7 @@ router.post('/submit', requireRenter, (req, res) => {
       }
       // Always generate from template — raw Python is blocked at submission validation
       finalTaskSpec = JOB_TEMPLATES[job_type](params);
-      result_type = job_type === 'image_generation' ? 'image' : 'text';
+      result_type = job_type === 'image_generation' ? 'image' : job_type === 'vllm_serve' ? 'endpoint' : 'text';
     }
 
     // Stringify task_spec if it's an object, then HMAC-sign
@@ -447,6 +475,20 @@ router.post('/submit', requireRenter, (req, res) => {
     );
 
     const job = db.get('SELECT * FROM jobs WHERE id = ?', result.lastInsertRowid);
+
+    // ── Create escrow hold — funds are locked pending job execution ────────
+    // Escrow expires at job timeout + 30-minute settlement buffer
+    const escrowExpiresAt = new Date(Date.now() + (timeout + 1800) * 1000).toISOString();
+    const renterKey = req.headers['x-renter-key'] || req.query.renter_key;
+    try {
+      db.run(
+        `INSERT INTO escrow_holds (id, renter_api_key, provider_id, job_id, amount_halala, status, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, 'held', ?, ?)`,
+        'esc-' + job_id, renterKey, provider_id, job_id, cost_halala, now, escrowExpiresAt
+      );
+    } catch (e) {
+      console.error('[escrow] Failed to create hold for job', job_id, ':', e.message);
+    }
 
     // Calculate queue position if queued
     let queue_position = null;
@@ -510,6 +552,12 @@ router.get('/assigned', (req, res) => {
     job.status = 'assigned';
     job.assigned_at = now;
     job.picked_up_at = now;
+
+    // Lock escrow — provider has committed to executing this job
+    db.run(
+      `UPDATE escrow_holds SET status = 'locked' WHERE job_id = ? AND status = 'held'`,
+      job.job_id
+    );
 
     job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
     res.json({ job });
@@ -606,6 +654,32 @@ router.post('/:job_id/result', (req, res) => {
       `UPDATE providers SET total_earnings = total_earnings + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
       [providerEarned / 100, job.provider_id]
     );
+
+    // ── Escrow settlement ──────────────────────────────────────────────────
+    // Success: job produced output → release held funds to provider
+    // Failure: no result → refund renter and release escrow back to them
+    if (result) {
+      db.run(
+        `UPDATE escrow_holds SET status = 'released_provider', resolved_at = ?
+         WHERE job_id = ? AND status IN ('held','locked')`,
+        now, job.job_id
+      );
+      db.run(
+        `UPDATE providers SET claimable_earnings_halala = claimable_earnings_halala + ? WHERE id = ?`,
+        providerEarned, job.provider_id
+      );
+    } else {
+      // Permanent failure — return held amount to renter balance
+      db.run(
+        `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
+         WHERE job_id = ? AND status IN ('held','locked')`,
+        now, job.job_id
+      );
+      if (job.renter_id && job.cost_halala > 0 && !job.refunded_at) {
+        db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+        db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+      }
+    }
 
     // ── Auto-dispatch: promote next queued job for this provider ──────
     const promoted = promoteNextQueuedJob(job.provider_id);
@@ -826,13 +900,20 @@ router.post('/:job_id/complete', (req, res) => {
     );
 
     // Provider earnings updated from actual billing — 75% floor split, not full renter charge
-    // provider_earned = splitBilling(actual_cost_halala).provider (computed at line 147)
     db.run(
       `UPDATE providers SET
         total_jobs = total_jobs + 1,
-        total_earnings = total_earnings + ?
+        total_earnings = total_earnings + ?,
+        claimable_earnings_halala = claimable_earnings_halala + ?
        WHERE id = ?`,
-      provider_earned / 100, job.provider_id
+      provider_earned / 100, provider_earned, job.provider_id
+    );
+
+    // Release escrow to provider
+    db.run(
+      `UPDATE escrow_holds SET status = 'released_provider', resolved_at = ?
+       WHERE job_id = ? AND status IN ('held','locked')`,
+      now, job.job_id
     );
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
@@ -850,6 +931,52 @@ router.post('/:job_id/complete', (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to complete job' });
+  }
+});
+
+// POST /api/jobs/:job_id/fail — Explicit daemon failure webhook; releases escrow to renter
+router.post('/:job_id/fail', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!isAdmin(req)) {
+      const provider = getProviderFromReq(req);
+      if (!provider || provider.id !== job.provider_id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+    const activeStatuses = ['running', 'assigned', 'pulling', 'pending'];
+    if (!activeStatuses.includes(job.status)) {
+      return res.status(409).json({ error: 'Job already settled', current_status: job.status });
+    }
+
+    const { error: jobError, duration_seconds } = req.body;
+    const now = new Date().toISOString();
+    const actualMinutes = duration_seconds ? Math.ceil(duration_seconds / 60) : (job.duration_minutes || 1);
+
+    db.run(
+      `UPDATE jobs SET status = 'failed', error = ?, completed_at = ?, actual_duration_minutes = ? WHERE id = ?`,
+      jobError || 'Job failed', now, actualMinutes, job.id
+    );
+
+    // Release escrow back to renter
+    db.run(
+      `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
+       WHERE job_id = ? AND status IN ('held','locked')`,
+      now, job.job_id
+    );
+
+    // Refund renter
+    if (job.renter_id && job.cost_halala > 0 && !job.refunded_at) {
+      db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+      db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+    }
+
+    promoteNextQueuedJob(job.provider_id);
+    res.json({ success: true, job_id: job.job_id, refunded_halala: job.cost_halala });
+  } catch (error) {
+    console.error('Job fail error:', error);
+    res.status(500).json({ error: 'Failed to record job failure' });
   }
 });
 
@@ -881,6 +1008,13 @@ router.post('/:job_id/cancel', (req, res) => {
       db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
       db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
     }
+
+    // Release escrow back to renter on cancellation
+    db.run(
+      `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
+       WHERE job_id = ? AND status IN ('held','locked')`,
+      now, job.job_id
+    );
 
     // Auto-dispatch: promote next queued job for this provider
     promoteNextQueuedJob(job.provider_id);
@@ -935,6 +1069,48 @@ router.post('/:job_id/progress', (req, res) => {
   } catch (error) {
     console.error('Job progress error:', error);
     res.status(500).json({ error: 'Failed to update progress' });
+  }
+});
+
+// POST /api/jobs/:job_id/endpoint-ready — daemon reports vLLM serve endpoint is ready
+// Body: { api_key, port, provider_ip? }
+// Backend constructs endpoint_url from provider's stored IP + port, stores on job
+router.post('/:job_id/endpoint-ready', (req, res) => {
+  try {
+    const { api_key, port, provider_ip: reportedIp } = req.body;
+    if (!api_key || !port) return res.status(400).json({ error: 'api_key and port required' });
+
+    const provider = db.get(
+      'SELECT id, provider_ip, ip_address FROM providers WHERE api_key = ?', api_key
+    );
+    if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+    const job = db.get('SELECT * FROM jobs WHERE (id = ? OR job_id = ?) AND provider_id = ?',
+      req.params.job_id, req.params.job_id, provider.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.job_type !== 'vllm_serve') return res.status(400).json({ error: 'Not a vllm_serve job' });
+
+    const resolvedIp = reportedIp || provider.provider_ip || provider.ip_address;
+    if (!resolvedIp) return res.status(400).json({ error: 'Cannot resolve provider IP — send provider_ip in body' });
+
+    const portNum = parseInt(port);
+    if (!portNum || portNum < 1024 || portNum > 65535) return res.status(400).json({ error: 'Invalid port' });
+
+    const endpointUrl = `http://${resolvedIp}:${portNum}/v1`;
+    const now = new Date().toISOString();
+
+    db.run(
+      `UPDATE jobs SET endpoint_url = ?, serve_port = ?, status = 'running',
+        progress_phase = 'serving', progress_updated_at = ?,
+        started_at = COALESCE(started_at, ?) WHERE id = ?`,
+      endpointUrl, portNum, now, now, job.id
+    );
+
+    console.log(`[vllm] Job ${job.job_id}: endpoint ready at ${endpointUrl}`);
+    res.json({ success: true, endpoint_url: endpointUrl });
+  } catch (error) {
+    console.error('Endpoint-ready error:', error);
+    res.status(500).json({ error: 'Failed to record endpoint' });
   }
 });
 
@@ -1249,7 +1425,7 @@ function enforceJobTimeouts() {
         `UPDATE jobs SET status = 'failed', error = 'Job timed out — provider may be offline or model too large', completed_at = ? WHERE id = ?`,
         now, job.id
       );
-      // Refund renter for timed-out jobs
+      // Refund renter for timed-out jobs + mark escrow expired
       if (job.renter_id && job.cost_halala > 0) {
         try {
           db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
@@ -1257,6 +1433,14 @@ function enforceJobTimeouts() {
           console.log(`[timeout] Refunded ${job.cost_halala} halala to renter ${job.renter_id} for job ${job.job_id}`);
         } catch(e) { console.error('[timeout] Refund error:', e); }
       }
+      // Expire escrow hold — funds already returned to renter above
+      try {
+        db.run(
+          `UPDATE escrow_holds SET status = 'expired', resolved_at = ?
+           WHERE job_id = ? AND status IN ('held','locked')`,
+          now, job.job_id
+        );
+      } catch(e) { console.error('[timeout] Escrow expire error:', e); }
       console.log(`[timeout] Job ${job.job_id} timed out (provider ${job.provider_id})`);
       // Auto-dispatch: promote next queued job for this provider
       promoteNextQueuedJob(job.provider_id);
