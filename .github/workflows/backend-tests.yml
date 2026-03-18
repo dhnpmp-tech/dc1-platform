@@ -34,7 +34,9 @@ jobs:
         run: npm ci --include=dev
 
       - name: Run integration tests
-        run: npm run test:integration -- --no-coverage
+        # Exclude .ts test files — they require vitest, not Jest.
+        # All JavaScript integration tests run here; TS tests run in a separate vitest job (future).
+        run: npm run test:integration -- --no-coverage --testPathIgnorePatterns="\.ts$"
         env:
           DC1_DB_PATH: ':memory:'
           DC1_ADMIN_TOKEN: ci-admin-token-${{ github.run_id }}

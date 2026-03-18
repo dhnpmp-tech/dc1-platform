@@ -247,6 +247,8 @@ const migrations = [
   // vLLM serverless endpoint — DCP-34
   'ALTER TABLE jobs ADD COLUMN endpoint_url TEXT',          // OpenAI-compatible /v1 endpoint URL (vllm_serve)
   'ALTER TABLE jobs ADD COLUMN serve_port INTEGER',         // provider-side port the vLLM container listens on
+  // Provider reputation system — DCP-51
+  'ALTER TABLE providers ADD COLUMN reputation_score REAL DEFAULT 100.0', // composite trust score (0–100)
 ];
 
 migrations.forEach(sql => {

@@ -1691,7 +1691,7 @@ router.post('/payments/:paymentId/refund', (req, res) => {
 // ============================================================================
 // GET /api/admin/escrow — Escrow holds overview (DCP-32)
 // ============================================================================
-router.get('/escrow', requireAdmin, (req, res) => {
+router.get('/escrow', (req, res) => {
   try {
     const { status, provider_id } = req.query;
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);

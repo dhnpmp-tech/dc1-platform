@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "dc1"
+version = "0.1.0"
+description = "Official Python SDK for the DC1 GPU compute marketplace"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["gpu", "compute", "ai", "inference", "dc1"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []  # stdlib-only; no third-party deps
+
+[project.urls]
+Homepage = "https://dc1st.com"
+Documentation = "https://dc1st.com/docs"
+Repository = "https://github.com/dhnpmp-tech/dc1-platform"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dc1*"]

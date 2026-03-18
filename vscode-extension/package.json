@@ -1,0 +1,164 @@
+{
+  "name": "dc1-compute",
+  "displayName": "DC1 GPU Compute",
+  "description": "Submit GPU compute jobs to DC1 — Saudi Arabia's decentralized GPU marketplace. Provider sidebar, job submission, live log streaming, wallet panel.",
+  "version": "0.1.0",
+  "publisher": "dc1-platform",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dhnpmp-tech/dc1-platform"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["GPU", "compute", "AI", "machine learning", "DC1", "Saudi Arabia", "inference"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "icon": "media/icon.png",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dc1-explorer",
+          "title": "DC1 Compute",
+          "icon": "media/dc1-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dc1-explorer": [
+        {
+          "id": "dc1.availableGPUs",
+          "name": "Available GPUs",
+          "icon": "$(server)"
+        },
+        {
+          "id": "dc1.myJobs",
+          "name": "My Jobs",
+          "icon": "$(play-circle)"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dc1.setup",
+        "title": "DC1: Set API Key",
+        "icon": "$(key)"
+      },
+      {
+        "command": "dc1.submitJob",
+        "title": "DC1: Submit GPU Job",
+        "icon": "$(play)"
+      },
+      {
+        "command": "dc1.refreshGPUs",
+        "title": "DC1: Refresh Available GPUs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dc1.refreshJobs",
+        "title": "DC1: Refresh My Jobs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dc1.viewJobLogs",
+        "title": "DC1: View Job Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "dc1.cancelJob",
+        "title": "DC1: Cancel Job",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "dc1.openWallet",
+        "title": "DC1: Wallet & Billing",
+        "icon": "$(credit-card)"
+      },
+      {
+        "command": "dc1.submitJobOnProvider",
+        "title": "DC1: Submit Job on This GPU",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "dc1.refreshGPUs",
+          "when": "view == dc1.availableGPUs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dc1.submitJob",
+          "when": "view == dc1.availableGPUs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dc1.refreshJobs",
+          "when": "view == dc1.myJobs",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "dc1.submitJobOnProvider",
+          "when": "view == dc1.availableGPUs && viewItem == gpu",
+          "group": "inline"
+        },
+        {
+          "command": "dc1.viewJobLogs",
+          "when": "view == dc1.myJobs && viewItem == job",
+          "group": "inline"
+        },
+        {
+          "command": "dc1.cancelJob",
+          "when": "view == dc1.myJobs && viewItem == job_running",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DC1 Compute",
+      "properties": {
+        "dc1.apiBase": {
+          "type": "string",
+          "default": "http://76.13.179.86:8083",
+          "description": "DC1 API base URL. Update to https://api.dc1st.com when HTTPS is live."
+        },
+        "dc1.pollIntervalSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 5,
+          "maximum": 60,
+          "description": "Job status polling interval in seconds."
+        },
+        "dc1.autoRefreshGPUs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh available GPUs every 30 seconds."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack --mode development",
+    "watch": "webpack --mode development --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts",
+    "test": "echo \"No tests yet\""
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.3.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  }
+}

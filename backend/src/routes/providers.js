@@ -167,6 +167,47 @@ router.get('/installer', (req, res) => {
 });
 
 // ============================================================================
+// REPUTATION: compute uptime%, success_rate, and composite reputation_score
+// Called on every heartbeat — rolls a 7-day window.
+// Formula: 70% success_rate + 20% uptime + 10% longevity (0–100 each)
+// ============================================================================
+function computeReputationScore(providerId) {
+    // 1. Uptime — heartbeats received in last 7 days vs expected (1/min = 10080)
+    const EXPECTED_HEARTBEATS_7D = 7 * 24 * 60;
+    const hbRow = db.get(
+        `SELECT COUNT(*) AS cnt FROM heartbeat_log
+         WHERE provider_id = ? AND received_at >= datetime('now', '-7 days')`,
+        providerId
+    );
+    const uptimePct = Math.min((hbRow.cnt / EXPECTED_HEARTBEATS_7D) * 100, 100);
+
+    // 2. Success rate — completed / (completed + failed) across all jobs
+    const jobRow = db.get(
+        `SELECT
+           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN status IN ('completed','failed') THEN 1 ELSE 0 END) AS terminal
+         FROM jobs WHERE provider_id = ?`,
+        providerId
+    );
+    const successRate = (jobRow && jobRow.terminal > 0)
+        ? (jobRow.completed / jobRow.terminal) * 100
+        : 100; // default 100 while no terminal jobs exist
+
+    // 3. Longevity — capped at 1.0 after 30 days of registration
+    const provRow = db.get('SELECT created_at FROM providers WHERE id = ?', providerId);
+    const daysSince = provRow?.created_at
+        ? (Date.now() - new Date(provRow.created_at).getTime()) / (1000 * 60 * 60 * 24)
+        : 0;
+    const longevityPct = Math.min(daysSince / 30, 1.0) * 100;
+
+    const score = Math.round(0.7 * successRate + 0.2 * uptimePct + 0.1 * longevityPct);
+    return {
+        reputation_score: Math.min(score, 100),
+        uptime_percent: Math.round(uptimePct * 10) / 10,
+    };
+}
+
+// ============================================================================
 // POST /api/providers/heartbeat - Provider heartbeat (GPU status update)
 // ============================================================================
 router.post('/heartbeat', (req, res) => {
@@ -243,6 +284,13 @@ router.post('/heartbeat', (req, res) => {
         if (daemonVersion) {
             db.run('UPDATE providers SET daemon_version = ? WHERE id = ?', daemonVersion, p.id);
         }
+
+        // Recompute reputation score on every heartbeat (rolling 7-day window)
+        const rep = computeReputationScore(p.id);
+        db.run(
+            'UPDATE providers SET uptime_percent = ?, reputation_score = ? WHERE id = ?',
+            rep.uptime_percent, rep.reputation_score, p.id
+        );
 
         // Tell daemon if update is available (semantic version comparison)
         const needsUpdate = !daemonVersion || compareVersions(daemonVersion, MIN_DAEMON_VERSION) < 0;
@@ -1269,11 +1317,12 @@ router.get('/available', (req, res) => {
         const providers = db.all(
             `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
                     gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
-                    status, location, run_mode, reliability_score, cached_models, last_heartbeat,
-                    uptime_percent, total_jobs, is_paused
+                    status, location, run_mode, reliability_score, reputation_score,
+                    cached_models, last_heartbeat, uptime_percent, total_jobs, is_paused,
+                    created_at
              FROM providers
              WHERE status = 'online' AND is_paused = 0
-             ORDER BY gpu_vram_mib DESC NULLS LAST, reliability_score DESC NULLS LAST`
+             ORDER BY reputation_score DESC NULLS LAST, gpu_vram_mib DESC NULLS LAST`
         );
 
         const now = Date.now();
@@ -1310,6 +1359,7 @@ router.get('/available', (req, res) => {
                 run_mode: p.run_mode,
                 // Quality
                 reliability_score: p.reliability_score,
+                reputation_score: p.reputation_score ?? 100,
                 uptime_percent: p.uptime_percent,
                 total_jobs_completed: p.total_jobs,
                 cached_models: cachedModels,

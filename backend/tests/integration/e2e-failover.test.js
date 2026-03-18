@@ -1,9 +1,11 @@
 /**
  * E2E Failover — provider disconnect detection + job migration
+ *
+ * Updated for current API: job submission requires x-renter-key auth.
  */
 const request = require('supertest');
 const { createApp } = require('./test-app');
-const { cleanDb, registerProvider, bringOnline, db } = require('./helpers');
+const { cleanDb, registerProvider, registerRenter, bringOnline, db } = require('./helpers');
 const { runRecoveryCycle } = require('../../src/services/recovery-engine');
 
 const app = createApp();
@@ -12,7 +14,7 @@ beforeEach(() => cleanDb());
 
 describe('E2E Failover', () => {
   it('migrates job from disconnected provider to backup', async () => {
-    // 1. Register 2 providers
+    // 1. Register 2 providers and a renter
     const provA = await registerProvider(request, app, { name: 'Provider A', email: 'a@dc1.test' });
     const provB = await registerProvider(request, app, { name: 'Provider B', email: 'b@dc1.test' });
 
@@ -23,22 +25,21 @@ describe('E2E Failover', () => {
     db.run('UPDATE providers SET gpu_vram_mib = 24000 WHERE id = ?', provA.providerId);
     db.run('UPDATE providers SET gpu_vram_mib = 24000 WHERE id = ?', provB.providerId);
 
-    // 2. Submit a job → matched to Provider A
-    const jobRes = await request(app).post('/api/jobs/submit').send({
-      provider_id: provA.providerId,
-      job_type: 'llm-inference',
-      duration_minutes: 60,
-    });
-    expect(jobRes.status).toBe(201);
-    const jobId = jobRes.body.job.id;
+    const { apiKey: renterKey } = await registerRenter(request, app, { balanceHalala: 200_000 });
 
-    // The jobs table has both `id` (int) and `job_id` (text). Recovery engine uses job_id.
-    // We need to set job_id for the recovery engine to work.
-    const job = db.get('SELECT * FROM jobs WHERE id = ?', jobId);
-    const jobIdText = job.job_id || String(jobId);
-    if (!job.job_id) {
-      db.run('UPDATE jobs SET job_id = ? WHERE id = ?', String(jobId), jobId);
-    }
+    // 2. Submit a job → matched to Provider A
+    const jobRes = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({
+        provider_id: provA.providerId,
+        job_type: 'llm_inference',
+        duration_minutes: 60,
+        params: { prompt: 'Hello', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' },
+      });
+    expect(jobRes.status).toBe(201);
+    const jobIdText = jobRes.body.job.job_id;
+    const jobIntId = jobRes.body.job.id;
 
     // 3. Simulate Provider A disconnect — set last_heartbeat to 2 minutes ago
     const oldTime = new Date(Date.now() - 120 * 1000).toISOString();
@@ -60,8 +61,7 @@ describe('E2E Failover', () => {
     expect(event.reason).toBe('provider_disconnect');
 
     // 7. Verify job migrated to Provider B
-    const migratedJob = db.get('SELECT * FROM jobs WHERE id = ?', jobId);
-    // Recovery engine updates by job_id text field
+    const migratedJob = db.get('SELECT * FROM jobs WHERE job_id = ? OR id = ?', jobIdText, jobIntId);
     expect(migratedJob.provider_id).toBe(provB.providerId);
   });
 
@@ -69,16 +69,18 @@ describe('E2E Failover', () => {
     const provA = await registerProvider(request, app, { name: 'Solo Provider', email: 'solo@dc1.test' });
     await bringOnline(request, app, provA.apiKey);
 
-    const jobRes = await request(app).post('/api/jobs/submit').send({
-      provider_id: provA.providerId,
-      job_type: 'training',
-      duration_minutes: 30,
-    });
-    const jobId = jobRes.body.job.id;
-    const job = db.get('SELECT * FROM jobs WHERE id = ?', jobId);
-    if (!job.job_id) {
-      db.run('UPDATE jobs SET job_id = ? WHERE id = ?', String(jobId), jobId);
-    }
+    const { apiKey: renterKey } = await registerRenter(request, app, { balanceHalala: 200_000 });
+
+    const jobRes = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({
+        provider_id: provA.providerId,
+        job_type: 'llm_inference',
+        duration_minutes: 30,
+        params: { prompt: 'test', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' },
+      });
+    expect(jobRes.status).toBe(201);
 
     // Disconnect provider A
     const oldTime = new Date(Date.now() - 120 * 1000).toISOString();

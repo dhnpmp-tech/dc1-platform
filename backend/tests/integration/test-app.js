@@ -11,9 +11,10 @@ function createApp() {
   app.use(express.json());
 
   app.use('/api/providers', require('../../src/routes/providers'));
+  app.use('/api/renters',   require('../../src/routes/renters'));
   app.use('/api/benchmark', require('../../src/routes/benchmark'));
-  app.use('/api/jobs', require('../../src/routes/jobs'));
-  app.use('/api/recovery', require('../../src/routes/recovery'));
+  app.use('/api/jobs',      require('../../src/routes/jobs'));
+  app.use('/api/recovery',  require('../../src/routes/recovery'));
 
   return app;
 }

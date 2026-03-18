@@ -196,6 +196,85 @@
 
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
+## [2026-03-18 18:30 UTC] Frontend Developer — DCP-47: Arabic UI + RTL support (Phase C)
+
+- **Issue**: DCP-47 (Medium priority)
+- **Files**:
+  - `lib/i18n.tsx` — NEW: Language context, LanguageProvider, useLanguage hook, LangToggle component, useJobStatusLabel helper. Full EN/AR translation strings: nav, hero, foundingRates, twoPaths, capabilities (6 items), providerSteps (4 steps), apiExample, features (4 items), CTA, footer, common labels, jobStatus.
+  - `app/components/providers/LanguageWrapper.tsx` — NEW: Client wrapper providing LanguageContext to the app tree
+  - `app/layout.tsx` — Wrap children with LanguageWrapper, added `dir="ltr"` to `<html>`
+  - `app/globals.css` — RTL CSS: `[dir='rtl'] body` Arabic fonts, `.font-arabic` utility, RTL section-heading border flip, RTL table text-right
+  - `app/page.tsx` — Full landing page wired to `useLanguage()`. All sections translated. LangToggle in nav. Code blocks preserve `dir="ltr"`.
+  - `app/components/layout/Footer.tsx` — Added `'use client'`, wired to `useLanguage()` for translated headings and links
+  - `app/components/layout/DashboardSidebar.tsx` — RTL-aware border direction, sidebar position, LangToggle in user section + mobile topbar
+  - `app/components/layout/Header.tsx` — LangToggle button in desktop nav
+  - `app/login/page.tsx` — Platform badge and title use translations
+
+### Details
+- Language stored in `localStorage` key `dc1_lang`
+- On switch: `document.documentElement.lang` + `.dir` updated via useEffect
+- Arabic fonts already loaded (IBM Plex Sans Arabic, Tajawal) in layout.tsx
+- SAR amounts use Western numerals per spec; step numbers use Eastern Arabic-Indic
+- `useJobStatusLabel()` hook available for dashboard pages to translate job status strings
+- **Breaking**: None
+
+## [2026-03-18 17:35 UTC] DevOps Automator — DCP-46: VPS env var audit + deployment validation
+
+- **Issue**: DCP-46 (High priority)
+- **Files**:
+  - `backend/ecosystem.config.js` — added all missing env var slots with CHANGE_ME placeholders
+  - `backend/src/server.js` — added dc1st.com + www.dc1st.com to CORS ALLOWED_ORIGINS
+
+### Audit Results
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| VPS API running | ✅ | v4.0.0, port 8083 |
+| Admin auth | ✅ | Token works |
+| DC1_HMAC_SECRET in PM2 | ❌ CRITICAL | NOT in ecosystem.config.js → daemon gets empty secret |
+| MOYASAR_SECRET_KEY in PM2 | ❌ | NOT set → payments broken |
+| MOYASAR_WEBHOOK_SECRET in PM2 | ❌ | NOT set → webhook verification fails |
+| FRONTEND_URL in PM2 | ❌ | NOT set (using default https://dc1st.com) |
+| DC1_ADMIN_TOKEN | ⚠️ | Set but DEFAULT value exposed in source — rotate needed |
+| api.dcp.sa DNS → 76.13.179.86 | ❌ BLOCKED | Points to Vercel (DEPLOYMENT_NOT_FOUND). HTTPS setup cannot proceed. |
+| DCP-31 payments routes live | ❌ | /api/admin/payments → 404. PM2 not reloaded since code added. |
+| DCP-32 escrow routes live | ❌ | /api/admin/escrow → 404. Same. |
+| DCP-33 templates routes live | ❌ | /api/templates → 404. Same. |
+| dc1st.com in CORS | ❌ Fixed | Was missing — added to hardcoded list + CORS_ORIGINS in ecosystem |
+
+### Actions taken (code-only, VPS restart needed)
+1. `ecosystem.config.js` — added DC1_HMAC_SECRET, MOYASAR_SECRET_KEY, MOYASAR_WEBHOOK_SECRET, FRONTEND_URL, CORS_ORIGINS, BACKEND_URL slots
+2. `server.js` — added dc1st.com to CORS allowlist
+
+### Board action required
+1. **SSH to VPS** → edit `ecosystem.config.js` → replace all `CHANGE_ME_*` with real secrets
+2. **`DC1_HMAC_SECRET`** → run `openssl rand -hex 32` on VPS, paste result
+3. **`MOYASAR_SECRET_KEY`** → get from Moyasar dashboard (sandbox: sk_test_..., live: sk_live_...)
+4. **`MOYASAR_WEBHOOK_SECRET`** → get from Moyasar webhook config
+5. **`DC1_ADMIN_TOKEN`** → rotate to a new value (current is in source control)
+6. **`git pull origin main`** on VPS, then `pm2 reload ecosystem.config.js`
+7. **DNS fix**: Update api.dcp.sa A record → 76.13.179.86 (currently points to Vercel). Only then run `setup-https.sh`.
+8. **Notify active providers** (especially Yazan Almazyad) to re-download daemon once HMAC secret is set.
+
+## [2026-03-18 17:30 UTC] Frontend Developer — DCP-42: Replit-matched UI (Phase 1-3)
+
+- **Issue**: DCP-42 (Critical priority)
+- **Files**:
+  - `tailwind.config.ts` — added `dcp-*` color token namespace (aliases for dc1-* with same values + dcp-border-hover: amber)
+  - `app/globals.css` — added `.dcp-card` and `.dcp-card-hover` utility classes with hover-to-amber border transition
+  - `app/page.tsx` — full landing page rebuild with 10 sections: Nav, Hero, Terminal block, Founding Rates Table, Two Paths, Capability Cards (2×3), Provider Steps, API Code Example, Feature Highlights, Footer
+  - `app/components/layout/DashboardSidebar.tsx` — hover-to-amber border-l transition on inactive nav items
+  - `app/login/page.tsx` — DCP branding: amber icon + "Decentralized Compute Platform" tagline, renamed "Console Login"
+  - `app/components/layout/Footer.tsx` — rebuilt with 3-column layout per spec: Infrastructure (Providers, Pricing, Status), Developers (API Docs, Provider Guide, Renter Guide), Legal (Terms, Privacy, Acceptable Use); updated brand to amber DC icon
+
+### Changes summary
+- **Phase 1**: `dcp-` prefix token aliases in tailwind; `.dcp-card`/`.dcp-card-hover` with `hover:border-dcp-amber/50` in globals.css
+- **Phase 2**: Landing page fully rebuilt — dark void bg, "Borderless GPU Compute" hero, daemon install terminal block, founding rates table (RTX 3080/3090/4090/A100), Two Paths cards (Playground vs Custom Jobs), 6-capability grid, 4-step provider onboarding, curl API example block, 4-feature highlights grid, final CTA
+- **Phase 3**: Sidebar hover-amber border added; login page DCP tagline; footer 3-column layout
+
+### Breaking changes
+- None — all existing API integrations, localStorage keys, and routes unchanged
+
 ## [2026-03-18 17:15 UTC] DevOps Automator — DCP-34: vLLM serverless endpoint deployment
 
 - **Issue**: DCP-34 (High priority)

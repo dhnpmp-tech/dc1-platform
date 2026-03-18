@@ -3,52 +3,18 @@
  */
 const db = require('../../src/db');
 
-// Fix jobs table schema — db.js has two conflicting CREATE TABLE IF NOT EXISTS.
-// The first one wins and lacks columns jobs.js needs. Drop and recreate with the correct schema.
-try {
-  db._db.exec('DROP TABLE IF EXISTS jobs');
-  db._db.exec(`
-    CREATE TABLE IF NOT EXISTS jobs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id TEXT,
-      provider_id INTEGER NOT NULL,
-      job_type TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',
-      vram_required INTEGER DEFAULT 0,
-      submitted_at DATETIME,
-      started_at DATETIME,
-      completed_at DATETIME,
-      duration_minutes INTEGER,
-      cost_halala INTEGER DEFAULT 0,
-      gpu_requirements TEXT,
-      notes TEXT,
-      created_at TEXT,
-      updated_at TEXT,
-      FOREIGN KEY (provider_id) REFERENCES providers(id)
-    )
-  `);
-  // Also fix recovery_events — db.js has two conflicting schemas
-  db._db.exec('DROP TABLE IF EXISTS recovery_events');
-  db._db.exec(`
-    CREATE TABLE IF NOT EXISTS recovery_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id TEXT,
-      from_provider_id INTEGER,
-      to_provider_id INTEGER,
-      reason TEXT,
-      status TEXT NOT NULL,
-      started_at TEXT NOT NULL,
-      completed_at TEXT,
-      notes TEXT
-    )
-  `);
-} catch (e) { /* ignore */ }
+// db.js handles the full schema including all migrations.
+// Do not drop/recreate tables here — that would lose migration-added columns.
 
 function cleanDb() {
-  db.run('DELETE FROM benchmark_runs');
-  db.run('DELETE FROM recovery_events');
-  db.run('DELETE FROM jobs');
-  db.run('DELETE FROM providers');
+  // Delete in dependency order: child tables before parent tables
+  try { db.run('DELETE FROM benchmark_runs'); }  catch (_) {}
+  try { db.run('DELETE FROM recovery_events'); } catch (_) {}
+  try { db.run('DELETE FROM escrow_holds'); }    catch (_) {}
+  try { db.run('DELETE FROM heartbeat_log'); }   catch (_) {}
+  try { db.run('DELETE FROM jobs'); }            catch (_) {}
+  try { db.run('DELETE FROM renters'); }         catch (_) {}
+  try { db.run('DELETE FROM providers'); }       catch (_) {}
 }
 
 /** Register a provider via API and return { body, apiKey, providerId } */
@@ -80,4 +46,21 @@ async function bringOnline(request, app, apiKey) {
   return res;
 }
 
-module.exports = { cleanDb, registerProvider, bringOnline, db };
+/** Register a renter via API and return { body, apiKey, renterId } */
+async function registerRenter(request, app, overrides = {}) {
+  const res = await request(app).post('/api/renters/register').send({
+    name:  overrides.name  || `Renter-${Date.now()}`,
+    email: overrides.email || `renter-${Date.now()}-${Math.random().toString(36).slice(2)}@dc1.test`,
+  });
+  if (overrides.balanceHalala) {
+    db.run('UPDATE renters SET balance_halala = ? WHERE id = ?', overrides.balanceHalala, res.body.renter_id);
+  }
+  return {
+    body:     res.body,
+    apiKey:   res.body.api_key,
+    renterId: res.body.renter_id,
+    status:   res.status,
+  };
+}
+
+module.exports = { cleanDb, registerProvider, registerRenter, bringOnline, db };

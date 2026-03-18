@@ -1,95 +1,132 @@
 /**
- * E2E Job Flow — full lifecycle: register → heartbeat → submit → complete → billing
+ * E2E Job Flow — full lifecycle: register → heartbeat → submit → execute → complete → billing
+ *
+ * Updated for current API: job submission requires x-renter-key auth (DCP-2).
+ * The full daemon-driven flow (submit→assigned→result) is covered in
+ * job-pipeline-routes.test.js. These E2E tests verify the higher-level contracts
+ * across provider + renter + job APIs.
  */
 const request = require('supertest');
 const { createApp } = require('./test-app');
-const { cleanDb, registerProvider, bringOnline, db } = require('./helpers');
+const { cleanDb, registerProvider, registerRenter, bringOnline, db } = require('./helpers');
 
 const app = createApp();
 
 beforeEach(() => cleanDb());
 
 describe('E2E Job Flow', () => {
-  it('full lifecycle: register → heartbeat → submit → execute → complete → billing', async () => {
-    // 1. Register provider
-    const { apiKey, providerId } = await registerProvider(request, app);
-    expect(providerId).toBeDefined();
-    expect(apiKey).toBeDefined();
+  it('full lifecycle: register → heartbeat → submit → assign → result → billing', async () => {
+    // 1. Register provider and bring online
+    const { apiKey: providerKey, providerId } = await registerProvider(request, app);
+    await bringOnline(request, app, providerKey);
 
-    // 2. Heartbeat → provider goes online
-    const hbRes = await bringOnline(request, app, apiKey);
-    expect(hbRes.status).toBe(200);
-    expect(hbRes.body.success).toBe(true);
-
-    // Verify provider is online
     const provider = db.get('SELECT * FROM providers WHERE id = ?', providerId);
     expect(provider.status).toBe('online');
 
-    // 3. Submit a job
-    const jobRes = await request(app).post('/api/jobs/submit').send({
-      provider_id: providerId,
-      job_type: 'llm-inference',
-      duration_minutes: 10,
-    });
+    // 2. Register renter with sufficient balance
+    const { apiKey: renterKey, renterId } = await registerRenter(request, app, { balanceHalala: 50_000 });
+
+    // 3. Submit a job (requires x-renter-key)
+    const jobRes = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({
+        provider_id: providerId,
+        job_type: 'llm_inference',
+        duration_minutes: 10,
+        params: { prompt: 'Hello', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' },
+      });
     expect(jobRes.status).toBe(201);
     expect(jobRes.body.success).toBe(true);
-
-    const jobId = jobRes.body.job.id;
-    expect(jobRes.body.job.provider_id).toBe(providerId);
-    expect(jobRes.body.job.status).toBe('running'); // auto-transitions to running
+    expect(jobRes.body.job.status).toBe('pending');
     expect(jobRes.body.job.cost_halala).toBe(150); // 15 halala/min × 10 min
 
-    // 4. Job is matched to provider (already assigned at submit)
-    const activeRes = await request(app).get('/api/jobs/active');
-    expect(activeRes.body.jobs.some(j => j.id === jobId)).toBe(true);
+    const jobId = jobRes.body.job.job_id;
 
-    // 5. Complete the job
-    const completeRes = await request(app).post(`/api/jobs/${jobId}/complete`);
-    expect(completeRes.status).toBe(200);
-    expect(completeRes.body.success).toBe(true);
-    expect(completeRes.body.job.status).toBe('completed');
+    // Verify balance was deducted at submit (pre-pay)
+    const renterAfterSubmit = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId);
+    expect(renterAfterSubmit.balance_halala).toBe(50_000 - 150);
 
-    // 6. Verify billing — provider credited (total_earnings in SAR = cost_halala / 100)
+    // 4. Provider daemon picks up job (GET /assigned)
+    const assignedRes = await request(app).get(`/api/jobs/assigned?key=${providerKey}`);
+    expect(assignedRes.status).toBe(200);
+    expect(assignedRes.body.job.job_id).toBe(jobId);
+    expect(assignedRes.body.job.status).toBe('assigned');
+
+    // 5. Provider submits result (marks job completed)
+    const resultRes = await request(app)
+      .post(`/api/jobs/${jobId}/result`)
+      .set('x-provider-key', providerKey)
+      .send({ result: 'Hello, world!', duration_seconds: 600 });
+    expect(resultRes.status).toBe(200);
+    expect(resultRes.body.success).toBe(true);
+
+    // 6. Verify billing — provider credited 75%
+    const billing = resultRes.body.billing;
+    expect(billing.provider_earned_halala).toBeGreaterThan(0);
+    expect(billing.dc1_fee_halala).toBeGreaterThan(0);
+    expect(billing.provider_earned_halala + billing.dc1_fee_halala).toBe(billing.actual_cost_halala);
+
     const updatedProvider = db.get('SELECT * FROM providers WHERE id = ?', providerId);
     expect(updatedProvider.total_jobs).toBe(1);
-    expect(updatedProvider.total_earnings).toBe(1.5); // 150 halala = 1.5 SAR
+    expect(updatedProvider.claimable_earnings_halala).toBeGreaterThan(0);
 
-    // 7. Verify the completed job record
-    const completedJob = db.get('SELECT * FROM jobs WHERE id = ?', jobId);
+    // 7. Verify job record is completed
+    const completedJob = db.get('SELECT * FROM jobs WHERE job_id = ?', jobId);
     expect(completedJob.status).toBe('completed');
     expect(completedJob.completed_at).toBeDefined();
-    expect(completedJob.cost_halala).toBe(150);
   });
 
   it('rejects job submission to offline provider', async () => {
     const { providerId } = await registerProvider(request, app);
     // Don't send heartbeat — provider stays 'registered', not 'online'
+    const { apiKey: renterKey } = await registerRenter(request, app, { balanceHalala: 50_000 });
 
-    const res = await request(app).post('/api/jobs/submit').send({
-      provider_id: providerId,
-      job_type: 'training',
-      duration_minutes: 5,
-    });
+    const res = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({ provider_id: providerId, job_type: 'training', duration_minutes: 5 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/not online/i);
   });
 
-  it('rejects completing a non-running job', async () => {
-    const { apiKey, providerId } = await registerProvider(request, app);
-    await bringOnline(request, app, apiKey);
+  it('rejects job submission without renter key (401)', async () => {
+    const { providerId } = await registerProvider(request, app);
+    await bringOnline(request, app, (await registerProvider(request, app)).apiKey);
 
-    const jobRes = await request(app).post('/api/jobs/submit').send({
-      provider_id: providerId,
-      job_type: 'rendering',
-      duration_minutes: 5,
-    });
-    const jobId = jobRes.body.job.id;
+    const res = await request(app)
+      .post('/api/jobs/submit')
+      .send({ provider_id: providerId, job_type: 'llm_inference', duration_minutes: 5 });
+    expect(res.status).toBe(401);
+  });
 
-    // Complete it
-    await request(app).post(`/api/jobs/${jobId}/complete`);
-    // Try completing again
-    const res = await request(app).post(`/api/jobs/${jobId}/complete`);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/not running/i);
+  it('rejects duplicate result submission for same job (409)', async () => {
+    const { apiKey: providerKey, providerId } = await registerProvider(request, app);
+    await bringOnline(request, app, providerKey);
+    const { apiKey: renterKey } = await registerRenter(request, app, { balanceHalala: 50_000 });
+
+    const jobRes = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({
+        provider_id: providerId,
+        job_type: 'llm_inference',
+        duration_minutes: 5,
+        params: { prompt: 'test', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' },
+      });
+    const jobId = jobRes.body.job.job_id;
+
+    await request(app).get(`/api/jobs/assigned?key=${providerKey}`);
+    await request(app)
+      .post(`/api/jobs/${jobId}/result`)
+      .set('x-provider-key', providerKey)
+      .send({ result: 'done', duration_seconds: 60 });
+
+    // Second result → 409
+    const dup = await request(app)
+      .post(`/api/jobs/${jobId}/result`)
+      .set('x-provider-key', providerKey)
+      .send({ result: 'done again' });
+    expect(dup.status).toBe(409);
   });
 });

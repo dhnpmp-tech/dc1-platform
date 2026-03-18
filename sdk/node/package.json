@@ -1,0 +1,36 @@
+{
+  "name": "@dc1/client",
+  "version": "0.1.0",
+  "description": "Official Node.js SDK for the DC1 GPU compute marketplace",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "gpu",
+    "compute",
+    "ai",
+    "inference",
+    "dc1",
+    "saudi-arabia"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dhnpmp-tech/dc1-platform"
+  },
+  "homepage": "https://dc1st.com/docs"
+}
