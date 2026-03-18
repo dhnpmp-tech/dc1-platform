@@ -8,14 +8,17 @@ const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
 
 // ── CORS Lockdown ─────────────────────────────────────────────────────
+// Additional origins can be injected via CORS_ORIGINS (comma-separated)
+const _extraOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+  : [];
 const ALLOWED_ORIGINS = [
   'https://dc1-platform.vercel.app',
   'https://dc1-platform-dc11.vercel.app',
   'https://dc1-platform-git-main-dc11.vercel.app',
-  'http://76.13.179.86:8083',
-  'http://76.13.179.86:8084',
   'http://localhost:3000',
   'http://localhost:8083',
+  ..._extraOrigins,
 ];
 app.use(cors({
   origin: (origin, callback) => {
@@ -103,6 +106,26 @@ const adminLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use('/api/admin', adminLimiter);
+
+// Renter registration: 5 per IP per hour (same policy as provider registration)
+const renterRegisterLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many registration attempts. Try again in 1 hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/renters/register', renterRegisterLimiter);
+
+// Balance top-up: 10 per IP per minute (financial operation — prevent abuse)
+const topupLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many top-up requests. Slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/renters/topup', topupLimiter);
 
 // General API: 300 per IP per minute
 const generalLimiter = rateLimit({

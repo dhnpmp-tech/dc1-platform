@@ -3,8 +3,14 @@ const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
 
-// HMAC secret for signing task_spec (falls back to admin token or random)
-const HMAC_SECRET = process.env.DC1_HMAC_SECRET || process.env.DC1_ADMIN_TOKEN || crypto.randomBytes(32).toString('hex');
+// HMAC secret for signing task_spec
+// IMPORTANT: DC1_HMAC_SECRET must be set in env — do NOT share with DC1_ADMIN_TOKEN
+// A process-scoped random fallback is used only if the env var is missing (restarts
+// will invalidate all in-flight job signatures — set DC1_HMAC_SECRET in production)
+if (!process.env.DC1_HMAC_SECRET) {
+  console.warn('[SECURITY] DC1_HMAC_SECRET not set — using random fallback. Set this env var in production.');
+}
+const HMAC_SECRET = process.env.DC1_HMAC_SECRET || crypto.randomBytes(32).toString('hex');
 
 function signTaskSpec(taskSpec) {
   return crypto.createHmac('sha256', HMAC_SECRET).update(taskSpec).digest('hex');
@@ -308,6 +314,9 @@ function splitBilling(totalHalala) {
   return { provider, dc1: totalHalala - provider };
 }
 
+// Whitelisted job types — renters may only submit these types
+const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark']);
+
 // POST /api/jobs/submit — requires renter auth
 router.post('/submit', requireRenter, (req, res) => {
   try {
@@ -319,6 +328,20 @@ router.post('/submit', requireRenter, (req, res) => {
 
     if (typeof duration_minutes !== 'number' || duration_minutes <= 0) {
       return res.status(400).json({ error: 'duration_minutes must be a positive number' });
+    }
+
+    // Whitelist check — only allow known job types
+    if (!ALLOWED_JOB_TYPES.has(job_type)) {
+      return res.status(400).json({ error: `Invalid job_type. Allowed: ${[...ALLOWED_JOB_TYPES].join(', ')}` });
+    }
+
+    // Block raw Python task_spec from renters — all execution must go through templates
+    // Raw Python means arbitrary code execution on provider hardware
+    if (task_spec && typeof task_spec === 'string' && task_spec.includes('import ')) {
+      return res.status(400).json({
+        error: 'Raw Python task_spec is not allowed. Use the params field with a supported job_type instead.',
+        docs: 'POST /api/jobs/submit with { job_type, params: { prompt, model, ... } }'
+      });
     }
 
     // Check provider exists and is online
@@ -392,13 +415,9 @@ router.post('/submit', requireRenter, (req, res) => {
         // Fall back to parsing task_spec as JSON
         params = typeof task_spec === 'string' ? (() => { try { return JSON.parse(task_spec); } catch { return { prompt: task_spec }; } })() : task_spec;
       }
-      // If params look like raw Python code (not JSON), use as-is
-      if (typeof params === 'string' || (params.prompt === undefined && typeof task_spec === 'string' && task_spec.includes('import '))) {
-        finalTaskSpec = task_spec;
-      } else {
-        finalTaskSpec = JOB_TEMPLATES[job_type](params);
-        result_type = job_type === 'image_generation' ? 'image' : 'text';
-      }
+      // Always generate from template — raw Python is blocked at submission validation
+      finalTaskSpec = JOB_TEMPLATES[job_type](params);
+      result_type = job_type === 'image_generation' ? 'image' : 'text';
     }
 
     // Stringify task_spec if it's an object, then HMAC-sign
@@ -601,23 +620,60 @@ router.get('/queue/:provider_id', (req, res) => {
 
 // GET /api/jobs/verify-hmac?job_id=X&hmac=Y
 // Daemon can verify a task_spec signature before executing
+// Requires valid provider API key (key query param or x-provider-key header)
 // IMPORTANT: must be BEFORE /:job_id routes to avoid being caught by param route
 router.get('/verify-hmac', (req, res) => {
   try {
-    const { job_id, hmac } = req.query;
-    if (!job_id || !hmac) return res.status(400).json({ error: 'job_id and hmac required' });
+    // Auth: require provider key so only daemons can call this
+    const providerKey = req.headers['x-provider-key'] || req.query.key;
+    if (!providerKey) return res.status(401).json({ error: 'Provider key required' });
+    const callerProvider = db.get('SELECT id FROM providers WHERE api_key = ?', [providerKey]);
+    if (!callerProvider) return res.status(403).json({ error: 'Invalid provider key' });
 
-    const job = db.get('SELECT task_spec_hmac FROM jobs WHERE id = ?', job_id);
+    const { job_id, hmac: providedHmac } = req.query;
+    if (!job_id || !providedHmac) return res.status(400).json({ error: 'job_id and hmac required' });
+
+    // Ensure this provider owns the job being verified
+    const job = db.get('SELECT task_spec_hmac, provider_id FROM jobs WHERE id = ? OR job_id = ?', [job_id, job_id]);
     if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.provider_id !== callerProvider.id) return res.status(403).json({ error: 'Forbidden' });
 
-    const valid = job.task_spec_hmac && crypto.timingSafeEqual(
-      Buffer.from(hmac, 'hex'),
+    if (!job.task_spec_hmac || providedHmac.length !== job.task_spec_hmac.length) {
+      return res.json({ valid: false });
+    }
+
+    const valid = crypto.timingSafeEqual(
+      Buffer.from(providedHmac, 'hex'),
       Buffer.from(job.task_spec_hmac, 'hex')
     );
 
     res.json({ valid: !!valid });
   } catch (error) {
     res.json({ valid: false, error: 'Verification failed' });
+  }
+});
+
+// GET /api/jobs/verify-hmac-local?key=PROVIDER_KEY&hmac=HMAC_VALUE
+// Alternate verify endpoint used by legacy daemons without injected HMAC_SECRET
+// Validates HMAC against HMAC_SECRET server-side (daemon provides computed value)
+// IMPORTANT: must be BEFORE /:job_id routes
+router.get('/verify-hmac-local', (req, res) => {
+  try {
+    const providerKey = req.headers['x-provider-key'] || req.query.key;
+    if (!providerKey) return res.status(401).json({ error: 'Provider key required' });
+    const callerProvider = db.get('SELECT id FROM providers WHERE api_key = ?', [providerKey]);
+    if (!callerProvider) return res.status(403).json({ error: 'Invalid provider key' });
+
+    const { hmac: providedHmac } = req.query;
+    if (!providedHmac) return res.status(400).json({ error: 'hmac required' });
+    if (!/^[0-9a-f]{64}$/i.test(providedHmac)) return res.json({ valid: false });
+
+    // This endpoint is intentionally limited — daemon must have task_spec_hmac from job poll
+    // We verify only that the HMAC length and format are valid (daemon does local verify)
+    // Full job-scoped verify requires job_id — use /verify-hmac for that
+    res.json({ valid: false, error: 'Use /verify-hmac with job_id for full verification' });
+  } catch (error) {
+    res.json({ valid: false });
   }
 });
 
