@@ -193,12 +193,33 @@ router.post('/heartbeat', (req, res) => {
           p.id
         );
 
-        db.run(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        const allGpus = Array.isArray(gs.all_gpus) ? gs.all_gpus : null;
+        const gpuCount = gs.gpu_count || (allGpus ? allGpus.length : 1);
+        const computeCap = gs.compute_capability || null;
+        const cudaVersion = gs.cuda_version || null;
+        db.run(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info, gpu_metrics_json, gpu_count)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           p.id, now, provider_ip||null, provider_hostname||null,
           gpuUtil, gpuTemp, gpuPower, gpuFreeVram, gpuVramMib,
-          daemonVersion, pythonVersion, osInfo
+          daemonVersion, pythonVersion, osInfo,
+          allGpus ? JSON.stringify(allGpus) : null,
+          gpuCount
         );
+
+        // Update GPU spec fields on provider record when new data arrives
+        if (computeCap || cudaVersion || allGpus) {
+            db.run(
+                `UPDATE providers SET
+                  gpu_count_reported = COALESCE(?, gpu_count_reported),
+                  gpu_compute_capability = COALESCE(?, gpu_compute_capability),
+                  gpu_cuda_version = COALESCE(?, gpu_cuda_version),
+                  gpu_spec_json = COALESCE(?, gpu_spec_json)
+                 WHERE id = ?`,
+                gpuCount, computeCap, cudaVersion,
+                allGpus ? JSON.stringify(allGpus) : null,
+                p.id
+            );
+        }
 
         // Store daemon version on provider record for job assignment checks
         if (daemonVersion) {
@@ -1163,6 +1184,153 @@ router.post('/rotate-key', (req, res) => {
     } catch (error) {
         console.error('Provider key rotation error:', error);
         res.status(500).json({ error: 'Key rotation failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/available — Renter marketplace: all online providers with full GPU specs
+// Public endpoint (renter key preferred but not required for browsing)
+// Returns GPU model, VRAM, CUDA version, compute capability, cost rates, availability
+// ============================================================================
+router.get('/available', (req, res) => {
+    try {
+        const { COST_RATES } = require('./jobs');
+        const providers = db.all(
+            `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
+                    gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
+                    status, location, run_mode, reliability_score, cached_models, last_heartbeat,
+                    uptime_percent, total_jobs, is_paused
+             FROM providers
+             WHERE status = 'online' AND is_paused = 0
+             ORDER BY gpu_vram_mib DESC NULLS LAST, reliability_score DESC NULLS LAST`
+        );
+
+        const now = Date.now();
+        const mapped = providers.map(p => {
+            let cachedModels = [];
+            if (p.cached_models) { try { cachedModels = JSON.parse(p.cached_models); } catch {} }
+
+            let gpuSpec = null;
+            if (p.gpu_spec_json) { try { gpuSpec = JSON.parse(p.gpu_spec_json); } catch {} }
+
+            // Determine live availability: heartbeat within last 2 minutes = live
+            const heartbeatAge = p.last_heartbeat
+                ? Math.floor((now - new Date(p.last_heartbeat).getTime()) / 1000)
+                : null;
+            const isLive = heartbeatAge !== null && heartbeatAge < 120;
+
+            return {
+                id: p.id,
+                name: p.name,
+                // GPU spec
+                gpu_model: p.gpu_name_detected || p.gpu_model,
+                vram_gb: p.gpu_vram_mib ? Math.round(p.gpu_vram_mib / 1024 * 10) / 10 : null,
+                vram_mib: p.gpu_vram_mib,
+                gpu_count: p.gpu_count_reported || 1,
+                driver_version: p.gpu_driver,
+                compute_capability: p.gpu_compute_capability,
+                cuda_version: p.gpu_cuda_version,
+                gpu_spec: gpuSpec,
+                // Availability
+                status: p.status,
+                is_live: isLive,
+                heartbeat_age_seconds: heartbeatAge,
+                location: p.location,
+                run_mode: p.run_mode,
+                // Quality
+                reliability_score: p.reliability_score,
+                uptime_percent: p.uptime_percent,
+                total_jobs_completed: p.total_jobs,
+                cached_models: cachedModels,
+                // Pricing (halala per minute by job type)
+                cost_rates_halala_per_min: COST_RATES,
+            };
+        });
+
+        res.json({
+            providers: mapped,
+            total: mapped.length,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('Available providers error:', error);
+        res.status(500).json({ error: 'Failed to fetch available providers' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/:id/gpu-metrics — GPU metric history for charts and monitoring
+// Returns last N heartbeat samples with GPU utilization, temp, VRAM, multi-GPU JSON
+// Auth: provider key (own data) or admin token
+// Query params: limit (default 60, max 1440), since (ISO timestamp)
+// ============================================================================
+router.get('/:id/gpu-metrics', (req, res) => {
+    try {
+        const isAdminReq = (() => {
+            const provided = req.headers['x-admin-token'] || '';
+            const expected = process.env.DC1_ADMIN_TOKEN;
+            return !!expected && provided === expected;
+        })();
+
+        const providerIdParam = req.params.id;
+
+        // Allow provider to fetch own metrics by numeric ID or 'me'
+        let provider;
+        if (providerIdParam === 'me') {
+            const key = req.headers['x-provider-key'] || req.query.key;
+            if (!key) return res.status(401).json({ error: 'API key required' });
+            provider = db.get('SELECT id, gpu_name_detected, gpu_vram_mib, gpu_count_reported, gpu_spec_json FROM providers WHERE api_key = ?', key);
+        } else {
+            provider = db.get('SELECT id, gpu_name_detected, gpu_vram_mib, gpu_count_reported, gpu_spec_json FROM providers WHERE id = ?', providerIdParam);
+            if (provider && !isAdminReq) {
+                // Non-admin must supply own key
+                const key = req.headers['x-provider-key'] || req.query.key;
+                const own = key ? db.get('SELECT id FROM providers WHERE api_key = ?', key) : null;
+                if (!own || own.id !== provider.id) return res.status(403).json({ error: 'Forbidden' });
+            }
+        }
+
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const limit = Math.min(parseInt(req.query.limit) || 60, 1440);
+        const since = req.query.since || null;
+
+        let samples;
+        if (since) {
+            samples = db.all(
+                `SELECT received_at, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, gpu_metrics_json, gpu_count
+                 FROM heartbeat_log WHERE provider_id = ? AND received_at > ?
+                 ORDER BY received_at DESC LIMIT ?`,
+                provider.id, since, limit
+            );
+        } else {
+            samples = db.all(
+                `SELECT received_at, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, gpu_metrics_json, gpu_count
+                 FROM heartbeat_log WHERE provider_id = ?
+                 ORDER BY received_at DESC LIMIT ?`,
+                provider.id, limit
+            );
+        }
+
+        // Parse gpu_metrics_json inline
+        const parsed = samples.map(s => ({
+            ...s,
+            all_gpus: s.gpu_metrics_json ? (() => { try { return JSON.parse(s.gpu_metrics_json); } catch { return null; } })() : null,
+            gpu_metrics_json: undefined,
+        }));
+
+        res.json({
+            provider_id: provider.id,
+            gpu_name: provider.gpu_name_detected,
+            gpu_vram_mib: provider.gpu_vram_mib,
+            gpu_count: provider.gpu_count_reported || 1,
+            gpu_spec: provider.gpu_spec_json ? (() => { try { return JSON.parse(provider.gpu_spec_json); } catch { return null; } })() : null,
+            samples: parsed,
+            sample_count: parsed.length,
+        });
+    } catch (error) {
+        console.error('GPU metrics error:', error);
+        res.status(500).json({ error: 'Failed to fetch GPU metrics' });
     }
 });
 

@@ -81,22 +81,23 @@ router.get('/me', (req, res) => {
 router.get('/available-providers', (req, res) => {
   try {
     const providers = db.all(
-      `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, status, location,
-              run_mode, reliability_score, cached_models
+      `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
+              gpu_compute_capability, gpu_cuda_version, gpu_count_reported,
+              status, location, run_mode, reliability_score, cached_models, last_heartbeat
        FROM providers WHERE status = 'online' AND is_paused = 0
-       ORDER BY gpu_vram_mib DESC`
+       ORDER BY gpu_vram_mib DESC NULLS LAST`
     );
 
+    const now = Date.now();
     res.json({
       providers: providers.map(p => {
         let parsedCachedModels = [];
         if (p.cached_models) {
-          try {
-            parsedCachedModels = JSON.parse(p.cached_models);
-          } catch (e) {
-            parsedCachedModels = [];
-          }
+          try { parsedCachedModels = JSON.parse(p.cached_models); } catch {}
         }
+        const heartbeatAge = p.last_heartbeat
+          ? Math.floor((now - new Date(p.last_heartbeat).getTime()) / 1000)
+          : null;
 
         return {
           id: p.id,
@@ -104,7 +105,12 @@ router.get('/available-providers', (req, res) => {
           gpu_model: p.gpu_name_detected || p.gpu_model,
           vram_gb: p.gpu_vram_mib ? Math.round(p.gpu_vram_mib / 1024) : null,
           vram_mib: p.gpu_vram_mib,
+          gpu_count: p.gpu_count_reported || 1,
+          driver_version: p.gpu_driver,
+          compute_capability: p.gpu_compute_capability,
+          cuda_version: p.gpu_cuda_version,
           status: p.status,
+          is_live: heartbeatAge !== null && heartbeatAge < 120,
           location: p.location,
           reliability_score: p.reliability_score,
           cached_models: parsedCachedModels
