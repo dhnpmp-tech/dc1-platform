@@ -225,6 +225,18 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN refunded_at TEXT',
   // Cached HuggingFace models — daemon reports which models are pre-downloaded
   'ALTER TABLE providers ADD COLUMN cached_models TEXT',
+  // Job execution engine — DCP-18
+  'ALTER TABLE jobs ADD COLUMN priority INTEGER DEFAULT 2',         // 1=high, 2=normal, 3=low
+  'ALTER TABLE jobs ADD COLUMN retry_count INTEGER DEFAULT 0',      // how many times job was retried
+  'ALTER TABLE jobs ADD COLUMN max_retries INTEGER DEFAULT 2',      // transient failure retry ceiling
+  // GPU metrics — DCP-19: multi-GPU data stored as JSON per heartbeat
+  'ALTER TABLE heartbeat_log ADD COLUMN gpu_metrics_json TEXT',     // full all_gpus array from daemon
+  'ALTER TABLE heartbeat_log ADD COLUMN gpu_count INTEGER DEFAULT 1',
+  // Provider GPU spec — DCP-20
+  'ALTER TABLE providers ADD COLUMN gpu_count_reported INTEGER',    // number of GPUs reported by daemon
+  'ALTER TABLE providers ADD COLUMN gpu_spec_json TEXT',            // full GPU spec array from daemon
+  'ALTER TABLE providers ADD COLUMN gpu_compute_capability TEXT',   // e.g. "8.9"
+  'ALTER TABLE providers ADD COLUMN gpu_cuda_version TEXT',         // e.g. "12.2"
 ];
 
 migrations.forEach(sql => {
@@ -306,6 +318,20 @@ db.exec(`
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
+
+// ─── JOB LOGS TABLE ───
+// Stores stdout/stderr lines from job execution; daemon streams these after execution
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    line_no INTEGER NOT NULL,
+    level TEXT DEFAULT 'info',
+    message TEXT NOT NULL,
+    logged_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id, line_no)`);
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap

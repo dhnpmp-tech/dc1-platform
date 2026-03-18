@@ -59,8 +59,10 @@ function requireRenter(req, res, next) {
 
 // ── Queue helper: promote next queued job for a provider ─────────────────────
 function promoteNextQueuedJob(providerId) {
+  // Priority ordering: 1=high first, then 2=normal, then 3=low; ties broken by creation time
   const nextQueued = db.get(
-    `SELECT * FROM jobs WHERE provider_id = ? AND status = 'queued' ORDER BY created_at ASC LIMIT 1`,
+    `SELECT * FROM jobs WHERE provider_id = ? AND status = 'queued'
+     ORDER BY COALESCE(priority, 2) ASC, created_at ASC LIMIT 1`,
     [providerId]
   );
   if (nextQueued) {
@@ -320,7 +322,9 @@ const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inf
 // POST /api/jobs/submit — requires renter auth
 router.post('/submit', requireRenter, (req, res) => {
   try {
-    const { provider_id, job_type, duration_minutes, gpu_requirements, task_spec, params: bodyParams, max_duration_seconds } = req.body;
+    const { provider_id, job_type, duration_minutes, gpu_requirements, task_spec, params: bodyParams, max_duration_seconds, priority: reqPriority } = req.body;
+    // priority: 1=high, 2=normal (default), 3=low
+    const jobPriority = [1, 2, 3].includes(reqPriority) ? reqPriority : 2;
 
     if (!provider_id || !job_type || !duration_minutes) {
       return res.status(400).json({ error: 'Missing required fields: provider_id, job_type, duration_minutes' });
@@ -429,8 +433,8 @@ router.post('/submit', requireRenter, (req, res) => {
 
     const result = db.run(
       `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, status, submitted_at, duration_minutes,
-        cost_halala, gpu_requirements, task_spec, task_spec_hmac, max_duration_seconds, timeout_at, notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        cost_halala, gpu_requirements, task_spec, task_spec_hmac, max_duration_seconds, timeout_at, notes, created_at, priority)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       job_id, provider_id, req.renter.id, job_type, initialStatus, now, duration_minutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
       taskSpecStr,
@@ -438,7 +442,8 @@ router.post('/submit', requireRenter, (req, res) => {
       timeout,
       isQueued ? null : timeoutAt, // Don't start timeout clock for queued jobs
       null,
-      now
+      now,
+      jobPriority
     );
 
     const job = db.get('SELECT * FROM jobs WHERE id = ?', result.lastInsertRowid);
@@ -470,6 +475,7 @@ router.post('/submit', requireRenter, (req, res) => {
         timeout_at: job.timeout_at,
         gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
         task_spec_signed: !!taskSpecHmac,
+        priority: jobPriority,
         queue_position: queue_position
       },
       ...(isQueued ? { queued: true, message: `Provider is busy. Your job is #${queue_position} in queue and will run automatically when the provider is free.` } : {})
@@ -491,16 +497,18 @@ router.get('/assigned', (req, res) => {
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
     const job = db.get(
-      `SELECT * FROM jobs WHERE provider_id = ? AND status IN ('pending', 'running') AND task_spec IS NOT NULL AND picked_up_at IS NULL ORDER BY created_at ASC LIMIT 1`,
+      `SELECT * FROM jobs WHERE provider_id = ? AND status IN ('pending', 'running') AND task_spec IS NOT NULL AND picked_up_at IS NULL
+       ORDER BY COALESCE(priority, 2) ASC, created_at ASC LIMIT 1`,
       [provider.id]
     );
 
     if (!job) return res.json({ job: null });
 
-    // Transition to running + mark as picked up so daemon doesn't re-execute
+    // Transition to 'assigned' — daemon confirms receipt; status advances to 'pulling'/'running' via progress endpoint
     const now = new Date().toISOString();
-    db.run(`UPDATE jobs SET status = 'running', started_at = COALESCE(started_at, ?), picked_up_at = ? WHERE id = ?`, [now, now, job.id]);
-    job.status = 'running';
+    db.run(`UPDATE jobs SET status = 'assigned', assigned_at = ?, picked_up_at = ? WHERE id = ?`, [now, now, job.id]);
+    job.status = 'assigned';
+    job.assigned_at = now;
     job.picked_up_at = now;
 
     job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
@@ -524,8 +532,9 @@ router.post('/:job_id/result', (req, res) => {
       }
     }
 
-    // Guard against duplicate settlement — only settle a running job once
-    if (job.status !== 'running') {
+    // Guard against duplicate settlement — only settle active jobs
+    const activeStatuses = ['running', 'assigned', 'pulling'];
+    if (!activeStatuses.includes(job.status)) {
       return res.status(409).json({
         error: 'Job already settled',
         current_status: job.status,
@@ -533,7 +542,36 @@ router.post('/:job_id/result', (req, res) => {
       });
     }
 
-    const { result, error: jobError, duration_seconds, gpu_util_peak } = req.body;
+    const { result, error: jobError, duration_seconds, gpu_util_peak, transient } = req.body;
+
+    // ── Transient failure retry logic ──────────────────────────────────────
+    // If daemon reports a transient failure (e.g. Docker pull timeout, temp GPU error)
+    // and the job hasn't exceeded max_retries, reset it to 'pending' for re-execution
+    if (!result && jobError && transient === true) {
+      const retryCount = (job.retry_count || 0) + 1;
+      const maxRetries = job.max_retries || 2;
+      if (retryCount <= maxRetries) {
+        const now = new Date().toISOString();
+        const timeout = job.max_duration_seconds || 1800;
+        const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
+        db.run(
+          `UPDATE jobs SET status = 'pending', retry_count = ?, picked_up_at = NULL, assigned_at = NULL,
+           timeout_at = ?, error = ?, updated_at = ? WHERE id = ?`,
+          [retryCount, timeoutAt, `[retry ${retryCount}/${maxRetries}] ${jobError}`, now, job.id]
+        );
+        console.log(`[Retry] Job ${job.job_id}: transient failure, retry ${retryCount}/${maxRetries}`);
+        return res.json({
+          success: false,
+          retry: true,
+          attempt: retryCount,
+          max_retries: maxRetries,
+          job_id: job.job_id,
+          message: `Job re-queued for retry ${retryCount}/${maxRetries}`
+        });
+      }
+      // Exhausted retries — fall through to normal failure handling
+      console.log(`[Retry] Job ${job.job_id}: transient failure exhausted (${job.retry_count}/${job.max_retries})`);
+    }
 
     const now = new Date().toISOString();
     const actualMinutes = duration_seconds ? Math.ceil(duration_seconds / 60) : job.duration_minutes;
@@ -867,18 +905,107 @@ router.post('/:job_id/progress', (req, res) => {
       req.params.job_id, req.params.job_id, provider.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
-    const validPhases = ['downloading_model', 'installing_deps', 'loading_model', 'generating', 'formatting'];
+    // pulling = Docker image pull in progress; execution phases advance status to 'running'
+    const validPhases = ['pulling', 'downloading_model', 'installing_deps', 'loading_model', 'generating', 'formatting'];
     if (!validPhases.includes(phase)) {
       return res.status(400).json({ error: `Invalid phase. Valid: ${validPhases.join(', ')}` });
     }
 
     const now = new Date().toISOString();
-    db.run('UPDATE jobs SET progress_phase = ?, progress_updated_at = ? WHERE id = ?', phase, now, job.id);
-    console.log(`[progress] Job ${job.job_id}: ${phase}`);
+    // Status transitions based on phase:
+    // pulling → set status='pulling' (still waiting for container)
+    // execution phases → advance to 'running' if job is assigned/pulling
+    let newStatus = null;
+    if (phase === 'pulling') {
+      newStatus = 'pulling';
+    } else if (['assigned', 'pulling'].includes(job.status)) {
+      newStatus = 'running';
+    }
+
+    if (newStatus) {
+      db.run(
+        'UPDATE jobs SET progress_phase = ?, progress_updated_at = ?, status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?',
+        phase, now, newStatus, now, job.id
+      );
+    } else {
+      db.run('UPDATE jobs SET progress_phase = ?, progress_updated_at = ? WHERE id = ?', phase, now, job.id);
+    }
+    console.log(`[progress] Job ${job.job_id}: phase=${phase}${newStatus ? ` status→${newStatus}` : ''}`);
     res.json({ success: true, phase });
   } catch (error) {
     console.error('Job progress error:', error);
     res.status(500).json({ error: 'Failed to update progress' });
+  }
+});
+
+// POST /api/jobs/:job_id/logs — daemon streams execution log lines to backend
+// Accepts: { api_key, lines: [{ level, message }] }
+router.post('/:job_id/logs', (req, res) => {
+  try {
+    const { api_key, lines } = req.body;
+    if (!api_key) return res.status(401).json({ error: 'api_key required' });
+    if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ error: 'lines array required' });
+
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+    if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+    const job = db.get('SELECT * FROM jobs WHERE (id = ? OR job_id = ?) AND provider_id = ?',
+      req.params.job_id, req.params.job_id, provider.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    // Get current max line_no for this job
+    const maxRow = db.get('SELECT MAX(line_no) as max_line FROM job_logs WHERE job_id = ?', job.job_id);
+    let lineNo = (maxRow?.max_line || 0) + 1;
+
+    const now = new Date().toISOString();
+    const VALID_LEVELS = new Set(['info', 'warn', 'error', 'debug']);
+    const insert = db.prepare(
+      'INSERT INTO job_logs (job_id, line_no, level, message, logged_at) VALUES (?, ?, ?, ?, ?)'
+    );
+
+    const insertMany = db._db.transaction((rows) => {
+      for (const row of rows) {
+        const level = VALID_LEVELS.has(row.level) ? row.level : 'info';
+        const message = String(row.message || '').slice(0, 2000); // cap line length
+        insert.run(job.job_id, lineNo++, level, message, now);
+      }
+    });
+
+    insertMany(lines.slice(0, 500)); // cap batch size
+    res.json({ success: true, lines_written: Math.min(lines.length, 500) });
+  } catch (error) {
+    console.error('Job logs write error:', error);
+    res.status(500).json({ error: 'Failed to write job logs' });
+  }
+});
+
+// GET /api/jobs/:job_id/logs — fetch job execution logs (renter, provider, or admin)
+// Query params: since=<line_no> (default 0), limit=<n> (default 200, max 1000)
+router.get('/:job_id/logs', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+
+    const since = parseInt(req.query.since) || 0;
+    const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
+
+    const logs = db.all(
+      'SELECT line_no, level, message, logged_at FROM job_logs WHERE job_id = ? AND line_no > ? ORDER BY line_no ASC LIMIT ?',
+      job.job_id, since, limit
+    );
+
+    const total = db.get('SELECT COUNT(*) as cnt FROM job_logs WHERE job_id = ?', job.job_id);
+    res.json({
+      job_id: job.job_id,
+      status: job.status,
+      logs,
+      total_lines: total?.cnt || 0,
+      has_more: logs.length === limit
+    });
+  } catch (error) {
+    console.error('Job logs read error:', error);
+    res.status(500).json({ error: 'Failed to read job logs' });
   }
 });
 
@@ -1110,8 +1237,10 @@ router.get('/:job_id/output/:format', (req, res) => {
 function enforceJobTimeouts() {
   try {
     const now = new Date().toISOString();
+    // Include assigned/pulling states — if daemon stalls during container setup, still timeout
     const timedOut = db.all(
-      `SELECT * FROM jobs WHERE status = 'running' AND timeout_at IS NOT NULL AND datetime(replace(timeout_at, 'T', ' ')) < datetime(replace(?, 'T', ' '))`,
+      `SELECT * FROM jobs WHERE status IN ('running', 'assigned', 'pulling') AND timeout_at IS NOT NULL
+       AND datetime(replace(timeout_at, 'T', ' ')) < datetime(replace(?, 'T', ' '))`,
       now
     );
 
