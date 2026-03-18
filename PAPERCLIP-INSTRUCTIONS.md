@@ -106,6 +106,20 @@ curl -s -X PATCH -H "Authorization: Bearer $PAPERCLIP_API_KEY" -H "Content-Type:
 - Your FIRST action every heartbeat MUST be to check your inbox via curl
 - If no issues assigned, exit quietly
 
+
+
+## CRITICAL: Frontend Build Rules
+
+These rules MUST be followed by ALL agents. Violations will break the Vercel production deploy.
+
+1. **NEVER create new TypeScript directories** without adding them to tsconfig.json excludes
+2. **DashboardLayout** only accepts: children, navItems, role, userName — NO title prop
+3. **All imports must use existing components** — check app/components/ before importing
+4. **New app/ pages must use relative imports** for DashboardLayout: ../../components/layout/DashboardLayout
+5. **Do NOT install npm packages** on the VPS — it can break native modules (better-sqlite3)
+6. **tsconfig.json excludes** currently: node_modules, backend, orchestration, frontend, security, vitest.config.ts, vscode-extension, sdk, p2p, docker-templates
+
+If you create a new top-level directory with .ts/.tsx files, ADD IT to tsconfig.json excludes immediately.
 ## Cross-Agent Protocol
 
 ### IMPORTANT: No Git Commands Inside Paperclip
