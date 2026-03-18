@@ -196,6 +196,164 @@
 
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
+## [2026-03-18 17:15 UTC] DevOps Automator — DCP-34: vLLM serverless endpoint deployment
+
+- **Issue**: DCP-34 (High priority)
+- **Files**:
+  - `backend/src/db.js` — 2 new migrations: `jobs.endpoint_url TEXT`, `jobs.serve_port INTEGER`
+  - `backend/src/routes/jobs.js` — `vllm_serve` job type: cost rate (20 hal/min), ALLOWED_JOB_TYPES, `generateVllmServeSpec()`, JOB_TEMPLATES entry, `result_type='endpoint'`, `POST /:job_id/endpoint-ready` route
+  - `backend/installers/dc1_daemon.py` — `VRAM_REQUIREMENTS["vllm_serve"]=14336`, `_find_free_port()`, `_get_public_ip()`, `run_vllm_serve_job()`, `execute_job()` vllm_serve branch
+  - `backend/installers/dc1-daemon.py` — same changes (mirror)
+
+### Architecture
+1. Renter submits `vllm_serve` job with `params.model` + `duration_minutes`
+2. Backend generates JSON task_spec: `{serve_mode:true, model, max_model_len, dtype}`
+3. Daemon: allocates free port (8100-8199), pulls `vllm/vllm-openai:latest`, starts detached container with `-p port:8000 --network bridge`
+4. Daemon polls `http://127.0.0.1:port/health` every 5s (up to 5 min) until ready
+5. Daemon POSTs `POST /api/jobs/:id/endpoint-ready` → backend stores `endpoint_url = http://provider_ip:port/v1`
+6. Renter reads `GET /api/jobs/:id` → gets `endpoint_url`, calls `/v1/chat/completions` directly
+7. Daemon monitors every 30s; stops+removes container when job status leaves `running`
+
+### Cost: 20 halala/min (12 SAR/hr)
+### Allowed models: TinyLlama-1.1B, Mistral-7B, Llama-3-8B, Phi-3-mini, Gemma-2B-it
+### VRAM guard: 14336 MiB — providers with < 14 GB free VRAM auto-reject
+### Breaking: None — all additive. Providers need daemon re-download.
+
+---
+
+## [2026-03-18 17:00 UTC] Backend Architect — DCP-32: Off-chain escrow hold/release system
+
+- **Issue**: DCP-32 (High priority)
+- **Files**:
+  - `backend/src/db.js` — `escrow_holds` table + 4 indexes + `providers.claimable_earnings_halala` migration
+  - `backend/src/routes/jobs.js` — escrow create/lock/release through job lifecycle + new `/fail` endpoint
+  - `backend/src/routes/providers.js` — earnings + withdraw endpoints use `claimable_earnings_halala`
+  - `backend/src/routes/admin.js` — new `GET /api/admin/escrow` endpoint
+
+### What changed
+
+**DB**: `escrow_holds` table — `id` (esc-{job_id}), `renter_api_key`, `provider_id`, `job_id` (UNIQUE), `amount_halala`, `status` (held|locked|released_provider|released_renter|expired), `created_at`, `expires_at`, `resolved_at`. Indexed on job_id, renter, provider, expires. Added `claimable_earnings_halala INTEGER DEFAULT 0` to providers for integer-precise earnings tracking.
+
+**Job lifecycle escrow tracking**:
+- `POST /api/jobs/submit` → creates `escrow_holds` record (status=`held`) after balance deduction. Expires at job timeout + 30min settlement buffer.
+- `GET /api/jobs/assigned` (daemon pickup) → advances escrow to `locked`
+- `POST /api/jobs/:id/result` (daemon success) → `released_provider`, increments `claimable_earnings_halala`; (daemon failure, no result) → `released_renter` + refunds renter balance
+- `POST /api/jobs/:id/fail` (NEW explicit daemon failure endpoint) → `released_renter` + refund
+- `POST /api/jobs/:id/complete` (renter-initiated) → `released_provider`, increments `claimable_earnings_halala`
+- `POST /api/jobs/:id/cancel` → `released_renter`
+- Timeout sweeper → `expired`
+
+**Provider earnings**:
+- `GET /api/providers/earnings` → returns `claimable_earnings_halala`, `available_halala`, `escrow.held/locked` summary. Falls back to `total_earnings * 100` for pre-escrow providers.
+- `POST /api/providers/withdraw` → validates against `claimable_earnings_halala` (halala-precise, no SAR float drift)
+
+**Admin**: `GET /api/admin/escrow?status=&provider_id=` — full hold list + summary (held/locked/released_provider/released_renter/expired totals in halala and SAR)
+
+### Breaking changes
+- None — all additive. Existing jobs and providers work without escrow records (graceful fallback to `total_earnings`).
+- New `/api/jobs/:id/fail` endpoint is additive (existing daemons still use `/result`).
+
+## [2026-03-18 16:10 UTC] DevOps Automator — DCP-33: Docker compute template library
+
+- **Issue**: DCP-33 (Medium priority)
+- **Files**:
+  - `docker-templates/` (NEW dir) — 6 JSON template specs
+  - `backend/src/routes/templates.js` (NEW) — `GET /api/templates`, `GET /api/templates/whitelist`, `GET /api/templates/:id`
+  - `backend/src/server.js` — registered templates router at `/api/templates`
+  - `backend/src/routes/jobs.js` — added `custom_container` to `ALLOWED_JOB_TYPES`, added `generateCustomContainerSpec()` + entry in `JOB_TEMPLATES`
+  - `backend/installers/dc1-daemon.py` — `APPROVED_IMAGES` set, image_override JSON parsing + whitelist validation in `run_docker_job()`
+  - `backend/installers/dc1_daemon.py` — same changes (mirror)
+  - `app/renter/templates/page.tsx` (NEW) — template picker UI with provider selection, duration, params, submit
+  - 8 renter page files — added TemplatesIcon + Templates nav item (`/renter/templates`) after Marketplace
+
+### Templates
+| ID | Name | Image | VRAM | SAR/hr |
+|----|------|-------|------|--------|
+| `vllm-serve` | vLLM Serve | dc1/llm-worker | 16 GB | 9.00 |
+| `stable-diffusion` | Stable Diffusion | dc1/sd-worker | 4 GB | 12.00 |
+| `jupyter-gpu` | Jupyter GPU Notebook | dc1/general-worker | 4 GB | 9.00 |
+| `pytorch-training` | PyTorch Training | dc1/general-worker | 8 GB | 9.00 |
+| `ollama` | Ollama LLM | dc1/llm-worker | 4 GB | 9.00 |
+| `custom-container` | Custom Container | user-specified | 4 GB | 9.00 |
+
+### Security
+- `GET /api/templates/whitelist` — daemon-fetchable approved image list
+- `APPROVED_IMAGES` set in daemon validates `image_override` field before use
+- Rejected images emit `container_image_rejected` audit event, fall back to default
+- Custom containers limited to 9 approved base images (dc1/* + PyTorch official + NVIDIA NGC + TF official)
+
+### Breaking changes
+- None — `custom_container` job_type is new; existing job types unchanged
+
+## [2026-03-18 16:00 UTC] Backend Architect — DCP-31: SAR payment integration via Moyasar
+
+- **Issue**: DCP-31 (High priority)
+- **Files**:
+  - `backend/src/db.js` — `payments` table + indexes, idempotent migrations for `refunded_at`/`refund_amount_halala`
+  - `backend/src/routes/payments.js` — NEW: full Moyasar payment route module
+  - `backend/src/server.js` — mount `/api/payments`, add payment rate limiter (10/IP/min)
+  - `backend/src/routes/admin.js` — 3 new admin endpoints: payment list, revenue, refund
+
+### What changed
+
+**Gateway choice: Moyasar**
+Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, SAMA compliance, simpler API, good sandbox (sk_test_ keys).
+
+**DB**: `payments` table — `payment_id` (Moyasar ID), `renter_id`, `amount_sar`, `amount_halala`, `status` (initiated/paid/failed/refunded), `source_type` (creditcard/mada/applepay), `checkout_url`, `gateway_response`, `confirmed_at`, `refunded_at`, `refund_amount_halala`. Indexed on `renter_id`, `payment_id`, `status`.
+
+**Payment endpoints**:
+- `POST /api/payments/topup` — Creates Moyasar payment (Basic auth with `MOYASAR_SECRET_KEY`), returns `checkout_url` for hosted payment. Validates 1–10,000 SAR, source type whitelist.
+- `POST /api/payments/topup-sandbox` — Dev-only direct balance credit (disabled when `MOYASAR_SECRET_KEY` is set)
+- `POST /api/payments/webhook` — Moyasar webhook handler: HMAC-SHA256 signature verification (`MOYASAR_WEBHOOK_SECRET`), idempotent `paid`/`failed`/`refunded` processing, credits balance on `paid`
+- `GET /api/payments/verify/:paymentId` — Frontend polling after redirect: fetches live Moyasar status, auto-syncs balance if gateway reports `paid` but local is still `initiated`
+- `GET /api/payments/history` — Renter's paginated payment history with totals
+
+**Admin endpoints**:
+- `GET /api/admin/payments` — All payments with renter join, filter by status/search, summary stats
+- `GET /api/admin/payments/revenue` — Daily revenue breakdown, configurable `?days=` up to 365
+- `POST /api/admin/payments/:paymentId/refund` — Moyasar refund API call (or manual fallback for sandbox/no-key)
+
+### Breaking changes
+- None — all additive. Existing `/api/renters/topup` (direct balance add) still works.
+
+### Required env vars (set in PM2 ecosystem or .env)
+- `MOYASAR_SECRET_KEY` — Moyasar live/test secret (e.g. `sk_live_...` or `sk_test_...`)
+- `MOYASAR_WEBHOOK_SECRET` — Moyasar webhook secret for HMAC verification (defaults to `MOYASAR_SECRET_KEY` if not set)
+- `FRONTEND_URL` — Frontend base URL for callback (defaults to `https://dc1st.com`)
+- Set webhook URL in Moyasar dashboard to `https://api.dcp.sa/api/payments/webhook`
+
+## [2026-03-18 14:05 UTC] Founding Engineer — DCP-27: Ocean-style resource_spec schema for GPU advertisement
+
+- **Issue**: DCP-27 (High priority)
+- **Files**:
+  - `backend/src/db.js` — migration: `providers.resource_spec TEXT`
+  - `backend/src/routes/providers.js` — register, heartbeat, GET /me
+  - `backend/installers/dc1_daemon.py` — `build_resource_spec()` + heartbeat payload
+  - `backend/installers/dc1-daemon.py` — same (mirror)
+  - `app/provider/page.tsx` — Resource Advertisement card on dashboard
+
+### What changed
+- **DB**: Added `resource_spec TEXT` column to providers table via idempotent migration
+- **Register** (`POST /api/providers/register`): Accepts optional `resource_spec` JSON, stores it at registration time
+- **Heartbeat** (`POST /api/providers/heartbeat`): Accepts `resource_spec` from daemon, updates provider record each heartbeat
+- **GET /me**: Now returns `resource_spec`, `gpu_count_reported`, `gpu_compute_capability`, `gpu_cuda_version`, `daemon_version` in provider object
+- **Daemon**: Added `build_resource_spec(gpu)` function — constructs Ocean-style `{resources:[...]}` from CPU (multiprocessing), RAM (/proc/meminfo), disk (shutil), and per-GPU entries (model, VRAM GB, CUDA version, compute capability, driver) from `detect_gpu()`. Included in every heartbeat payload.
+- **Frontend**: Provider dashboard shows "Resource Advertisement" card — GPU tiles (model, VRAM, CUDA, compute cap, driver) and system resource tiles (CPU cores, RAM GB, disk GB with free/allocatable). Only renders when `resource_spec` is populated by daemon.
+
+### Schema
+```json
+{"resources": [
+  {"id": "cpu", "total": 8, "min": 1, "max": 4},
+  {"id": "ram", "total": 64.0, "min": 1, "max": 32},
+  {"id": "disk", "total": 500.0, "free": 320.4, "min": 5, "max": 256},
+  {"id": "gpu-nvidia-0", "type": "gpu", "total": 1, "model": "RTX 4090", "vram_gb": 24.0, "cuda_version": "12.2", "compute_capability": "8.9", "driver_version": "535.161.08"}
+]}
+```
+
+### Breaking changes
+- None — all new fields are additive. Existing providers get `resource_spec` populated on next daemon heartbeat.
+- Providers must have daemon running to populate `resource_spec`; card is hidden until populated.
+
 ## [2026-03-18 11:51 UTC] DevOps Automator — DCP-16, DCP-17: NVIDIA CT install fix + container isolation docs
 
 ### DCP-16: NVIDIA Container Toolkit + Docker GPU passthrough

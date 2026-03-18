@@ -1,0 +1,41 @@
+name: Backend Integration Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+
+jobs:
+  test:
+    name: Run integration tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Run integration tests
+        run: npm run test:integration -- --no-coverage
+        env:
+          DC1_DB_PATH: ':memory:'
+          DC1_ADMIN_TOKEN: ci-admin-token-${{ github.run_id }}
+          DC1_HMAC_SECRET: ci-hmac-secret-${{ github.run_id }}
