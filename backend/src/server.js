@@ -127,6 +127,17 @@ const topupLimiter = rateLimit({
 });
 app.use('/api/renters/topup', topupLimiter);
 
+// Payment initiation (Moyasar): 10 per IP per minute
+const paymentLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many payment requests. Slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/payments/topup', paymentLimiter);
+app.use('/api/payments/topup-sandbox', paymentLimiter);
+
 // General API: 300 per IP per minute
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -177,6 +188,12 @@ app.use('/api/renters', rentersRouter);
 
 const verificationRouter = require('./routes/verification');
 app.use('/api/verification', verificationRouter);
+
+const paymentsRouter = require('./routes/payments');
+app.use('/api/payments', paymentsRouter);
+
+const templatesRouter = require('./routes/templates');
+app.use('/api/templates', templatesRouter);
 
 // Initialize Supabase sync bridge
 const supabaseSync = require('./services/supabase-sync');

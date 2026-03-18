@@ -2,7 +2,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'providers.db');
+const DB_PATH = process.env.DC1_DB_PATH || path.join(__dirname, '..', 'data', 'providers.db');
 
 // Ensure data directory exists
 const fs = require('fs');
@@ -237,6 +237,16 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN gpu_spec_json TEXT',            // full GPU spec array from daemon
   'ALTER TABLE providers ADD COLUMN gpu_compute_capability TEXT',   // e.g. "8.9"
   'ALTER TABLE providers ADD COLUMN gpu_cuda_version TEXT',         // e.g. "12.2"
+  // Ocean-style structured resource advertisement — DCP-27
+  'ALTER TABLE providers ADD COLUMN resource_spec TEXT',            // JSON: {resources:[{id,total,type,...}]}
+  // SAR payment integration — DCP-31
+  'ALTER TABLE payments ADD COLUMN refunded_at TEXT',               // when refund processed
+  'ALTER TABLE payments ADD COLUMN refund_amount_halala INTEGER',   // partial refund support
+  // Escrow-based earnings tracking — DCP-32 (integer halala, avoids SAR float drift)
+  'ALTER TABLE providers ADD COLUMN claimable_earnings_halala INTEGER DEFAULT 0',
+  // vLLM serverless endpoint — DCP-34
+  'ALTER TABLE jobs ADD COLUMN endpoint_url TEXT',          // OpenAI-compatible /v1 endpoint URL (vllm_serve)
+  'ALTER TABLE jobs ADD COLUMN serve_port INTEGER',         // provider-side port the vLLM container listens on
 ];
 
 migrations.forEach(sql => {
@@ -263,6 +273,31 @@ db.exec(`
     updated_at TEXT
   )
 `);
+
+// ─── PAYMENTS TABLE ─── (DCP-31: Moyasar SAR payment integration)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    payment_id TEXT NOT NULL UNIQUE,        -- Moyasar payment ID
+    renter_id INTEGER NOT NULL,
+    amount_sar REAL NOT NULL,
+    amount_halala INTEGER NOT NULL,
+    status TEXT DEFAULT 'initiated',        -- initiated|paid|failed|refunded
+    source_type TEXT DEFAULT 'creditcard',  -- creditcard|mada|applepay
+    description TEXT,
+    callback_url TEXT,
+    checkout_url TEXT,                      -- Moyasar hosted checkout URL
+    gateway_response TEXT,                  -- Full Moyasar response JSON
+    created_at TEXT NOT NULL,
+    confirmed_at TEXT,                      -- When webhook confirmed payment
+    refunded_at TEXT,
+    refund_amount_halala INTEGER,
+    FOREIGN KEY (renter_id) REFERENCES renters(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_renter_id ON payments(renter_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_payment_id ON payments(payment_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status, created_at DESC)`);
 
 // ─── WITHDRAWALS TABLE ───
 db.exec(`
@@ -315,9 +350,35 @@ db.exec(`
     daemon_version TEXT,
     python_version TEXT,
     os_info TEXT,
+    gpu_metrics_json TEXT,
+    gpu_count INTEGER DEFAULT 1,
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
+
+// ─── ESCROW HOLDS TABLE ─── (DCP-32: off-chain escrow for GPU job billing)
+// Tracks pre-paid funds through the job lifecycle:
+//   held → locked → released_provider (success)
+//                 → released_renter   (failure/cancel)
+//                 → expired           (timeout)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS escrow_holds (
+    id TEXT PRIMARY KEY,
+    renter_api_key TEXT NOT NULL,
+    provider_id INTEGER NOT NULL,
+    job_id TEXT NOT NULL UNIQUE,
+    amount_halala INTEGER NOT NULL,
+    status TEXT DEFAULT 'held' CHECK(status IN ('held','locked','released_provider','released_renter','expired')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    resolved_at DATETIME,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_job_id ON escrow_holds(job_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_renter ON escrow_holds(renter_api_key, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_provider ON escrow_holds(provider_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_escrow_expires ON escrow_holds(status, expires_at)`);
 
 // ─── JOB LOGS TABLE ───
 // Stores stdout/stderr lines from job execution; daemon streams these after execution
