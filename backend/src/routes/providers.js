@@ -688,7 +688,7 @@ router.post('/job-result', (req, res) => {
 
         const job = db.get('SELECT * FROM jobs WHERE job_id = ? AND provider_id = ?', job_id, provider.id);
         if (!job) return res.status(404).json({ error: 'Job not found' });
-        if (job.status === 'completed') return res.json({ success: true, message: 'Already completed' });
+        if (job.status !== 'running') return res.json({ success: true, message: `Job already settled (${job.status})` });
 
         const now = new Date().toISOString();
         const newStatus = success ? 'completed' : 'failed';
@@ -786,12 +786,14 @@ router.get('/download/daemon', (req, res) => {
             });
         }
 
-        // Full download: inject API key and URL
+        // Full download: inject API key, URL, and HMAC secret for task_spec signature verification
         // Supports both placeholder styles: {{API_KEY}} (v3.2.0+) and INJECT_KEY_HERE (legacy)
         const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
+        const hmacSecret = process.env.DC1_HMAC_SECRET || '';
         let injected = script
             .replace('API_KEY = "{{API_KEY}}"', `API_KEY = "${key}"`)
             .replace('API_URL = "{{API_URL}}"', `API_URL = "${apiUrl}"`)
+            .replace('HMAC_SECRET = "{{HMAC_SECRET}}"', `HMAC_SECRET = "${hmacSecret}"`)
             .replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`)
             .replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 

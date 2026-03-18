@@ -6,11 +6,11 @@
  * On local dev (http), hits the VPS directly.
  */
 
-const VPS_DIRECT = 'http://76.13.179.86:8083/api';
+const VPS_DIRECT = (process.env.NEXT_PUBLIC_DC1_API || 'http://76.13.179.86:8083') + '/api';
 const PROXY_PATH = '/api/dc1';
 
 /** Mission Control API */
-const MC_DIRECT = 'http://76.13.179.86:8084/api';
+const MC_DIRECT = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
 
 /**
  * Returns the correct API base URL for the current environment.
