@@ -196,6 +196,94 @@
 
 <!-- NEXT ENTRY GOES HERE — Append above this line -->
 
+## [2026-03-18 11:51 UTC] DevOps Automator — DCP-16, DCP-17: NVIDIA CT install fix + container isolation docs
+
+### DCP-16: NVIDIA Container Toolkit + Docker GPU passthrough
+- **Files**: `backend/installers/dc1-setup-unix.sh`, `app/docs/provider-guide/page.tsx`
+- **What changed**:
+  - Fixed NVIDIA CT repo URL in setup script from deprecated distribution-specific path to `stable/deb/nvidia-container-toolkit.list` (fixes Ubuntu 24.04 installs)
+  - Improved detection: checks `nvidia-ctk --version` binary in addition to `docker info` grep
+  - Added `dnf` package manager support (RHEL/Rocky/Fedora)
+  - Verification step now prints GPU name detected inside container
+  - Expanded provider-guide Requirements section: hardware specs (CUDA 6.0+, VRAM minimums), full Linux software stack (driver >= 450.x, Docker 20.10+, NVIDIA CT), Windows requirements, new Job Execution Security section, expanded troubleshooting
+- **Note**: Core GPU passthrough (`--gpus all` in `run_docker_job()`, NVIDIA CT check in `check_docker()`) was already implemented in prior heartbeats.
+
+### DCP-17: Container network isolation
+- **Files**: No code changes needed — already fully implemented in DCP-8 + DCP-21
+- **Verified in `run_docker_job()`**: `--network none`, `--security-opt no-new-privileges:true`, `--read-only`, `--cap-drop all`, `--pids-limit 256`, custom seccomp profile
+- **Optional bridge network**: Deferred — all current job types are single-container workloads
+
+## [2026-03-18 11:45 UTC] Security Engineer — DCP-21: Container security hardening
+
+- **Issue**: DCP-21 (High priority)
+- **Files**: `backend/installers/dc1-daemon.py`, `backend/installers/dc1_daemon.py`
+- **What changed**:
+  - **`--cpus 4`**: Hard CPU core limit per container (was unlimited)
+  - **`--memory-swap 16g`**: Set equal to `--memory` to disable swap headroom
+  - **`--pids-limit 256`**: Fork-bomb protection (prevents unbounded process spawning)
+  - **`--read-only`**: Root filesystem now immutable; writable areas via tmpfs only
+  - **`--tmpfs /tmp:rw,noexec,nosuid,size=1g`** and **`/var/tmp`**: Writable tmp with noexec,nosuid
+  - **`--cap-drop all`**: Drops all Linux capabilities (CUDA uses device files, not caps)
+  - **`_ensure_seccomp_profile()`**: Writes `/tmp/dc1-gpu-seccomp.json` once at startup. Blacklist policy (default ALLOW) blocking 34 dangerous syscalls: kernel module loading, ptrace, clock manipulation, mount/pivot_root, kexec, perf_event_open, keyring, NUMA
+  - **`--security-opt seccomp={path}`**: Custom seccomp attached when writable
+  - **Audit events**: `container_start`, `container_complete`, `container_timeout`, `container_error` via `report_event()` → `daemon_events` table
+  - **VRAM leak detection**: `container_vram_leak` warning if residual VRAM after container exit > 512 MiB
+  - Added `CONTAINER_*` constants for tunable limits
+- **Breaking**: Worker images must support read-only root FS. Images writing outside `/tmp`/`/var/tmp` will fail. Re-test all worker images with `--read-only` before production rollout. Providers must re-download daemon.
+
+---
+
+## [2026-03-18 11:38 UTC] Frontend Developer — DCP-22: GPU utilization dashboard
+
+### New pages
+- **`app/provider/gpu/page.tsx`** — Provider GPU metrics dashboard
+  - SVG area/line charts (no external charting lib): GPU util %, VRAM %, temperature, power draw
+  - Time range selector: 1h / 24h / 7d — uses `since` + `limit` query params on `GET /api/providers/me/gpu-metrics`
+  - Multi-GPU per-card breakdown with GPU index tabs (reads `all_gpus[]` from DCP-19)
+  - Period summary table: avg util, peak temp, peak power, sample count
+  - Auto-refresh every 30s with live indicator
+- **`app/renter/gpu-comparison/page.tsx`** — Renter provider comparison
+  - Grid + table views of online providers from `GET /api/providers/available` (DCP-20)
+  - Spec pills: VRAM, GPU count, CUDA, compute capability, location
+  - Reliability / uptime progress bars
+  - Side-by-side comparison table (select 2–4 providers)
+  - Sort: Most VRAM / Reliability / Experience / Cheapest; filter by GPU model
+  - Pricing: LLM + image SAR/min from `cost_rates_halala_per_min`
+
+### Nav updates
+- Added **GPU Metrics** nav item (`/provider/gpu`) to all 5 provider pages: dashboard, jobs, earnings, job detail, settings
+- Added **GPU Compare** nav item (`/renter/gpu-comparison`) to renter sidebar
+
+### Breaking changes
+- None
+
+## [2026-03-18 11:12 UTC] Backend Architect — DCP-18, DCP-19, DCP-20: Job execution engine, GPU metrics, GPU spec reporting
+
+### DCP-18: Job execution engine
+- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/installers/dc1_daemon.py`, `backend/installers/dc1-daemon.py`
+- **DB migrations**: `jobs.priority` (1=high/2=normal/3=low), `jobs.retry_count`, `jobs.max_retries`, `job_logs` table
+- **Priority queue**: `promoteNextQueuedJob()` now orders by `priority ASC, created_at ASC`
+- **Status lifecycle**: `pending → assigned → pulling → running → completed/failed`. `/api/jobs/assigned` now sets `assigned`; progress endpoint advances to `pulling`/`running`
+- **Retry logic**: result handler handles `transient: true` flag — resets to `pending` if `retry_count < max_retries` (default 2 retries)
+- **New endpoints**: `POST /api/jobs/:id/logs` (daemon streams log lines), `GET /api/jobs/:id/logs` (renter/admin reads logs)
+- **Daemon**: Docker pull failures return `transient: True`; reports `pulling` phase before pull; posts logs via `post_job_logs()` after execution
+- **Breaking**: `/api/jobs/assigned` now returns `status: "assigned"` instead of `"running"` — daemons advance to `running` via progress endpoint
+
+### DCP-19: GPU metrics per container
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, both daemon files
+- **Multi-GPU**: `detect_gpu()` now iterates all GPU rows (was GPU 0 only), includes `all_gpus[]` array
+- **Container metrics**: `collect_container_gpu_metrics(container_name)` — `nvidia-smi pmon` per-PID attribution; included in Docker job result
+- **DB migrations**: `heartbeat_log.gpu_metrics_json`, `heartbeat_log.gpu_count`
+- **New endpoint**: `GET /api/providers/:id/gpu-metrics` — time-series GPU metric history, multi-GPU aware, auth by provider key or admin
+
+### DCP-20: Provider GPU spec reporting
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, both daemon files
+- **Daemon**: `_get_cuda_version()` parses CUDA version from nvidia-smi; `detect_gpu()` adds `compute_cap` query; heartbeat includes `compute_capability`, `cuda_version`
+- **DB migrations**: `providers.gpu_compute_capability`, `providers.gpu_cuda_version`, `providers.gpu_count_reported`, `providers.gpu_spec_json`
+- **Heartbeat handler**: stores spec fields on provider record on each heartbeat
+- **New endpoint**: `GET /api/providers/available` — rich marketplace endpoint with full GPU spec (VRAM, CUDA, compute cap, driver, gpu_count, cost_rates, is_live)
+- **Enhanced**: `GET /api/renters/available-providers` now includes compute_capability, cuda_version, gpu_count, is_live
+
 ## [2026-03-17 23:41 UTC] DevOps Automator — DCP-8, DCP-12, DCP-13
 
 ### DCP-8: Docker container isolation for job execution
