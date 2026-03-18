@@ -47,6 +47,7 @@ from datetime import datetime
 
 API_KEY = "{{API_KEY}}"
 API_URL = "{{API_URL}}"
+HMAC_SECRET = "{{HMAC_SECRET}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
@@ -731,6 +732,57 @@ def run_verification(challenge):
     except Exception as e:
         log.error(f"Verification submit failed: {e}")
 
+# ─── HMAC VERIFICATION ───────────────────────────────────────────────────────
+
+def verify_task_spec_hmac(task_spec_str, expected_hmac):
+    """Verify HMAC-SHA256 signature of task_spec before execution.
+
+    Returns True if signature is valid, False otherwise.
+    Fails CLOSED: returns False on any error except missing secret (backward compat).
+    """
+    if not task_spec_str:
+        return True  # No task_spec to verify
+
+    # If secret wasn't injected at download time, fall back to remote verify
+    if HMAC_SECRET in ("{{HMAC_SECRET}}", "", None):
+        if not expected_hmac:
+            log.error("HMAC verification: no signature and no local secret — rejecting")
+            return False
+        try:
+            # Use backend verify endpoint as fallback (requires provider key)
+            code, resp = http_get(
+                f"{API_URL}/api/jobs/verify-hmac-local?key={API_KEY}&hmac={expected_hmac}",
+                timeout=10
+            )
+            if code == 200 and resp.get("valid"):
+                return True
+            log.error(f"HMAC remote verification returned invalid: {resp}")
+            return False
+        except Exception as e:
+            log.error(f"HMAC remote verification failed: {e}")
+            return False
+
+    # Local verification with injected secret
+    if not expected_hmac:
+        log.error("HMAC verification: task_spec present but no signature — rejecting")
+        return False
+
+    try:
+        spec_bytes = task_spec_str.encode("utf-8") if isinstance(task_spec_str, str) else task_spec_str
+        computed = hmac.new(
+            HMAC_SECRET.encode("utf-8"),
+            spec_bytes,
+            hashlib.sha256
+        ).hexdigest()
+        valid = hmac.compare_digest(computed, expected_hmac)
+        if not valid:
+            log.error("HMAC verification: signature mismatch — task_spec may have been tampered with")
+        return valid
+    except Exception as e:
+        log.error(f"HMAC verification error: {e}")
+        return False
+
+
 # ─── JOB EXECUTION ───────────────────────────────────────────────────────────
 
 def run_gpu_benchmark(task_spec):
@@ -779,18 +831,20 @@ def run_gpu_benchmark(task_spec):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-def run_docker_job(job_type, task_spec, job_dir):
-    """Execute job inside Docker container with GPU access."""
-    # GHCR registry — falls back to local images if not pulled
-    GHCR = "ghcr.io/dhnpmp-tech"
+def run_docker_job(job_type, task_spec, job_dir, job_id=None):
+    """Execute job inside Docker container with GPU access and network isolation."""
+    # Local images built via backend/docker/build-images.sh
     IMAGE_MAP = {
-        "image_generation": f"{GHCR}/dc1-sd-worker:latest",
-        "llm-inference": f"{GHCR}/dc1-llm-worker:latest",
-        "training": f"{GHCR}/dc1-base-worker:latest",
-        "rendering": f"{GHCR}/dc1-base-worker:latest",
-        "benchmark": f"{GHCR}/dc1-base-worker:latest",
+        "image_generation": "dc1/sd-worker:latest",
+        "llm-inference":    "dc1/llm-worker:latest",
+        "training":         "dc1/general-worker:latest",
+        "rendering":        "dc1/general-worker:latest",
+        "benchmark":        "dc1/general-worker:latest",
     }
-    image = IMAGE_MAP.get(job_type, "dc1/base-worker:latest")
+    image = IMAGE_MAP.get(job_type, "dc1/general-worker:latest")
+
+    # Unique container name for reliable timeout kill
+    container_name = f"dc1-job-{job_id or int(time.time())}"
 
     # Write task_spec as task.py in job directory
     script = task_spec if isinstance(task_spec, str) else task_spec.get("script", "")
@@ -801,14 +855,22 @@ def run_docker_job(job_type, task_spec, job_dir):
     with open(task_path, "w", encoding="utf-8") as f:
         f.write(script)
 
-    log.info(f"Docker exec: image={image}, job_dir={job_dir}")
+    log.info(f"Docker exec: image={image}, container={container_name}")
 
     try:
         result = subprocess.run(
-            ["docker", "run", "--gpus", "all", "--rm",
-             "--memory", "16g", "--shm-size", "2g",
-             "-v", f"{job_dir}:/dc1/job",
-             image, "python", "/dc1/job/task.py"],
+            [
+                "docker", "run",
+                "--gpus", "all",
+                "--rm",
+                "--name", container_name,
+                "--network", "none",                      # No internet access inside container
+                "--memory", "16g",
+                "--shm-size", "2g",
+                "--security-opt", "no-new-privileges:true",  # Block privilege escalation
+                "-v", f"{job_dir}:/dc1/job:ro",           # Mount task read-only
+                image, "python", "/dc1/job/task.py",
+            ],
             capture_output=True, text=True, encoding="utf-8", timeout=JOB_TIMEOUT
         )
 
@@ -820,11 +882,14 @@ def run_docker_job(job_type, task_spec, job_dir):
         else:
             return {"success": False, "error": f"Exit code {result.returncode}: {stderr[:500]}"}
     except subprocess.TimeoutExpired:
-        # Kill the container
-        subprocess.run(["docker", "kill", f"dc1-job-{job_type}"], capture_output=True)
+        # Kill named container for reliable cleanup
+        subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=10)
         return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
     except Exception as e:
         return {"success": False, "error": str(e)}
+    finally:
+        # Always clean up the temp job directory
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 def report_job_progress(job_id, phase):
     """Report job execution phase to backend for live UI updates."""
@@ -943,7 +1008,7 @@ def execute_job(job):
         if has_script:
             if check_docker():
                 job_dir = tempfile.mkdtemp(prefix="dc1-job-")
-                return run_docker_job(job_type, task_spec, job_dir)
+                return run_docker_job(job_type, task_spec, job_dir, job_id=job_id)
             else:
                 return run_bare_metal_job(task_spec, job_id=job_id)
         else:
@@ -1016,6 +1081,23 @@ def poll_and_execute():
             }, timeout=15)
         except: pass
         return
+
+    # ── Guard: HMAC signature verification (prevents RCE via tampered task_spec) ──
+    task_spec_raw = job.get("task_spec")
+    task_spec_hmac = job.get("task_spec_hmac")
+    if task_spec_raw:
+        if not verify_task_spec_hmac(task_spec_raw, task_spec_hmac):
+            log.error(f"Job {job_id} REJECTED: task_spec HMAC verification failed — possible tampering or unauthorized injection")
+            report_event("job_failure",
+                f"Job rejected: HMAC verification failed. task_spec may have been tampered with.",
+                job_id=job_id, severity="critical")
+            try:
+                http_post(f"{API_URL}/api/providers/job-result", {
+                    "api_key": API_KEY, "job_id": job_id, "success": False,
+                    "error": "HMAC verification failed — task_spec rejected for security",
+                }, timeout=15)
+            except: pass
+            return
 
     # Execute in background thread so heartbeats continue
     def _run():

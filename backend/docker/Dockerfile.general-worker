@@ -1,0 +1,18 @@
+# DC1 General Worker — Training, Rendering, Benchmarks, Custom Compute
+# Used for: training, rendering, benchmark, and unknown job types
+# Extends base-worker with additional ML/scientific compute libraries
+ARG BASE_IMAGE=dc1/base-worker:latest
+FROM ${BASE_IMAGE}
+
+# Additional compute and scientific libraries
+RUN pip3 install --no-cache-dir \
+    scipy \
+    matplotlib \
+    pandas \
+    scikit-learn \
+    opencv-python-headless
+
+LABEL dc1.worker.type="general"
+LABEL dc1.worker.version="1.0"
+
+CMD ["python", "/dc1/job/task.py"]

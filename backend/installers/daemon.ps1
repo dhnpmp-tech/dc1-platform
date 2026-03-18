@@ -20,7 +20,7 @@ param(
     [string]$ApiKey,
     
     [Parameter(Mandatory=$false)]
-    [string]$ApiUrl = "http://76.13.179.86:8083",
+    [string]$ApiUrl = "https://api.dcp.sa",
     
     [Parameter(Mandatory=$false)]
     [string]$RunMode = "always-on",

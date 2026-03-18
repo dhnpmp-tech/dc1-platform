@@ -8,7 +8,7 @@ param(
     [string]$RunMode = "always-on",
     [string]$ScheduledStart = "23:00",
     [string]$ScheduledEnd = "07:00",
-    [string]$ApiUrl = "$($env:DC1_API_URL ?? 'http://76.13.179.86:8083')",
+    [string]$ApiUrl = "$($env:DC1_API_URL ?? 'https://api.dcp.sa')",
     [string]$InstallDir = "$env:LOCALAPPDATA\dc1-provider",
     [string]$GpuName = "unknown",
     [string]$GpuVram = "0"
