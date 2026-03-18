@@ -19,7 +19,7 @@ DC1 is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPU
 ### Production Sites
 | System | URL | Purpose |
 |--------|-----|---------|
-| Frontend | dc1st.com (Vercel) | Next.js 14 App Router — provider/renter/admin dashboards |
+| Frontend | dcp.sa (Vercel) — PRODUCTION | Next.js 14 App Router — provider/renter/admin dashboards |
 | Backend API | 76.13.179.86:8083 | Express.js — all provider, renter, job, admin endpoints |
 | Supabase | rwxqcqgjszvbwcyjfpec.supabase.co | Real-time reads, wallet sync, machine metrics |
 | Paperclip | 76.13.179.86:3100 | Agent orchestration (this system) |
