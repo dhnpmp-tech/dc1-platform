@@ -45,6 +45,10 @@
     "orchestration",
     "frontend",
     "security",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vscode-extension",
+    "sdk",
+    "p2p",
+    "docker-templates"
   ]
 }
