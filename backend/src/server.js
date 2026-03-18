@@ -235,6 +235,10 @@ console.log('[timeout] Job timeout enforcement started (every 30s)');
 const { startLoop: startFallbackLoop } = require('./services/fallback-loop');
 startFallbackLoop();
 
+// Start data retention cleanup (runs daily at 2:00 AM UTC — DCP-59)
+const cleanup = require('./services/cleanup');
+cleanup.schedule();
+
 app.listen(PORT, () => {
   console.log(`DC1 Platform API (headless) running on port ${PORT}`);
   console.log(`API:  http://localhost:${PORT}/api`);

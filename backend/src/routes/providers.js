@@ -813,11 +813,24 @@ router.post('/job-result', (req, res) => {
         // Update provider stats
         if (success) {
             db.run(
-                `UPDATE providers SET total_earnings = total_earnings + ?, total_jobs = total_jobs + 1, current_job_id = NULL WHERE id = ?`,
-                providerEarned / 100, provider.id  // total_earnings is in SAR
+                `UPDATE providers SET total_earnings = total_earnings + ?, claimable_earnings_halala = claimable_earnings_halala + ?, total_jobs = total_jobs + 1, current_job_id = NULL WHERE id = ?`,
+                providerEarned / 100, providerEarned, provider.id  // total_earnings is in SAR, claimable in halala
             );
         } else {
             db.run(`UPDATE providers SET current_job_id = NULL WHERE id = ?`, provider.id);
+        }
+
+        // ── Release escrow to provider (or back to renter on failure) ──
+        if (success) {
+            db.run(
+                `UPDATE escrow_holds SET status = 'released_provider', resolved_at = ? WHERE job_id = ? AND status IN ('held','locked')`,
+                now, job_id
+            );
+        } else {
+            db.run(
+                `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ? WHERE job_id = ? AND status IN ('held','locked')`,
+                now, job_id
+            );
         }
 
         // ── Renter billing settlement ──────────────────────────────────

@@ -1747,4 +1747,15 @@ router.get('/escrow', (req, res) => {
   }
 });
 
+// ─── GET /api/admin/cleanup/stats ─────────────────────────────────────────────
+router.get('/cleanup/stats', (req, res) => {
+  try {
+    const { getStats } = require('../services/cleanup');
+    res.json(getStats());
+  } catch (error) {
+    console.error('Admin cleanup stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch cleanup stats' });
+  }
+});
+
 module.exports = router;
