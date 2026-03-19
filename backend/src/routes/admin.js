@@ -1758,4 +1758,17 @@ router.get('/cleanup/stats', (req, res) => {
   }
 });
 
+// ─── GET /api/admin/escrow-chain/status (DCP-75) ──────────────────────────────
+// Returns on-chain escrow service status: contract address, network, oracle address, isEnabled
+router.get('/escrow-chain/status', async (req, res) => {
+  try {
+    const { getChainEscrow } = require('../services/escrow-chain');
+    const status = await getChainEscrow().getStatus();
+    res.json(status);
+  } catch (error) {
+    console.error('Admin escrow-chain status error:', error);
+    res.status(500).json({ error: 'Failed to fetch escrow-chain status' });
+  }
+});
+
 module.exports = router;

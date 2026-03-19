@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
+const { sendWelcomeEmail } = require('../services/email');
 
 // POST /api/renters/register
 router.post('/register', (req, res) => {
@@ -32,6 +33,9 @@ router.post('/register', (req, res) => {
       api_key,
       message: `Welcome ${name}! Save your API key — it won't be shown again.`
     });
+
+    // Fire-and-forget welcome email — does not affect registration response
+    sendWelcomeEmail('renter', { name, email, apiKey: api_key });
   } catch (error) {
     if (error.message && error.message.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'A renter with this email already exists' });
@@ -264,6 +268,52 @@ router.post('/rotate-key', (req, res) => {
   } catch (error) {
     console.error('Renter key rotation error:', error);
     res.status(500).json({ error: 'Key rotation failed' });
+  }
+});
+
+// DELETE /api/renters/me — PDPL right to erasure (soft delete)
+// Anonymizes PII while preserving job records for financial audit trail.
+// Auth: x-renter-key header or key query param
+router.delete('/me', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
+
+    const renter = db.get('SELECT id, status FROM renters WHERE api_key = ?', key);
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+    if (renter.status === 'deleted') return res.status(410).json({ error: 'Account already deleted' });
+
+    const now = new Date().toISOString();
+    const anonId = 'deleted-' + renter.id;
+
+    // Soft delete: anonymize PII, invalidate key, mark deleted
+    db.run(
+      `UPDATE renters SET
+         name         = ?,
+         email        = ?,
+         organization = NULL,
+         api_key      = ?,
+         status       = 'deleted',
+         updated_at   = ?
+       WHERE id = ?`,
+      anonId,
+      anonId + '@deleted.invalid',
+      'revoked-' + crypto.randomBytes(8).toString('hex'),
+      now,
+      renter.id
+    );
+
+    // Job and payment records are retained with renter_id for financial audit (SAMA 7-year req)
+    console.log(`[pdpl] Renter ${renter.id} account deleted and PII anonymized`);
+
+    res.json({
+      success: true,
+      message: 'Your account has been deleted and personal data anonymized in accordance with PDPL. Financial records are retained for 7 years as required by SAMA regulations.',
+      deleted_at: now,
+    });
+  } catch (error) {
+    console.error('Renter delete error:', error);
+    res.status(500).json({ error: 'Account deletion failed' });
   }
 });
 

@@ -1,6 +1,7 @@
 // DC1 Provider Onboarding Backend Server
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
@@ -207,6 +208,59 @@ app.use('/api/fallback', fallbackRouter);
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'dc1-platform-api', mode: 'headless', timestamp: new Date().toISOString() });
+});
+
+// OpenAPI spec — GET /api/docs
+const OPENAPI_PATH = path.join(__dirname, '../../docs/openapi.yaml');
+app.get('/api/docs', (req, res) => {
+  if (!fs.existsSync(OPENAPI_PATH)) {
+    return res.status(404).json({ error: 'OpenAPI spec not found' });
+  }
+  res.setHeader('Content-Type', 'application/yaml');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.sendFile(OPENAPI_PATH);
+});
+
+// Swagger UI — GET /api/docs/ui (CDN-hosted, no npm package required)
+app.get('/api/docs/ui', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DC1 API — Swagger UI</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <style>
+    body { margin: 0; background: #07070E; }
+    .topbar { background: #07070E !important; }
+    .topbar-wrapper img { display: none; }
+    .topbar-wrapper::before {
+      content: 'DC1 API';
+      color: #F5A524;
+      font-size: 1.4rem;
+      font-weight: 700;
+      font-family: Inter, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = () => {
+      SwaggerUIBundle({
+        url: '/api/docs',
+        dom_id: '#swagger-ui',
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+        layout: 'BaseLayout',
+        deepLinking: true,
+        tryItOutEnabled: true,
+      });
+    };
+  </script>
+</body>
+</html>`);
 });
 
 // Default route -> API info (headless mode)

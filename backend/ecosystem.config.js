@@ -36,7 +36,21 @@ module.exports = {
 
         // ── Backend URL (injected into daemon downloads) ──────────────────────
         // Set to HTTPS once api.dcp.sa DNS + SSL setup is complete
-        BACKEND_URL: 'http://76.13.179.86:8083'
+        BACKEND_URL: 'http://76.13.179.86:8083',
+
+        // ── Resend Email Service (DCP-54) ─────────────────────────────────────
+        // Get API key from: https://resend.com/api-keys
+        // Free tier: 100 emails/day — used for welcome emails on registration
+        RESEND_API_KEY: 'CHANGE_ME_resend_api_key',
+
+        // ── On-chain Escrow / Base L2 (DCP-75) ───────────────────────────────
+        // Leave ESCROW_CONTRACT_ADDRESS unset to use off-chain SQLite escrow only.
+        // Set all three to enable on-chain settlement via Escrow.sol on Base Sepolia.
+        // Deploy contract: cd contracts && npx hardhat run scripts/deploy.js --network base-sepolia
+        // Generate oracle key: node -e "const {ethers}=require('ethers'); console.log(ethers.Wallet.createRandom().privateKey)"
+        ESCROW_CONTRACT_ADDRESS: '',
+        ESCROW_ORACLE_PRIVATE_KEY: 'CHANGE_ME_0x_private_key_for_oracle_wallet',
+        BASE_RPC_URL: 'https://sepolia.base.org'
       }
     }
   ]

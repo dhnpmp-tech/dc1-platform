@@ -7,6 +7,7 @@ const router = express.Router();
 // Database (use existing connection)
 const db = require('../db');
 const { sendAlert } = require('../services/notifications');
+const { sendWelcomeEmail } = require('../services/email');
 
 // Import shared billing rates from jobs module
 const { COST_RATES } = require('./jobs');
@@ -83,6 +84,9 @@ router.post('/register', async (req, res) => {
             installer_url,
             message: `Welcome ${name}! Your API key is ready. Download the installer to get started.`
         });
+
+        // Fire-and-forget welcome email — does not affect registration response
+        sendWelcomeEmail('provider', { name, email, apiKey: api_key });
         
     } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -1465,6 +1469,56 @@ router.get('/:id/gpu-metrics', (req, res) => {
     } catch (error) {
         console.error('GPU metrics error:', error);
         res.status(500).json({ error: 'Failed to fetch GPU metrics' });
+    }
+});
+
+// ============================================================================
+// DELETE /api/providers/me — PDPL right to erasure (soft delete)
+// Anonymizes PII while preserving job records for financial audit trail.
+// Auth: x-provider-key header or key query param
+// ============================================================================
+router.delete('/me', (req, res) => {
+    try {
+        const key = req.headers['x-provider-key'] || req.query.key;
+        if (!key) return res.status(400).json({ error: 'API key required (x-provider-key header or key query)' });
+
+        const provider = db.get('SELECT id, status FROM providers WHERE api_key = ?', key);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+        if (provider.status === 'deleted') return res.status(410).json({ error: 'Account already deleted' });
+
+        const now = new Date().toISOString();
+        const anonId = 'deleted-' + provider.id;
+
+        // Soft delete: anonymize all PII columns, invalidate key, mark deleted
+        db.run(
+            `UPDATE providers SET
+               name        = ?,
+               email       = ?,
+               phone       = NULL,
+               api_key     = ?,
+               status      = 'deleted',
+               ip_address  = NULL,
+               hostname    = NULL,
+               updated_at  = ?
+             WHERE id = ?`,
+            anonId,
+            anonId + '@deleted.invalid',
+            'revoked-' + crypto.randomBytes(8).toString('hex'),
+            now,
+            provider.id
+        );
+
+        // Job records are intentionally retained with provider_id for financial audit (SAMA 7-year req)
+        console.log(`[pdpl] Provider ${provider.id} account deleted and PII anonymized`);
+
+        res.json({
+            success: true,
+            message: 'Your account has been deleted and personal data anonymized in accordance with PDPL. Financial records are retained for 7 years as required by SAMA regulations.',
+            deleted_at: now,
+        });
+    } catch (error) {
+        console.error('Provider delete error:', error);
+        res.status(500).json({ error: 'Account deletion failed' });
     }
 });
 

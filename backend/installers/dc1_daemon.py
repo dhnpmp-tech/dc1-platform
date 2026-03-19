@@ -1411,6 +1411,7 @@ def run_vllm_serve_job(task_spec, job_id=None):
         "microsoft/Phi-3-mini-4k-instruct",
         "google/gemma-2b-it",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
     }
     if model not in ALLOWED_VLLM_MODELS:
         log.warning(f"Rejected vllm model '{model}' — not in whitelist. Using TinyLlama.")

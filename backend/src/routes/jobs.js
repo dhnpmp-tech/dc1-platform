@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
+const { getChainEscrow } = require('../services/escrow-chain');
 
 // HMAC secret for signing task_spec
 // IMPORTANT: DC1_HMAC_SECRET must be set in env — do NOT share with DC1_ADMIN_TOKEN
@@ -490,6 +491,14 @@ router.post('/submit', requireRenter, (req, res) => {
       console.error('[escrow] Failed to create hold for job', job_id, ':', e.message);
     }
 
+    // On-chain escrow (opt-in via ESCROW_CONTRACT_ADDRESS) — fire-and-forget, never blocks job creation
+    const chainEscrow = getChainEscrow();
+    if (chainEscrow.isEnabled()) {
+      const expiryMs = new Date(escrowExpiresAt).getTime();
+      chainEscrow.depositAndLock(job_id, provider.wallet_address || null, cost_halala, expiryMs)
+        .catch(err => console.error('[escrow-chain] depositAndLock async error:', err.message));
+    }
+
     // Calculate queue position if queued
     let queue_position = null;
     if (isQueued) {
@@ -668,6 +677,12 @@ router.post('/:job_id/result', (req, res) => {
         `UPDATE providers SET claimable_earnings_halala = claimable_earnings_halala + ? WHERE id = ?`,
         providerEarned, job.provider_id
       );
+      // On-chain: claim escrow to provider
+      const chainEscrow = getChainEscrow();
+      if (chainEscrow.isEnabled()) {
+        chainEscrow.claimLock(job.job_id)
+          .catch(err => console.error('[escrow-chain] claimLock async error:', err.message));
+      }
     } else {
       // Permanent failure — return held amount to renter balance
       db.run(
@@ -678,6 +693,12 @@ router.post('/:job_id/result', (req, res) => {
       if (job.renter_id && job.cost_halala > 0 && !job.refunded_at) {
         db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
         db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+      }
+      // On-chain: cancel expired lock, return funds to renter
+      const chainEscrow = getChainEscrow();
+      if (chainEscrow.isEnabled()) {
+        chainEscrow.cancelExpiredLock(job.job_id)
+          .catch(err => console.error('[escrow-chain] cancelExpiredLock async error:', err.message));
       }
     }
 
@@ -970,6 +991,13 @@ router.post('/:job_id/fail', (req, res) => {
     if (job.renter_id && job.cost_halala > 0 && !job.refunded_at) {
       db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
       db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+    }
+
+    // On-chain: cancel expired lock, return funds to renter
+    const chainEscrow = getChainEscrow();
+    if (chainEscrow.isEnabled()) {
+      chainEscrow.cancelExpiredLock(job.job_id)
+        .catch(err => console.error('[escrow-chain] cancelExpiredLock async error:', err.message));
     }
 
     promoteNextQueuedJob(job.provider_id);
