@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Hardhat build artifacts
+artifacts/
+cache/
+typechain-types/
+
+# Environment — NEVER commit private keys
+.env
+
+# Coverage reports
+coverage/
+coverage.json
+
+# Deployed address (updated by deploy script — optional to commit)
+# Uncomment if you want to exclude: abis/Escrow.json

@@ -1,0 +1,172 @@
+# DC1 Smart Contracts — Escrow on Base L2
+
+Trustless payment escrow for DC1 GPU compute jobs. USDC is held on-chain while jobs run; providers claim funds on completion; renters get refunded if jobs expire unclaimed.
+
+**Network**: Base Sepolia (testnet) / Base mainnet (future)
+**Token**: USDC (6 decimals)
+**Fee split**: 75 % provider / 25 % DC1 (hardcoded as `FEE_BPS = 2500`)
+
+---
+
+## Contract Architecture
+
+### `Escrow.sol`
+
+| Function | Caller | Description |
+|---|---|---|
+| `depositAndLock(jobId, provider, amount, expiry)` | Renter | Pulls USDC from renter and locks it against a jobId |
+| `claimLock(jobId, proof)` | Provider | Claims after job completes; verifies DC1 oracle ECDSA signature |
+| `cancelExpiredLock(jobId)` | Renter | Reclaims full amount if job expired without a claim |
+| `getEscrow(jobId)` | Anyone | Read-only: returns `EscrowRecord` struct |
+| `setOracle(address)` | Owner | Updates the DC1 oracle signing address |
+
+#### EscrowRecord struct
+
+```solidity
+struct EscrowRecord {
+    address renter;
+    address provider;
+    uint256 amount;      // USDC micro-units (6 decimals)
+    uint256 expiry;      // Unix timestamp
+    EscrowStatus status; // EMPTY(0) | LOCKED(1) | CLAIMED(2) | CANCELLED(3)
+}
+```
+
+#### Oracle proof format
+
+The DC1 backend signs job completion using its private key. The proof is an EIP-191 personal signature over:
+
+```
+keccak256(abi.encodePacked(jobId, providerAddress, amount))
+```
+
+The backend constructs this in `backend/src/services/escrow.js` (future issue) using ethers.js:
+
+```js
+const messageHash = ethers.solidityPackedKeccak256(
+  ["bytes32", "address", "uint256"],
+  [jobId, providerAddress, amount]
+);
+const proof = await oracleWallet.signMessage(ethers.getBytes(messageHash));
+```
+
+### `MockUSDC.sol`
+
+Test-only ERC20 token with 6 decimals and open `mint()`. **Do not deploy to mainnet.**
+
+---
+
+## Setup
+
+```bash
+cd contracts
+npm install
+```
+
+---
+
+## Running Tests
+
+Tests use Hardhat's local in-process EVM — no external RPC needed.
+
+```bash
+npm test
+# or with gas report:
+npm run test:gas
+```
+
+### What the tests cover
+
+| Suite | Tests |
+|---|---|
+| `depositAndLock` | happy path, duplicate jobId, past expiry, zero amount, zero provider |
+| `claimLock` | 75/25 split, invalid oracle sig, wrong caller, post-expiry, double-claim |
+| `cancelExpiredLock` | happy path, pre-expiry revert, wrong caller, double-cancel |
+| `setOracle` | owner update, non-owner revert, zero-address revert |
+| `getEscrow` | unknown jobId returns EMPTY |
+
+---
+
+## Deploying to Base Sepolia
+
+1. **Copy and fill env vars**
+
+   ```bash
+   cp .env.example .env
+   # Edit .env: PRIVATE_KEY, USDC_ADDRESS, ORACLE_ADDRESS, BASESCAN_API_KEY
+   ```
+
+2. **Compile**
+
+   ```bash
+   npm run compile
+   ```
+
+3. **Deploy**
+
+   ```bash
+   npm run deploy:sepolia
+   ```
+
+   The script writes `abis/Escrow.json` with the deployed address and ABI.
+
+4. **Verify on Basescan** (optional)
+
+   ```bash
+   npx hardhat verify --network base-sepolia <CONTRACT_ADDRESS> "<USDC_ADDRESS>" "<ORACLE_ADDRESS>"
+   ```
+
+### Base Sepolia addresses
+
+| Token | Address |
+|---|---|
+| USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+
+Get testnet ETH from the [Base Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-goerli-faucet).
+
+---
+
+## Backend Integration Plan
+
+The Express.js backend will integrate via `backend/src/services/escrow.js` (tracked in a follow-up issue). Key steps:
+
+1. Load `contracts/abis/Escrow.json` (address + ABI) at startup
+2. Expose a **DC1 oracle wallet** (env var `ORACLE_PRIVATE_KEY`) for signing proofs
+3. Add backend endpoints:
+   - `POST /api/jobs/:id/escrow-lock` — renter initiates on-chain lock (returns tx data for frontend to sign + broadcast)
+   - `POST /api/jobs/:id/escrow-claim` — DC1 signs proof; provider broadcasts `claimLock`
+   - `GET /api/jobs/:id/escrow-status` — reads on-chain state via `getEscrow`
+4. Wire into job lifecycle in `backend/src/routes/jobs.js`: status transitions trigger escrow state checks
+
+The current off-chain SQL escrow (DCP-32) remains the default. The on-chain path is opt-in for renters who want trustless settlement.
+
+---
+
+## Security Notes
+
+- Contract owner receives the 25% fee — set owner to a DC1 multisig before mainnet
+- `oracle` private key must be kept secret; rotate via `setOracle()` if compromised
+- Expiry should be at least `job_estimated_duration + buffer` — set in the backend
+- No upgradeability — contract is immutable by design; re-deploy for fixes
+- **Do not deploy to mainnet without a professional audit**
+
+---
+
+## File Structure
+
+```
+contracts/
+├── contracts/
+│   ├── Escrow.sol       — main escrow contract
+│   └── MockUSDC.sol     — test-only ERC20
+├── scripts/
+│   └── deploy.js        — Hardhat deploy + ABI export
+├── test/
+│   └── Escrow.test.js   — full test suite
+├── abis/
+│   └── Escrow.json      — ABI + deployed address (consumed by backend)
+├── hardhat.config.js
+├── package.json
+├── .env.example
+└── README.md            — you are here
+```
