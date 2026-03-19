@@ -818,3 +818,8 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
   2. Landing page missing 4 sections (Provider Setup Demo, Founding Rates Table, What You Can Run, Programmatic Integration)
 - **Recommended child issues**: Update header nav, add missing landing sections, update hero headline to "Borderless GPU Compute"
 - **Breaking changes**: None
+
+## [2026-03-19 08:27 UTC] Codex - DCP-89 vLLM playground API contract QA + regression fix
+- **Commit**: `n/a (Paperclip no-git container)`  Added/updated QA integration coverage for vLLM contract checks and fixed two backend regressions discovered during validation.
+- **Files**: `backend/src/services/escrow-chain.js`, `backend/src/routes/templates.js`, `backend/tests/integration/container-templates.test.js`, `backend/tests/integration/providers-available-vllm.test.js`
+- **Impact**: Restores job submission stability when on-chain escrow is disabled (`isEnabled()` fallback added), fixes `/api/templates` path so vLLM template is discoverable, and adds explicit tests for vLLM template presence and vLLM-capable providers in `/api/providers/available`.
