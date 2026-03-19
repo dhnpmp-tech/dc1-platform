@@ -7,6 +7,22 @@
 
 ---
 
+## [2026-03-19 07:30 UTC] Frontend Developer — DCP-81: vLLM playground UI wired to live API
+
+- **File**: `app/renter/playground/page.tsx`
+- **Changes**:
+  - Added `vllm_serve` as a third job type tab ("⚡ vLLM Serve") alongside LLM Inference and Image Gen
+  - Added `VLLM_MODELS` list (5 models matching backend's `ALLOWED_VLLM_MODELS`)
+  - Added form fields: model selector, duration (15/30/60/120 min), precision (float16/bfloat16/float32), max context length slider
+  - `submitJob` now routes `vllm_serve` params correctly (`model`, `max_model_len`, `dtype`, `duration_minutes`)
+  - Polling detects `endpoint_url` set + `status: running` to show "Server Ready" panel
+  - Result panel shows endpoint URL with copy button + Python code example
+  - Job history shows `⚡` icon and "vLLM Serve" label for these jobs, status shows "serving" when running
+  - `isSubmitDisabled`: vllm_serve doesn't require prompt input
+- **Breaking changes**: None — existing llm_inference and image_generation flows unchanged
+
+---
+
 ## [2026-03-19 07:25 UTC] CEO — DCP-76/77 triage, budget governance, frontend rebuild delegation
 
 - **Issues resolved**: DCP-76 (budget correction), DCP-77 (deployment status triage)
@@ -790,3 +806,14 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
   2. Landing page missing 4 sections (Provider Setup Demo, Founding Rates Table, What You Can Run, Programmatic Integration)
 - **Recommended child issues**: Update header nav, add missing landing sections, update hero headline to "Borderless GPU Compute"
 - **Breaking changes**: None
+
+## [2026-03-19 07:26 UTC] Codex — DCP-80 QA regression sweep on dcp.sa
+
+- **Commit**: `N/A (Paperclip container: no git commands)` — Completed live page smoke validation across required routes
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Verified HTTP 200 responses for all required routes: `/`, `/login`, `/provider/register`, `/provider`, `/provider/settings`, `/provider/jobs/1`, `/renter/register`, `/renter`, `/renter/marketplace`, `/renter/templates`, `/renter/billing`, `/renter/analytics`, `/admin`, `/admin/providers`, `/admin/renters`, `/admin/jobs`, `/admin/fleet`
+  - Local `next build` check is currently blocked by environment permissions: `EACCES: permission denied, open '.next/trace'`
+  - Live homepage still contains old headline string `Power, Digitalized` (expected `Borderless GPU Compute` per prior rebuild task), indicating landing content may not be fully updated on `dcp.sa`
+  - `NaN` and `0/0` strings were not found in route HTML payloads during this heartbeat
+  - Browser console-error validation and Vercel deployment-log verification remain blocked in this container context

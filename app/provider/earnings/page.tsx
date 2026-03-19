@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import DashboardLayout from '@/app/components/layout/DashboardLayout'
-import StatCard from '@/app/components/ui/StatCard'
-import StatusBadge from '@/app/components/ui/StatusBadge'
+import DashboardLayout from '../../components/layout/DashboardLayout'
+import StatCard from '../../components/ui/StatCard'
+import StatusBadge from '../../components/ui/StatusBadge'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'

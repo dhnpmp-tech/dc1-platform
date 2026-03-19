@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import DashboardLayout from '@/app/components/layout/DashboardLayout'
-import StatCard from '@/app/components/ui/StatCard'
-import { getApiBase, getProviderKey } from '@/lib/api'
+import DashboardLayout from '../../components/layout/DashboardLayout'
+import StatCard from '../../components/ui/StatCard'
+import { getApiBase, getProviderKey } from '../../../lib/api'
 
 // ── SVG Icons ──────────────────────────────────────────────────────────────
 const HomeIcon = () => (
