@@ -53,7 +53,7 @@ HMAC_SECRET = "{{HMAC_SECRET}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.3.1"
+DAEMON_VERSION = "3.3.2"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
@@ -63,6 +63,7 @@ CRASH_WINDOW = 600         # 10 minute window for counting crashes
 AUTO_UPDATE_CHECK = 300    # Check for updates every 5 minutes
 UPDATE_CRASH_THRESHOLD = 90  # If daemon crashes within 90s of update, rollback
 ROLLBACK_RECHECK_INTERVAL = 600  # After rollback, re-check for updates every 10 min
+CANONICAL_UPDATE_ENDPOINT = "https://dcp.sa/api/dc1/providers/download/daemon"
 
 # ─── CONTAINER SECURITY CONFIG ───────────────────────────────────────────────
 CONTAINER_CPU_LIMIT = "4"          # Max CPU cores per job container
@@ -395,44 +396,109 @@ def bandwidth_loop():
 
 # ─── AUTO-UPDATE ────────────────────────────────────────────────────────────
 
+def _parse_version(version):
+    """Convert semver-like string to tuple for numeric comparison."""
+    try:
+        parts = [int(p) for p in str(version).strip().split(".")]
+        return tuple(parts)
+    except Exception:
+        return None
+
+def _is_remote_newer(remote_version, local_version):
+    """Compare versions safely (numeric compare; fallback to string compare)."""
+    remote = _parse_version(remote_version)
+    local = _parse_version(local_version)
+    if remote is not None and local is not None:
+        max_len = max(len(remote), len(local))
+        remote = remote + (0,) * (max_len - len(remote))
+        local = local + (0,) * (max_len - len(local))
+        return remote > local
+    return str(remote_version).strip() != str(local_version).strip()
+
+def _legacy_update_endpoint():
+    """Legacy update endpoint derived from injected API URL."""
+    return f"{API_URL.rstrip('/')}/api/providers/download/daemon"
+
+def _candidate_update_endpoints():
+    """Ordered update endpoints: canonical first, legacy fallback second."""
+    return [CANONICAL_UPDATE_ENDPOINT, _legacy_update_endpoint()]
+
+def _resolve_download_url(download_url):
+    """Normalize download_url from check_only response."""
+    if not download_url:
+        return None
+    url = str(download_url).strip()
+    if not url:
+        return None
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("/api/providers/"):
+        return f"https://dcp.sa/api/dc1{url[4:]}"
+    if url.startswith("/"):
+        return f"https://dcp.sa{url}"
+    return None
+
 def check_for_update():
     """Check if a newer daemon version is available and self-update."""
-    try:
-        # The heartbeat response already tells us if update is available
-        # But we also have a dedicated download endpoint
-        url = f"{API_URL}/api/providers/download/daemon?key={API_KEY}&check_only=true"
-        code, resp = http_get(url)
-        if code == 200 and resp.get("version"):
-            remote_version = resp["version"]
-            if remote_version > DAEMON_VERSION:
-                log.info(f"Update available: {DAEMON_VERSION} → {remote_version}")
-                return perform_update(remote_version)
-    except Exception as e:
-        log.debug(f"Update check failed: {e}")
+    for endpoint in _candidate_update_endpoints():
+        try:
+            url = f"{endpoint}?key={API_KEY}&check_only=true"
+            code, resp = http_get(url)
+            if code != 200 or not isinstance(resp, dict) or not resp.get("version"):
+                continue
+
+            remote_version = str(resp["version"]).strip()
+            if _is_remote_newer(remote_version, DAEMON_VERSION):
+                log.info(f"Update available via {endpoint}: {DAEMON_VERSION} → {remote_version}")
+                resolved = _resolve_download_url(resp.get("download_url"))
+                return perform_update(remote_version, preferred_download_url=resolved)
+            return False
+        except Exception as e:
+            log.debug(f"Update check failed via {endpoint}: {e}")
     return False
 
-def perform_update(new_version):
+def perform_update(new_version, preferred_download_url=None):
     """Download new daemon, replace current file, and signal restart."""
     report_event("update_start", f"Updating {DAEMON_VERSION} → {new_version}")
     log.info(f"Downloading daemon v{new_version}...")
 
     try:
-        download_url = f"{API_URL}/api/providers/download/daemon?key={API_KEY}"
+        download_candidates = []
+        if preferred_download_url:
+            download_candidates.append(preferred_download_url)
+        for endpoint in _candidate_update_endpoints():
+            download_candidates.append(f"{endpoint}?key={API_KEY}")
 
-        if HAS_REQUESTS:
-            import requests as req_lib
-            r = req_lib.get(download_url, timeout=30)
-            if r.status_code != 200:
-                raise Exception(f"Download HTTP {r.status_code}")
-            new_code = r.text
-        else:
-            import urllib.request
-            with urllib.request.urlopen(download_url, timeout=30) as resp:
-                new_code = resp.read().decode("utf-8")
+        new_code = None
+        used_url = None
+        last_error = None
+        for download_url in download_candidates:
+            try:
+                if HAS_REQUESTS:
+                    import requests as req_lib
+                    r = req_lib.get(download_url, timeout=30)
+                    if r.status_code != 200:
+                        raise Exception(f"Download HTTP {r.status_code}")
+                    candidate_code = r.text
+                else:
+                    import urllib.request
+                    with urllib.request.urlopen(download_url, timeout=30) as resp:
+                        candidate_code = resp.read().decode("utf-8")
 
-        # Validate it's actually Python code
-        if "DC1 Provider Daemon" not in new_code or "def main()" not in new_code:
-            raise Exception("Downloaded file doesn't look like a valid daemon")
+                if "DC1 Provider Daemon" not in candidate_code or "def main()" not in candidate_code:
+                    raise Exception("Downloaded file doesn't look like a valid daemon")
+
+                new_code = candidate_code
+                used_url = download_url
+                break
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not new_code:
+            raise Exception(f"All update downloads failed: {last_error}")
+
+        log.info(f"Downloaded update from: {used_url}")
 
         # Save current as backup
         current_path = Path(__file__).resolve()
@@ -1544,9 +1610,16 @@ def run_vllm_serve_job(task_spec, job_id=None):
     report_event("container_complete", f"vLLM serve job {job_id} completed — container stopped", job_id=job_id)
     log.info(f"vLLM container {container_name} stopped and removed")
 
+    endpoint_url = f"http://{public_ip}:{port}/v1"
     return {
         "success": True,
-        "endpoint_url": f"http://{public_ip}:{port}/v1",
+        "result": {
+            "endpoint_url": endpoint_url,
+            "model": model,
+            "port": port,
+        },
+        # Backward-compatible top-level keys for any consumers that read outcome directly.
+        "endpoint_url": endpoint_url,
         "model": model,
         "port": port,
     }
@@ -1570,15 +1643,16 @@ def execute_job(job):
     log.info(f"Executing job {job_id} (type: {job_type})")
 
     try:
-        # Pure benchmark jobs (no script needed)
-        if job_type == "benchmark" or (isinstance(task_spec, dict) and task_spec.get("benchmark")):
-            return run_gpu_benchmark(task_spec if isinstance(task_spec, dict) else {})
-
-        # vLLM serverless serve — long-running detached container with health polling
+        # vLLM serverless serve — long-running detached container with health polling.
+        # This must run before benchmark fallback in case task_spec contains benchmark metadata.
         if job_type == "vllm_serve":
             if not check_docker():
                 return {"success": False, "error": "Docker not available — vllm_serve requires Docker with NVIDIA Container Toolkit"}
             return run_vllm_serve_job(task_spec, job_id=job_id)
+
+        # Pure benchmark jobs (no script needed)
+        if job_type == "benchmark" or (isinstance(task_spec, dict) and task_spec.get("benchmark")):
+            return run_gpu_benchmark(task_spec if isinstance(task_spec, dict) else {})
 
         # Script-based jobs — Docker > bare-metal
         has_script = (isinstance(task_spec, str) and len(task_spec) > 10) or \
@@ -1963,14 +2037,18 @@ def main():
 
 # ─── CRASH WATCHDOG ─────────────────────────────────────────────────────────
 
-def _find_backup_files():
+def _find_backup_files(daemon_path=None):
     """Find all .bak files from previous daemon versions."""
-    daemon_path = Path(__file__).resolve()
-    return sorted(daemon_path.parent.glob("dc1-daemon.v*.bak"), reverse=True)
+    daemon_path = daemon_path or Path(__file__).resolve()
+    current_pattern = f"{daemon_path.stem}.v*.bak"
+    legacy_pattern = "dc1-daemon.v*.bak"
+    backups = list(daemon_path.parent.glob(current_pattern))
+    backups.extend(daemon_path.parent.glob(legacy_pattern))
+    return sorted(backups, reverse=True)
 
 def _rollback_daemon(daemon_path):
     """Rollback to the most recent backup file. Returns True if successful."""
-    backups = _find_backup_files()
+    backups = _find_backup_files(daemon_path)
     if not backups:
         log.error("[WATCHDOG] No backup files found — cannot rollback")
         return False
