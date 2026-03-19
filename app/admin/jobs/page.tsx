@@ -124,7 +124,7 @@ export default function JobsPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Job Control Center</h1>
         <p className="text-dc1-text-secondary">
-          {data ? `${data.total} total jobs` : 'Loading...'}
+          {data ? `${data.total || data.jobs?.length || 0} total jobs` : 'Loading...'}
         </p>
       </div>
 

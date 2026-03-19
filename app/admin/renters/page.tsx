@@ -254,9 +254,9 @@ export default function RentersPage() {
                       <div className="text-xs text-dc1-text-muted">{r.email}</div>
                     </td>
                     <td className="text-sm">{r.organization || '—'}</td>
-                    <td className="text-sm text-dc1-amber">{r.balance !== null ? `${(r.balance / 100).toFixed(2)} SAR` : '—'}</td>
+                    <td className="text-sm text-dc1-amber">{r.balance_halala !== null && r.balance_halala !== undefined ? `${(r.balance_halala / 100).toFixed(2)} SAR` : '—'}</td>
                     <td className="text-sm">{r.total_jobs || 0}</td>
-                    <td className="text-sm">{r.total_spent ? `${(r.total_spent / 100).toFixed(2)} SAR` : '—'}</td>
+                    <td className="text-sm">{r.total_spent_halala ?? `${(r.total_spent_halala ?/ 100).toFixed(2)} SAR` : '—'}</td>
                     <td>
                       <StatusBadge status={r.status === 'suspended' ? 'warning' : 'online'}
                         label={r.status === 'suspended' ? 'Suspended' : 'Active'} />
