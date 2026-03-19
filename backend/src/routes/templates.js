@@ -4,7 +4,7 @@ const path = require('path');
 const router = express.Router();
 
 // Templates are stored as JSON files in /docker-templates at the repo root
-const TEMPLATES_DIR = path.join(__dirname, '../../../../docker-templates');
+const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
 
 // Collect all approved images across all templates (for daemon whitelist)
 const APPROVED_IMAGES_EXTRA = [

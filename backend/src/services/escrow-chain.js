@@ -196,7 +196,22 @@ class ChainEscrowService {
 }
 
 function getChainEscrow() {
-  if (!ethers) return { depositAndLock: async () => null, claimLock: async () => null, cancelExpiredLock: async () => null, getEscrowState: async () => null };
+  if (!ethers) {
+    return {
+      isEnabled: () => false,
+      depositAndLock: async () => null,
+      claimLock: async () => null,
+      cancelExpiredLock: async () => null,
+      getEscrow: async () => null,
+      getStatus: async () => ({
+        enabled: false,
+        contractAddress: null,
+        network: null,
+        oracleAddress: null,
+      }),
+    };
+  }
+  return _getChainEscrow();
 }
 function _getChainEscrow() {
   if (!_instance) {

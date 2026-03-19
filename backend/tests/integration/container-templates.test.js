@@ -58,6 +58,13 @@ describe('GET /api/templates — list all templates', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.templates)).toBe(true);
   });
+
+  it('includes vllm-serve template in list', async () => {
+    const res = await request(app).get('/api/templates');
+    expect(res.status).toBe(200);
+    const ids = (res.body.templates || []).map(t => t.id);
+    expect(ids).toContain('vllm-serve');
+  });
 });
 
 describe('GET /api/templates?tag= — tag filtering', () => {
