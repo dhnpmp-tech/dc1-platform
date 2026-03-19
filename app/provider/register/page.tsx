@@ -15,6 +15,7 @@ interface RegistrationFormData {
   gpuModel: string
   operatingSystem: string
   phone: string
+  pdplConsent: boolean
 }
 
 interface StatusStep {
@@ -30,6 +31,7 @@ export default function ProviderRegisterPage() {
     gpuModel: '',
     operatingSystem: '',
     phone: '',
+    pdplConsent: false,
   })
 
   const [isLoading, setIsLoading] = useState(false)
@@ -61,6 +63,10 @@ export default function ProviderRegisterPage() {
     }
     if (!formData.operatingSystem) {
       setError('Operating system is required')
+      return false
+    }
+    if (!formData.pdplConsent) {
+      setError('You must consent to data processing to register')
       return false
     }
     return true
@@ -684,19 +690,24 @@ export default function ProviderRegisterPage() {
                 />
               </div>
 
-              {/* Terms Agreement */}
+              {/* PDPL Consent */}
               <div className="p-4 rounded-lg bg-dc1-surface-l2 border border-dc1-border">
-                <p className="text-sm text-dc1-text-secondary">
-                  By registering, you agree to our{' '}
-                  <a href="/terms" className="text-dc1-amber hover:underline">
-                    Terms of Service
-                  </a>{' '}
-                  and{' '}
-                  <a href="/privacy" className="text-dc1-amber hover:underline">
-                    Privacy Policy
-                  </a>
-                  .
-                </p>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="pdplConsent"
+                    checked={formData.pdplConsent}
+                    onChange={(e) => setFormData(prev => ({ ...prev, pdplConsent: e.target.checked }))}
+                    className="mt-0.5 w-4 h-4 rounded border-dc1-border accent-dc1-amber flex-shrink-0"
+                    required
+                  />
+                  <span className="text-sm text-dc1-text-secondary">
+                    I consent to DC1 collecting and processing my personal data (name, email, IP address, GPU metrics) as described in the{' '}
+                    <a href="/privacy" className="text-dc1-amber hover:underline">Privacy Policy</a>.
+                    {' '}I understand my data is processed on servers outside Saudi Arabia (Lithuania/US) and I consent to this cross-border transfer. I agree to the{' '}
+                    <a href="/terms" className="text-dc1-amber hover:underline">Terms of Service</a>.
+                  </span>
+                </label>
               </div>
 
               {/* Submit Button */}

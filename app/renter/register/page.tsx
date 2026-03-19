@@ -22,6 +22,7 @@ export default function RenterRegisterPage() {
     organization: '',
     useCase: 'AI Training',
     phone: '',
+    pdplConsent: false,
   })
 
   const [loading, setLoading] = useState(false)
@@ -50,6 +51,12 @@ export default function RenterRegisterPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+
+    if (!formData.pdplConsent) {
+      setError('You must consent to data processing to register')
+      setLoading(false)
+      return
+    }
 
     try {
       const res = await fetch(`${API_BASE}/renters/register`, {
@@ -258,6 +265,26 @@ export default function RenterRegisterPage() {
                   placeholder="+1 (555) 123-4567"
                   className="input"
                 />
+              </div>
+
+              {/* PDPL Consent */}
+              <div className="p-4 rounded-lg bg-dc1-surface-l2 border border-dc1-border">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="pdplConsent"
+                    checked={formData.pdplConsent}
+                    onChange={(e) => setFormData(prev => ({ ...prev, pdplConsent: e.target.checked }))}
+                    className="mt-0.5 w-4 h-4 rounded border-dc1-border accent-dc1-amber flex-shrink-0"
+                    required
+                  />
+                  <span className="text-sm text-dc1-text-secondary">
+                    I consent to DC1 collecting and processing my personal data (name, email, billing history, job history) as described in the{' '}
+                    <a href="/privacy" className="text-dc1-amber hover:underline">Privacy Policy</a>.
+                    {' '}I understand my data is processed on servers outside Saudi Arabia (Lithuania/US) and I consent to this cross-border transfer. I agree to the{' '}
+                    <a href="/terms" className="text-dc1-amber hover:underline">Terms of Service</a>.
+                  </span>
+                </label>
               </div>
 
               <button

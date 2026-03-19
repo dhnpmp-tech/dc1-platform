@@ -12,7 +12,11 @@ type JobType = 'llm_inference' | 'image_generation';
 
 const LLM_MODELS = [
   { id: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0', label: 'TinyLlama 1.1B Chat', vram: '~2 GB', speed: 'Fast' },
-  { id: 'microsoft/phi-2', label: 'Microsoft Phi-2 (2.7B)', vram: '~5 GB', speed: 'Medium' },
+  { id: 'google/gemma-2b-it', label: 'Google Gemma 2B Instruct', vram: '~4 GB', speed: 'Fast' },
+  { id: 'microsoft/Phi-3-mini-4k-instruct', label: 'Microsoft Phi-3 Mini (3.8B)', vram: '~4 GB', speed: 'Medium' },
+  { id: 'mistralai/Mistral-7B-Instruct-v0.2', label: 'Mistral 7B Instruct v0.2', vram: '~14 GB', speed: 'Medium' },
+  { id: 'meta-llama/Meta-Llama-3-8B-Instruct', label: 'Llama 3 8B Instruct', vram: '~16 GB', speed: 'Medium' },
+  { id: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B', label: 'DeepSeek R1 Distill 8B', vram: '~16 GB', speed: 'Slow' },
 ] as const;
 
 const SD_MODELS = [
@@ -146,7 +150,9 @@ function GpuPlayground() {
 
   // ── Auth ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('dc1_renter_key') : null;
+    const saved = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_renter_key'))
+      : null;
     if (saved) {
       setRenterKey(saved);
       verifyKey(saved);

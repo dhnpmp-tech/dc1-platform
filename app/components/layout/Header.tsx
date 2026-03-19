@@ -5,9 +5,9 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 
 const publicNav = [
-  { label: 'Home', href: '/' },
-  { label: 'For Providers', href: '/provider/register' },
-  { label: 'For Renters', href: '/renter/register' },
+  { label: 'Compute', href: '/renter/register' },
+  { label: 'Supply', href: '/provider/register' },
+  { label: 'Docs', href: '/docs' },
 ]
 
 export default function Header() {
@@ -55,10 +55,10 @@ export default function Header() {
           {/* Right side: Auth buttons */}
           <div className="hidden md:flex items-center gap-3">
             <Link href="/login" className="btn btn-secondary btn-sm">
-              Sign In
+              Console Login
             </Link>
             <Link href="/provider/register" className="btn btn-primary btn-sm">
-              Get Started
+              Get Early Access
             </Link>
           </div>
 
@@ -98,8 +98,8 @@ export default function Header() {
               ))}
             </nav>
             <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-dc1-border px-4">
-              <Link href="/login" className="btn btn-secondary text-center">Sign In</Link>
-              <Link href="/provider/register" className="btn btn-primary text-center">Get Started</Link>
+              <Link href="/login" className="btn btn-secondary text-center">Console Login</Link>
+              <Link href="/provider/register" className="btn btn-primary text-center">Get Early Access</Link>
             </div>
           </div>
         )}
