@@ -41,7 +41,7 @@ export default function TermsPage() {
       <p>These Terms are governed by the laws of the Kingdom of Saudi Arabia. Disputes shall be resolved in the courts of Riyadh.</p>
 
       <h2>11. Contact</h2>
-      <p>Questions about these Terms may be directed to <a href="mailto:legal@dc1st.com">legal@dc1st.com</a>.</p>
+      <p>Questions about these Terms may be directed to <a href="mailto:legal@dcp.sa">legal@dcp.sa</a>.</p>
     </LegalPage>
   )
 }

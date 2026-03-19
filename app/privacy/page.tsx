@@ -12,8 +12,8 @@ export default function PrivacyPage() {
 
       <h2>1. Data Controller</h2>
       <p>
-        DC1 Platform is the data controller for personal data processed through dc1st.com and the DC1 API.
-        For privacy inquiries, contact: <a href="mailto:privacy@dc1st.com">privacy@dc1st.com</a>
+        DC1 Platform is the data controller for personal data processed through dcp.sa and the DC1 API.
+        For privacy inquiries, contact: <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a>
       </p>
 
       <h2>2. Personal Data We Collect</h2>
@@ -115,11 +115,11 @@ export default function PrivacyPage() {
       <ul>
         <li>
           <strong>Right of access</strong>: Request a copy of your personal data — email{' '}
-          <a href="mailto:privacy@dc1st.com">privacy@dc1st.com</a>
+          <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a>
         </li>
         <li>
           <strong>Right to correction</strong>: Request correction of inaccurate data — contact{' '}
-          <a href="mailto:privacy@dc1st.com">privacy@dc1st.com</a>
+          <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a>
         </li>
         <li>
           <strong>Right to erasure (right to be forgotten)</strong>: Delete your account and anonymize your PII
@@ -169,9 +169,9 @@ export default function PrivacyPage() {
 
       <h2>12. Contact</h2>
       <ul>
-        <li>Privacy inquiries (PDPL rights requests): <a href="mailto:privacy@dc1st.com">privacy@dc1st.com</a></li>
-        <li>Security vulnerabilities: <a href="mailto:security@dc1st.com">security@dc1st.com</a></li>
-        <li>General support: <a href="mailto:support@dc1st.com">support@dc1st.com</a></li>
+        <li>Privacy inquiries (PDPL rights requests): <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a></li>
+        <li>Security vulnerabilities: <a href="mailto:security@dcp.sa">security@dcp.sa</a></li>
+        <li>General support: <a href="mailto:support@dcp.sa">support@dcp.sa</a></li>
       </ul>
     </LegalPage>
   )

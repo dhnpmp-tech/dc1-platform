@@ -33,10 +33,10 @@ export default function AcceptableUsePage() {
       <p>Providers must ensure their hardware is maintained in good working condition, respond to platform health checks, and not artificially inflate uptime or performance metrics.</p>
 
       <h2>Enforcement</h2>
-      <p>DC1 reserves the right to monitor usage patterns for compliance. Violations will result in warnings, temporary suspension, or permanent account termination depending on severity. Appeals may be directed to <a href="mailto:abuse@dc1st.com">abuse@dc1st.com</a>.</p>
+      <p>DC1 reserves the right to monitor usage patterns for compliance. Violations will result in warnings, temporary suspension, or permanent account termination depending on severity. Appeals may be directed to <a href="mailto:abuse@dcp.sa">abuse@dcp.sa</a>.</p>
 
       <h2>Reporting Violations</h2>
-      <p>If you observe a violation of this policy, please report it to <a href="mailto:abuse@dc1st.com">abuse@dc1st.com</a>.</p>
+      <p>If you observe a violation of this policy, please report it to <a href="mailto:abuse@dcp.sa">abuse@dcp.sa</a>.</p>
     </LegalPage>
   )
 }

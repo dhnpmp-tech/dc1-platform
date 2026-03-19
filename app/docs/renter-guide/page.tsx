@@ -68,7 +68,7 @@ x-renter-key: your-api-key
       </ul>
 
       <h2>Need Help?</h2>
-      <p>Visit our <a href="/support">Support page</a> for FAQs and contact information, or email <a href="mailto:support@dc1st.com">support@dc1st.com</a> for direct assistance.</p>
+      <p>Visit our <a href="/support">Support page</a> for FAQs and contact information, or email <a href="mailto:support@dcp.sa">support@dcp.sa</a> for direct assistance.</p>
     </LegalPage>
   )
 }

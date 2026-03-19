@@ -5,14 +5,14 @@ import Link from 'next/link'
 import Footer from '@/app/components/layout/Footer'
 
 const supportChannels = [
-  { title: 'Email Support', description: 'For account issues, billing questions, and general inquiries.', contact: 'support@dc1st.com', icon: '✉' },
-  { title: 'Abuse Reports', description: 'Report policy violations or suspicious activity.', contact: 'abuse@dc1st.com', icon: '⚠' },
-  { title: 'Privacy Requests', description: 'Data access, correction, or deletion requests.', contact: 'privacy@dc1st.com', icon: '🔒' },
+  { title: 'Email Support', description: 'For account issues, billing questions, and general inquiries.', contact: 'support@dcp.sa', icon: '✉' },
+  { title: 'Abuse Reports', description: 'Report policy violations or suspicious activity.', contact: 'abuse@dcp.sa', icon: '⚠' },
+  { title: 'Privacy Requests', description: 'Data access, correction, or deletion requests.', contact: 'privacy@dcp.sa', icon: '🔒' },
 ]
 
 const faqs = [
   { q: 'How do I get my API key?', a: 'Your API key is generated automatically when you register as a provider or renter. It is shown once on the registration success screen — save it securely.' },
-  { q: 'I lost my API key. How do I recover it?', a: 'Contact support@dc1st.com with your registered email address. We will verify your identity and issue a new key.' },
+  { q: 'I lost my API key. How do I recover it?', a: 'Contact support@dcp.sa with your registered email address. We will verify your identity and issue a new key.' },
   { q: 'My daemon shows as offline. What should I do?', a: 'Ensure the Python process is running (check with `ps aux | grep dc1_daemon`). Verify your internet connection and that no firewall blocks outbound HTTPS.' },
   { q: 'How is billing calculated?', a: 'LLM inference is billed at 15 halala/minute, image generation at 20 halala/minute. Providers receive 75% and DC1 retains 25%.' },
   { q: 'Can I use DC1 for cryptocurrency mining?', a: 'No. Cryptocurrency mining is prohibited under our Acceptable Use Policy and will result in account termination.' },
@@ -39,12 +39,12 @@ function ContactForm() {
       } else {
         // If endpoint doesn't exist yet, fall back to mailto
         setStatus('sent');
-        window.location.href = `mailto:support@dc1st.com?subject=[${form.category}] Support Request from ${form.name}&body=${encodeURIComponent(form.message)}`;
+        window.location.href = `mailto:support@dcp.sa?subject=[${form.category}] Support Request from ${form.name}&body=${encodeURIComponent(form.message)}`;
       }
     } catch {
       // Fallback to mailto if API unreachable
       setStatus('sent');
-      window.location.href = `mailto:support@dc1st.com?subject=[${form.category}] Support Request from ${form.name}&body=${encodeURIComponent(form.message)}`;
+      window.location.href = `mailto:support@dcp.sa?subject=[${form.category}] Support Request from ${form.name}&body=${encodeURIComponent(form.message)}`;
     }
   };
 

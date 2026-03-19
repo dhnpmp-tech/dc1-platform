@@ -178,7 +178,7 @@ export default function HomePage() {
                 step: '2',
                 title: 'Download and run the installer',
                 desc: 'One command installs the daemon and registers your GPU.',
-                code: '# Linux / macOS\ncurl -sSL https://dc1.sa/install.sh | bash',
+                code: '# Linux / macOS\ncurl -sSL https://dcp.sa/install.sh | bash',
               },
               {
                 step: '3',
@@ -211,7 +211,7 @@ export default function HomePage() {
             <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Windows (PowerShell)</p>
             <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`# Run as Administrator
 Invoke-WebRequest \`
-  -Uri "https://dc1.sa/install.ps1" \`
+  -Uri "https://dcp.sa/install.ps1" \`
   -OutFile install.ps1
 .\\install.ps1 \`
   --key YOUR_PROVIDER_KEY`}</pre>
@@ -398,7 +398,7 @@ Invoke-WebRequest \`
             </div>
             <div className="card border-dc1-amber/20">
               <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Submit a job via curl</p>
-              <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://api.dc1.sa/api/jobs/submit \\
+              <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://api.dcp.sa/api/jobs/submit \\
   -H "x-renter-key: YOUR_RENTER_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
