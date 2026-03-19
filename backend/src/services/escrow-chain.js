@@ -1,5 +1,14 @@
 'use strict';
 
+// Graceful fallback when ethers is not installed
+let ethers, EscrowABI;
+try {
+  ethers = require('ethers');
+  EscrowABI = require('../../contracts/abis/Escrow.json');
+} catch (e) {
+  console.warn('[escrow-chain] ethers not installed — on-chain escrow disabled');
+}
+
 /**
  * ChainEscrowService — on-chain escrow via Escrow.sol on Base Sepolia (DCP-75)
  *
@@ -10,8 +19,8 @@
  *   job runs → claimLock (oracle-signed) → cancelExpiredLock if failed/expired
  */
 
-const { ethers } = require('ethers');
-const EscrowABI = require('../../contracts/abis/Escrow.json');
+// const { ethers } = require("ethers"); // moved to top with fallback
+// const EscrowABI = require("../../contracts/abis/Escrow.json"); // moved to top with fallback
 
 let _instance = null;
 
@@ -187,6 +196,9 @@ class ChainEscrowService {
 }
 
 function getChainEscrow() {
+  if (!ethers) return { depositAndLock: async () => null, claimLock: async () => null, cancelExpiredLock: async () => null, getEscrowState: async () => null };
+}
+function _getChainEscrow() {
   if (!_instance) {
     _instance = new ChainEscrowService();
   }
