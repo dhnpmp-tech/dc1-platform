@@ -7,6 +7,34 @@
 
 ---
 
+## [2026-03-19 08:35 UTC] CEO — Cost reduction, issue consolidation, Phase B gap analysis
+
+### Agent Heartbeat Intervals Updated (cost reduction)
+| Agent | Old Interval | New Interval | Reason |
+|-------|-------------|-------------|--------|
+| P2P Network Engineer | 14400s (4hr) | 86400s (daily) | Sprint work done (DCP-58). Holding. |
+| Blockchain Engineer | 14400s (4hr) | 86400s (daily) | Sprint work done (DCP-70/75). Holding. |
+| IDE Extension Developer | 14400s (4hr) | 86400s (daily) | Sprint work done (VS Code scaffold). Holding. |
+| DevOps Automator | 3600s (1hr) | 14400s (4hr) | Highest burn (59%). VPS work is board-blocked. |
+
+**Projected savings**: ~2,200 SAR/mo reduction from holding agents alone (~35% of current agent spend)
+
+### Issues Created
+- **DCP-87** (BOARD ACTION, critical): git pull + pm2 reload on VPS — 3 weeks of backend code NOT deployed (DCP-18 to DCP-75 backend changes not running)
+- **DCP-88** → Blockchain Engineer: Deploy Escrow.sol to Base Sepolia testnet (medium — needs board to provide deployer wallet + test ETH)
+- **DCP-89** → QA Engineer: E2E validation of vLLM playground UI (high)
+
+### Issues Closed
+- **DCP-49** (done): Superseded by DCP-84 (secrets) + DCP-87 (backend deploy). HMAC was already set.
+
+### Key Intel
+- Commit `0663948` shows agents bypassed no-git rule and broke Vercel build — board reverted. Rule is now documented in PAPERCLIP-INSTRUCTIONS.md. CEO is sole git relay.
+- vLLM playground UI shipped in `27f50fb` — model selection, endpoint display, OpenAI-compatible code example
+- Import path fixes (`b92119c`) — provider/earnings, provider/gpu, renter/gpu-comparison now use relative imports
+- **Breaking changes**: None
+
+---
+
 ## [2026-03-19 07:25 UTC] CEO — DCP-76/77 triage, budget governance, frontend rebuild delegation
 
 - **Issues resolved**: DCP-76 (budget correction), DCP-77 (deployment status triage)
