@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import DashboardLayout from '@/app/components/layout/DashboardLayout'
-import StatCard from '@/app/components/ui/StatCard'
+import DashboardLayout from '../../components/layout/DashboardLayout'
+import StatCard from '../../components/ui/StatCard'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'
@@ -24,6 +24,7 @@ export default function BillingPage() {
   const [topupAmount, setTopupAmount] = useState('')
   const [topupLoading, setTopupLoading] = useState(false)
   const [topupSuccess, setTopupSuccess] = useState(false)
+  const [topupError, setTopupError] = useState('')
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
@@ -79,28 +80,28 @@ export default function BillingPage() {
     if (!amountSar || amountSar <= 0) return
     setTopupLoading(true)
     setTopupSuccess(false)
+    setTopupError('')
     try {
-      const res = await fetch(`${API_BASE}/renters/topup`, {
+      const amountHalala = Math.round(amountSar * 100)
+      const res = await fetch(`${API_BASE}/payments/topup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
-        body: JSON.stringify({ amount_sar: amountSar }),
+        body: JSON.stringify({ amount_halala: amountHalala }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || 'Top-up failed')
+        setTopupError(err.error || 'Top-up failed. Please try again.')
         return
       }
       const data = await res.json()
-      setTopupSuccess(true)
-      setTopupAmount('')
-      // Refresh renter data
-      if (data.new_balance_halala != null) {
-        setRenter((prev: any) => prev ? { ...prev, balance_halala: data.new_balance_halala } : prev)
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url
+      } else {
+        setTopupError('No checkout URL returned. Please try again.')
       }
-      setTimeout(() => setTopupSuccess(false), 4000)
     } catch (err) {
       console.error('Top-up failed:', err)
-      alert('Top-up failed. Please try again.')
+      setTopupError('Top-up failed. Please try again.')
     } finally {
       setTopupLoading(false)
     }
@@ -189,9 +190,12 @@ export default function BillingPage() {
           </button>
         </div>
         {topupSuccess && (
-          <p className="text-sm text-status-success mt-3 font-medium">Funds added successfully! Balance updated.</p>
+          <p className="text-sm text-status-success mt-3 font-medium">Redirecting to payment...</p>
         )}
-        <p className="text-xs text-dc1-text-muted mt-3">Payment integration coming soon. Currently admin-verified top-ups.</p>
+        {topupError && (
+          <p className="text-sm text-status-error mt-3">{topupError}</p>
+        )}
+        <p className="text-xs text-dc1-text-muted mt-3">Secure payment via Moyasar. You will be redirected to complete payment.</p>
       </div>
 
       {/* Rate card */}

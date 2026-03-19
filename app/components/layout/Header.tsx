@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
+import { LanguageToggle } from '../../lib/i18n'
 
 const publicNav = [
   { label: 'Compute', href: '/renter/register' },
@@ -52,8 +53,9 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* Right side: Auth buttons */}
+          {/* Right side: Language toggle + Auth buttons */}
           <div className="hidden md:flex items-center gap-3">
+            <LanguageToggle />
             <Link href="/login" className="btn btn-secondary btn-sm">
               Console Login
             </Link>
@@ -98,6 +100,7 @@ export default function Header() {
               ))}
             </nav>
             <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-dc1-border px-4">
+              <LanguageToggle className="self-start" />
               <Link href="/login" className="btn btn-secondary text-center">Console Login</Link>
               <Link href="/provider/register" className="btn btn-primary text-center">Get Early Access</Link>
             </div>

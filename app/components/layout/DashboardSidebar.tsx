@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
+import { LanguageToggle } from '../../lib/i18n'
 
 export interface NavItem {
   label: string
@@ -75,6 +76,11 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
 
       {/* User section */}
       <div className="border-t border-dc1-border px-4 py-4">
+        {!collapsed && (
+          <div className="mb-3">
+            <LanguageToggle className="w-full justify-center" />
+          </div>
+        )}
         {!collapsed && userName && (
           <div className="flex items-center gap-3 mb-3">
             <div className="w-8 h-8 rounded-full bg-dc1-amber/20 flex items-center justify-center text-dc1-amber text-sm font-bold">

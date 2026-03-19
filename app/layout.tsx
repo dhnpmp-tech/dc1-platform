@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { LanguageWrapper } from './lib/i18n'
 
 export const metadata: Metadata = {
   title: 'DC1 Platform - GPU Compute Marketplace',
@@ -23,7 +24,9 @@ export default function RootLayout({
         />
       </head>
       <body className="font-inter bg-dc1-void text-dc1-text-primary antialiased">
-        {children}
+        <LanguageWrapper>
+          {children}
+        </LanguageWrapper>
       </body>
     </html>
   )

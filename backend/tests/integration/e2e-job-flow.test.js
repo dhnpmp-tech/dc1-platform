@@ -9,6 +9,7 @@
 const request = require('supertest');
 const { createApp } = require('./test-app');
 const { cleanDb, registerProvider, registerRenter, bringOnline, db } = require('./helpers');
+const { enforceJobTimeouts } = require('../../src/routes/jobs');
 
 const app = createApp();
 
@@ -128,5 +129,44 @@ describe('E2E Job Flow', () => {
       .set('x-provider-key', providerKey)
       .send({ result: 'done again' });
     expect(dup.status).toBe(409);
+  });
+
+  it('times out overdue jobs and refunds renter + releases escrow to renter', async () => {
+    const { apiKey: providerKey, providerId } = await registerProvider(request, app);
+    await bringOnline(request, app, providerKey);
+    const { apiKey: renterKey, renterId } = await registerRenter(request, app, { balanceHalala: 50_000 });
+
+    const submit = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({
+        provider_id: providerId,
+        job_type: 'llm_inference',
+        duration_minutes: 5,
+        max_duration_seconds: 1,
+        params: { prompt: 'timeout test', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' },
+      });
+    expect(submit.status).toBe(201);
+    const jobId = submit.body.job.job_id;
+
+    // Move job to assigned/locked state so timeout path covers execution-stage jobs too.
+    const assigned = await request(app).get(`/api/jobs/assigned?key=${providerKey}`);
+    expect(assigned.status).toBe(200);
+    expect(assigned.body.job.job_id).toBe(jobId);
+
+    // Force timeout to be overdue, then trigger enforcer directly.
+    db.run(`UPDATE jobs SET timeout_at = datetime('now', '-2 minutes') WHERE job_id = ?`, jobId);
+    const timedOutCount = enforceJobTimeouts();
+    expect(timedOutCount).toBeGreaterThanOrEqual(1);
+
+    const timedOutJob = db.get('SELECT status, refunded_at FROM jobs WHERE job_id = ?', jobId);
+    expect(timedOutJob.status).toBe('failed');
+    expect(timedOutJob.refunded_at).toBeDefined();
+
+    const renterAfter = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId);
+    expect(renterAfter.balance_halala).toBe(50_000);
+
+    const escrow = db.get('SELECT status FROM escrow_holds WHERE job_id = ?', jobId);
+    expect(escrow.status).toBe('released_renter');
   });
 });

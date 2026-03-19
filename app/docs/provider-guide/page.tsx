@@ -2,7 +2,7 @@ import LegalPage from '@/app/components/layout/LegalPage'
 
 export default function ProviderGuidePage() {
   return (
-    <LegalPage title="Provider Guide" lastUpdated="March 12, 2026">
+    <LegalPage title="Provider Guide" lastUpdated="March 19, 2026">
       <h2>Overview</h2>
       <p>As a DC1 provider, you share your GPU hardware to earn revenue from compute jobs. This guide walks you through the entire process from registration to earning.</p>
 
@@ -11,13 +11,14 @@ export default function ProviderGuidePage() {
 
       <h2>Step 2: Install the Daemon</h2>
       <p>After registration, you will see platform-specific install commands:</p>
+      <p><strong>Important:</strong> You must run <strong>dc1_daemon.py v3.3.0 or later</strong>. Older daemon versions do not support HMAC-signed heartbeats and will be rejected by the API. Always download the daemon fresh from the registration page or via the SDK to ensure you have the current version.</p>
       <p><strong>Linux / macOS:</strong></p>
       <p>Run the curl command shown on screen to download and start the DC1 daemon. The daemon is a Python script that connects your GPU to the DC1 network.</p>
       <p><strong>Windows:</strong></p>
       <p>Run the PowerShell command shown on screen. This downloads and executes the setup script which installs the daemon as a background service.</p>
 
       <h2>Step 3: Daemon Connection</h2>
-      <p>Once running, the daemon sends a heartbeat every 30 seconds with your GPU status (model, VRAM, temperature, utilization). The registration page will show your status change from &quot;waiting&quot; to &quot;online&quot; in real-time.</p>
+      <p>Once running, the daemon sends a heartbeat every 30 seconds with your GPU status (model, VRAM, temperature, utilization). Each heartbeat is HMAC-signed with your API key so DC1 can verify it came from your machine. The registration page will show your status change from &quot;waiting&quot; to &quot;online&quot; in real-time.</p>
 
       <h2>Step 4: Receiving Jobs</h2>
       <p>When a renter submits a job that matches your GPU, the daemon automatically picks it up, runs the computation, and reports the result back. You don&apos;t need to do anything — the daemon handles everything.</p>
@@ -28,8 +29,111 @@ export default function ProviderGuidePage() {
         <li><strong>Image Generation</strong> — Stable Diffusion and similar models (billed at 20 halala/min)</li>
       </ul>
 
+      <h2>Model VRAM Requirements</h2>
+      <p>The vLLM Serve presets in DC1 currently support these models. Values below are practical estimates for FP16 inference (weights + runtime overhead), verified from Hugging Face model pages and model-sizer reports on March 19, 2026.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Minimum VRAM (FP16)</th>
+            <th>Recommended VRAM</th>
+            <th>Fits 12 GB GPU?</th>
+            <th>Fits 8 GB GPU?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>TinyLlama-1.1B</td>
+            <td>2 GB</td>
+            <td>3 GB</td>
+            <td>Yes</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td>Gemma-2B-it</td>
+            <td>5 GB</td>
+            <td>6 GB</td>
+            <td>Yes</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td>Phi-3-mini-4k</td>
+            <td>8 GB</td>
+            <td>10 GB</td>
+            <td>Yes</td>
+            <td>Borderline (usually no)</td>
+          </tr>
+          <tr>
+            <td>Mistral-7B</td>
+            <td>14 GB</td>
+            <td>16 GB</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Llama-3-8B</td>
+            <td>16 GB</td>
+            <td>18 GB</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+        </tbody>
+      </table>
+      <p><strong>Notes:</strong> 8 GB cards may run very small models only, and may fail under concurrent load. 12 GB cards are suitable for TinyLlama, Gemma, and most Phi-3 runs, but not for Mistral-7B/Llama-3-8B at FP16. Use quantization if you need larger models on lower VRAM hardware.</p>
+
       <h2>Earnings</h2>
       <p>You receive 75% of compute revenue. Earnings are tracked in real-time on your provider dashboard at <a href="/provider">dcp.sa/provider</a>. The dashboard shows today&apos;s earnings, weekly earnings, total earnings, and completed jobs.</p>
+
+      <h2>Withdrawing Earnings</h2>
+      <p>Once your claimable balance reaches the minimum threshold, you can request a payout. Minimum withdrawal is <strong>10 SAR</strong>. Processing takes 1–3 business days via bank transfer.</p>
+      <p>Submit a withdrawal via the dashboard or directly via the API:</p>
+      <pre><code>{`POST /api/providers/withdraw
+Content-Type: application/json
+
+{
+  "api_key": "dc1-provider-<your-key>",
+  "amount_sar": 50.00,
+  "payout_method": "bank_transfer",
+  "payout_details": {
+    "iban": "SA0000000000000000000000",
+    "account_name": "Khalid Al-Harbi"
+  }
+}`}</code></pre>
+      <p>A successful request returns a <code>withdrawal_id</code> and status <code>pending</code>. Track past payouts at <code>GET /api/providers/withdrawal-history?key=&lt;your-key&gt;</code>.</p>
+
+      <h2>dc1_provider Python SDK</h2>
+      <p>For custom integrations, automated pipelines, or building on top of DC1, use the official Python SDK instead of calling the HTTP API directly.</p>
+      <p><strong>Install:</strong></p>
+      <pre><code>pip install dc1_provider</code></pre>
+      <p><em>Note: the package is being published to PyPI. Until then, install from source:</em> <code>pip install ./sdk/python</code></p>
+      <p><strong>Register a new provider account:</strong></p>
+      <pre><code>{`from dc1_provider import DC1ProviderClient
+
+client = DC1ProviderClient()  # no api_key needed for registration
+result = client.register(
+    name="Khalid GPU Farm",
+    email="khalid@example.com",
+    gpu_model="RTX 4090",
+)
+print("API key:", result["api_key"])  # save this`}</code></pre>
+      <p><strong>Send a heartbeat and poll for jobs:</strong></p>
+      <pre><code>{`from dc1_provider import DC1ProviderClient
+
+client = DC1ProviderClient(api_key="dc1-provider-abc123")
+
+# Advertise your hardware capacity
+spec = client.build_resource_spec()  # auto-detects GPU via nvidia-smi
+client.announce(spec)
+
+# Poll for queued jobs
+jobs = client.get_jobs(status="queued")
+for job in jobs:
+    print(f"Job {job.id}: {job.job_type} — {job.earnings_sar:.2f} SAR")`}</code></pre>
+      <p><strong>Check your earnings:</strong></p>
+      <pre><code>{`e = client.get_earnings()
+print(f"Available: {e.available_sar:.2f} SAR")
+print(f"Total earned: {e.total_earned_sar:.2f} SAR")`}</code></pre>
+      <p>The SDK handles API key auth, retries, and response parsing. See <a href="/docs/api">API Reference</a> for the full endpoint list.</p>
 
       <h2>Managing Your Provider</h2>
       <ul>

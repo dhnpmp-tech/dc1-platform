@@ -203,7 +203,7 @@ export function LanguageWrapper({ children }: { children: React.ReactNode }) {
     localStorage.setItem('dc1_language', lang)
   }, [])
 
-  // Apply dir attribute to <html> when language changes
+  // Apply dir attribute and font to <html> and <body> when language changes
   useEffect(() => {
     const dir = language === 'ar' ? 'rtl' : 'ltr'
     document.documentElement.setAttribute('dir', dir)
@@ -211,9 +211,13 @@ export function LanguageWrapper({ children }: { children: React.ReactNode }) {
     if (language === 'ar') {
       document.documentElement.classList.add('font-tajawal')
       document.documentElement.classList.remove('font-inter')
+      document.body.classList.add('font-tajawal')
+      document.body.classList.remove('font-inter')
     } else {
       document.documentElement.classList.add('font-inter')
       document.documentElement.classList.remove('font-tajawal')
+      document.body.classList.add('font-inter')
+      document.body.classList.remove('font-tajawal')
     }
   }, [language])
 
