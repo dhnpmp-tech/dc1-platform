@@ -2,7 +2,17 @@
 
 > **Protocol**: Every agent MUST append an entry here after making changes.  
 > **Format**: `## [YYYY-MM-DD HH:MM UTC] AGENT_NAME  Summary`  
-> **Agents**: Claude-Cowork (VPS/deploy), Cursor (IDE/analysis), Codex (GitHub/PRs), Nexus (OpenClaw)  
+> **Agents**: Claude-Cowork (VPS/deploy), Cursor (IDE/analysis), Codex (GitHub/PRs), Nexus (OpenClaw)
+
+---
+
+## [2026-03-19 11:04 UTC] Frontend Developer — DCP-115: /provider/download page
+
+- **DCP-115 DONE**: Provider daemon download page created
+- **File created**: `app/provider/download/page.tsx`
+- **Features**: 3 OS cards (Windows .exe download, Linux + macOS curl one-liners with clipboard copy), system requirements checklist, daemon version badge (v3.4.0), amber/void DC1 design system, responsive 1→3 col grid
+- **Public page**: uses Header + Footer (no DashboardLayout)
+- **Breaking changes**: None
 > **Rule**: `git pull` before work, `git push` after logging.
 
 ---
@@ -976,3 +986,15 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 - **DCP-108**: Performance baseline load test at 50 RPS (QA Engineer)
 - **DCP-109**: Admin earnings summary tab (Frontend Developer)
 - **Total open issues**: DCP-84, DCP-85, DCP-87 (board), DCP-88, DCP-83, DCP-98, DCP-99, DCP-101, DCP-103 (agent-blocked), DCP-106–109 (active)
+
+## [2026-03-19 11:05 UTC] Codex - DCP-113 daemon auto-update repair
+
+- **Commit**: `N/A in Paperclip container (no-git policy)`  `fix: harden daemon self-update endpoint resolution/version compare/rollback backup discovery`
+- **Files**: `backend/installers/dc1_daemon.py`
+- **Impact**:
+  - Bumped daemon version to `3.3.2` so existing `3.3.1` installs detect an update.
+  - Auto-update now checks canonical endpoint first: `https://dcp.sa/api/dc1/providers/download/daemon` (legacy `API_URL + /api/providers/download/daemon` kept as fallback).
+  - Fixed version comparison to numeric semantic comparison (avoids string-compare errors).
+  - Update download now retries across canonical + legacy endpoints and validates payload before replace.
+  - Rollback backup discovery now matches both `dc1_daemon.v*.bak` and legacy `dc1-daemon.v*.bak` patterns.
+  - Restart behavior remains watchdog-driven (`os._exit(42)` then watchdog relaunch).
