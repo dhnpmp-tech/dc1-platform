@@ -1,0 +1,102 @@
+# DC1 P2P — 3-node local test
+#
+# Topology:
+#   bootstrap  — relay/rendezvous server   (port 8765)
+#   provider1  — RTX 3090, 24 GB, 20 SAR/hr  ← cheaper, should win
+#   provider2  — RTX 4090, 24 GB, 35 SAR/hr  ← more expensive, should lose
+#   renter     — submits an llm_inference job; expects provider1 to win
+#
+# Run:
+#   cd p2p && docker compose up --build
+#
+# Expected output:
+#   renter logs ">>> Winning bid: provider-... GPU=RTX 3090  2000 h/hr"
+#   renter logs "JOB COMPLETE  Success: True"
+#   Exit code 0
+
+version: "3.9"
+
+services:
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 bootstrap_server.py
+    ports:
+      - "8765:8765"
+    environment:
+      DC1_P2P_BOOTSTRAP_PORT: "8765"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.socket(); s.settimeout(2); s.connect(('localhost', 8765)); s.close()\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - dc1-p2p
+
+  provider1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      python3 provider_node.py
+      --gpu "RTX 3090"
+      --vram 24
+      --price 20.0
+      --location "Riyadh, SA"
+    environment:
+      DC1_P2P_BOOTSTRAP: "ws://bootstrap:8765"
+      DC1_P2P_HOST: "provider1"
+      DC1_P2P_PORT: "8766"
+    depends_on:
+      bootstrap:
+        condition: service_healthy
+    networks:
+      - dc1-p2p
+
+  provider2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      python3 provider_node.py
+      --gpu "RTX 4090"
+      --vram 24
+      --price 35.0
+      --location "Jeddah, SA"
+    environment:
+      DC1_P2P_BOOTSTRAP: "ws://bootstrap:8765"
+      DC1_P2P_HOST: "provider2"
+      DC1_P2P_PORT: "8766"
+    depends_on:
+      bootstrap:
+        condition: service_healthy
+    networks:
+      - dc1-p2p
+
+  renter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      python3 renter_client.py
+      --job-type llm_inference
+      --image dc1/simulate
+      --command "echo hello from DC1 P2P"
+      --min-vram 8
+      --max-price 25.0
+    environment:
+      DC1_P2P_BOOTSTRAP: "ws://bootstrap:8765"
+      DC1_RENTER_HOST: "renter"
+      DC1_RENTER_PORT: "8767"
+      DC1_BID_WINDOW_SECS: "5"
+    depends_on:
+      - provider1
+      - provider2
+    networks:
+      - dc1-p2p
+
+networks:
+  dc1-p2p:
+    driver: bridge

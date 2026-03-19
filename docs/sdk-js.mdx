@@ -1,0 +1,51 @@
+---
+title: SDK JavaScript
+description: Use the Node SDK for renter automation and job lifecycle polling.
+order: 3
+---
+
+## Install
+
+```bash
+npm install dc1-renter-sdk
+```
+
+## Initialize client
+
+```ts
+import { DC1RenterClient } from 'dc1-renter-sdk'
+
+const client = new DC1RenterClient({
+  apiKey: process.env.DC1_RENTER_KEY!,
+  baseUrl: 'https://api.dcp.sa',
+})
+```
+
+## Submit and wait for job
+
+```ts
+const job = await client.submitJob({
+  provider_id: 26,
+  job_type: 'llm-inference',
+  params: {
+    model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+    prompt: 'Explain edge inference in two paragraphs.',
+  },
+})
+
+const done = await client.waitForJob(job.job_id, { intervalMs: 3000, timeoutMs: 120000 })
+const output = await client.getJob(done.job_id)
+console.log(output.status, output.result)
+```
+
+## Common methods
+
+```text
+me()
+listProviders(filters?)
+submitJob(payload)
+getJob(jobId)
+waitForJob(jobId, options?)
+getBalance()
+getPaymentHistory()
+```

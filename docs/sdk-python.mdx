@@ -1,0 +1,44 @@
+---
+title: SDK Python
+description: Provider SDK usage for registration, resource advertisement, and earnings checks.
+order: 4
+---
+
+## Install
+
+```bash
+pip install dc1_provider
+```
+
+## Register provider
+
+```python
+from dc1_provider import DC1ProviderClient
+
+public_client = DC1ProviderClient()
+result = public_client.register(
+    name="Jeddah Node",
+    email="gpu@example.com",
+    gpu_model="RTX 3090",
+)
+print(result["api_key"])
+```
+
+## Send heartbeat and check jobs
+
+```python
+from dc1_provider import DC1ProviderClient
+
+client = DC1ProviderClient(api_key="dc1-provider-xxxx")
+spec = client.build_resource_spec()
+client.announce(spec)
+jobs = client.get_jobs(status="pending")
+print(f"queued: {len(jobs)}")
+```
+
+## Earnings API
+
+```python
+e = client.get_earnings()
+print(e.total_earned_sar, e.available_sar)
+```

@@ -112,11 +112,11 @@ export default function JobsPage() {
   }
 
   const stats = [
-    { label: 'Total Jobs', value: String(data?.total || 0), accent: 'default' as const },
-    { label: 'Completed', value: String(data?.completed || 0), accent: 'success' as const },
-    { label: 'Failed', value: String(data?.failed || 0), accent: 'error' as const },
-    { label: 'Active', value: String((data?.pending || 0) + (data?.assigned || 0) + (data?.running || 0)), accent: 'info' as const },
-    { label: 'Total Revenue', value: `${((data?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`, accent: 'amber' as const },
+    { label: 'Total Jobs', value: String(data?.stats?.total || 0), accent: 'default' as const },
+    { label: 'Completed', value: String(data?.stats?.completed || 0), accent: 'success' as const },
+    { label: 'Failed', value: String(data?.stats?.failed || 0), accent: 'error' as const },
+    { label: 'Active', value: String(data?.stats?.active || 0), accent: 'info' as const },
+    { label: 'Total Revenue', value: `${((data?.stats?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`, accent: 'amber' as const },
   ]
 
   return (
@@ -124,7 +124,7 @@ export default function JobsPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Job Control Center</h1>
         <p className="text-dc1-text-secondary">
-          {data ? `${data.stats?.total_jobs || data.jobs?.length || 0} total jobs` : 'Loading...'}
+          {data ? `${data.stats?.total || data.jobs?.length || 0} total jobs` : 'Loading...'}
         </p>
       </div>
 

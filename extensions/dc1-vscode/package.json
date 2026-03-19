@@ -1,0 +1,163 @@
+{
+  "name": "dc1-gpu",
+  "displayName": "DC1 GPU Compute",
+  "description": "Submit GPU compute jobs on DC1 — Saudi Arabia's decentralized GPU marketplace — without leaving your editor.",
+  "version": "0.1.0",
+  "publisher": "dc1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "GPU",
+    "compute",
+    "AI",
+    "machine learning",
+    "DC1",
+    "Saudi Arabia"
+  ],
+  "icon": "assets/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dhnpmp-tech/dc1-platform"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "DC1 GPU Compute",
+      "properties": {
+        "dc1.apiBaseUrl": {
+          "type": "string",
+          "default": "https://dcp.sa",
+          "description": "DC1 API base URL (default: dcp.sa production)"
+        },
+        "dc1.pollingIntervalMs": {
+          "type": "number",
+          "default": 5000,
+          "description": "Job status polling interval in milliseconds"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "dc1.setApiKey",
+        "title": "DC1: Set Renter API Key",
+        "icon": "$(key)"
+      },
+      {
+        "command": "dc1.clearApiKey",
+        "title": "DC1: Clear API Key"
+      },
+      {
+        "command": "dc1.listGPUs",
+        "title": "DC1: List Available GPUs",
+        "icon": "$(server)"
+      },
+      {
+        "command": "dc1.submitJob",
+        "title": "DC1: Submit GPU Job",
+        "icon": "$(play)"
+      },
+      {
+        "command": "dc1.jobStatus",
+        "title": "DC1: Show Job Status",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "dc1.refreshProviders",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dc1.openWallet",
+        "title": "DC1: Open Wallet / Balance",
+        "icon": "$(credit-card)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dc1-sidebar",
+          "title": "DC1 GPU Compute",
+          "icon": "assets/sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dc1-sidebar": [
+        {
+          "id": "dc1.providersView",
+          "name": "Available GPUs",
+          "icon": "$(server)",
+          "contextualTitle": "DC1 GPU Providers"
+        },
+        {
+          "id": "dc1.jobsView",
+          "name": "My Jobs",
+          "icon": "$(list-ordered)",
+          "contextualTitle": "DC1 Jobs"
+        },
+        {
+          "id": "dc1.walletView",
+          "name": "Wallet",
+          "icon": "$(credit-card)",
+          "contextualTitle": "DC1 Wallet"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "dc1.refreshProviders",
+          "when": "view == dc1.providersView",
+          "group": "navigation"
+        },
+        {
+          "command": "dc1.submitJob",
+          "when": "view == dc1.providersView",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "dc1.submitJob",
+          "group": "dc1",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "dc1.submitJob",
+        "key": "ctrl+shift+g",
+        "mac": "cmd+shift+g",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.3.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.0"
+  }
+}

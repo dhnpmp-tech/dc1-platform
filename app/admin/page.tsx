@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '@/app/components/layout/DashboardLayout'
 import StatCard from '@/app/components/ui/StatCard'
 import StatusBadge from '@/app/components/ui/StatusBadge'
+import { useLanguage } from '@/app/lib/i18n'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'
@@ -15,6 +16,7 @@ interface NavItem { label: string; href: string; icon: React.ReactNode }
 
 export default function AdminDashboard() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [isAuthed, setIsAuthed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -53,7 +55,7 @@ export default function AdminDashboard() {
     return () => clearInterval(interval)
   }, [router])
 
-  if (!isAuthed) return <div className="flex items-center justify-center min-h-screen text-dc1-text-secondary">Loading...</div>
+  if (!isAuthed) return <div className="flex items-center justify-center min-h-screen text-dc1-text-secondary">{t('common.loading')}</div>
 
   const HomeIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg>)
   const ServerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12v4a2 2 0 002 2h10a2 2 0 002-2v-4" /></svg>)
@@ -66,14 +68,14 @@ export default function AdminDashboard() {
   const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
 
   const navItems: NavItem[] = [
-    { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-    { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-    { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-    { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-    { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-    { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-    { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-    { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
   ]
 
   const formatTime = (iso: string) => {
@@ -87,35 +89,35 @@ export default function AdminDashboard() {
   return (
     <DashboardLayout navItems={navItems} role="admin" userName="Admin">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Admin Dashboard</h1>
-        <p className="text-dc1-text-secondary">Live platform overview</p>
+        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('admin.dashboard')}</h1>
+        <p className="text-dc1-text-secondary">{t('admin.live_overview')}</p>
       </div>
 
       {error && <div className="card mb-6 border-red-500/50 text-red-400 text-sm">{error}</div>}
 
       {loading ? (
-        <div className="text-dc1-text-secondary">Loading dashboard data...</div>
+        <div className="text-dc1-text-secondary">{t('admin.loading')}</div>
       ) : (
         <>
           {/* Provider Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <StatCard label="Total Providers" value={String(stats?.total_providers || 0)} accent="default" />
-            <StatCard label="Online Now" value={String(stats?.online_now || 0)} accent="success" />
-            <StatCard label="Total Renters" value={String(stats?.total_renters || 0)} accent="info" />
-            <StatCard label="Active Jobs" value={String(stats?.active_jobs || 0)} accent="amber" />
+            <StatCard label={t('admin.total_providers')} value={String(stats?.total_providers || 0)} accent="default" />
+            <StatCard label={t('admin.online_now')} value={String(stats?.online_now || 0)} accent="success" />
+            <StatCard label={t('admin.total_renters')} value={String(stats?.total_renters || 0)} accent="info" />
+            <StatCard label={t('admin.active_jobs')} value={String(stats?.active_jobs || 0)} accent="amber" />
           </div>
 
           {/* Revenue Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <StatCard label="Total Revenue" value={`${((stats?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`} accent="success" />
-            <StatCard label="DC1 Fees" value={`${((stats?.total_dc1_fees_halala || 0) / 100).toFixed(2)} SAR`} accent="amber" />
-            <StatCard label="Today Revenue" value={`${((stats?.today_revenue_halala || 0) / 100).toFixed(2)} SAR`} accent="info" />
-            <StatCard label="Jobs Completed" value={String(stats?.completed_jobs || 0)} accent="default" />
+            <StatCard label={t('admin.total_revenue')} value={`${((stats?.total_revenue_halala || 0) / 100).toFixed(2)} ${t('common.sar')}`} accent="success" />
+            <StatCard label={t('admin.dc1_fees')} value={`${((stats?.total_dc1_fees_halala || 0) / 100).toFixed(2)} ${t('common.sar')}`} accent="amber" />
+            <StatCard label={t('admin.today_revenue')} value={`${((stats?.today_revenue_halala || 0) / 100).toFixed(2)} ${t('common.sar')}`} accent="info" />
+            <StatCard label={t('provider.jobs_completed')} value={String(stats?.completed_jobs || 0)} accent="default" />
           </div>
 
           {/* GPU Fleet */}
           <div className="card mb-8">
-            <h2 className="section-heading mb-6">GPU Fleet Breakdown</h2>
+            <h2 className="section-heading mb-6">{t('admin.gpu_fleet')}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {gpuBreakdown.map((g: any) => (
                 <div key={g.gpu_model} className="bg-dc1-surface-l2 rounded-lg p-4 border border-dc1-border/50 hover:border-dc1-amber/30 transition-colors">
@@ -123,7 +125,7 @@ export default function AdminDashboard() {
                     <div>
                       <p className="text-sm text-dc1-text-secondary mb-1">{g.gpu_model || 'Unknown'}</p>
                       <p className="text-2xl font-bold text-dc1-text-primary">{g.count}</p>
-                      <p className="text-xs text-dc1-text-muted mt-1">providers</p>
+                      <p className="text-xs text-dc1-text-muted mt-1">{t('admin.providers_count')}</p>
                     </div>
                     <div className="w-12 h-12 bg-dc1-amber/10 rounded-lg flex items-center justify-center text-dc1-amber">
                       <BoltIcon />
@@ -131,17 +133,17 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
-              {gpuBreakdown.length === 0 && <p className="text-dc1-text-muted text-sm col-span-3">No GPU data yet</p>}
+              {gpuBreakdown.length === 0 && <p className="text-dc1-text-muted text-sm col-span-3">{t('admin.no_gpu_data')}</p>}
             </div>
           </div>
 
           {/* Recent Signups */}
           <div className="card mb-8">
-            <h2 className="section-heading mb-6">Recent Provider Signups</h2>
+            <h2 className="section-heading mb-6">{t('admin.recent_signups')}</h2>
             <div className="table-container">
               <table className="table">
                 <thead>
-                  <tr><th>Name</th><th>Email</th><th>GPU Model</th><th>OS</th><th>Joined</th></tr>
+                  <tr><th>{t('table.name')}</th><th>{t('table.email')}</th><th>{t('table.gpu_model')}</th><th>{t('table.os')}</th><th>{t('table.joined')}</th></tr>
                 </thead>
                 <tbody>
                   {recentSignups.map((p: any) => (
@@ -153,7 +155,7 @@ export default function AdminDashboard() {
                       <td className="text-sm text-dc1-text-secondary">{formatTime(p.created_at)}</td>
                     </tr>
                   ))}
-                  {recentSignups.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">No signups yet</td></tr>}
+                  {recentSignups.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">{t('admin.no_signups')}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -161,11 +163,11 @@ export default function AdminDashboard() {
 
           {/* Recent Heartbeats */}
           <div className="card">
-            <h2 className="section-heading mb-6">Recent Daemon Heartbeats</h2>
+            <h2 className="section-heading mb-6">{t('admin.recent_heartbeats')}</h2>
             <div className="table-container">
               <table className="table">
                 <thead>
-                  <tr><th>Provider</th><th>GPU</th><th>IP</th><th>Hostname</th><th>Last Seen</th></tr>
+                  <tr><th>{t('table.provider')}</th><th>{t('table.gpu')}</th><th>{t('table.ip')}</th><th>{t('table.hostname')}</th><th>{t('table.last_seen')}</th></tr>
                 </thead>
                 <tbody>
                   {recentHeartbeats.map((h: any) => (
@@ -177,7 +179,7 @@ export default function AdminDashboard() {
                       <td className="text-sm text-dc1-text-secondary">{formatTime(h.last_heartbeat)}</td>
                     </tr>
                   ))}
-                  {recentHeartbeats.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">No heartbeats yet</td></tr>}
+                  {recentHeartbeats.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">{t('admin.no_heartbeats')}</td></tr>}
                 </tbody>
               </table>
             </div>

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'
@@ -16,6 +17,7 @@ interface RegistrationResult {
 }
 
 export default function RenterRegisterPage() {
+  const { t } = useLanguage()
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -114,11 +116,11 @@ export default function RenterRegisterPage() {
                   </svg>
                 </div>
               </div>
-              <h2 className="text-3xl font-bold text-dc1-text-primary mb-2">Welcome to DC1!</h2>
+              <h2 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('register.renter.success_title')}</h2>
               <p className="text-dc1-text-secondary mb-8">{result.message}</p>
 
               <div className="bg-dc1-surface-l3 border border-dc1-border rounded-lg p-6 mb-6 text-left">
-                <p className="text-sm text-dc1-text-secondary mb-2">Your API Key</p>
+                <p className="text-sm text-dc1-text-secondary mb-2">{t('register.renter.api_key_title')}</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-sm font-mono text-dc1-amber break-all">{result.api_key}</code>
                   <button
@@ -136,7 +138,7 @@ export default function RenterRegisterPage() {
 
               <div className="flex flex-col sm:flex-row gap-3">
                 <a href="/renter" className="btn btn-primary flex-1">
-                  Go to Dashboard
+                  {t('register.renter.go_dashboard')}
                 </a>
                 <a href="/" className="btn btn-secondary flex-1">
                   Back to Home
@@ -158,7 +160,7 @@ export default function RenterRegisterPage() {
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
           <div className="text-center">
             <h1 className="text-4xl sm:text-5xl font-bold text-dc1-text-primary mb-4">
-              Access GPU Compute Power
+              {t('register.renter.title')}
             </h1>
             <p className="text-xl text-dc1-text-secondary max-w-2xl mx-auto">
               Rent powerful GPUs for your AI training, inference, and scientific computing needs. Pay only for what you use.
@@ -169,7 +171,7 @@ export default function RenterRegisterPage() {
         {/* Registration Form */}
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
           <div className="card bg-dc1-surface-l1 border border-dc1-border rounded-lg p-8">
-            <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">Register as a Renter</h2>
+            <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">{t('register.renter.form_title')}</h2>
 
             {error && (
               <div className="alert-error mb-6">
@@ -184,7 +186,7 @@ export default function RenterRegisterPage() {
               {/* Full Name */}
               <div>
                 <label htmlFor="name" className="label">
-                  Full Name <span className="text-status-error">*</span>
+                  {t('register.renter.full_name')} <span className="text-status-error">*</span>
                 </label>
                 <input
                   type="text"
@@ -193,7 +195,7 @@ export default function RenterRegisterPage() {
                   value={formData.name}
                   onChange={handleChange}
                   required
-                  placeholder="John Doe"
+                  placeholder={t('register.renter.full_name_placeholder')}
                   className="input"
                 />
               </div>
@@ -201,7 +203,7 @@ export default function RenterRegisterPage() {
               {/* Email */}
               <div>
                 <label htmlFor="email" className="label">
-                  Email <span className="text-status-error">*</span>
+                  {t('register.renter.email')} <span className="text-status-error">*</span>
                 </label>
                 <input
                   type="email"
@@ -210,7 +212,7 @@ export default function RenterRegisterPage() {
                   value={formData.email}
                   onChange={handleChange}
                   required
-                  placeholder="you@example.com"
+                  placeholder={t('register.renter.email_placeholder')}
                   className="input"
                 />
               </div>
@@ -218,7 +220,7 @@ export default function RenterRegisterPage() {
               {/* Company/Organization */}
               <div>
                 <label htmlFor="organization" className="label">
-                  Company/Organization <span className="text-dc1-text-muted">(Optional)</span>
+                  {t('register.renter.organization')}
                 </label>
                 <input
                   type="text"
@@ -234,7 +236,7 @@ export default function RenterRegisterPage() {
               {/* Use Case */}
               <div>
                 <label htmlFor="useCase" className="label">
-                  Primary Use Case <span className="text-status-error">*</span>
+                  {t('register.renter.use_case')} <span className="text-status-error">*</span>
                 </label>
                 <select
                   id="useCase"
@@ -292,13 +294,13 @@ export default function RenterRegisterPage() {
                 disabled={loading}
                 className="btn btn-primary w-full"
               >
-                {loading ? 'Creating Account...' : 'Create Renter Account'}
+                {loading ? t('register.renter.submitting') : t('register.renter.submit')}
               </button>
 
               <p className="text-center text-sm text-dc1-text-secondary">
-                Already have an account?{' '}
+                {t('register.renter.already_registered')}{' '}
                 <a href="/renter" className="text-dc1-amber hover:underline">
-                  Sign in here
+                  {t('register.renter.sign_in')}
                 </a>
               </p>
             </form>

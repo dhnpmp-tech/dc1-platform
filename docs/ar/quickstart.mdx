@@ -1,0 +1,42 @@
+---
+title: البدء السريع
+description: افتح حساب مستأجر، اشحن الرصيد، وشغّل أول مهمة GPU خلال دقائق.
+order: 1
+---
+
+## 1) إنشاء حساب مستأجر
+
+1. افتح `/renter/register`
+2. أدخل الاسم والبريد والجهة
+3. احفظ مفتاح API الذي يبدأ بـ `dc1-renter-`
+
+## 2) شحن الرصيد
+
+```bash
+curl -X POST https://dcp.sa/api/dc1/payments/topup \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: dc1-renter-xxxx" \
+  -d '{"amount_halala": 5000}'
+```
+
+## 3) اختيار مزود متاح
+
+```bash
+curl https://dcp.sa/api/dc1/renters/available-providers
+```
+
+## 4) إرسال مهمة
+
+```bash
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: dc1-renter-xxxx" \
+  -d '{
+    "provider_id": 26,
+    "job_type": "llm-inference",
+    "params": {
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "prompt": "عرّف مدينة الرياض في فقرتين."
+    }
+  }'
+```

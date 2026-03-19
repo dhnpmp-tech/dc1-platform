@@ -238,3 +238,64 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+.docs-mdx h2 {
+  @apply mt-8 mb-3 text-2xl font-semibold text-dc1-text-primary;
+}
+
+.docs-mdx h3 {
+  @apply mt-6 mb-2 text-xl font-semibold text-dc1-text-primary;
+}
+
+.docs-mdx p {
+  @apply mb-4 text-dc1-text-secondary;
+}
+
+.docs-mdx ul,
+.docs-mdx ol {
+  @apply mb-4 list-inside space-y-2 text-dc1-text-secondary;
+}
+
+.docs-mdx ul {
+  @apply list-disc;
+}
+
+.docs-mdx ol {
+  @apply list-decimal;
+}
+
+.docs-mdx a {
+  @apply text-dc1-amber hover:underline;
+}
+
+.docs-mdx code {
+  @apply rounded bg-dc1-surface-l2 px-1.5 py-0.5 text-sm text-dc1-text-primary;
+}
+
+.docs-mdx pre {
+  @apply mb-5 overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4;
+}
+
+.docs-mdx pre code {
+  @apply bg-transparent p-0 text-sm;
+}
+
+.docs-mdx pre .hljs-keyword,
+.docs-mdx pre .hljs-selector-tag,
+.docs-mdx pre .hljs-title.function_ {
+  color: #f5a524;
+}
+
+.docs-mdx pre .hljs-string,
+.docs-mdx pre .hljs-attr {
+  color: #56d364;
+}
+
+.docs-mdx pre .hljs-number,
+.docs-mdx pre .hljs-literal {
+  color: #79c0ff;
+}
+
+.docs-mdx pre .hljs-comment {
+  color: #8b949e;
+}

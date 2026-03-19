@@ -31,7 +31,7 @@ const navItems = [
   { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
 ]
 
-const halalaToSar = (h: number) => (h / 100).toFixed(2)
+const halalaToSar = (h: number) => ((h || 0) / 100).toFixed(2)
 
 export default function FinanceDashboard() {
   const router = useRouter()
@@ -98,9 +98,9 @@ export default function FinanceDashboard() {
 
         {/* Revenue Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Revenue" value={`${halalaToSar(at.total_revenue || 0)} SAR`} accent="success" icon={<CurrencyIcon />} />
-          <StatCard label="DC1 Fees (25%)" value={`${halalaToSar(at.total_dc1_fees || 0)} SAR`} accent="amber" icon={<CurrencyIcon />} />
-          <StatCard label="Provider Payouts (75%)" value={`${halalaToSar(at.total_provider_payouts || 0)} SAR`} accent="info" icon={<CurrencyIcon />} />
+          <StatCard label="Total Revenue" value={`${halalaToSar(at.total_revenue)} SAR`} accent="success" icon={<CurrencyIcon />} />
+          <StatCard label="DC1 Fees (25%)" value={`${halalaToSar(at.total_dc1_fees)} SAR`} accent="amber" icon={<CurrencyIcon />} />
+          <StatCard label="Provider Payouts (75%)" value={`${halalaToSar(at.total_provider_payouts)} SAR`} accent="info" icon={<CurrencyIcon />} />
           <StatCard label="Completed Jobs" value={String(at.completed_jobs || 0)} accent="default" />
         </div>
 
@@ -108,18 +108,18 @@ export default function FinanceDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="card">
             <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">Today</h3>
-            <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(td.revenue || 0)} SAR</p>
-            <p className="text-xs text-dc1-text-muted mt-1">{td.jobs || 0} jobs · DC1 fee: {halalaToSar(td.dc1_fees || 0)} SAR</p>
+            <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(td.revenue)} SAR</p>
+            <p className="text-xs text-dc1-text-muted mt-1">{td.jobs || 0} jobs · DC1 fee: {halalaToSar(td.dc1_fees)} SAR</p>
           </div>
           <div className="card">
             <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">This Week</h3>
-            <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(wk.revenue || 0)} SAR</p>
-            <p className="text-xs text-dc1-text-muted mt-1">{wk.jobs || 0} jobs · DC1 fee: {halalaToSar(wk.dc1_fees || 0)} SAR</p>
+            <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(wk.revenue)} SAR</p>
+            <p className="text-xs text-dc1-text-muted mt-1">{wk.jobs || 0} jobs · DC1 fee: {halalaToSar(wk.dc1_fees)} SAR</p>
           </div>
           <div className="card">
             <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">This Month</h3>
-            <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(mo.revenue || 0)} SAR</p>
-            <p className="text-xs text-dc1-text-muted mt-1">{mo.jobs || 0} jobs · DC1 fee: {halalaToSar(mo.dc1_fees || 0)} SAR</p>
+            <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(mo.revenue)} SAR</p>
+            <p className="text-xs text-dc1-text-muted mt-1">{mo.jobs || 0} jobs · DC1 fee: {halalaToSar(mo.dc1_fees)} SAR</p>
           </div>
         </div>
 
@@ -128,7 +128,7 @@ export default function FinanceDashboard() {
           <div className="card">
             <h2 className="section-heading mb-4">Renter Balances</h2>
             <div className="space-y-3">
-              <div className="flex justify-between"><span className="text-dc1-text-secondary">Total Held</span><span className="text-dc1-text-primary font-semibold">{halalaToSar(rb.total_held || 0)} SAR</span></div>
+              <div className="flex justify-between"><span className="text-dc1-text-secondary">Total Held</span><span className="text-dc1-text-primary font-semibold">{halalaToSar(rb.total_held)} SAR</span></div>
               <div className="flex justify-between"><span className="text-dc1-text-secondary">Active Renters</span><span className="text-dc1-text-primary">{rb.total_renters || 0}</span></div>
               <div className="flex justify-between"><span className="text-dc1-text-secondary">Funded Accounts</span><span className="text-dc1-text-primary">{rb.funded_renters || 0}</span></div>
             </div>
@@ -232,9 +232,9 @@ export default function FinanceDashboard() {
                     <td className="text-sm">{t.job_type || '—'}</td>
                     <td className="text-sm">{t.renter_name || '—'}</td>
                     <td className="text-sm">{t.provider_name || '—'}</td>
-                    <td className="text-sm font-semibold text-dc1-text-primary">{halalaToSar(t.actual_cost_halala || 0)}</td>
-                    <td className="text-sm text-dc1-amber">{halalaToSar(t.dc1_fee_halala || 0)}</td>
-                    <td className="text-sm text-status-success">{halalaToSar(t.provider_earned_halala || 0)}</td>
+                    <td className="text-sm font-semibold text-dc1-text-primary">{halalaToSar(t.actual_cost_halala)}</td>
+                    <td className="text-sm text-dc1-amber">{halalaToSar(t.dc1_fee_halala)}</td>
+                    <td className="text-sm text-status-success">{halalaToSar(t.provider_earned_halala)}</td>
                     <td className="text-xs text-dc1-text-secondary">{t.completed_at ? new Date(t.completed_at).toLocaleDateString() : '—'}</td>
                   </tr>
                 ))}
@@ -310,7 +310,7 @@ export default function FinanceDashboard() {
               {/* Summary Stat Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
                 <StatCard label="Total Jobs" value={String(recon.summary?.total_completed_jobs || 0)} accent="default" />
-                <StatCard label="Total Billed" value={`${halalaToSar(recon.summary?.total_billed_halala || 0)} SAR`} accent="default" />
+                <StatCard label="Total Billed" value={`${halalaToSar(recon.summary?.total_billed_halala)} SAR`} accent="default" />
                 <StatCard
                   label="Split Mismatches"
                   value={String(recon.summary?.split_mismatches || 0)}

@@ -89,6 +89,77 @@ npm install
 node demo.js
 ```
 
+## Python Job Routing Prototype (Phase C)
+
+The Python layer adds **job routing** on top of the discovery layer:
+providers form a mesh, renters broadcast job requests, providers bid, and
+the renter picks the cheapest bid.  The central VPS API is **not** involved
+in job data transfer — only in billing (Phase D).
+
+### Message flow
+
+```
+Renter                Bootstrap              Provider 1        Provider 2
+  │                       │                      │                 │
+  │── PEER_HELLO ─────────▶│                      │                 │
+  │◀─ PEER_LIST ───────────│                      │                 │
+  │                        │◀── ANNOUNCE_CAPACITY─┤                 │
+  │◀── ANNOUNCE_CAPACITY ──│◀── ANNOUNCE_CAPACITY─┼─────────────────┤
+  │── JOB_REQUEST ─────────▶── broadcast ─────────▶─────────────────▶
+  │◀─ JOB_BID (20 SAR/hr)──│◀──────────────────────┤                 │
+  │◀─ JOB_BID (35 SAR/hr)──│◀────────────────────────────────────────┤
+  │── JOB_ACCEPT ──────────▶──────────────────────▶                  │
+  │                         │                      │ (executes job)   │
+  │◀─────────────── JOB_RESULT (direct P2P) ───────┤                 │
+```
+
+Provider 1 wins because it bids lower (20 SAR/hr < 35 SAR/hr).
+
+### 3-node Docker Compose test
+
+```bash
+cd p2p
+docker compose up --build
+```
+
+Expected result: renter log shows `>>> Winning bid: ... GPU=RTX 3090  2000 h/hr`
+then `JOB COMPLETE  Success: True`.
+
+### Running without Docker
+
+```bash
+cd p2p
+pip install websockets
+
+# Terminal 1 — bootstrap
+python3 bootstrap_server.py
+
+# Terminal 2 — provider 1 (cheaper)
+DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
+  python3 provider_node.py --gpu "RTX 3090" --vram 24 --price 20.0
+
+# Terminal 3 — provider 2 (more expensive)
+DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
+  python3 provider_node.py --gpu "RTX 4090" --vram 24 --price 35.0
+
+# Terminal 4 — renter
+DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
+  python3 renter_client.py --image dc1/simulate --max-price 25.0
+```
+
+### Environment variables (Python layer)
+
+| Variable | Default | Description |
+|---|---|---|
+| `DC1_P2P_BOOTSTRAP` | `ws://127.0.0.1:8765` | Bootstrap WS address (comma-separated for multiple) |
+| `DC1_P2P_BOOTSTRAP_PORT` | `8765` | Bootstrap listen port |
+| `DC1_P2P_HOST` | auto-detect | Provider's externally reachable hostname |
+| `DC1_P2P_PORT` | `8766` | Provider's direct P2P WebSocket port |
+| `DC1_RENTER_HOST` | `127.0.0.1` | Renter's externally reachable hostname |
+| `DC1_RENTER_PORT` | `8767` | Renter's result WebSocket port |
+| `DC1_BID_WINDOW_SECS` | `5` | Seconds renter waits to collect bids |
+| `DC1_JOB_TIMEOUT_SECS` | `300` | Max job execution time (seconds) |
+
 ## VPS Setup (Phase D prerequisite)
 
 Run the bootstrap node on the VPS alongside the Express API:
@@ -156,12 +227,23 @@ process — more efficient than spawning per heartbeat.
 - Renters → `/api/providers/available`
 - VPS is required for all discovery
 
-### Phase C (this prototype) — DHT research
+### Phase C (this prototype) — DHT research + P2P job routing
+
+**Provider discovery (JavaScript / libp2p Kademlia DHT):**
 - ✅ `dc1-node.js` — core libp2p node factory
 - ✅ `bootstrap.js` — VPS routing node
 - ✅ `provider-announce.js` — daemon integration hook
 - ✅ `demo.js` — working end-to-end discovery demo
 - ❌ Not yet integrated into daemon or backend
+
+**Job routing (Python / WebSocket mesh):**
+- ✅ `config.py` — network config, env overrides, `MsgType` constants
+- ✅ `bootstrap_server.py` — relay/rendezvous server (Circuit Relay pattern)
+- ✅ `provider_node.py` — announces GPU capacity, bids on jobs, executes & delivers results P2P
+- ✅ `renter_client.py` — discovers providers, broadcasts job, selects lowest bid, receives result
+- ✅ `proto/dc1.proto` — canonical Protobuf schema for all wire messages
+- ✅ `docker-compose.yml` — 3-node local test (bootstrap + 2 providers + renter)
+- ✅ `Dockerfile` + `requirements.txt` — Python 3.11-slim, `websockets>=12.0`
 
 ### Phase D — DHT in production
 - [ ] Run `bootstrap.js` on VPS under PM2

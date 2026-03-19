@@ -1,0 +1,32 @@
+---
+title: مرجع API
+description: نقاط REST، أسلوب المصادقة، وتنسيق الأخطاء.
+order: 2
+---
+
+## العنوان الأساسي
+
+- عبر البروكسي: `https://dcp.sa/api/dc1`
+- مباشرة: `http://76.13.179.86:8083/api`
+
+## المصادقة
+
+- المزود: `?key=` أو `x-provider-key`
+- المستأجر: `?key=` أو `x-renter-key`
+- المدير: `x-admin-token`
+
+## تنسيق الخطأ
+
+```json
+{ "error": "descriptive message" }
+```
+
+## نقاط مهمة
+
+```text
+POST /providers/register
+POST /providers/heartbeat
+POST /jobs/submit
+GET  /jobs/:id/output
+GET  /admin/dashboard
+```

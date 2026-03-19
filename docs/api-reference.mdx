@@ -1,0 +1,79 @@
+---
+title: API Reference
+description: REST endpoints, auth headers, and error contract used across DC1.
+order: 2
+---
+
+## Base URL
+
+- Proxy: `https://dcp.sa/api/dc1`
+- Direct API: `http://76.13.179.86:8083/api`
+
+## Authentication
+
+- Provider: `?key=` query or `x-provider-key`
+- Renter: `?key=` query or `x-renter-key`
+- Admin: `x-admin-token`
+
+## Error format
+
+All failures return:
+
+```json
+{ "error": "descriptive message" }
+```
+
+## Provider endpoints
+
+```text
+POST /providers/register
+GET  /providers/me?key=
+POST /providers/heartbeat
+POST /providers/pause
+POST /providers/resume
+GET  /providers/download/daemon?key=
+GET  /providers/download/setup?key=&os=windows|linux|mac
+```
+
+## Renter endpoints
+
+```text
+POST /renters/register
+GET  /renters/me?key=
+GET  /renters/available-providers
+POST /payments/topup
+GET  /payments/history
+```
+
+## Job endpoints
+
+```text
+POST /jobs/submit
+GET  /jobs/:id
+GET  /jobs/:id/output
+POST /jobs/:id/cancel
+POST /jobs/:id/fail
+```
+
+## Admin endpoints
+
+```text
+GET /admin/dashboard
+GET /admin/providers
+GET /admin/jobs/:id
+GET /admin/daemon-health
+```
+
+## Example: register provider
+
+```bash
+curl -X POST https://dcp.sa/api/dc1/providers/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Riyadh GPU Node",
+    "email": "ops@example.com",
+    "gpu_model": "RTX 4090",
+    "os": "linux",
+    "phone": "+966500000000"
+  }'
+```

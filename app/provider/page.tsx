@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import StatusBadge from '../components/ui/StatusBadge'
 import StatCard from '../components/ui/StatCard'
+import { useLanguage } from '../lib/i18n'
 
 interface ProviderData {
   id: string
@@ -72,14 +73,6 @@ const GpuIcon = () => (
   </svg>
 )
 
-const getNavItems = () => [
-  { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
-  { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
-  { label: 'Earnings', href: '/provider/earnings', icon: <CurrencyIcon /> },
-  { label: 'GPU Metrics', href: '/provider/gpu', icon: <GpuIcon /> },
-  { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
-]
-
 // Temperature gauge color
 const getTempColor = (temp: number): string => {
   if (temp < 70) return 'bg-status-success'
@@ -89,8 +82,17 @@ const getTempColor = (temp: number): string => {
 
 export default function ProviderDashboard() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [providerData, setProviderData] = useState<ProviderData | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const getNavItems = () => [
+    { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
+    { label: t('nav.jobs'), href: '/provider/jobs', icon: <LightningIcon /> },
+    { label: t('nav.earnings'), href: '/provider/earnings', icon: <CurrencyIcon /> },
+    { label: t('nav.gpu_metrics'), href: '/provider/gpu', icon: <GpuIcon /> },
+    { label: t('nav.settings'), href: '/provider/settings', icon: <GearIcon /> },
+  ]
   const [togglingPause, setTogglingPause] = useState(false)
   const [dailyEarnings, setDailyEarnings] = useState<Array<{ day: string; earned_halala: number; completed: number }>>([])
 
@@ -225,7 +227,7 @@ export default function ProviderDashboard() {
     return (
       <DashboardLayout navItems={getNavItems()} role="provider" userName="Provider">
         <div className="card">
-          <p className="text-dc1-text-secondary">Failed to load provider data</p>
+          <p className="text-dc1-text-secondary">{t('provider.failed_load')}</p>
         </div>
       </DashboardLayout>
     )
@@ -236,7 +238,7 @@ export default function ProviderDashboard() {
       <div className="space-y-8">
         {/* Page Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <h1 className="text-3xl font-bold text-dc1-text-primary">Provider Dashboard</h1>
+          <h1 className="text-3xl font-bold text-dc1-text-primary">{t('provider.dashboard')}</h1>
           <div className="flex items-center gap-3">
             <StatusBadge status={providerData.isPaused ? 'paused' : providerData.status} />
             <button
@@ -248,7 +250,7 @@ export default function ProviderDashboard() {
                   : 'bg-status-warning/20 text-status-warning hover:bg-status-warning/30 border border-status-warning/30'
               }`}
             >
-              {togglingPause ? 'Updating...' : providerData.isPaused ? 'Resume GPU' : 'Pause GPU'}
+              {togglingPause ? t('provider.updating') : providerData.isPaused ? t('provider.resume_gpu') : t('provider.pause_gpu')}
             </button>
           </div>
         </div>
@@ -256,31 +258,31 @@ export default function ProviderDashboard() {
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <StatCard
-            label="Today's Earnings"
-            value={`${providerData.todayEarnings.toFixed(2)} SAR`}
+            label={t('provider.today_earnings')}
+            value={`${providerData.todayEarnings.toFixed(2)} ${t('common.sar')}`}
             accent="amber"
             icon={<CurrencyIcon />}
           />
           <StatCard
-            label="This Week"
-            value={`${providerData.weekEarnings.toFixed(2)} SAR`}
+            label={t('provider.this_week')}
+            value={`${providerData.weekEarnings.toFixed(2)} ${t('common.sar')}`}
             accent="info"
             icon={<CurrencyIcon />}
           />
           <StatCard
-            label="Total Earnings"
-            value={`${providerData.totalEarnings.toFixed(2)} SAR`}
+            label={t('provider.total_earnings')}
+            value={`${providerData.totalEarnings.toFixed(2)} ${t('common.sar')}`}
             accent="success"
             icon={<CurrencyIcon />}
           />
           <StatCard
-            label="Jobs Completed"
+            label={t('provider.jobs_completed')}
             value={providerData.jobsCompleted}
             accent="default"
             icon={<LightningIcon />}
           />
           <StatCard
-            label="GPU Uptime"
+            label={t('provider.gpu_uptime')}
             value={`${providerData.gpuUptime}%`}
             accent="info"
             icon={
@@ -293,17 +295,17 @@ export default function ProviderDashboard() {
 
         {/* GPU Health Section */}
         <div className="card">
-          <h2 className="section-heading mb-6">GPU Health</h2>
+          <h2 className="section-heading mb-6">{t('provider.gpu_health')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* GPU Model */}
             <div>
-              <p className="text-sm text-dc1-text-secondary mb-2">GPU Model</p>
+              <p className="text-sm text-dc1-text-secondary mb-2">{t('provider.gpu_model')}</p>
               <p className="text-lg font-semibold text-dc1-text-primary">{providerData.gpuModel}</p>
             </div>
 
             {/* Temperature Gauge */}
             <div>
-              <p className="text-sm text-dc1-text-secondary mb-2">Temperature</p>
+              <p className="text-sm text-dc1-text-secondary mb-2">{t('provider.temperature')}</p>
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="h-2 bg-dc1-surface-l2 rounded-full overflow-hidden">
@@ -321,7 +323,7 @@ export default function ProviderDashboard() {
 
             {/* Daemon Connection */}
             <div>
-              <p className="text-sm text-dc1-text-secondary mb-2">Daemon Status</p>
+              <p className="text-sm text-dc1-text-secondary mb-2">{t('provider.daemon_status')}</p>
               {(() => {
                 const hb = providerData.lastHeartbeat
                 const isConnected = hb ? (Date.now() - new Date(hb).getTime()) < 120000 : false
@@ -330,17 +332,17 @@ export default function ProviderDashboard() {
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-status-success animate-pulse' : isStale ? 'bg-status-warning' : 'bg-status-error'}`} />
                     <span className="text-sm font-medium text-dc1-text-primary">
-                      {isConnected ? 'Connected' : isStale ? 'Stale' : 'Disconnected'}
+                      {isConnected ? t('provider.connected') : isStale ? t('provider.stale') : t('provider.disconnected')}
                     </span>
                     {providerData.daemonVersion && (
-                      <span className="text-xs text-dc1-text-muted ml-1">v{providerData.daemonVersion}</span>
+                      <span className="text-xs text-dc1-text-muted ms-1">v{providerData.daemonVersion}</span>
                     )}
                   </div>
                 )
               })()}
               {providerData.lastHeartbeat && (
                 <p className="text-xs text-dc1-text-muted mt-1">
-                  Last seen: {new Date(providerData.lastHeartbeat).toLocaleString()}
+                  {t('provider.last_seen')}: {new Date(providerData.lastHeartbeat).toLocaleString()}
                 </p>
               )}
             </div>
@@ -351,7 +353,7 @@ export default function ProviderDashboard() {
             {/* GPU Usage */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-dc1-text-secondary">GPU Usage</p>
+                <p className="text-sm text-dc1-text-secondary">{t('provider.gpu_usage')}</p>
                 <span className="text-sm font-semibold text-dc1-text-primary">{providerData.gpuUsage}%</span>
               </div>
               <div className="h-2 bg-dc1-surface-l2 rounded-full overflow-hidden">
@@ -365,7 +367,7 @@ export default function ProviderDashboard() {
             {/* VRAM Usage */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-dc1-text-secondary">VRAM Usage</p>
+                <p className="text-sm text-dc1-text-secondary">{t('provider.vram_usage')}</p>
                 <span className="text-sm font-semibold text-dc1-text-primary">{providerData.vramUsage}%</span>
               </div>
               <div className="h-2 bg-dc1-surface-l2 rounded-full overflow-hidden">
@@ -381,7 +383,7 @@ export default function ProviderDashboard() {
         {/* 7-Day Earnings Chart */}
         {dailyEarnings.length > 0 && (
           <div className="card">
-            <h2 className="section-heading mb-4">Last 7 Days</h2>
+            <h2 className="section-heading mb-4">{t('provider.last_7_days')}</h2>
             <div className="flex items-end gap-2 h-32">
               {(() => {
                 const maxEarning = Math.max(...dailyEarnings.map(d => d.earned_halala), 1)
@@ -409,54 +411,54 @@ export default function ProviderDashboard() {
 
         {/* Current Job Section */}
         <div className="card">
-          <h2 className="section-heading mb-4">Current Job</h2>
+          <h2 className="section-heading mb-4">{t('provider.current_job')}</h2>
           {providerData.activeJob ? (
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                  <p className="text-sm text-dc1-text-secondary mb-1">Job Type</p>
+                  <p className="text-sm text-dc1-text-secondary mb-1">{t('provider.job_type')}</p>
                   <p className="text-lg font-semibold text-dc1-text-primary">{providerData.activeJob.jobType}</p>
                 </div>
                 <StatusBadge status="running" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-dc1-text-secondary mb-1">Job ID</p>
+                  <p className="text-sm text-dc1-text-secondary mb-1">{t('provider.job_id')}</p>
                   <p className="text-sm font-mono text-dc1-amber">{providerData.activeJob.id}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-dc1-text-secondary mb-1">Started</p>
+                  <p className="text-sm text-dc1-text-secondary mb-1">{t('provider.started')}</p>
                   <p className="text-sm text-dc1-text-primary">{providerData.activeJob.startTime}</p>
                 </div>
               </div>
             </div>
           ) : (
             <div className="flex items-center justify-center py-8">
-              <p className="text-dc1-text-secondary">No active jobs</p>
+              <p className="text-dc1-text-secondary">{t('provider.no_active_jobs')}</p>
             </div>
           )}
         </div>
 
         {/* Recent Activity Section */}
         <div className="card">
-          <h2 className="section-heading mb-6">Recent Activity</h2>
+          <h2 className="section-heading mb-6">{t('provider.recent_activity')}</h2>
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Job Type</th>
-                  <th>Duration</th>
-                  <th>Earnings</th>
-                  <th>Status</th>
-                  <th>Completed</th>
+                  <th>{t('table.job_type')}</th>
+                  <th>{t('table.duration')}</th>
+                  <th>{t('table.earnings')}</th>
+                  <th>{t('table.status')}</th>
+                  <th>{t('table.completed')}</th>
                 </tr>
               </thead>
               <tbody>
                 {providerData.recentJobs.length > 0 ? providerData.recentJobs.map((job) => (
                   <tr key={job.id}>
                     <td>{job.jobType}</td>
-                    <td>{job.duration > 0 ? `${job.duration} min` : '<1 min'}</td>
-                    <td className="font-semibold text-status-success">{job.earnings > 0 ? `${job.earnings.toFixed(2)} SAR` : '—'}</td>
+                    <td>{job.duration > 0 ? `${job.duration} ${t('common.min')}` : '<1 min'}</td>
+                    <td className="font-semibold text-status-success">{job.earnings > 0 ? `${job.earnings.toFixed(2)} ${t('common.sar')}` : '—'}</td>
                     <td>
                       <StatusBadge
                         status={job.status === 'completed' ? 'completed' : 'failed'}
@@ -466,7 +468,7 @@ export default function ProviderDashboard() {
                     <td className="text-dc1-text-secondary">{job.completedAt ? new Date(job.completedAt).toLocaleString() : '—'}</td>
                   </tr>
                 )) : (
-                  <tr><td colSpan={5} className="text-center text-dc1-text-secondary py-6">No jobs yet</td></tr>
+                  <tr><td colSpan={5} className="text-center text-dc1-text-secondary py-6">{t('common.no_jobs_yet')}</td></tr>
                 )}
               </tbody>
             </table>

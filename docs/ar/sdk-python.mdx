@@ -1,0 +1,22 @@
+---
+title: Python SDK
+description: إدارة تسجيل المزود، الإعلان عن الموارد، ومتابعة الأرباح.
+order: 4
+---
+
+## التثبيت
+
+```bash
+pip install dc1_provider
+```
+
+## مثال
+
+```python
+from dc1_provider import DC1ProviderClient
+
+client = DC1ProviderClient(api_key="dc1-provider-xxxx")
+spec = client.build_resource_spec()
+client.announce(spec)
+print(client.get_earnings())
+```

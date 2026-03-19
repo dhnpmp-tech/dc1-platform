@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'
@@ -25,6 +26,7 @@ interface StatusStep {
 }
 
 export default function ProviderRegisterPage() {
+  const { t } = useLanguage()
   const [formData, setFormData] = useState<RegistrationFormData>({
     fullName: '',
     email: '',
@@ -208,11 +210,10 @@ export default function ProviderRegisterPage() {
                 </svg>
               </div>
               <h1 className="text-4xl font-bold text-dc1-text-primary mb-4">
-                Registration Successful!
+                {t('register.provider.success_title')}
               </h1>
               <p className="text-dc1-text-secondary text-lg">
-                Your provider account has been created. Follow the steps below to connect your
-                hardware to DC1.
+                {t('register.provider.success_desc')}
               </p>
             </div>
 
@@ -223,10 +224,10 @@ export default function ProviderRegisterPage() {
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm">
                     1
                   </span>
-                  Your API Key
+                  {t('register.provider.api_key_title')}
                 </h2>
                 <p className="text-dc1-text-secondary mb-4">
-                  Save this API key securely. You'll use it to authenticate your daemon.
+                  {t('register.provider.api_key_desc')}
                 </p>
                 <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-sm">
                   <code className="text-dc1-amber break-all">{apiKey}</code>
@@ -272,10 +273,10 @@ export default function ProviderRegisterPage() {
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm">
                     2
                   </span>
-                  Install the Daemon
+                  {t('register.provider.install_title')}
                 </h2>
                 <p className="text-dc1-text-secondary mb-6">
-                  Run the appropriate command for your operating system:
+                  {t('register.provider.install_desc')}
                 </p>
 
                 <div className="space-y-4">
@@ -387,7 +388,7 @@ export default function ProviderRegisterPage() {
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm">
                     3
                   </span>
-                  Setup Progress
+                  {t('register.provider.progress_title')}
                 </h2>
                 <div className="space-y-4">
                   {statusSteps.map((step, idx) => (
@@ -434,10 +435,10 @@ export default function ProviderRegisterPage() {
                         </h3>
                         <p className="text-sm text-dc1-text-secondary">
                           {step.status === 'completed'
-                            ? 'Complete'
+                            ? t('register.provider.status_complete')
                             : step.status === 'in-progress'
-                              ? 'In progress...'
-                              : 'Pending'}
+                              ? t('register.provider.status_in_progress')
+                              : t('register.provider.status_pending')}
                         </p>
                       </div>
                     </div>
@@ -454,7 +455,7 @@ export default function ProviderRegisterPage() {
 
               {/* Next Steps */}
               <div className="card border-dc1-amber/20">
-                <h2 className="text-xl font-semibold text-dc1-text-primary mb-4">What's Next?</h2>
+                <h2 className="text-xl font-semibold text-dc1-text-primary mb-4">{t('register.provider.next_title')}</h2>
                 <ul className="space-y-3">
                   <li className="flex gap-3">
                     <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-dc1-amber/20 text-dc1-amber text-sm font-semibold flex-shrink-0">
@@ -504,7 +505,7 @@ export default function ProviderRegisterPage() {
                   href="/provider/dashboard"
                   className="btn btn-primary flex-1 text-center"
                 >
-                  Go to Dashboard
+                  {t('register.provider.go_dashboard')}
                 </a>
                 <a
                   href="/docs/provider-guide"
@@ -530,11 +531,10 @@ export default function ProviderRegisterPage() {
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
             <div className="text-center">
               <h1 className="text-4xl sm:text-5xl font-bold text-dc1-text-primary mb-4">
-                Monetize Your GPU Hardware
+                {t('register.provider.title')}
               </h1>
               <p className="text-lg text-dc1-text-secondary max-w-2xl mx-auto">
-                Join the DC1 GPU compute marketplace and start earning by renting your idle
-                GPU capacity to researchers, AI developers, and enterprises.
+                {t('register.provider.subtitle')}
               </p>
               <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-6 text-sm">
                 <div className="flex items-center gap-2 text-dc1-text-secondary">
@@ -576,7 +576,7 @@ export default function ProviderRegisterPage() {
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <div className="card">
             <h2 className="text-2xl font-bold text-dc1-text-primary mb-2">
-              Create Your Provider Account
+              {t('register.provider.form_title')}
             </h2>
             <p className="text-dc1-text-secondary mb-8">
               Fill in your details to get started. It takes less than 2 minutes to register.
@@ -599,7 +599,7 @@ export default function ProviderRegisterPage() {
               {/* Full Name */}
               <div>
                 <label htmlFor="fullName" className="label">
-                  Full Name
+                  {t('register.provider.full_name')}
                 </label>
                 <input
                   id="fullName"
@@ -607,7 +607,7 @@ export default function ProviderRegisterPage() {
                   name="fullName"
                   value={formData.fullName}
                   onChange={handleInputChange}
-                  placeholder="John Doe"
+                  placeholder={t('register.provider.full_name_placeholder')}
                   className="input"
                   required
                 />
@@ -616,7 +616,7 @@ export default function ProviderRegisterPage() {
               {/* Email */}
               <div>
                 <label htmlFor="email" className="label">
-                  Email Address
+                  {t('register.provider.email')}
                 </label>
                 <input
                   id="email"
@@ -624,7 +624,7 @@ export default function ProviderRegisterPage() {
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  placeholder="john@example.com"
+                  placeholder={t('register.provider.email_placeholder')}
                   className="input"
                   required
                 />
@@ -633,7 +633,7 @@ export default function ProviderRegisterPage() {
               {/* GPU Model */}
               <div>
                 <label htmlFor="gpuModel" className="label">
-                  GPU Model
+                  {t('register.provider.gpu_model')}
                 </label>
                 <select
                   id="gpuModel"
@@ -643,7 +643,7 @@ export default function ProviderRegisterPage() {
                   className="input"
                   required
                 >
-                  <option value="">Select a GPU model</option>
+                  <option value="">{t('register.provider.gpu_model_placeholder')}</option>
                   <option value="RTX 4090">NVIDIA RTX 4090</option>
                   <option value="RTX 3090">NVIDIA RTX 3090</option>
                   <option value="RTX 3080">NVIDIA RTX 3080</option>
@@ -656,7 +656,7 @@ export default function ProviderRegisterPage() {
               {/* Operating System */}
               <div>
                 <label htmlFor="operatingSystem" className="label">
-                  Operating System
+                  {t('register.provider.os')}
                 </label>
                 <select
                   id="operatingSystem"
@@ -666,7 +666,7 @@ export default function ProviderRegisterPage() {
                   className="input"
                   required
                 >
-                  <option value="">Select operating system</option>
+                  <option value="">{t('register.provider.os_placeholder')}</option>
                   <option value="Windows 10/11">Windows 10/11</option>
                   <option value="Ubuntu 22.04">Ubuntu 22.04</option>
                   <option value="Ubuntu 20.04">Ubuntu 20.04</option>
@@ -733,18 +733,18 @@ export default function ProviderRegisterPage() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       />
                     </svg>
-                    Creating Account...
+                    {t('register.provider.submitting')}
                   </>
                 ) : (
-                  'Create Account'
+                  t('register.provider.submit')
                 )}
               </button>
 
               {/* Sign In Link */}
               <p className="text-center text-sm text-dc1-text-secondary">
-                Already have an account?{' '}
+                {t('register.provider.already_registered')}{' '}
                 <a href="/login" className="text-dc1-amber hover:underline font-semibold">
-                  Sign In
+                  {t('register.provider.sign_in')}
                 </a>
               </p>
             </form>

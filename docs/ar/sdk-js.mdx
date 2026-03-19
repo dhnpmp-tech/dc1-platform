@@ -1,0 +1,28 @@
+---
+title: JavaScript SDK
+description: تشغيل دورة حياة المهام من تطبيقات Node.js.
+order: 3
+---
+
+## التثبيت
+
+```bash
+npm install dc1-renter-sdk
+```
+
+## مثال سريع
+
+```ts
+import { DC1RenterClient } from 'dc1-renter-sdk'
+
+const client = new DC1RenterClient({
+  apiKey: process.env.DC1_RENTER_KEY!,
+  baseUrl: 'https://api.dcp.sa',
+})
+
+const job = await client.submitJob({
+  provider_id: 26,
+  job_type: 'llm-inference',
+  params: { prompt: 'اكتب مقدمة عن الحوسبة السحابية.' },
+})
+```

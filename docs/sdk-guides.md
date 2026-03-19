@@ -1,0 +1,455 @@
+# DC1 SDK Guides
+
+DC1 provides official SDKs for Python and JavaScript. Both wrap the REST API with typed methods, handle authentication, and expose polling helpers for job completion.
+
+> **Note:** The SDKs are in active development. To use DC1 today, call the REST API directly (examples below are functional). SDK packages will be published to PyPI (`dc1-sdk`) and npm (`dc1-renter-sdk`) in an upcoming release.
+
+---
+
+## Python SDK
+
+Install:
+
+```bash
+pip install dc1-sdk
+```
+
+Until PyPI publication, install directly:
+
+```bash
+pip install requests  # only dependency for direct API calls
+```
+
+### Quickstart (Python)
+
+```python
+import requests
+
+DC1_BASE = "http://76.13.179.86:8083"
+RENTER_KEY = "dc1-renter-YOUR_KEY_HERE"
+
+headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
+
+# 1. Check balance
+resp = requests.get(f"{DC1_BASE}/api/renters/balance", headers=headers)
+balance = resp.json()
+print(f"Balance: {balance['balance_sar']} SAR")
+
+# 2. Find a GPU
+providers = requests.get(f"{DC1_BASE}/api/renters/available-providers").json()
+live = [p for p in providers["providers"] if p["is_live"]]
+provider_id = live[0]["id"]
+print(f"Using provider: {live[0]['name']} ({live[0]['gpu_model']})")
+
+# 3. Submit an LLM inference job
+job_resp = requests.post(
+    f"{DC1_BASE}/api/jobs/submit",
+    headers=headers,
+    json={
+        "provider_id": provider_id,
+        "job_type": "llm_inference",
+        "duration_minutes": 5,
+        "params": {
+            "model": "mistralai/Mistral-7B-Instruct-v0.2",
+            "prompt": "Write a haiku about desert computing",
+            "max_tokens": 64,
+            "temperature": 0.8,
+        },
+    },
+)
+job = job_resp.json()["job"]
+job_id = job["job_id"]
+print(f"Job submitted: {job_id} (cost: {job['cost_halala']} halala)")
+
+# 4. Poll until complete
+import time
+
+while True:
+    status_resp = requests.get(
+        f"{DC1_BASE}/api/jobs/{job_id}",
+        headers=headers,
+    ).json()["job"]
+
+    print(f"  status: {status_resp['status']}")
+    if status_resp["status"] in ("completed", "failed", "cancelled"):
+        break
+    time.sleep(5)
+
+# 5. Get result
+if status_resp["status"] == "completed":
+    output = requests.get(
+        f"{DC1_BASE}/api/jobs/{job_id}/output",
+        headers=headers,
+    ).json()
+    print("\nResult:")
+    print(output["result"]["response"])
+    print(f"\nActual cost: {output['actual_cost_halala']} halala")
+```
+
+### Image generation (Python)
+
+```python
+import base64, requests
+
+DC1_BASE = "http://76.13.179.86:8083"
+RENTER_KEY = "dc1-renter-YOUR_KEY_HERE"
+headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
+
+providers = requests.get(f"{DC1_BASE}/api/renters/available-providers").json()
+provider_id = next(p["id"] for p in providers["providers"] if p["is_live"] and p["vram_gb"] >= 16)
+
+job = requests.post(
+    f"{DC1_BASE}/api/jobs/submit",
+    headers=headers,
+    json={
+        "provider_id": provider_id,
+        "job_type": "image_generation",
+        "duration_minutes": 10,
+        "params": {
+            "prompt": "A futuristic mosque with neon lights, cyberpunk style",
+            "model": "stabilityai/stable-diffusion-xl-base-1.0",
+            "steps": 30,
+            "width": 1024,
+            "height": 1024,
+        },
+    },
+).json()["job"]
+
+# Poll
+import time
+while True:
+    s = requests.get(f"{DC1_BASE}/api/jobs/{job['job_id']}", headers=headers).json()["job"]
+    if s["status"] in ("completed", "failed"):
+        break
+    time.sleep(8)
+
+# Save image
+output = requests.get(f"{DC1_BASE}/api/jobs/{job['job_id']}/output", headers=headers).json()
+img_bytes = base64.b64decode(output["result"]["image_base64"])
+with open("output.png", "wb") as f:
+    f.write(img_bytes)
+print("Saved output.png")
+```
+
+### vLLM serving endpoint (Python)
+
+Use `vllm_serve` to start an OpenAI-compatible inference server on a provider GPU. The job stays `running` and you call the endpoint directly.
+
+```python
+import requests, time, openai
+
+DC1_BASE = "http://76.13.179.86:8083"
+RENTER_KEY = "dc1-renter-YOUR_KEY_HERE"
+headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
+
+providers = requests.get(f"{DC1_BASE}/api/renters/available-providers").json()
+provider_id = next(p["id"] for p in providers["providers"] if p["is_live"] and p["vram_gb"] >= 16)
+
+job = requests.post(
+    f"{DC1_BASE}/api/jobs/submit",
+    headers=headers,
+    json={
+        "provider_id": provider_id,
+        "job_type": "vllm_serve",
+        "duration_minutes": 60,
+        "params": {
+            "model": "mistralai/Mistral-7B-Instruct-v0.2",
+            "max_model_len": 4096,
+            "dtype": "float16",
+        },
+    },
+).json()["job"]
+
+# Wait for endpoint to be ready
+endpoint_url = None
+for _ in range(60):
+    output = requests.get(f"{DC1_BASE}/api/jobs/{job['job_id']}/output", headers=headers).json()
+    if output.get("result", {}).get("endpoint_url"):
+        endpoint_url = output["result"]["endpoint_url"]
+        break
+    time.sleep(5)
+
+# Use OpenAI-compatible client
+client = openai.OpenAI(base_url=endpoint_url, api_key="not-needed")
+response = client.chat.completions.create(
+    model="mistralai/Mistral-7B-Instruct-v0.2",
+    messages=[{"role": "user", "content": "Tell me about Vision 2030"}],
+)
+print(response.choices[0].message.content)
+```
+
+---
+
+## JavaScript / TypeScript SDK
+
+Install:
+
+```bash
+npm install dc1-renter-sdk
+# or
+yarn add dc1-renter-sdk
+```
+
+Until npm publication, use `node-fetch` or the native `fetch` API directly.
+
+### Quickstart (Node.js / TypeScript)
+
+```typescript
+const DC1_BASE = "http://76.13.179.86:8083";
+const RENTER_KEY = "dc1-renter-YOUR_KEY_HERE";
+
+const headers = {
+  "x-renter-key": RENTER_KEY,
+  "Content-Type": "application/json",
+};
+
+async function main() {
+  // 1. Check balance
+  const bal = await fetch(`${DC1_BASE}/api/renters/balance`, { headers }).then(r => r.json());
+  console.log(`Balance: ${bal.balance_sar} SAR`);
+
+  // 2. Find a live GPU
+  const { providers } = await fetch(`${DC1_BASE}/api/renters/available-providers`).then(r => r.json());
+  const provider = providers.find((p: any) => p.is_live);
+  if (!provider) throw new Error("No live providers available");
+  console.log(`Using: ${provider.name} (${provider.gpu_model})`);
+
+  // 3. Submit job
+  const submitResp = await fetch(`${DC1_BASE}/api/jobs/submit`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      provider_id: provider.id,
+      job_type: "llm_inference",
+      duration_minutes: 5,
+      params: {
+        model: "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        prompt: "What is the capital of Saudi Arabia?",
+        max_tokens: 128,
+        temperature: 0.5,
+      },
+    }),
+  }).then(r => r.json());
+
+  const jobId = submitResp.job.job_id;
+  console.log(`Job submitted: ${jobId}`);
+
+  // 4. Poll for completion
+  let status = "";
+  while (!["completed", "failed", "cancelled"].includes(status)) {
+    await new Promise(r => setTimeout(r, 5000));
+    const s = await fetch(`${DC1_BASE}/api/jobs/${jobId}`, { headers }).then(r => r.json());
+    status = s.job.status;
+    console.log(`  status: ${status}`);
+  }
+
+  // 5. Get result
+  if (status === "completed") {
+    const output = await fetch(`${DC1_BASE}/api/jobs/${jobId}/output`, { headers }).then(r => r.json());
+    console.log("\nResponse:", output.result.response);
+    console.log(`Actual cost: ${output.actual_cost_halala} halala`);
+  }
+}
+
+main().catch(console.error);
+```
+
+### Image generation (JavaScript)
+
+```javascript
+const { writeFileSync } = require("fs");
+
+const DC1_BASE = "http://76.13.179.86:8083";
+const RENTER_KEY = "dc1-renter-YOUR_KEY_HERE";
+const headers = { "x-renter-key": RENTER_KEY, "Content-Type": "application/json" };
+
+async function generateImage(prompt) {
+  const providers = await fetch(`${DC1_BASE}/api/renters/available-providers`)
+    .then(r => r.json());
+  const provider = providers.providers.find(p => p.is_live && p.vram_gb >= 16);
+
+  const { job } = await fetch(`${DC1_BASE}/api/jobs/submit`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      provider_id: provider.id,
+      job_type: "image_generation",
+      duration_minutes: 10,
+      params: {
+        prompt,
+        model: "stabilityai/stable-diffusion-xl-base-1.0",
+        steps: 30,
+        width: 1024,
+        height: 1024,
+      },
+    }),
+  }).then(r => r.json());
+
+  // Poll
+  let output;
+  while (true) {
+    await new Promise(r => setTimeout(r, 8000));
+    const s = await fetch(`${DC1_BASE}/api/jobs/${job.job_id}`, { headers }).then(r => r.json());
+    if (s.job.status === "completed") {
+      output = await fetch(`${DC1_BASE}/api/jobs/${job.job_id}/output`, { headers }).then(r => r.json());
+      break;
+    }
+    if (["failed", "cancelled"].includes(s.job.status)) throw new Error(`Job ${s.job.status}`);
+  }
+
+  const imgBuffer = Buffer.from(output.result.image_base64, "base64");
+  writeFileSync("output.png", imgBuffer);
+  console.log("Saved output.png");
+}
+
+generateImage("A camel caravan at sunset over the Empty Quarter, oil painting style");
+```
+
+### Using the SDK class (dc1-renter-sdk)
+
+When the SDK is published to npm, you'll use it like this:
+
+```typescript
+import { DC1RenterClient } from "dc1-renter-sdk";
+
+const dc1 = new DC1RenterClient({
+  apiKey: "dc1-renter-YOUR_KEY_HERE",
+  baseUrl: "http://76.13.179.86:8083",  // optional, defaults to production
+});
+
+// Submit and wait for completion in one call
+const result = await dc1.jobs.run({
+  jobType: "llm_inference",
+  params: {
+    model: "mistralai/Mistral-7B-Instruct-v0.2",
+    prompt: "Explain blockchain to a 10-year-old",
+    maxTokens: 256,
+  },
+});
+
+console.log(result.response);
+console.log(`Cost: ${result.actualCostSar} SAR`);
+```
+
+---
+
+## Code examples by use case
+
+### LLM inference pipeline
+
+```python
+# process_batch.py — run inference on a list of prompts
+import requests, time
+
+DC1_BASE = "http://76.13.179.86:8083"
+RENTER_KEY = "dc1-renter-YOUR_KEY"
+headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
+
+prompts = [
+    "Summarize the Saudi Vision 2030 in one paragraph",
+    "What is the difference between Llama 3 and Mistral 7B?",
+    "Write Python code to parse JSON from a REST API",
+]
+
+providers = requests.get(f"{DC1_BASE}/api/renters/available-providers").json()
+provider_id = next(p["id"] for p in providers["providers"] if p["is_live"])
+
+results = []
+for prompt in prompts:
+    # Submit
+    job = requests.post(f"{DC1_BASE}/api/jobs/submit", headers=headers, json={
+        "provider_id": provider_id,
+        "job_type": "llm_inference",
+        "duration_minutes": 3,
+        "params": {"model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0", "prompt": prompt, "max_tokens": 256},
+    }).json()["job"]
+
+    # Wait
+    while True:
+        s = requests.get(f"{DC1_BASE}/api/jobs/{job['job_id']}", headers=headers).json()["job"]
+        if s["status"] in ("completed", "failed"):
+            break
+        time.sleep(4)
+
+    if s["status"] == "completed":
+        out = requests.get(f"{DC1_BASE}/api/jobs/{job['job_id']}/output", headers=headers).json()
+        results.append({"prompt": prompt, "response": out["result"]["response"]})
+        print(f"✓ [{out['result']['tokens_generated']} tokens] {prompt[:40]}...")
+
+for r in results:
+    print(f"\n--- {r['prompt'][:60]} ---\n{r['response']}\n")
+```
+
+### Custom container job
+
+```python
+# Run arbitrary Python on a GPU — useful for training, fine-tuning, or custom workloads
+import requests, time
+
+DC1_BASE = "http://76.13.179.86:8083"
+RENTER_KEY = "dc1-renter-YOUR_KEY"
+headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
+
+custom_script = """
+import torch
+import json
+
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none'}")
+
+# Your custom training/inference code here
+x = torch.randn(1000, 1000).cuda()
+y = torch.mm(x, x)
+result = {"matmul_shape": list(y.shape), "device": str(y.device)}
+print("DC1_RESULT_JSON:" + json.dumps(result))
+"""
+
+providers = requests.get(f"{DC1_BASE}/api/renters/available-providers").json()
+provider_id = next(p["id"] for p in providers["providers"] if p["is_live"])
+
+job = requests.post(f"{DC1_BASE}/api/jobs/submit", headers=headers, json={
+    "provider_id": provider_id,
+    "job_type": "custom_container",
+    "duration_minutes": 10,
+    "params": {
+        "image_override": "dc1/general-worker:latest",
+        "script": custom_script,
+    },
+}).json()["job"]
+
+print(f"Job: {job['job_id']}")
+while True:
+    s = requests.get(f"{DC1_BASE}/api/jobs/{job['job_id']}", headers=headers).json()["job"]
+    if s["status"] in ("completed", "failed"):
+        break
+    time.sleep(5)
+
+output = requests.get(f"{DC1_BASE}/api/jobs/{job['job_id']}/output", headers=headers).json()
+print(output)
+```
+
+---
+
+## Polling best practices
+
+- Poll at 5-second intervals for short jobs (LLM inference, image gen)
+- Poll at 15-30 second intervals for long jobs (training, vllm_serve startup)
+- Implement exponential backoff if you receive 429 (rate limit)
+- Set a maximum poll timeout (e.g., 10 minutes) and handle `failed`/`cancelled` states
+
+```python
+def poll_job(dc1_base, job_id, headers, timeout_s=600, interval_s=5):
+    """Poll job status until complete or timeout. Returns final job dict."""
+    import time
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        resp = requests.get(f"{dc1_base}/api/jobs/{job_id}", headers=headers)
+        if resp.status_code == 429:
+            time.sleep(interval_s * 2)
+            continue
+        job = resp.json().get("job", {})
+        if job.get("status") in ("completed", "failed", "cancelled"):
+            return job
+        time.sleep(interval_s)
+    raise TimeoutError(f"Job {job_id} did not complete within {timeout_s}s")
+```

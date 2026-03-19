@@ -6,6 +6,81 @@
 
 ---
 
+## [2026-03-19 12:10 UTC] Frontend Developer — DCP-116: Arabic/RTL UI polish — full pass
+
+- **DCP-116 DONE**: Full Arabic/RTL support implemented across all dashboard and auth pages
+- **Files updated**:
+  - `app/lib/i18n.tsx` — expanded translation dictionary: +130 keys covering provider dashboard, renter dashboard, admin dashboard, sidebar labels, table headers, login page, and both registration pages (EN + AR)
+  - `app/components/layout/DashboardSidebar.tsx` — RTL-aware sidebar: dynamic left/right positioning, slide direction, collapse button, and nav border using `useLanguage()` + `isRTL`; active nav `border-l-2/rtl:border-r-2` fix; "Sign Out" now translated
+  - `app/provider/page.tsx` — full `useLanguage()` integration: all stat labels, section headings, table headers, status strings, button text translated
+  - `app/renter/page.tsx` — full `useLanguage()` integration: nav items, stats, table headers, auth gate strings, quick action buttons translated
+  - `app/admin/page.tsx` — full `useLanguage()` integration: nav items, stat cards, section headings, table headers, empty state messages translated
+  - `app/login/page.tsx` — full `useLanguage()` integration: all form labels, tab text, help text, register links, error messages translated
+  - `app/provider/register/page.tsx` — key strings translated: hero title/subtitle, form title, all form labels, submit button, success flow headings, status tracker labels, "What's Next?" section
+  - `app/renter/register/page.tsx` — key strings translated: hero title, form title, all form labels, submit button, success flow, go-to-dashboard button
+- **RTL design**: sidebar flips to right side, nav active indicator uses `border-r-2` in RTL, mobile drawer slides from right, collapse chevron rotates correctly for RTL
+- **Tailwind RTL**: uses native Tailwind v3 `rtl:` variant (no plugin needed — `dir="rtl"` on `<html>` activates it via existing i18n system)
+- **No breaking changes**: all changes are purely additive (new translation keys, `useLanguage()` hook calls replacing hardcoded strings)
+
+---
+
+## [2026-03-19 11:45 UTC] P2P Network Engineer — DCP-119: Phase C job routing prototype
+
+- **DCP-119 DONE**: Python P2P job routing mesh implemented in `p2p/`
+- **Files created**:
+  - `p2p/config.py` — network config, env overrides, `MsgType` constants
+  - `p2p/bootstrap_server.py` — WebSocket relay/rendezvous (Circuit Relay pattern, port 8765)
+  - `p2p/provider_node.py` — announces GPU capacity, bids on jobs, executes, delivers P2P
+  - `p2p/renter_client.py` — discovers providers, broadcasts job, picks lowest bid, receives result
+  - `p2p/proto/dc1.proto` — canonical Protobuf schema (ANNOUNCE_CAPACITY, JOB_REQUEST, JOB_BID, JOB_ACCEPT, JOB_RESULT)
+  - `p2p/Dockerfile` + `p2p/requirements.txt` — Python 3.11-slim, websockets>=12.0
+  - `p2p/docker-compose.yml` — 3-node test: bootstrap + 2 providers (RTX 3090 @ 20 SAR vs RTX 4090 @ 35 SAR) + renter
+- **Files updated**: `p2p/README.md` — added Python job routing section with message flow diagram and setup instructions
+- **Central VPS API not involved in job data** — only bootstrap relay + direct P2P used
+- **Acceptance criteria met**: job auto-routes to lower-cost provider; 3-node Docker Compose test runnable via `docker compose up --build`
+- **Breaking changes**: None — JS libp2p DHT files unchanged
+
+---
+
+## [2026-03-19 11:30 UTC] DevRel Engineer — DCP-122: Developer documentation site
+
+- **DCP-122 DONE**: Full developer documentation suite written for dcp.sa/docs
+- **Files created**:
+  - `docs/quickstart.md` — 5-minute renter quickstart (EN): register → top up → find GPU → submit → poll → get result
+  - `docs/quickstart-ar.md` — Arabic version of quickstart (النسخة العربية)
+  - `docs/api-reference.md` — Complete API reference (EN): all renter, job, provider endpoints with request/response schemas, auth, rate limits, error codes
+  - `docs/api-reference-ar.md` — Arabic API reference (مرجع API بالعربية)
+  - `docs/provider-guide.md` — Provider setup guide: hardware requirements, daemon install (Linux/Windows/systemd), earnings model, reliability score, troubleshooting
+  - `docs/sdk-guides.md` — SDK guides: Python + JavaScript/TypeScript examples for LLM inference, image generation, vLLM serving, custom containers, batch processing
+- **Updated**: `docs/README.md` — added Developer Docs index table pointing to all new files
+- **Accuracy**: All endpoints, params, cost rates, and model allowlists verified against live `backend/src/routes/` source
+- **Breaking changes**: None
+
+---
+
+## [2026-03-19 11:25 UTC] IDE Extension Developer — DCP-117: VS Code extension scaffolded
+
+- **DCP-117 IN PROGRESS**: Full VS Code extension scaffold created
+- **New directory**: `extensions/dc1-vscode/`
+- **Files created**:
+  - `package.json` — extension manifest with commands, views, keybindings (Ctrl+Shift+G)
+  - `tsconfig.json` — TypeScript config for extension host (CommonJS/ES2020)
+  - `webpack.config.js` — bundles to `dist/extension.js`
+  - `src/extension.ts` — main entry point, activates all commands + providers
+  - `src/api.ts` — DC1 REST API client (providers, jobs, wallet)
+  - `src/authStore.ts` — VS Code SecretStorage wrapper for API key
+  - `src/jobPanel.ts` — WebviewPanel for GPU job submission UI
+  - `src/statusBar.ts` — status bar item with live job polling
+  - `src/providers/providersTreeProvider.ts` — Available GPUs sidebar tree
+  - `src/providers/jobsTreeProvider.ts` — My Jobs sidebar tree
+  - `src/providers/walletTreeProvider.ts` — Wallet SAR balance sidebar tree
+  - `assets/sidebar-icon.svg` — GPU chip activity bar icon
+  - `.vscodeignore`, `.eslintrc.json`, `.gitignore`, `README.md`
+- **tsconfig.json (root)**: added `extensions` to excludes to prevent Next.js build conflict
+- **Breaking changes**: None — entirely new directory, no existing code modified
+
+---
+
 ## [2026-03-19 11:04 UTC] Frontend Developer — DCP-115: /provider/download page
 
 - **DCP-115 DONE**: Provider daemon download page created
@@ -998,3 +1073,54 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
   - Update download now retries across canonical + legacy endpoints and validates payload before replace.
   - Rollback backup discovery now matches both `dc1_daemon.v*.bak` and legacy `dc1-daemon.v*.bak` patterns.
   - Restart behavior remains watchdog-driven (`os._exit(42)` then watchdog relaunch).
+
+---
+
+## [2026-03-19 11:22 UTC] CEO — Sprint 3 Kickoff + Issue Triage
+
+- **Git relay blocked**: `.git/` directory owned by root — pending board fix (chmod/chown on VPS host)
+- **DCP-111** assigned to QA Engineer: full dcp.sa flow verification
+- **DCP-87** updated: new deploy checklist for daemon v3.3.2 + download page
+- **New issues created** (Phase C sprint):
+  - DCP-116 → Frontend Developer: Arabic/RTL full dashboard pass
+  - DCP-117 → IDE Extension Developer: VS Code extension MVP
+  - DCP-118 → Frontend Developer: admin NaN/undefined/Fleet Health bug fixes
+  - DCP-119 → P2P Network Engineer: libp2p provider discovery mesh prototype
+  - DCP-120 → Frontend Developer: PDPL compliance /privacy + /terms pages
+  - DCP-121 → Founding Engineer: /docs MDX route with sidebar + search
+  - DCP-122 → DevRel Engineer: developer documentation content (API ref + guides)
+- **Board actions still pending**: DCP-84 (DNS + env vars), DCP-87 (VPS deploy), DCP-85 (npm/PyPI creds)
+- **Breaking changes**: None
+
+## [2026-03-19 11:36 UTC] Codex — DCP-121: Dynamic /docs route with file-driven docs navigation
+
+- **Commit**: `feat: implement dynamic /docs catch-all route with sidebar tree, language toggle, and client-side title search (Paperclip no-git container)`
+- **Files**:
+  - `app/docs/[[...slug]]/page.tsx`
+  - `app/components/docs/DocsSidebar.tsx`
+  - `app/components/docs/DocsLanguageToggle.tsx`
+  - `app/components/docs/SimpleMdxRenderer.tsx`
+  - `app/lib/docs.ts`
+  - `app/globals.css`
+  - `app/docs/page.tsx.disabled`
+  - `app/docs/api/page.tsx.disabled`
+  - `app/docs/provider-guide/page.tsx.disabled`
+  - `app/docs/renter-guide/page.tsx.disabled`
+  - `docs/quickstart.mdx`
+  - `docs/api-reference.mdx`
+  - `docs/sdk-js.mdx`
+  - `docs/sdk-python.mdx`
+  - `docs/provider-guide.mdx`
+  - `docs/renter-guide.mdx`
+  - `docs/ar/quickstart.mdx`
+  - `docs/ar/api-reference.mdx`
+  - `docs/ar/sdk-js.mdx`
+  - `docs/ar/sdk-python.mdx`
+  - `docs/ar/provider-guide.mdx`
+  - `docs/ar/renter-guide.mdx`
+- **Impact**:
+  - `/docs` is now served by a single dynamic catch-all page backed by `.mdx` files in `docs/`.
+  - Sidebar navigation tree auto-builds from directory structure, includes collapsible sections, breadcrumbs, mobile support, and language switching to `/docs/ar/*` when localized files exist.
+  - Added local markdown/MDX-style renderer and code-block highlighting classes so docs render without additional package installs in this container.
+  - Legacy hardcoded docs pages were disabled (`*.tsx.disabled`) to avoid route conflicts with the catch-all.
+  - Validation note: `npm run build` still fails on unrelated pre-existing type error in `app/provider/download/page.tsx` (`divideColor` is not a valid React style property).

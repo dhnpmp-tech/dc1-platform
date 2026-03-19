@@ -50,6 +50,7 @@
     "sdk",
     "p2p",
     "docker-templates",
-    "contracts"
+    "contracts",
+    "extensions"
   ]
 }

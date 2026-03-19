@@ -152,7 +152,7 @@ export default function ProviderDownloadPage() {
           </h2>
           <div
             className="rounded-xl divide-y"
-            style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.08)', divideColor: 'rgba(255,255,255,0.06)' }}
+            style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.08)' }}
           >
             {REQUIREMENTS.map((req) => (
               <div

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import StatCard from '../components/ui/StatCard'
 import StatusBadge from '../components/ui/StatusBadge'
+import { useLanguage } from '../lib/i18n'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'
@@ -84,24 +85,24 @@ const GearIcon = () => (
   </svg>
 )
 
-// ── Navigation ───────────────────────────────────────────────────
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-  { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
-  { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
-]
-
 // ── Main Component ─────────────────────────────────────────────────
 export default function RenterDashboard() {
+  const { t } = useLanguage()
   const [renter, setRenter] = useState<RenterInfo | null>(null)
   const [gpus, setGpus] = useState<GPU[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [authChecking, setAuthChecking] = useState(true)
   const [renterKey, setRenterKey] = useState('')
+
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
+  ]
 
   // ── Auth + Auto-refresh ──────────────────────────────────────────
   useEffect(() => {
@@ -218,9 +219,9 @@ export default function RenterDashboard() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-dc1-text-primary mb-2">Welcome Back</h1>
+          <h1 className="text-2xl font-bold text-dc1-text-primary mb-2">{t('login.welcome_back')}</h1>
           <p className="text-dc1-text-secondary mb-8">
-            Sign in with your API key to access your renter dashboard.
+            {t('renter.sign_in_prompt')}
           </p>
 
           <form
@@ -235,19 +236,19 @@ export default function RenterDashboard() {
           >
             <input
               type="password"
-              placeholder="Enter your API key"
+              placeholder={t('auth.api_key_placeholder')}
               className="input"
               required
             />
             <button type="submit" className="btn btn-primary w-full">
-              Sign In
+              {t('auth.sign_in')}
             </button>
           </form>
 
           <p className="text-sm text-dc1-text-secondary mt-6">
-            Don&apos;t have an account?{' '}
+            {t('auth.no_account')}{' '}
             <a href="/renter/register" className="text-dc1-amber hover:underline">
-              Register here
+              {t('auth.register_here')}
             </a>
           </p>
         </div>
@@ -267,34 +268,34 @@ export default function RenterDashboard() {
         {/* Page Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-dc1-text-primary">Renter Dashboard</h1>
-            <p className="text-dc1-text-secondary text-sm mt-1">Welcome back, {renter.name}</p>
+            <h1 className="text-3xl font-bold text-dc1-text-primary">{t('renter.dashboard')}</h1>
+            <p className="text-dc1-text-secondary text-sm mt-1">{t('dashboard.welcome')}, {renter.name}</p>
           </div>
           <button onClick={handleLogout} className="btn btn-outline text-sm">
-            Sign Out
+            {t('common.sign_out')}
           </button>
         </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Account Balance" value={`${balance.toFixed(2)} SAR`} accent="amber" />
-          <StatCard label="Total Spent" value={`${totalSpent.toFixed(2)} SAR`} accent="default" />
-          <StatCard label="Jobs Run" value={totalJobs.toString()} accent="default" />
-          <StatCard label="Online GPUs" value={onlineGPUs.toString()} accent="success" />
+          <StatCard label={t('dashboard.balance')} value={`${balance.toFixed(2)} ${t('common.sar')}`} accent="amber" />
+          <StatCard label={t('dashboard.total_spent')} value={`${totalSpent.toFixed(2)} ${t('common.sar')}`} accent="default" />
+          <StatCard label={t('dashboard.jobs_run')} value={totalJobs.toString()} accent="default" />
+          <StatCard label={t('dashboard.online_gpus')} value={onlineGPUs.toString()} accent="success" />
         </div>
 
         {/* Available GPUs */}
         <section>
-          <h2 className="section-heading mb-4">Available GPUs</h2>
+          <h2 className="section-heading mb-4">{t('common.available_gpus')}</h2>
           <div className="table-container">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Provider</th>
-                  <th>GPU Model</th>
-                  <th>VRAM</th>
-                  <th>Status</th>
-                  <th>Action</th>
+                  <th>{t('table.provider')}</th>
+                  <th>{t('table.gpu_model')}</th>
+                  <th>{t('table.vram')}</th>
+                  <th>{t('table.status')}</th>
+                  <th>{t('table.action')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -312,7 +313,7 @@ export default function RenterDashboard() {
                           href={`/renter/playground?provider=${gpu.id}`}
                           className="text-dc1-amber hover:underline text-sm font-medium"
                         >
-                          Use GPU
+                          {t('renter.use_gpu')}
                         </Link>
                       </td>
                     </tr>
@@ -320,7 +321,7 @@ export default function RenterDashboard() {
                 ) : (
                   <tr>
                     <td colSpan={5} className="text-center py-8 text-dc1-text-secondary">
-                      No GPUs available at the moment
+                      {t('renter.no_gpus')}
                     </td>
                   </tr>
                 )}
@@ -332,20 +333,20 @@ export default function RenterDashboard() {
         {/* Recent Jobs */}
         <section>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="section-heading">Recent Jobs</h2>
+            <h2 className="section-heading">{t('common.recent_jobs')}</h2>
             <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">
-              View All
+              {t('common.view_all')}
             </Link>
           </div>
           <div className="table-container">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Job ID</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Cost</th>
-                  <th>Duration</th>
+                  <th>{t('table.job_id')}</th>
+                  <th>{t('table.type')}</th>
+                  <th>{t('table.status')}</th>
+                  <th>{t('table.cost')}</th>
+                  <th>{t('table.duration')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -357,18 +358,14 @@ export default function RenterDashboard() {
                       <td>
                         <StatusBadge status={job.status} />
                       </td>
-                      <td className="text-dc1-amber font-semibold">{job.cost > 0 ? `${job.cost.toFixed(2)} SAR` : '—'}</td>
+                      <td className="text-dc1-amber font-semibold">{job.cost > 0 ? `${job.cost.toFixed(2)} ${t('common.sar')}` : '—'}</td>
                       <td>{job.duration > 0 ? (job.duration >= 60 ? `${Math.floor(job.duration / 60)}m ${job.duration % 60}s` : `${job.duration}s`) : '—'}</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
                     <td colSpan={5} className="text-center py-8 text-dc1-text-secondary">
-                      No jobs yet. Try the{' '}
-                      <Link href="/renter/playground" className="text-dc1-amber hover:underline">
-                        GPU Playground
-                      </Link>
-                      !
+                      {t('renter.no_jobs_playground')}
                     </td>
                   </tr>
                 )}
@@ -379,16 +376,16 @@ export default function RenterDashboard() {
 
         {/* Quick Actions */}
         <section>
-          <h2 className="section-heading mb-4">Quick Actions</h2>
+          <h2 className="section-heading mb-4">{t('common.quick_actions')}</h2>
           <div className="flex flex-col sm:flex-row gap-4">
             <Link href="/renter/playground" className="btn btn-primary flex-1 text-center">
-              Open GPU Playground
+              {t('renter.open_playground')}
             </Link>
             <Link href="/renter/marketplace" className="btn btn-secondary flex-1 text-center">
-              Browse Marketplace
+              {t('renter.browse_marketplace')}
             </Link>
             <Link href="/renter/billing" className="btn btn-outline flex-1 text-center">
-              Manage Billing
+              {t('renter.manage_billing')}
             </Link>
           </div>
         </section>

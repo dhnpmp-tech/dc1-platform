@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Header from '@/app/components/layout/Header'
 import Footer from '@/app/components/layout/Footer'
+import { useLanguage } from '@/app/lib/i18n'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'
@@ -15,6 +16,7 @@ type LoginMethod = 'email' | 'apikey'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [email, setEmail] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [role, setRole] = useState<Role>('renter')
@@ -31,13 +33,13 @@ export default function LoginPage() {
       if (loginMethod === 'email') {
         // Email-based login
         if (!email.trim()) {
-          setError('Please enter your email address')
+          setError(t('login.enter_email'))
           setIsLoading(false)
           return
         }
 
         if (role === 'admin') {
-          setError('Admin login requires an API key')
+          setError(t('login.admin_needs_key'))
           setIsLoading(false)
           return
         }
@@ -86,7 +88,7 @@ export default function LoginPage() {
       } else {
         // API key-based login (original flow)
         if (!apiKey.trim()) {
-          setError('Please enter your API key')
+          setError(t('login.enter_key'))
           setIsLoading(false)
           return
         }
@@ -163,10 +165,10 @@ export default function LoginPage() {
             </div>
 
             <h1 className="text-2xl font-bold text-dc1-text-primary text-center mb-2">
-              Sign In
+              {t('auth.sign_in')}
             </h1>
             <p className="text-sm text-dc1-text-secondary text-center mb-6">
-              Sign in to access your dashboard
+              {t('login.sign_in_desc')}
             </p>
 
             {/* Login Method Toggle */}
@@ -181,7 +183,7 @@ export default function LoginPage() {
                       : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
                   }`}
                 >
-                  Email
+                  {t('login.email')}
                 </button>
                 <button
                   type="button"
@@ -192,14 +194,14 @@ export default function LoginPage() {
                       : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
                   }`}
                 >
-                  API Key
+                  {t('login.api_key')}
                 </button>
               </div>
             </div>
 
             {/* Role Selector */}
             <div className="mb-6">
-              <label className="label">Account Type</label>
+              <label className="label">{t('login.account_type')}</label>
               <div className="flex gap-3">
                 {(loginMethod === 'email' ? ['renter', 'provider'] as const : ['renter', 'provider', 'admin'] as const).map((r) => (
                   <label key={r} className="flex items-center gap-2 flex-1 cursor-pointer">
@@ -228,7 +230,7 @@ export default function LoginPage() {
               {loginMethod === 'email' ? (
                 <div>
                   <label htmlFor="email" className="label">
-                    Email Address
+                    {t('login.email_address')}
                   </label>
                   <input
                     id="email"
@@ -245,7 +247,7 @@ export default function LoginPage() {
               ) : (
                 <div>
                   <label htmlFor="apiKey" className="label">
-                    API Key
+                    {t('login.api_key')}
                   </label>
                   <input
                     id="apiKey"
@@ -265,31 +267,29 @@ export default function LoginPage() {
                 disabled={isLoading}
                 className="btn btn-primary w-full"
               >
-                {isLoading ? 'Signing in...' : 'Sign In'}
+                {isLoading ? t('login.signing_in') : t('auth.sign_in')}
               </button>
             </form>
 
             {/* Help text */}
             <div className="mt-6 pt-6 border-t border-dc1-border/30">
               <p className="text-xs text-dc1-text-secondary text-center mb-3">
-                {loginMethod === 'email'
-                  ? 'Use the email you registered with to sign in instantly.'
-                  : 'Your API key was provided when you registered. Check your records or contact support.'}
+                {loginMethod === 'email' ? t('login.email_hint') : t('login.apikey_hint')}
               </p>
             </div>
 
             {/* Register links */}
             <div className="mt-4 space-y-2 text-center text-sm">
               <p className="text-dc1-text-secondary">
-                New to DC1?{' '}
+                {t('login.new_to_dc1')}{' '}
                 <a href="/provider/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">
-                  Become a Provider
+                  {t('login.become_provider')}
                 </a>
               </p>
               <p className="text-dc1-text-secondary">
-                Want to rent GPUs?{' '}
+                {t('login.want_to_rent')}{' '}
                 <a href="/renter/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">
-                  Register as Renter
+                  {t('login.register_as_renter')}
                 </a>
               </p>
             </div>

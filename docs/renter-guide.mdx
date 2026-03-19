@@ -1,0 +1,36 @@
+---
+title: Renter Guide
+description: Discover providers, run jobs, and manage billing as a compute renter.
+order: 6
+---
+
+## Start here
+
+1. Register at `/renter/register`
+2. Save your API key
+3. Add funds from `/renter/billing`
+4. Pick a GPU from `/renter/marketplace`
+
+## Submit through playground
+
+- Open `/renter/playground`
+- Choose a provider and model
+- Run LLM or image generation jobs
+
+## Submit through API
+
+```bash
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: dc1-renter-xxxx" \
+  -d '{
+    "provider_id": 26,
+    "job_type": "llm-inference",
+    "params": {"prompt": "Hello from DC1"}
+  }'
+```
+
+## Track spend
+
+- `/renter` dashboard for balance and recent jobs
+- `/renter/analytics` for spend trends

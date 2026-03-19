@@ -55,33 +55,38 @@ export default function FleetHealthPage() {
   }, [])
 
   useEffect(() => {
-    fetchFleetHealth()
+    if (token) fetchFleetHealth()
   }, [timePeriod])
 
   const fetchFleetHealth = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/daemon-health?hours=${timePeriod}`, {
-        headers: { 'x-admin-token': token! }
-      })
-      if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return }
-      const json = await res.json()
-      setData(json)
-    } catch (err) {
-      console.error(err)
-    }
+      const [daemonRes, healthRes] = await Promise.allSettled([
+        fetch(`${API_BASE}/admin/daemon-health?hours=${timePeriod}`, {
+          headers: { 'x-admin-token': token! }
+        }),
+        fetch(`${API_BASE}/admin/health`, {
+          headers: { 'x-admin-token': token! }
+        }),
+      ])
 
-    // Fetch system health status
-    try {
-      const healthRes = await fetch(`${API_BASE}/admin/health`, {
-        headers: { 'x-admin-token': token! }
-      })
-      if (healthRes.ok) {
-        const healthJson = await healthRes.json()
+      if (daemonRes.status === 'fulfilled') {
+        const res = daemonRes.value
+        if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return }
+        if (res.ok) {
+          const json = await res.json()
+          setData(json)
+        }
+      }
+
+      if (healthRes.status === 'fulfilled' && healthRes.value.ok) {
+        const healthJson = await healthRes.value.json()
         setHealth(healthJson)
       }
     } catch (err) {
-      console.error('Failed to fetch system health:', err)
-    } finally { setLoading(false) }
+      console.error('Failed to fetch fleet health:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const getSeverityColor = (severity: string) => {
@@ -99,6 +104,10 @@ export default function FleetHealthPage() {
   const versions = data?.versions || []
   const crashes = data?.crashes || []
   const recentEvents = data?.recent_events || []
+
+  // Derive provider counts: prefer daemon-health summary, fall back to /health checks
+  const providersOnline = summary.providers_online ?? health?.checks?.providers?.online ?? 0
+  const providersTotal = summary.providers_total ?? health?.checks?.providers?.total ?? 0
 
   return (
     <DashboardLayout navItems={navItems} role="admin" userName="Admin">
@@ -159,31 +168,31 @@ export default function FleetHealthPage() {
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
               <div className="text-xs text-dc1-text-secondary mb-1">Providers Online</div>
-              <div className="text-sm font-bold text-dc1-amber">{health.checks?.providers?.online || 0} / {health.checks?.providers?.total || 0}</div>
+              <div className="text-sm font-bold text-dc1-amber">{health.checks?.providers?.online ?? 0} / {health.checks?.providers?.total ?? 0}</div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
               <div className="text-xs text-dc1-text-secondary mb-1">Active Jobs</div>
-              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.jobs?.active || 0}</div>
+              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.jobs?.active ?? 0}</div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
               <div className="text-xs text-dc1-text-secondary mb-1">Stuck Jobs</div>
-              <div className={`text-sm font-bold ${(health.checks?.jobs?.stuck || 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                {health.checks?.jobs?.stuck || 0}
+              <div className={`text-sm font-bold ${(health.checks?.jobs?.stuck ?? 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                {health.checks?.jobs?.stuck ?? 0}
               </div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
               <div className="text-xs text-dc1-text-secondary mb-1">Failed (1h)</div>
-              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.errors?.failed_last_hour || 0}</div>
+              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.errors?.failed_last_hour ?? 0}</div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
               <div className="text-xs text-dc1-text-secondary mb-1">Critical Events</div>
-              <div className={`text-sm font-bold ${(health.checks?.errors?.critical_events || 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                {health.checks?.errors?.critical_events || 0}
+              <div className={`text-sm font-bold ${(health.checks?.errors?.critical_events ?? 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                {health.checks?.errors?.critical_events ?? 0}
               </div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
               <div className="text-xs text-dc1-text-secondary mb-1">Pending Withdrawals</div>
-              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.withdrawals?.pending || 0}</div>
+              <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.withdrawals?.pending ?? 0}</div>
             </div>
           </div>
         </div>
@@ -198,7 +207,7 @@ export default function FleetHealthPage() {
             <StatCard label="Total Events" value={String(summary.total_events || 0)} accent="default" />
             <StatCard label="Total Crashes" value={String(summary.total_crashes || 0)} accent="error" />
             <StatCard label="Job Success Rate" value={summary.job_success_rate || 'N/A'} accent="success" />
-            <StatCard label="Providers Online" value={`${summary.providers_online || 0} / ${summary.providers_total || 0}`} accent="amber" />
+            <StatCard label="Providers Online" value={`${providersOnline} / ${providersTotal}`} accent="amber" />
           </div>
 
           {/* Version Distribution */}

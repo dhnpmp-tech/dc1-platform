@@ -1,0 +1,59 @@
+---
+title: Quickstart
+description: Register, top up, and run your first GPU job in under 10 minutes.
+order: 1
+---
+
+## 1. Create a renter account
+
+1. Open `/renter/register`
+2. Submit your name, email, and organization
+3. Save the generated `dc1-renter-...` API key
+
+## 2. Add balance
+
+Use the Billing page or API:
+
+```bash
+curl -X POST https://dcp.sa/api/dc1/payments/topup \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: dc1-renter-xxxx" \
+  -d '{"amount_halala": 5000}'
+```
+
+## 3. Find an available provider
+
+```bash
+curl https://dcp.sa/api/dc1/renters/available-providers
+```
+
+Pick a provider with enough VRAM for your model.
+
+## 4. Submit a job
+
+```bash
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: dc1-renter-xxxx" \
+  -d '{
+    "provider_id": 26,
+    "job_type": "llm-inference",
+    "max_duration_seconds": 300,
+    "params": {
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "prompt": "Write a short intro about Riyadh."
+    }
+  }'
+```
+
+## 5. Poll output
+
+```bash
+curl https://dcp.sa/api/dc1/jobs/<job_id>/output?key=dc1-renter-xxxx
+```
+
+## Next
+
+- Review limits and auth headers in [API Reference](/docs/api-reference)
+- Use [SDK JavaScript](/docs/sdk-js) for typed app integration
+- Use [Provider Guide](/docs/provider-guide) to onboard compute suppliers

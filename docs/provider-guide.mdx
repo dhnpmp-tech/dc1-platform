@@ -1,0 +1,37 @@
+---
+title: Provider Guide
+description: Install the daemon, keep your GPU online, and earn with the 75/25 split.
+order: 5
+---
+
+## Provider flow
+
+1. Register on `/provider/register`
+2. Download installer or daemon script
+3. Keep daemon running and heartbeating every 30 seconds
+4. Complete jobs and track earnings in SAR
+
+## Linux/macOS installer
+
+```bash
+curl -sL "https://dcp.sa/api/dc1/providers/download/setup?key=<PROVIDER_KEY>&os=linux" | bash
+```
+
+## Windows installer
+
+```powershell
+irm "https://dcp.sa/api/dc1/providers/download/setup?key=<PROVIDER_KEY>&os=windows" | iex
+```
+
+## Minimum requirements
+
+- NVIDIA GPU with at least 8 GB VRAM
+- Driver 450+ and working `nvidia-smi`
+- Stable internet connection
+- Docker + NVIDIA Container Toolkit recommended
+
+## Earnings
+
+- DC1 fee: 25%
+- Provider share: 75%
+- Minimum withdrawal: 10 SAR

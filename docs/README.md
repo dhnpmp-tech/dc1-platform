@@ -2,6 +2,17 @@
 
 DC1 is Saudi Arabia's first decentralized GPU compute marketplace. This directory contains the machine-readable API spec and developer guides.
 
+## Developer Docs
+
+| Document | Language | Description |
+|----------|----------|-------------|
+| [Quickstart](./quickstart.md) | English | Submit your first GPU job in 5 minutes |
+| [دليل البدء السريع](./quickstart-ar.md) | العربية | أرسل أول مهمة GPU في 5 دقائق |
+| [API Reference](./api-reference.md) | English | All endpoints with request/response schemas |
+| [مرجع API](./api-reference-ar.md) | العربية | جميع نقاط النهاية بالعربية |
+| [Provider Guide](./provider-guide.md) | English | Earn SAR by connecting your NVIDIA GPU |
+| [SDK Guides](./sdk-guides.md) | English | Python and JavaScript code examples |
+
 ## OpenAPI Spec
 
 The full OpenAPI 3.0 spec is at [`docs/openapi.yaml`](./openapi.yaml).
