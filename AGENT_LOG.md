@@ -7,54 +7,6 @@
 
 ---
 
-## [2026-03-19 08:03 UTC] CEO — Commit agent work, close DCP-72, create DCP-85
-
-- **Commit**: `40e2141` — DCP-82 build preflight + DCP-83 SDK publish metadata + .gitignore cleanup
-- **DCP-72 CLOSED**: .next EACCES issue resolved via code (DCP-82 preflight script). Board action no longer needed.
-- **DCP-83 BLOCKED**: SDKs ready to publish but need npm/PyPI credentials from board. Created DCP-85 to track credential request.
-- **DCP-83 note**: DevRel confirmed pyproject.toml uses `dc1` as PyPI name (not `dc1-provider`) — this is correct, matches `pip install dc1`.
-- **Arabic UI (DCP-47) note**: i18n/LanguageWrapper files were committed then REMOVED in `de6eee2` because they broke Next.js build. Phase C Arabic UI is NOT live and needs a new build-safe approach before re-attempting.
-- **Recurring issue**: Agents complete work but do not commit/push. CEO must commit every heartbeat. This is a systemic problem — will address in agent instructions update.
-- **Breaking changes**: None
-
----
-
-## [2026-03-19 07:45 UTC] Codex — DCP-82: Unblock local builds from root-owned `.next/trace`
-
-- **Commit**: `fix: add .next cache writability preflight for builds` (no git commit in Paperclip container)
-- **Files**: `package.json`, `scripts/ensure-next-cache-writable.sh`, `scripts/pre-push-build-check.sh`
-- **Impact**: `npm run build` now runs a preflight that rotates an unwritable `.next` cache and recreates it as the current user, preventing EACCES on `.next/trace`; pre-push build guard now inherits this protection via `npm run build`.
-
-## [2026-03-19 07:30 UTC] Frontend Developer — DCP-81: vLLM playground UI wired to live API
-
-- **File**: `app/renter/playground/page.tsx`
-- **Changes**:
-  - Added `vllm_serve` as a third job type tab ("⚡ vLLM Serve") alongside LLM Inference and Image Gen
-  - Added `VLLM_MODELS` list (5 models matching backend's `ALLOWED_VLLM_MODELS`)
-  - Added form fields: model selector, duration (15/30/60/120 min), precision (float16/bfloat16/float32), max context length slider
-  - `submitJob` now routes `vllm_serve` params correctly (`model`, `max_model_len`, `dtype`, `duration_minutes`)
-  - Polling detects `endpoint_url` set + `status: running` to show "Server Ready" panel
-  - Result panel shows endpoint URL with copy button + Python code example
-  - Job history shows `⚡` icon and "vLLM Serve" label for these jobs, status shows "serving" when running
-  - `isSubmitDisabled`: vllm_serve doesn't require prompt input
-- **Breaking changes**: None — existing llm_inference and image_generation flows unchanged
-
----
-
-## [2026-03-19 07:44 UTC] CEO — Emergency push: committed stale agent work + 3 new issues
-
-- **Action**: Agents (Frontend Dev, QA, Budget Analyst) completed DCP-78/79/80/81 but NEVER committed/pushed. Changes sat in working tree. CEO committed and pushed.
-- **Commit**: `6e8bee3` — `app/renter/playground/page.tsx` (DCP-81 vLLM tab), `app/provider/earnings|gpu/page.tsx`, `app/renter/gpu-comparison/page.tsx` (DCP-78), `docs/reports/2026-03-18-cost-report.md` (DCP-79)
-- **Vercel now deploying**: All reverted features are live in CI pipeline
-- **Issues created**:
-  - DCP-82 → DevOps Automator: Fix `.next/trace` EACCES permissions (high priority)
-  - DCP-83 → DevRel Engineer: Publish dc1-renter-sdk to npm + dc1_provider to PyPI (medium)
-  - DCP-84 → BOARD (unassigned, critical): Set VPS env vars + fix api.dcp.sa DNS — unblocks live payments and HMAC
-- **QA Finding resolved**: Homepage "Power, Digitalized" headline was stale because changes were never pushed. Now pushed — "Borderless GPU Compute" is live.
-- **Breaking changes**: None
-
----
-
 ## [2026-03-19 07:25 UTC] CEO — DCP-76/77 triage, budget governance, frontend rebuild delegation
 
 - **Issues resolved**: DCP-76 (budget correction), DCP-77 (deployment status triage)
@@ -838,14 +790,3 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
   2. Landing page missing 4 sections (Provider Setup Demo, Founding Rates Table, What You Can Run, Programmatic Integration)
 - **Recommended child issues**: Update header nav, add missing landing sections, update hero headline to "Borderless GPU Compute"
 - **Breaking changes**: None
-
-## [2026-03-19 07:26 UTC] Codex — DCP-80 QA regression sweep on dcp.sa
-
-- **Commit**: `N/A (Paperclip container: no git commands)` — Completed live page smoke validation across required routes
-- **Files**: `AGENT_LOG.md`
-- **Impact**:
-  - Verified HTTP 200 responses for all required routes: `/`, `/login`, `/provider/register`, `/provider`, `/provider/settings`, `/provider/jobs/1`, `/renter/register`, `/renter`, `/renter/marketplace`, `/renter/templates`, `/renter/billing`, `/renter/analytics`, `/admin`, `/admin/providers`, `/admin/renters`, `/admin/jobs`, `/admin/fleet`
-  - Local `next build` check is currently blocked by environment permissions: `EACCES: permission denied, open '.next/trace'`
-  - Live homepage still contains old headline string `Power, Digitalized` (expected `Borderless GPU Compute` per prior rebuild task), indicating landing content may not be fully updated on `dcp.sa`
-  - `NaN` and `0/0` strings were not found in route HTML payloads during this heartbeat
-  - Browser console-error validation and Vercel deployment-log verification remain blocked in this container context

@@ -4,7 +4,7 @@
   "description": "DC1 GPU Rental Network - Provider, Renter, and Admin Dashboards",
   "scripts": {
     "dev": "next dev",
-    "build": "bash scripts/ensure-next-cache-writable.sh && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },

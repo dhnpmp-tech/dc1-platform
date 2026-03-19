@@ -8,7 +8,7 @@ const API_BASE = typeof window !== 'undefined' && window.location.protocol === '
   ? '/api/dc1'
   : 'http://76.13.179.86:8083/api';
 
-type JobType = 'llm_inference' | 'image_generation' | 'vllm_serve';
+type JobType = 'llm_inference' | 'image_generation';
 
 const LLM_MODELS = [
   { id: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0', label: 'TinyLlama 1.1B Chat', vram: '~2 GB', speed: 'Fast' },
@@ -23,18 +23,9 @@ const SD_MODELS = [
   { id: 'CompVis/stable-diffusion-v1-4', label: 'Stable Diffusion v1.4', vram: '~3.5 GB', speed: 'Fast' },
 ] as const;
 
-const VLLM_MODELS = [
-  { id: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0', label: 'TinyLlama 1.1B Chat', vram: '~2 GB' },
-  { id: 'google/gemma-2b-it', label: 'Google Gemma 2B Instruct', vram: '~4 GB' },
-  { id: 'microsoft/Phi-3-mini-4k-instruct', label: 'Microsoft Phi-3 Mini (3.8B)', vram: '~4 GB' },
-  { id: 'mistralai/Mistral-7B-Instruct-v0.2', label: 'Mistral 7B Instruct v0.2', vram: '~14 GB' },
-  { id: 'meta-llama/Meta-Llama-3-8B-Instruct', label: 'Llama 3 8B Instruct', vram: '~16 GB' },
-] as const;
-
 const COST_RATES: Record<JobType, number> = {
   llm_inference: 15,
   image_generation: 20,
-  vllm_serve: 20,
 };
 
 interface Provider {
@@ -145,12 +136,6 @@ function GpuPlayground() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
 
-  // vLLM Serve Form
-  const [vllmModel, setVllmModel] = useState<string>(VLLM_MODELS[0].id);
-  const [vllmDuration, setVllmDuration] = useState(30);
-  const [vllmDtype, setVllmDtype] = useState<'float16' | 'bfloat16' | 'float32'>('float16');
-  const [vllmMaxModelLen, setVllmMaxModelLen] = useState(4096);
-
   // Job execution
   const [phase, setPhase] = useState<Phase>('idle');
   const [jobId, setJobId] = useState<number | null>(null);
@@ -161,8 +146,6 @@ function GpuPlayground() {
   const [errorMsg, setErrorMsg] = useState('');
   const [showRawLog, setShowRawLog] = useState(false);
   const [progressPhase, setProgressPhase] = useState<string>('');
-  const [endpointUrl, setEndpointUrl] = useState<string>('');
-  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Auth ──────────────────────────────────────────────────────────
@@ -333,38 +316,26 @@ function GpuPlayground() {
 
   // ── Submit job ───────────────────────────────────────────────────
   async function submitJob() {
-    if (jobType !== 'vllm_serve' && !prompt.trim()) return;
-    if (!providerId) return;
+    if (!prompt.trim() || !providerId) return;
     setPhase('submitting');
     setResult(null);
     setProof(null);
     setErrorMsg('');
-    setEndpointUrl('');
-    setCopiedEndpoint(false);
     setPollCount(0);
     setProgressPhase('');
     setViewMode('new');
 
-    let params: Record<string, unknown>;
-    let durationMinutes: number;
-    if (jobType === 'vllm_serve') {
-      params = { model: vllmModel, max_model_len: vllmMaxModelLen, dtype: vllmDtype };
-      durationMinutes = vllmDuration;
-    } else if (jobType === 'llm_inference') {
-      params = { model: llmModel, prompt: prompt.trim(), max_tokens: maxTokens, temperature };
-      durationMinutes = 10;
-    } else {
-      params = {
-        model: sdModel,
-        prompt: prompt.trim(),
-        negative_prompt: negativePrompt.trim() || undefined,
-        steps,
-        width: imgWidth,
-        height: imgHeight,
-        seed: seed >= 0 ? seed : undefined,
-      };
-      durationMinutes = 15;
-    }
+    const params = jobType === 'llm_inference'
+      ? { model: llmModel, prompt: prompt.trim(), max_tokens: maxTokens, temperature }
+      : {
+          model: sdModel,
+          prompt: prompt.trim(),
+          negative_prompt: negativePrompt.trim() || undefined,
+          steps,
+          width: imgWidth,
+          height: imgHeight,
+          seed: seed >= 0 ? seed : undefined,
+        };
 
     try {
       const res = await fetch(`${API_BASE}/jobs/submit`, {
@@ -373,7 +344,7 @@ function GpuPlayground() {
         body: JSON.stringify({
           provider_id: providerId,
           job_type: jobType,
-          duration_minutes: durationMinutes,
+          duration_minutes: jobType === 'image_generation' ? 15 : 10,
           params,
         }),
       });
@@ -415,55 +386,41 @@ function GpuPlayground() {
             setPhase('error');
             return;
           }
-          // vLLM serve: detect when endpoint is ready
-          if (jobType === 'vllm_serve' && job.endpoint_url && job.status === 'running') {
-            setEndpointUrl(job.endpoint_url);
-            fetchProof(jobId);
-            setPhase('done');
-            refreshJobHistory();
-            return;
-          }
-          // vLLM serve completed (duration expired)
-          if (jobType === 'vllm_serve' && job.status === 'completed') {
-            setPhase('done');
-            refreshJobHistory();
-            return;
-          }
         }
 
-        // For non-vLLM jobs, check output endpoint
-        if (jobType !== 'vllm_serve') {
-          const res = await fetch(`${API_BASE}/jobs/${jobId}/output`, {
-            headers: { 'Accept': 'application/json' },
+        // Check output
+        const res = await fetch(`${API_BASE}/jobs/${jobId}/output`, {
+          headers: { 'Accept': 'application/json' },
+        });
+
+        if (res.status === 202) return; // still running
+        if (res.status === 204) return; // completed but no output yet
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.type === 'text' && data.response) {
+            setResult(data);
+            if (jobId) fetchProof(jobId);
+            setPhase('done');
+            // Refresh job history
+            refreshJobHistory();
+          } else if (data.type === 'image' && data.image_base64) {
+            setResult(data);
+            if (jobId) fetchProof(jobId);
+            setPhase('done');
+            // Refresh job history
+            refreshJobHistory();
+          }
+        } else if (res.status === 404) {
+          const jobRes = await fetch(`${API_BASE}/jobs/${jobId}`, {
+            headers: { 'x-renter-key': renterKey },
           });
-
-          if (res.status === 202) return; // still running
-          if (res.status === 204) return; // completed but no output yet
-
-          if (res.ok) {
-            const data = await res.json();
-            if (data.type === 'text' && data.response) {
-              setResult(data);
-              if (jobId) fetchProof(jobId);
-              setPhase('done');
-              refreshJobHistory();
-            } else if (data.type === 'image' && data.image_base64) {
-              setResult(data);
-              if (jobId) fetchProof(jobId);
-              setPhase('done');
-              refreshJobHistory();
-            }
-          } else if (res.status === 404) {
-            const jobRes = await fetch(`${API_BASE}/jobs/${jobId}`, {
-              headers: { 'x-renter-key': renterKey },
-            });
-            if (jobRes.ok) {
-              const data = await jobRes.json();
-              const job = data.job || {};
-              if (job.status === 'failed') {
-                setErrorMsg(job.error || 'Job failed on provider');
-                setPhase('error');
-              }
+          if (jobRes.ok) {
+            const data = await jobRes.json();
+            const job = data.job || {};
+            if (job.status === 'failed') {
+              setErrorMsg(job.error || 'Job failed on provider');
+              setPhase('error');
             }
           }
         }
@@ -532,22 +489,12 @@ function GpuPlayground() {
     setPrompt('');
     setNegativePrompt('');
     setProgressPhase('');
-    setEndpointUrl('');
-    setCopiedEndpoint(false);
-  }
-
-  function copyEndpoint() {
-    navigator.clipboard.writeText(endpointUrl).then(() => {
-      setCopiedEndpoint(true);
-      setTimeout(() => setCopiedEndpoint(false), 2000);
-    });
   }
 
   // ── Styling ──────────────────────────────────────────────────────
   const inputCls = 'w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00D9FF]/60 transition';
   const rate = COST_RATES[jobType];
   const isRunning = phase === 'polling' || phase === 'submitting';
-  const isSubmitDisabled = isRunning || !providerId || (jobType !== 'vllm_serve' && !prompt.trim());
 
   // ── Progress label ────────────────────────────────────────────────
   function getProgressLabel(): string {
@@ -560,12 +507,9 @@ function GpuPlayground() {
         loading_model: 'Loading model to GPU...',
         generating: jobType === 'image_generation' ? 'Generating image...' : 'Running inference...',
         formatting: 'Formatting output...',
-        starting_server: 'Starting vLLM server...',
-        server_ready: 'Server ready!',
       };
       return `${labels[progressPhase] || progressPhase} (${elapsed})`;
     }
-    if (jobType === 'vllm_serve') return `Starting vLLM server on GPU... (${elapsed})`;
     return jobType === 'image_generation'
       ? `Generating on GPU... (${elapsed})`
       : `Running on GPU... (${elapsed})`;
@@ -803,30 +747,25 @@ function GpuPlayground() {
                   <div className="space-y-2">
                     {jobHistory.map(job => {
                       const isImage = job.job_type === 'image_generation';
-                      const isVllm = job.job_type === 'vllm_serve';
                       const isCompleted = job.status === 'completed';
-                      const isRunningJob = job.status === 'running';
-                      const canView = isCompleted && !isVllm;
                       const duration = job.completed_at && job.submitted_at
                         ? Math.round((new Date(job.completed_at).getTime() - new Date(job.submitted_at).getTime()) / 1000)
                         : 0;
-                      const jobIcon = isVllm ? '⚡' : isImage ? '🎨' : '💬';
-                      const jobLabel = isVllm ? 'vLLM Serve' : isImage ? 'Image Generation' : 'LLM Inference';
 
                       return (
                         <button
                           key={job.id}
-                          onClick={() => canView ? loadJobResult(job) : undefined}
-                          disabled={!canView}
+                          onClick={() => isCompleted ? loadJobResult(job) : undefined}
+                          disabled={!isCompleted}
                           className={`w-full text-left px-5 py-4 rounded-xl border transition ${
-                            canView
+                            isCompleted
                               ? 'border-white/10 bg-white/5 hover:border-[#00D9FF]/40 hover:bg-white/[0.07] cursor-pointer'
                               : 'border-white/5 bg-white/[0.02] cursor-default opacity-60'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <span className="text-lg">{jobIcon}</span>
+                              <span className="text-lg">{isImage ? '🎨' : '💬'}</span>
                               <div>
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm font-medium text-white/80">
@@ -835,14 +774,14 @@ function GpuPlayground() {
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                                     isCompleted ? 'bg-green-500/20 text-green-400' :
                                     job.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                                    isRunningJob ? 'bg-yellow-500/20 text-yellow-400' :
+                                    job.status === 'running' ? 'bg-yellow-500/20 text-yellow-400' :
                                     'bg-white/10 text-white/40'
                                   }`}>
-                                    {isVllm && isRunningJob ? 'serving' : job.status}
+                                    {job.status}
                                   </span>
                                 </div>
                                 <div className="text-xs text-white/40 mt-0.5">
-                                  {jobLabel}
+                                  {isImage ? 'Image Generation' : 'LLM Inference'}
                                   {' — '}
                                   {new Date(job.submitted_at).toLocaleString()}
                                 </div>
@@ -853,11 +792,11 @@ function GpuPlayground() {
                                 {job.actual_cost_halala > 0 ? `${(job.actual_cost_halala / 100).toFixed(2)} SAR` : '—'}
                               </div>
                               {duration > 0 && (
-                                <div className="text-xs text-white/30">{duration >= 60 ? `${Math.floor(duration/60)}m` : `${duration}s`}</div>
+                                <div className="text-xs text-white/30">{duration}s</div>
                               )}
                             </div>
                           </div>
-                          {canView && (
+                          {isCompleted && (
                             <div className="text-xs text-[#00D9FF]/60 mt-2">Click to view result{isImage ? ' and download image' : ''}</div>
                           )}
                         </button>
@@ -897,18 +836,7 @@ function GpuPlayground() {
                     : 'bg-white/5 text-white/50 border border-white/10 hover:border-white/20'
                 } disabled:opacity-60`}
               >
-                <span className="mr-2">🎨</span> Image Gen
-              </button>
-              <button
-                onClick={() => { if (!isRunning) setJobType('vllm_serve'); }}
-                disabled={isRunning}
-                className={`flex-1 py-3 rounded-xl font-semibold text-sm transition ${
-                  jobType === 'vllm_serve'
-                    ? 'bg-green-500 text-[#0d1117]'
-                    : 'bg-white/5 text-white/50 border border-white/10 hover:border-white/20'
-                } disabled:opacity-60`}
-              >
-                <span className="mr-2">⚡</span> vLLM Serve
+                <span className="mr-2">🎨</span> Image Generation
               </button>
             </div>
 
@@ -924,16 +852,10 @@ function GpuPlayground() {
                       <option key={m.id} value={m.id}>{m.label} — {m.vram} VRAM, {m.speed}</option>
                     ))}
                   </select>
-                ) : jobType === 'image_generation' ? (
+                ) : (
                   <select className={inputCls} value={sdModel} onChange={e => setSdModel(e.target.value)} disabled={isRunning}>
                     {SD_MODELS.map(m => (
                       <option key={m.id} value={m.id}>{m.label} — {m.vram} VRAM, {m.speed}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <select className={inputCls} value={vllmModel} onChange={e => setVllmModel(e.target.value)} disabled={isRunning}>
-                    {VLLM_MODELS.map(m => (
-                      <option key={m.id} value={m.id}>{m.label} — {m.vram} VRAM</option>
                     ))}
                   </select>
                 )}
@@ -970,25 +892,23 @@ function GpuPlayground() {
                 )}
               </div>
 
-              {/* Prompt — hidden for vllm_serve */}
-              {jobType !== 'vllm_serve' && (
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-sm text-white/60">Prompt</label>
-                    <span className="text-xs text-white/30">{prompt.length} / 10,000</span>
-                  </div>
-                  <textarea
-                    rows={jobType === 'image_generation' ? 2 : 3}
-                    placeholder={jobType === 'image_generation'
-                      ? 'A futuristic city in Saudi Arabia at sunset, cyberpunk style, detailed, 4k'
-                      : 'What is the capital of Saudi Arabia? Give a brief answer.'}
-                    className={`${inputCls} resize-y`}
-                    value={prompt}
-                    onChange={e => setPrompt(e.target.value)}
-                    disabled={isRunning}
-                  />
+              {/* Prompt */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-sm text-white/60">Prompt</label>
+                  <span className="text-xs text-white/30">{prompt.length} / 10,000</span>
                 </div>
-              )}
+                <textarea
+                  rows={jobType === 'image_generation' ? 2 : 3}
+                  placeholder={jobType === 'image_generation'
+                    ? 'A futuristic city in Saudi Arabia at sunset, cyberpunk style, detailed, 4k'
+                    : 'What is the capital of Saudi Arabia? Give a brief answer.'}
+                  className={`${inputCls} resize-y`}
+                  value={prompt}
+                  onChange={e => setPrompt(e.target.value)}
+                  disabled={isRunning}
+                />
+              </div>
 
               {/* Image Gen specific fields */}
               {jobType === 'image_generation' && (
@@ -1042,59 +962,19 @@ function GpuPlayground() {
                 </div>
               )}
 
-              {/* vLLM Serve-specific fields */}
-              {jobType === 'vllm_serve' && (
-                <>
-                  <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-sm text-green-300/80">
-                    Starts an OpenAI-compatible vLLM server on the provider GPU. You'll receive an API endpoint URL when the server is ready.
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm text-white/60 mb-1.5">Duration</label>
-                      <select className={inputCls} value={vllmDuration} onChange={e => setVllmDuration(Number(e.target.value))} disabled={isRunning}>
-                        <option value={15}>15 minutes</option>
-                        <option value={30}>30 minutes</option>
-                        <option value={60}>60 minutes</option>
-                        <option value={120}>120 minutes</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-white/60 mb-1.5">Precision</label>
-                      <select className={inputCls} value={vllmDtype} onChange={e => setVllmDtype(e.target.value as typeof vllmDtype)} disabled={isRunning}>
-                        <option value="float16">float16 (recommended)</option>
-                        <option value="bfloat16">bfloat16</option>
-                        <option value="float32">float32 (slow)</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm text-white/60 mb-1.5">Max Context Length: {vllmMaxModelLen.toLocaleString()} tokens</label>
-                    <input type="range" min={512} max={8192} step={512} className="w-full accent-green-500 mt-1" value={vllmMaxModelLen} onChange={e => setVllmMaxModelLen(Number(e.target.value))} disabled={isRunning} />
-                    <div className="flex justify-between text-xs text-white/30 mt-1">
-                      <span>512</span><span>8192</span>
-                    </div>
-                  </div>
-                </>
-              )}
-
               {/* Cost estimate */}
               <div className="flex justify-between text-xs text-white/40 px-1">
-                {jobType === 'vllm_serve'
-                  ? <span>Est. cost: ~{rate * vllmDuration} halala ({(rate * vllmDuration / 100).toFixed(2)} SAR) for {vllmDuration} min</span>
-                  : <span>Est. cost: ~{rate} halala ({(rate / 100).toFixed(2)} SAR) per minute</span>
-                }
+                <span>Est. cost: ~{rate} halala ({(rate / 100).toFixed(2)} SAR) per minute</span>
                 <span>Rate: {rate} halala/min</span>
               </div>
 
               {/* Submit */}
               <button
                 onClick={submitJob}
-                disabled={isSubmitDisabled}
+                disabled={isRunning || !prompt.trim() || !providerId}
                 className={`w-full py-3.5 rounded-xl font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition text-lg ${
                   jobType === 'image_generation'
                     ? 'bg-[#A855F7] text-white hover:bg-[#A855F7]/90'
-                    : jobType === 'vllm_serve'
-                    ? 'bg-green-500 text-[#0d1117] hover:bg-green-500/90'
                     : 'bg-[#00D9FF] text-[#0d1117] hover:bg-[#00D9FF]/90'
                 }`}
               >
@@ -1103,7 +983,7 @@ function GpuPlayground() {
                     <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                     {getProgressLabel()}
                   </span>
-                ) : jobType === 'image_generation' ? 'Generate Image' : jobType === 'vllm_serve' ? 'Start vLLM Server' : 'Run Inference'}
+                ) : jobType === 'image_generation' ? 'Generate Image' : 'Run Inference'}
               </button>
             </div>
 
@@ -1116,60 +996,8 @@ function GpuPlayground() {
               </div>
             )}
 
-            {/* ── vLLM Endpoint Result ─────────────────────────────── */}
-            {phase === 'done' && jobType === 'vllm_serve' && (
-              <div className="space-y-4">
-                {endpointUrl ? (
-                  <div className="bg-green-500/5 border border-green-500/30 rounded-xl p-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
-                      <span className="text-green-400 font-semibold">vLLM Server Ready</span>
-                    </div>
-                    <p className="text-white/50 text-sm mb-3">Your OpenAI-compatible endpoint is live. Use this URL with any OpenAI SDK.</p>
-                    <div className="flex items-center gap-2 bg-black/40 rounded-lg px-4 py-3 mb-4">
-                      <code className="flex-1 text-green-300 font-mono text-sm break-all">{endpointUrl}</code>
-                      <button
-                        onClick={copyEndpoint}
-                        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30 transition"
-                      >
-                        {copiedEndpoint ? 'Copied!' : 'Copy'}
-                      </button>
-                    </div>
-                    <div className="bg-black/40 rounded-lg p-4">
-                      <p className="text-white/40 text-xs mb-2 font-medium">Example usage (Python):</p>
-                      <pre className="text-green-300/70 font-mono text-xs overflow-x-auto whitespace-pre">{`from openai import OpenAI
-client = OpenAI(base_url="${endpointUrl}", api_key="dc1")
-response = client.chat.completions.create(
-    model="${vllmModel}",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-print(response.choices[0].message.content)`}</pre>
-                    </div>
-                    {proof && (
-                      <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-2 text-sm border-t border-white/10 pt-4">
-                        <ProofRow label="Job ID" value={proof.job_id} />
-                        <ProofRow label="Model" value={vllmModel.split('/').pop() || vllmModel} />
-                        <ProofRow label="Cost" value={`${proof.cost_halala} halala (${(proof.cost_halala / 100).toFixed(2)} SAR)`} />
-                        <ProofRow label="Duration" value={`${vllmDuration} min reserved`} />
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-center">
-                    <p className="text-white/50">vLLM server session ended.</p>
-                  </div>
-                )}
-                <button
-                  onClick={resetForm}
-                  className="w-full py-3 rounded-xl font-semibold border border-green-500/30 text-green-400 hover:bg-green-500/10 transition"
-                >
-                  Start Another Server
-                </button>
-              </div>
-            )}
-
             {/* ── Result ──────────────────────────────────────────── */}
-            {result && jobType !== 'vllm_serve' && (
+            {result && (
               <div className="space-y-4">
 
                 {/* IMAGE Result */}

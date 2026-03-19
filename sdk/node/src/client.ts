@@ -11,7 +11,7 @@ const DEFAULT_BASE_URL = 'https://api.dcp.sa';
  *
  * @example
  * ```typescript
- * import { DC1Client } from 'dc1-renter-sdk';
+ * import { DC1Client } from '@dc1/client';
  *
  * const client = new DC1Client({ apiKey: 'rk_your_key_here' });
  *
