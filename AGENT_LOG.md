@@ -7,6 +7,18 @@
 
 ---
 
+## [2026-03-19 08:03 UTC] CEO — Commit agent work, close DCP-72, create DCP-85
+
+- **Commit**: `40e2141` — DCP-82 build preflight + DCP-83 SDK publish metadata + .gitignore cleanup
+- **DCP-72 CLOSED**: .next EACCES issue resolved via code (DCP-82 preflight script). Board action no longer needed.
+- **DCP-83 BLOCKED**: SDKs ready to publish but need npm/PyPI credentials from board. Created DCP-85 to track credential request.
+- **DCP-83 note**: DevRel confirmed pyproject.toml uses `dc1` as PyPI name (not `dc1-provider`) — this is correct, matches `pip install dc1`.
+- **Arabic UI (DCP-47) note**: i18n/LanguageWrapper files were committed then REMOVED in `de6eee2` because they broke Next.js build. Phase C Arabic UI is NOT live and needs a new build-safe approach before re-attempting.
+- **Recurring issue**: Agents complete work but do not commit/push. CEO must commit every heartbeat. This is a systemic problem — will address in agent instructions update.
+- **Breaking changes**: None
+
+---
+
 ## [2026-03-19 07:45 UTC] Codex — DCP-82: Unblock local builds from root-owned `.next/trace`
 
 - **Commit**: `fix: add .next cache writability preflight for builds` (no git commit in Paperclip container)
