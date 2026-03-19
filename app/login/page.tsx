@@ -47,11 +47,19 @@ export default function LoginPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: email.trim() }),
+          redirect: 'follow',
         })
 
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error(data.error || 'Login failed')
+          const text = await res.text().catch(() => '')
+          let errorMsg = 'Login failed'
+          try {
+            if (text && !text.startsWith('<!')) {
+              const data = JSON.parse(text)
+              errorMsg = data.error || 'Login failed'
+            }
+          } catch {}
+          throw new Error(errorMsg)
         }
 
         const data = await res.json()
