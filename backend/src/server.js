@@ -4,8 +4,6 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const { getQueueDepth, startJobSweep } = require('./services/jobSweep');
-const db = require('./db');
 
 const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
@@ -202,28 +200,6 @@ app.use('/api/payments', paymentsRouter);
 const templatesRouter = require('./routes/templates');
 app.use('/api/templates', templatesRouter);
 
-// Admin queue depth metric (DCP-129)
-app.get('/api/admin/queue-depth', (req, res) => {
-  const adminToken = process.env.DC1_ADMIN_TOKEN;
-  const provided =
-    req.headers['x-admin-token'] ||
-    (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-
-  if (!adminToken) {
-    return res.status(503).json({ error: 'Admin token not configured' });
-  }
-  if (provided !== adminToken) {
-    return res.status(401).json({ error: 'Admin access denied' });
-  }
-
-  try {
-    res.json(getQueueDepth());
-  } catch (error) {
-    console.error('Queue depth error:', error);
-    res.status(500).json({ error: 'Failed to fetch queue depth' });
-  }
-});
-
 // Initialize Supabase sync bridge
 const supabaseSync = require('./services/supabase-sync');
 if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
@@ -231,38 +207,10 @@ if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
 const fallbackRouter = require('./routes/fallback');
 app.use('/api/fallback', fallbackRouter);
 
-function getHealthPayload() {
-  db.get('SELECT 1 AS ok');
-  const providersOnline = db.get(
-    "SELECT COUNT(*) AS count FROM providers WHERE status = 'online'"
-  )?.count || 0;
-  const jobsPending = db.get(
-    "SELECT COUNT(*) AS count FROM jobs WHERE status = 'pending'"
-  )?.count || 0;
-
-  return {
-    status: 'ok',
-    version: '1.0.0',
-    db: 'ok',
-    uptime_sec: Math.floor(process.uptime()),
-    providers_online: providersOnline,
-    jobs_pending: jobsPending,
-    timestamp: new Date().toISOString(),
-  };
-}
-
-function healthHandler(req, res) {
-  try {
-    return res.json(getHealthPayload());
-  } catch (error) {
-    console.error('Health check failed:', error);
-    return res.status(503).json({ error: 'Health check failed: database unavailable' });
-  }
-}
-
-// Public health endpoints (no auth)
-app.get('/health', healthHandler);
-app.get('/api/health', healthHandler);
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', service: 'dc1-platform-api', mode: 'headless', timestamp: new Date().toISOString() });
+});
 
 // OpenAPI spec — GET /api/docs
 const OPENAPI_PATH = path.join(__dirname, '../../docs/openapi.yaml');
@@ -342,9 +290,6 @@ console.log('[timeout] Job timeout enforcement started (every 30s)');
 // Start fallback loop (bottleneck detection + disconnect recovery) every 15 seconds
 const { startLoop: startFallbackLoop } = require('./services/fallback-loop');
 startFallbackLoop();
-
-// Start stale-job timeout sweep every 5 minutes
-startJobSweep();
 
 // Start data retention cleanup (runs daily at 2:00 AM UTC — DCP-59)
 const cleanup = require('./services/cleanup');
