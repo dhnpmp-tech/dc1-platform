@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
@@ -10,6 +10,7 @@ const API_BASE =
     ? '/api/dc1'
     : 'http://76.13.179.86:8083/api'
 
+// ── Types ──────────────────────────────────────────────────────────
 interface CostRates {
   'llm-inference'?: number
   llm_inference?: number
@@ -40,9 +41,78 @@ interface Provider {
   cached_models: string[]
   driver_version: string | null
   compute_capability: string | null
+  cuda_version: string | null
   cost_rates_halala_per_min: CostRates | null
 }
 
+interface Filters {
+  minVram: number
+  maxPriceSar: number
+  gpuModels: string[]
+  region: string
+}
+
+type SortOption = 'price-asc' | 'vram-desc' | 'availability'
+
+// ── Constants ──────────────────────────────────────────────────────
+const GPU_MODEL_OPTIONS = ['RTX 3090', 'RTX 4090', 'A100', 'H100', 'Other']
+const REGION_OPTIONS = ['All Regions', 'KSA', 'UAE', 'Other']
+const POLL_INTERVAL_MS = 30_000
+
+// ── Helpers ────────────────────────────────────────────────────────
+function halalaPriceToSarHr(halalPerMin: number): string {
+  return ((halalPerMin * 60) / 100).toFixed(2)
+}
+
+function getDefaultRate(rates: CostRates | null): number {
+  if (!rates) return 15
+  return rates['llm-inference'] ?? rates.llm_inference ?? rates.default ?? 15
+}
+
+function getDefaultRateSarHr(rates: CostRates | null): number {
+  return (getDefaultRate(rates) * 60) / 100
+}
+
+function formatAge(seconds: number | null): string {
+  if (seconds === null) return 'unknown'
+  if (seconds < 60) return `${seconds}s ago`
+  return `${Math.floor(seconds / 60)}m ago`
+}
+
+function formatLastUpdated(date: Date | null): string {
+  if (!date) return '—'
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function matchesGpuModelFilter(gpuModel: string, selected: string[]): boolean {
+  if (selected.length === 0) return true
+  const m = gpuModel?.toUpperCase() ?? ''
+  for (const opt of selected) {
+    if (opt === 'RTX 3090' && m.includes('3090')) return true
+    if (opt === 'RTX 4090' && m.includes('4090')) return true
+    if (opt === 'A100' && m.includes('A100')) return true
+    if (opt === 'H100' && m.includes('H100')) return true
+    if (opt === 'Other') {
+      const isKnown = m.includes('3090') || m.includes('4090') || m.includes('A100') || m.includes('H100')
+      if (!isKnown) return true
+    }
+  }
+  return false
+}
+
+function matchesRegion(location: string | null, region: string): boolean {
+  if (region === 'All Regions' || !region) return true
+  if (!location) return region === 'Other'
+  const loc = location.toUpperCase()
+  if (region === 'KSA') return loc.includes('KSA') || loc.includes('SAUDI') || loc.includes('RIYADH') || loc.includes('JEDDAH') || loc.includes('MECCA') || loc.includes('DAMMAM')
+  if (region === 'UAE') return loc.includes('UAE') || loc.includes('DUBAI') || loc.includes('ABU DHABI') || loc.includes('SHARJAH')
+  // Other: not KSA and not UAE
+  const isKSA = loc.includes('KSA') || loc.includes('SAUDI') || loc.includes('RIYADH') || loc.includes('JEDDAH')
+  const isUAE = loc.includes('UAE') || loc.includes('DUBAI') || loc.includes('ABU DHABI')
+  return !isKSA && !isUAE
+}
+
+// ── Icons ──────────────────────────────────────────────────────────
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 11l4-4m0 0l4 4m-4-4V5" />
@@ -75,8 +145,18 @@ const ChartIcon = () => (
 )
 const GearIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.11 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+)
+const FilterIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+  </svg>
+)
+const RefreshIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
   </svg>
 )
 
@@ -90,23 +170,296 @@ const navItems = [
   { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
 ]
 
-function halalaPriceToSarHr(halalPerMin: number): string {
-  return ((halalPerMin * 60) / 100).toFixed(2)
+// ── Filter Sidebar ─────────────────────────────────────────────────
+function FilterSidebar({
+  filters,
+  onChange,
+  matchCount,
+}: {
+  filters: Filters
+  onChange: (f: Filters) => void
+  matchCount: number
+}) {
+  function toggleGpuModel(model: string) {
+    const next = filters.gpuModels.includes(model)
+      ? filters.gpuModels.filter(m => m !== model)
+      : [...filters.gpuModels, model]
+    onChange({ ...filters, gpuModels: next })
+  }
+
+  function resetFilters() {
+    onChange({ minVram: 0, maxPriceSar: 50, gpuModels: [], region: 'All Regions' })
+  }
+
+  const hasActiveFilters =
+    filters.minVram > 0 ||
+    filters.maxPriceSar < 50 ||
+    filters.gpuModels.length > 0 ||
+    filters.region !== 'All Regions'
+
+  return (
+    <aside className="flex flex-col gap-5" aria-label="GPU filters">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-dc1-text-primary uppercase tracking-wide">Filters</h2>
+        {hasActiveFilters && (
+          <button
+            onClick={resetFilters}
+            className="text-xs text-dc1-amber hover:underline"
+          >
+            Reset all
+          </button>
+        )}
+      </div>
+
+      {/* Match count */}
+      <p className="text-xs text-dc1-text-muted -mt-2">
+        {matchCount} provider{matchCount !== 1 ? 's' : ''} match
+      </p>
+
+      {/* Min VRAM */}
+      <div>
+        <label className="block text-xs font-medium text-dc1-text-secondary mb-2">
+          Min VRAM — <span className="text-dc1-amber font-semibold">{filters.minVram === 0 ? 'Any' : `${filters.minVram} GB`}</span>
+        </label>
+        <input
+          type="range"
+          min={0}
+          max={80}
+          step={4}
+          value={filters.minVram}
+          onChange={e => onChange({ ...filters, minVram: Number(e.target.value) })}
+          className="w-full accent-dc1-amber"
+          aria-label="Minimum VRAM filter"
+        />
+        <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
+          <span>Any</span>
+          <span>80 GB</span>
+        </div>
+      </div>
+
+      {/* Max Price */}
+      <div>
+        <label className="block text-xs font-medium text-dc1-text-secondary mb-2">
+          Max Price — <span className="text-dc1-amber font-semibold">{filters.maxPriceSar >= 50 ? 'Any' : `${filters.maxPriceSar} SAR/hr`}</span>
+        </label>
+        <input
+          type="range"
+          min={0}
+          max={50}
+          step={1}
+          value={filters.maxPriceSar}
+          onChange={e => onChange({ ...filters, maxPriceSar: Number(e.target.value) })}
+          className="w-full accent-dc1-amber"
+          aria-label="Maximum price filter"
+        />
+        <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
+          <span>0 SAR</span>
+          <span>50+ SAR</span>
+        </div>
+      </div>
+
+      {/* GPU Model */}
+      <div>
+        <p className="text-xs font-medium text-dc1-text-secondary mb-2">GPU Model</p>
+        <div className="space-y-1.5">
+          {GPU_MODEL_OPTIONS.map(model => (
+            <label key={model} className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={filters.gpuModels.includes(model)}
+                onChange={() => toggleGpuModel(model)}
+                className="accent-dc1-amber w-3.5 h-3.5 rounded"
+              />
+              <span className="text-sm text-dc1-text-secondary group-hover:text-dc1-text-primary transition-colors">
+                {model}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Region */}
+      <div>
+        <label className="block text-xs font-medium text-dc1-text-secondary mb-2" htmlFor="region-select">
+          Region
+        </label>
+        <select
+          id="region-select"
+          value={filters.region}
+          onChange={e => onChange({ ...filters, region: e.target.value })}
+          className="input w-full text-sm"
+        >
+          {REGION_OPTIONS.map(r => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+      </div>
+    </aside>
+  )
 }
 
-function formatHeartbeatAge(seconds: number | null): string {
-  if (seconds === null) return 'unknown'
-  if (seconds < 60) return `${seconds}s ago`
-  return `${Math.floor(seconds / 60)}m ago`
+// ── GPU Card ───────────────────────────────────────────────────────
+function GPUCard({ provider }: { provider: Provider }) {
+  const llmRate = provider.cost_rates_halala_per_min?.['llm-inference']
+    ?? provider.cost_rates_halala_per_min?.llm_inference
+    ?? 15
+  const imgRate = provider.cost_rates_halala_per_min?.image_generation ?? 20
+  const trainRate = provider.cost_rates_halala_per_min?.training ?? 25
+
+  return (
+    <article
+      className="card hover:border-dc1-amber/30 transition-colors flex flex-col"
+      aria-label={`GPU: ${provider.gpu_model}`}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="min-w-0 flex-1 mr-2">
+          <h3 className="text-base font-semibold text-dc1-text-primary leading-tight truncate">
+            {provider.gpu_model || 'Unknown GPU'}
+          </h3>
+          <p className="text-xs text-dc1-text-muted mt-0.5 truncate">{provider.name}</p>
+        </div>
+        <StatusBadge status={provider.is_live ? 'online' : 'offline'} size="sm" pulse={provider.is_live} />
+      </div>
+
+      {/* Specs grid */}
+      <dl className="space-y-1.5 text-sm text-dc1-text-secondary mb-4 flex-1">
+        {provider.vram_gb != null && provider.vram_gb > 0 && (
+          <div className="flex justify-between">
+            <dt>VRAM</dt>
+            <dd className="text-dc1-text-primary font-medium">{provider.vram_gb} GB</dd>
+          </div>
+        )}
+        {provider.gpu_count > 1 && (
+          <div className="flex justify-between">
+            <dt>GPUs</dt>
+            <dd className="text-dc1-text-primary font-medium">{provider.gpu_count}×</dd>
+          </div>
+        )}
+        {provider.compute_capability && (
+          <div className="flex justify-between">
+            <dt>Compute</dt>
+            <dd className="text-dc1-text-primary">{provider.compute_capability}</dd>
+          </div>
+        )}
+        {provider.cuda_version && (
+          <div className="flex justify-between">
+            <dt>CUDA</dt>
+            <dd className="text-dc1-text-primary">{provider.cuda_version}</dd>
+          </div>
+        )}
+        {provider.location && (
+          <div className="flex justify-between">
+            <dt>Location</dt>
+            <dd className="text-dc1-text-primary">{provider.location}</dd>
+          </div>
+        )}
+        {provider.reliability_score != null && provider.reliability_score > 0 && (
+          <div className="flex justify-between">
+            <dt>Reliability</dt>
+            <dd className={`font-medium ${
+              provider.reliability_score >= 90
+                ? 'text-status-success'
+                : provider.reliability_score >= 70
+                ? 'text-dc1-amber'
+                : 'text-status-error'
+            }`}>
+              {provider.reliability_score}%
+            </dd>
+          </div>
+        )}
+        {provider.heartbeat_age_seconds !== null && (
+          <div className="flex justify-between">
+            <dt>Last seen</dt>
+            <dd className="text-dc1-text-muted text-xs">{formatAge(provider.heartbeat_age_seconds)}</dd>
+          </div>
+        )}
+      </dl>
+
+      {/* Pricing */}
+      <div className="bg-dc1-surface-l2 rounded-md p-3 mb-3 space-y-1 text-sm">
+        <p className="text-xs text-dc1-text-muted uppercase tracking-wide mb-2 font-semibold">Pricing (SAR/hr)</p>
+        <div className="flex justify-between">
+          <span className="text-dc1-text-secondary">LLM Inference</span>
+          <span className="text-dc1-amber font-semibold">{halalaPriceToSarHr(llmRate)} SAR/hr</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-dc1-text-secondary">Image Gen</span>
+          <span className="text-dc1-amber font-semibold">{halalaPriceToSarHr(imgRate)} SAR/hr</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-dc1-text-secondary">Training</span>
+          <span className="text-dc1-amber font-semibold">{halalaPriceToSarHr(trainRate)} SAR/hr</span>
+        </div>
+      </div>
+
+      {/* Cached models */}
+      {provider.cached_models && provider.cached_models.length > 0 && (
+        <div className="mb-3 pt-2 border-t border-dc1-border/50">
+          <p className="text-xs text-dc1-text-muted mb-1.5">Cached models (instant start):</p>
+          <div className="flex flex-wrap gap-1">
+            {provider.cached_models.slice(0, 4).map((m, i) => (
+              <span
+                key={i}
+                className="text-xs px-2 py-0.5 rounded bg-status-success/10 text-status-success border border-status-success/20"
+              >
+                {m.split('/').pop()}
+              </span>
+            ))}
+            {provider.cached_models.length > 4 && (
+              <span className="text-xs px-2 py-0.5 rounded bg-dc1-surface-l2 text-dc1-text-muted">
+                +{provider.cached_models.length - 4} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CTA */}
+      <Link
+        href={`/renter/playground?provider=${provider.id}`}
+        className="btn btn-primary w-full text-center text-sm mt-auto"
+      >
+        Rent Now
+      </Link>
+    </article>
+  )
 }
 
+// ── Main Page ──────────────────────────────────────────────────────
 export default function MarketplacePage() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('')
-  const [sortBy, setSortBy] = useState<'reputation' | 'vram' | 'price'>('reputation')
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [renterName, setRenterName] = useState('Renter')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [sortBy, setSortBy] = useState<SortOption>('availability')
+  const [filters, setFilters] = useState<Filters>({
+    minVram: 0,
+    maxPriceSar: 50,
+    gpuModels: [],
+    region: 'All Regions',
+  })
+  const countdownRef = useRef<number>(POLL_INTERVAL_MS / 1000)
+  const [countdown, setCountdown] = useState(POLL_INTERVAL_MS / 1000)
 
+  const fetchProviders = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/providers/available`)
+      if (res.ok) {
+        const data = await res.json()
+        setProviders(data.providers || [])
+        setLastUpdated(new Date())
+      }
+    } catch (err) {
+      console.error('Failed to load providers:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Auth — get renter name
   useEffect(() => {
     const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
     if (key) {
@@ -115,198 +468,159 @@ export default function MarketplacePage() {
         .then(d => { if (d?.renter?.name) setRenterName(d.renter.name) })
         .catch(() => {})
     }
-
-    const fetchProviders = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/providers/available`)
-        if (res.ok) {
-          const data = await res.json()
-          setProviders(data.providers || [])
-        }
-      } catch (err) {
-        console.error('Failed to load providers:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchProviders()
-    const interval = setInterval(fetchProviders, 15000)
-    return () => clearInterval(interval)
   }, [])
 
-  const filtered = providers.filter(
-    (p) => !filter || p.gpu_model?.toLowerCase().includes(filter.toLowerCase())
-  )
+  // Poll every 30s + countdown ticker
+  useEffect(() => {
+    fetchProviders()
+
+    const pollInterval = setInterval(() => {
+      fetchProviders()
+      countdownRef.current = POLL_INTERVAL_MS / 1000
+    }, POLL_INTERVAL_MS)
+
+    const tickInterval = setInterval(() => {
+      countdownRef.current = Math.max(0, countdownRef.current - 1)
+      setCountdown(countdownRef.current)
+    }, 1000)
+
+    return () => {
+      clearInterval(pollInterval)
+      clearInterval(tickInterval)
+    }
+  }, [fetchProviders])
+
+  // ── Filter + Sort ────────────────────────────────────────────────
+  const filtered = providers.filter(p => {
+    const vramOk = filters.minVram === 0 || (p.vram_gb ?? 0) >= filters.minVram
+    const priceSarHr = getDefaultRateSarHr(p.cost_rates_halala_per_min)
+    const priceOk = filters.maxPriceSar >= 50 || priceSarHr <= filters.maxPriceSar
+    const modelOk = matchesGpuModelFilter(p.gpu_model ?? '', filters.gpuModels)
+    const regionOk = matchesRegion(p.location, filters.region)
+    return vramOk && priceOk && modelOk && regionOk
+  })
 
   const sorted = [...filtered].sort((a, b) => {
-    if (sortBy === 'vram') return (b.vram_gb ?? 0) - (a.vram_gb ?? 0)
-    if (sortBy === 'price') {
-      const aRate = a.cost_rates_halala_per_min?.['llm-inference'] ?? a.cost_rates_halala_per_min?.default ?? 10
-      const bRate = b.cost_rates_halala_per_min?.['llm-inference'] ?? b.cost_rates_halala_per_min?.default ?? 10
-      return aRate - bRate
+    if (sortBy === 'availability') {
+      if (a.is_live !== b.is_live) return a.is_live ? -1 : 1
+      return (b.reputation_score ?? 0) - (a.reputation_score ?? 0)
     }
-    return (b.reputation_score ?? 0) - (a.reputation_score ?? 0)
+    if (sortBy === 'price-asc') {
+      return getDefaultRate(a.cost_rates_halala_per_min) - getDefaultRate(b.cost_rates_halala_per_min)
+    }
+    if (sortBy === 'vram-desc') {
+      return (b.vram_gb ?? 0) - (a.vram_gb ?? 0)
+    }
+    return 0
   })
+
+  const onlineCount = providers.filter(p => p.is_live).length
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="space-y-5">
+        {/* ── Page Header ─────────────────────────────────────────── */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-dc1-text-primary mb-1">GPU Marketplace</h1>
-            <p className="text-dc1-text-secondary text-sm">
-              {providers.length} GPU{providers.length !== 1 ? 's' : ''} online — refreshes every 15s
-            </p>
+            <h1 className="text-2xl font-bold text-dc1-text-primary">GPU Marketplace</h1>
+            <div className="flex items-center gap-3 mt-1 flex-wrap">
+              <span className="text-sm text-dc1-text-secondary">
+                <span className="text-status-success font-semibold">{onlineCount}</span> online
+                {' · '}
+                <span className="text-dc1-text-muted">{providers.length} total</span>
+              </span>
+              {lastUpdated && (
+                <span className="text-xs text-dc1-text-muted flex items-center gap-1">
+                  <RefreshIcon />
+                  Updated {formatLastUpdated(lastUpdated)}
+                  {countdown > 0 && <span className="ml-1">(next in {countdown}s)</span>}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <input
-              type="text"
-              placeholder="Filter by GPU model..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="input max-w-xs"
-              aria-label="Filter GPUs by model"
-            />
+
+          <div className="flex items-center gap-2">
+            {/* Mobile filter toggle */}
+            <button
+              className="btn btn-outline text-sm flex items-center gap-1.5 sm:hidden"
+              onClick={() => setFiltersOpen(prev => !prev)}
+              aria-expanded={filtersOpen}
+              aria-controls="filter-panel"
+            >
+              <FilterIcon />
+              Filters
+              {(filters.gpuModels.length > 0 || filters.minVram > 0 || filters.maxPriceSar < 50 || filters.region !== 'All Regions') && (
+                <span className="ml-1 bg-dc1-amber text-dc1-void text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                  !
+                </span>
+              )}
+            </button>
+
+            {/* Sort */}
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'reputation' | 'vram' | 'price')}
-              className="input"
+              onChange={e => setSortBy(e.target.value as SortOption)}
+              className="input text-sm"
               aria-label="Sort GPUs"
             >
-              <option value="reputation">Sort: Reputation</option>
-              <option value="vram">Sort: VRAM ↓</option>
-              <option value="price">Sort: Price ↑</option>
+              <option value="availability">Online first</option>
+              <option value="price-asc">Price: low → high</option>
+              <option value="vram-desc">VRAM: high → low</option>
             </select>
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full" aria-label="Loading" />
+        {/* ── Layout: sidebar + cards ──────────────────────────────── */}
+        <div className="flex gap-6 items-start">
+          {/* Filter sidebar — desktop: always visible, mobile: toggle */}
+          <div
+            id="filter-panel"
+            className={`
+              w-56 flex-shrink-0
+              sm:block
+              ${filtersOpen ? 'block' : 'hidden'}
+              card p-4
+            `}
+          >
+            <FilterSidebar
+              filters={filters}
+              onChange={setFilters}
+              matchCount={filtered.length}
+            />
           </div>
-        ) : sorted.length === 0 ? (
-          <div className="card text-center py-12">
-            <p className="text-dc1-text-secondary mb-4">
-              {providers.length === 0 ? 'No GPUs are currently online.' : 'No GPUs match your filter.'}
-            </p>
-            <p className="text-sm text-dc1-text-muted">Check back soon — providers come online throughout the day.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {sorted.map((p) => {
-              const llmRate = p.cost_rates_halala_per_min?.['llm-inference'] ?? p.cost_rates_halala_per_min?.llm_inference ?? 15
-              const imgRate = p.cost_rates_halala_per_min?.image_generation ?? 20
-              const trainRate = p.cost_rates_halala_per_min?.training ?? 25
 
-              return (
+          {/* GPU cards */}
+          <div className="flex-1 min-w-0">
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
                 <div
-                  key={p.id}
-                  className="card hover:border-dc1-amber/30 transition-colors flex flex-col"
-                  role="article"
-                  aria-label={`GPU: ${p.gpu_model}`}
-                >
-                  {/* Card Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-dc1-text-primary leading-tight">
-                        {p.gpu_model || 'Unknown GPU'}
-                      </h3>
-                      <p className="text-xs text-dc1-text-muted mt-0.5">{p.name}</p>
-                    </div>
-                    <StatusBadge status={p.is_live ? 'online' : 'offline'} size="sm" pulse={p.is_live} />
-                  </div>
-
-                  {/* Specs */}
-                  <div className="space-y-1.5 text-sm text-dc1-text-secondary mb-4 flex-1">
-                    {p.vram_gb != null && p.vram_gb > 0 && (
-                      <div className="flex justify-between">
-                        <span>VRAM</span>
-                        <span className="text-dc1-text-primary font-medium">{p.vram_gb} GB</span>
-                      </div>
-                    )}
-                    {p.gpu_count > 1 && (
-                      <div className="flex justify-between">
-                        <span>GPUs</span>
-                        <span className="text-dc1-text-primary font-medium">{p.gpu_count}×</span>
-                      </div>
-                    )}
-                    {p.location && (
-                      <div className="flex justify-between">
-                        <span>Location</span>
-                        <span className="text-dc1-text-primary">{p.location}</span>
-                      </div>
-                    )}
-                    {p.compute_capability && (
-                      <div className="flex justify-between">
-                        <span>CUDA CC</span>
-                        <span className="text-dc1-text-primary">{p.compute_capability}</span>
-                      </div>
-                    )}
-                    {p.reliability_score != null && p.reliability_score > 0 && (
-                      <div className="flex justify-between">
-                        <span>Reliability</span>
-                        <span className={`font-medium ${p.reliability_score >= 90 ? 'text-status-success' : p.reliability_score >= 70 ? 'text-dc1-amber' : 'text-status-error'}`}>
-                          {p.reliability_score}%
-                        </span>
-                      </div>
-                    )}
-                    {p.heartbeat_age_seconds !== null && (
-                      <div className="flex justify-between">
-                        <span>Last seen</span>
-                        <span className="text-dc1-text-muted text-xs">{formatHeartbeatAge(p.heartbeat_age_seconds)}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Pricing */}
-                  <div className="bg-dc1-surface-l2 rounded-md p-3 mb-3 space-y-1 text-sm">
-                    <p className="text-xs text-dc1-text-muted uppercase tracking-wide mb-2 font-semibold">Pricing (SAR/hr)</p>
-                    <div className="flex justify-between">
-                      <span className="text-dc1-text-secondary">LLM Inference</span>
-                      <span className="text-dc1-amber font-semibold">{halalaPriceToSarHr(llmRate)} SAR/hr</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-dc1-text-secondary">Image Generation</span>
-                      <span className="text-dc1-amber font-semibold">{halalaPriceToSarHr(imgRate)} SAR/hr</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-dc1-text-secondary">Training</span>
-                      <span className="text-dc1-amber font-semibold">{halalaPriceToSarHr(trainRate)} SAR/hr</span>
-                    </div>
-                  </div>
-
-                  {/* Cached Models */}
-                  {p.cached_models && p.cached_models.length > 0 && (
-                    <div className="mb-3 pt-2 border-t border-dc1-border/50">
-                      <p className="text-xs text-dc1-text-muted mb-1.5">Cached Models (instant start):</p>
-                      <div className="flex flex-wrap gap-1">
-                        {p.cached_models.slice(0, 4).map((m, i) => (
-                          <span key={i} className="text-xs px-2 py-0.5 rounded bg-status-success/10 text-status-success border border-status-success/20">
-                            {m.split('/').pop()}
-                          </span>
-                        ))}
-                        {p.cached_models.length > 4 && (
-                          <span className="text-xs px-2 py-0.5 rounded bg-dc1-surface-l2 text-dc1-text-muted">
-                            +{p.cached_models.length - 4} more
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* CTA */}
-                  <Link
-                    href={`/renter/playground?provider=${p.id}`}
-                    className="btn btn-primary w-full text-center text-sm mt-auto"
-                  >
-                    Use This GPU
-                  </Link>
-                </div>
-              )
-            })}
+                  className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full"
+                  aria-label="Loading GPUs"
+                  role="status"
+                />
+              </div>
+            ) : sorted.length === 0 ? (
+              <div className="card text-center py-12">
+                <p className="text-dc1-text-secondary mb-2">
+                  {providers.length === 0
+                    ? 'No GPUs are currently online.'
+                    : 'No GPUs match your filters.'}
+                </p>
+                <p className="text-sm text-dc1-text-muted">
+                  {providers.length === 0
+                    ? 'Check back soon — providers come online throughout the day.'
+                    : 'Try relaxing your filters.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {sorted.map(p => (
+                  <GPUCard key={p.id} provider={p} />
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </DashboardLayout>
   )

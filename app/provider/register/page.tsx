@@ -25,8 +25,18 @@ interface StatusStep {
   status: 'pending' | 'in-progress' | 'completed'
 }
 
+const GPU_EARNINGS: Record<string, { rate: number; providerRate: number; label: string }> = {
+  'RTX 3080': { rate: 9, providerRate: 6.75, label: 'RTX 3080 (10 GB)' },
+  'RTX 3090': { rate: 15, providerRate: 11.25, label: 'RTX 3090 (24 GB)' },
+  'RTX 4090': { rate: 22, providerRate: 16.5, label: 'RTX 4090 (24 GB)' },
+  'A100': { rate: 75, providerRate: 56.25, label: 'A100 (80 GB)' },
+  'H100': { rate: 120, providerRate: 90, label: 'H100 (80 GB)' },
+}
+
 export default function ProviderRegisterPage() {
   const { t } = useLanguage()
+  const [calcGpu, setCalcGpu] = useState('RTX 3090')
+  const [calcHours, setCalcHours] = useState(12)
   const [formData, setFormData] = useState<RegistrationFormData>({
     fullName: '',
     email: '',
@@ -569,6 +579,69 @@ export default function ProviderRegisterPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Earning Calculator */}
+        <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <div className="card border-dc1-amber/20">
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-1">Earning Calculator</h2>
+            <p className="text-dc1-text-secondary text-sm mb-6">See how much you could earn based on your GPU and availability.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label className="label mb-2 block">Your GPU Model</label>
+                <select
+                  value={calcGpu}
+                  onChange={(e) => setCalcGpu(e.target.value)}
+                  className="input"
+                >
+                  {Object.entries(GPU_EARNINGS).map(([model, info]) => (
+                    <option key={model} value={model}>{info.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label mb-2 block">Hours Available Per Day: <span className="text-dc1-amber font-semibold">{calcHours} hrs</span></label>
+                <input
+                  type="range"
+                  min={1}
+                  max={24}
+                  value={calcHours}
+                  onChange={(e) => setCalcHours(Number(e.target.value))}
+                  className="w-full accent-dc1-amber"
+                />
+                <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
+                  <span>1 hr</span>
+                  <span>12 hrs</span>
+                  <span>24 hrs</span>
+                </div>
+              </div>
+            </div>
+            {GPU_EARNINGS[calcGpu] && (
+              <div className="mt-6 grid grid-cols-3 gap-4">
+                <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
+                  <p className="text-xs text-dc1-text-secondary mb-1">Daily Earnings</p>
+                  <p className="text-2xl font-bold text-dc1-amber">
+                    {(GPU_EARNINGS[calcGpu].providerRate * calcHours).toFixed(0)} SAR
+                  </p>
+                </div>
+                <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
+                  <p className="text-xs text-dc1-text-secondary mb-1">Weekly Earnings</p>
+                  <p className="text-2xl font-bold text-dc1-amber">
+                    {(GPU_EARNINGS[calcGpu].providerRate * calcHours * 7).toFixed(0)} SAR
+                  </p>
+                </div>
+                <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
+                  <p className="text-xs text-dc1-text-secondary mb-1">Monthly Earnings</p>
+                  <p className="text-2xl font-bold text-dc1-amber">
+                    {(GPU_EARNINGS[calcGpu].providerRate * calcHours * 30).toFixed(0)} SAR
+                  </p>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-dc1-text-muted mt-4">
+              Estimates based on {GPU_EARNINGS[calcGpu]?.rate} SAR/hr renter rate × 75% provider share. Actual earnings depend on job availability and utilization.
+            </p>
           </div>
         </section>
 

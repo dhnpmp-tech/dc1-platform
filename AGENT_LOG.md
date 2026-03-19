@@ -6,6 +6,57 @@
 
 ---
 
+## [2026-03-19 13:00 UTC] Frontend Developer — DCP-133: Renter marketplace — real-time GPU availability + filter/sort
+
+- **DCP-133 DONE**: Full marketplace overhaul with live data, filter sidebar, and sort
+- **Files changed**:
+  - `app/renter/marketplace/page.tsx` — Complete rewrite:
+    - Polls `GET /api/dc1/providers/available` every **30s** (was 15s); live countdown timer + last-updated timestamp shown in header
+    - **Left sidebar filter panel** (collapsible on mobile via "Filters" toggle button):
+      - Min VRAM slider: 0–80 GB (step 4 GB)
+      - Max price slider: 0–50 SAR/hr (step 1 SAR)
+      - GPU model multi-select checkboxes: RTX 3090, RTX 4090, A100, H100, Other
+      - Region dropdown: All Regions / KSA / UAE / Other (matches against `location` field)
+      - Live "N providers match" count below filter header
+      - "Reset all" button when any filter active
+    - **Sort options**: Online first (default), Price low→high, VRAM high→low
+    - **GPU card**: added CUDA version row, compute capability row, "Rent Now" CTA (→ `/renter/playground?provider=id`)
+    - Green/grey `StatusBadge` with `pulse` prop for live providers; `is_live` determined by heartbeat < 120s
+    - All filtering and sorting is **client-side** — no extra API calls
+    - Mobile-responsive: filter sidebar hidden by default on mobile, toggled via header button
+- **Breaking changes**: None — only this page changed
+
+---
+
+## [2026-03-19 12:10 UTC] IDE Extension Developer — DCP-127: Wire vLLM serve + job submission to live API
+
+- **DCP-127 DONE**: VS Code extension fully wired to live DCP API with vLLM serve and script job submission
+- **Files changed**:
+  - `extensions/dc1-vscode/src/api.ts` — Updated `Job` interface to match real backend schema (`job_id`, `job_type`); updated `JobSubmitRequest` to use `{job_type, provider_id, duration_minutes, params}`; fixed `submitJob` to unwrap `{success, job}` envelope; fixed `getJobById` to unwrap `{job}` envelope; added `ServeSession` interface; added `getServeSession()` method; added `inferStream()` SSE streaming method
+  - `extensions/dc1-vscode/src/jobPanel.ts` — Rewritten HTML/submit handler to use correct API format (`job_type` select, `duration_minutes`, `params`); added `onJobSubmitted` callback
+  - `extensions/dc1-vscode/src/servePanel.ts` — **NEW**: Chat-style webview panel for vLLM inference; SSE streaming proxied through extension host; per-token cost display; streaming cursor animation
+  - `extensions/dc1-vscode/src/statusBar.ts` — Added `trackServeSession()` method; status bar now shows rocket icon + model name + elapsed time for serve sessions; click opens `dc1.queryServe`
+  - `extensions/dc1-vscode/src/extension.ts` — Added `dc1.startServe` command (QuickPick model → duration → provider → submit job → poll → open panel); added `dc1.queryServe` command; updated `dc1.submitJob` for direct script submission from editor selection
+  - `extensions/dc1-vscode/package.json` — Registered `dc1.startServe` (`Ctrl+Shift+V`) and `dc1.queryServe` commands; added sidebar + context menu entries
+  - `backend/src/routes/jobs.js` — `GET /api/jobs/:job_id` now includes `serve_session_id`, `serve_session_status`, `serve_session_model`, `serve_session_expires_at` for `vllm_serve` jobs
+- **Breaking changes**: `JobSubmitRequest` interface changed significantly — old `container_image`/`command` fields replaced with `job_type`/`params`
+- **New flow**: `dc1.startServe` → model picker → provider picker → vllm_serve job → poll → session token → ServePanel with SSE chat
+
+---
+
+## [2026-03-19 12:45 UTC] Frontend Developer — DCP-120: PDPL compliance pages /privacy and /terms with Arabic translation
+
+- **DCP-120 DONE**: Both legal pages now render with full bilingual content and RTL layout
+- **Files changed**:
+  - `app/components/layout/LegalPage.tsx` — converted to `'use client'`; added `LanguageToggle`, `dir` RTL attribute, and `childrenAr`/`titleAr`/`lastUpdatedAr` props
+  - `app/privacy/page.tsx` — complete Arabic Privacy Policy translation (data controller, categories, legal basis, PDPL rights, retention table, 72h breach notification, cross-border transfer disclosure)
+  - `app/terms/page.tsx` — full English + Arabic Terms of Service (provider/renter obligations, billing, prohibited uses, Saudi governing law, Riyadh dispute resolution, PDPL consent clause)
+- **PDPL consent checkbox**: already present on both registration pages — no changes needed
+- **Footer links**: already resolve correctly — no changes needed
+- **Breaking changes**: `LegalPage` interface now requires `titleAr`, `lastUpdatedAr`, `childrenAr` — only `/privacy` and `/terms` use this component
+
+---
+
 ## [2026-03-19 12:20 UTC] Frontend Developer — DCP-118: Admin dashboard bug fixes (NaN SAR, undefined totals, Fleet Health 0/0)
 
 - **DCP-118 DONE**: Fixed 3 admin dashboard display bugs
@@ -1162,3 +1213,138 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 - **DCP-85** [MEDIUM]: npm + PyPI tokens for SDK publishing
 - **DCP-123 note**: `.git/` ownership fix is temporary — root-user agents will break it again. Permanent fix needed.
 
+
+## [2026-03-19 11:50 UTC] Security Engineer — DCP-125: VS Code + P2P security audit and hardening
+
+- **Commit**: `fix: harden p2p message auth/validation and enforce https in vscode extension` (pending board operator commit)
+- **Files**:
+  - `extensions/dc1-vscode/src/api.ts`
+  - `p2p/security.py`
+  - `p2p/bootstrap_server.py`
+  - `p2p/provider_node.py`
+  - `p2p/renter_client.py`
+  - `p2p/proto/dc1.proto`
+  - `docs/security/vscode-p2p-threats.md`
+- **Impact**:
+  - Added signed-envelope verification (HMAC + timestamp freshness) for Python Phase C P2P path; unsigned/stale messages are now rejected.
+  - Added provider-side job payload validation before bid/execute path; malformed or oversized fields are rejected.
+  - Added bootstrap role/message-type gating to reduce spoofing surface.
+  - Enforced HTTPS-only `dc1.apiBaseUrl` in VS Code extension API client.
+  - Documented full threat model + HIGH/MEDIUM/LOW findings in `docs/security/vscode-p2p-threats.md`.
+  - Runtime validation gap: Python binaries unavailable in this container, so execution tests were not run.
+
+## [2026-03-19 11:51 UTC] Codex — DCP-124: vLLM serve session pipeline (provider/renter APIs + billing)
+
+- **Commit**: `n/a (Paperclip no-git container)` — Implemented serve session tracking schema, provider serve registration/stop APIs, and renter proxy inference APIs with per-token billing.
+- **Files**:
+  - `backend/src/db.js` — added `serve_sessions` table + indexes; added `cost_rates` table + default/token-rate seeds
+  - `backend/src/routes/providers.js` — added provider auth helper, HMAC verification helper, `POST /api/providers/serve/ready`, `POST /api/providers/serve/stop`
+  - `backend/src/routes/renters.js` — added serve session lookup/auth helpers, session expiry updater, per-token charge transaction, `GET /api/renters/serve/:session_id`, `POST /api/renters/serve/:session_id/infer` (JSON + SSE proxy)
+- **Impact**:
+  - Renter never receives provider IP directly; inference now goes through backend proxy.
+  - Serve registration requires HMAC signature + timestamp (`x-dc1-signature`, `x-dc1-timestamp`) using shared server HMAC secret.
+  - Inference charges renter balance by token usage and updates provider claimable earnings + job/session aggregates.
+  - Existing `jobs.js` `/endpoint-ready` route still works, but because that file is root-owned in this container, compatibility backfill into `serve_sessions` there was not patchable in this run.
+
+---
+
+## [2026-03-19 12:05 UTC] CEO — Sprint 4 committed + Sprint 5 kickoff
+
+- **Commit**: `81f6a50` — 15 files, 1,918 insertions — Sprint 4 deliverables pushed
+- **Pushed to GitHub**: Vercel deploy triggered for PDPL pages + vLLM serve + P2P security
+- **DCP-111**: Re-assigned to QA Engineer (3rd time — need QA to run soon)
+- **All Sprint 4 issues closed**: DCP-120, DCP-124, DCP-125, DCP-126
+
+### Sprint 5 issues created
+| Issue | Agent | Title |
+|-------|-------|-------|
+| DCP-127 | IDE Extension Developer | VS Code extension: wire vLLM serve + job submission to live API |
+| DCP-128 | Founding Engineer | Landing page: add 4 missing sections (founding rates, provider demo, vLLM, API example) |
+| DCP-129 | Backend Architect | Job queue depth alerting + stuck job timeout sweep |
+| DCP-130 | P2P Network Engineer | P2P: integrate security.py + 3-node Docker smoke test |
+| DCP-131 | ML Infrastructure Engineer | Daemon: vLLM model pre-download + VRAM pre-flight check |
+
+### Board actions STILL blocking live payments (unchanged)
+- **DCP-84** [CRITICAL]: MOYASAR_SECRET_KEY + api.dcp.sa DNS A record
+- **DCP-87** [CRITICAL]: VPS git pull + pm2 reload
+- **DCP-85** [MEDIUM]: npm + PyPI tokens
+
+
+## [2026-03-19 12:07 UTC] Codex — DCP-128: Landing page sections aligned to QA audit
+
+- **Commit**: `N/A (Paperclip no-git container)` — Reworked landing page to match QA-required section set and copy
+- **Files**:
+  - `app/page.tsx`
+- **Impact**:
+  - Added spec-accurate Provider Setup Demo (3 steps + CTA), Founding Rates table (Availability column + Founding Rate badge), 4-card "What You Can Run" grid with `/docs` links, and Programmatic Integration area with a `curl | JavaScript | Python` tab switcher
+  - Updated programmatic endpoint display to `POST https://dcp.sa/api/dc1/jobs`
+  - Added Arabic text coverage for newly introduced/updated landing page content via `useLanguage()` conditional copy
+  - Header nav/CTA labels and hero wording remain aligned with issue requirements (Compute / Supply / Docs, Console Login / Get Early Access, "Borderless GPU Compute")
+
+## [2026-03-19 12:08 UTC] Codex — DCP-129: Stuck job sweep + queue depth alerting
+
+- **Commit**: `n/a (Paperclip no-git)` — Implemented backend stale-job sweep service, queue-depth metrics endpoint wiring, DB sweep log table, and Fleet Health UI queue pressure cards/banner
+- **Files**:
+  - `backend/src/services/jobSweep.js` (new)
+  - `backend/src/db.js`
+  - `backend/src/server.js`
+  - `app/admin/fleet/page.tsx`
+- **Impact**:
+  - New 5-minute sweep fails stale jobs (`assigned` >15m, `running` >20m/default or `JOB_TIMEOUT`, `pending` >30m), refunds renter balance, releases escrow to renter, and logs to `job_sweep_log`
+  - New admin queue-depth JSON metric available at `GET /api/admin/queue-depth` with `{ pending, assigned, running, oldest_pending_age_sec }`
+  - Queue pressure warning logs when pending queue >10 or oldest pending >300s
+  - Fleet Health tab now fetches queue-depth and surfaces queue pressure status
+  - `backend/src/routes/admin.js` is root-owned (`644 root root`) in this workspace, so queue-depth route was added in `server.js` with equivalent admin-token guard instead of modifying `admin.js`
+
+## [2026-03-19 12:08 UTC] Codex — DCP-131: daemon vLLM VRAM preflight + serve readiness hardening
+
+- **Commit**: `n/a (Paperclip no-git container)` — `fix: add vLLM VRAM preflight, model cache pre-download logging, health-gated serve registration, and graceful serve shutdown`
+- **Files**:
+  - `backend/installers/dc1_daemon.py`
+- **Impact**:
+  - Added `check_vram_sufficient(model_name, required_vram_gb)` and wired vLLM-specific preflight before execution.
+  - vLLM insufficient VRAM path now calls `POST /api/jobs/:job_id/fail` with reason `insufficient_vram` (legacy fallback to `/api/providers/job-result`).
+  - Added model cache detection (`model_is_cached`) and best-effort pre-download path with explicit "Pre-downloading model ..." logging.
+  - Added `wait_for_vllm_ready` and moved serve registration to run only after `/health` returns 200.
+  - Added signed `/api/providers/serve/ready` registration (with HMAC canonical payload) and legacy `/endpoint-ready` fallback for compatibility.
+  - Added graceful stop helper for serve containers: SIGTERM -> wait 10s -> SIGKILL.
+  - Daemon version bumped to `3.3.3`.
+
+---
+
+## [2026-03-19 12:18 UTC] CEO — Sprint 5 committed + Sprint 6 kickoff
+
+- **Commit**: `f161422` — 16 files, 2,239 insertions — Sprint 5 complete
+- **Pushed**: GitHub main branch updated, Vercel auto-deploy triggered
+- **DCP-111**: Re-assigned to QA Engineer (4th time — must run this heartbeat)
+- **All Sprint 5 issues closed**: DCP-127, DCP-128, DCP-129, DCP-130, DCP-131
+
+### Sprint 6 issues created
+| Issue | Agent | Title |
+|-------|-------|-------|
+| DCP-132 | DevRel Engineer | Provider acquisition campaign — Saudi GPU owners outreach kit |
+| DCP-133 | Frontend Developer | Renter marketplace — real-time GPU availability + price sort |
+| DCP-134 | DevOps Automator | VPS health check endpoint + PM2 monitoring script |
+| DCP-135 | Blockchain Engineer | Escrow.sol hardhat local test suite |
+
+### Platform status after Sprint 5
+- **Committed features**: Landing page complete, job sweep (stale job protection), daemon v3.3.3 (VRAM preflight + health-gated serve), VS Code extension fully wired, P2P security integrated
+- **Board actions blocking deployment** (unchanged — 4th notice):
+  - DCP-87: `git pull && pm2 reload all` on VPS
+  - DCP-84: MOYASAR_SECRET_KEY + api.dcp.sa DNS
+  - DCP-85: npm + PyPI tokens
+
+
+## [2026-03-19 12:23 UTC] Codex — DCP-134: VPS health endpoint + PM2 monitor hardening
+
+- **Commit**: `n/a (Paperclip no-git container)` — Implemented DB-backed health endpoint, PM2 runtime safeguards, uptime monitor script, and deployment runbook updates
+- **Files**:
+  - `backend/src/server.js`
+  - `backend/ecosystem.config.js`
+  - `scripts/health-check.sh`
+  - `DEPLOYMENT.md`
+- **Impact**:
+  - Added public `GET /health` (and aligned `/api/health`) returning status/version/db/uptime/providers_online/jobs_pending/timestamp; returns `503` with JSON error if DB probe fails
+  - PM2 ecosystem now enforces `watch: false`, `max_memory_restart: 500M`, `restart_delay: 5000`, and explicit `error/out` log files under `backend/logs/`
+  - Added executable `scripts/health-check.sh` for 5-minute cron probing of `https://api.dcp.sa/health` with failure logging to `/var/log/dcp-health.log`
+  - `DEPLOYMENT.md` now includes VPS health checks, PM2 restart commands, and log locations for faster incident response

@@ -61,6 +61,60 @@ db.exec(`
   )
 `);
 
+// ─── SERVE SESSIONS TABLE ───
+// Tracks active vLLM serving sessions exposed through DC1 proxy.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS serve_sessions (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL UNIQUE,
+    provider_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    provider_ip TEXT,
+    endpoint_url TEXT,
+    session_token TEXT,
+    status TEXT DEFAULT 'starting' CHECK(status IN ('starting','serving','stopped','expired')),
+    started_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    stopped_at TEXT,
+    last_inference_at TEXT,
+    total_inferences INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    total_billed_halala INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id),
+    FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_provider ON serve_sessions(provider_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_expiry ON serve_sessions(status, expires_at)`);
+
+// ─── COST RATES TABLE ───
+// Supports model-specific token rates for vLLM serve billing.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cost_rates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model TEXT NOT NULL UNIQUE,
+    token_rate_halala INTEGER NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL
+  )
+`);
+const nowIso = new Date().toISOString();
+try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
+   VALUES (?, ?, 1, ?)`).run('__default__', 1, nowIso); } catch(e) {}
+try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
+   VALUES (?, ?, 1, ?)`).run('mistralai/Mistral-7B-Instruct-v0.2', 2, nowIso); } catch(e) {}
+try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
+   VALUES (?, ?, 1, ?)`).run('meta-llama/Meta-Llama-3-8B-Instruct', 3, nowIso); } catch(e) {}
+try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
+   VALUES (?, ?, 1, ?)`).run('microsoft/Phi-3-mini-4k-instruct', 1, nowIso); } catch(e) {}
+try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
+   VALUES (?, ?, 1, ?)`).run('google/gemma-2b-it', 1, nowIso); } catch(e) {}
+try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
+   VALUES (?, ?, 1, ?)`).run('TinyLlama/TinyLlama-1.1B-Chat-v1.0', 1, nowIso); } catch(e) {}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS recovery_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -395,6 +449,21 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id, line_no)`);
+
+// ─── JOB SWEEP LOG TABLE ───
+// Audit trail for stale-job sweeps (DCP-129)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_sweep_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    old_status TEXT NOT NULL,
+    new_status TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    swept_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_job_sweep_log_job_id ON job_sweep_log(job_id, swept_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_job_sweep_log_swept_at ON job_sweep_log(swept_at DESC)`);
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap

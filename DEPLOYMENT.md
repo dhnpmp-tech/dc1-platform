@@ -136,6 +136,56 @@ server {
 
 ---
 
+## 🩺 VPS Health + PM2 Operations
+
+### Health endpoint checks
+
+```bash
+# Public health endpoint (returns DB + queue summary)
+curl -sS https://api.dcp.sa/health | jq
+
+# Local API check on VPS
+curl -sS http://127.0.0.1:8083/health | jq
+```
+
+Expected HTTP status: `200`.
+If SQLite is unavailable, `/health` returns `503` with `{ "error": "..." }`.
+
+### PM2 restart commands
+
+```bash
+# Restart only DCP API service
+pm2 restart dc1-provider-onboarding
+
+# Reload all PM2 services with zero-downtime semantics where possible
+pm2 reload all
+
+# Verify status/uptime
+pm2 status
+pm2 show dc1-provider-onboarding
+```
+
+### PM2 log file locations
+
+Configured in `backend/ecosystem.config.js`:
+- Error log: `/root/dc1-platform/backend/logs/error.log`
+- Output log: `/root/dc1-platform/backend/logs/out.log`
+- PM2 stream: `pm2 logs dc1-provider-onboarding`
+
+### Scheduled uptime monitor
+
+`scripts/health-check.sh` checks `https://api.dcp.sa/health` and writes failures to `/var/log/dcp-health.log`.
+
+```bash
+# Run manually
+./scripts/health-check.sh
+
+# Add cron (every 5 minutes)
+*/5 * * * * /home/node/dc1-platform/scripts/health-check.sh
+```
+
+---
+
 ## 🧪 Post-Deployment Testing
 
 ### Health Check

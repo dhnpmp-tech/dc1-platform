@@ -19,7 +19,6 @@
     "DC1",
     "Saudi Arabia"
   ],
-  "icon": "assets/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/dhnpmp-tech/dc1-platform"
@@ -78,6 +77,16 @@
         "command": "dc1.openWallet",
         "title": "DC1: Open Wallet / Balance",
         "icon": "$(credit-card)"
+      },
+      {
+        "command": "dc1.startServe",
+        "title": "DC1: Start vLLM Serve Session",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "dc1.queryServe",
+        "title": "DC1: Open Inference Panel",
+        "icon": "$(comment-discussion)"
       }
     ],
     "viewsContainers": {
@@ -122,6 +131,11 @@
           "command": "dc1.submitJob",
           "when": "view == dc1.providersView",
           "group": "navigation"
+        },
+        {
+          "command": "dc1.startServe",
+          "when": "view == dc1.providersView",
+          "group": "navigation"
         }
       ],
       "editor/context": [
@@ -129,6 +143,11 @@
           "command": "dc1.submitJob",
           "group": "dc1",
           "when": "editorHasSelection"
+        },
+        {
+          "command": "dc1.startServe",
+          "group": "dc1",
+          "when": "editorTextFocus"
         }
       ]
     },
@@ -137,6 +156,12 @@
         "command": "dc1.submitJob",
         "key": "ctrl+shift+g",
         "mac": "cmd+shift+g",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "dc1.startServe",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
         "when": "editorTextFocus"
       }
     ]

@@ -7,6 +7,10 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
+      max_memory_restart: '500M',
+      error_file: '/root/dc1-platform/backend/logs/error.log',
+      out_file: '/root/dc1-platform/backend/logs/out.log',
+      restart_delay: 5000,
       env: {
         NODE_ENV: 'production',
         DC1_PROVIDER_PORT: 8083,
