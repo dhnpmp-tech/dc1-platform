@@ -2,6 +2,14 @@
 
 All notable changes to the DCP GPU Compute extension are documented here.
 
+## [1.0.1] — 2026-03-19
+
+### Sprint 10 — Live Polling + Cancel
+
+- **Live job polling** — `My Jobs` view now auto-refreshes every 5s while jobs are running (DCP-210)
+- **Cancel running job** — Right-click a running job to cancel it via `DELETE /jobs/{id}` (DCP-210)
+- **TypeScript fix** — TS7053 compile error on `Content-Length` header assignment resolved (DCP-237)
+
 ## [1.0.0] — 2026-03-19
 
 ### First Marketplace Release

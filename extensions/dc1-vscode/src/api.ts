@@ -81,7 +81,7 @@ function makeRequest<T>(
 
     const bodyStr = body ? JSON.stringify(body) : undefined;
     if (bodyStr) {
-      options.headers!['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+      (options.headers as Record<string, string>)['Content-Length'] = Buffer.byteLength(bodyStr).toString();
     }
 
     const transport = url.protocol === 'https:' ? https : http;

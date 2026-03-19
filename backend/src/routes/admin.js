@@ -661,8 +661,8 @@ router.post('/providers/:id/suspend', (req, res) => {
     const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', req.params.id);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
     const now = new Date().toISOString();
-    db.run('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?', 'suspended', now, req.params.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'provider_suspended', 'provider', provider.id, `Suspended provider "${provider.name}"`, now); } catch(e) {}
+    db.prepare('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?').run('suspended', now, req.params.id);
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('provider_suspended', 'provider', provider.id, `Suspended provider "${provider.name}"`, now); } catch(e) {}
     res.json({ success: true, message: `Provider ${provider.name} suspended` });
   } catch (error) {
     console.error('Suspend provider error:', error);
@@ -1629,10 +1629,9 @@ router.post('/notifications/config', (req, res) => {
     if (enabled !== undefined) { updates.push('enabled = ?'); params.push(enabled ? 1 : 0); }
     updates.push('updated_at = ?'); params.push(now);
     if (updates.length > 1) {
-      db.run(`UPDATE notification_config SET ${updates.join(', ')} WHERE id = 1`, ...params);
+      db.prepare(`UPDATE notification_config SET ${updates.join(', ')} WHERE id = 1`).run(...params);
     }
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)',
-      'notification_config_updated', 'system', 0, `Updated notification config: enabled=${enabled}`, now); } catch(e) {}
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('notification_config_updated', 'system', 0, `Updated notification config: enabled=${enabled}`, now); } catch(e) {}
     res.json({ success: true, message: 'Notification config updated' });
   } catch (error) {
     console.error('Notification config error:', error);
@@ -1783,14 +1782,8 @@ router.post('/payments/:paymentId/refund', (req, res) => {
   const MOYASAR_SECRET = process.env.MOYASAR_SECRET_KEY || '';
   if (!MOYASAR_SECRET || payment.payment_id.startsWith('sandbox-')) {
     const now = new Date().toISOString();
-    db.run(
-      `UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ? WHERE payment_id = ?`,
-      now, refundAmount, paymentId
-    );
-    db.run(
-      `UPDATE renters SET balance_halala = MAX(0, balance_halala - ?), updated_at = ? WHERE id = ?`,
-      refundAmount, now, payment.renter_id
-    );
+    db.prepare(`UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ? WHERE payment_id = ?`).run(now, refundAmount, paymentId);
+    db.prepare(`UPDATE renters SET balance_halala = MAX(0, balance_halala - ?), updated_at = ? WHERE id = ?`).run(refundAmount, now, payment.renter_id);
     return res.json({
       success: true,
       type: 'manual',

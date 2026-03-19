@@ -6,6 +6,30 @@
 
 ---
 
+## [2026-03-19 21:25 UTC] CEO — Fix DCP-236/237 audit failures; DCP-240 re-review created
+
+- **Files changed**:
+  - `backend/src/routes/admin.js` — 5x `db.run()` → `db.prepare().run()` (lines 664, 665, 1632, 1634, 1786-1792)
+  - `extensions/dc1-vscode/src/api.ts:84` — TS7053 fix: `(options.headers as Record<string, string>)['Content-Length']`
+  - `extensions/dc1-vscode/package.json` — version 1.0.0 → 1.0.1
+  - `extensions/dc1-vscode/CHANGELOG.md` — added [1.0.1] Sprint 10 entry
+- **Audit results**: DCP-236 (Sprint 9 verify) FAIL fixed; DCP-237 (VS Code verify) FAIL fixed; DCP-238 (QA smoke test) ALL PASS ✅
+- **DCP-240 created**: CR1 re-review of admin.js + VS Code extension fixes
+- **DCP-239**: Sprint 10 code review in progress (CR1)
+- **Breaking changes**: None — db.prepare().run() is drop-in replacement; TS cast is type-only change
+
+---
+
+## [2026-03-19 21:09 UTC] CEO — Deployment Audit: DCP-235 created (DCP-1 through DCP-233)
+
+- **DCP-235 CREATED**: Full 233-issue deployment audit — LIVE vs PENDING vs LOST vs N/A table
+- **Key findings**: ~95 LIVE (ee82919), ~40 PENDING (3 reviewed batches), ~12 PENDING-UNREVIEWED (Sprint 10), ~5 LOST (container/GPU VPS features), ~80 N/A
+- **Subtasks**: DCP-236 (CR1: Sprint 9 verify), DCP-237 (CR2: VS Code verify), DCP-238 (QA: smoke test dcp.sa), DCP-239 (CR1: Sprint 10 review)
+- **Board action needed**: Push DCP-172 + DCP-216 + DCP-234 (all code-reviewed batches)
+- **No code changes** — audit + coordination only
+
+---
+
 ## [2026-03-19 19:41 UTC] Codex — DCP-226: E2E native module mismatch mitigation
 
 - **Commit**: `N/A (Paperclip container: git commands disabled)` — Added dedicated E2E test script and documented `better-sqlite3` rebuild step for fresh/mismatched Node environments
@@ -56,6 +80,32 @@
   - `app/marketplace/page.tsx` — **NEW** — public marketplace with Header/Footer layout, provider grid cards (GPU model, VRAM, SAR/min price, uptime%, Rent Now → /renter/register), text search, sort options, skeleton loading, error/empty states, 30s auto-refresh, bottom CTA. Fetches `GET /api/dc1/providers/marketplace` with fallback to `/api/dc1/providers/available`.
   - `app/page.tsx` — Updated 2 hero/CTA links from `/renter/marketplace` → `/marketplace`
 - **Breaking changes**: None — new page only; `/renter/marketplace` (authenticated) unchanged
+
+---
+
+## [2026-03-19 22:45 UTC] CEO — ALL reviews complete; 3 deploy batches ready; hard stop lift requested
+
+**DCP-233 (Sprint 9 final re-review)**: PASS ✅ — Check 2 skipped per DCP-185 wrapper
+
+**All 4 code review chains complete:**
+- Sprint 7+: DCP-227 FAIL → CEO fix → DCP-231 PASS
+- Sprint 8: DCP-228 PASS (first review)
+- Sprint 9: DCP-224 FAIL → CEO fix → DCP-229 false positive → CEO correction → DCP-233 PASS
+- VS Code: DCP-221 FAIL → DCP-225 fix → DCP-230 FAIL → CEO fix → DCP-232 PASS
+
+**3 deploy manifests awaiting board push auth:**
+- DCP-172 (Sprint 7+), DCP-216 (Sprint 8), DCP-234 (Sprint 9)
+
+**No code changes this session. No new agents assigned.**
+
+---
+
+## [2026-03-19 22:30 UTC] CEO — Code review gate CLEARED: DCP-172 + DCP-216 board push ready
+
+**DCP-231 (Sprint 7+ re-review)**: PASS; **DCP-232 (VS Code re-review)**: PASS
+**DCP-172 + DCP-216**: Both CR-approved, board push authorization requested
+**DCP-233**: Sprint 9 final re-review assigned to CR1 (Check 2 false positive resolved)
+**Files changed**: server.js:275,282 DC1→DCP; README.md:152 npm install→npm ci
 
 ---
 
@@ -2043,3 +2093,9 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 - **Commit**: `N/A (Paperclip container: git commands disabled)` — Completed 11-point checklist review for Sprint 8 files and posted PASS result.
 - **Files**: `app/marketplace/page.tsx`, `app/docs/renter-guide/page.tsx`, `app/docs/renter-guide/page.tsx.disabled`, `backend/tests/integration/moyasar-payment-e2e.test.js`
 - **Impact**: DCP-228 marked `done` with structured PASS comment; approval comment posted on `DCP-216` indicating deploy-ready for Claude-Cowork.
+
+## [2026-03-19 21:20 UTC] Codex — DCP-238: Live dcp.sa smoke test (9 board-ordered pages)
+
+- **Commit**: `N/A (Paperclip container: git commands disabled)` — Executed HTTP smoke checks against 9 production frontend routes and reported results to Paperclip issue DCP-238
+- **Files**: `AGENT_LOG.md`
+- **Impact**: All tested pages returned `200` at check time (`/login`, `/provider/register`, `/renter/register`, `/admin`, `/marketplace`, `/privacy`, `/terms`, `/support`, `/docs/api`). This validates server route availability only; client-side auth/render behavior still requires browser E2E coverage.

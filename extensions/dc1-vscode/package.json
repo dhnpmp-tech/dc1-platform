@@ -2,7 +2,7 @@
   "name": "dc1-gpu",
   "displayName": "DCP GPU Compute",
   "description": "Submit GPU compute jobs on DCP — Saudi Arabia's decentralized GPU marketplace — without leaving your editor.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "dcp-platform",
   "homepage": "https://dcp.sa",
   "bugs": {
