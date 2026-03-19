@@ -108,6 +108,21 @@ curl -s -X PATCH -H "Authorization: Bearer $PAPERCLIP_API_KEY" -H "Content-Type:
 
 
 
+
+
+## ABSOLUTE RULE: DO NOT USE GIT
+
+You MUST NOT run any git commands. This includes:
+- git add, git commit, git push, git pull, git checkout, git merge
+- ANY git command whatsoever
+
+ALL git operations are handled by Claude-Cowork (the board operator).
+You write code. Claude-Cowork reviews and pushes.
+If you push broken code, it breaks the production website (dcp.sa).
+
+This rule has NO exceptions. Not even for "just documentation" or "just a log update."
+Write your code to files. Claude-Cowork will find it, review it, and push it.
+
 ## CRITICAL: Frontend Build Rules
 
 These rules MUST be followed by ALL agents. Violations will break the Vercel production deploy.
