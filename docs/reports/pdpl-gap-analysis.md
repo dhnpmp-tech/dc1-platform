@@ -1,13 +1,13 @@
-# DC1 PDPL Compliance Gap Analysis
+# DCP PDPL Compliance Gap Analysis
 
 **Date**: 2026-03-19 (UTC)
-**Scope**: PDPL review for DC1 provider/renter data handling across backend, frontend, and sync services.
+**Scope**: PDPL review for DCP provider/renter data handling across backend, frontend, and sync services.
 **Method**: Static review of repository implementation and legal pages.
 **Note**: This is an engineering compliance assessment, not formal legal advice.
 
 ## Executive Summary
 
-DC1 has meaningful PDPL groundwork already in place: privacy policy publication, front-end consent UX, retention cleanup automation, and account erasure endpoints. The main compliance risk is a **policy-to-implementation gap**: consent is not enforced server-side or recorded, cross-border transfer controls are largely documentary, and breach notification appears as policy text without an operational incident workflow.
+DCP has meaningful PDPL groundwork already in place: privacy policy publication, front-end consent UX, retention cleanup automation, and account erasure endpoints. The main compliance risk is a **policy-to-implementation gap**: consent is not enforced server-side or recorded, cross-border transfer controls are largely documentary, and breach notification appears as policy text without an operational incident workflow.
 
 ## 1) PII Inventory
 

@@ -1,18 +1,18 @@
-# DC1 Platform — Paperclip Agent Instructions
+# DCP Platform — Paperclip Agent Instructions
 
 ## READ FIRST
-You are an AI agent managed by Paperclip, working on the DC1 Platform.
+You are an AI agent managed by Paperclip, working on the DCP Platform.
 You run INSIDE a Docker container as the node user. Do NOT run any git commands.
 
 Before doing anything:
 1. Read this file fully (platform context)
 2. Read `AGENT_LOG.md` (what other agents recently changed) — use the Read tool, NOT git
-3. For deep technical details, read `DC1-AGENT-BRIEFING.md`
+3. For deep technical details, read `DCP-AGENT-BRIEFING.md`
 
 CRITICAL: Never run git pull, git push, git commit, or any git commands. They will fail with permission errors.
 
-## What Is DC1
-DC1 is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPUs, install a Python daemon, and earn SAR. Renters submit compute jobs (LLM inference, image gen, training) that run on provider hardware. DC1 takes 25% fee; providers earn 75%. Currency: SAR (halala = 1/100 SAR).
+## What Is DCP
+DCP is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPUs, install a Python daemon, and earn SAR. Renters submit compute jobs (LLM inference, image gen, training) that run on provider hardware. DCP takes 25% fee; providers earn 75%. Currency: SAR (halala = 1/100 SAR).
 
 ## Live Systems
 
@@ -28,7 +28,7 @@ DC1 is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPU
 ### VPS Services (76.13.179.86, Ubuntu)
 | Service | Manager | Port | Notes |
 |---------|---------|------|-------|
-| DC1 API | PM2 (ID 5) | 8083 | Main backend — dc1-provider-onboarding |
+| DCP API | PM2 (ID 5) | 8083 | Main backend — dc1-provider-onboarding |
 | Paperclip | Docker | 3100 | Agent orchestration |
 | Bella (OpenClaw) | Docker | 18803-18804 | AI gateway |
 | Laura (OpenClaw) | Docker (Hostinger) | — | AI gateway |
@@ -138,7 +138,7 @@ If you create a new top-level directory with .ts/.tsx files, ADD IT to tsconfig.
 ## Cross-Agent Protocol
 
 ### IMPORTANT: No Git Commands Inside Paperclip
-You are running inside a Docker container with a READ-ONLY volume mount of the DC1 repo.
+You are running inside a Docker container with a READ-ONLY volume mount of the DCP repo.
 Do NOT run `git pull`, `git push`, `git commit`, or any git commands — they will fail.
 The codebase is automatically kept in sync via the host volume mount.
 
@@ -210,14 +210,14 @@ dc1-platform/
 ├── CLAUDE.md               # Agent memory (Claude-Cowork)
 ├── AGENTS.md               # Agent memory (Codex)
 ├── AGENT_LOG.md            # Cross-agent communication log
-├── DC1-AGENT-BRIEFING.md   # Comprehensive technical reference
+├── DCP-AGENT-BRIEFING.md   # Comprehensive technical reference
 ├── NEXUS-MONITORING.md     # Nexus endpoint map
 ├── next.config.js          # API proxy rewrites
-└── tailwind.config.ts      # DC1 design tokens
+└── tailwind.config.ts      # DCP design tokens
 ```
 
 ## For Detailed Technical Reference
-Read `DC1-AGENT-BRIEFING.md` — it contains:
+Read `DCP-AGENT-BRIEFING.md` — it contains:
 - Complete database schema (providers, jobs, renters tables)
 - All 40+ API endpoints with auth requirements
 - Billing model (halala rates, 75/25 split)

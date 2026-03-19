@@ -1,4 +1,4 @@
-# DC1 Platform — Cost Report (CORRECTED)
+# DCP Platform — Cost Report (CORRECTED)
 
 **Date:** 2026-03-18 | **Corrected:** 2026-03-19
 **Period:** March 2026 (month-to-date — 2 days since agent activation on 2026-03-17)
@@ -88,8 +88,8 @@ _Original report showed 354.9 SAR MTD — corrected to 413 SAR to reflect full 2
 
 | Resource | Monthly SAR | Monthly USD | Notes |
 |----------|-------------|-------------|-------|
-| Hostinger VPS srv1328172 | 382 | $101.87 | Ubuntu KVM; runs DC1 API, Paperclip, Bella/Laura, PostgreSQL |
-| **TOTAL** | **382** | **$101.87** | Currently paid by Peter. DC1 will inherit at Phase B close. |
+| Hostinger VPS srv1328172 | 382 | $101.87 | Ubuntu KVM; runs DCP API, Paperclip, Bella/Laura, PostgreSQL |
+| **TOTAL** | **382** | **$101.87** | Currently paid by Peter. DCP will inherit at Phase B close. |
 
 _Original report stated ~75 SAR — corrected to 382 SAR per actual invoice._
 
@@ -101,21 +101,21 @@ _Original report stated ~75 SAR — corrected to 382 SAR per actual invoice._
 |--------|-------------|-------------|-------|
 | OPEX Floor (fixed) | 2,956 | $788 | Subscriptions — does not change |
 | Agent API (variable, projected) | ~6,200 | ~$1,653 | Sprint-inflated; see optimization options |
-| VPS (partner-subsidized) | 382 | $102 | Will become DC1 direct cost at Phase B |
+| VPS (partner-subsidized) | 382 | $102 | Will become DCP direct cost at Phase B |
 | **TRUE TOTAL** | **~9,538** | **~$2,543** | At current sprint burn rate |
 
 ---
 
 ## Break-Even Analysis
 
-DC1 earns a **25% fee** on all GPU-hours billed. Providers keep 75%.
+DCP earns a **25% fee** on all GPU-hours billed. Providers keep 75%.
 
-To cover **9,538 SAR/mo** in total costs, DC1 needs 9,538 SAR in platform revenue.
+To cover **9,538 SAR/mo** in total costs, DCP needs 9,538 SAR in platform revenue.
 This requires total platform billings of: **9,538 ÷ 0.25 = 38,152 SAR/mo**
 
 ### By GPU-Hour Volume
 
-| GPU Tier | Rental Price/hr (SAR) | DC1 Revenue/hr | GPU-hours/mo needed | Equivalent GPUs at 80% utilization |
+| GPU Tier | Rental Price/hr (SAR) | DCP Revenue/hr | GPU-hours/mo needed | Equivalent GPUs at 80% utilization |
 |----------|-----------------------|----------------|---------------------|------------------------------------|
 | Budget (RTX 3090-class) | 2.50 | 0.625 | 15,261 hrs | ~26.5 GPUs |
 | Mid (RTX 4090-class) | 5.00 | 1.25 | 7,630 hrs | ~13.2 GPUs |
@@ -125,7 +125,7 @@ _Utilization at 80% = (GPU-hours needed) ÷ (30 days × 24 hrs × 0.80)_
 
 ### By Number of Paying Renters
 
-| Renter Monthly Spend | DC1 Revenue per Renter/mo | Renters Needed to Break Even |
+| Renter Monthly Spend | DCP Revenue per Renter/mo | Renters Needed to Break Even |
 |---------------------|--------------------------|------------------------------|
 | 250 SAR/mo | 62.5 SAR | 153 renters |
 | 500 SAR/mo | 125 SAR | 77 renters |
@@ -187,7 +187,7 @@ Temporarily deactivate agents with no active Phase B assignments:
 
 ## Combined Impact — Optimization Scenarios
 
-| Scenario | Agent API Cost (SAR/mo) | Total DC1 Cost (SAR/mo) | Meets <3,000 Target? |
+| Scenario | Agent API Cost (SAR/mo) | Total DCP Cost (SAR/mo) | Meets <3,000 Target? |
 |----------|------------------------|------------------------|---------------------|
 | Current (no changes) | ~6,200 | ~9,538 | ❌ |
 | Option 1 only (Haiku) | ~4,513 | ~7,851 | ❌ |

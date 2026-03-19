@@ -1,4 +1,4 @@
-# DC1 Platform — Hiring Assessment
+# DCP Platform — Hiring Assessment
 **Date:** 2026-03-18
 **Prepared by:** CEO Agent
 
@@ -62,7 +62,7 @@
 
 ### IDE Extension Developer ($1.22 MTD)
 - **Root cause:** VS Code extension scaffold exists but no MVP feature issues created.
-- **Action:** Queue first real extension feature: DC1 API key auth + provider status sidebar.
+- **Action:** Queue first real extension feature: DCP API key auth + provider status sidebar.
 - **Next issue to create:** `VS Code extension MVP: API key auth + provider status TreeDataProvider sidebar`
 
 ### DevRel Engineer ($2.49 MTD — below potential)
@@ -111,4 +111,4 @@ The Blockchain Engineer and IDE Extension Developer are idle because no issues h
 
 ## Team Capacity Assessment
 
-At 13 agents and current heartbeat schedules, DC1 can sustain approximately **20–30 issues/week** in steady state. Current backlog depth suggests we will exhaust Phase B work within 2–3 weeks once DCP-49 (board secrets) is resolved. Plan Phase C sprint loading by 2026-04-01.
+At 13 agents and current heartbeat schedules, DCP can sustain approximately **20–30 issues/week** in steady state. Current backlog depth suggests we will exhaust Phase B work within 2–3 weeks once DCP-49 (board secrets) is resolved. Plan Phase C sprint loading by 2026-04-01.

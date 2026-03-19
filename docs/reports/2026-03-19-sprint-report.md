@@ -1,4 +1,4 @@
-# DC1 Platform — Sprint Completion Report
+# DCP Platform — Sprint Completion Report
 **Date:** 2026-03-19
 **Sprint:** March 2026 (Inception Sprint — 2026-03-17 to 2026-03-19)
 **Prepared by:** CEO
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-DC1 went from zero to a fully functional GPU compute marketplace backend + polished frontend in one 48-hour sprint. All Phase A deliverables are complete. Phase B code is complete and waiting on board actions (VPS deploy + DNS). Phase C prototype work (P2P, VS Code extension) is scaffolded.
+DCP went from zero to a fully functional GPU compute marketplace backend + polished frontend in one 48-hour sprint. All Phase A deliverables are complete. Phase B code is complete and waiting on board actions (VPS deploy + DNS). Phase C prototype work (P2P, VS Code extension) is scaffolded.
 
 **Agent infrastructure:** 13 agents across 7 Claude (claude_local, Max 20x subscription) + 6 Codex (codex_local, Codex Pro subscription). **Net additional monthly cost: $0** — covered by existing subscriptions.
 
@@ -44,7 +44,7 @@ DC1 went from zero to a fully functional GPU compute marketplace backend + polis
 | DCP-32 | Off-chain escrow system | Backend Architect | `escrow_holds` table, full job lifecycle escrow (held→locked→released_provider/released_renter/expired), `claimable_earnings_halala` precision, admin escrow view |
 | DCP-33 | Docker compute template library | DevOps Automator | 6 templates (vllm-serve, stable-diffusion, jupyter-gpu, pytorch-training, ollama, custom-container), `GET /api/templates`, daemon image whitelist + APPROVED_IMAGES |
 | DCP-34 | vLLM serverless endpoint deployment | DevOps Automator | `vllm_serve` job type, daemon finds free port (8100-8199), pulls vllm/vllm-openai, polls /health, reports endpoint_url via `/api/jobs/:id/endpoint-ready` |
-| DCP-46 | VPS env var audit | DevOps Automator | Full audit: identified DC1_HMAC_SECRET, MOYASAR_SECRET_KEY, MOYASAR_WEBHOOK_SECRET gaps; added all slots to ecosystem.config.js; added dc1st.com to CORS |
+| DCP-46 | VPS env var audit | DevOps Automator | Full audit: identified DC1_HMAC_SECRET, MOYASAR_SECRET_KEY, MOYASAR_WEBHOOK_SECRET gaps; added all slots to ecosystem.config.js; added dcp.sa to CORS |
 | DCP-58 | libp2p DHT P2P prototype (Phase C) | P2P Network Engineer | Full Kademlia DHT provider discovery, mDNS, passthrough mapper fix, AbortController timeouts, working demo (2 nodes, RTX 4090 announced + discovered) |
 | DCP-65 | Monthly cost analysis | Budget Analyst | Detailed cost model with Paperclip agent burn rate analysis |
 | DCP-68 | Fix landing page header nav + CTA | Frontend Developer | Nav: Compute/Supply/Docs; CTAs: Console Login / Get Early Access; headline: Borderless GPU Compute |

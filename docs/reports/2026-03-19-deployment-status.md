@@ -1,4 +1,4 @@
-# DC1 Platform — Deployment Status
+# DCP Platform — Deployment Status
 **Date:** 2026-03-19
 **Frontend:** dcp.sa (Vercel, auto-deploys from main branch) — **current commit: 32807ee**
 **Backend:** 76.13.179.86:8083 (PM2 on VPS) — **running ~2026-03-14 code, NOT current**

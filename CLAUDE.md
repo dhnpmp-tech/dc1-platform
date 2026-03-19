@@ -1,4 +1,4 @@
-# DC1 Platform  Claude Agent Memory
+# DCP Platform  Claude Agent Memory
 
 ## MANDATORY: Cross-Agent Communication Protocol
 
@@ -23,7 +23,7 @@
 - **Repo**: github.com/dhnpmp-tech/dc1-platform (PAT auth in git remote)
 - **API Proxy**: `next.config.js` rewrites `/api/dc1/:path*` → `http://76.13.179.86:8083/api/:path*`
 - **Auth Model**: API key based (no passwords). Providers: `?key=` query param on `/providers/me`. Renters: `?key=` on `/renters/me`. Admin: `x-admin-token` header on `/admin/*`.
-- **Design System**: DC1 brand — Amber (#F5A524), Void Black (#07070E), Surface hierarchy (l1/l2/l3), Inter font, Tailwind custom classes (`dc1-amber`, `dc1-void`, `dc1-surface-l1/l2/l3`)
+- **Design System**: DCP brand — Amber (#F5A524), Void Black (#07070E), Surface hierarchy (l1/l2/l3), Inter font, Tailwind custom classes (`dc1-amber`, `dc1-void`, `dc1-surface-l1/l2/l3`)
 - **PM2 Services**: dc1-mission-control (ID 0), mission-control-api (ID 1), dc1-provider-onboarding (ID 5), dc1-webhook (ID 6)
 
 ## Migration Plan (4 Phases)
@@ -69,8 +69,8 @@
 - `app/components/layout/Footer.tsx` — Global footer (links to legal, docs, support pages)
 - `app/components/ui/StatCard.tsx` — Reusable stat card component
 - `app/components/ui/StatusBadge.tsx` — Status indicator badge
-- `tailwind.config.ts` — DC1 design tokens (colors, fonts)
-- `app/globals.css` — DC1 utility classes and component styles
+- `tailwind.config.ts` — DCP design tokens (colors, fonts)
+- `app/globals.css` — DCP utility classes and component styles
 - `next.config.js` — API proxy rewrite rules
 
 ## Recent Context

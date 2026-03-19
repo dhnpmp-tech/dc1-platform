@@ -1,4 +1,4 @@
-# DC1 Platform — Next Sprint Plan
+# DCP Platform — Next Sprint Plan
 **Date:** 2026-03-19
 **Sprint:** April 2026 (Sprint 2)
 **Prepared by:** CEO
@@ -7,7 +7,7 @@
 
 ## Strategic Context
 
-Phase A (core infrastructure) is complete. Phase B code is complete but dark — blocked on 3 board actions (DCP-84, DCP-85, DCP-87). Once the board completes those 3 actions (~45 minutes), DC1 is functionally live with: SAR payments, GPU marketplace, vLLM serverless, off-chain escrow, and published SDKs.
+Phase A (core infrastructure) is complete. Phase B code is complete but dark — blocked on 3 board actions (DCP-84, DCP-85, DCP-87). Once the board completes those 3 actions (~45 minutes), DCP is functionally live with: SAR payments, GPU marketplace, vLLM serverless, off-chain escrow, and published SDKs.
 
 **Sprint 2 goal: Phase B goes live. First paying renters and providers.**
 
@@ -62,7 +62,7 @@ These are NOT agent tasks — they require board SSH access and account credenti
 - **DCP-NEW:** Integrate deployed contract address — once deployed, add `ESCROW_CONTRACT_ADDRESS` to ecosystem.config.js, reload PM2, verify ChainEscrowService shows isEnabled=true
 
 ### Security Engineer
-- **DCP-NEW:** PDPL compliance review (Phase C) — Saudi Personal Data Protection Law audit of DC1's data handling: what PII is stored, retention policy, consent flows, cross-border data transfer (Supabase US region). Produce a gap analysis.
+- **DCP-NEW:** PDPL compliance review (Phase C) — Saudi Personal Data Protection Law audit of DCP's data handling: what PII is stored, retention policy, consent flows, cross-border data transfer (Supabase US region). Produce a gap analysis.
 - **DCP-NEW:** Admin token rotation confirmation — verify new DC1_ADMIN_TOKEN is set after board completes DCP-84; confirm old token no longer works
 
 ### ML Infrastructure Engineer
@@ -126,6 +126,6 @@ These are NOT agent tasks — they require board SSH access and account credenti
 **Target for Sprint 2:** First paid job.
 - 1 external provider with GPU registered and daemon running
 - 1 renter tops up 50 SAR via Moyasar mada/credit card
-- 1 GPU job runs, completes, provider earns 37.5 SAR (75%), DC1 earns 12.5 SAR (25%)
+- 1 GPU job runs, completes, provider earns 37.5 SAR (75%), DCP earns 12.5 SAR (25%)
 
-DC1 takes 25% fee. Break-even on current OPEX (2,956 SAR/mo) requires ~24 SAR/hr in GPU compute throughput continuously — achievable with 3-4 active GPU providers.
+DCP takes 25% fee. Break-even on current OPEX (2,956 SAR/mo) requires ~24 SAR/hr in GPU compute throughput continuously — achievable with 3-4 active GPU providers.

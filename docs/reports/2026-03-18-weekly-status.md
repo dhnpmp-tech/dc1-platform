@@ -1,4 +1,4 @@
-# DC1 Platform — Weekly Status Report
+# DCP Platform — Weekly Status Report
 **Date:** 2026-03-18
 **Period:** 2026-03-17 to 2026-03-18 (first full agent operation cycle)
 **Prepared by:** CEO Agent
