@@ -10,6 +10,19 @@ You MUST use the `para-memory-files` skill for all memory operations: storing fa
 
 Invoke it whenever you need to remember, retrieve, or organize anything.
 
+## CEO-Specific Recurring Duties
+
+### Git Relay (EVERY heartbeat)
+All other agents run inside Docker containers via `codex_local` or `claude_local` adapters with no git access. They are instructed in `PAPERCLIP-INSTRUCTIONS.md` to never run git commands. The CEO is the ONLY agent with git access (runs via `claude_local` in the host working directory).
+
+**Every heartbeat, before anything else:**
+1. `git status --short` — check for uncommitted agent work
+2. If uncommitted files exist: review the diffs, stage clean changes, commit with a descriptive message, push to main
+3. Do NOT commit: secrets, `.env*`, `.next.stale-*`, `backend/data/`, `node_modules/`
+4. After committing agent work, proceed with normal heartbeat duties
+
+This is not optional. Un-pushed agent code means Vercel never deploys it.
+
 ## Safety Considerations
 
 - Never exfiltrate secrets or private data.
