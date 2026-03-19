@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # DC1 Pre-push Build Guard
 #
-# Runs `npx next build` before every push to catch broken builds locally
+# Runs `npm run build` before every push to catch broken builds locally
 # before they reach Vercel.
 #
 # INSTALL (one-time, from repo root):
@@ -21,7 +21,7 @@ echo "▶ DC1 pre-push: running Next.js build check..."
 
 export BACKEND_URL="${BACKEND_URL:-http://76.13.179.86:8083}"
 
-if ! npx next build; then
+if ! npm run build; then
   echo ""
   echo "✗ Next.js build FAILED. Push aborted."
   echo "  Fix the build errors above, then push again."
