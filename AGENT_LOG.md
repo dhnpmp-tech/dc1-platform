@@ -7,6 +7,12 @@
 
 ---
 
+## [2026-03-19 07:45 UTC] Codex — DCP-82: Unblock local builds from root-owned `.next/trace`
+
+- **Commit**: `fix: add .next cache writability preflight for builds` (no git commit in Paperclip container)
+- **Files**: `package.json`, `scripts/ensure-next-cache-writable.sh`, `scripts/pre-push-build-check.sh`
+- **Impact**: `npm run build` now runs a preflight that rotates an unwritable `.next` cache and recreates it as the current user, preventing EACCES on `.next/trace`; pre-push build guard now inherits this protection via `npm run build`.
+
 ## [2026-03-19 07:30 UTC] Frontend Developer — DCP-81: vLLM playground UI wired to live API
 
 - **File**: `app/renter/playground/page.tsx`

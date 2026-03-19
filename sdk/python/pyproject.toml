@@ -7,6 +7,7 @@ name = "dc1"
 version = "0.1.0"
 description = "Official Python SDK for the DC1 GPU compute marketplace"
 readme = "README.md"
+authors = [{ name = "DC1", email = "dev@dcp.sa" }]
 license = { text = "MIT" }
 requires-python = ">=3.9"
 keywords = ["gpu", "compute", "ai", "inference", "dc1"]
