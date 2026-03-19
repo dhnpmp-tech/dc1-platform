@@ -1296,10 +1296,10 @@ router.get('/health', (req, res) => {
     // Provider stats
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const onlineProviders = db.get(
-      "SELECT COUNT(*) as count FROM providers WHERE last_heartbeat > ? AND status = 'active'",
+      "SELECT COUNT(*) as count FROM providers WHERE last_heartbeat > ? AND status = 'online'",
       fiveMinAgo
     )?.count || 0;
-    const totalProviders = db.get("SELECT COUNT(*) as count FROM providers WHERE status = 'active'")?.count || 0;
+    const totalProviders = db.get("SELECT COUNT(*) as count FROM providers")?.count || 0;
 
     // Active jobs
     const activeJobs = db.get(
