@@ -29,6 +29,38 @@ function splitBilling(totalHalala) {
   return { provider_cut, dc1_cut };
 }
 
+function normalizeString(value, { maxLen = 500, trim = true } = {}) {
+  if (typeof value !== 'string') return null;
+  const next = trim ? value.trim() : value;
+  if (!next) return null;
+  return next.slice(0, maxLen);
+}
+
+function toFiniteNumber(value, { min = null, max = null } = {}) {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (min != null && num < min) return null;
+  if (max != null && num > max) return null;
+  return num;
+}
+
+function toFiniteInt(value, { min = null, max = null } = {}) {
+  const num = toFiniteNumber(value, { min, max });
+  if (num == null || !Number.isInteger(num)) return null;
+  return num;
+}
+
+function normalizeIdArray(value, { maxItems = 500 } = {}) {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const ids = [];
+  for (const raw of value.slice(0, maxItems)) {
+    const id = toFiniteInt(raw, { min: 1 });
+    if (id == null) return null;
+    ids.push(id);
+  }
+  return ids.length > 0 ? ids : null;
+}
+
 // === GET /api/admin/providers - All providers (api_key intentionally excluded) ===
 router.get('/providers', (req, res) => {
   try {
@@ -192,6 +224,116 @@ router.get('/dashboard', (req, res) => {
   } catch (error) {
     console.error('Admin dashboard error:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard' });
+  }
+});
+
+// === GET /api/admin/analytics - 7-day compute analytics ===
+router.get('/analytics', (req, res) => {
+  try {
+    const now = new Date();
+    const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const compute = db.get(
+      `SELECT
+         COUNT(*) as total_jobs,
+         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
+         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs,
+         COALESCE(SUM(CASE WHEN status = 'completed'
+           THEN COALESCE(actual_duration_minutes, duration_minutes, 0)
+           ELSE 0 END), 0) as total_duration_minutes,
+         COALESCE(AVG(CASE WHEN status = 'completed'
+           THEN COALESCE(actual_duration_minutes, duration_minutes, 0)
+           ELSE NULL END), 0) as avg_duration_minutes
+       FROM jobs
+       WHERE COALESCE(completed_at, created_at) >= ?`,
+      since
+    ) || {};
+
+    const revenue = db.get(
+      `SELECT
+         COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0) as gross_halala,
+         COALESCE(SUM(
+           COALESCE(
+             provider_earned_halala,
+             CAST(COALESCE(actual_cost_halala, cost_halala, 0) * 0.75 AS INTEGER)
+           )
+         ), 0) as provider_halala
+       FROM jobs
+       WHERE status = 'completed'
+         AND COALESCE(completed_at, created_at) >= ?`,
+      since
+    ) || {};
+
+    const gpuBreakdown = db.all(
+      `SELECT
+         COALESCE(NULLIF(TRIM(p.gpu_model), ''), 'Unknown GPU') as gpu_model,
+         COUNT(j.id) as jobs,
+         COALESCE(SUM(COALESCE(j.actual_duration_minutes, j.duration_minutes, 0)), 0) as duration_minutes
+       FROM jobs j
+       LEFT JOIN providers p ON p.id = j.provider_id
+       WHERE j.status = 'completed'
+         AND COALESCE(j.completed_at, j.created_at) >= ?
+       GROUP BY COALESCE(NULLIF(TRIM(p.gpu_model), ''), 'Unknown GPU')
+       ORDER BY jobs DESC, duration_minutes DESC`,
+      since
+    ).map((row) => ({
+      gpu_model: row.gpu_model,
+      jobs: row.jobs || 0,
+      compute_hours: Number((((row.duration_minutes || 0) / 60)).toFixed(2)),
+    }));
+
+    const expectedHeartbeats7d = 7 * 24 * 60 * 2; // 30-second daemon heartbeat
+    const topProviders = db.all(
+      `SELECT
+         p.id as provider_id,
+         COALESCE(NULLIF(TRIM(p.gpu_model), ''), 'Unknown GPU') as gpu_model,
+         COUNT(DISTINCT j.id) as jobs_completed,
+         COUNT(DISTINCT h.id) as heartbeat_count
+       FROM providers p
+       LEFT JOIN jobs j
+         ON j.provider_id = p.id
+        AND j.status = 'completed'
+        AND COALESCE(j.completed_at, j.created_at) >= ?
+       LEFT JOIN heartbeat_log h
+         ON h.provider_id = p.id
+        AND h.received_at >= ?
+       GROUP BY p.id
+       HAVING jobs_completed > 0
+       ORDER BY jobs_completed DESC, heartbeat_count DESC
+       LIMIT 5`,
+      since,
+      since
+    ).map((row) => ({
+      provider_id: row.provider_id,
+      gpu_model: row.gpu_model,
+      jobs_completed: row.jobs_completed || 0,
+      uptime_pct: Math.min(100, Math.round(((row.heartbeat_count || 0) / expectedHeartbeats7d) * 100)),
+    }));
+
+    const grossHalala = revenue.gross_halala || 0;
+    const providerHalala = revenue.provider_halala || 0;
+    const dc1FeeHalala = Math.max(0, grossHalala - providerHalala);
+
+    res.json({
+      period: 'last_7d',
+      compute: {
+        total_jobs: compute.total_jobs || 0,
+        completed_jobs: compute.completed_jobs || 0,
+        failed_jobs: compute.failed_jobs || 0,
+        total_compute_hours: Number((((compute.total_duration_minutes || 0) / 60)).toFixed(2)),
+        avg_job_duration_minutes: Math.round(compute.avg_duration_minutes || 0),
+      },
+      revenue: {
+        gross_compute_sar: Number((grossHalala / 100).toFixed(2)),
+        dcp_fee_sar: Number((dc1FeeHalala / 100).toFixed(2)),
+        provider_earnings_sar: Number((providerHalala / 100).toFixed(2)),
+      },
+      gpu_breakdown: gpuBreakdown,
+      top_providers: topProviders,
+    });
+  } catch (error) {
+    console.error('Admin analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
   }
 });
 
@@ -583,25 +725,26 @@ router.post('/renters/:id/unsuspend', (req, res) => {
 router.post('/renters/:id/balance', (req, res) => {
   try {
     const { amount_halala, reason } = req.body;
-    if (!amount_halala || typeof amount_halala !== 'number') {
+    const amountHalala = toFiniteInt(amount_halala, { min: -100000000, max: 100000000 });
+    if (amountHalala == null) {
       return res.status(400).json({ error: 'amount_halala (number) is required' });
     }
     const renter = db.get('SELECT id, name, balance_halala FROM renters WHERE id = ?', req.params.id);
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
 
-    const newBalance = renter.balance_halala + amount_halala;
+    const newBalance = renter.balance_halala + amountHalala;
     if (newBalance < 0) return res.status(400).json({ error: 'Balance cannot go below 0' });
 
     db.run('UPDATE renters SET balance_halala = ? WHERE id = ?', newBalance, req.params.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'balance_adjusted', 'renter', renter.id, `Adjusted balance by ${amount_halala} halala for "${renter.name}": ${reason || 'No reason'}`, new Date().toISOString()); } catch(e) {}
+    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'balance_adjusted', 'renter', renter.id, `Adjusted balance by ${amountHalala} halala for "${renter.name}": ${normalizeString(reason, { maxLen: 300 }) || 'No reason'}`, new Date().toISOString()); } catch(e) {}
     res.json({
       success: true,
       renter_id: renter.id,
       name: renter.name,
       previous_balance: renter.balance_halala,
-      adjustment: amount_halala,
+      adjustment: amountHalala,
       new_balance: newBalance,
-      reason: reason || 'Admin adjustment'
+      reason: normalizeString(reason, { maxLen: 300 }) || 'Admin adjustment'
     });
   } catch (error) {
     console.error('Balance adjustment error:', error);
@@ -615,13 +758,14 @@ router.post('/renters/:id/balance', (req, res) => {
 router.post('/bulk/providers', (req, res) => {
   try {
     const { ids, action } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+    const safeIds = normalizeIdArray(ids);
+    if (!safeIds) return res.status(400).json({ error: 'ids array required (positive integers)' });
     if (!['suspend', 'unsuspend'].includes(action)) return res.status(400).json({ error: 'action must be suspend or unsuspend' });
 
     const now = new Date().toISOString();
     let success = 0, failed = 0;
 
-    for (const id of ids) {
+    for (const id of safeIds) {
       try {
         const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', id);
         if (!provider) { failed++; continue; }
@@ -636,7 +780,7 @@ router.post('/bulk/providers', (req, res) => {
       } catch (e) { failed++; }
     }
 
-    res.json({ success: true, action, processed: success, failed, total: ids.length });
+    res.json({ success: true, action, processed: success, failed, total: safeIds.length });
   } catch (error) {
     console.error('Bulk provider action error:', error);
     res.status(500).json({ error: 'Bulk action failed' });
@@ -649,14 +793,18 @@ router.post('/bulk/providers', (req, res) => {
 router.post('/bulk/renters', (req, res) => {
   try {
     const { ids, action, amount_halala, reason } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+    const safeIds = normalizeIdArray(ids);
+    if (!safeIds) return res.status(400).json({ error: 'ids array required (positive integers)' });
     if (!['suspend', 'unsuspend', 'credit'].includes(action)) return res.status(400).json({ error: 'action must be suspend, unsuspend, or credit' });
-    if (action === 'credit' && (!amount_halala || typeof amount_halala !== 'number')) return res.status(400).json({ error: 'amount_halala required for credit' });
+    const amountHalala = action === 'credit'
+      ? toFiniteInt(amount_halala, { min: 1, max: 100000000 })
+      : null;
+    if (action === 'credit' && amountHalala == null) return res.status(400).json({ error: 'amount_halala required for credit' });
 
     const now = new Date().toISOString();
     let success = 0, failed = 0;
 
-    for (const id of ids) {
+    for (const id of safeIds) {
       try {
         const renter = db.get('SELECT id, name, status, balance_halala FROM renters WHERE id = ?', id);
         if (!renter) { failed++; continue; }
@@ -665,15 +813,15 @@ router.post('/bulk/renters', (req, res) => {
         } else if (action === 'unsuspend') {
           db.run('UPDATE renters SET status = ? WHERE id = ?', 'active', id);
         } else if (action === 'credit') {
-          db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', amount_halala, id);
+          db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', amountHalala, id);
         }
         try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)',
-          `bulk_renter_${action}`, 'renter', id, `Bulk ${action}: "${renter.name}"${action === 'credit' ? ` +${amount_halala} halala: ${reason || 'bulk credit'}` : ''}`, now); } catch(e) {}
+          `bulk_renter_${action}`, 'renter', id, `Bulk ${action}: "${renter.name}"${action === 'credit' ? ` +${amountHalala} halala: ${normalizeString(reason, { maxLen: 300 }) || 'bulk credit'}` : ''}`, now); } catch(e) {}
         success++;
       } catch (e) { failed++; }
     }
 
-    res.json({ success: true, action, processed: success, failed, total: ids.length });
+    res.json({ success: true, action, processed: success, failed, total: safeIds.length });
   } catch (error) {
     console.error('Bulk renter action error:', error);
     res.status(500).json({ error: 'Bulk action failed' });
@@ -1022,8 +1170,9 @@ router.post('/withdrawals/:id/approve', (req, res) => {
     if (w.status !== 'pending') return res.status(400).json({ error: `Cannot approve — status is ${w.status}` });
 
     const now = new Date().toISOString();
+    const notes = normalizeString(req.body.notes, { maxLen: 500 }) || 'Approved by admin';
     db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
-      'approved', now, req.body.notes || 'Approved by admin', w.id);
+      'approved', now, notes, w.id);
 
     // Log to audit
     try {
@@ -1050,17 +1199,18 @@ router.post('/withdrawals/:id/reject', (req, res) => {
     if (w.status !== 'pending') return res.status(400).json({ error: `Cannot reject — status is ${w.status}` });
 
     const now = new Date().toISOString();
+    const reason = normalizeString(req.body.reason, { maxLen: 500 }) || 'Rejected by admin';
     db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
-      'rejected', now, req.body.reason || 'Rejected by admin', w.id);
+      'rejected', now, reason, w.id);
 
     try {
       db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
               VALUES (?, ?, ?, ?, ?)`,
         'withdrawal_rejected', 'withdrawal', w.id,
-        `Rejected ${w.amount_sar} SAR for provider ${w.provider_id}: ${req.body.reason || 'No reason'}`, now);
+        `Rejected ${w.amount_sar} SAR for provider ${w.provider_id}: ${reason || 'No reason'}`, now);
     } catch(e) {}
 
-    res.json({ success: true, withdrawal_id: w.withdrawal_id, new_status: 'rejected', reason: req.body.reason || '' });
+    res.json({ success: true, withdrawal_id: w.withdrawal_id, new_status: 'rejected', reason: reason || '' });
   } catch (error) {
     console.error('Reject withdrawal error:', error);
     res.status(500).json({ error: 'Failed to reject withdrawal' });
@@ -1077,8 +1227,9 @@ router.post('/withdrawals/:id/complete', (req, res) => {
     if (w.status !== 'approved') return res.status(400).json({ error: `Can only complete approved withdrawals — status is ${w.status}` });
 
     const now = new Date().toISOString();
+    const notes = normalizeString(req.body.notes, { maxLen: 500 }) || 'Payment sent';
     db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
-      'completed', now, req.body.notes || 'Payment sent', w.id);
+      'completed', now, notes, w.id);
 
     try {
       db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
@@ -1472,9 +1623,9 @@ router.post('/notifications/config', (req, res) => {
     getNotifConfig(); // ensure table + row exists
     const updates = [];
     const params = [];
-    if (webhook_url !== undefined) { updates.push('webhook_url = ?'); params.push(webhook_url || null); }
-    if (telegram_bot_token !== undefined) { updates.push('telegram_bot_token = ?'); params.push(telegram_bot_token || null); }
-    if (telegram_chat_id !== undefined) { updates.push('telegram_chat_id = ?'); params.push(telegram_chat_id || null); }
+    if (webhook_url !== undefined) { updates.push('webhook_url = ?'); params.push(normalizeString(webhook_url, { maxLen: 500 }) || null); }
+    if (telegram_bot_token !== undefined) { updates.push('telegram_bot_token = ?'); params.push(normalizeString(telegram_bot_token, { maxLen: 500 }) || null); }
+    if (telegram_chat_id !== undefined) { updates.push('telegram_chat_id = ?'); params.push(normalizeString(telegram_chat_id, { maxLen: 200 }) || null); }
     if (enabled !== undefined) { updates.push('enabled = ?'); params.push(enabled ? 1 : 0); }
     updates.push('updated_at = ?'); params.push(now);
     if (updates.length > 1) {
@@ -1492,7 +1643,7 @@ router.post('/notifications/config', (req, res) => {
 router.post('/notifications/test', (req, res) => {
   (async () => {
     try {
-      const result = await sendAlert('test_alert', 'This is a test alert from DC1 Admin Panel. If you see this, notifications are working!');
+      const result = await sendAlert('test_alert', 'This is a test alert from DCP Admin Panel. If you see this, notifications are working!');
       res.json({ success: true, ...result });
     } catch (error) {
       console.error('Test notification error:', error);
@@ -1607,6 +1758,7 @@ router.get('/payments/revenue', (req, res) => {
 router.post('/payments/:paymentId/refund', (req, res) => {
   const { paymentId } = req.params;
   const { amount_halala, reason } = req.body;
+  const refundReason = normalizeString(reason, { maxLen: 500 }) || 'Admin-initiated refund';
 
   const payment = db.get('SELECT * FROM payments WHERE payment_id = ?', paymentId);
   if (!payment) return res.status(404).json({ error: 'Payment not found' });
@@ -1617,7 +1769,12 @@ router.post('/payments/:paymentId/refund', (req, res) => {
     return res.status(400).json({ error: 'Payment already refunded' });
   }
 
-  const refundAmount = amount_halala || payment.amount_halala;
+  const refundAmount = amount_halala == null
+    ? payment.amount_halala
+    : toFiniteInt(amount_halala, { min: 1, max: payment.amount_halala });
+  if (refundAmount == null) {
+    return res.status(400).json({ error: 'amount_halala must be a positive integer' });
+  }
   if (refundAmount > payment.amount_halala) {
     return res.status(400).json({ error: 'Refund amount exceeds original payment' });
   }
@@ -1640,7 +1797,7 @@ router.post('/payments/:paymentId/refund', (req, res) => {
       payment_id: paymentId,
       refunded_halala: refundAmount,
       refunded_sar: refundAmount / 100,
-      note: reason || 'Admin-initiated refund',
+      note: refundReason,
     });
   }
 

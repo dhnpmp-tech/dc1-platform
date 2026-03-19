@@ -44,7 +44,7 @@ DCP is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPU
 ### Auth Model
 - Providers: `?key=` query param or `x-provider-key` header
 - Renters: `?key=` query param or `x-renter-key` header
-- Admin: `x-admin-token` header (token: 9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b)
+- Admin: `x-admin-token` header (token: REDACTED_USE_DC1_ADMIN_TOKEN_ENV)
 
 ## Current State (March 2026)
 

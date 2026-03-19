@@ -1,18 +1,18 @@
-import LegalPage from '@/app/components/layout/LegalPage'
+import LegalPage from '../components/layout/LegalPage'
 
 export default function PrivacyPage() {
   return (
     <LegalPage title="Privacy Policy" lastUpdated="March 18, 2026">
       <p>
-        This Privacy Policy explains how DC1 Platform (&ldquo;DC1&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) collects, uses,
-        stores, and protects your personal data. DC1 operates as a GPU compute marketplace serving users in Saudi Arabia and
+        This Privacy Policy explains how DCP (&ldquo;DCP&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) collects, uses,
+        stores, and protects your personal data. DCP operates as a GPU compute marketplace serving users in Saudi Arabia and
         complies with the <strong>Saudi Personal Data Protection Law (PDPL)</strong> (Royal Decree M/19, effective September 2023)
         and its implementing regulations.
       </p>
 
       <h2>1. Data Controller</h2>
       <p>
-        DC1 Platform is the data controller for personal data processed through dcp.sa and the DC1 API.
+        DCP is the data controller for personal data processed through dcp.sa and the DCP API.
         For privacy inquiries, contact: <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a>
       </p>
 
@@ -38,7 +38,7 @@ export default function PrivacyPage() {
       <h2>3. Legal Basis for Processing (PDPL Article 5)</h2>
       <p>We process your personal data on the following bases:</p>
       <ul>
-        <li><strong>Contractual necessity</strong>: To provide the DC1 marketplace service you registered for</li>
+        <li><strong>Contractual necessity</strong>: To provide the DCP marketplace service you registered for</li>
         <li><strong>Explicit consent</strong>: For cross-border data transfers and non-essential processing (obtained at registration)</li>
         <li><strong>Legal obligation</strong>: Financial records retained per SAMA regulations (7 years)</li>
         <li><strong>Legitimate interest</strong>: Platform security monitoring, fraud prevention, abuse detection</li>
@@ -46,7 +46,7 @@ export default function PrivacyPage() {
 
       <h2>4. How We Use Your Data</h2>
       <ul>
-        <li>Operate the DC1 GPU compute marketplace (job routing, billing, payouts)</li>
+        <li>Operate the DCP GPU compute marketplace (job routing, billing, payouts)</li>
         <li>Authenticate your account using your API key</li>
         <li>Monitor platform health, detect fraud, and enforce rate limits</li>
         <li>Send important service notifications (security alerts, policy changes)</li>
@@ -56,16 +56,16 @@ export default function PrivacyPage() {
 
       <h2>5. Data Storage and Cross-Border Transfer</h2>
       <p>
-        <strong>Important disclosure (PDPL Article 29)</strong>: DC1&rsquo;s backend servers are currently hosted on Hostinger
+        <strong>Important disclosure (PDPL Article 29)</strong>: DCP&rsquo;s backend servers are currently hosted on Hostinger
         infrastructure located in <strong>Lithuania (EU) and the United States</strong>. This means your personal data is
         transferred to and stored outside the Kingdom of Saudi Arabia.
       </p>
       <p>
-        By registering and using DC1, you provide explicit consent to this cross-border transfer as required by PDPL Article 29.
+        By registering and using DCP, you provide explicit consent to this cross-border transfer as required by PDPL Article 29.
         We are planning migration to Saudi Arabia-hosted infrastructure (STC Cloud or AWS Bahrain ap-southeast-3) in Q3 2026.
       </p>
       <p>
-        The DC1 frontend is served via Vercel (global CDN). Payment processing uses Moyasar (Saudi payment gateway).
+        The DCP frontend is served via Vercel (global CDN). Payment processing uses Moyasar (Saudi payment gateway).
       </p>
 
       <h2>6. Data Retention</h2>
@@ -150,8 +150,8 @@ export default function PrivacyPage() {
 
       <h2>9. Cookies and Local Storage</h2>
       <p>
-        DC1 uses browser <strong>localStorage</strong> to store your API key for session persistence.
-        No tracking cookies or third-party advertising trackers are used. No cookies are set by the DC1 API.
+        DCP uses browser <strong>localStorage</strong> to store your API key for session persistence.
+        No tracking cookies or third-party advertising trackers are used. No cookies are set by the DCP API.
       </p>
 
       <h2>10. Third-Party Services</h2>

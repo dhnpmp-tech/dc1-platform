@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import DashboardLayout from '@/app/components/layout/DashboardLayout'
+import DashboardLayout from '../../components/layout/DashboardLayout'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.protocol === 'https:'

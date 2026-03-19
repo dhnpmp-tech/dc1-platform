@@ -79,7 +79,7 @@ export class ProvidersTreeProvider
   async load(): Promise<void> {
     const client = this.getClient();
     if (!client) {
-      this.errorMessage = 'No API key set. Run "DC1: Set Renter API Key".';
+      this.errorMessage = 'No API key set. Run "DCP: Set Renter API Key".';
       this.providers = [];
       this.refresh();
       return;

@@ -3,7 +3,7 @@
  */
 
 import * as vscode from 'vscode';
-import { Dc1ApiClient, Provider } from './api';
+import { Dc1ApiClient } from './api';
 
 export class JobSubmitPanel {
   static currentPanel: JobSubmitPanel | undefined;
@@ -22,7 +22,7 @@ export class JobSubmitPanel {
 
     const panel = vscode.window.createWebviewPanel(
       'dc1.jobSubmit',
-      'DC1: Submit GPU Job',
+      'DCP: Submit GPU Job',
       vscode.ViewColumn.Beside,
       {
         enableScripts: true,
@@ -88,7 +88,7 @@ export class JobSubmitPanel {
     if (!client) {
       this.panel.webview.postMessage({
         command: 'error',
-        message: 'No API key configured. Run "DC1: Set Renter API Key" first.',
+        message: 'No API key configured. Run "DCP: Set Renter API Key" first.',
       });
       return;
     }
@@ -103,7 +103,7 @@ export class JobSubmitPanel {
       });
       this.panel.webview.postMessage({ command: 'submitted', job });
       vscode.window.showInformationMessage(
-        `DC1: Job submitted! ID: ${job.id} — Status: ${job.status}`
+        `DCP: Job submitted! ID: ${job.id} — Status: ${job.status}`
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -121,7 +121,7 @@ export class JobSubmitPanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DC1: Submit GPU Job</title>
+  <title>DCP: Submit GPU Job</title>
   <style>
     :root {
       --dc1-amber: #F5A524;
@@ -176,7 +176,7 @@ export class JobSubmitPanel {
 </head>
 <body>
   <h2>Submit GPU Job</h2>
-  <p style="font-size:0.8em;opacity:0.6;margin-top:2px;">Powered by DC1 — dcp.sa</p>
+  <p style="font-size:0.8em;opacity:0.6;margin-top:2px;">Powered by DCP — dcp.sa</p>
 
   <form id="jobForm">
     <label for="container_image">Container Image *</label>

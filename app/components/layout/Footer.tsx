@@ -9,11 +9,11 @@ export default function Footer() {
           <div className="md:col-span-1">
             <div className="flex items-center gap-3 mb-4">
               <img
-                src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp"
-                alt="DC1"
+                src="/logo.svg"
+                alt="DCP."
                 className="h-10 w-auto"
               />
-              <span className="text-lg font-bold">DC1</span>
+              <span className="text-lg font-bold">DCP.</span>
             </div>
             <p className="text-sm text-dc1-text-secondary leading-relaxed">
               Power, Digitalized. The transparent, reliable GPU compute marketplace.

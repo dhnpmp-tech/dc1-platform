@@ -12,6 +12,24 @@ DC1 is Saudi Arabia's first decentralized GPU compute marketplace. This director
 | [مرجع API](./api-reference-ar.md) | العربية | جميع نقاط النهاية بالعربية |
 | [Provider Guide](./provider-guide.md) | English | Earn SAR by connecting your NVIDIA GPU |
 | [SDK Guides](./sdk-guides.md) | English | Python and JavaScript code examples |
+| [vLLM Model Catalog](./models.md) | English | Supported LLMs, VRAM requirements, and Arabic model guidance |
+| [GPU Compatibility Matrix](./gpu-matrix.md) | English | GPU-to-model fit, batch sizing, and throughput planning |
+| [Pricing Guide](./pricing-guide.md) | English | SAR pricing bands, earnings calculator, and cloud comparison |
+
+## Test Environment Note
+
+If tests fail with a `better-sqlite3` native module version mismatch after switching Node.js versions or using a fresh environment, run:
+
+```bash
+cd backend
+npm rebuild better-sqlite3
+```
+
+Then run E2E tests with:
+
+```bash
+npm run test:e2e
+```
 
 ## OpenAPI Spec
 

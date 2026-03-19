@@ -3,10 +3,10 @@ import './globals.css'
 import { LanguageWrapper } from './lib/i18n'
 
 export const metadata: Metadata = {
-  title: 'DC1 Platform - GPU Compute Marketplace',
+  title: 'DCP — GPU Compute Marketplace',
   description: 'Power, Digitalized. Connect GPU providers and renters on the transparent, reliable GPU compute marketplace.',
   icons: {
-    icon: 'https://dc1st.com/assets/dc1-logo-Z67caTEl.webp',
+    icon: '/logo.svg',
   },
 }
 

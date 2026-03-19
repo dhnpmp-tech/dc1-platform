@@ -2,15 +2,26 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// Auth middleware — checks MC_TOKEN header
-function requireAuth(req, res, next) {
-  const token = req.headers['x-mc-token'] || req.headers['authorization'];
-  const expected = process.env.MC_TOKEN;
+function flattenRunParams(params) {
+  if (params.length === 1 && Array.isArray(params[0])) return params[0];
+  return params.reduce((acc, p) => (Array.isArray(p) ? acc.concat(p) : acc.concat([p])), []);
+}
+
+function runStatement(sql, ...params) {
+  return db.prepare(sql).run(...flattenRunParams(params));
+}
+
+// Auth middleware — checks admin token header
+function requireAdminToken(req, res, next) {
+  const token = req.headers['x-admin-token'] || '';
+  const expected = process.env.DC1_ADMIN_TOKEN;
   if (!expected || token !== expected) {
-    return res.status(401).json({ error: 'Unauthorized — MC_TOKEN required' });
+    return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
 }
+
+router.use(requireAdminToken);
 
 // Ensure schema has columns we need (idempotent)
 try {
@@ -67,7 +78,7 @@ router.get('/events', (req, res) => {
         type: 'failed_heartbeat',
         severity: 'critical',
         provider_id: p.id,
-        provider_name: p.name || p.email,
+        provider_name: p.name || 'Anonymous',
         description: `Provider heartbeat stale since ${p.last_heartbeat}`,
         timestamp: p.last_heartbeat,
       });
@@ -83,7 +94,7 @@ router.get('/events', (req, res) => {
         type: 'new_registration',
         severity: 'info',
         provider_id: p.id,
-        provider_name: p.name || p.email,
+        provider_name: p.name || 'Anonymous',
         description: `New provider registered`,
         timestamp: p.created_at,
       });
@@ -104,7 +115,7 @@ router.get('/events', (req, res) => {
         type: 'suspicious_toggle',
         severity: 'warning',
         provider_id: t.provider_id,
-        provider_name: p ? (p.name || p.email) : `Provider #${t.provider_id}`,
+        provider_name: p ? (p.name || 'Anonymous') : `Provider #${t.provider_id}`,
         description: `Status toggled ${t.toggle_count}× in last hour`,
         timestamp: new Date().toISOString(),
       });
@@ -120,7 +131,7 @@ router.get('/events', (req, res) => {
         type: 'active_threat',
         severity: p.status === 'suspended' ? 'critical' : 'warning',
         provider_id: p.id,
-        provider_name: p.name || p.email,
+        provider_name: p.name || 'Anonymous',
         description: `Provider is ${p.status}`,
         timestamp: p.updated_at || p.created_at,
       });
@@ -184,7 +195,7 @@ router.get('/summary', (req, res) => {
 // ============================================================================
 // POST /api/security/flag/:providerId — flag a provider (auth required)
 // ============================================================================
-router.post('/flag/:providerId', requireAuth, (req, res) => {
+router.post('/flag/:providerId', (req, res) => {
   try {
     const { providerId } = req.params;
     const provider = db.get('SELECT id, status FROM providers WHERE id = ?', parseInt(providerId));
@@ -194,13 +205,13 @@ router.post('/flag/:providerId', requireAuth, (req, res) => {
     }
 
     // Log the status change
-    db.run(
+    runStatement(
       `INSERT INTO provider_status_log (provider_id, old_status, new_status) VALUES (?, ?, ?)`,
       [provider.id, provider.status, 'flagged']
     );
 
     // Update status
-    db.run(
+    runStatement(
       `UPDATE providers SET status = 'flagged', updated_at = datetime('now') WHERE id = ?`,
       [provider.id]
     );

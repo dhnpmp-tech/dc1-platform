@@ -1,8 +1,18 @@
 const express = require('express');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../db');
 const { getChainEscrow } = require('../services/escrow-chain');
+
+function flattenRunParams(params) {
+  if (params.length === 1 && Array.isArray(params[0])) return params[0];
+  return params.reduce((acc, p) => (Array.isArray(p) ? acc.concat(p) : acc.concat([p])), []);
+}
+
+function runStatement(sql, ...params) {
+  return db.prepare(sql).run(...flattenRunParams(params));
+}
 
 // HMAC secret for signing task_spec
 // IMPORTANT: DC1_HMAC_SECRET must be set in env — do NOT share with DC1_ADMIN_TOKEN
@@ -12,9 +22,63 @@ if (!process.env.DC1_HMAC_SECRET) {
   console.warn('[SECURITY] DC1_HMAC_SECRET not set — using random fallback. Set this env var in production.');
 }
 const HMAC_SECRET = process.env.DC1_HMAC_SECRET || crypto.randomBytes(32).toString('hex');
+const JOB_COLUMNS = new Set((db.all("PRAGMA table_info('jobs')") || []).map((row) => row.name));
+const HAS_RETRY_REASON = JOB_COLUMNS.has('retry_reason');
+const DEFAULT_JOB_PRIORITY = 5;
+const MIN_JOB_PRIORITY = 0;
+const MAX_JOB_PRIORITY = 10;
 
 function signTaskSpec(taskSpec) {
   return crypto.createHmac('sha256', HMAC_SECRET).update(taskSpec).digest('hex');
+}
+
+function parsePriority(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isInteger(parsed) && parsed >= MIN_JOB_PRIORITY && parsed <= MAX_JOB_PRIORITY) {
+    return parsed;
+  }
+  return DEFAULT_JOB_PRIORITY;
+}
+
+function normalizeModelField(modelValue) {
+  if (modelValue === undefined || modelValue === null) return null;
+  const model = String(modelValue).trim();
+  return model.length > 0 ? model : null;
+}
+
+function toFiniteNumber(value, { min = null, max = null } = {}) {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (min != null && num < min) return null;
+  if (max != null && num > max) return null;
+  return num;
+}
+
+function toFiniteInt(value, { min = null, max = null } = {}) {
+  const num = toFiniteNumber(value, { min, max });
+  if (num == null || !Number.isInteger(num)) return null;
+  return num;
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function inferRetryReason(job) {
+  if (HAS_RETRY_REASON && job.retry_reason) return job.retry_reason;
+  const msg = String(job.error || '').toLowerCase();
+  if (msg.includes('queue timeout')) return 'queue_timeout';
+  if (msg.includes('timed out') || msg.includes('timeout')) return 'provider_timeout';
+  if (job.status === 'permanently_failed' || (job.retry_count || 0) > 0) return 'execution_failed';
+  return null;
+}
+
+function applyRetryMetadata(job) {
+  if (!job || typeof job !== 'object') return job;
+  job.retry_count = Number(job.retry_count || 0);
+  job.max_retries = Number(job.max_retries || 2);
+  job.retry_reason = inferRetryReason(job);
+  return job;
 }
 
 function isAdmin(req) {
@@ -24,7 +88,7 @@ function isAdmin(req) {
 }
 
 function getRenterFromReq(req) {
-  const key = req.headers['x-renter-key'] || req.query.renter_key;
+  const key = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
   if (!key) return null;
   return db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active') || null;
 }
@@ -44,6 +108,15 @@ function canReadJob(req, job) {
   return false;
 }
 
+function getAuthenticatedActor(req) {
+  if (isAdmin(req)) return { type: 'admin', id: null };
+  const provider = getProviderFromReq(req);
+  if (provider) return { type: 'provider', id: provider.id };
+  const renter = getRenterFromReq(req);
+  if (renter) return { type: 'renter', id: renter.id };
+  return null;
+}
+
 // Renter auth middleware — validates renter API key from header or query
 function requireRenter(req, res, next) {
   const key = req.headers['x-renter-key'] || req.query.renter_key;
@@ -58,18 +131,52 @@ function requireRenter(req, res, next) {
   next();
 }
 
+function getRenterRateLimitKey(req) {
+  return req.headers['x-renter-key'] || req.query.renter_key || req.query.key || `renter-id:${req.renter?.id || 'unknown'}`;
+}
+
+const renterSubmitLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: getRenterRateLimitKey,
+  message: { error: 'Too many job submissions for this renter API key. Try again in 1 minute.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+function logQuotaCheck(renterId, checkType, allowed, limitValue, currentValue, requestedValue, reason, jobId = null) {
+  try {
+    runStatement(
+      `INSERT INTO quota_log (
+        renter_id, job_id, check_type, allowed, limit_value, current_value, requested_value, reason, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      renterId,
+      jobId,
+      checkType,
+      allowed ? 1 : 0,
+      limitValue,
+      currentValue,
+      requestedValue,
+      reason,
+      new Date().toISOString()
+    );
+  } catch (err) {
+    console.error('[quota] failed to log quota check:', err.message);
+  }
+}
+
 // ── Queue helper: promote next queued job for a provider ─────────────────────
 function promoteNextQueuedJob(providerId) {
-  // Priority ordering: 1=high first, then 2=normal, then 3=low; ties broken by creation time
+  // Priority ordering: higher numeric priority first, then FIFO by creation time
   const nextQueued = db.get(
     `SELECT * FROM jobs WHERE provider_id = ? AND status = 'queued'
-     ORDER BY COALESCE(priority, 2) ASC, created_at ASC LIMIT 1`,
+     ORDER BY COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC, created_at ASC LIMIT 1`,
     [providerId]
   );
   if (nextQueued) {
     const timeout = nextQueued.max_duration_seconds || 1800;
     const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
-    db.run(
+    runStatement(
       `UPDATE jobs SET status = 'pending', timeout_at = ? WHERE id = ?`,
       [timeoutAt, nextQueued.id]
     );
@@ -348,19 +455,42 @@ function splitBilling(totalHalala) {
 // Whitelisted job types — renters may only submit these types
 const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark', 'custom_container', 'vllm_serve']);
 
-// POST /api/jobs/submit — requires renter auth
-router.post('/submit', requireRenter, (req, res) => {
-  try {
-    const { provider_id, job_type, duration_minutes, gpu_requirements, task_spec, params: bodyParams, max_duration_seconds, priority: reqPriority } = req.body;
-    // priority: 1=high, 2=normal (default), 3=low
-    const jobPriority = [1, 2, 3].includes(reqPriority) ? reqPriority : 2;
+// Lazy-load jobRouter to avoid module-load ordering issues
+let _jobRouter;
+function getJobRouter() {
+  if (!_jobRouter) _jobRouter = require('../services/jobRouter');
+  return _jobRouter;
+}
 
-    if (!provider_id || !job_type || !duration_minutes) {
-      return res.status(400).json({ error: 'Missing required fields: provider_id, job_type, duration_minutes' });
+// POST /api/jobs/submit — requires renter auth
+// provider_id is optional: omit to auto-route to best GPU-fit provider (DCP-205)
+router.post('/submit', requireRenter, renterSubmitLimiter, (req, res) => {
+  try {
+    const {
+      provider_id: reqProviderId,
+      job_type,
+      duration_minutes,
+      gpu_requirements,
+      task_spec,
+      params: bodyParams,
+      max_duration_seconds,
+      priority: reqPriority,
+      model: requestedModel,
+    } = req.body;
+    const jobPriority = parsePriority(reqPriority);
+    const payloadModel = normalizeModelField(requestedModel);
+    const durationMinutes = toFiniteNumber(duration_minutes, { min: 0.01, max: 1440 });
+    const requestedProviderId = reqProviderId == null ? null : toFiniteInt(reqProviderId, { min: 1 });
+
+    if (!job_type || durationMinutes == null) {
+      return res.status(400).json({ error: 'Missing required fields: job_type, duration_minutes' });
     }
 
-    if (typeof duration_minutes !== 'number' || duration_minutes <= 0) {
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
       return res.status(400).json({ error: 'duration_minutes must be a positive number' });
+    }
+    if (reqProviderId != null && requestedProviderId == null) {
+      return res.status(400).json({ error: 'provider_id must be a positive integer' });
     }
 
     // Whitelist check — only allow known job types
@@ -377,14 +507,49 @@ router.post('/submit', requireRenter, (req, res) => {
       });
     }
 
-    // Check provider exists and is online
-    const provider = db.get('SELECT * FROM providers WHERE id = ?', provider_id);
-    if (!provider) {
-      return res.status(404).json({ error: 'Provider not found' });
-    }
+    // ── Provider resolution ───────────────────────────────────────────────────
+    // If provider_id given: validate it directly (manual selection).
+    // If omitted: auto-route to best GPU-fit provider via jobRouter (DCP-205).
+    let provider;
+    let provider_id;
 
-    if (provider.status !== 'online') {
-      return res.status(400).json({ error: 'Provider is not online', provider_status: provider.status });
+    if (requestedProviderId != null) {
+      // Manual provider selection — validate existence and heartbeat freshness
+      provider = db.get('SELECT * FROM providers WHERE id = ?', requestedProviderId);
+      if (!provider) {
+        return res.status(404).json({ error: 'Provider not found' });
+      }
+      // Graduated heartbeat check (mirrors DCP-183): offline after 10 min silence
+      const heartbeatAgeSecs = provider.last_heartbeat
+        ? (Date.now() - new Date(provider.last_heartbeat).getTime()) / 1000
+        : Infinity;
+      if (heartbeatAgeSecs > 600) {
+        return res.status(400).json({ error: 'Provider is not online', provider_status: provider.status });
+      }
+      provider_id = provider.id;
+    } else {
+      // Auto-routing: pick best available provider matching VRAM + uptime criteria
+      const minVramGb = toFiniteNumber(gpu_requirements?.min_vram_gb, { min: 0, max: 1024 }) || 0;
+      const globalRate = COST_RATES[job_type] || COST_RATES['default'];
+      const routed = getJobRouter().findBestProvider({
+        job_type,
+        min_vram_gb: minVramGb,
+        globalRateHalala: globalRate,
+      });
+
+      if (!routed) {
+        // No provider available — renter should retry after 60s
+        res.set('Retry-After', '60');
+        return res.status(503).json({
+          error: 'No available providers match your job requirements. Please retry shortly.',
+          retry_after_seconds: 60,
+          min_vram_gb: minVramGb,
+        });
+      }
+
+      provider = db.get('SELECT * FROM providers WHERE id = ?', routed.provider.id);
+      provider_id = routed.provider.id;
+      console.log(`[jobs/submit] Auto-routed job (${job_type}) to provider #${provider_id} (${provider.name})`);
     }
 
     // Check if provider is busy (has a running or pending job)
@@ -395,8 +560,11 @@ router.post('/submit', requireRenter, (req, res) => {
     const isQueued = !!busyJob; // Will create as 'queued' instead of 'pending'
 
     // Validate GPU requirements if specified
+    if (gpu_requirements != null && !isPlainObject(gpu_requirements)) {
+      return res.status(400).json({ error: 'gpu_requirements must be an object' });
+    }
     if (gpu_requirements) {
-      const req_vram = gpu_requirements.min_vram_gb;
+      const req_vram = toFiniteNumber(gpu_requirements.min_vram_gb, { min: 0, max: 1024 });
       const providerVram = provider.gpu_vram_mib ? provider.gpu_vram_mib / 1024 : provider.vram_gb;
       if (req_vram && providerVram && providerVram < req_vram) {
         return res.status(400).json({
@@ -407,11 +575,93 @@ router.post('/submit', requireRenter, (req, res) => {
       }
     }
 
-    const cost_halala = calculateCostHalala(job_type, duration_minutes);
+    const cost_halala = calculateCostHalala(job_type, durationMinutes);
+
+    // Balance must be positive before any submission is accepted.
+    if (req.renter.balance_halala <= 0) {
+      logQuotaCheck(req.renter.id, 'balance_positive', false, 1, req.renter.balance_halala, cost_halala, 'zero_balance');
+      return res.status(402).json({
+        error: 'Balance is zero. Please top up your renter wallet before submitting jobs.',
+        balance_halala: req.renter.balance_halala,
+        required_halala: cost_halala
+      });
+    }
+
+    // Ensure renter quota row exists, then evaluate daily/monthly limits.
+    runStatement(
+      `INSERT OR IGNORE INTO renter_quota (renter_id, daily_jobs_limit, monthly_spend_limit_halala, created_at, updated_at)
+       VALUES (?, 100, 10000, ?, ?)`,
+      req.renter.id,
+      new Date().toISOString(),
+      new Date().toISOString()
+    );
+    const renterQuota = db.get(
+      `SELECT renter_id, daily_jobs_limit, monthly_spend_limit_halala FROM renter_quota WHERE renter_id = ?`,
+      req.renter.id
+    );
+    const dailyJobs = db.get(
+      `SELECT COUNT(*) AS total FROM jobs
+       WHERE renter_id = ? AND date(COALESCE(submitted_at, created_at)) = date('now')`,
+      req.renter.id
+    ) || { total: 0 };
+    const monthlySpend = db.get(
+      `SELECT COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala)), 0) AS total FROM jobs
+       WHERE renter_id = ? AND strftime('%Y-%m', COALESCE(submitted_at, created_at)) = strftime('%Y-%m', 'now')`,
+      req.renter.id
+    ) || { total: 0 };
+
+    const projectedDailyJobs = Number(dailyJobs.total || 0) + 1;
+    const projectedMonthlySpend = Number(monthlySpend.total || 0) + Number(cost_halala || 0);
+
+    const dailyAllowed = projectedDailyJobs <= Number(renterQuota.daily_jobs_limit || 100);
+    logQuotaCheck(
+      req.renter.id,
+      'daily_jobs_limit',
+      dailyAllowed,
+      Number(renterQuota.daily_jobs_limit || 100),
+      Number(dailyJobs.total || 0),
+      1,
+      dailyAllowed ? 'ok' : 'daily_limit_exceeded'
+    );
+    if (!dailyAllowed) {
+      return res.status(429).json({
+        error: 'Daily job submission quota exceeded',
+        daily_jobs_limit: Number(renterQuota.daily_jobs_limit || 100),
+        submitted_today: Number(dailyJobs.total || 0)
+      });
+    }
+
+    const monthlyAllowed = projectedMonthlySpend <= Number(renterQuota.monthly_spend_limit_halala || 10000);
+    logQuotaCheck(
+      req.renter.id,
+      'monthly_spend_limit_halala',
+      monthlyAllowed,
+      Number(renterQuota.monthly_spend_limit_halala || 10000),
+      Number(monthlySpend.total || 0),
+      Number(cost_halala || 0),
+      monthlyAllowed ? 'ok' : 'monthly_spend_limit_exceeded'
+    );
+    if (!monthlyAllowed) {
+      return res.status(429).json({
+        error: 'Monthly spend quota exceeded',
+        monthly_spend_limit_halala: Number(renterQuota.monthly_spend_limit_halala || 10000),
+        spent_this_month_halala: Number(monthlySpend.total || 0),
+        requested_halala: Number(cost_halala || 0)
+      });
+    }
 
     // ── Pre-pay balance check ──────────────────────────────────────────
     // Renter must have enough balance to cover estimated job cost
     if (req.renter.balance_halala < cost_halala) {
+      logQuotaCheck(
+        req.renter.id,
+        'balance_coverage',
+        false,
+        req.renter.balance_halala,
+        req.renter.balance_halala,
+        cost_halala,
+        'insufficient_balance'
+      );
       return res.status(402).json({
         error: 'Insufficient balance',
         balance_halala: req.renter.balance_halala,
@@ -420,9 +670,18 @@ router.post('/submit', requireRenter, (req, res) => {
         message: `Top up at least ${Math.ceil((cost_halala - req.renter.balance_halala) / 100)} SAR to submit this job. POST /api/renters/topup`
       });
     }
+    logQuotaCheck(
+      req.renter.id,
+      'balance_coverage',
+      true,
+      req.renter.balance_halala,
+      req.renter.balance_halala,
+      cost_halala,
+      'ok'
+    );
 
     // Hold (deduct) estimated cost from renter balance upfront
-    db.run(
+    runStatement(
       `UPDATE renters SET balance_halala = balance_halala - ? WHERE id = ?`,
       cost_halala, req.renter.id
     );
@@ -431,7 +690,8 @@ router.post('/submit', requireRenter, (req, res) => {
     const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
     // Job timeout: default 30 minutes, max 1 hour
-    const timeout = Math.min(max_duration_seconds || 1800, 3600);
+    const requestedTimeoutSeconds = toFiniteInt(max_duration_seconds, { min: 60, max: 3600 });
+    const timeout = requestedTimeoutSeconds || 1800;
     const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
 
     // ── Auto-generate task script from template if job_type has one ─────
@@ -441,17 +701,24 @@ router.post('/submit', requireRenter, (req, res) => {
     if (JOB_TEMPLATES[job_type]) {
       // Parse params: prefer body.params, fall back to task_spec
       let params = {};
-      if (bodyParams && typeof bodyParams === 'object' && Object.keys(bodyParams).length > 0) {
+      if (bodyParams != null && !isPlainObject(bodyParams)) {
+        return res.status(400).json({ error: 'params must be an object' });
+      }
+      if (bodyParams && Object.keys(bodyParams).length > 0) {
         // Renter sent params directly in request body (recommended way)
-        params = bodyParams;
+        params = { ...bodyParams };
       } else if (task_spec) {
         // Fall back to parsing task_spec as JSON
         params = typeof task_spec === 'string' ? (() => { try { return JSON.parse(task_spec); } catch { return { prompt: task_spec }; } })() : task_spec;
+      }
+      if (payloadModel && !params.model) {
+        params.model = payloadModel;
       }
       // Always generate from template — raw Python is blocked at submission validation
       finalTaskSpec = JOB_TEMPLATES[job_type](params);
       result_type = job_type === 'image_generation' ? 'image' : job_type === 'vllm_serve' ? 'endpoint' : 'text';
     }
+    const effectiveModel = normalizeModelField(bodyParams?.model) || payloadModel;
 
     // Stringify task_spec if it's an object, then HMAC-sign
     const taskSpecStr = finalTaskSpec ? (typeof finalTaskSpec === 'string' ? finalTaskSpec : JSON.stringify(finalTaskSpec)) : null;
@@ -460,11 +727,11 @@ router.post('/submit', requireRenter, (req, res) => {
     // If provider is busy, job goes into 'queued'; otherwise 'pending' (ready for daemon)
     const initialStatus = isQueued ? 'queued' : 'pending';
 
-    const result = db.run(
-      `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, status, submitted_at, duration_minutes,
+    const result = runStatement(
+      `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
         cost_halala, gpu_requirements, task_spec, task_spec_hmac, max_duration_seconds, timeout_at, notes, created_at, priority)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      job_id, provider_id, req.renter.id, job_type, initialStatus, now, duration_minutes, cost_halala,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
       taskSpecStr,
       taskSpecHmac,
@@ -482,7 +749,7 @@ router.post('/submit', requireRenter, (req, res) => {
     const escrowExpiresAt = new Date(Date.now() + (timeout + 1800) * 1000).toISOString();
     const renterKey = req.headers['x-renter-key'] || req.query.renter_key;
     try {
-      db.run(
+      runStatement(
         `INSERT INTO escrow_holds (id, renter_api_key, provider_id, job_id, amount_halala, status, created_at, expires_at)
          VALUES (?, ?, ?, ?, ?, 'held', ?, ?)`,
         'esc-' + job_id, renterKey, provider_id, job_id, cost_halala, now, escrowExpiresAt
@@ -517,6 +784,7 @@ router.post('/submit', requireRenter, (req, res) => {
         provider_id: job.provider_id,
         renter_id: job.renter_id,
         job_type: job.job_type,
+        model: job.model || effectiveModel,
         status: job.status,
         submitted_at: job.submitted_at,
         started_at: job.started_at,
@@ -539,6 +807,47 @@ router.post('/submit', requireRenter, (req, res) => {
 
 // GET /api/jobs/assigned?key=API_KEY
 // Daemon polls this to check if it has a running job with a task to execute
+function fetchAndAssignNextJob(providerId) {
+  const job = db.get(
+    `SELECT * FROM jobs
+     WHERE provider_id = ?
+       AND status IN ('pending', 'queued')
+       AND task_spec IS NOT NULL
+       AND picked_up_at IS NULL
+     ORDER BY
+       CASE status WHEN 'pending' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+       COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC,
+       created_at ASC
+     LIMIT 1`,
+    [providerId]
+  );
+
+  if (!job) return null;
+
+  const now = new Date().toISOString();
+  const timeout = job.max_duration_seconds || 1800;
+  const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
+  runStatement(
+    `UPDATE jobs
+     SET status = 'assigned',
+         assigned_at = ?,
+         picked_up_at = ?,
+         timeout_at = COALESCE(timeout_at, ?)
+     WHERE id = ?`,
+    [now, now, timeoutAt, job.id]
+  );
+
+  runStatement(
+    `UPDATE escrow_holds SET status = 'locked' WHERE job_id = ? AND status = 'held'`,
+    job.job_id
+  );
+
+  const updated = db.get('SELECT * FROM jobs WHERE id = ?', [job.id]);
+  if (!updated) return null;
+  updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
+  return updated;
+}
+
 router.get('/assigned', (req, res) => {
   try {
     const { key } = req.query;
@@ -547,32 +856,31 @@ router.get('/assigned', (req, res) => {
     const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-    const job = db.get(
-      `SELECT * FROM jobs WHERE provider_id = ? AND status IN ('pending', 'running') AND task_spec IS NOT NULL AND picked_up_at IS NULL
-       ORDER BY COALESCE(priority, 2) ASC, created_at ASC LIMIT 1`,
-      [provider.id]
-    );
-
+    const job = fetchAndAssignNextJob(provider.id);
     if (!job) return res.json({ job: null });
 
-    // Transition to 'assigned' — daemon confirms receipt; status advances to 'pulling'/'running' via progress endpoint
-    const now = new Date().toISOString();
-    db.run(`UPDATE jobs SET status = 'assigned', assigned_at = ?, picked_up_at = ? WHERE id = ?`, [now, now, job.id]);
-    job.status = 'assigned';
-    job.assigned_at = now;
-    job.picked_up_at = now;
-
-    // Lock escrow — provider has committed to executing this job
-    db.run(
-      `UPDATE escrow_holds SET status = 'locked' WHERE job_id = ? AND status = 'held'`,
-      job.job_id
-    );
-
-    job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
     res.json({ job });
   } catch (error) {
     console.error('Assigned job fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch assigned job' });
+  }
+});
+
+// GET /api/jobs/queue?key=API_KEY
+// Provider fetches the next pending/queued job by priority (DESC), then FIFO.
+router.get('/queue', (req, res) => {
+  try {
+    const key = req.query.key || req.headers['x-provider-key'];
+    if (!key) return res.status(400).json({ error: 'Provider API key required' });
+
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', [key]);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const job = fetchAndAssignNextJob(provider.id);
+    res.json({ job: job || null });
+  } catch (error) {
+    console.error('Queue fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch queue job' });
   }
 });
 
@@ -600,6 +908,10 @@ router.post('/:job_id/result', (req, res) => {
     }
 
     const { result, error: jobError, duration_seconds, gpu_util_peak, transient } = req.body;
+    const durationSeconds = duration_seconds == null ? null : toFiniteNumber(duration_seconds, { min: 0, max: 86400 });
+    if (duration_seconds != null && durationSeconds == null) {
+      return res.status(400).json({ error: 'duration_seconds must be a finite number' });
+    }
 
     // ── Transient failure retry logic ──────────────────────────────────────
     // If daemon reports a transient failure (e.g. Docker pull timeout, temp GPU error)
@@ -611,10 +923,12 @@ router.post('/:job_id/result', (req, res) => {
         const now = new Date().toISOString();
         const timeout = job.max_duration_seconds || 1800;
         const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
-        db.run(
+        const retryReasonClause = HAS_RETRY_REASON ? ', retry_reason = ?' : '';
+        const retryReasonParam = HAS_RETRY_REASON ? ['execution_failed'] : [];
+        runStatement(
           `UPDATE jobs SET status = 'pending', retry_count = ?, picked_up_at = NULL, assigned_at = NULL,
-           timeout_at = ?, error = ?, updated_at = ? WHERE id = ?`,
-          [retryCount, timeoutAt, `[retry ${retryCount}/${maxRetries}] ${jobError}`, now, job.id]
+           timeout_at = ?, error = ?, updated_at = ?${retryReasonClause} WHERE id = ?`,
+          [retryCount, timeoutAt, `[retry ${retryCount}/${maxRetries}] ${jobError}`, now, ...retryReasonParam, job.id]
         );
         console.log(`[Retry] Job ${job.job_id}: transient failure, retry ${retryCount}/${maxRetries}`);
         return res.json({
@@ -631,12 +945,12 @@ router.post('/:job_id/result', (req, res) => {
     }
 
     const now = new Date().toISOString();
-    const actualMinutes = duration_seconds ? Math.ceil(duration_seconds / 60) : job.duration_minutes;
+    const actualMinutes = durationSeconds != null ? Math.ceil(durationSeconds / 60) : job.duration_minutes;
     const billingRate = COST_RATES[job.job_type] || COST_RATES['default'];
     const actualCostHalala = billingRate * actualMinutes;
     const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
 
-    db.run(
+    runStatement(
       `UPDATE jobs SET
         status = 'completed',
         result = ?,
@@ -659,7 +973,7 @@ router.post('/:job_id/result', (req, res) => {
       ]
     );
 
-    db.run(
+    runStatement(
       `UPDATE providers SET total_earnings = total_earnings + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
       [providerEarned / 100, job.provider_id]
     );
@@ -668,12 +982,12 @@ router.post('/:job_id/result', (req, res) => {
     // Success: job produced output → release held funds to provider
     // Failure: no result → refund renter and release escrow back to them
     if (result) {
-      db.run(
+      runStatement(
         `UPDATE escrow_holds SET status = 'released_provider', resolved_at = ?
          WHERE job_id = ? AND status IN ('held','locked')`,
         now, job.job_id
       );
-      db.run(
+      runStatement(
         `UPDATE providers SET claimable_earnings_halala = claimable_earnings_halala + ? WHERE id = ?`,
         providerEarned, job.provider_id
       );
@@ -682,23 +996,40 @@ router.post('/:job_id/result', (req, res) => {
       if (chainEscrow.isEnabled()) {
         chainEscrow.claimLock(job.job_id)
           .catch(err => console.error('[escrow-chain] claimLock async error:', err.message));
+      } else {
+        // Simulation log — real claimLock call when ESCROW_CONTRACT_ADDRESS + ESCROW_ORACLE_PRIVATE_KEY are set
+        const providerRecord = db.get('SELECT api_key FROM providers WHERE id = ?', job.provider_id);
+        console.log(
+          `[escrow-sim] claimLock | jobId=${job.job_id}` +
+          ` | providerAddress=N/A (no EVM wallet registered)` +
+          ` | providerKey=${providerRecord ? providerRecord.api_key.slice(0, 8) + '...' : 'unknown'}` +
+          ` | amountHalala=${providerEarned}` +
+          ` | dc1FeeHalala=${dc1Fee}`
+        );
       }
     } else {
       // Permanent failure — return held amount to renter balance
-      db.run(
+      runStatement(
         `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
          WHERE job_id = ? AND status IN ('held','locked')`,
         now, job.job_id
       );
       if (job.renter_id && job.cost_halala > 0 && !job.refunded_at) {
-        db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
-        db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+        runStatement('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+        runStatement('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
       }
       // On-chain: cancel expired lock, return funds to renter
       const chainEscrow = getChainEscrow();
       if (chainEscrow.isEnabled()) {
         chainEscrow.cancelExpiredLock(job.job_id)
           .catch(err => console.error('[escrow-chain] cancelExpiredLock async error:', err.message));
+      } else {
+        // Simulation log — real cancelExpiredLock call when on-chain escrow is configured
+        console.log(
+          `[escrow-sim] cancelExpiredLock | jobId=${job.job_id}` +
+          ` | refundHalala=${job.cost_halala}` +
+          ` | reason=job_failed_no_result`
+        );
       }
     }
 
@@ -725,9 +1056,28 @@ router.post('/:job_id/result', (req, res) => {
 // GET /api/jobs/active
 router.get('/active', (req, res) => {
   try {
-    const jobs = db.all(
-      `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`
-    );
+    const actor = getAuthenticatedActor(req);
+    if (!actor) {
+      return res.status(401).json({ error: 'Provider or renter API key required' });
+    }
+
+    let jobs = [];
+    if (actor.type === 'admin') {
+      jobs = db.all(
+        `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`
+      );
+    } else if (actor.type === 'provider') {
+      jobs = db.all(
+        `SELECT * FROM jobs WHERE provider_id = ? AND status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`,
+        actor.id
+      );
+    } else {
+      jobs = db.all(
+        `SELECT * FROM jobs WHERE renter_id = ? AND status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`,
+        actor.id
+      );
+    }
+
     res.json({ jobs });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch active jobs' });
@@ -737,14 +1087,43 @@ router.get('/active', (req, res) => {
 // GET /api/jobs/queue/:provider_id — show queue for a provider
 router.get('/queue/:provider_id', (req, res) => {
   try {
-    const jobs = db.all(
-      `SELECT j.id, j.job_id, j.renter_id, j.job_type, j.status, j.submitted_at, j.duration_minutes, j.cost_halala,
-              r.name as renter_name
-       FROM jobs j LEFT JOIN renters r ON j.renter_id = r.id
-       WHERE j.provider_id = ? AND j.status IN ('queued', 'pending', 'running')
-       ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'queued' THEN 2 END, j.created_at ASC`,
-      [req.params.provider_id]
-    );
+    const actor = getAuthenticatedActor(req);
+    if (!actor) {
+      return res.status(401).json({ error: 'Provider or renter API key required' });
+    }
+
+    const providerId = parseInt(req.params.provider_id, 10);
+    if (!Number.isInteger(providerId) || providerId <= 0) {
+      return res.status(400).json({ error: 'Invalid provider_id' });
+    }
+
+    if (actor.type === 'provider' && actor.id !== providerId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    let jobs = [];
+    if (actor.type === 'renter') {
+      jobs = db.all(
+        `SELECT j.job_id, j.status
+         FROM jobs j
+         WHERE j.provider_id = ? AND j.renter_id = ? AND j.status IN ('queued', 'pending', 'running')
+         ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'queued' THEN 2 END,
+                  COALESCE(j.priority, ${DEFAULT_JOB_PRIORITY}) DESC,
+                  j.created_at ASC`,
+        providerId, actor.id
+      );
+    } else {
+      jobs = db.all(
+        `SELECT j.job_id, j.status
+         FROM jobs j
+         WHERE j.provider_id = ? AND j.status IN ('queued', 'pending', 'running')
+         ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'queued' THEN 2 END,
+                  COALESCE(j.priority, ${DEFAULT_JOB_PRIORITY}) DESC,
+                  j.created_at ASC`,
+        providerId
+      );
+    }
+
     res.json({ queue: jobs, total: jobs.length });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch queue' });
@@ -874,6 +1253,7 @@ router.get('/:job_id', (req, res) => {
       job.queue_position = ahead ? ahead.cnt : 1;
     }
 
+    applyRetryMetadata(job);
     res.json({ job });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch job' });
@@ -908,7 +1288,7 @@ router.post('/:job_id/complete', (req, res) => {
     const actual_cost_halala = Math.round(rate * actualMinutes);
     const { provider: provider_earned, dc1: dc1_fee } = splitBilling(actual_cost_halala);
 
-    db.run(
+    runStatement(
       `UPDATE jobs SET
         status = 'completed',
         completed_at = ?,
@@ -921,7 +1301,7 @@ router.post('/:job_id/complete', (req, res) => {
     );
 
     // Provider earnings updated from actual billing — 75% floor split, not full renter charge
-    db.run(
+    runStatement(
       `UPDATE providers SET
         total_jobs = total_jobs + 1,
         total_earnings = total_earnings + ?,
@@ -931,11 +1311,28 @@ router.post('/:job_id/complete', (req, res) => {
     );
 
     // Release escrow to provider
-    db.run(
+    runStatement(
       `UPDATE escrow_holds SET status = 'released_provider', resolved_at = ?
        WHERE job_id = ? AND status IN ('held','locked')`,
       now, job.job_id
     );
+
+    // On-chain: claim escrow to provider (mirrors /result success path)
+    const chainEscrow = getChainEscrow();
+    if (chainEscrow.isEnabled()) {
+      chainEscrow.claimLock(job.job_id)
+        .catch(err => console.error('[escrow-chain] claimLock async error (complete):', err.message));
+    } else {
+      // Simulation log — real claimLock call when ESCROW_CONTRACT_ADDRESS + ESCROW_ORACLE_PRIVATE_KEY are set
+      const providerRecord = db.get('SELECT api_key FROM providers WHERE id = ?', job.provider_id);
+      console.log(
+        `[escrow-sim] claimLock | jobId=${job.job_id}` +
+        ` | providerAddress=N/A (no EVM wallet registered)` +
+        ` | providerKey=${providerRecord ? providerRecord.api_key.slice(0, 8) + '...' : 'unknown'}` +
+        ` | amountHalala=${provider_earned}` +
+        ` | dc1FeeHalala=${dc1_fee}`
+      );
+    }
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
     updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
@@ -972,16 +1369,20 @@ router.post('/:job_id/fail', (req, res) => {
     }
 
     const { error: jobError, duration_seconds } = req.body;
+    const durationSeconds = duration_seconds == null ? null : toFiniteNumber(duration_seconds, { min: 0, max: 86400 });
+    if (duration_seconds != null && durationSeconds == null) {
+      return res.status(400).json({ error: 'duration_seconds must be a finite number' });
+    }
     const now = new Date().toISOString();
-    const actualMinutes = duration_seconds ? Math.ceil(duration_seconds / 60) : (job.duration_minutes || 1);
+    const actualMinutes = durationSeconds != null ? Math.ceil(durationSeconds / 60) : (job.duration_minutes || 1);
 
-    db.run(
+    runStatement(
       `UPDATE jobs SET status = 'failed', error = ?, completed_at = ?, actual_duration_minutes = ? WHERE id = ?`,
       jobError || 'Job failed', now, actualMinutes, job.id
     );
 
     // Release escrow back to renter
-    db.run(
+    runStatement(
       `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
        WHERE job_id = ? AND status IN ('held','locked')`,
       now, job.job_id
@@ -989,8 +1390,8 @@ router.post('/:job_id/fail', (req, res) => {
 
     // Refund renter
     if (job.renter_id && job.cost_halala > 0 && !job.refunded_at) {
-      db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
-      db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+      runStatement('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+      runStatement('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
     }
 
     // On-chain: cancel expired lock, return funds to renter
@@ -1026,19 +1427,19 @@ router.post('/:job_id/cancel', (req, res) => {
     }
 
     const now = new Date().toISOString();
-    db.run(
+    runStatement(
       `UPDATE jobs SET status = 'cancelled', completed_at = ? WHERE id = ?`,
       now, job.id
     );
 
     // Refund renter for cancelled job
     if (job.renter_id && job.cost_halala > 0) {
-      db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
-      db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+      runStatement('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+      runStatement('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
     }
 
     // Release escrow back to renter on cancellation
-    db.run(
+    runStatement(
       `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
        WHERE job_id = ? AND status IN ('held','locked')`,
       now, job.job_id
@@ -1058,7 +1459,8 @@ router.post('/:job_id/cancel', (req, res) => {
 router.post('/:job_id/progress', (req, res) => {
   try {
     const { api_key, phase } = req.body;
-    if (!api_key || !phase) return res.status(400).json({ error: 'api_key and phase required' });
+    const phaseText = typeof phase === 'string' ? phase.trim() : '';
+    if (!api_key || !phaseText) return res.status(400).json({ error: 'api_key and phase required' });
 
     const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
     if (!provider) return res.status(401).json({ error: 'Invalid API key' });
@@ -1069,7 +1471,7 @@ router.post('/:job_id/progress', (req, res) => {
 
     // pulling = Docker image pull in progress; execution phases advance status to 'running'
     const validPhases = ['pulling', 'downloading_model', 'installing_deps', 'loading_model', 'generating', 'formatting'];
-    if (!validPhases.includes(phase)) {
+    if (!validPhases.includes(phaseText)) {
       return res.status(400).json({ error: `Invalid phase. Valid: ${validPhases.join(', ')}` });
     }
 
@@ -1078,22 +1480,22 @@ router.post('/:job_id/progress', (req, res) => {
     // pulling → set status='pulling' (still waiting for container)
     // execution phases → advance to 'running' if job is assigned/pulling
     let newStatus = null;
-    if (phase === 'pulling') {
+    if (phaseText === 'pulling') {
       newStatus = 'pulling';
     } else if (['assigned', 'pulling'].includes(job.status)) {
       newStatus = 'running';
     }
 
     if (newStatus) {
-      db.run(
+      runStatement(
         'UPDATE jobs SET progress_phase = ?, progress_updated_at = ?, status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?',
-        phase, now, newStatus, now, job.id
+        phaseText, now, newStatus, now, job.id
       );
     } else {
-      db.run('UPDATE jobs SET progress_phase = ?, progress_updated_at = ? WHERE id = ?', phase, now, job.id);
+      runStatement('UPDATE jobs SET progress_phase = ?, progress_updated_at = ? WHERE id = ?', phaseText, now, job.id);
     }
-    console.log(`[progress] Job ${job.job_id}: phase=${phase}${newStatus ? ` status→${newStatus}` : ''}`);
-    res.json({ success: true, phase });
+    console.log(`[progress] Job ${job.job_id}: phase=${phaseText}${newStatus ? ` status→${newStatus}` : ''}`);
+    res.json({ success: true, phase: phaseText });
   } catch (error) {
     console.error('Job progress error:', error);
     res.status(500).json({ error: 'Failed to update progress' });
@@ -1121,13 +1523,13 @@ router.post('/:job_id/endpoint-ready', (req, res) => {
     const resolvedIp = reportedIp || provider.provider_ip || provider.ip_address;
     if (!resolvedIp) return res.status(400).json({ error: 'Cannot resolve provider IP — send provider_ip in body' });
 
-    const portNum = parseInt(port);
-    if (!portNum || portNum < 1024 || portNum > 65535) return res.status(400).json({ error: 'Invalid port' });
+    const portNum = toFiniteInt(port, { min: 1024, max: 65535 });
+    if (!portNum) return res.status(400).json({ error: 'Invalid port' });
 
     const endpointUrl = `http://${resolvedIp}:${portNum}/v1`;
     const now = new Date().toISOString();
 
-    db.run(
+    runStatement(
       `UPDATE jobs SET endpoint_url = ?, serve_port = ?, status = 'running',
         progress_phase = 'serving', progress_updated_at = ?,
         started_at = COALESCE(started_at, ?) WHERE id = ?`,
@@ -1169,7 +1571,8 @@ router.post('/:job_id/logs', (req, res) => {
 
     const insertMany = db._db.transaction((rows) => {
       for (const row of rows) {
-        const level = VALID_LEVELS.has(row.level) ? row.level : 'info';
+        const levelCandidate = String(row.level || '').toLowerCase();
+        const level = VALID_LEVELS.has(levelCandidate) ? levelCandidate : 'info';
         const message = String(row.message || '').slice(0, 2000); // cap line length
         insert.run(job.job_id, lineNo++, level, message, now);
       }
@@ -1219,6 +1622,7 @@ router.get('/:job_id/output', (req, res) => {
   try {
     const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
 
     // Failed/cancelled/timed-out jobs — return 410 Gone with error details
     if (job.status === 'failed' || job.status === 'cancelled') {
@@ -1380,6 +1784,7 @@ router.get('/:job_id/output/:format', (req, res) => {
 
     const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
     if (job.status !== 'completed') return res.status(400).json({ error: 'Job not completed' });
     if (!job.result) return res.status(204).json({ error: 'No output data' });
 
@@ -1405,32 +1810,11 @@ router.get('/:job_id/output/:format', (req, res) => {
       return res.send(imgBuf);
     }
 
-    // For JPEG and WebP, try sharp if available, fallback to raw PNG
-    try {
-      const sharp = require('sharp');
-      sharp(imgBuf)
-        .toFormat(normalizedFormat, normalizedFormat === 'jpeg' ? { quality: 90 } : { quality: 85 })
-        .toBuffer()
-        .then(converted => {
-          res.set('Content-Type', `image/${normalizedFormat}`);
-          res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.${normalizedFormat === 'jpeg' ? 'jpg' : normalizedFormat}"`);
-          res.set('Content-Length', converted.length);
-          res.send(converted);
-        })
-        .catch(err => {
-          console.warn(`[output] Sharp conversion failed for ${normalizedFormat}, serving PNG:`, err.message);
-          res.set('Content-Type', 'image/png');
-          res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
-          res.set('Content-Length', imgBuf.length);
-          res.send(imgBuf);
-        });
-    } catch(e) {
-      // sharp not installed — serve PNG as fallback
-      res.set('Content-Type', 'image/png');
-      res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
-      res.set('Content-Length', imgBuf.length);
-      res.send(imgBuf);
-    }
+    // Optional image conversion dependency removed: return original PNG when non-PNG requested.
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
+    res.set('Content-Length', imgBuf.length);
+    res.send(imgBuf);
   } catch (error) {
     console.error('Job output format error:', error);
     res.status(500).json({ error: 'Failed to fetch job output' });
@@ -1449,21 +1833,21 @@ function enforceJobTimeouts() {
     );
 
     for (const job of timedOut) {
-      db.run(
+      runStatement(
         `UPDATE jobs SET status = 'failed', error = 'Job timed out — provider may be offline or model too large', completed_at = ? WHERE id = ?`,
         now, job.id
       );
       // Refund renter for timed-out jobs + mark escrow expired
       if (job.renter_id && job.cost_halala > 0) {
         try {
-          db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
-          db.run('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
+          runStatement('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', job.cost_halala, job.renter_id);
+          runStatement('UPDATE jobs SET refunded_at = ? WHERE id = ?', now, job.id);
           console.log(`[timeout] Refunded ${job.cost_halala} halala to renter ${job.renter_id} for job ${job.job_id}`);
         } catch(e) { console.error('[timeout] Refund error:', e); }
       }
       // Expire escrow hold — funds already returned to renter above
       try {
-        db.run(
+        runStatement(
           `UPDATE escrow_holds SET status = 'expired', resolved_at = ?
            WHERE job_id = ? AND status IN ('held','locked')`,
           now, job.job_id
@@ -1493,30 +1877,33 @@ router.post('/test', (req, res) => {
     }
 
     const { provider_id, matrix_size, iterations } = req.body;
-    if (!provider_id) return res.status(400).json({ error: 'provider_id required' });
+    const providerId = toFiniteInt(provider_id, { min: 1 });
+    if (!providerId) return res.status(400).json({ error: 'provider_id required' });
 
     // Verify provider exists and is online
-    const provider = db.get('SELECT id, status, readiness_status FROM providers WHERE id = ?', provider_id);
+    const provider = db.get('SELECT id, status, readiness_status FROM providers WHERE id = ?', providerId);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
+    const matrixSize = toFiniteInt(matrix_size, { min: 128, max: 16384 }) || 4096;
+    const iterCount = toFiniteInt(iterations, { min: 1, max: 100 }) || 5;
 
     const job_id = 'test-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
     const taskSpec = JSON.stringify({
       benchmark: 'matmul',
-      matrix_size: matrix_size || 4096,
-      iterations: iterations || 5
+      matrix_size: matrixSize,
+      iterations: iterCount
     });
     const taskSpecHmac = signTaskSpec(taskSpec);
     const now = new Date().toISOString();
 
-    db.run(
+    runStatement(
       `INSERT INTO jobs (job_id, provider_id, job_type, status, task_spec, task_spec_hmac, gpu_requirements, duration_minutes, max_duration_seconds, submitted_at, created_at)
        VALUES (?, ?, 'benchmark', 'pending', ?, ?, '{}', 5, 300, ?, ?)`,
-      job_id, provider_id, taskSpec, taskSpecHmac, now, now
+      job_id, providerId, taskSpec, taskSpecHmac, now, now
     );
 
     res.json({
       success: true,
-      job: { job_id, provider_id, status: 'pending', task_spec: JSON.parse(taskSpec) },
+      job: { job_id, provider_id: providerId, status: 'pending', task_spec: JSON.parse(taskSpec) },
       message: `Test job created. Daemon will pick it up on next poll.`
     });
   } catch (error) {

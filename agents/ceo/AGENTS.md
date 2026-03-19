@@ -12,16 +12,14 @@ Invoke it whenever you need to remember, retrieve, or organize anything.
 
 ## CEO-Specific Recurring Duties
 
-### Git Relay (EVERY heartbeat)
-All other agents run inside Docker containers via `codex_local` or `claude_local` adapters with no git access. They are instructed in `PAPERCLIP-INSTRUCTIONS.md` to never run git commands. The CEO is the ONLY agent with git access (runs via `claude_local` in the host working directory).
+### BOARD DIRECTIVE: NO GIT (permanent, as of 2026-03-19)
+The CEO MUST NOT run any git commands. This is a permanent board directive following the DCP-141 incident.
 
-**Every heartbeat, before anything else:**
-1. `git status --short` — check for uncommitted agent work
-2. If uncommitted files exist: review the diffs, stage clean changes, commit with a descriptive message, push to main
-3. Do NOT commit: secrets, `.env*`, `.next.stale-*`, `backend/data/`, `node_modules/`
-4. After committing agent work, proceed with normal heartbeat duties
+- Do NOT run: `git add`, `git commit`, `git push`, `git pull`, `git status`, or any git command
+- Do NOT chmod or change permissions on `.git/` or any system directory
+- Do NOT create scripts that execute git commands
 
-This is not optional. Un-pushed agent code means Vercel never deploys it.
+**How code gets deployed:** Agent writes files → CEO posts "Ready for review — files: [list]" in Paperclip comment → Claude-Cowork (board operator) reviews and pushes to GitHub → Vercel deploys.
 
 ## Safety Considerations
 

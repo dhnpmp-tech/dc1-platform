@@ -14,8 +14,8 @@ export default function LegalPage({ title, lastUpdated, children }: LegalPagePro
       <header className="bg-dc1-surface-l1 border-b border-dc1-border">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
-            <img src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp" alt="DC1" className="h-8 w-auto" />
-            <span className="text-lg font-bold text-dc1-text-primary">DC1</span>
+            <img src="/logo.svg" alt="DCP" className="h-8 w-auto" />
+            <span className="text-lg font-bold text-dc1-text-primary">DCP</span>
           </Link>
           <Link href="/login" className="text-sm text-dc1-amber hover:underline">Sign In</Link>
         </div>

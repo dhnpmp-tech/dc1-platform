@@ -1,9 +1,17 @@
 {
   "name": "dc1-gpu",
-  "displayName": "DC1 GPU Compute",
-  "description": "Submit GPU compute jobs on DC1 — Saudi Arabia's decentralized GPU marketplace — without leaving your editor.",
-  "version": "0.1.0",
-  "publisher": "dc1",
+  "displayName": "DCP GPU Compute",
+  "description": "Submit GPU compute jobs on DCP — Saudi Arabia's decentralized GPU marketplace — without leaving your editor.",
+  "version": "1.0.0",
+  "publisher": "dcp-platform",
+  "homepage": "https://dcp.sa",
+  "bugs": {
+    "url": "https://github.com/dhnpmp-tech/dc1-platform/issues"
+  },
+  "galleryBanner": {
+    "color": "#050a14",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -12,12 +20,12 @@
     "Machine Learning"
   ],
   "keywords": [
-    "GPU",
+    "gpu",
+    "llm",
+    "vllm",
     "compute",
-    "AI",
-    "machine learning",
-    "DC1",
-    "Saudi Arabia"
+    "saudi",
+    "inference"
   ],
   "repository": {
     "type": "git",
@@ -29,12 +37,12 @@
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": {
-      "title": "DC1 GPU Compute",
+      "title": "DCP GPU Compute",
       "properties": {
         "dc1.apiBaseUrl": {
           "type": "string",
           "default": "https://dcp.sa",
-          "description": "DC1 API base URL (default: dcp.sa production)"
+          "description": "DCP API base URL (default: dcp.sa production)"
         },
         "dc1.pollingIntervalMs": {
           "type": "number",
@@ -46,26 +54,26 @@
     "commands": [
       {
         "command": "dc1.setApiKey",
-        "title": "DC1: Set Renter API Key",
+        "title": "DCP: Set Renter API Key",
         "icon": "$(key)"
       },
       {
         "command": "dc1.clearApiKey",
-        "title": "DC1: Clear API Key"
+        "title": "DCP: Clear API Key"
       },
       {
         "command": "dc1.listGPUs",
-        "title": "DC1: List Available GPUs",
+        "title": "DCP: List Available GPUs",
         "icon": "$(server)"
       },
       {
         "command": "dc1.submitJob",
-        "title": "DC1: Submit GPU Job",
+        "title": "DCP: Submit GPU Job",
         "icon": "$(play)"
       },
       {
         "command": "dc1.jobStatus",
-        "title": "DC1: Show Job Status",
+        "title": "DCP: Show Job Status",
         "icon": "$(pulse)"
       },
       {
@@ -75,25 +83,35 @@
       },
       {
         "command": "dc1.openWallet",
-        "title": "DC1: Open Wallet / Balance",
+        "title": "DCP: Open Wallet / Balance",
         "icon": "$(credit-card)"
       },
       {
         "command": "dc1.startServe",
-        "title": "DC1: Start vLLM Serve Session",
+        "title": "DCP: Start vLLM Serve Session",
         "icon": "$(rocket)"
       },
       {
         "command": "dc1.queryServe",
-        "title": "DC1: Open Inference Panel",
+        "title": "DCP: Open Inference Panel",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "dc1.refreshJobs",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dc1.cancelJob",
+        "title": "Cancel Job",
+        "icon": "$(circle-slash)"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "dc1-sidebar",
-          "title": "DC1 GPU Compute",
+          "title": "DCP GPU Compute",
           "icon": "assets/sidebar-icon.svg"
         }
       ]
@@ -104,19 +122,19 @@
           "id": "dc1.providersView",
           "name": "Available GPUs",
           "icon": "$(server)",
-          "contextualTitle": "DC1 GPU Providers"
+          "contextualTitle": "DCP GPU Providers"
         },
         {
           "id": "dc1.jobsView",
           "name": "My Jobs",
           "icon": "$(list-ordered)",
-          "contextualTitle": "DC1 Jobs"
+          "contextualTitle": "DCP Jobs"
         },
         {
           "id": "dc1.walletView",
           "name": "Wallet",
           "icon": "$(credit-card)",
-          "contextualTitle": "DC1 Wallet"
+          "contextualTitle": "DCP Wallet"
         }
       ]
     },
@@ -136,6 +154,23 @@
           "command": "dc1.startServe",
           "when": "view == dc1.providersView",
           "group": "navigation"
+        },
+        {
+          "command": "dc1.refreshJobs",
+          "when": "view == dc1.jobsView",
+          "group": "navigation"
+        },
+        {
+          "command": "dc1.submitJob",
+          "when": "view == dc1.jobsView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "dc1.cancelJob",
+          "when": "view == dc1.jobsView && viewItem == job_running",
+          "group": "inline"
         }
       ],
       "editor/context": [
@@ -168,6 +203,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
+    "vscode:package": "vsce package",
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",

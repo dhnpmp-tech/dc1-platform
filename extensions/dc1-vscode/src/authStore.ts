@@ -1,5 +1,5 @@
 /**
- * Manages DC1 API key storage using VS Code SecretStorage.
+ * Manages DCP API key storage using VS Code SecretStorage.
  * Keys are encrypted at rest and never written to disk in plaintext.
  */
 
@@ -29,7 +29,7 @@ export class AuthStore {
     }
 
     const input = await vscode.window.showInputBox({
-      prompt: 'Enter your DC1 Renter API Key',
+      prompt: 'Enter your DCP Renter API Key',
       placeHolder: 'renter_xxxxxxxxxxxx',
       password: true,
       ignoreFocusOut: true,
@@ -42,7 +42,7 @@ export class AuthStore {
 
     const trimmed = input.trim();
     await this.setApiKey(trimmed);
-    vscode.window.showInformationMessage('DC1: API key saved securely.');
+    vscode.window.showInformationMessage('DCP: API key saved securely.');
     return trimmed;
   }
 }

@@ -1,41 +1,87 @@
 const express = require('express');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../db');
+const { COST_RATES } = require('./jobs');
 const { sendWelcomeEmail } = require('../services/email');
+
+function flattenRunParams(params) {
+  if (params.length === 1 && Array.isArray(params[0])) return params[0];
+  return params.reduce((acc, p) => (Array.isArray(p) ? acc.concat(p) : acc.concat([p])), []);
+}
+
+function runStatement(sql, ...params) {
+  return db.prepare(sql).run(...flattenRunParams(params));
+}
+
+const loginEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeString(value, { maxLen = 500, trim = true } = {}) {
+  if (typeof value !== 'string') return null;
+  const next = trim ? value.trim() : value;
+  if (!next) return null;
+  return next.slice(0, maxLen);
+}
+
+function normalizeEmail(value) {
+  const normalized = normalizeString(value, { maxLen: 254 })?.toLowerCase() || null;
+  if (!normalized || !EMAIL_REGEX.test(normalized)) return null;
+  return normalized;
+}
+
+function toFiniteNumber(value, { min = null, max = null } = {}) {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (min != null && num < min) return null;
+  if (max != null && num > max) return null;
+  return num;
+}
+
+function toFiniteInt(value, { min = null, max = null } = {}) {
+  const num = toFiniteNumber(value, { min, max });
+  if (num == null || !Number.isInteger(num)) return null;
+  return num;
+}
 
 // POST /api/renters/register
 router.post('/register', (req, res) => {
   try {
     const { name, email, organization } = req.body;
+    const cleanName = normalizeString(name, { maxLen: 120 });
+    const cleanEmail = normalizeEmail(email);
+    const cleanOrg = normalizeString(organization, { maxLen: 160 });
 
-    if (!name || !email) {
+    if (!cleanName || !cleanEmail) {
       return res.status(400).json({ error: 'Missing required fields: name, email' });
-    }
-
-    // Basic email validation
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     const api_key = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
     const now = new Date().toISOString();
 
-    const result = db.run(
+    const result = runStatement(
       `INSERT INTO renters (name, email, api_key, organization, status, balance_halala, created_at)
        VALUES (?, ?, ?, ?, 'active', 1000, ?)`,
-      name, email, api_key, organization || null, now
+      cleanName, cleanEmail, api_key, cleanOrg || null, now
     );
 
     res.status(201).json({
       success: true,
       renter_id: result.lastInsertRowid,
       api_key,
-      message: `Welcome ${name}! Save your API key — it won't be shown again.`
+      message: `Welcome ${cleanName}! Save your API key — it won't be shown again.`
     });
 
     // Fire-and-forget welcome email — does not affect registration response
-    sendWelcomeEmail('renter', { name, email, apiKey: api_key });
+    sendWelcomeEmail('renter', { name: cleanName, email: cleanEmail, apiKey: api_key });
   } catch (error) {
     if (error.message && error.message.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'A renter with this email already exists' });
@@ -77,6 +123,90 @@ router.get('/me', (req, res) => {
   } catch (error) {
     console.error('Renter me error:', error);
     res.status(500).json({ error: 'Failed to fetch renter data' });
+  }
+});
+
+// GET /api/renters/me/invoices?key=API_KEY&page=1&per_page=20
+router.get('/me/invoices', (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const pageRaw = Number.parseInt(req.query.page, 10);
+    const perPageRaw = Number.parseInt(req.query.per_page, 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const per_page = Number.isFinite(perPageRaw) && perPageRaw > 0 ? Math.min(perPageRaw, 100) : 20;
+    const offset = (page - 1) * per_page;
+
+    const totalRow = db.get(
+      `SELECT COUNT(*) as total
+       FROM jobs
+       WHERE renter_id = ?`,
+      renter.id
+    );
+
+    const totalSpentRow = db.get(
+      `SELECT COALESCE(SUM(
+          CASE
+            WHEN status = 'completed' THEN COALESCE(actual_cost_halala, cost_halala, 0)
+            ELSE 0
+          END
+        ), 0) as total_spent_halala
+       FROM jobs
+       WHERE renter_id = ?`,
+      renter.id
+    );
+
+    const rows = db.all(
+      `SELECT j.id, j.job_id, j.job_type, j.status, j.created_at,
+              j.duration_minutes, j.actual_duration_minutes,
+              j.cost_halala, j.actual_cost_halala, j.dc1_fee_halala,
+              p.name as provider_name, p.gpu_model
+       FROM jobs j
+       LEFT JOIN providers p ON p.id = j.provider_id
+       WHERE j.renter_id = ?
+       ORDER BY COALESCE(j.completed_at, j.submitted_at, j.created_at) DESC
+       LIMIT ? OFFSET ?`,
+      renter.id, per_page, offset
+    );
+
+    const invoices = rows.map((row) => {
+      const durationMinutes = row.actual_duration_minutes || row.duration_minutes || 0;
+      const ratePerMinute = COST_RATES[row.job_type] || COST_RATES.default || 10;
+      const fallbackCostHalala = Math.max(0, Math.round(durationMinutes * ratePerMinute));
+      const totalHalala = row.actual_cost_halala ?? row.cost_halala ?? fallbackCostHalala;
+      const feeHalala = row.dc1_fee_halala ?? Math.round(totalHalala * 0.25);
+
+      return {
+        id: row.id,
+        job_id: row.job_id,
+        provider_name: row.provider_name || null,
+        gpu_model: row.gpu_model || null,
+        job_type: row.job_type,
+        duration_minutes: durationMinutes,
+        price_sar: Number((totalHalala / 100).toFixed(2)),
+        fee_sar: Number((feeHalala / 100).toFixed(3)),
+        total_sar: Number((totalHalala / 100).toFixed(2)),
+        status: row.status,
+        created_at: row.created_at
+      };
+    });
+
+    res.json({
+      invoices,
+      total_spent_sar: Number(((totalSpentRow.total_spent_halala || 0) / 100).toFixed(2)),
+      pagination: {
+        page,
+        per_page,
+        total: totalRow.total || 0
+      }
+    });
+  } catch (error) {
+    console.error('Renter invoices error:', error);
+    res.status(500).json({ error: 'Failed to fetch renter invoices' });
   }
 });
 
@@ -133,6 +263,10 @@ router.get('/available-providers', (req, res) => {
 // For Gate 1 we accept direct top-up with amount_halala.
 router.post('/topup', (req, res) => {
   try {
+    if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SANDBOX_TOPUP !== 'true') {
+      return res.status(403).json({ error: 'Direct top-up disabled in production. Use payment flow.' });
+    }
+
     const key = req.headers['x-renter-key'] || req.query.key;
     if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
 
@@ -141,7 +275,11 @@ router.post('/topup', (req, res) => {
 
     const { amount_halala, amount_sar } = req.body;
     // Accept either halala or SAR (convert SAR → halala)
-    const topup = amount_halala || (amount_sar ? Math.round(amount_sar * 100) : 0);
+    const topupFromHalala = toFiniteInt(amount_halala, { min: 1, max: 100000 });
+    const amountSar = toFiniteNumber(amount_sar, { min: 0.01, max: 1000 });
+    const topup = topupFromHalala != null
+      ? topupFromHalala
+      : (amountSar != null ? Math.round(amountSar * 100) : 0);
 
     if (!topup || topup <= 0) {
       return res.status(400).json({ error: 'Provide amount_halala (int) or amount_sar (float), must be > 0' });
@@ -152,7 +290,7 @@ router.post('/topup', (req, res) => {
     }
 
     const now = new Date().toISOString();
-    db.run(
+    runStatement(
       `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
       topup, now, renter.id
     );
@@ -204,41 +342,28 @@ router.get('/balance', (req, res) => {
 });
 
 // POST /api/renters/login-email — Login with email instead of API key
-router.post('/login-email', (req, res) => {
+router.post('/login-email', loginEmailLimiter, (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
 
-    const renter = db.get('SELECT * FROM renters WHERE email = ? AND status = ?', email.trim().toLowerCase(), 'active');
+    const renter = db.get('SELECT * FROM renters WHERE email = ? AND status = ?', cleanEmail, 'active');
     if (!renter) {
       // Also try case-insensitive
-      const renterCI = db.get('SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?', email.trim(), 'active');
+      const renterCI = db.get('SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?', cleanEmail, 'active');
       if (!renterCI) {
         return res.status(404).json({ error: 'No renter account found with this email. Register first at /renter/register' });
       }
       return res.json({
         success: true,
-        api_key: renterCI.api_key,
-        renter: {
-          id: renterCI.id,
-          name: renterCI.name,
-          email: renterCI.email,
-          organization: renterCI.organization,
-          balance_halala: renterCI.balance_halala,
-        }
+        message: 'Account found. Log in via your dashboard to retrieve your key.'
       });
     }
 
     res.json({
       success: true,
-      api_key: renter.api_key,
-      renter: {
-        id: renter.id,
-        name: renter.name,
-        email: renter.email,
-        organization: renter.organization,
-        balance_halala: renter.balance_halala,
-      }
+      message: 'Account found. Log in via your dashboard to retrieve your key.'
     });
   } catch (error) {
     console.error('Renter email login error:', error);
@@ -256,7 +381,7 @@ router.post('/rotate-key', (req, res) => {
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
 
     const newKey = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
-    db.run('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?',
+    runStatement('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?',
       newKey, new Date().toISOString(), renter.id);
 
     res.json({
@@ -287,7 +412,7 @@ router.delete('/me', (req, res) => {
     const anonId = 'deleted-' + renter.id;
 
     // Soft delete: anonymize PII, invalidate key, mark deleted
-    db.run(
+    runStatement(
       `UPDATE renters SET
          name         = ?,
          email        = ?,

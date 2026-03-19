@@ -63,7 +63,7 @@ export class WalletTreeProvider implements vscode.TreeDataProvider<vscode.TreeIt
     return element;
   }
 
-  getChildren(): vscode.TreeItem[] {
+  getChildren(_element?: vscode.TreeItem): vscode.TreeItem[] {
     if (this.loading) {
       return [new EmptyItem('Loading wallet...')];
     }

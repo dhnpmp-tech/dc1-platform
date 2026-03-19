@@ -51,10 +51,10 @@ export default function ProviderRegisterPage() {
   const [apiKey, setApiKey] = useState('')
   const [providerId, setProviderId] = useState('')
   const [statusSteps, setStatusSteps] = useState<StatusStep[]>([
-    { step: 1, label: 'Registered', status: 'pending' },
-    { step: 2, label: 'Daemon Installed', status: 'pending' },
-    { step: 3, label: 'Connected', status: 'pending' },
-    { step: 4, label: 'Ready for Jobs', status: 'pending' },
+    { step: 1, label: 'register.provider.step_registered', status: 'pending' },
+    { step: 2, label: 'register.provider.step_daemon', status: 'pending' },
+    { step: 3, label: 'register.provider.step_connected', status: 'pending' },
+    { step: 4, label: 'register.provider.step_ready', status: 'pending' },
   ])
   const [showSuccess, setShowSuccess] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
@@ -62,23 +62,23 @@ export default function ProviderRegisterPage() {
   // Validate form
   const validateForm = () => {
     if (!formData.fullName.trim()) {
-      setError('Full name is required')
+      setError(t('register.provider.validation.full_name'))
       return false
     }
     if (!formData.email.trim() || !formData.email.includes('@')) {
-      setError('Valid email address is required')
+      setError(t('register.provider.validation.email'))
       return false
     }
     if (!formData.gpuModel) {
-      setError('GPU model is required')
+      setError(t('register.provider.validation.gpu'))
       return false
     }
     if (!formData.operatingSystem) {
-      setError('Operating system is required')
+      setError(t('register.provider.validation.os'))
       return false
     }
     if (!formData.pdplConsent) {
-      setError('You must consent to data processing to register')
+      setError(t('register.provider.validation.pdpl'))
       return false
     }
     return true
@@ -441,7 +441,7 @@ export default function ProviderRegisterPage() {
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-dc1-text-primary">
-                          {step.label}
+                          {t(step.label)}
                         </h3>
                         <p className="text-sm text-dc1-text-secondary">
                           {step.status === 'completed'
@@ -457,8 +457,7 @@ export default function ProviderRegisterPage() {
 
                 <div className="mt-6 p-4 rounded-md bg-status-info/5 border border-status-info/20">
                   <p className="text-sm text-status-info">
-                    The status will update automatically as your daemon connects and starts
-                    accepting jobs. This typically takes 1-2 minutes.
+                    {t('register.provider.status_auto_update')}
                   </p>
                 </div>
               </div>
@@ -472,9 +471,9 @@ export default function ProviderRegisterPage() {
                       ✓
                     </span>
                     <span className="text-dc1-text-secondary">
-                      Monitor your daemon status in the{' '}
+                      {t('register.provider.next_monitor')}{' '}
                       <a href="/provider/dashboard" className="text-dc1-amber hover:underline">
-                        provider dashboard
+                        {t('register.provider.next_monitor_link')}
                       </a>
                     </span>
                   </li>
@@ -483,7 +482,7 @@ export default function ProviderRegisterPage() {
                       ✓
                     </span>
                     <span className="text-dc1-text-secondary">
-                      Configure GPU pricing and availability settings
+                      {t('register.provider.next_configure')}
                     </span>
                   </li>
                   <li className="flex gap-3">
@@ -491,7 +490,7 @@ export default function ProviderRegisterPage() {
                       ✓
                     </span>
                     <span className="text-dc1-text-secondary">
-                      Start receiving jobs from renters on the platform
+                      {t('register.provider.next_jobs')}
                     </span>
                   </li>
                   <li className="flex gap-3">
@@ -499,11 +498,11 @@ export default function ProviderRegisterPage() {
                       ✓
                     </span>
                     <span className="text-dc1-text-secondary">
-                      Check{' '}
+                      {t('register.provider.next_docs')}{' '}
                       <a href="/docs" className="text-dc1-amber hover:underline">
-                        our documentation
+                        {t('register.provider.next_docs_link')}
                       </a>{' '}
-                      for advanced configuration
+                      {t('register.provider.next_docs_suffix')}
                     </span>
                   </li>
                 </ul>
@@ -521,7 +520,7 @@ export default function ProviderRegisterPage() {
                   href="/docs/provider-guide"
                   className="btn btn-secondary flex-1 text-center"
                 >
-                  Read Documentation
+                  {t('register.provider.read_docs')}
                 </a>
               </div>
             </div>
@@ -555,7 +554,7 @@ export default function ProviderRegisterPage() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  <span>Transparent pricing</span>
+                  <span>{t('register.provider.transparent_pricing')}</span>
                 </div>
                 <div className="flex items-center gap-2 text-dc1-text-secondary">
                   <svg className="w-5 h-5 text-status-success" fill="currentColor" viewBox="0 0 20 20">
@@ -565,7 +564,7 @@ export default function ProviderRegisterPage() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  <span>Easy setup</span>
+                  <span>{t('register.provider.easy_setup')}</span>
                 </div>
                 <div className="flex items-center gap-2 text-dc1-text-secondary">
                   <svg className="w-5 h-5 text-status-success" fill="currentColor" viewBox="0 0 20 20">
@@ -575,7 +574,7 @@ export default function ProviderRegisterPage() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  <span>Instant payouts</span>
+                  <span>{t('register.provider.instant_payouts')}</span>
                 </div>
               </div>
             </div>
@@ -585,11 +584,11 @@ export default function ProviderRegisterPage() {
         {/* Earning Calculator */}
         <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="card border-dc1-amber/20">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-1">Earning Calculator</h2>
-            <p className="text-dc1-text-secondary text-sm mb-6">See how much you could earn based on your GPU and availability.</p>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-1">{t('register.provider.calc_title')}</h2>
+            <p className="text-dc1-text-secondary text-sm mb-6">{t('register.provider.calc_desc')}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="label mb-2 block">Your GPU Model</label>
+                <label className="label mb-2 block">{t('register.provider.calc_gpu_label')}</label>
                 <select
                   value={calcGpu}
                   onChange={(e) => setCalcGpu(e.target.value)}
@@ -601,7 +600,7 @@ export default function ProviderRegisterPage() {
                 </select>
               </div>
               <div>
-                <label className="label mb-2 block">Hours Available Per Day: <span className="text-dc1-amber font-semibold">{calcHours} hrs</span></label>
+                <label className="label mb-2 block">{t('register.provider.calc_hours_label')}: <span className="text-dc1-amber font-semibold">{calcHours} hrs</span></label>
                 <input
                   type="range"
                   min={1}
@@ -620,19 +619,19 @@ export default function ProviderRegisterPage() {
             {GPU_EARNINGS[calcGpu] && (
               <div className="mt-6 grid grid-cols-3 gap-4">
                 <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
-                  <p className="text-xs text-dc1-text-secondary mb-1">Daily Earnings</p>
+                  <p className="text-xs text-dc1-text-secondary mb-1">{t('register.provider.calc_daily')}</p>
                   <p className="text-2xl font-bold text-dc1-amber">
                     {(GPU_EARNINGS[calcGpu].providerRate * calcHours).toFixed(0)} SAR
                   </p>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
-                  <p className="text-xs text-dc1-text-secondary mb-1">Weekly Earnings</p>
+                  <p className="text-xs text-dc1-text-secondary mb-1">{t('register.provider.calc_weekly')}</p>
                   <p className="text-2xl font-bold text-dc1-amber">
                     {(GPU_EARNINGS[calcGpu].providerRate * calcHours * 7).toFixed(0)} SAR
                   </p>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
-                  <p className="text-xs text-dc1-text-secondary mb-1">Monthly Earnings</p>
+                  <p className="text-xs text-dc1-text-secondary mb-1">{t('register.provider.calc_monthly')}</p>
                   <p className="text-2xl font-bold text-dc1-amber">
                     {(GPU_EARNINGS[calcGpu].providerRate * calcHours * 30).toFixed(0)} SAR
                   </p>
@@ -652,7 +651,7 @@ export default function ProviderRegisterPage() {
               {t('register.provider.form_title')}
             </h2>
             <p className="text-dc1-text-secondary mb-8">
-              Fill in your details to get started. It takes less than 2 minutes to register.
+              {t('register.provider.form_desc')}
             </p>
 
             {error && (
@@ -750,7 +749,7 @@ export default function ProviderRegisterPage() {
               {/* Phone (Optional) */}
               <div>
                 <label htmlFor="phone" className="label">
-                  Phone Number <span className="text-dc1-text-muted">(optional)</span>
+                  {t('register.provider.phone_label')} <span className="text-dc1-text-muted">{t('register.provider.phone_optional')}</span>
                 </label>
                 <input
                   id="phone"
@@ -775,10 +774,10 @@ export default function ProviderRegisterPage() {
                     required
                   />
                   <span className="text-sm text-dc1-text-secondary">
-                    I consent to DC1 collecting and processing my personal data (name, email, IP address, GPU metrics) as described in the{' '}
-                    <a href="/privacy" className="text-dc1-amber hover:underline">Privacy Policy</a>.
-                    {' '}I understand my data is processed on servers outside Saudi Arabia (Lithuania/US) and I consent to this cross-border transfer. I agree to the{' '}
-                    <a href="/terms" className="text-dc1-amber hover:underline">Terms of Service</a>.
+                    {t('register.provider.pdpl_text')}{' '}
+                    <a href="/privacy" className="text-dc1-amber hover:underline">{t('register.provider.privacy_policy')}</a>.
+                    {' '}{t('register.provider.pdpl_text2')}{' '}
+                    <a href="/terms" className="text-dc1-amber hover:underline">{t('register.provider.terms')}</a>.
                   </span>
                 </label>
               </div>

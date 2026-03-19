@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
+function requireAdminToken(req, res, next) {
+  const token = req.headers['x-admin-token'] || '';
+  const expected = process.env.DC1_ADMIN_TOKEN;
+  if (!expected || token !== expected) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+router.use(requireAdminToken);
+
 // Helper: extract GPU utilization from gpu_status JSON blob
 function extractUtilization(gpuStatusStr) {
   if (!gpuStatusStr) return null;
@@ -109,7 +120,7 @@ router.get('/providers', (req, res) => {
 
     const result = providers.map(p => ({
       id: p.id,
-      name: p.name || p.email,
+      name: p.name || 'Anonymous',
       status: p.status,
       gpu_model: getGpuModel(p),
       gpu_count: p.gpu_count || 1,

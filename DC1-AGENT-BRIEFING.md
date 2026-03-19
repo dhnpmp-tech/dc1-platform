@@ -630,6 +630,7 @@ A full competitive gap analysis was completed (see `DC1-Gap-Analysis-vs-VastAI.d
 ### Critical (Gate 2 — Revenue Enablement)
 1. **Payment gateway integration** — Stripe/Tap for real SAR deposits + provider payouts
 2. **Domain + SSL** — replace raw IP `76.13.179.86:8083` with proper domain + HTTPS
+   - HTTPS for `api.dcp.sa`: run `sudo scripts/setup-https.sh` after DCP-84 DNS is confirmed.
 3. **Provider payout system** — bank transfers to Saudi providers (IBAN integration)
 
 ### High Priority (Gate 2 — Production Readiness)
@@ -762,7 +763,7 @@ The daemon (`dc1_daemon.py` v3.0) is a single Python file that runs as a backgro
 - Frontend `NEXT_PUBLIC_*` env vars are baked at build time on Vercel — must be set before deploy
 - Windows installer requires NSIS compilation: `makensis dc1-provider-Windows.nsi` on Windows
 - Daemon v3.0 is backward-compatible with both v1.0 and v2.0 backend endpoints
-- Yazan Almazyad has 2 provider records: ID 23 (RTX 2060, registered) + ID 26 (RTX 3060 Ti, online) — active key: `dc1-provider-8cf28b3bb4e91a3bc04abf4fcc33b29e`
+- Yazan Almazyad has 2 provider records: ID 23 (RTX 2060, registered) + ID 26 (RTX 3060 Ti, online) — active key: `<REDACTED_PROVIDER_KEY>`
 - Mistral 7B is whitelisted in ALLOWED_LLM_MODELS as `mistralai/Mistral-7B-Instruct-v0.2`
 
 ## VPS Docker Services (76.13.179.86)

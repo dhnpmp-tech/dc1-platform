@@ -23,7 +23,7 @@ const OS_CARDS: {
     icon: '⊞',
     downloadType: 'exe',
     primaryLabel: 'Download Installer (.exe)',
-    primaryAction: 'https://dcp.sa/api/providers/daemon/windows',
+    primaryAction: '/api/dc1/providers/daemon/windows',
   },
   {
     id: 'linux',
@@ -31,8 +31,8 @@ const OS_CARDS: {
     icon: '🐧',
     downloadType: 'curl',
     primaryLabel: 'Copy Install Command',
-    primaryAction: 'curl -sSL https://dcp.sa/install.sh | bash',
-    command: 'curl -sSL https://dcp.sa/install.sh | bash',
+    primaryAction: 'curl -sSL https://dcp.sa/api/dc1/providers/daemon/linux | bash',
+    command: 'curl -sSL https://dcp.sa/api/dc1/providers/daemon/linux | bash',
   },
   {
     id: 'macos',
@@ -79,10 +79,10 @@ export default function ProviderDownloadPage() {
             Current version: {DAEMON_VERSION}
           </div>
           <h1 className="text-4xl font-bold mb-4" style={{ color: '#F0F0F0' }}>
-            DC1 Provider Daemon
+            DCP Provider Daemon
           </h1>
           <p className="text-lg max-w-xl mx-auto" style={{ color: '#94A3B8' }}>
-            Install the daemon on your GPU machine to start earning SAR from compute jobs on the DC1 marketplace.
+            Install the daemon on your GPU machine to start earning SAR from compute jobs on the DCP marketplace.
           </p>
         </div>
 

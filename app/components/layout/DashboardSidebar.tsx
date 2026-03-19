@@ -40,14 +40,14 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
       <div className="flex items-center gap-3 px-4 py-5 border-b border-dc1-border">
         <Link href="/" className="shrink-0">
           <img
-            src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp"
-            alt="DC1"
+            src="/logo.svg"
+            alt="DCP."
             className="h-8 w-auto"
           />
         </Link>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-dc1-text-primary truncate">DC1</p>
+            <p className="text-sm font-semibold text-dc1-text-primary truncate">DCP.</p>
             <p className="text-xs text-dc1-amber truncate">{roleLabels[role]}</p>
           </div>
         )}
@@ -131,7 +131,7 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <img src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp" alt="DC1" className="h-7" />
+        <img src="/logo.svg" alt="DCP." className="h-7" />
         <span className="text-sm font-semibold text-dc1-amber">{roleLabels[role]}</span>
       </div>
 

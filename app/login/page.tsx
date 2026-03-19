@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Header from '@/app/components/layout/Header'
-import Footer from '@/app/components/layout/Footer'
+import Header from '../components/layout/Header'
+import Footer from '../components/layout/Footer'
 import { useLanguage } from '@/app/lib/i18n'
 
 const API_BASE =
@@ -158,8 +158,8 @@ export default function LoginPage() {
             {/* Logo */}
             <div className="flex justify-center mb-8">
               <img
-                src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp"
-                alt="DC1"
+                src="/logo.svg"
+                alt="DCP"
                 className="h-12 w-auto"
               />
             </div>

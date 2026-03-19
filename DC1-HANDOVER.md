@@ -91,13 +91,13 @@ ssh root@76.13.179.86 "sqlite3 /root/dc1-platform/backend/data/providers.db \"YO
 - **Providers**: `?key=dc1-provider-xxx` query param on `/api/providers/me`
 - **Renters**: `?key=dc1-renter-xxx` query param on `/api/renters/me`
 - **Admin**: `x-admin-token` header on all `/api/admin/*` endpoints
-- **Admin Token**: `9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b`
+- **Admin Token**: `<DC1_ADMIN_TOKEN>`
 
 ### Crediting a Renter (example)
 ```bash
 ssh root@76.13.179.86 "curl -s -X POST http://localhost:8083/api/admin/renters/ID/balance \
   -H 'Content-Type: application/json' \
-  -H 'x-admin-token: 9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b' \
+  -H 'x-admin-token: <DC1_ADMIN_TOKEN>' \
   -d '{\"amount_halala\": 5000, \"reason\": \"Credit 50 SAR\"}'"
 ```
 100 halala = 1 SAR.
@@ -313,10 +313,10 @@ ssh root@76.13.179.86 "pm2 status"
 ssh root@76.13.179.86 "pm2 logs dc1-provider-onboarding --lines 50 --nostream"
 
 # Check online providers
-ssh root@76.13.179.86 "curl -s http://localhost:8083/api/admin/providers -H 'x-admin-token: 9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b' | python3 -m json.tool | head -20"
+ssh root@76.13.179.86 "curl -s http://localhost:8083/api/admin/providers -H 'x-admin-token: <DC1_ADMIN_TOKEN>' | python3 -m json.tool | head -20"
 
 # Credit a renter
-ssh root@76.13.179.86 "curl -s -X POST http://localhost:8083/api/admin/renters/RENTER_ID/balance -H 'Content-Type: application/json' -H 'x-admin-token: 9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b' -d '{\"amount_halala\": 5000}'"
+ssh root@76.13.179.86 "curl -s -X POST http://localhost:8083/api/admin/renters/RENTER_ID/balance -H 'Content-Type: application/json' -H 'x-admin-token: <DC1_ADMIN_TOKEN>' -d '{\"amount_halala\": 5000}'"
 
 # Check a job
 ssh root@76.13.179.86 "sqlite3 /root/dc1-platform/backend/data/providers.db \"SELECT job_id, status, job_type, result FROM jobs WHERE id = JOB_ID;\""
@@ -342,7 +342,7 @@ git add -A && git commit -m "feat: description" && git push
 | 7 | Tariq Almazyad | Tariq.Almazyad@gmail.com | 100 SAR |
 
 ### Provider API Key for Testing
-Renter key for dhnpmp@gmail.com: `dc1-renter-c1afa164e95b92f608f8a5d63f0a980c`
+Renter key for dhnpmp@gmail.com: `<REDACTED_TEST_RENTER_KEY>`
 
 ---
 

@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import Header from '@/app/components/layout/Header'
-import Footer from '@/app/components/layout/Footer'
-import DocsSidebar from '@/app/components/docs/DocsSidebar'
-import SimpleMdxRenderer from '@/app/components/docs/SimpleMdxRenderer'
+import Header from '../../components/layout/Header'
+import Footer from '../../components/layout/Footer'
+import DocsSidebar from '../../components/docs/DocsSidebar'
+import SimpleMdxRenderer from '../../components/docs/SimpleMdxRenderer'
 import {
   getBreadcrumbs,
   getDocAlternates,

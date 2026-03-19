@@ -46,6 +46,7 @@ db.exec(`
     job_id TEXT UNIQUE,
     provider_id INTEGER,
     job_type TEXT,
+    model TEXT,
     status TEXT DEFAULT 'pending',
     vram_required INTEGER DEFAULT 0,
     cost_halala INTEGER DEFAULT 0,
@@ -214,6 +215,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
   // jobs columns (for existing DBs that had the old narrow schema)
   'ALTER TABLE jobs ADD COLUMN job_type TEXT',
+  'ALTER TABLE jobs ADD COLUMN model TEXT',
   'ALTER TABLE jobs ADD COLUMN cost_halala INTEGER DEFAULT 0',
   'ALTER TABLE jobs ADD COLUMN gpu_requirements TEXT',
   'ALTER TABLE jobs ADD COLUMN notes TEXT',
@@ -303,6 +305,8 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN serve_port INTEGER',         // provider-side port the vLLM container listens on
   // Provider reputation system — DCP-51
   'ALTER TABLE providers ADD COLUMN reputation_score REAL DEFAULT 100.0', // composite trust score (0–100)
+  // Provider per-minute pricing — DCP-205 job router (NULL = use global COST_RATES)
+  'ALTER TABLE providers ADD COLUMN price_per_min_halala INTEGER DEFAULT NULL',
 ];
 
 migrations.forEach(sql => {
@@ -329,6 +333,41 @@ db.exec(`
     updated_at TEXT
   )
 `);
+
+// ─── RENTER QUOTA TABLE ───
+// Per-renter submission/spend controls enforced at job submission.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS renter_quota (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    renter_id INTEGER NOT NULL UNIQUE,
+    daily_jobs_limit INTEGER NOT NULL DEFAULT 100,
+    monthly_spend_limit_halala INTEGER NOT NULL DEFAULT 10000,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    FOREIGN KEY (renter_id) REFERENCES renters(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_quota_renter_id ON renter_quota(renter_id)`);
+
+// ─── QUOTA LOG TABLE ───
+// Audit trail for quota and balance checks on job submissions.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS quota_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    renter_id INTEGER NOT NULL,
+    job_id TEXT,
+    check_type TEXT NOT NULL,
+    allowed INTEGER NOT NULL DEFAULT 0,
+    limit_value INTEGER,
+    current_value INTEGER,
+    requested_value INTEGER,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (renter_id) REFERENCES renters(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_quota_log_renter_id ON quota_log(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_quota_log_job_id ON quota_log(job_id, created_at DESC)`);
 
 // ─── PAYMENTS TABLE ─── (DCP-31: Moyasar SAR payment integration)
 db.exec(`

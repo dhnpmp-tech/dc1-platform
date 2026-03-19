@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import DashboardLayout from '@/app/components/layout/DashboardLayout'
-import StatCard from '@/app/components/ui/StatCard'
-import StatusBadge from '@/app/components/ui/StatusBadge'
+import DashboardLayout from '../components/layout/DashboardLayout'
+import StatCard from '../components/ui/StatCard'
+import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '@/app/lib/i18n'
 
 const API_BASE =

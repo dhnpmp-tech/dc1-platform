@@ -16,8 +16,9 @@ module.exports = {
         DC1_PROVIDER_PORT: 8083,
 
         // ── Auth ────────────────────────────────────────────────────────────
-        // ROTATE THIS — default token is exposed in source control
-        DC1_ADMIN_TOKEN: '9ca7c4f924374229b9c9f584758f055373878dfce3fea309ff192d638756342b',
+        // REQUIRED — generate with: openssl rand -hex 32
+        // Never commit real admin tokens to source control
+        DC1_ADMIN_TOKEN: 'CHANGE_ME_dc1_admin_token_hex_64',
 
         // ── HMAC Job Signing (DCP-3) ─────────────────────────────────────────
         // REQUIRED — generate with: openssl rand -hex 32
@@ -32,11 +33,11 @@ module.exports = {
         MOYASAR_WEBHOOK_SECRET: 'CHANGE_ME_moyasar_webhook_secret',
 
         // ── Frontend URL (for Moyasar payment callbacks) ─────────────────────
-        FRONTEND_URL: 'https://dc1st.com',
+        FRONTEND_URL: 'https://dcp.sa',
 
         // ── CORS Extra Origins ────────────────────────────────────────────────
-        // dc1st.com is the live frontend domain — must be in CORS allowlist
-        CORS_ORIGINS: 'https://dc1st.com,https://www.dc1st.com',
+        // dcp.sa is the live frontend domain — must be in CORS allowlist
+        CORS_ORIGINS: 'https://dcp.sa,https://www.dcp.sa',
 
         // ── Backend URL (injected into daemon downloads) ──────────────────────
         // Set to HTTPS once api.dcp.sa DNS + SSL setup is complete
@@ -55,6 +56,23 @@ module.exports = {
         ESCROW_CONTRACT_ADDRESS: '',
         ESCROW_ORACLE_PRIVATE_KEY: 'CHANGE_ME_0x_private_key_for_oracle_wallet',
         BASE_RPC_URL: 'https://sepolia.base.org'
+      }
+    },
+    {
+      name: 'dcp-vps-health-cron',
+      script: '/bin/bash',
+      args: '-lc "/root/dc1-platform/scripts/vps-health.sh >> /root/dc1-platform/backend/logs/vps-health.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '*/10 * * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production',
+
+        // Telegram bot token used by scripts/vps-health.sh to send threshold alerts
+        TELEGRAM_BOT_TOKEN: 'CHANGE_ME_telegram_bot_token'
       }
     }
   ]

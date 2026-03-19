@@ -14,8 +14,8 @@
   }
 
   body {
-    background: #07070E;
-    color: #F0F0F0;
+    background: #050a14;
+    color: #f8fafc;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
@@ -34,7 +34,7 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: #090E1A;
+    background: #0d1117;
   }
 
   ::-webkit-scrollbar-thumb {
@@ -48,25 +48,25 @@
 
   /* Focus indicators for accessibility */
   :focus-visible {
-    outline: 2px solid #F5A524;
+    outline: 2px solid #00f0ff;
     outline-offset: 2px;
   }
 
   /* Selection */
   ::selection {
-    background: rgba(245, 165, 36, 0.3);
-    color: #F0F0F0;
+    background: rgba(0, 240, 255, 0.3);
+    color: #f8fafc;
   }
 }
 
 @layer components {
   /* Button base styles */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-md font-semibold text-sm transition-all duration-200;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-md font-mono font-medium text-sm uppercase tracking-[0.025em] transition-all duration-200;
   }
 
   .btn-primary {
-    @apply bg-dc1-amber text-white hover:bg-dc1-amber-hover shadow-amber hover:shadow-amber-lg;
+    @apply bg-dc1-amber text-dc1-void hover:bg-dc1-amber-hover shadow-amber hover:shadow-amber-lg;
   }
 
   .btn-secondary {
@@ -217,16 +217,36 @@
 @layer utilities {
   /* Text gradient for brand emphasis */
   .text-gradient-amber {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-dc1-amber to-yellow-400;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-dc1-amber to-blue-400;
+  }
+
+  .text-gradient-cyan {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-dc1-amber to-blue-400;
   }
 
   /* Glow effects */
   .glow-amber {
-    box-shadow: 0 0 20px rgba(245, 165, 36, 0.15), 0 0 60px rgba(245, 165, 36, 0.05);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.15), 0 0 60px rgba(0, 240, 255, 0.05);
   }
 
   .glow-amber-strong {
-    box-shadow: 0 0 30px rgba(245, 165, 36, 0.25), 0 0 80px rgba(245, 165, 36, 0.1);
+    box-shadow: 0 0 30px rgba(0, 240, 255, 0.25), 0 0 80px rgba(0, 240, 255, 0.1);
+  }
+
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.15), 0 0 60px rgba(0, 240, 255, 0.05);
+  }
+
+  .glow-cyan-strong {
+    box-shadow: 0 0 30px rgba(0, 240, 255, 0.25), 0 0 80px rgba(0, 240, 255, 0.1);
+  }
+
+  /* Grid dot pattern background */
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(hsla(0,0%,100%,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, hsla(0,0%,100%,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 }
 
@@ -283,7 +303,7 @@
 .docs-mdx pre .hljs-keyword,
 .docs-mdx pre .hljs-selector-tag,
 .docs-mdx pre .hljs-title.function_ {
-  color: #f5a524;
+  color: #00f0ff;
 }
 
 .docs-mdx pre .hljs-string,

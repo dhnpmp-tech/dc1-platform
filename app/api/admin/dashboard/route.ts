@@ -4,6 +4,21 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
 
+function requireAdminCallerAuth(request: NextRequest): NextResponse | null {
+  const callerToken = request.headers.get('x-admin-token');
+  const serverToken = process.env.DC1_ADMIN_TOKEN;
+
+  if (!serverToken) {
+    return NextResponse.json({ error: 'Admin auth misconfigured' }, { status: 500 });
+  }
+
+  if (!callerToken || callerToken !== serverToken) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return null;
+}
+
 // Build headers for backend calls — forwards admin token from env + client
 function adminHeaders(request: NextRequest): HeadersInit {
   const headers: Record<string, string> = {};
@@ -43,6 +58,9 @@ async function adminFetch(url: string, request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const authError = requireAdminCallerAuth(request);
+  if (authError) return authError;
+
   const dashResult = await adminFetch(`${BACKEND_URL}/api/admin/dashboard`, request);
 
   // If admin endpoint returns 401, propagate it so the frontend can re-auth

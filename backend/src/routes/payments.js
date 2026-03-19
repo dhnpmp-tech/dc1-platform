@@ -1,4 +1,4 @@
-// DC1 Payment Routes — Moyasar SAR integration (DCP-31)
+// DCP Payment Routes — Moyasar SAR integration (DCP-31)
 // Moyasar: Saudi-first gateway supporting mada, Apple Pay, VISA/MC in SAR
 // Docs: https://moyasar.com/docs
 const express = require('express');
@@ -7,10 +7,44 @@ const https = require('https');
 const router = express.Router();
 const db = require('../db');
 
+function flattenRunParams(params) {
+  if (params.length === 1 && Array.isArray(params[0])) return params[0];
+  return params.reduce((acc, p) => (Array.isArray(p) ? acc.concat(p) : acc.concat([p])), []);
+}
+
+function runStatement(sql, ...params) {
+  return db.prepare(sql).run(...flattenRunParams(params));
+}
+
 const MOYASAR_BASE = 'https://api.moyasar.com/v1';
 const MOYASAR_SECRET = process.env.MOYASAR_SECRET_KEY || '';
-const MOYASAR_WEBHOOK_SECRET = process.env.MOYASAR_WEBHOOK_SECRET || MOYASAR_SECRET;
+const MOYASAR_WEBHOOK_SECRET = process.env.MOYASAR_WEBHOOK_SECRET || '';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dcp.sa';
+
+if (process.env.NODE_ENV === 'production' && !MOYASAR_WEBHOOK_SECRET) {
+  throw new Error('MOYASAR_WEBHOOK_SECRET must be set in production');
+}
+
+function toFiniteNumber(value, { min = null, max = null } = {}) {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (min != null && num < min) return null;
+  if (max != null && num > max) return null;
+  return num;
+}
+
+function normalizeCallbackUrl(value) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') return null;
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (!['https:', 'http:'].includes(parsed.protocol)) return null;
+  return parsed.toString();
+}
 
 // ─── Moyasar API helper ────────────────────────────────────────────────────────
 
@@ -97,9 +131,9 @@ router.post('/topup', (req, res) => {
   }
 
   const { amount_sar, source_type = 'creditcard', callback_url } = req.body;
-  const amountSar = parseFloat(amount_sar);
+  const amountSar = toFiniteNumber(amount_sar, { min: 0.01, max: 10000 });
 
-  if (!amountSar || amountSar <= 0) {
+  if (amountSar == null) {
     return res.status(400).json({ error: 'amount_sar must be a positive number' });
   }
   if (amountSar < 1) {
@@ -110,20 +144,24 @@ router.post('/topup', (req, res) => {
   }
 
   const ALLOWED_SOURCES = ['creditcard', 'mada', 'applepay'];
-  if (!ALLOWED_SOURCES.includes(source_type)) {
+  const sourceType = String(source_type || '').trim().toLowerCase();
+  if (!ALLOWED_SOURCES.includes(sourceType)) {
     return res.status(400).json({ error: `source_type must be one of: ${ALLOWED_SOURCES.join(', ')}` });
   }
 
   const amountHalala = Math.round(amountSar * 100);
-  const callbackUrl = callback_url || `${FRONTEND_URL}/renter/billing?payment=callback`;
-  const description = `DC1 balance top-up — ${renter.name} (${renter.email})`;
+  const callbackUrl = normalizeCallbackUrl(callback_url) || `${FRONTEND_URL}/renter/billing?payment=callback`;
+  if (callback_url != null && !normalizeCallbackUrl(callback_url)) {
+    return res.status(400).json({ error: 'callback_url must be a valid http(s) URL' });
+  }
+  const description = `DCP balance top-up — ${renter.name} (${renter.email})`;
 
   const moyasarBody = {
     amount: amountHalala,
     currency: 'SAR',
     description,
     callback_url: callbackUrl,
-    source: { type: source_type },
+    source: { type: sourceType },
     metadata: {
       renter_id: renter.id,
       renter_email: renter.email,
@@ -137,12 +175,12 @@ router.post('/topup', (req, res) => {
       const now = new Date().toISOString();
 
       // Store payment record (status=initiated until webhook confirms)
-      db.run(
+      runStatement(
         `INSERT INTO payments
            (payment_id, renter_id, amount_sar, amount_halala, status, source_type,
             description, callback_url, checkout_url, gateway_response, created_at)
          VALUES (?, ?, ?, ?, 'initiated', ?, ?, ?, ?, ?, ?)`,
-        paymentId, renter.id, amountSar, amountHalala, source_type,
+        paymentId, renter.id, amountSar, amountHalala, sourceType,
         description, callbackUrl, checkoutUrl,
         JSON.stringify(payment), now
       );
@@ -189,8 +227,8 @@ router.post('/topup-sandbox', (req, res) => {
   }
 
   const { amount_sar } = req.body;
-  const amountSar = parseFloat(amount_sar);
-  if (!amountSar || amountSar <= 0 || amountSar > 10000) {
+  const amountSar = toFiniteNumber(amount_sar, { min: 0.01, max: 10000 });
+  if (amountSar == null) {
     return res.status(400).json({ error: 'amount_sar must be between 0 and 10,000' });
   }
 
@@ -198,7 +236,7 @@ router.post('/topup-sandbox', (req, res) => {
   const paymentId = 'sandbox-' + crypto.randomBytes(8).toString('hex');
   const now = new Date().toISOString();
 
-  db.run(
+  runStatement(
     `INSERT INTO payments
        (payment_id, renter_id, amount_sar, amount_halala, status, source_type,
         description, created_at, confirmed_at)
@@ -207,7 +245,7 @@ router.post('/topup-sandbox', (req, res) => {
     'Sandbox top-up (dev mode)', now, now
   );
 
-  db.run(
+  runStatement(
     `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
     amountHalala, now, renter.id
   );
@@ -228,19 +266,20 @@ router.post('/topup-sandbox', (req, res) => {
 // ─── POST /api/payments/webhook ────────────────────────────────────────────────
 // Moyasar webhook handler. Verifies HMAC-SHA256 signature, credits balance on `paid`.
 // Moyasar retries webhooks on non-2xx response.
-// Raw body needed for HMAC — must be mounted BEFORE express.json() for this route.
-router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+// Raw body is mounted in server.js before express.json()
+router.post('/webhook', (req, res) => {
   const rawBody = req.body; // Buffer (express.raw)
   const signature = req.headers['x-moyasar-signature'];
 
-  // Verify HMAC signature (skip if webhook secret not configured — log warning)
-  if (MOYASAR_WEBHOOK_SECRET) {
-    if (!verifyMoyasarWebhook(rawBody, signature)) {
-      console.warn('[payments/webhook] Invalid HMAC signature — rejected');
-      return res.status(401).json({ error: 'Invalid webhook signature' });
-    }
-  } else {
-    console.warn('[payments/webhook] MOYASAR_WEBHOOK_SECRET not set — skipping signature verification');
+  if (!Buffer.isBuffer(rawBody)) {
+    return res.status(500).json({ error: 'Webhook must be sent as raw application/json body' });
+  }
+  if (!MOYASAR_WEBHOOK_SECRET) {
+    return res.status(503).json({ error: 'Webhook secret not configured' });
+  }
+  if (!verifyMoyasarWebhook(rawBody, signature)) {
+    console.warn('[payments/webhook] Invalid HMAC signature — rejected');
+    return res.status(401).json({ error: 'Invalid webhook signature' });
   }
 
   let event;
@@ -270,11 +309,11 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
 
   if (status === 'paid') {
     // Credit renter balance
-    db.run(
+    runStatement(
       `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
       payment.amount_halala, now, payment.renter_id
     );
-    db.run(
+    runStatement(
       `UPDATE payments SET status = 'paid', confirmed_at = ?, gateway_response = ? WHERE payment_id = ?`,
       now, JSON.stringify(event), paymentId
     );
@@ -283,7 +322,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
   }
 
   if (status === 'failed') {
-    db.run(
+    runStatement(
       `UPDATE payments SET status = 'failed', gateway_response = ? WHERE payment_id = ?`,
       JSON.stringify(event), paymentId
     );
@@ -296,12 +335,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
     // Deduct from renter balance only if it was previously paid and not yet refunded
     if (payment.status === 'paid' && !payment.refunded_at) {
       const deduct = Math.min(refundAmount, payment.amount_halala);
-      db.run(
+      runStatement(
         `UPDATE renters SET balance_halala = MAX(0, balance_halala - ?), updated_at = ? WHERE id = ?`,
         deduct, now, payment.renter_id
       );
     }
-    db.run(
+    runStatement(
       `UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ?, gateway_response = ? WHERE payment_id = ?`,
       now, refundAmount, JSON.stringify(event), paymentId
     );
@@ -310,7 +349,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
   }
 
   // For any other status (e.g. 'initiated'), just update the gateway response
-  db.run(
+  runStatement(
     `UPDATE payments SET status = ?, gateway_response = ? WHERE payment_id = ?`,
     status, JSON.stringify(event), paymentId
   );
@@ -363,11 +402,11 @@ router.get('/verify/:paymentId', (req, res) => {
 
       // Sync local record if Moyasar reports paid
       if (payment.status === 'paid' && localPayment.status !== 'paid') {
-        db.run(
+        runStatement(
           `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
           localPayment.amount_halala, now, renter.id
         );
-        db.run(
+        runStatement(
           `UPDATE payments SET status = 'paid', confirmed_at = ?, gateway_response = ? WHERE payment_id = ?`,
           now, JSON.stringify(payment), paymentId
         );

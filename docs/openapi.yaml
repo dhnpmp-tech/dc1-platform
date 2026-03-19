@@ -1,12 +1,12 @@
 openapi: 3.0.3
 info:
-  title: DC1 Platform API
+  title: DCP Platform API
   version: 4.0.0
   description: |
-    DC1 is Saudi Arabia's first decentralized GPU compute marketplace.
+    DCP is Saudi Arabia's first decentralized GPU compute marketplace.
     Providers register NVIDIA GPUs, install the Python daemon, and earn SAR.
     Renters submit compute jobs (LLM inference, image generation, training) that
-    run on provider hardware. DC1 takes 25% fee; providers earn 75%.
+    run on provider hardware. DCP takes 25% fee; providers earn 75%.
 
     ## Currency
     All monetary amounts are in **halala** (1 SAR = 100 halala) unless the field
@@ -27,14 +27,15 @@ info:
     | `POST /providers/register` | 5 / IP / hour |
     | `POST /providers/heartbeat` | 4 / IP / minute |
     | `POST /renters/register` | 5 / IP / hour |
-    | `POST /jobs/submit` | 30 / IP / minute |
+    | `POST /jobs/submit` | 10 / renter API key / minute |
     | `POST /payments/topup` | 10 / IP / minute |
+    | `GET /api/providers/marketplace` | 30 / IP / minute |
     | `GET /api/admin/*` | 100 / IP / minute |
     | All other `/api/*` | 300 / IP / minute |
 
   contact:
-    name: DC1 DevRel
-    url: https://dc1st.com/docs
+    name: DCP DevRel
+    url: https://dcp.sa/docs
   x-env-vars:
     DC1_ADMIN_TOKEN:
       description: Secret token for admin endpoint auth. Set in PM2 env.
@@ -52,7 +53,7 @@ info:
       description: Resend.com API key for transactional email delivery.
       required: false
     FRONTEND_URL:
-      description: Frontend base URL injected into payment callback links. Defaults to https://dc1st.com.
+      description: Frontend base URL injected into payment callback links. Defaults to https://dcp.sa.
       required: false
     BACKEND_URL:
       description: Backend URL injected into installer scripts. Defaults to http://76.13.179.86:8083.
@@ -1008,7 +1009,7 @@ paths:
       summary: Daemon submits completed job result
       description: |
         Called by daemon after job completion or failure. Triggers billing settlement:
-        - On success: provider earns 75%, DC1 takes 25%, renter balance reconciled.
+        - On success: provider earns 75%, DCP takes 25%, renter balance reconciled.
         - On failure: renter balance refunded.
       requestBody:
         required: true
@@ -1331,7 +1332,12 @@ paths:
       summary: Submit a compute job
       description: |
         Validates renter balance, deducts estimated cost as a pre-pay hold, assigns
-        provider, and queues the job. Rate limited to 30/min.
+        provider, and queues the job.
+
+        Enforced controls:
+        - Rate limit: **10 submissions/min per renter API key**
+        - Balance gate: renter `balance_halala` must be `> 0`
+        - Quotas: `daily_jobs_limit` and `monthly_spend_limit_halala` (from `renter_quota`)
 
         **Supported job types and cost rates (halala/min):**
         | Type | Rate |
@@ -1417,7 +1423,9 @@ paths:
         '400':
           description: Invalid request (missing job_type, etc.)
         '402':
-          description: Insufficient balance
+          description: Insufficient balance or zero wallet balance
+        '429':
+          description: Renter submission rate limit or quota exceeded
         '503':
           description: No providers available
 
@@ -2913,6 +2921,392 @@ paths:
         '500':
           description: Failed to fetch escrow-chain status
 
+  /api/providers/download/setup:
+    get:
+      tags: [Providers]
+      summary: Download OS-specific setup script with injected key
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: os
+          schema:
+            type: string
+            enum: [windows, linux, mac]
+      responses:
+        '200':
+          description: Setup script file (PowerShell or shell script)
+        '401':
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/providers/daemon/windows:
+    get:
+      tags: [Providers]
+      summary: Download Windows provider installer EXE
+      responses:
+        '200':
+          description: Windows installer binary
+        '404':
+          description: Installer not built
+
+  /api/providers/daemon/linux:
+    get:
+      tags: [Providers]
+      summary: Download Linux install script
+      responses:
+        '200':
+          description: install.sh script
+        '404':
+          description: Linux install script not found
+
+  /api/providers/earnings:
+    get:
+      tags: [Providers]
+      summary: Provider earnings and escrow balance
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          schema:
+            type: string
+          description: Provider API key (alternative to x-provider-key header)
+      responses:
+        '200':
+          description: Earnings summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider_id:
+                    type: integer
+                  total_earned_halala:
+                    type: integer
+                  claimable_earnings_halala:
+                    type: integer
+                  available_halala:
+                    type: integer
+                  available_sar:
+                    type: string
+                    example: "120.50"
+
+  /api/providers/job-history:
+    get:
+      tags: [Providers]
+      summary: Provider job history and totals
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Provider job history
+
+  /api/providers/earnings-daily:
+    get:
+      tags: [Providers]
+      summary: Daily earnings breakdown
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            default: 30
+            maximum: 90
+      responses:
+        '200':
+          description: Daily earnings rows in halala and SAR
+
+  /api/providers/daemon-logs:
+    get:
+      tags: [Providers]
+      summary: Provider daemon events and runtime info
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - in: query
+          name: severity
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Daemon events list
+
+  /api/providers/available:
+    get:
+      tags: [Providers]
+      summary: Public marketplace list of live online providers
+      description: Returns online, unpaused providers with GPU specs and indicative SAR rates.
+      responses:
+        '200':
+          description: Provider marketplace data
+
+  /api/providers/marketplace:
+    get:
+      tags: [Providers]
+      summary: Public lightweight online-provider marketplace list
+      description: Returns online providers for public marketplace cards. No auth required.
+      responses:
+        '200':
+          description: Array of online provider cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      example: 42
+                    gpu_model:
+                      type: string
+                      example: NVIDIA RTX 4090
+                    vram_gb:
+                      type: number
+                      nullable: true
+                      example: 24
+                    price_per_min_halala:
+                      type: integer
+                      example: 10
+                    uptime_pct:
+                      type: number
+                      example: 99.2
+                    jobs_completed:
+                      type: integer
+                      example: 318
+
+  /api/providers/{id}/gpu-metrics:
+    get:
+      tags: [Providers]
+      summary: GPU metrics history for charts
+      security:
+        - ProviderApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Numeric provider id or `me`
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 60
+            maximum: 1440
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Heartbeat metric samples
+
+  /api/providers/rotate-key:
+    post:
+      tags: [Providers]
+      summary: Rotate provider API key
+      security:
+        - ProviderApiKey: []
+      responses:
+        '200':
+          description: New API key generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  api_key:
+                    type: string
+
+  /api/jobs/verify-hmac:
+    get:
+      tags: [Jobs]
+      summary: Verify task HMAC for provider-owned job
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: job_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: hmac
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+
+  /api/jobs/verify-hmac-local:
+    get:
+      tags: [Jobs]
+      summary: Legacy daemon HMAC format validator
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: hmac
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Validation response
+
+  /api/jobs/{job_id}/result:
+    post:
+      tags: [Jobs]
+      summary: Provider daemon submits final result and settlement
+      security:
+        - ProviderApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result:
+                  oneOf:
+                    - type: string
+                    - type: object
+                error:
+                  type: string
+                duration_seconds:
+                  type: integer
+                transient:
+                  type: boolean
+      responses:
+        '200':
+          description: Job settled and billing applied
+
+  /api/jobs/test:
+    post:
+      tags: [Jobs]
+      summary: Admin-only benchmark job creation
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_id]
+              properties:
+                provider_id:
+                  type: integer
+                matrix_size:
+                  type: integer
+                iterations:
+                  type: integer
+      responses:
+        '200':
+          description: Test job created
+
+  /api/admin/bulk/providers:
+    post:
+      tags: [Admin]
+      summary: Bulk suspend or unsuspend providers
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, action]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                action:
+                  type: string
+                  enum: [suspend, unsuspend]
+      responses:
+        '200':
+          description: Bulk action results
+
+  /api/admin/bulk/renters:
+    post:
+      tags: [Admin]
+      summary: Bulk renter actions (suspend, unsuspend, credit)
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, action]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                action:
+                  type: string
+                  enum: [suspend, unsuspend, credit]
+                amount_halala:
+                  type: integer
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Bulk action results
   /api/docs:
     get:
       tags: [System]

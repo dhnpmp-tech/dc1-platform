@@ -27,12 +27,12 @@ export default function Header() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 shrink-0">
             <img
-              src="https://dc1st.com/assets/dc1-logo-Z67caTEl.webp"
-              alt="DC1"
+              src="/logo.svg"
+              alt="DCP"
               className="h-9 w-auto"
             />
             <span className="text-lg font-bold text-dc1-text-primary hidden sm:block">
-              DC1
+              DCP.
             </span>
           </Link>
 

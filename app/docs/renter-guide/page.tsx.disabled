@@ -1,10 +1,10 @@
-import LegalPage from '@/app/components/layout/LegalPage'
+import LegalPage from '../../components/layout/LegalPage'
 
 export default function RenterGuidePage() {
   return (
     <LegalPage title="Renter Quickstart Guide" lastUpdated="March 14, 2026">
       <h2>Overview</h2>
-      <p>As a DC1 renter, you can access powerful GPU hardware on-demand for AI inference, image generation, and other compute-intensive tasks. This guide walks you through getting started.</p>
+      <p>As a DCP renter, you can access powerful GPU hardware on-demand for AI inference, image generation, and other compute-intensive tasks. This guide walks you through getting started.</p>
 
       <h2>Step 1: Create Your Account</h2>
       <p>Visit <a href="/renter/register">dcp.sa/renter/register</a> and provide your name, email, and optional organization name. After registration, you will receive an API key — save this key securely, it authenticates all your requests.</p>

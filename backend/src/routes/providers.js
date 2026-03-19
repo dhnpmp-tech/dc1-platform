@@ -2,18 +2,85 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
 // Database (use existing connection)
 const db = require('../db');
 const { sendAlert } = require('../services/notifications');
 const { sendWelcomeEmail } = require('../services/email');
+const { getBenchmarkResult } = require('../services/benchmarkRunner');
+
+function flattenRunParams(params) {
+    if (params.length === 1 && Array.isArray(params[0])) return params[0];
+    return params.reduce((acc, p) => (Array.isArray(p) ? acc.concat(p) : acc.concat([p])), []);
+}
+
+function runStatement(sql, ...params) {
+    return db.prepare(sql).run(...flattenRunParams(params));
+}
 
 // Import shared billing rates from jobs module
 const { COST_RATES } = require('./jobs');
 
 // Minimum daemon version required — daemons older than this get update_available: true
 const MIN_DAEMON_VERSION = '3.3.0';
+const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
+const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');
+const loginEmailLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeString(value, { maxLen = 500, trim = true } = {}) {
+    if (typeof value !== 'string') return null;
+    const next = trim ? value.trim() : value;
+    if (!next) return null;
+    return next.slice(0, maxLen);
+}
+
+function normalizeEmail(value) {
+    const normalized = normalizeString(value, { maxLen: 254 })?.toLowerCase() || null;
+    if (!normalized || !EMAIL_REGEX.test(normalized)) return null;
+    return normalized;
+}
+
+function toFiniteNumber(value, { min = null, max = null } = {}) {
+    const num = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(num)) return null;
+    if (min != null && num < min) return null;
+    if (max != null && num > max) return null;
+    return num;
+}
+
+function toFiniteInt(value, { min = null, max = null } = {}) {
+    const num = toFiniteNumber(value, { min, max });
+    if (num == null || !Number.isInteger(num)) return null;
+    return num;
+}
+
+function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+const marketplaceLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    message: { error: 'Too many requests. Limit is 30 requests per minute.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+const benchmarkLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    message: { error: 'Too many requests. Limit is 30 requests per minute.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // Semantic version comparison: returns -1 (v1<v2), 0 (equal), 1 (v1>v2)
 function compareVersions(v1, v2) {
@@ -33,10 +100,18 @@ function compareVersions(v1, v2) {
 router.post('/register', async (req, res) => {
     try {
         const { name, email, gpu_model, os, phone, resource_spec } = req.body;
+        const cleanName = normalizeString(name, { maxLen: 120 });
+        const cleanEmail = normalizeEmail(email);
+        const cleanGpuModel = normalizeString(gpu_model, { maxLen: 120 });
+        const cleanOs = normalizeString(os, { maxLen: 40 });
 
         // Validate inputs
-        if (!name || !email || !gpu_model || !os) {
+        if (!cleanName || !cleanEmail || !cleanGpuModel || !cleanOs) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+        const validOs = new Set(['windows', 'linux', 'mac', 'darwin']);
+        if (!validOs.has(cleanOs.toLowerCase())) {
+            return res.status(400).json({ error: 'Invalid OS value' });
         }
 
         // Check for similar existing accounts (fuzzy duplicate detection)
@@ -44,11 +119,11 @@ router.post('/register', async (req, res) => {
             `SELECT id, name, email, status FROM providers
              WHERE LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)
              LIMIT 3`,
-            email.trim(), name.trim()
+            cleanEmail, cleanName
         );
         if (similar.length > 0) {
             const matches = similar.map(s => `${s.name} (${s.email}, ${s.status})`).join('; ');
-            console.warn(`[registration] Potential duplicate for "${name}" <${email}>: ${matches}`);
+            console.warn(`[registration] Potential duplicate for "${cleanName}" <${cleanEmail}>: ${matches}`);
         }
 
         // Generate unique API key
@@ -59,7 +134,7 @@ router.post('/register', async (req, res) => {
 
         // Validate resource_spec if provided
         let resourceSpecJson = null;
-        if (resource_spec) {
+        if (resource_spec && (typeof resource_spec === 'string' || isPlainObject(resource_spec))) {
             try {
                 resourceSpecJson = typeof resource_spec === 'string'
                     ? resource_spec
@@ -68,25 +143,25 @@ router.post('/register', async (req, res) => {
         }
 
         // Save to database
-        const result = await db.run(
+        const result = await runStatement(
             `INSERT INTO providers (name, email, gpu_model, os, api_key, status, created_at, resource_spec)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [name, email, gpu_model, os, api_key, 'registered', new Date().toISOString(), resourceSpecJson]
+            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', new Date().toISOString(), resourceSpecJson]
         );
         
         // Generate installer URL
-        const installer_url = `/api/providers/installer?key=${api_key}&os=${os}`;
+        const installer_url = `/api/providers/installer?key=${api_key}&os=${encodeURIComponent(cleanOs)}`;
         
         res.json({
             success: true,
             provider_id: result.lastInsertRowid,
             api_key,
             installer_url,
-            message: `Welcome ${name}! Your API key is ready. Download the installer to get started.`
+            message: `Welcome ${cleanName}! Your API key is ready. Download the installer to get started.`
         });
 
         // Fire-and-forget welcome email — does not affect registration response
-        sendWelcomeEmail('provider', { name, email, apiKey: api_key });
+        sendWelcomeEmail('provider', { name: cleanName, email: cleanEmail, apiKey: api_key });
         
     } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -100,26 +175,20 @@ router.post('/register', async (req, res) => {
 // ============================================================================
 // POST /api/providers/login-email - Login with email instead of API key
 // ============================================================================
-router.post('/login-email', (req, res) => {
+router.post('/login-email', loginEmailLimiter, (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) return res.status(400).json({ error: 'Email is required' });
+        const cleanEmail = normalizeEmail(email);
+        if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
 
-        const provider = db.get('SELECT * FROM providers WHERE LOWER(email) = LOWER(?)', email.trim());
+        const provider = db.get('SELECT * FROM providers WHERE LOWER(email) = LOWER(?)', cleanEmail);
         if (!provider) {
             return res.status(404).json({ error: 'No provider account found with this email. Register first at /provider/register' });
         }
 
         res.json({
             success: true,
-            api_key: provider.api_key,
-            provider: {
-                id: provider.id,
-                name: provider.name,
-                email: provider.email,
-                gpu_model: provider.gpu_model,
-                status: provider.status,
-            }
+            message: 'Account found. Log in via your dashboard to retrieve your key.'
         });
     } catch (error) {
         console.error('Provider email login error:', error);
@@ -214,47 +283,98 @@ function computeReputationScore(providerId) {
 // ============================================================================
 // POST /api/providers/heartbeat - Provider heartbeat (GPU status update)
 // ============================================================================
+//
+// HEARTBEAT API CONTRACT
+// ----------------------
+// Called by dc1_daemon.py every 30 seconds while the provider is active.
+//
+// Endpoint : POST /api/providers/heartbeat
+// Auth     : api_key in request body (no header required)
+//
+// Required payload fields:
+//   api_key        {string}  Provider API key issued at registration
+//   gpu_status     {object}  GPU telemetry snapshot — see sub-fields below
+//   provider_ip    {string}  Public IP of the provider machine
+//   provider_hostname {string} Hostname of the provider machine
+//
+// gpu_status sub-fields:
+//   gpu_name       {string}  GPU model name (e.g. "NVIDIA RTX 3090")
+//   gpu_vram_mib   {number}  Total VRAM in MiB
+//   driver_version {string}  NVIDIA driver version string
+//   gpu_util_pct   {number}  GPU utilisation 0–100
+//   temp_c         {number}  GPU temperature in °C
+//   power_w        {number}  GPU power draw in Watts
+//   free_vram_mib  {number}  Available (free) VRAM in MiB
+//   daemon_version {string}  Semver string of the running daemon
+//   python_version {string}  Python runtime version
+//   os_info        {string}  OS identifier string
+//   gpu_count      {number}  Number of GPUs detected
+//   all_gpus       {array}   Per-GPU metric objects (multi-GPU rigs)
+//   compute_capability {string} CUDA compute capability (e.g. "8.6")
+//   cuda_version   {string}  CUDA toolkit version
+//
+// Optional payload fields:
+//   cached_models  {array}   List of model names already downloaded on the node
+//   resource_spec  {object}  Ocean-style resource specification object
+//   uptime         {number}  (reserved — not currently used)
+//
+// Response:
+//   { success: true, timestamp: ISO-string, update_available: bool, min_version: string }
+//
+// Daemon interval recommendation: 30 seconds.
+// Grace period thresholds (used by GET /api/providers/available):
+//   < 2 min since last heartbeat  → status: "online"   (green)
+//   2–10 min since last heartbeat → status: "degraded"  (yellow, still bookable)
+//   > 10 min since last heartbeat → status: "offline"   (excluded from marketplace)
+// ============================================================================
 router.post('/heartbeat', (req, res) => {
     try {
         const { api_key, gpu_status, uptime, provider_ip, provider_hostname, cached_models, resource_spec } = req.body;
+        const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
+        if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
+        if (gpu_status != null && !isPlainObject(gpu_status)) {
+            return res.status(400).json({ error: 'gpu_status must be an object' });
+        }
 
         const gs = gpu_status || {};
-        const gpuName = gs.gpu_name || null;
-        const gpuVramMib = (gs.gpu_vram_mib != null) ? gs.gpu_vram_mib : null;
-        const gpuDriver = gs.driver_version || null;
-        const gpuUtil = (gs.gpu_util_pct != null) ? gs.gpu_util_pct : null;
-        const gpuTemp = (gs.temp_c != null) ? gs.temp_c : null;
-        const gpuPower = (gs.power_w != null) ? gs.power_w : null;
-        const gpuFreeVram = (gs.free_vram_mib != null) ? gs.free_vram_mib : null;
-        const daemonVersion = gs.daemon_version || null;
-        const pythonVersion = gs.python_version || null;
-        const osInfo = gs.os_info || null;
+        const gpuName = normalizeString(gs.gpu_name, { maxLen: 200 });
+        const gpuVramMib = toFiniteNumber(gs.gpu_vram_mib, { min: 0, max: 1024 * 1024 });
+        const gpuDriver = normalizeString(gs.driver_version, { maxLen: 80 });
+        const gpuUtil = toFiniteNumber(gs.gpu_util_pct, { min: 0, max: 100 });
+        const gpuTemp = toFiniteNumber(gs.temp_c, { min: -40, max: 150 });
+        const gpuPower = toFiniteNumber(gs.power_w, { min: 0, max: 2000 });
+        const gpuFreeVram = toFiniteNumber(gs.free_vram_mib, { min: 0, max: 1024 * 1024 });
+        const daemonVersion = normalizeString(gs.daemon_version, { maxLen: 32 });
+        const pythonVersion = normalizeString(gs.python_version, { maxLen: 32 });
+        const osInfo = normalizeString(gs.os_info, { maxLen: 200 });
+        const providerIp = normalizeString(provider_ip, { maxLen: 64, trim: true });
+        const providerHostname = normalizeString(provider_hostname, { maxLen: 255, trim: true });
         const now = new Date().toISOString();
 
         // Verify API key (sync — better-sqlite3)
-        const p = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        const p = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
         if (!p) return res.status(401).json({ error: 'Invalid API key' });
 
-        db.run(`UPDATE providers SET
+        runStatement(`UPDATE providers SET
           gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = 'online',
           gpu_name_detected = COALESCE(?, gpu_name_detected),
           gpu_vram_mib = COALESCE(?, gpu_vram_mib),
           gpu_driver = COALESCE(?, gpu_driver),
           cached_models = COALESCE(?, cached_models)
           WHERE id = ?`,
-          JSON.stringify(gpu_status), provider_ip || null, provider_hostname || null, now,
+          JSON.stringify(gpu_status || {}), providerIp || null, providerHostname || null, now,
           gpuName, gpuVramMib, gpuDriver,
-          cached_models ? JSON.stringify(cached_models) : null,
+          Array.isArray(cached_models) ? JSON.stringify(cached_models) : null,
           p.id
         );
 
-        const allGpus = Array.isArray(gs.all_gpus) ? gs.all_gpus : null;
-        const gpuCount = gs.gpu_count || (allGpus ? allGpus.length : 1);
+        const allGpus = Array.isArray(gs.all_gpus) ? gs.all_gpus.slice(0, 32) : null;
+        const gpuCount = toFiniteInt(gs.gpu_count, { min: 1, max: 64 }) || (allGpus ? allGpus.length : 1);
         const computeCap = gs.compute_capability || null;
         const cudaVersion = gs.cuda_version || null;
-        db.run(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info, gpu_metrics_json, gpu_count)
+        runStatement(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info, gpu_metrics_json, gpu_count)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          p.id, now, provider_ip||null, provider_hostname||null,
+          p.id, now, providerIp || null, providerHostname || null,
           gpuUtil, gpuTemp, gpuPower, gpuFreeVram, gpuVramMib,
           daemonVersion, pythonVersion, osInfo,
           allGpus ? JSON.stringify(allGpus) : null,
@@ -263,7 +383,7 @@ router.post('/heartbeat', (req, res) => {
 
         // Update GPU spec fields on provider record when new data arrives
         if (computeCap || cudaVersion || allGpus) {
-            db.run(
+            runStatement(
                 `UPDATE providers SET
                   gpu_count_reported = COALESCE(?, gpu_count_reported),
                   gpu_compute_capability = COALESCE(?, gpu_compute_capability),
@@ -277,21 +397,21 @@ router.post('/heartbeat', (req, res) => {
         }
 
         // Update Ocean-style resource_spec when daemon provides it
-        if (resource_spec) {
+        if (resource_spec && (typeof resource_spec === 'string' || isPlainObject(resource_spec))) {
             const resourceSpecJson = typeof resource_spec === 'string'
                 ? resource_spec
                 : JSON.stringify(resource_spec);
-            db.run('UPDATE providers SET resource_spec = ? WHERE id = ?', resourceSpecJson, p.id);
+            runStatement('UPDATE providers SET resource_spec = ? WHERE id = ?', resourceSpecJson, p.id);
         }
 
         // Store daemon version on provider record for job assignment checks
         if (daemonVersion) {
-            db.run('UPDATE providers SET daemon_version = ? WHERE id = ?', daemonVersion, p.id);
+            runStatement('UPDATE providers SET daemon_version = ? WHERE id = ?', daemonVersion, p.id);
         }
 
         // Recompute reputation score on every heartbeat (rolling 7-day window)
         const rep = computeReputationScore(p.id);
-        db.run(
+        runStatement(
             'UPDATE providers SET uptime_percent = ?, reputation_score = ? WHERE id = ?',
             rep.uptime_percent, rep.reputation_score, p.id
         );
@@ -318,41 +438,48 @@ router.post('/daemon-event', (req, res) => {
         const { api_key, event_type, severity, daemon_version, timestamp,
                 hostname, os_info, python_version, details, job_id } = req.body;
 
-        if (!api_key || !event_type) {
+        const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
+        const cleanEventType = normalizeString(event_type, { maxLen: 80 });
+        if (!cleanApiKey || !cleanEventType) {
             return res.status(400).json({ error: 'Missing api_key or event_type' });
         }
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+        const cleanSeverity = ['info', 'warning', 'error', 'critical'].includes(String(severity || '').toLowerCase())
+            ? String(severity).toLowerCase()
+            : 'info';
+        const cleanTimestamp = normalizeString(timestamp, { maxLen: 40, trim: true }) || new Date().toISOString();
+        const cleanDetails = normalizeString(details || '', { maxLen: 5000, trim: false }) || '';
 
-        db.run(`INSERT INTO daemon_events
+        runStatement(`INSERT INTO daemon_events
             (provider_id, event_type, severity, daemon_version, job_id,
              hostname, os_info, python_version, details, event_timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             provider.id,
-            event_type,
-            severity || 'info',
-            daemon_version || null,
-            job_id || null,
-            hostname || null,
-            os_info || null,
-            python_version || null,
-            (details || '').substring(0, 5000),  // Cap at 5KB
-            timestamp || new Date().toISOString()
+            cleanEventType,
+            cleanSeverity,
+            normalizeString(daemon_version, { maxLen: 32 }) || null,
+            normalizeString(job_id, { maxLen: 80 }) || null,
+            normalizeString(hostname, { maxLen: 255 }) || null,
+            normalizeString(os_info, { maxLen: 200 }) || null,
+            normalizeString(python_version, { maxLen: 32 }) || null,
+            cleanDetails,  // Cap at 5KB
+            cleanTimestamp
         );
 
         // Log critical events to console for immediate visibility
-        if (severity === 'critical' || severity === 'error') {
-            console.warn(`[DAEMON EVENT] provider=${provider.id} type=${event_type} severity=${severity}: ${(details || '').substring(0, 200)}`);
+        if (cleanSeverity === 'critical' || cleanSeverity === 'error') {
+            console.warn(`[DAEMON EVENT] provider=${provider.id} type=${cleanEventType} severity=${cleanSeverity}: ${cleanDetails.substring(0, 200)}`);
             // Fire async alert — don't block response
             const provName = db.get('SELECT name FROM providers WHERE id = ?', provider.id)?.name || `ID ${provider.id}`;
             sendAlert(
-              event_type === 'crash' ? 'provider_crash' : 'critical_error',
-              `Provider: ${provName} (ID ${provider.id})\nEvent: ${event_type}\nSeverity: ${severity}\nHost: ${hostname || 'unknown'}\n\n${(details || '').substring(0, 500)}`
+              cleanEventType === 'crash' ? 'provider_crash' : 'critical_error',
+              `Provider: ${provName} (ID ${provider.id})\nEvent: ${cleanEventType}\nSeverity: ${cleanSeverity}\nHost: ${normalizeString(hostname, { maxLen: 255 }) || 'unknown'}\n\n${cleanDetails.substring(0, 500)}`
             ).catch(() => {});
         }
 
-        res.json({ success: true, event_type, provider_id: provider.id });
+        res.json({ success: true, event_type: cleanEventType, provider_id: provider.id });
 
     } catch (error) {
         console.error('Daemon event error:', error);
@@ -556,6 +683,77 @@ router.get('/me', async (req, res) => {
 });
 
 // ============================================================================
+// GET /api/providers/me/metrics - Provider performance dashboard metrics
+// ============================================================================
+router.get('/me/metrics', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id, gpu_model FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const statsRow = db.get(
+            `SELECT
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS jobs_completed,
+                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS jobs_failed,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(actual_duration_minutes, duration_minutes, 0) ELSE 0 END), 0) AS total_compute_minutes,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(provider_earned_halala, 0) ELSE 0 END), 0) AS earnings_halala,
+                COALESCE(AVG(CASE WHEN status = 'completed' THEN COALESCE(actual_duration_minutes, duration_minutes, NULL) END), 0) AS avg_job_duration_minutes
+             FROM jobs
+             WHERE provider_id = ?`,
+            provider.id
+        ) || {};
+
+        const hbRow = db.get(
+            `SELECT COALESCE(COUNT(*), 0) AS heartbeat_count
+             FROM heartbeat_log
+             WHERE provider_id = ? AND received_at >= datetime('now', '-7 days')`,
+            provider.id
+        ) || {};
+
+        // Heartbeat cadence is every ~30s, so 120 heartbeats ~= 1 hour.
+        const uptimeHoursLast7d = Number(((hbRow.heartbeat_count || 0) / 120).toFixed(2));
+
+        const recentJobs = db.all(
+            `SELECT
+                job_id,
+                job_type,
+                status,
+                COALESCE(actual_duration_minutes, duration_minutes, 0) AS duration_minutes,
+                COALESCE(provider_earned_halala, 0) AS earnings_halala,
+                completed_at
+             FROM jobs
+             WHERE provider_id = ? AND status = 'completed'
+             ORDER BY datetime(completed_at) DESC
+             LIMIT 10`,
+            provider.id
+        );
+
+        const earningsHalala = Number(statsRow.earnings_halala || 0);
+        const response = {
+            provider_id: provider.id,
+            gpu_model: provider.gpu_model || null,
+            stats: {
+                jobs_completed: Number(statsRow.jobs_completed || 0),
+                jobs_failed: Number(statsRow.jobs_failed || 0),
+                total_compute_minutes: Number(statsRow.total_compute_minutes || 0),
+                earnings_halala: earningsHalala,
+                earnings_sar: Number((earningsHalala / 100).toFixed(2)),
+                uptime_hours_last_7d: uptimeHoursLast7d,
+                avg_job_duration_minutes: Number(Number(statsRow.avg_job_duration_minutes || 0).toFixed(2)),
+            },
+            recent_jobs: recentJobs,
+        };
+
+        return res.json(response);
+    } catch (error) {
+        console.error('Provider metrics error:', error);
+        return res.status(500).json({ error: 'Failed to fetch provider metrics' });
+    }
+});
+
+// ============================================================================
 // POST /api/providers/pause - Pause provider
 // ============================================================================
 router.post('/pause', async (req, res) => {
@@ -566,7 +764,7 @@ router.post('/pause', async (req, res) => {
         const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-        db.run('UPDATE providers SET status = ?, is_paused = 1 WHERE id = ?', 'paused', provider.id);
+        runStatement('UPDATE providers SET status = ?, is_paused = 1 WHERE id = ?', 'paused', provider.id);
         res.json({ success: true, status: 'paused' });
     } catch (error) {
         console.error('Pause error:', error);
@@ -589,7 +787,7 @@ router.post('/resume', async (req, res) => {
         const isRecent = lastHb && (Date.now() - lastHb.getTime()) < 60000;
         const newStatus = isRecent ? 'online' : 'connected';
 
-        db.run('UPDATE providers SET status = ?, is_paused = 0 WHERE id = ?', newStatus, provider.id);
+        runStatement('UPDATE providers SET status = ?, is_paused = 0 WHERE id = ?', newStatus, provider.id);
         res.json({ success: true, status: newStatus });
     } catch (error) {
         console.error('Resume error:', error);
@@ -603,36 +801,47 @@ router.post('/resume', async (req, res) => {
 router.post('/preferences', async (req, res) => {
     try {
         const { key, run_mode, scheduled_start, scheduled_end, gpu_usage_cap_pct, vram_reserve_gb, temp_limit_c } = req.body;
-        if (!key) return res.status(400).json({ error: 'API key required' });
+        const cleanKey = normalizeString(key, { maxLen: 128, trim: false });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [cleanKey]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         // Validate
         const validModes = ['always-on', 'manual', 'scheduled'];
-        if (run_mode && !validModes.includes(run_mode)) {
+        const cleanRunMode = run_mode == null ? null : normalizeString(run_mode, { maxLen: 24 });
+        if (cleanRunMode && !validModes.includes(cleanRunMode)) {
             return res.status(400).json({ error: 'Invalid run_mode' });
         }
-        if (gpu_usage_cap_pct != null && (gpu_usage_cap_pct < 0 || gpu_usage_cap_pct > 100)) {
+        const usageCap = gpu_usage_cap_pct == null
+            ? null
+            : toFiniteNumber(gpu_usage_cap_pct, { min: 0, max: 100 });
+        if (gpu_usage_cap_pct != null && usageCap == null) {
             return res.status(400).json({ error: 'gpu_usage_cap_pct must be 0-100' });
         }
-        if (vram_reserve_gb != null && (vram_reserve_gb < 0 || vram_reserve_gb > 16)) {
+        const vramReserve = vram_reserve_gb == null
+            ? null
+            : toFiniteNumber(vram_reserve_gb, { min: 0, max: 16 });
+        if (vram_reserve_gb != null && vramReserve == null) {
             return res.status(400).json({ error: 'vram_reserve_gb must be 0-16' });
         }
-        if (temp_limit_c != null && (temp_limit_c < 50 || temp_limit_c > 100)) {
+        const tempLimit = temp_limit_c == null
+            ? null
+            : toFiniteNumber(temp_limit_c, { min: 50, max: 100 });
+        if (temp_limit_c != null && tempLimit == null) {
             return res.status(400).json({ error: 'temp_limit_c must be 50-100' });
         }
 
         const updates = {
-            run_mode: run_mode || provider.run_mode || 'always-on',
-            scheduled_start: scheduled_start || provider.scheduled_start || '23:00',
-            scheduled_end: scheduled_end || provider.scheduled_end || '07:00',
-            gpu_usage_cap_pct: gpu_usage_cap_pct != null ? gpu_usage_cap_pct : (provider.gpu_usage_cap_pct != null ? provider.gpu_usage_cap_pct : 80),
-            vram_reserve_gb: vram_reserve_gb != null ? vram_reserve_gb : (provider.vram_reserve_gb != null ? provider.vram_reserve_gb : 1),
-            temp_limit_c: temp_limit_c != null ? temp_limit_c : (provider.temp_limit_c != null ? provider.temp_limit_c : 85)
+            run_mode: cleanRunMode || provider.run_mode || 'always-on',
+            scheduled_start: normalizeString(scheduled_start, { maxLen: 5 }) || provider.scheduled_start || '23:00',
+            scheduled_end: normalizeString(scheduled_end, { maxLen: 5 }) || provider.scheduled_end || '07:00',
+            gpu_usage_cap_pct: usageCap != null ? usageCap : (provider.gpu_usage_cap_pct != null ? provider.gpu_usage_cap_pct : 80),
+            vram_reserve_gb: vramReserve != null ? vramReserve : (provider.vram_reserve_gb != null ? provider.vram_reserve_gb : 1),
+            temp_limit_c: tempLimit != null ? tempLimit : (provider.temp_limit_c != null ? provider.temp_limit_c : 85)
         };
 
-        db.run(
+        runStatement(
             `UPDATE providers SET run_mode = ?, scheduled_start = ?, scheduled_end = ?, gpu_usage_cap_pct = ?, vram_reserve_gb = ?, temp_limit_c = ? WHERE id = ?`,
             updates.run_mode, updates.scheduled_start, updates.scheduled_end, updates.gpu_usage_cap_pct, updates.vram_reserve_gb, updates.temp_limit_c, provider.id
         );
@@ -680,21 +889,50 @@ router.get('/download', async (req, res) => {
 });
 
 // ============================================================================
+// GET /api/providers/daemon/windows
+// Canonical Windows installer endpoint used by dcp.sa download page
+// ============================================================================
+function sendWindowsInstaller(res) {
+    if (fs.existsSync(WINDOWS_INSTALLER_PATH)) {
+        res.setHeader('Content-Disposition', 'attachment; filename="dc1-provider-setup.exe"');
+        res.setHeader('Content-Type', 'application/octet-stream');
+        return res.sendFile(WINDOWS_INSTALLER_PATH);
+    }
+    return res.status(404).json({
+        error: 'Installer not yet built',
+        message: 'makensis is required to build backend/installers/dc1-provider-Windows.nsi',
+        build_docs: '/docs/build-installer.md',
+        powershell_alternative: '/api/providers/setup-windows?key=YOUR_KEY'
+    });
+}
+
+router.get('/daemon/windows', (req, res) => {
+    return sendWindowsInstaller(res);
+});
+
+// ============================================================================
+// GET /api/providers/daemon/linux
+// Curl-able Linux setup entrypoint: curl -sSL .../daemon/linux | bash
+// ============================================================================
+router.get('/daemon/linux', (req, res) => {
+    if (!fs.existsSync(LINUX_INSTALL_SCRIPT_PATH)) {
+        return res.status(404).json({
+            error: 'Linux install script not found',
+            expected_path: 'backend/public/install.sh'
+        });
+    }
+
+    res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="install.sh"');
+    return res.sendFile(LINUX_INSTALL_SCRIPT_PATH);
+});
+
+// ============================================================================
 // GET /api/providers/download-windows-exe
 // Returns the generic Windows .exe installer (asks for API key during install)
 // ============================================================================
 router.get('/download-windows-exe', (req, res) => {
-    const exePath = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
-    if (fs.existsSync(exePath)) {
-        res.setHeader('Content-Disposition', 'attachment; filename="dc1-provider-setup.exe"');
-        res.setHeader('Content-Type', 'application/octet-stream');
-        return res.sendFile(exePath);
-    }
-    res.status(404).json({
-        error: 'Installer not yet built',
-        message: 'Run: makensis backend/installers/dc1-provider-Windows.nsi to build the installer',
-        powershell_alternative: '/api/providers/setup-windows?key=YOUR_KEY'
-    });
+    return sendWindowsInstaller(res);
 });
 
 // ============================================================================
@@ -703,18 +941,23 @@ router.get('/download-windows-exe', (req, res) => {
 router.post('/readiness', (req, res) => {
     try {
         const { api_key, checks, daemon_version } = req.body;
-        if (!api_key) return res.status(400).json({ error: 'API key required' });
+        const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
+        if (!cleanApiKey) return res.status(400).json({ error: 'API key required' });
+        if (checks != null && !isPlainObject(checks)) {
+            return res.status(400).json({ error: 'checks must be an object' });
+        }
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         // checks = { cuda: bool, pytorch: bool, vram_gb: number, driver: string, ... }
-        const allPassed = checks && checks.cuda && checks.pytorch && (checks.vram_gb >= 4);
+        const vramGb = toFiniteNumber(checks?.vram_gb, { min: 0, max: 1024 });
+        const allPassed = !!checks && checks.cuda === true && checks.pytorch === true && vramGb != null && vramGb >= 4;
         const status = allPassed ? 'ready' : 'failed';
 
-        db.run(
+        runStatement(
             `UPDATE providers SET readiness_status = ?, readiness_details = ?, daemon_version = ?, updated_at = ? WHERE id = ?`,
-            status, JSON.stringify(checks || {}), daemon_version || null, new Date().toISOString(), provider.id
+            status, JSON.stringify(checks || {}), normalizeString(daemon_version, { maxLen: 32 }) || null, new Date().toISOString(), provider.id
         );
 
         res.json({ success: true, readiness_status: status, checks });
@@ -733,11 +976,11 @@ router.get('/:api_key/jobs', (req, res) => {
         const provider = db.get('SELECT id, readiness_status FROM providers WHERE api_key = ?', api_key);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
-        // Find oldest pending job assigned to this provider
+        // Find next pending job using priority routing (higher first, FIFO tie-breaker)
         const job = db.get(
-            `SELECT id, job_id, job_type, task_spec, task_spec_hmac, gpu_requirements, duration_minutes, max_duration_seconds
+            `SELECT id, job_id, job_type, model, priority, task_spec, task_spec_hmac, gpu_requirements, duration_minutes, max_duration_seconds
              FROM jobs WHERE provider_id = ? AND status = 'pending'
-             ORDER BY submitted_at ASC LIMIT 1`,
+             ORDER BY COALESCE(priority, 5) DESC, created_at ASC LIMIT 1`,
             provider.id
         );
 
@@ -747,13 +990,13 @@ router.get('/:api_key/jobs', (req, res) => {
 
         // Mark as picked up
         const now = new Date().toISOString();
-        db.run(
+        runStatement(
             `UPDATE jobs SET picked_up_at = ?, status = 'running', started_at = COALESCE(started_at, ?),
              timeout_at = datetime(?, '+' || COALESCE(max_duration_seconds, 600) || ' seconds')
              WHERE id = ?`,
             now, now, now, job.id
         );
-        db.run(`UPDATE providers SET current_job_id = ? WHERE id = ?`, job.job_id, provider.id);
+        runStatement(`UPDATE providers SET current_job_id = ? WHERE id = ?`, job.job_id, provider.id);
 
         // Parse task_spec if it's a string
         let taskSpec = job.task_spec;
@@ -764,6 +1007,8 @@ router.get('/:api_key/jobs', (req, res) => {
                 id: job.id,
                 job_id: job.job_id,
                 job_type: job.job_type,
+                model: job.model || null,
+                priority: Number.isInteger(job.priority) ? job.priority : 5,
                 task_spec: taskSpec,
                 task_spec_hmac: job.task_spec_hmac,
                 gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
@@ -783,17 +1028,20 @@ router.get('/:api_key/jobs', (req, res) => {
 router.post('/job-result', (req, res) => {
     try {
         const { api_key, job_id, result, success, error: jobError, metrics } = req.body;
-        if (!api_key || !job_id) return res.status(400).json({ error: 'api_key and job_id required' });
+        const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
+        const cleanJobId = normalizeString(job_id, { maxLen: 80, trim: true });
+        if (!cleanApiKey || !cleanJobId) return res.status(400).json({ error: 'api_key and job_id required' });
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
-        const job = db.get('SELECT * FROM jobs WHERE job_id = ? AND provider_id = ?', job_id, provider.id);
+        const job = db.get('SELECT * FROM jobs WHERE job_id = ? AND provider_id = ?', cleanJobId, provider.id);
         if (!job) return res.status(404).json({ error: 'Job not found' });
         if (job.status !== 'running') return res.json({ success: true, message: `Job already settled (${job.status})` });
 
         const now = new Date().toISOString();
-        const newStatus = success ? 'completed' : 'failed';
+        const successFlag = success === true || success === 'true' || success === 1;
+        const newStatus = successFlag ? 'completed' : 'failed';
 
         // Calculate actual duration and billing
         const startedAt = job.started_at || job.submitted_at;
@@ -805,7 +1053,7 @@ router.post('/job-result', (req, res) => {
         const providerEarned = Math.floor(actualCostHalala * 0.75);
         const dc1Fee = actualCostHalala - providerEarned;
 
-        db.run(
+        runStatement(
             `UPDATE jobs SET status = ?, result = ?, error = ?, completed_at = ?,
              actual_duration_minutes = ?, actual_cost_halala = ?,
              provider_earned_halala = ?, dc1_fee_halala = ?
@@ -816,22 +1064,22 @@ router.post('/job-result', (req, res) => {
 
         // Update provider stats
         if (success) {
-            db.run(
+            runStatement(
                 `UPDATE providers SET total_earnings = total_earnings + ?, claimable_earnings_halala = claimable_earnings_halala + ?, total_jobs = total_jobs + 1, current_job_id = NULL WHERE id = ?`,
                 providerEarned / 100, providerEarned, provider.id  // total_earnings is in SAR, claimable in halala
             );
         } else {
-            db.run(`UPDATE providers SET current_job_id = NULL WHERE id = ?`, provider.id);
+            runStatement(`UPDATE providers SET current_job_id = NULL WHERE id = ?`, provider.id);
         }
 
         // ── Release escrow to provider (or back to renter on failure) ──
         if (success) {
-            db.run(
+            runStatement(
                 `UPDATE escrow_holds SET status = 'released_provider', resolved_at = ? WHERE job_id = ? AND status IN ('held','locked')`,
                 now, job_id
             );
         } else {
-            db.run(
+            runStatement(
                 `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ? WHERE job_id = ? AND status IN ('held','locked')`,
                 now, job_id
             );
@@ -844,13 +1092,13 @@ router.post('/job-result', (req, res) => {
             const estimatedCost = job.cost_halala || 0;
             const delta = estimatedCost - actualCostHalala; // positive = refund, negative = extra charge
             if (delta !== 0) {
-                db.run(
+                runStatement(
                     `UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?`,
                     delta, job.renter_id
                 );
             }
             // Update renter spending stats
-            db.run(
+            runStatement(
                 `UPDATE renters SET total_spent_halala = total_spent_halala + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
                 actualCostHalala, job.renter_id
             );
@@ -858,7 +1106,7 @@ router.post('/job-result', (req, res) => {
 
         res.json({
             success: true,
-            job_id,
+            job_id: cleanJobId,
             status: newStatus,
             actual_minutes: actualMinutes,
             cost_halala: actualCostHalala,
@@ -882,8 +1130,12 @@ router.get('/download/daemon', (req, res) => {
         const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
-        const daemonPath = path.join(__dirname, '../../installers/dc1-daemon.py');
-        if (!fs.existsSync(daemonPath)) {
+        const daemonCandidates = [
+            path.join(__dirname, '../../installers/dc1_daemon.py'),
+            path.join(__dirname, '../../installers/dc1-daemon.py'),
+        ];
+        const daemonPath = daemonCandidates.find(candidate => fs.existsSync(candidate));
+        if (!daemonPath) {
             return res.status(404).json({ error: 'Daemon file not found' });
         }
 
@@ -912,8 +1164,9 @@ router.get('/download/daemon', (req, res) => {
             .replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`)
             .replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 
+        const downloadName = path.basename(daemonPath);
         res.setHeader('Content-Type', 'text/x-python');
-        res.setHeader('Content-Disposition', 'attachment; filename="dc1-daemon.py"');
+        res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
         res.send(injected);
     } catch (error) {
         console.error('Daemon download error:', error);
@@ -1033,20 +1286,22 @@ router.get('/earnings', (req, res) => {
 router.post('/withdraw', (req, res) => {
     try {
         const { api_key, amount_sar, payout_method, payout_details } = req.body;
-        if (!api_key) return res.status(400).json({ error: 'api_key required' });
+        const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
+        if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
 
         const provider = db.get(
             'SELECT id, name, total_earnings, claimable_earnings_halala FROM providers WHERE api_key = ?',
-            api_key
+            cleanApiKey
         );
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
-        if (!amount_sar || amount_sar <= 0) {
+        const amountSar = toFiniteNumber(amount_sar, { min: 0.01, max: 1000000 });
+        if (amountSar == null) {
             return res.status(400).json({ error: 'amount_sar must be > 0' });
         }
 
         // Minimum withdrawal: 10 SAR
-        if (amount_sar < 10) {
+        if (amountSar < 10) {
             return res.status(400).json({ error: 'Minimum withdrawal is 10 SAR' });
         }
 
@@ -1071,31 +1326,33 @@ router.post('/withdraw', (req, res) => {
         const availableHalala = Math.max(0, totalEarnedHalala - pendingHalala - withdrawnHalala);
         const availableSar = availableHalala / 100;
 
-        if (amount_sar > availableSar) {
+        if (amountSar > availableSar) {
             return res.status(402).json({
                 error: 'Insufficient available earnings',
                 available_sar: availableSar.toFixed(2),
                 available_halala: availableHalala,
-                requested_sar: amount_sar
+                requested_sar: amountSar
             });
         }
 
         const now = new Date().toISOString();
         const withdrawal_id = 'wd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 
-        db.run(
+        runStatement(
             `INSERT INTO withdrawals (withdrawal_id, provider_id, amount_sar, payout_method, payout_details, status, requested_at)
              VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
-            withdrawal_id, provider.id, amount_sar,
-            payout_method || 'bank_transfer',
-            payout_details ? JSON.stringify(payout_details) : null,
+            withdrawal_id, provider.id, amountSar,
+            normalizeString(payout_method, { maxLen: 50 }) || 'bank_transfer',
+            payout_details && (typeof payout_details === 'string' || isPlainObject(payout_details))
+                ? JSON.stringify(payout_details)
+                : null,
             now
         );
 
         res.status(201).json({
             success: true,
             withdrawal_id,
-            amount_sar,
+            amount_sar: amountSar,
             status: 'pending',
             message: 'Withdrawal request submitted. Processing takes 1-3 business days.'
         });
@@ -1296,6 +1553,231 @@ router.get('/withdrawal-history', (req, res) => {
     }
 });
 
+const MODEL_TIERS = {
+    tier8: [
+        { model_id: 'llama-3-8b', display_name: 'Llama 3 8B' },
+        { model_id: 'mistral-7b', display_name: 'Mistral 7B' },
+        { model_id: 'phi-3-mini', display_name: 'Phi-3 Mini' },
+    ],
+    tier24: [
+        { model_id: 'llama-3-70b-q4', display_name: 'Llama 3 70B Q4' },
+        { model_id: 'codellama-34b', display_name: 'CodeLlama 34B' },
+        { model_id: 'mixtral-8x7b', display_name: 'Mixtral 8x7B' },
+    ],
+    tier40: [
+        { model_id: 'llama-3-70b', display_name: 'Llama 3 70B' },
+        { model_id: 'falcon-40b', display_name: 'Falcon 40B' },
+        { model_id: 'yi-34b', display_name: 'Yi 34B' },
+    ],
+};
+
+const MODEL_DISPLAY_OVERRIDES = {
+    'llama-3-8b': 'Llama 3 8B',
+    'mistral-7b': 'Mistral 7B',
+    'phi-3-mini': 'Phi-3 Mini',
+    'llama-3-70b-q4': 'Llama 3 70B Q4',
+    'codellama-34b': 'CodeLlama 34B',
+    'mixtral-8x7b': 'Mixtral 8x7B',
+    'llama-3-70b': 'Llama 3 70B',
+    'falcon-40b': 'Falcon 40B',
+    'yi-34b': 'Yi 34B',
+    'meta-llama/meta-llama-3-8b-instruct': 'Llama 3 8B Instruct',
+    'mistralai/mistral-7b-instruct-v0.2': 'Mistral 7B Instruct',
+    'microsoft/phi-3-mini-4k-instruct': 'Phi-3 Mini Instruct',
+};
+
+const MODEL_ALIASES = {
+    'meta-llama/meta-llama-3-8b-instruct': 'llama-3-8b',
+    'meta-llama/llama-3-8b-instruct': 'llama-3-8b',
+    'mistralai/mistral-7b-instruct-v0.2': 'mistral-7b',
+    'microsoft/phi-3-mini-4k-instruct': 'phi-3-mini',
+};
+
+function safeJsonParse(value) {
+    if (!value) return null;
+    if (typeof value === 'object') return value;
+    try {
+        return JSON.parse(value);
+    } catch (_) {
+        return null;
+    }
+}
+
+function toDisplayName(modelId) {
+    const known = MODEL_DISPLAY_OVERRIDES[String(modelId).toLowerCase()];
+    if (known) return known;
+    return String(modelId)
+        .split('/')
+        .pop()
+        .replace(/[-_]/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function normalizeModelId(modelId) {
+    const cleaned = String(modelId || '').trim();
+    if (!cleaned) return null;
+    const lower = cleaned.toLowerCase();
+    return MODEL_ALIASES[lower] || lower;
+}
+
+function inferVramGb(provider) {
+    if (Number.isFinite(provider.gpu_vram_mib) && provider.gpu_vram_mib > 0) {
+        return provider.gpu_vram_mib / 1024;
+    }
+    if (Number.isFinite(provider.vram_gb) && provider.vram_gb > 0) {
+        return provider.vram_gb;
+    }
+    const resourceSpec = safeJsonParse(provider.resource_spec);
+    const gpuResource = Array.isArray(resourceSpec?.resources)
+        ? resourceSpec.resources.find(r => String(r?.type || '').toLowerCase() === 'gpu')
+        : null;
+    if (!gpuResource) return 0;
+    const candidates = [
+        gpuResource.vram_gb,
+        gpuResource.memory_gb,
+        gpuResource.total_memory_gb,
+        gpuResource.total_gb,
+        gpuResource.total,
+    ];
+    const firstGb = candidates.find(v => Number.isFinite(Number(v)) && Number(v) > 0);
+    if (firstGb != null) return Number(firstGb);
+    if (Number.isFinite(Number(gpuResource.memory_mib)) && Number(gpuResource.memory_mib) > 0) {
+        return Number(gpuResource.memory_mib) / 1024;
+    }
+    return 0;
+}
+
+function getFallbackModelsForVram(vramGb) {
+    if (vramGb >= 40) return MODEL_TIERS.tier40;
+    if (vramGb >= 24) return MODEL_TIERS.tier24;
+    if (vramGb >= 8) return MODEL_TIERS.tier8;
+    return [];
+}
+
+function extractProviderModels(provider) {
+    const parsed = safeJsonParse(provider.cached_models);
+    let models = [];
+    if (Array.isArray(parsed)) {
+        models = parsed;
+    } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.models)) models = parsed.models;
+        else if (Array.isArray(parsed.supported_models)) models = parsed.supported_models;
+        else if (Array.isArray(parsed.vllm_models)) models = parsed.vllm_models;
+    }
+
+    const normalized = new Map();
+    models.forEach(item => {
+        const rawModelId = typeof item === 'string'
+            ? item
+            : item?.model_id || item?.model || item?.id || item?.name;
+        const modelId = normalizeModelId(rawModelId);
+        if (!modelId) return;
+        normalized.set(modelId, {
+            model_id: modelId,
+            display_name: (item && item.display_name) || toDisplayName(modelId),
+        });
+    });
+
+    if (normalized.size > 0) return Array.from(normalized.values());
+    return getFallbackModelsForVram(inferVramGb(provider));
+}
+
+// ============================================================================
+// Graduated provider status thresholds (seconds since last heartbeat)
+// Used by /models and /available to compute online | degraded | offline status.
+// ============================================================================
+const HEARTBEAT_ONLINE_THRESHOLD_S   = 120;   // < 2 min  → online   (green)
+const HEARTBEAT_DEGRADED_THRESHOLD_S = 600;   // 2–10 min → degraded (yellow, still bookable)
+                                               // > 10 min → offline  (excluded)
+
+/**
+ * Compute graduated availability status from the age of the last heartbeat.
+ * @param {string|null} lastHeartbeat  ISO-8601 timestamp from providers.last_heartbeat
+ * @param {number}      now            Current epoch ms (Date.now())
+ * @returns {{ status: 'online'|'degraded'|'offline', heartbeat_age_seconds: number|null, degraded_since: string|null }}
+ */
+function computeProviderStatus(lastHeartbeat, now) {
+    if (!lastHeartbeat) {
+        return { status: 'offline', heartbeat_age_seconds: null, degraded_since: null };
+    }
+    const ageMs = now - new Date(lastHeartbeat).getTime();
+    const ageSecs = Math.floor(ageMs / 1000);
+    if (ageSecs < HEARTBEAT_ONLINE_THRESHOLD_S) {
+        return { status: 'online', heartbeat_age_seconds: ageSecs, degraded_since: null };
+    }
+    if (ageSecs < HEARTBEAT_DEGRADED_THRESHOLD_S) {
+        // degraded_since = moment the provider crossed the 2-minute threshold
+        const degradedSince = new Date(new Date(lastHeartbeat).getTime() + HEARTBEAT_ONLINE_THRESHOLD_S * 1000).toISOString();
+        return { status: 'degraded', heartbeat_age_seconds: ageSecs, degraded_since: degradedSince };
+    }
+    return { status: 'offline', heartbeat_age_seconds: ageSecs, degraded_since: null };
+}
+
+// ============================================================================
+// GET /api/providers/models — Public aggregate of available vLLM models
+// ============================================================================
+router.get('/models', (req, res) => {
+    try {
+        const providers = db.all(
+            `SELECT id, status, is_paused, gpu_vram_mib, vram_gb, cached_models, resource_spec, last_heartbeat
+             FROM providers
+             WHERE is_paused = 0 AND last_heartbeat IS NOT NULL`
+        );
+
+        const llmRateHalalaPerMin = COST_RATES['llm-inference']
+            || COST_RATES.llm_inference
+            || COST_RATES.vllm_serve
+            || COST_RATES.default
+            || 10;
+
+        const now = Date.now();
+        const modelMap = new Map();
+
+        providers.forEach(provider => {
+            // Only include providers whose heartbeat is recent enough (online or degraded)
+            const { status: providerStatus } = computeProviderStatus(provider.last_heartbeat, now);
+            if (providerStatus === 'offline') return;
+
+            const providerVramGb = inferVramGb(provider);
+            const providerModels = extractProviderModels(provider);
+
+            providerModels.forEach(model => {
+                const existing = modelMap.get(model.model_id);
+                if (!existing) {
+                    modelMap.set(model.model_id, {
+                        model_id: model.model_id,
+                        display_name: model.display_name || toDisplayName(model.model_id),
+                        provider_ids: new Set([provider.id]),
+                        min_price_sar_per_hr: (llmRateHalalaPerMin * 60) / 100,
+                        max_vram_available_gb: providerVramGb,
+                        sample_provider_id: String(provider.id),
+                    });
+                    return;
+                }
+
+                existing.provider_ids.add(provider.id);
+                existing.max_vram_available_gb = Math.max(existing.max_vram_available_gb || 0, providerVramGb || 0);
+            });
+        });
+
+        const models = Array.from(modelMap.values())
+            .map(m => ({
+                model_id: m.model_id,
+                display_name: m.display_name,
+                providers_count: m.provider_ids.size,
+                min_price_sar_per_hr: Number(m.min_price_sar_per_hr.toFixed(2)),
+                max_vram_available_gb: Number((m.max_vram_available_gb || 0).toFixed(1)),
+                sample_provider_id: m.sample_provider_id,
+            }))
+            .sort((a, b) => b.providers_count - a.providers_count || a.model_id.localeCompare(b.model_id));
+
+        res.json({ models, total: models.length });
+    } catch (error) {
+        console.error('Provider models aggregation error:', error);
+        res.status(500).json({ error: 'Failed to fetch provider models' });
+    }
+});
+
 // ============================================================================
 // POST /api/providers/rotate-key — Rotate API key (provider self-service)
 // ============================================================================
@@ -1308,7 +1790,7 @@ router.post('/rotate-key', (req, res) => {
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         const newKey = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
-        db.run('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?',
+        runStatement('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?',
             newKey, new Date().toISOString(), provider.id);
 
         res.json({
@@ -1331,6 +1813,10 @@ router.post('/rotate-key', (req, res) => {
 router.get('/available', (req, res) => {
     try {
         const { COST_RATES } = require('./jobs');
+        // Fetch all non-paused providers that have ever sent a heartbeat.
+        // Graduated status (online/degraded/offline) is computed in JS from heartbeat age,
+        // so we do NOT filter by status column here — the DB status column is only updated
+        // when a heartbeat arrives (→ 'online'), not when the provider goes silent.
         const providers = db.all(
             `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
                     gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
@@ -1338,25 +1824,25 @@ router.get('/available', (req, res) => {
                     cached_models, last_heartbeat, uptime_percent, total_jobs, is_paused,
                     created_at
              FROM providers
-             WHERE status = 'online' AND is_paused = 0
+             WHERE is_paused = 0 AND last_heartbeat IS NOT NULL
              ORDER BY reputation_score DESC NULLS LAST, gpu_vram_mib DESC NULLS LAST`
         );
 
         const now = Date.now();
-        const mapped = providers.map(p => {
+        const mapped = providers.reduce((acc, p) => {
+            const { status: computedStatus, heartbeat_age_seconds, degraded_since } =
+                computeProviderStatus(p.last_heartbeat, now);
+
+            // Exclude truly offline providers from the marketplace listing
+            if (computedStatus === 'offline') return acc;
+
             let cachedModels = [];
             if (p.cached_models) { try { cachedModels = JSON.parse(p.cached_models); } catch {} }
 
             let gpuSpec = null;
             if (p.gpu_spec_json) { try { gpuSpec = JSON.parse(p.gpu_spec_json); } catch {} }
 
-            // Determine live availability: heartbeat within last 2 minutes = live
-            const heartbeatAge = p.last_heartbeat
-                ? Math.floor((now - new Date(p.last_heartbeat).getTime()) / 1000)
-                : null;
-            const isLive = heartbeatAge !== null && heartbeatAge < 120;
-
-            return {
+            acc.push({
                 id: p.id,
                 name: p.name,
                 // GPU spec
@@ -1368,10 +1854,11 @@ router.get('/available', (req, res) => {
                 compute_capability: p.gpu_compute_capability,
                 cuda_version: p.gpu_cuda_version,
                 gpu_spec: gpuSpec,
-                // Availability
-                status: p.status,
-                is_live: isLive,
-                heartbeat_age_seconds: heartbeatAge,
+                // Graduated availability status
+                status: computedStatus,           // "online" | "degraded"
+                is_live: computedStatus === 'online',
+                heartbeat_age_seconds,
+                degraded_since,                   // ISO timestamp when degraded began; null if online
                 location: p.location,
                 run_mode: p.run_mode,
                 // Quality
@@ -1382,17 +1869,115 @@ router.get('/available', (req, res) => {
                 cached_models: cachedModels,
                 // Pricing (halala per minute by job type)
                 cost_rates_halala_per_min: COST_RATES,
-            };
+            });
+
+            return acc;
+        }, []);
+
+        // Degrade sort: online providers first, then degraded, both sub-sorted by reputation
+        mapped.sort((a, b) => {
+            if (a.status !== b.status) return a.status === 'online' ? -1 : 1;
+            return (b.reputation_score ?? 100) - (a.reputation_score ?? 100);
         });
 
         res.json({
             providers: mapped,
             total: mapped.length,
+            online_count: mapped.filter(p => p.status === 'online').length,
+            degraded_count: mapped.filter(p => p.status === 'degraded').length,
             timestamp: new Date().toISOString(),
         });
     } catch (error) {
         console.error('Available providers error:', error);
         res.status(500).json({ error: 'Failed to fetch available providers' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/marketplace — Public provider cards for marketplace page
+// Returns only online providers with minimal card fields (no auth required)
+// ============================================================================
+router.get('/marketplace', marketplaceLimiter, (req, res) => {
+    try {
+        const defaultPrice = COST_RATES.default || 10;
+        const providers = db.all(
+            `SELECT id, gpu_model, gpu_name_detected, gpu_vram_mib, vram_gb, uptime_percent, total_jobs
+             FROM providers
+             WHERE status = 'online' AND COALESCE(is_paused, 0) = 0
+             ORDER BY COALESCE(reputation_score, 0) DESC, id DESC`
+        );
+
+        const payload = providers.map((p) => ({
+            id: p.id,
+            gpu_model: p.gpu_name_detected || p.gpu_model || 'Unknown GPU',
+            vram_gb: p.vram_gb != null
+                ? Number(p.vram_gb)
+                : (p.gpu_vram_mib != null ? Math.round((p.gpu_vram_mib / 1024) * 10) / 10 : null),
+            price_per_min_halala: defaultPrice,
+            uptime_pct: p.uptime_percent != null ? Number(p.uptime_percent) : 0,
+            jobs_completed: p.total_jobs != null ? Number(p.total_jobs) : 0,
+        }));
+
+        res.json(payload);
+    } catch (error) {
+        console.error('Marketplace providers error:', error);
+        res.status(500).json({ error: 'Failed to fetch marketplace providers' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/:id/benchmarks — Most recent benchmark result for provider
+// ============================================================================
+router.get('/:id/benchmarks', benchmarkLimiter, (req, res) => {
+    try {
+        const isAdminReq = (() => {
+            const provided = req.headers['x-admin-token'] || '';
+            const expected = process.env.DC1_ADMIN_TOKEN;
+            return !!expected && provided === expected;
+        })();
+
+        const providerId = parseInt(req.params.id, 10);
+        if (!Number.isFinite(providerId)) {
+            return res.status(400).json({ error: 'Provider id must be a number' });
+        }
+
+        if (!isAdminReq) {
+            const key = req.headers['x-provider-key'] || req.query.key;
+            if (!key) return res.status(401).json({ error: 'API key required' });
+            const own = db.get('SELECT id FROM providers WHERE api_key = ?', key);
+            if (!own || own.id !== providerId) return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const provider = db.get('SELECT id FROM providers WHERE id = ?', providerId);
+        if (!provider) {
+            return res.status(404).json({ error: 'Provider not found' });
+        }
+
+        const benchmarkJob = db.get(
+            `SELECT job_id
+             FROM jobs
+             WHERE provider_id = ? AND job_type = 'benchmark' AND status = 'completed' AND result IS NOT NULL
+             ORDER BY datetime(COALESCE(completed_at, submitted_at)) DESC, id DESC
+             LIMIT 1`,
+            providerId
+        );
+
+        if (!benchmarkJob) {
+            return res.status(404).json({ error: 'No benchmark found for this provider' });
+        }
+
+        const benchmark = getBenchmarkResult(benchmarkJob.job_id);
+        if (!benchmark) {
+            return res.status(404).json({ error: 'Benchmark data unavailable' });
+        }
+
+        res.json({
+            provider_id: providerId,
+            benchmark,
+        });
+    } catch (error) {
+        console.error('Provider benchmark fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch provider benchmark' });
     }
 });
 
@@ -1490,7 +2075,7 @@ router.delete('/me', (req, res) => {
         const anonId = 'deleted-' + provider.id;
 
         // Soft delete: anonymize all PII columns, invalidate key, mark deleted
-        db.run(
+        runStatement(
             `UPDATE providers SET
                name        = ?,
                email       = ?,

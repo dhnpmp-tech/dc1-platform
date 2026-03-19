@@ -51,6 +51,10 @@
     "p2p",
     "docker-templates",
     "contracts",
-    "extensions"
+    "extensions",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ]
 }

@@ -55,7 +55,7 @@ export default function RenterRegisterPage() {
     setError('')
 
     if (!formData.pdplConsent) {
-      setError('You must consent to data processing to register')
+      setError(t('register.renter.pdpl_error'))
       setLoading(false)
       return
     }
@@ -127,13 +127,13 @@ export default function RenterRegisterPage() {
                     onClick={copyApiKey}
                     className="btn btn-secondary btn-sm"
                   >
-                    {copied ? 'Copied!' : 'Copy'}
+                    {copied ? t('register.renter.copied') : t('register.renter.copy')}
                   </button>
                 </div>
               </div>
 
               <p className="text-sm text-status-warning bg-status-warning/5 border border-status-warning/20 rounded-lg p-4 mb-6">
-                Keep this key secure. You'll need it to access the GPU marketplace and submit jobs.
+                {t('register.renter.key_security')}
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -141,7 +141,7 @@ export default function RenterRegisterPage() {
                   {t('register.renter.go_dashboard')}
                 </a>
                 <a href="/" className="btn btn-secondary flex-1">
-                  Back to Home
+                  {t('register.renter.back_home')}
                 </a>
               </div>
             </div>
@@ -163,7 +163,7 @@ export default function RenterRegisterPage() {
               {t('register.renter.title')}
             </h1>
             <p className="text-xl text-dc1-text-secondary max-w-2xl mx-auto">
-              Rent powerful GPUs for your AI training, inference, and scientific computing needs. Pay only for what you use.
+              {t('register.renter.subtitle_main')}
             </p>
           </div>
         </section>
@@ -228,7 +228,7 @@ export default function RenterRegisterPage() {
                   name="organization"
                   value={formData.organization}
                   onChange={handleChange}
-                  placeholder="Your Company Name"
+                  placeholder={t('register.renter.org_placeholder_text')}
                   className="input"
                 />
               </div>
@@ -256,7 +256,7 @@ export default function RenterRegisterPage() {
               {/* Phone */}
               <div>
                 <label htmlFor="phone" className="label">
-                  Phone <span className="text-dc1-text-muted">(Optional)</span>
+                  {t('register.renter.phone')} <span className="text-dc1-text-muted">{t('register.renter.optional')}</span>
                 </label>
                 <input
                   type="tel"
@@ -281,10 +281,10 @@ export default function RenterRegisterPage() {
                     required
                   />
                   <span className="text-sm text-dc1-text-secondary">
-                    I consent to DC1 collecting and processing my personal data (name, email, billing history, job history) as described in the{' '}
-                    <a href="/privacy" className="text-dc1-amber hover:underline">Privacy Policy</a>.
-                    {' '}I understand my data is processed on servers outside Saudi Arabia (Lithuania/US) and I consent to this cross-border transfer. I agree to the{' '}
-                    <a href="/terms" className="text-dc1-amber hover:underline">Terms of Service</a>.
+                    {t('register.renter.pdpl_text')}{' '}
+                    <a href="/privacy" className="text-dc1-amber hover:underline">{t('register.renter.privacy_policy')}</a>.
+                    {' '}{t('register.renter.pdpl_text2')}{' '}
+                    <a href="/terms" className="text-dc1-amber hover:underline">{t('register.renter.terms')}</a>.
                   </span>
                 </label>
               </div>
@@ -309,7 +309,7 @@ export default function RenterRegisterPage() {
 
         {/* Features Section */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
-          <h3 className="section-heading mb-8">What You Can Do</h3>
+          <h3 className="section-heading mb-8">{t('register.renter.what_you_can_do')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Card 1: Browse Marketplace */}
             <div className="card-hover">
@@ -320,9 +320,9 @@ export default function RenterRegisterPage() {
                   </svg>
                 </div>
               </div>
-              <h4 className="text-lg font-semibold text-dc1-text-primary mb-2">Browse Marketplace</h4>
+              <h4 className="text-lg font-semibold text-dc1-text-primary mb-2">{t('register.renter.browse_title')}</h4>
               <p className="text-sm text-dc1-text-secondary">
-                Discover available GPUs from providers worldwide. Filter by model, performance, and price to find the perfect fit for your workload.
+                {t('register.renter.browse_desc')}
               </p>
             </div>
 
@@ -335,9 +335,9 @@ export default function RenterRegisterPage() {
                   </svg>
                 </div>
               </div>
-              <h4 className="text-lg font-semibold text-dc1-text-primary mb-2">Submit Jobs</h4>
+              <h4 className="text-lg font-semibold text-dc1-text-primary mb-2">{t('register.renter.submit_title')}</h4>
               <p className="text-sm text-dc1-text-secondary">
-                Easily submit your AI training and inference jobs. Monitor progress in real-time and get detailed metrics.
+                {t('register.renter.submit_desc')}
               </p>
             </div>
 
@@ -350,9 +350,9 @@ export default function RenterRegisterPage() {
                   </svg>
                 </div>
               </div>
-              <h4 className="text-lg font-semibold text-dc1-text-primary mb-2">Pay Per Use</h4>
+              <h4 className="text-lg font-semibold text-dc1-text-primary mb-2">{t('register.renter.pay_title')}</h4>
               <p className="text-sm text-dc1-text-secondary">
-                Transparent pricing with no long-term contracts. Pay only for the compute resources you actually use.
+                {t('register.renter.pay_desc')}
               </p>
             </div>
           </div>

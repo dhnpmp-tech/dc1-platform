@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const paymentsRouter = require('./routes/payments');
 
 const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
@@ -13,16 +14,11 @@ const PORT = process.env.DC1_PROVIDER_PORT || 8083;
 const _extraOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : [];
+const _frontendOrigin = (process.env.FRONTEND_URL || '').trim();
 const ALLOWED_ORIGINS = [
   'https://dcp.sa',
   'https://www.dcp.sa',
-  'https://dcp.sa',
-  'https://www.dcp.sa',
-  'https://dc1-platform.vercel.app',
-  'https://dc1-platform-dc11.vercel.app',
-  'https://dc1-platform-git-main-dc11.vercel.app',
-  'http://localhost:3000',
-  'http://localhost:8083',
+  ...(_frontendOrigin ? [_frontendOrigin] : []),
   ..._extraOrigins,
 ];
 app.use(cors({
@@ -31,13 +27,14 @@ app.use(cors({
     if (!origin) return callback(null, true);
     // Allow exact matches
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-    // Allow Vercel preview deploys (*.vercel.app)
-    if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) return callback(null, true);
     console.warn(`[cors] Blocked origin: ${origin}`);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));
+
+// Webhook raw parser must run before express.json()
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '50mb' }));  // Large limit for base64 image results (512x512 PNG ~ 500KB base64)
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -111,6 +108,20 @@ const adminLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use('/api/admin', adminLimiter);
+
+// Login endpoints: 10 attempts per IP per 15 minutes
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/providers/login', loginLimiter);
+app.use('/api/renters/login', loginLimiter);
+app.use('/api/providers/login-email', loginLimiter);
+app.use('/api/renters/login-email', loginLimiter);
+app.use('/api/admin/login', loginLimiter);
 
 // Renter registration: 5 per IP per hour (same policy as provider registration)
 const renterRegisterLimiter = rateLimit({
@@ -194,7 +205,6 @@ app.use('/api/renters', rentersRouter);
 const verificationRouter = require('./routes/verification');
 app.use('/api/verification', verificationRouter);
 
-const paymentsRouter = require('./routes/payments');
 app.use('/api/payments', paymentsRouter);
 
 const templatesRouter = require('./routes/templates');
@@ -207,9 +217,40 @@ if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
 const fallbackRouter = require('./routes/fallback');
 app.use('/api/fallback', fallbackRouter);
 
+const db = require('./db');
+
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'dc1-platform-api', mode: 'headless', timestamp: new Date().toISOString() });
+  try {
+    db.prepare('SELECT 1').get();
+
+    const providersTotal = db.prepare(
+      `SELECT COUNT(*) AS count FROM providers`
+    ).get()?.count || 0;
+
+    const providersOnline = db.prepare(
+      `SELECT COUNT(*) AS count FROM providers WHERE status = 'online'`
+    ).get()?.count || 0;
+
+    const jobsQueued = db.prepare(
+      `SELECT COUNT(*) AS count FROM jobs WHERE status = 'queued'`
+    ).get()?.count || 0;
+
+    const jobsRunning = db.prepare(
+      `SELECT COUNT(*) AS count FROM jobs WHERE status = 'running'`
+    ).get()?.count || 0;
+
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      db: 'ok',
+      providers: { total: providersTotal, online: providersOnline },
+      jobs: { queued: jobsQueued, running: jobsRunning },
+    });
+  } catch (err) {
+    console.error('[health] Failed to run health checks:', err?.message || err);
+    res.status(500).json({ error: 'Health check failed' });
+  }
 });
 
 // OpenAPI spec — GET /api/docs
@@ -231,14 +272,14 @@ app.get('/api/docs/ui', (req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DC1 API — Swagger UI</title>
+  <title>DCP API — Swagger UI</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
   <style>
     body { margin: 0; background: #07070E; }
     .topbar { background: #07070E !important; }
     .topbar-wrapper img { display: none; }
     .topbar-wrapper::before {
-      content: 'DC1 API';
+      content: 'DCP API';
       color: #F5A524;
       font-size: 1.4rem;
       font-weight: 700;

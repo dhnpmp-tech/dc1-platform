@@ -1,5 +1,5 @@
 /**
- * DC1 API client for VS Code extension.
+ * DCP API client for VS Code extension.
  * Wraps all REST calls to dcp.sa backend.
  */
 
@@ -45,6 +45,12 @@ export interface WalletInfo {
   balance_halala: number;
   balance_sar: number;
   total_spent_halala: number;
+}
+
+export interface AvailableModel {
+  model_id: string;
+  display_name: string;
+  providers_count: number;
 }
 
 function getBaseUrl(): string {
@@ -160,5 +166,33 @@ export class Dc1ApiClient {
   async getWallet(): Promise<WalletInfo> {
     const result = await makeRequest<WalletInfo>('GET', '/renters/me', this.apiKey);
     return result;
+  }
+
+  async getAvailableModels(): Promise<AvailableModel[]> {
+    const result = await makeRequest<{ models: AvailableModel[] } | AvailableModel[]>(
+      'GET',
+      '/providers/models',
+      this.apiKey
+    );
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as { models: AvailableModel[] }).models || [];
+  }
+
+  async getInProgressJobs(): Promise<Job[]> {
+    const result = await makeRequest<{ jobs: Job[] } | Job[]>(
+      'GET',
+      '/renters/jobs?status=in_progress',
+      this.apiKey
+    );
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as { jobs: Job[] }).jobs || [];
+  }
+
+  async cancelJob(jobId: string): Promise<void> {
+    await makeRequest<unknown>('DELETE', `/jobs/${jobId}`, this.apiKey);
   }
 }
