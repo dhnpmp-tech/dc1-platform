@@ -14,6 +14,8 @@ const _extraOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : [];
 const ALLOWED_ORIGINS = [
+  'https://dcp.sa',
+  'https://www.dcp.sa',
   'https://dc1st.com',
   'https://www.dc1st.com',
   'https://dc1-platform.vercel.app',
