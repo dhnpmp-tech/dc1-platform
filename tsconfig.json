@@ -49,6 +49,7 @@
     "vscode-extension",
     "sdk",
     "p2p",
-    "docker-templates"
+    "docker-templates",
+    "contracts"
   ]
 }

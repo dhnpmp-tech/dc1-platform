@@ -24,8 +24,13 @@ import { createLibp2p } from 'libp2p'
 import { tcp } from '@libp2p/tcp'
 import { noise } from '@libp2p/noise'
 import { yamux } from '@libp2p/yamux'
-import { kadDHT } from '@libp2p/kad-dht'
+import { kadDHT, passthroughMapper, removePrivateAddressesMapper } from '@libp2p/kad-dht'
 import { bootstrap } from '@libp2p/bootstrap'
+import { identify } from '@libp2p/identify'
+import { ping } from '@libp2p/ping'
+import { multiaddr } from '@multiformats/multiaddr'
+
+export { multiaddr }
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -54,7 +59,12 @@ export const DEFAULT_BOOTSTRAP_ADDR =
 export async function createDC1Node ({
   port = 0,
   bootstrapList = [],
-  clientMode = false
+  clientMode = false,
+  // In production (public IPs), use removePrivateAddressesMapper so the DHT
+  // routing table only tracks publicly routable addresses.
+  // In local/prototype mode (loopback/LAN), use passthroughMapper so the DHT
+  // routing table accepts 127.0.0.1 and RFC-1918 addresses.
+  localMode = true
 } = {}) {
   const config = {
     addresses: {
@@ -64,6 +74,9 @@ export async function createDC1Node ({
     connectionEncrypters: [noise()],
     streamMuxers: [yamux()],
     services: {
+      // identify and ping are required by kad-dht (libp2p 3.x)
+      identify: identify(),
+      ping: ping(),
       dht: kadDHT({
         // Scoped protocol — DC1 DHT is isolated from the public IPFS DHT
         protocol: '/dc1/kad/1.0.0',
@@ -73,7 +86,25 @@ export async function createDC1Node ({
         // Production default is 20.
         kBucketSize: 2,
         // How often this node refreshes its own position in the DHT
-        querySelfInterval: 10_000
+        querySelfInterval: 10_000,
+        // IMPORTANT: By default kad-dht strips private (loopback/RFC-1918) addresses
+        // from routing table entries.  For local testing this empties the routing
+        // table, breaking all DHT queries.  passthroughMapper allows loopback
+        // addresses so the demo works on a single machine.  In production
+        // (real public IPs on VPS/provider machines) switch to
+        // removePrivateAddressesMapper or omit this option.
+        peerInfoMapper: localMode ? passthroughMapper : removePrivateAddressesMapper,
+        // Register a passthrough validator for the /dc1/ key namespace.
+        // Without this, verifyRecord() throws InvalidParametersError for
+        // any key whose first path component is not a registered type
+        // (e.g. 'pk' for public keys).  The validator simply accepts all
+        // values — DC1 can add signature-based validation in Phase D.
+        validators: {
+          dc1: async (_key, _value) => { /* accept all */ }
+        },
+        selectors: {
+          dc1: (_key, records) => 0  // always prefer the first record
+        }
       })
     }
   }
@@ -125,10 +156,25 @@ export async function announceProvider (node, spec) {
   const value = new TextEncoder().encode(JSON.stringify(record))
 
   // DHT put() returns an async iterator of routing events; consume them all.
-  for await (const event of node.services.dht.put(key, value)) {
-    if (event.name === 'QUERY_ERROR') {
-      console.warn(`[P2P] DHT put warning: ${event.error?.message ?? 'unknown'}`)
+  // In small prototype networks (< 3 nodes) routing queries may time out —
+  // this is expected; the record is still stored locally and readable by
+  // any directly-connected renter.
+  const abortCtrl = new AbortController()
+  const putTimeout = setTimeout(() => abortCtrl.abort(), 8000)
+  try {
+    for await (const event of node.services.dht.put(key, value, { signal: abortCtrl.signal })) {
+      if (event.name === 'QUERY_ERROR') {
+        console.warn(`[P2P] DHT put warning: ${event.error?.message ?? 'unknown'}`)
+      }
     }
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      console.warn(`[P2P] DHT put timed out (normal in small networks) — record stored locally`)
+    } else {
+      throw err
+    }
+  } finally {
+    clearTimeout(putTimeout)
   }
   console.log(`[P2P] Announced: ${DC1_PROVIDER_PREFIX}${node.peerId.toString()}`)
 }
@@ -147,14 +193,21 @@ export async function announceProvider (node, spec) {
  */
 export async function getProviderSpec (node, peerId) {
   const key = providerKey(peerId)
+  const abortCtrl = new AbortController()
+  const getTimeout = setTimeout(() => abortCtrl.abort(), 8000)
   try {
-    for await (const event of node.services.dht.get(key)) {
+    for await (const event of node.services.dht.get(key, { signal: abortCtrl.signal })) {
       if (event.name === 'VALUE') {
+        clearTimeout(getTimeout)
         return JSON.parse(new TextDecoder().decode(event.value))
       }
     }
   } catch (err) {
-    console.warn(`[P2P] DHT get failed for ${peerId}: ${err.message}`)
+    if (err.name !== 'TimeoutError' && err.name !== 'AbortError') {
+      console.warn(`[P2P] DHT get failed for ${peerId}: ${err.message}`)
+    }
+  } finally {
+    clearTimeout(getTimeout)
   }
   return null
 }
@@ -162,7 +215,7 @@ export async function getProviderSpec (node, peerId) {
 // ── Utility ────────────────────────────────────────────────────────────────
 
 /**
- * Return the first TCP multiaddr of a node as a string.
+ * Return the first full multiaddr of a node (includes /p2p/{peerId} in libp2p 3.x).
  *
  * @param {import('libp2p').Libp2p} node
  * @returns {string}
@@ -170,6 +223,22 @@ export async function getProviderSpec (node, peerId) {
 export function nodeAddr (node) {
   const addrs = node.getMultiaddrs()
   return addrs.length > 0 ? addrs[0].toString() : '(no address yet)'
+}
+
+/**
+ * Return the first TCP multiaddr WITHOUT the /p2p/{peerId} suffix.
+ * Useful when you want to build a full multiaddr manually.
+ *
+ * @param {import('libp2p').Libp2p} node
+ * @returns {string}
+ */
+export function nodeTransportAddr (node) {
+  const addrs = node.getMultiaddrs()
+  if (addrs.length === 0) return '(no address yet)'
+  // Strip /p2p/... suffix if present
+  const str = addrs[0].toString()
+  const p2pIdx = str.indexOf('/p2p/')
+  return p2pIdx !== -1 ? str.slice(0, p2pIdx) : str
 }
 
 /**

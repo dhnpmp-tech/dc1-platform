@@ -32,7 +32,7 @@
  *     direct lookup by peer ID is the stable API.
  */
 
-import { createDC1Node, announceProvider, getProviderSpec, nodeAddr } from './dc1-node.js'
+import { createDC1Node, announceProvider, getProviderSpec, nodeAddr, multiaddr } from './dc1-node.js'
 
 const PROVIDER_SPEC = {
   gpu: 'RTX 4090',
@@ -73,9 +73,9 @@ async function main () {
     bootstrapList: [], // direct demo: nodes discover each other via dial
     clientMode: false
   })
-  const providerAddr = nodeAddr(providerNode)
+  // In libp2p 3.x, getMultiaddrs() already includes /p2p/{peerId}
+  const providerFullAddr = nodeAddr(providerNode)
   const providerId = providerNode.peerId.toString()
-  const providerFullAddr = `${providerAddr}/p2p/${providerId}`
 
   log(`Provider peer ID : ${providerId}`)
   log(`Provider address : ${providerFullAddr}`)
@@ -95,7 +95,7 @@ async function main () {
   // ── 3. Dial provider directly (simulates bootstrap-assisted discovery) ──
   log(`Renter dialling provider at ${providerFullAddr}...`)
   try {
-    await renterNode.dial(providerFullAddr)
+    await renterNode.dial(multiaddr(providerFullAddr))
     log('Connection established')
   } catch (err) {
     log(`Dial failed: ${err.message}`)
@@ -152,7 +152,7 @@ async function main () {
     clientMode: false
   })
   const provider2Id = provider2Node.peerId.toString()
-  await renterNode.dial(`${nodeAddr(provider2Node)}/p2p/${provider2Id}`)
+  await renterNode.dial(multiaddr(nodeAddr(provider2Node)))
   await sleep(200)
   await announceProvider(provider2Node, {
     gpu: 'RTX 3090',

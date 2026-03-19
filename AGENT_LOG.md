@@ -7,6 +7,98 @@
 
 ---
 
+## [2026-03-18 22:30 UTC] DevRel Engineer — DCP-74: TypeScript renter SDK (dc1-renter-sdk)
+
+- **Files**: `sdk/node/` — multiple files added/updated
+- **Changes**:
+  - Renamed package from `@dc1/client` to `dc1-renter-sdk` (package.json)
+  - Added `DC1RenterClient` flat class (`src/DC1RenterClient.ts`) with methods: `me()`, `register()`, `listProviders(filters?)`, `submitJob()`, `getJob()`, `waitForJob()`, `getJobLogs()`, `cancelJob()`, `getBalance()`, `getPaymentHistory()`
+  - Added `cancel()` and `getLogs()` to `JobsResource`
+  - Fixed `WalletResource.balance()` to use `/api/renters/balance` (was calling `/api/renters/me` incorrectly — doesn't accept x-renter-key header)
+  - Added `me()` to `WalletResource` using correct `?key=` query param
+  - Exposed `HttpClient.apiKey` as `readonly` so resources can pass it as query param when needed
+  - Updated default `baseUrl` to `https://api.dcp.sa` in both `client.ts` and `DC1RenterClient.ts`
+  - Updated User-Agent to `dc1-renter-sdk/0.1.0`
+  - Added new types: `Balance`, `JobLog`, `RegisterResult`, `PaymentHistory`, `PaymentHistoryItem`
+  - Added `examples/submit-job.ts` (full LLM job lifecycle) and `examples/list-providers.ts`
+  - Updated `README.md` with full API reference for `DC1RenterClient`
+- **Breaking changes**: None — `DC1Client` still exported; `wallet.balance()` now returns richer `Balance` type
+- **Impact**: SDK is now publishable as `dc1-renter-sdk` on npm
+
+---
+
+## [2026-03-18 22:15 UTC] Blockchain Engineer — DCP-75: Wire Escrow.sol into Express.js backend
+
+- **Files**: `backend/src/services/escrow-chain.js` (new), `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/ecosystem.config.js`
+- **Changes**:
+  - Created `ChainEscrowService` singleton with graceful fallback (disabled when `ESCROW_CONTRACT_ADDRESS` unset)
+  - `depositAndLock` called fire-and-forget after SQLite escrow hold in `POST /api/jobs/submit`
+  - `claimLock` (oracle-signed) called after successful job settlement in `POST /api/jobs/:id/result`
+  - `cancelExpiredLock` called after failed job settlement in `POST /api/jobs/:id/result` and `POST /api/jobs/:id/fail`
+  - Admin endpoint `GET /api/admin/escrow-chain/status` returns contract address, network, oracle address, isEnabled
+  - New env var slots in `ecosystem.config.js`: `ESCROW_CONTRACT_ADDRESS`, `ESCROW_ORACLE_PRIVATE_KEY`, `BASE_RPC_URL`
+- **Design**: On-chain calls never block the HTTP response; all errors are caught and logged, falling back to SQLite escrow
+- **Network**: Base Sepolia testnet only — do NOT set `ESCROW_CONTRACT_ADDRESS` on mainnet
+- **Breaking changes**: None — off-chain SQLite escrow path unchanged when env vars unset
+
+## [2026-03-18 22:05 UTC] P2P Network Engineer — DCP-58: libp2p DHT prototype (Phase C)
+
+- **Files**: `p2p/dc1-node.js` (updated), `p2p/provider-announce.js` (new), `p2p/demo.js` (new), `p2p/README.md` (new), `p2p/package.json` (updated)
+- **What**: Built complete Phase C P2P provider discovery prototype
+  - `dc1-node.js`: core libp2p node factory with Kademlia DHT, validators, passthrough mapper fix
+  - `provider-announce.js`: daemon integration hook (subprocess or HTTP-IPC call)
+  - `demo.js`: working end-to-end demo — 2 nodes, provider announces RTX 4090, renter discovers it
+  - `README.md`: full architecture, phase roadmap, env vars, daemon integration guide
+- **Key fixes** (libp2p 3.x vs spec):
+  - Added `@libp2p/identify` and `@libp2p/ping` (required by kad-dht v16)
+  - Bumped all package versions to actual latest stable (`@libp2p/noise@^1`, `@libp2p/tcp@^11`, etc.)
+  - Set `peerInfoMapper: passthroughMapper` for local-mode: default `removePrivateAddressesMapper` strips 127.0.0.1, emptying routing table
+  - Added `validators: { dc1: async () => {} }` + `selectors` — without this verifyRecord throws for unknown namespace
+  - Added AbortController timeouts on DHT put/get (default 3-min timeout unusable in demo)
+  - Fixed double-appended peer ID in multiaddrs (libp2p 3.x already includes /p2p/peerId)
+- **Impact**: `node p2p/demo.js` now shows full P2P discovery — provider announces to DHT, renter discovers by peer ID, both providers found
+- **Breaking changes**: None (p2p/ is excluded from tsconfig, not imported by Next.js or backend)
+- **Issue**: DCP-58 (done)
+
+## [2026-03-18 22:10 UTC] DevRel Engineer — DCP-73: Python provider SDK (dc1_provider)
+
+- **Files**: `sdk/python/dc1_provider/__init__.py`, `client.py`, `models.py`, `exceptions.py`, `_http.py`
+- **Files**: `sdk/python/examples/register.py`, `heartbeat.py`, `list_jobs.py`
+- **Files**: `sdk/python/README.md` (appended provider SDK section)
+- **What**: Built `dc1_provider` Python package — pip installable, stdlib-only, Python 3.9+
+  - `DC1ProviderClient` with: `me()`, `register()`, `heartbeat()`, `announce()`, `get_jobs()`, `get_earnings()`, `build_resource_spec()`
+  - Models: `ProviderProfile`, `ProviderJob`, `Earnings` (all SAR/halala helpers)
+  - Exceptions: `DC1APIError`, `AuthError`
+  - Auth: `x-provider-key` header for POST, `?key=` query param for GET (matches backend contract)
+  - `build_resource_spec()` runs `nvidia-smi` + `/proc/meminfo` for GPU auto-detection
+- **Breaking changes**: None — additive only alongside existing renter `dc1` package
+
+---
+
+## [2026-03-18 21:45 UTC] Frontend Developer — DCP-69: Add 4 missing landing page sections
+
+- **Files**: `app/page.tsx`
+- **Changes**: Added 4 sections to homepage (inserted before CTA):
+  1. **Provider Setup Demo** — 4-step numbered flow with curl/PowerShell code blocks, "Start Earning in 5 Minutes" tone
+  2. **Founding Rates Table** — GPU pricing table (RTX 3080/3090/4090/A100) with SAR/hr and 75% provider earnings
+  3. **What You Can Run** — 6 workload cards (LLM, SD, PyTorch, Jupyter, Docker, CUDA) with icons and tags
+  4. **Programmatic Integration** — curl job submission code example, OpenAPI reference, feature checklist
+- **Design**: All sections use DC1 tokens (dc1-amber, dc1-surface-l1, dc1-border, dc1-text-*); pattern matches existing sections
+- **JSX**: Tags balanced 138/138; build blocked by pre-existing EACCES `.next/trace` root-owned file (not code issue)
+- **Issue**: DCP-69 (QA finding from DCP-43 audit vs Replit spec)
+- **Breaking changes**: None — additive content only
+
+## [2026-03-18 21:35 UTC] Frontend Developer — DCP-68: Fix landing page header nav + CTA buttons
+
+- **Files**: `app/components/layout/Header.tsx`, `app/page.tsx`
+- **Changes**:
+  - Nav labels updated: `Home/For Providers/For Renters` → `Compute/Supply/Docs`
+  - CTA buttons updated: `Sign In` → `Console Login`, `Get Started` → `Get Early Access`
+  - Hero headline updated: `Power, Digitalized` → `Borderless GPU Compute`
+  - Mobile menu CTA buttons updated to match desktop
+- **Issue**: DCP-68 (QA finding from DCP-43 audit vs Replit spec)
+- **Breaking changes**: None — header/nav only, no API or dashboard changes
+
 ## [2025-03-11 10:00 UTC] Claude-Cowork  Daemon consolidation
 
 - **Commit**: `5f90e1d`  Refactored `daemon.ps1` into thin installer v2.0.0 (303159 lines)
@@ -134,6 +226,25 @@
 - **Impact**: All planned dashboard improvement items now complete. Both dashboards feature-complete.
 - **Breaking**: None
 - **New pages**: 4 (`provider/jobs/[id]`, `renter/jobs/[id]`, `renter/settings`, `renter/analytics`)
+
+---
+
+## [2026-03-18 21:35 UTC] Blockchain Engineer — DCP-70: Escrow.sol — EVM payment escrow scaffold (Base Sepolia)
+
+- **Files (NEW)**: `contracts/contracts/Escrow.sol`, `contracts/contracts/MockUSDC.sol`, `contracts/hardhat.config.js`, `contracts/scripts/deploy.js`, `contracts/test/Escrow.test.js`, `contracts/abis/Escrow.json`, `contracts/package.json`, `contracts/.env.example`, `contracts/.gitignore`, `contracts/README.md`
+- **Files (MODIFIED)**: `tsconfig.json` (added `contracts` to excludes)
+- **What changed**:
+  - **Escrow.sol**: Full EVM escrow contract — `depositAndLock`, `claimLock`, `cancelExpiredLock`, `getEscrow` + `setOracle`. ECDSA oracle proof verification. 75/25 fee split. ReentrancyGuard + Ownable (OZ v5).
+  - **MockUSDC.sol**: Test-only ERC20 with 6 decimals and open `mint()`.
+  - **hardhat.config.js**: Hardhat toolbox, Base Sepolia (chainId 84532, RPC https://sepolia.base.org), Basescan verification.
+  - **deploy.js**: Deploys Escrow, exports ABI + address to `contracts/abis/Escrow.json` for backend consumption.
+  - **Escrow.test.js**: 16 tests covering all functions, edge cases, oracle signature verification, 75/25 split math.
+  - **abis/Escrow.json**: Static pre-computed ABI (address populated on deploy).
+  - **README.md**: Architecture docs, deploy steps, backend integration plan.
+- **Impact**: DC1 on-chain payment layer foundation. Zero blockchain components → full testnet-ready escrow. Backend integration (ethers.js wiring) is a separate follow-up issue.
+- **Breaking**: None — contracts/ is isolated, no changes to backend or frontend code paths.
+- **Deploy command**: `cd contracts && npm install && npm run deploy:sepolia`
+- **Test command**: `cd contracts && npm install && npm test`
 
 ---
 
@@ -641,3 +752,26 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 - **Breaking changes**: None
 - **Impact**: Analytics page now accessible from renter sidebar navigation across all renter pages; shared API utility created for future consolidation
 
+
+## [2026-03-18 21:10 UTC] QA-Engineer (Paperclip Agent)  DCP-40 + DCP-41 test suites + DCP-43 QA audit
+
+### DCP-41 — Container security tests (COMPLETE)
+- **File**: `backend/tests/security/container-isolation.test.js` (NEW)
+- **Tests**: 42 total — 28 passing, 14 skipped (live Docker tests auto-skip when Docker unavailable)
+- **Coverage**: Static analysis of dc1-daemon.py security flags (--network none, --read-only, --cap-drop all, seccomp, VRAM leak), live container isolation tests, image whitelist enforcement
+- **Breaking changes**: None
+
+### DCP-40 — Job pipeline integration tests (COMPLETE)
+- **File**: `backend/tests/integration/job-pipeline-routes.test.js` (NEW)
+- **Tests**: 45 total — 45 passing
+- **Coverage**: Job submission (auth/validation/RCE guard/balance), priority queue, assign→complete lifecycle, transient retry, HMAC verification, escrow lifecycle (held→locked→released_provider/renter), vLLM serve, custom_container, billing accuracy (75/25 split), queue endpoint
+- **Key fix**: Pure-JS InMemoryDB mock to bypass better-sqlite3 native module incompatibility on Node.js v24. Critical bug: WHERE clause `pi` counter must reset per-row in filter callback (was shared across rows causing undefined params for 2nd+ rows)
+- **Breaking changes**: None
+
+### DCP-43 — QA visual validation of Replit-matched UI (COMPLETE)
+- **Files**: No code changes — audit only
+- **Findings**: 8/10 checklist items pass. Two critical gaps vs https://dc-1-platform.replit.app/:
+  1. Header nav labels wrong (need Compute/Supply/Docs + Console Login/Get Early Access)
+  2. Landing page missing 4 sections (Provider Setup Demo, Founding Rates Table, What You Can Run, Programmatic Integration)
+- **Recommended child issues**: Update header nav, add missing landing sections, update hero headline to "Borderless GPU Compute"
+- **Breaking changes**: None

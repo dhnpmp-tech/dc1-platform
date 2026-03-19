@@ -4,12 +4,18 @@ Submit GPU compute jobs to **DC1** — Saudi Arabia's first decentralized GPU ma
 
 ## Features
 
+### For Providers
+- **🖥️ Provider Status Sidebar** — Explorer panel view showing live status: Online/Offline, GPU model, VRAM, jobs completed, earnings (SAR), last heartbeat
+- **🔑 Provider API Key Auth** — Stored securely in VS Code SecretStorage, never in settings
+- **📊 Provider Status Bar** — Bottom bar shows ✅ Connected / ❌ Not configured at a glance
+- **⟳ Auto-refresh** — Provider stats refresh every 60 seconds
+
+### For Renters
 - **⚡ GPU Sidebar** — Live tree view of available NVIDIA GPUs (model, VRAM, location, reliability score, cached models)
 - **🚀 Job Submission Panel** — Rich webview to select GPU, job type, model, prompt, duration, and VRAM requirements
 - **📋 My Jobs** — Tree view of your submitted jobs with live status icons; click to stream output
 - **💳 Wallet Panel** — View SAR balance, account info, and top-up
 - **📊 Status Bar** — Live balance display in the bottom bar, click to open wallet
-- **🔑 Secure Auth** — API key stored in VS Code SecretStorage (never in settings.json)
 - **📺 Log Streaming** — Job output streams to DC1 Job Logs output channel with auto-polling
 
 ## Job Types
@@ -26,10 +32,18 @@ Submit GPU compute jobs to **DC1** — Saudi Arabia's first decentralized GPU ma
 
 ## Getting Started
 
+### As a Provider
 1. Install the extension (`.vsix`) via *Extensions → Install from VSIX*
-2. Run **DC1: Set API Key** from the Command Palette (`Ctrl+Shift+P`)
-   - Get your key from [dc1st.com/renter/register](https://dc1st.com/renter/register)
-3. Open the **DC1** sidebar (lightning bolt icon in activity bar)
+2. Run **DC1: Set Provider API Key** from the Command Palette (`Ctrl+Shift+P`)
+   - Get your key from [dcp.sa/provider/register](https://dcp.sa/provider/register)
+3. Open the **Explorer** panel — look for the **DC1 Provider** section at the bottom
+4. Your live GPU status, job count, and earnings appear automatically (refresh every 60s)
+
+### As a Renter
+1. Install the extension (`.vsix`) via *Extensions → Install from VSIX*
+2. Run **DC1: Set Renter API Key** from the Command Palette (`Ctrl+Shift+P`)
+   - Get your key from [dcp.sa/renter/register](https://dcp.sa/renter/register)
+3. Open the **DC1** sidebar (activity bar icon)
 4. Click **Submit GPU Job** or right-click a GPU → **Submit Job on This GPU**
 
 ## Configuration
@@ -45,17 +59,18 @@ Submit GPU compute jobs to **DC1** — Saudi Arabia's first decentralized GPU ma
 ```
 vscode-extension/
 ├── src/
-│   ├── extension.ts           # Entry point, command registration
-│   ├── api/dc1Client.ts       # DC1 REST API client (Node http/https)
-│   ├── auth/AuthManager.ts    # SecretStorage key management
+│   ├── extension.ts                      # Entry point, command registration
+│   ├── api/dc1Client.ts                  # DC1 REST API client (Node http/https)
+│   ├── auth/AuthManager.ts               # SecretStorage key management (renter + provider)
 │   ├── providers/
-│   │   ├── GPUTreeProvider.ts # TreeDataProvider — available GPUs
-│   │   └── JobsTreeProvider.ts # TreeDataProvider — my jobs
+│   │   ├── ProviderStatusTreeProvider.ts # TreeDataProvider — provider's own live status
+│   │   ├── GPUTreeProvider.ts            # TreeDataProvider — available GPUs (renter view)
+│   │   └── JobsTreeProvider.ts           # TreeDataProvider — my jobs (renter view)
 │   └── panels/
-│       ├── JobSubmitPanel.ts  # WebviewPanel — job submission form
-│       └── WalletPanel.ts     # WebviewPanel — wallet & billing
+│       ├── JobSubmitPanel.ts             # WebviewPanel — job submission form
+│       └── WalletPanel.ts               # WebviewPanel — wallet & billing
 ├── media/dc1-icon.svg
-├── package.json               # Extension manifest
+├── package.json                          # Extension manifest
 ├── webpack.config.js
 └── tsconfig.json
 ```

@@ -1,18 +1,28 @@
 import * as vscode from 'vscode';
 import { dc1 } from '../api/dc1Client';
 
-const SECRET_KEY = 'dc1.renterApiKey';
+const RENTER_SECRET_KEY = 'dc1.renterApiKey';
+const PROVIDER_SECRET_KEY = 'dc1.providerKey';
 
 export class AuthManager {
+  // ── Renter key ────────────────────────────────────────────────────
   private _apiKey: string | undefined;
   private readonly _onDidChangeKey = new vscode.EventEmitter<string | undefined>();
   readonly onDidChangeKey = this._onDidChangeKey.event;
 
+  // ── Provider key ──────────────────────────────────────────────────
+  private _providerKey: string | undefined;
+  private readonly _onDidChangeProviderKey = new vscode.EventEmitter<string | undefined>();
+  readonly onDidChangeProviderKey = this._onDidChangeProviderKey.event;
+
   constructor(private readonly secrets: vscode.SecretStorage) {}
 
   async load(): Promise<void> {
-    this._apiKey = await this.secrets.get(SECRET_KEY);
+    this._apiKey = await this.secrets.get(RENTER_SECRET_KEY);
+    this._providerKey = await this.secrets.get(PROVIDER_SECRET_KEY);
   }
+
+  // ── Renter key accessors ──────────────────────────────────────────
 
   get apiKey(): string | undefined {
     return this._apiKey;
@@ -23,13 +33,13 @@ export class AuthManager {
   }
 
   async setApiKey(key: string): Promise<void> {
-    await this.secrets.store(SECRET_KEY, key);
+    await this.secrets.store(RENTER_SECRET_KEY, key);
     this._apiKey = key;
     this._onDidChangeKey.fire(key);
   }
 
   async clearApiKey(): Promise<void> {
-    await this.secrets.delete(SECRET_KEY);
+    await this.secrets.delete(RENTER_SECRET_KEY);
     this._apiKey = undefined;
     this._onDidChangeKey.fire(undefined);
   }
@@ -41,8 +51,8 @@ export class AuthManager {
   async promptAndSave(): Promise<boolean> {
     const current = this._apiKey;
     const input = await vscode.window.showInputBox({
-      title: 'DC1 Compute — Set API Key',
-      prompt: 'Enter your DC1 Renter API key (from dc1st.com/renter/register)',
+      title: 'DC1 Compute — Set Renter API Key',
+      prompt: 'Enter your DC1 Renter API key (from dcp.sa/renter/register)',
       value: current,
       password: true,
       placeHolder: 'rk_xxxxxxxxxxxxxxxx',
@@ -56,9 +66,8 @@ export class AuthManager {
 
     const key = input.trim();
 
-    // Validate by hitting /renters/me
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'DC1: Validating API key…', cancellable: false },
+      { location: vscode.ProgressLocation.Notification, title: 'DC1: Validating renter API key…', cancellable: false },
       async () => {
         try {
           const info = await dc1.getRenterInfo(key);
@@ -68,7 +77,7 @@ export class AuthManager {
           );
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`DC1: Invalid API key — ${msg}`);
+          vscode.window.showErrorMessage(`DC1: Invalid renter API key — ${msg}`);
           throw err;
         }
       }
@@ -77,7 +86,7 @@ export class AuthManager {
     return this.isAuthenticated;
   }
 
-  /** Ensure key is set; prompt if not. Returns the key or undefined. */
+  /** Ensure renter key is set; prompt if not. Returns the key or undefined. */
   async ensureKey(): Promise<string | undefined> {
     if (this._apiKey) {
       return this._apiKey;
@@ -86,7 +95,73 @@ export class AuthManager {
     return saved ? this._apiKey : undefined;
   }
 
+  // ── Provider key accessors ────────────────────────────────────────
+
+  get providerKey(): string | undefined {
+    return this._providerKey;
+  }
+
+  get isProviderAuthenticated(): boolean {
+    return !!this._providerKey;
+  }
+
+  async setProviderKey(key: string): Promise<void> {
+    await this.secrets.store(PROVIDER_SECRET_KEY, key);
+    this._providerKey = key;
+    this._onDidChangeProviderKey.fire(key);
+  }
+
+  async clearProviderKey(): Promise<void> {
+    await this.secrets.delete(PROVIDER_SECRET_KEY);
+    this._providerKey = undefined;
+    this._onDidChangeProviderKey.fire(undefined);
+  }
+
+  /**
+   * Prompt user for their DC1 provider API key, validate it, then store it.
+   * Returns true if the key was saved successfully.
+   */
+  async promptAndSaveProvider(): Promise<boolean> {
+    const current = this._providerKey;
+    const input = await vscode.window.showInputBox({
+      title: 'DC1 Compute — Set Provider API Key',
+      prompt: 'Enter your DC1 Provider API key (from dcp.sa/provider/register)',
+      value: current,
+      password: true,
+      placeHolder: 'pk_xxxxxxxxxxxxxxxx',
+      ignoreFocusOut: true,
+      validateInput: (v) => (v.trim().length < 10 ? 'API key looks too short' : undefined),
+    });
+
+    if (!input) {
+      return false;
+    }
+
+    const key = input.trim();
+
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'DC1: Validating provider API key…', cancellable: false },
+      async () => {
+        try {
+          const info = await dc1.getProviderInfo(key);
+          await this.setProviderKey(key);
+          const earningsSar = (info.total_earnings_halala / 100).toFixed(2);
+          vscode.window.showInformationMessage(
+            `DC1: Connected as provider ${info.name} — ${info.gpu_model} — ${earningsSar} SAR earned`
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`DC1: Invalid provider API key — ${msg}`);
+          throw err;
+        }
+      }
+    );
+
+    return this.isProviderAuthenticated;
+  }
+
   dispose(): void {
     this._onDidChangeKey.dispose();
+    this._onDidChangeProviderKey.dispose();
   }
 }

@@ -4,7 +4,7 @@ import { ProvidersResource } from './resources/providers';
 import { WalletResource } from './resources/wallet';
 import { DC1ClientConfig } from './types';
 
-const DEFAULT_BASE_URL = 'https://dcp.sa/api/dc1';
+const DEFAULT_BASE_URL = 'https://api.dcp.sa';
 
 /**
  * Official DC1 client for Node.js/TypeScript.

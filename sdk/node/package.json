@@ -1,7 +1,7 @@
 {
-  "name": "@dc1/client",
+  "name": "dc1-renter-sdk",
   "version": "0.1.0",
-  "description": "Official Node.js SDK for the DC1 GPU compute marketplace",
+  "description": "Official TypeScript/JavaScript SDK for GPU renters on DC1 — Saudi Arabia's compute marketplace",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

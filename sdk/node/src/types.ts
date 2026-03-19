@@ -82,6 +82,58 @@ export interface Wallet {
   apiKey: string;
 }
 
+/** Detailed balance breakdown from GET /api/renters/balance */
+export interface Balance {
+  balanceHalala: number;
+  balanceSar: number;
+  /** Funds held for active/queued jobs */
+  heldHalala: number;
+  heldSar: number;
+  availableHalala: number;
+  totalSpentHalala: number;
+  totalSpentSar: number;
+  totalJobs: number;
+}
+
+// ─── Logs ─────────────────────────────────────────────────────────────────────
+
+export interface JobLog {
+  lineNo: number;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  message: string;
+  loggedAt: string;
+}
+
+// ─── Registration ─────────────────────────────────────────────────────────────
+
+export interface RegisterResult {
+  renterId: number;
+  apiKey: string;
+  message: string;
+}
+
+// ─── Payment history ──────────────────────────────────────────────────────────
+
+export interface PaymentHistoryItem {
+  jobId: string;
+  jobType: string;
+  status: string;
+  submittedAt: string;
+  completedAt: string | null;
+  costHalala: number;
+  costSar: string;
+  providerName: string | null;
+  providerGpu: string | null;
+  refunded: boolean;
+}
+
+export interface PaymentHistory {
+  balanceHalala: number;
+  balanceSar: string;
+  totalJobs: number;
+  jobs: PaymentHistoryItem[];
+}
+
 // ─── Client config ────────────────────────────────────────────────────────────
 
 export interface DC1ClientConfig {

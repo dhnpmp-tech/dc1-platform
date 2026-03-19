@@ -194,6 +194,140 @@ See [`examples/`](examples/) for runnable scripts:
 - [`image_gen.py`](examples/image_gen.py) — generate an image with Stable Diffusion
 - [`vllm_endpoint.py`](examples/vllm_endpoint.py) — spin up an OpenAI-compatible vLLM endpoint
 
+---
+
+## Provider SDK (`dc1_provider`)
+
+GPU providers use the `DC1ProviderClient` class from the `dc1_provider` package,
+included in this repo alongside the renter SDK.
+
+### Quickstart
+
+```python
+from dc1_provider import DC1ProviderClient
+
+# --- Step 1: Register once ---
+client = DC1ProviderClient()          # no key needed for registration
+spec = client.build_resource_spec()   # auto-detects GPU + RAM + OS
+
+result = client.register(
+    name="My GPU Farm",
+    email="provider@example.com",
+    gpu_model=spec.get("gpu_model", "RTX 4090"),
+    resource_spec=spec,
+)
+API_KEY = result["api_key"]
+print("API key:", API_KEY)
+
+# --- Step 2: Ongoing operation ---
+client = DC1ProviderClient(api_key=API_KEY)
+
+me = client.me()
+print(f"{me.name} | {me.gpu_model} | {me.status}")
+print(f"Reputation: {me.reputation_score:.1f}/100")
+
+# Send a heartbeat (daemon does this automatically every 30s)
+client.announce(client.build_resource_spec())
+
+# Poll for assigned jobs
+jobs = client.get_jobs(status="queued")
+for job in jobs:
+    print(f"Job {job.id}: {job.job_type} — earns {job.earnings_sar:.2f} SAR")
+
+# Earnings
+e = client.get_earnings()
+print(f"Available: {e.available_sar:.2f} SAR / Total: {e.total_earned_sar:.2f} SAR")
+```
+
+### Authentication
+
+Provider keys look like `dc1-provider-<32-hex-chars>`. You receive one when
+you call `client.register()`. Store it securely — it authenticates all
+provider API calls.
+
+### `DC1ProviderClient` reference
+
+#### Constructor
+
+```python
+DC1ProviderClient(api_key=None, base_url="https://api.dcp.sa", timeout=30)
+```
+
+| Parameter  | Type           | Default                | Description                         |
+|------------|----------------|------------------------|-------------------------------------|
+| `api_key`  | `str \| None`  | `None`                 | Provider API key (omit for `register()`) |
+| `base_url` | `str`          | `https://api.dcp.sa`   | Override for local testing          |
+| `timeout`  | `int`          | `30`                   | HTTP timeout in seconds             |
+
+#### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `me()` | `ProviderProfile` | Your account profile, earnings totals, reputation |
+| `register(name, email, gpu_model, os=None, phone=None, resource_spec=None)` | `dict` | Create a new provider account |
+| `heartbeat(gpu_spec=None)` | `dict` | Send a lightweight heartbeat |
+| `announce(resource_spec)` | `dict` | Heartbeat with full resource spec to advertise capacity |
+| `get_jobs(status=None)` | `list[ProviderJob]` | List jobs assigned to you (`queued`, `running`, `completed`, `failed`) |
+| `get_earnings()` | `Earnings` | Available balance and lifetime earnings |
+| `build_resource_spec()` | `dict` | Auto-detect GPU + RAM + OS via `nvidia-smi` |
+
+### Provider models
+
+#### `ProviderProfile`
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `id` | `int` | Numeric provider ID |
+| `name` | `str` | Display name |
+| `gpu_model` | `str` | GPU string, e.g. `RTX 4090` |
+| `status` | `str` | `registered` \| `online` \| `offline` \| `suspended` |
+| `total_earnings_halala` | `int` | Lifetime earnings in halala |
+| `total_earnings_sar` | `float` | `total_earnings_halala / 100` |
+| `today_earnings_sar` | `float` | Today's earnings in SAR |
+| `reputation_score` | `float` | 0–100 composite score |
+| `uptime_pct` | `float` | 7-day uptime percentage |
+| `last_heartbeat` | `str \| None` | ISO-8601 timestamp |
+| `is_online` | `bool` | `True` when status == `"online"` |
+
+#### `ProviderJob`
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `id` | `str` | Job ID |
+| `job_type` | `str` | e.g. `llm_inference`, `image_gen` |
+| `status` | `str` | `queued` \| `running` \| `completed` \| `failed` |
+| `cost_halala` | `int` | Total job cost |
+| `provider_earnings_halala` | `int` | Your 75% share |
+| `earnings_sar` | `float` | `provider_earnings_halala / 100` |
+| `payload` | `dict` | Workload parameters |
+| `hmac_signature` | `str \| None` | Task signature for daemon validation |
+
+#### `Earnings`
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `available_halala` | `int` | Balance ready to withdraw |
+| `available_sar` | `float` | `available_halala / 100` |
+| `total_earned_sar` | `float` | Lifetime total |
+| `total_jobs` | `int` | Count of completed jobs |
+
+### Provider exceptions
+
+| Exception | When |
+|-----------|------|
+| `AuthError` | API key invalid or provider suspended |
+| `DC1APIError` | Any other API error. Has `.status_code` and `.response` |
+
+### Provider examples
+
+See [`examples/`](examples/) for runnable scripts:
+
+- [`register.py`](examples/register.py) — register a new provider and get an API key
+- [`heartbeat.py`](examples/heartbeat.py) — send continuous heartbeats (30s loop)
+- [`list_jobs.py`](examples/list_jobs.py) — view assigned jobs and earnings
+
+---
+
 ## License
 
 MIT © DC1 / dhnpmp-tech

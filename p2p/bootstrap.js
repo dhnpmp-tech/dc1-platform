@@ -42,8 +42,8 @@ async function main () {
     clientMode: false   // full server mode: participates in DHT routing
   })
 
-  const addr = nodeAddr(node)
-  const fullAddr = `${addr}/p2p/${node.peerId.toString()}`
+  // In libp2p 3.x, getMultiaddrs() already includes /p2p/{peerId}
+  const fullAddr = nodeAddr(node)
 
   console.log('[Bootstrap] ─────────────────────────────────────────────')
   console.log(`[Bootstrap] Peer ID  : ${node.peerId.toString()}`)

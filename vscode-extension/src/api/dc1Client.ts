@@ -42,6 +42,23 @@ export interface RenterInfo {
   api_key: string;
 }
 
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  email: string;
+  gpu_model: string;
+  vram_gb: number | null;
+  gpu_count: number;
+  status: string;
+  is_live: boolean;
+  total_jobs: number;
+  total_earnings_halala: number;
+  today_earnings_halala: number;
+  last_heartbeat: string | null;
+  driver_version: string | null;
+  cuda_version: string | null;
+}
+
 export interface JobOutput {
   status: string;
   result?: string;
@@ -132,6 +149,11 @@ export class DC1Client {
   /** GET /api/renters/available-providers — no auth required */
   async getAvailableProviders(): Promise<{ providers: Provider[]; total: number }> {
     return this.request('GET', '/api/renters/available-providers');
+  }
+
+  /** GET /api/providers/me?key= */
+  async getProviderInfo(apiKey: string): Promise<ProviderInfo> {
+    return this.request('GET', `/api/providers/me?key=${encodeURIComponent(apiKey)}`);
   }
 
   /** GET /api/renters/me?key= */

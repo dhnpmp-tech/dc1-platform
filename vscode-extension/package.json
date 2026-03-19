@@ -12,9 +12,21 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "keywords": ["GPU", "compute", "AI", "machine learning", "DC1", "Saudi Arabia", "inference"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "GPU",
+    "compute",
+    "AI",
+    "machine learning",
+    "DC1",
+    "Saudi Arabia",
+    "inference"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "icon": "media/icon.png",
   "contributes": {
@@ -28,6 +40,14 @@
       ]
     },
     "views": {
+      "explorer": [
+        {
+          "id": "dc1.providerStatus",
+          "name": "DC1 Provider",
+          "icon": "$(server)",
+          "visibility": "collapsed"
+        }
+      ],
       "dc1-explorer": [
         {
           "id": "dc1.availableGPUs",
@@ -43,8 +63,23 @@
     },
     "commands": [
       {
+        "command": "dc1.setProviderKey",
+        "title": "DC1: Set Provider API Key",
+        "icon": "$(key)"
+      },
+      {
+        "command": "dc1.clearProviderKey",
+        "title": "DC1: Clear Provider API Key",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "dc1.refreshProviderStatus",
+        "title": "DC1: Refresh Provider Status",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "dc1.setup",
-        "title": "DC1: Set API Key",
+        "title": "DC1: Set Renter API Key",
         "icon": "$(key)"
       },
       {
@@ -85,6 +120,16 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "dc1.refreshProviderStatus",
+          "when": "view == dc1.providerStatus",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dc1.setProviderKey",
+          "when": "view == dc1.providerStatus",
+          "group": "navigation@2"
+        },
         {
           "command": "dc1.refreshGPUs",
           "when": "view == dc1.availableGPUs",
@@ -151,13 +196,13 @@
     "test": "echo \"No tests yet\""
   },
   "devDependencies": {
+    "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
-    "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.0.0",
     "ts-loader": "^9.5.0",
-    "typescript": "^5.3.0",
+    "typescript": "^5.9.3",
     "webpack": "^5.89.0",
     "webpack-cli": "^5.1.4"
   }

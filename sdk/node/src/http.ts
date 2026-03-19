@@ -7,11 +7,16 @@ import { URL } from 'url';
 import { APIError, AuthError } from './errors';
 
 export class HttpClient {
+  /** Exposed so resources can inject it as a query param for endpoints that require ?key= */
+  readonly apiKey: string;
+
   constructor(
-    private readonly apiKey: string,
+    apiKey: string,
     private readonly baseUrl: string,
     private readonly timeoutMs: number,
-  ) {}
+  ) {
+    this.apiKey = apiKey;
+  }
 
   private request<T>(method: string, path: string, body?: unknown, params?: Record<string, string>): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -31,7 +36,7 @@ export class HttpClient {
         headers: {
           'Content-Type': 'application/json',
           'x-renter-key': this.apiKey,
-          'User-Agent': '@dc1/client/0.1.0',
+          'User-Agent': 'dc1-renter-sdk/0.1.0',
           ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
         },
         timeout: this.timeoutMs,
