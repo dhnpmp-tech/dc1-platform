@@ -19,7 +19,7 @@ const FROM_ADDRESS = 'DC1 Platform <noreply@dcp.sa>';
 
 function buildProviderEmail(name, apiKey) {
   const daemonUrl = `${process.env.BACKEND_URL || 'http://76.13.179.86:8083'}/api/providers/download/daemon`;
-  const dashboardUrl = `${process.env.FRONTEND_URL || 'https://dc1st.com'}/provider`;
+  const dashboardUrl = `${process.env.FRONTEND_URL || 'https://dcp.sa'}/provider`;
 
   return {
     subject: 'Welcome to DC1 — Your Provider API Key',
@@ -88,7 +88,7 @@ function buildProviderEmail(name, apiKey) {
 }
 
 function buildRenterEmail(name, apiKey) {
-  const dashboardUrl = `${process.env.FRONTEND_URL || 'https://dc1st.com'}/renter`;
+  const dashboardUrl = `${process.env.FRONTEND_URL || 'https://dcp.sa'}/renter`;
 
   return {
     subject: 'Welcome to DC1 — Your Renter API Key',

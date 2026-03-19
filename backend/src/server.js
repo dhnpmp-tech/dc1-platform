@@ -16,8 +16,8 @@ const _extraOrigins = process.env.CORS_ORIGINS
 const ALLOWED_ORIGINS = [
   'https://dcp.sa',
   'https://www.dcp.sa',
-  'https://dc1st.com',
-  'https://www.dc1st.com',
+  'https://dcp.sa',
+  'https://www.dcp.sa',
   'https://dc1-platform.vercel.app',
   'https://dc1-platform-dc11.vercel.app',
   'https://dc1-platform-git-main-dc11.vercel.app',
@@ -155,7 +155,7 @@ app.use('/api/', generalLimiter);
 
 // Phase 4 Final: VPS is headless API only — no HTML serving
 // Static HTML files (provider-onboarding.html, admin.html, docs.html) removed.
-// All frontend is served by Next.js on Vercel (dc1st.com).
+// All frontend is served by Next.js on Vercel (dcp.sa).
 
 // Serve installer files for download (daemon binaries — still needed)
 app.use('/installers', express.static(path.join(__dirname, '..', 'installers')));
@@ -271,8 +271,8 @@ app.get('/', (req, res) => {
     service: 'dc1-platform-api',
     version: '4.0.0',
     status: 'ok',
-    frontend: 'https://dc1st.com',
-    docs: 'https://dc1st.com/docs',
+    frontend: 'https://dcp.sa',
+    docs: 'https://dcp.sa/docs',
     timestamp: new Date().toISOString(),
   });
 });

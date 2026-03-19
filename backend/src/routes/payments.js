@@ -10,7 +10,7 @@ const db = require('../db');
 const MOYASAR_BASE = 'https://api.moyasar.com/v1';
 const MOYASAR_SECRET = process.env.MOYASAR_SECRET_KEY || '';
 const MOYASAR_WEBHOOK_SECRET = process.env.MOYASAR_WEBHOOK_SECRET || MOYASAR_SECRET;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dc1st.com';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dcp.sa';
 
 // ─── Moyasar API helper ────────────────────────────────────────────────────────
 
