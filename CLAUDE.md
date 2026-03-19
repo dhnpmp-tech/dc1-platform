@@ -17,7 +17,7 @@
 
 ## Architecture
 
-- **Frontend**: Next.js 14 (App Router) deployed on Vercel (dc1st.com)
+- **Frontend**: Next.js 14 (App Router) deployed on Vercel (dcp.sa)
 - **Backend**: Express.js (port 8083), SQLite (better-sqlite3), PM2 process manager
 - **VPS**: Hostinger srv1328172 (76.13.179.86), Ubuntu, accessed via web terminal
 - **Repo**: github.com/dhnpmp-tech/dc1-platform (PAT auth in git remote)
