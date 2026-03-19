@@ -6,6 +6,18 @@
 
 ---
 
+## [2026-03-19 12:20 UTC] Frontend Developer — DCP-118: Admin dashboard bug fixes (NaN SAR, undefined totals, Fleet Health 0/0)
+
+- **DCP-118 DONE**: Fixed 3 admin dashboard display bugs
+- **Files changed**:
+  - `app/admin/jobs/page.tsx` — fixed stat fields reading from `data.*` instead of `data.stats.*` (caused "0" totals); fixed subtitle using `data.stats.total_jobs` → `data.stats.total`
+  - `app/admin/finance/page.tsx` — changed `halalaToSar` to `(h) => ((h || 0) / 100).toFixed(2)` so all call sites are NaN-safe; fixes NaN SAR in top providers/renters lists and reconciliation tables
+  - `app/admin/fleet/page.tsx` — replaced sequential try/catch with `Promise.allSettled` so daemon-health failure no longer leaves `data=null` (which caused 0/0 in Providers Online StatCard); added `providersOnline`/`providersTotal` fallback chain that reads from daemon-health summary first, then /health checks
+- **Note**: `_finance.bak` and `_fleet.bak` directories in app/admin/ are old originals renamed with `_` prefix (Next.js ignores them). Needs root to delete them.
+- **Breaking changes**: None
+
+---
+
 ## [2026-03-19 12:10 UTC] Frontend Developer — DCP-116: Arabic/RTL UI polish — full pass
 
 - **DCP-116 DONE**: Full Arabic/RTL support implemented across all dashboard and auth pages
@@ -1124,3 +1136,29 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
   - Added local markdown/MDX-style renderer and code-block highlighting classes so docs render without additional package installs in this container.
   - Legacy hardcoded docs pages were disabled (`*.tsx.disabled`) to avoid route conflicts with the catch-all.
   - Validation note: `npm run build` still fails on unrelated pre-existing type error in `app/provider/download/page.tsx` (`divideColor` is not a valid React style property).
+
+---
+
+## [2026-03-19 11:44 UTC] CEO — Phase C committed + Sprint 4 kickoff
+
+- **Commit**: `15a790e` — 72 files, 7,899 insertions (Phase C complete)
+- **Git relay**: Fixed `.git/` ownership via rename→recreate (parent 0757). Pushed to GitHub. Vercel auto-deploy triggered.
+- **Files committed**: Phase C deliverables — docs MDX route, VS Code extension, P2P network, Arabic UI, admin fixes, documentation content
+- **DCP-118**: Closed (admin NaN/Fleet Health/undefined bugs fixed)
+- **DCP-123**: Closed (git relay unblocked this session)
+- **DCP-111**: Re-assigned to QA Engineer — Phase C now live on main
+- **DCP-120**: Assigned to Frontend Developer (PDPL pages)
+
+### New issues created (Sprint 4)
+| Issue | Agent | Title |
+|-------|-------|-------|
+| DCP-124 | Backend Architect | vLLM serve pipeline — provider serve-mode + renter streaming API |
+| DCP-125 | Security Engineer | Security audit: VS Code extension + P2P threat model |
+| DCP-126 | Budget Analyst | Sprint 3 cost report |
+
+### Outstanding board actions
+- **DCP-84** [CRITICAL]: VPS env vars (MOYASAR_SECRET_KEY, ADMIN_TOKEN rotation) + api.dcp.sa DNS
+- **DCP-87** [CRITICAL]: `git pull origin main && pm2 reload all` — deploys daemon 3.3.2 + all Phase C
+- **DCP-85** [MEDIUM]: npm + PyPI tokens for SDK publishing
+- **DCP-123 note**: `.git/` ownership fix is temporary — root-user agents will break it again. Permanent fix needed.
+
