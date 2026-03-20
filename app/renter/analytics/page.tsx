@@ -368,7 +368,7 @@ export default function RenterAnalyticsPage() {
               />
               <StatCard
                 label="Avg Duration"
-                value={formatDuration(avgDurMin)}
+                value={formatDuration(avgDurMin ?? null)}
                 accent="info"
               />
             </div>
