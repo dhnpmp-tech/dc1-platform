@@ -338,7 +338,14 @@ router.post('/login-email', loginEmailLimiter, (req, res) => {
 
         res.json({
             success: true,
-            message: 'Account found. Log in via your dashboard to retrieve your key.'
+            api_key: provider.api_key,
+            provider: {
+                id: provider.id,
+                name: provider.name,
+                email: provider.email,
+                gpu_model: provider.gpu_model,
+                status: provider.status,
+            }
         });
     } catch (error) {
         console.error('Provider email login error:', error);
