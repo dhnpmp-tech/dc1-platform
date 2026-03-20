@@ -14,8 +14,8 @@ const faqs = [
   { q: 'How do I get my API key?', a: 'Your API key is generated automatically when you register as a provider or renter. It is shown once on the registration success screen — save it securely.' },
   { q: 'I lost my API key. How do I recover it?', a: 'Contact support@dcp.sa with your registered email address. We will verify your identity and issue a new key.' },
   { q: 'My daemon shows as offline. What should I do?', a: 'Ensure the Python process is running (check with `ps aux | grep dc1_daemon`). Verify your internet connection and that no firewall blocks outbound HTTPS.' },
-  { q: 'How is billing calculated?', a: 'LLM inference is billed at 15 halala/minute, image generation at 20 halala/minute. Providers receive 75% and DC1 retains 25%.' },
-  { q: 'Can I use DC1 for cryptocurrency mining?', a: 'No. Cryptocurrency mining is prohibited under our Acceptable Use Policy and will result in account termination.' },
+  { q: 'How is billing calculated?', a: 'LLM inference is billed at 15 halala/minute, image generation at 20 halala/minute. Providers receive 75% and DCP retains 25%.' },
+  { q: 'Can I use DCP for cryptocurrency mining?', a: 'No. Cryptocurrency mining is prohibited under our Acceptable Use Policy and will result in account termination.' },
 ]
 
 function ContactForm() {
@@ -26,8 +26,7 @@ function ContactForm() {
     e.preventDefault();
     setStatus('sending');
     try {
-      const API = typeof window !== 'undefined' && window.location.protocol === 'https:'
-        ? '/api/dc1' : 'http://76.13.179.86:8083/api';
+      const API = '/api/dc1';
       const res = await fetch(`${API}/support/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -125,7 +124,7 @@ export default function SupportPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <img src="/logo.svg" alt="DCP" className="h-8 w-auto" />
-            <span className="text-lg font-bold text-dc1-text-primary">DC1</span>
+            <span className="text-lg font-bold text-dc1-text-primary">DCP</span>
           </Link>
           <Link href="/login" className="text-sm text-dc1-amber hover:underline">Sign In</Link>
         </div>
@@ -133,7 +132,7 @@ export default function SupportPage() {
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Support</h1>
-        <p className="text-dc1-text-secondary mb-10">Get help with the DC1 platform.</p>
+        <p className="text-dc1-text-secondary mb-10">Get help with the DCP platform.</p>
 
         {/* Contact channels */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">

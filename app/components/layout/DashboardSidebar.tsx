@@ -9,6 +9,7 @@ export interface NavItem {
   label: string
   href: string
   icon: React.ReactNode
+  badge?: boolean
 }
 
 interface DashboardSidebarProps {
@@ -67,10 +68,16 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
             }`}
             title={collapsed ? item.label : undefined}
           >
-            <span className="shrink-0 w-5 h-5 flex items-center justify-center">
+            <span className="shrink-0 w-5 h-5 flex items-center justify-center relative">
               {item.icon}
+              {item.badge && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-dc1-amber rounded-full" aria-label="alert" />
+              )}
             </span>
             {!collapsed && <span className="truncate">{item.label}</span>}
+            {!collapsed && item.badge && (
+              <span className="ml-auto w-2 h-2 bg-dc1-amber rounded-full shrink-0" aria-hidden="true" />
+            )}
           </Link>
         ))}
       </nav>

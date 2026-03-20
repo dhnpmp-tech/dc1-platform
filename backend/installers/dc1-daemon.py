@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DC1 Provider Daemon v3.3.0 — GPU Compute Marketplace
+DCP Provider Daemon v3.3.0 — GPU Compute Marketplace
 Runs as a background service on provider machines.
 
 Features:
@@ -69,6 +69,11 @@ CONTAINER_CPU_LIMIT = "4"          # Max CPU cores per job container
 CONTAINER_MEMORY_LIMIT = "16g"     # Max RAM per job container (swap disabled)
 CONTAINER_PIDS_LIMIT = "256"       # Max PIDs (fork-bomb protection)
 CONTAINER_TMP_SIZE = "1g"          # tmpfs size for /tmp in container
+VLLM_CPU_LIMIT = "8"               # vLLM serve default CPU limit
+VLLM_MEMORY_LIMIT = "24g"          # vLLM serve default memory cap
+VLLM_PIDS_LIMIT = "512"            # vLLM serve process limit
+VLLM_TMP_SIZE = "2g"               # vLLM /tmp tmpfs size
+VLLM_SHM_SIZE = "4g"               # vLLM shared memory size
 _SECCOMP_PROFILE_PATH = None       # Cached seccomp profile path (written once)
 BANDWIDTH_CHECK_INTERVAL = 600   # Measure bandwidth every 10 minutes
 BANDWIDTH_TEST_SIZE = 102400     # 100KB test payload for speed measurement
@@ -1049,6 +1054,39 @@ def _ensure_seccomp_profile():
     return _SECCOMP_PROFILE_PATH
 
 
+def _container_profile_for_job(job_type):
+    """Return per-job container limits by workload class."""
+    profiles = {
+        "default": {
+            "cpu": CONTAINER_CPU_LIMIT,
+            "memory": CONTAINER_MEMORY_LIMIT,
+            "pids": CONTAINER_PIDS_LIMIT,
+            "tmp": CONTAINER_TMP_SIZE,
+            "shm": "2g",
+        },
+        "benchmark": {"cpu": "2", "memory": "8g", "pids": "128", "tmp": "512m", "shm": "1g"},
+        "llm-inference": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "llm_inference": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "image_generation": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "rendering": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "training": {"cpu": "8", "memory": "24g", "pids": "512", "tmp": "2g", "shm": "4g"},
+        "custom_container": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+    }
+    return profiles.get(job_type, profiles["default"])
+
+
+def _vllm_profile_for_model(model):
+    """Return vLLM limits sized to expected model footprint."""
+    small_models = {
+        "google/gemma-2b-it",
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "microsoft/Phi-3-mini-4k-instruct",
+    }
+    if model in small_models:
+        return {"cpu": "6", "memory": "16g", "pids": "256", "tmp": "1g", "shm": "3g"}
+    return {"cpu": VLLM_CPU_LIMIT, "memory": VLLM_MEMORY_LIMIT, "pids": VLLM_PIDS_LIMIT, "tmp": VLLM_TMP_SIZE, "shm": VLLM_SHM_SIZE}
+
+
 def run_docker_job(job_type, task_spec, job_dir, job_id=None):
     """Execute job inside Docker container with GPU access and network isolation."""
     # Local images built via backend/docker/build-images.sh
@@ -1116,6 +1154,7 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
 
     # Build seccomp profile path (written once per daemon lifetime, reused after)
     seccomp_path = _ensure_seccomp_profile()
+    container_profile = _container_profile_for_job(job_type)
 
     # Report pulling phase so backend transitions job status to 'pulling'
     if job_id:
@@ -1139,7 +1178,7 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
     report_event(
         "container_start",
         f"Launching {container_name}: image={image} "
-        f"cpu={CONTAINER_CPU_LIMIT} mem={CONTAINER_MEMORY_LIMIT} pids={CONTAINER_PIDS_LIMIT}",
+        f"cpu={container_profile['cpu']} mem={container_profile['memory']} pids={container_profile['pids']}",
         job_id=job_id,
     )
 
@@ -1154,14 +1193,14 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
             # Network isolation
             "--network", "none",
             # Resource limits (CPU, RAM, swap disabled, PID fork-bomb protection)
-            "--memory", CONTAINER_MEMORY_LIMIT,
-            "--memory-swap", CONTAINER_MEMORY_LIMIT,   # swap = memory, so swap headroom = 0
-            "--cpus", CONTAINER_CPU_LIMIT,
-            "--pids-limit", CONTAINER_PIDS_LIMIT,
-            "--shm-size", "2g",
+            "--memory", container_profile["memory"],
+            "--memory-swap", container_profile["memory"],   # swap = memory, so swap headroom = 0
+            "--cpus", container_profile["cpu"],
+            "--pids-limit", container_profile["pids"],
+            "--shm-size", container_profile["shm"],
             # Read-only root filesystem — writable areas supplied via tmpfs
             "--read-only",
-            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={CONTAINER_TMP_SIZE}",
+            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={container_profile['tmp']}",
             "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",
             # Drop all Linux capabilities — CUDA device access uses /dev/nvidia* not capabilities
             "--cap-drop", "all",
@@ -1397,6 +1436,8 @@ def run_vllm_serve_job(task_spec, job_id=None):
 
     image = "vllm/vllm-openai:latest"
     container_name = f"dc1-vllm-{job_id or int(time.time())}"
+    seccomp_path = _ensure_seccomp_profile()
+    container_profile = _vllm_profile_for_model(model)
 
     port = _find_free_port()
     if not port:
@@ -1418,7 +1459,12 @@ def run_vllm_serve_job(task_spec, job_id=None):
         return {"success": False, "error": f"vLLM pull error: {e}", "transient": True}
 
     report_job_progress(job_id, "loading_model")
-    report_event("container_start", f"Starting vLLM serve: {container_name} model={model} port={port}", job_id=job_id)
+    report_event(
+        "container_start",
+        f"Starting vLLM serve: {container_name} model={model} port={port} "
+        f"cpu={container_profile['cpu']} mem={container_profile['memory']} pids={container_profile['pids']}",
+        job_id=job_id
+    )
 
     docker_cmd = [
         "docker", "run", "-d",
@@ -1426,12 +1472,20 @@ def run_vllm_serve_job(task_spec, job_id=None):
         "--name", container_name,
         "--network", "bridge",
         "-p", f"{port}:8000",
-        "--memory", "24g",
-        "--memory-swap", "24g",
-        "--cpus", "8",
-        "--shm-size", "4g",
+        "--memory", container_profile["memory"],
+        "--memory-swap", container_profile["memory"],
+        "--cpus", container_profile["cpu"],
+        "--pids-limit", container_profile["pids"],
+        "--shm-size", container_profile["shm"],
+        "--tmpfs", f"/tmp:rw,noexec,nosuid,size={container_profile['tmp']}",
+        "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",
+        "--cap-drop", "all",
         "--security-opt", "no-new-privileges:true",
         "-e", f"HUGGING_FACE_HUB_TOKEN={os.environ.get('HF_TOKEN', '')}",
+    ]
+    if seccomp_path:
+        docker_cmd.extend(["--security-opt", f"seccomp={seccomp_path}"])
+    docker_cmd += [
         image,
         "--model", model,
         "--dtype", dtype,
@@ -1808,7 +1862,7 @@ def precache_models():
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="DC1 Provider Daemon v3.3")
+    parser = argparse.ArgumentParser(description="DCP Provider Daemon v3.3")
     parser.add_argument("--key", help="Override API key")
     parser.add_argument("--url", help="Override API URL")
     parser.add_argument("--no-watchdog", action="store_true", help="Run without crash watchdog")
@@ -1822,10 +1876,10 @@ def main():
 
     # Validate configuration
     if API_KEY == "INJECT_KEY_HERE" or not API_KEY:
-        log.error("No API key configured. Use --key or download from DC1 dashboard.")
+        log.error("No API key configured. Use --key or download from DCP dashboard.")
         sys.exit(1)
     if API_URL == "INJECT_URL_HERE" or not API_URL:
-        log.error("No API URL configured. Use --url or download from DC1 dashboard.")
+        log.error("No API URL configured. Use --url or download from DCP dashboard.")
         sys.exit(1)
 
     # Register signal handlers for graceful shutdown
@@ -1844,7 +1898,7 @@ def main():
         except: pass
 
     log.info("=" * 60)
-    log.info(f"DC1 Provider Daemon v{DAEMON_VERSION}")
+    log.info(f"DCP Provider Daemon v{DAEMON_VERSION}")
     log.info(f"API URL: {API_URL}")
     log.info(f"API Key: {API_KEY[:20]}...")
     log.info(f"Logs: {LOG_DIR}")

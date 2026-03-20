@@ -6,10 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import StatusBadge from '../../../components/ui/StatusBadge'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface JobDetail {
   id: number
@@ -197,7 +194,7 @@ export default function ProviderJobDetailPage() {
           <h2 className="section-heading mb-4">Earnings Breakdown</h2>
           <DetailRow label="Total Job Cost" value={`${totalCost.toFixed(2)} SAR`} />
           <DetailRow label="Your Earnings (75%)" value={`${earned.toFixed(2)} SAR`} highlight />
-          <DetailRow label="DC1 Fee (25%)" value={`${fee.toFixed(2)} SAR`} />
+          <DetailRow label="DCP Fee (25%)" value={`${fee.toFixed(2)} SAR`} />
         </div>
 
         {/* Job Parameters */}

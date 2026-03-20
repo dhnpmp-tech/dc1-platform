@@ -126,6 +126,22 @@ const sections: Array<{ id: string; title: string; endpoints: Endpoint[] }> = [
 }`,
       },
       {
+        method: 'GET',
+        path: '/api/models',
+        auth: 'Public',
+        description: 'Model registry with VRAM requirements, live provider availability, and average SAR/min pricing.',
+        response: `[
+  {
+    "model_id": "mistralai/Mistral-7B-Instruct-v0.2",
+    "display_name": "Mistral 7B Instruct",
+    "min_gpu_vram_gb": 16,
+    "providers_online": 2,
+    "avg_price_sar_per_min": 0.15,
+    "status": "available"
+  }
+]`,
+      },
+      {
         method: 'POST',
         path: '/api/renters/topup',
         auth: 'Renter API key (header/query)',
@@ -310,8 +326,8 @@ export default function ApiDocsPage() {
           <p className="text-xs uppercase tracking-[0.16em] text-dc1-amber">DCP API</p>
           <h1 className="mt-2 text-3xl font-bold text-dc1-text-primary sm:text-4xl">API Reference</h1>
           <p className="mt-3 text-dc1-text-secondary">
-            Base URL: <code className="rounded bg-dc1-surface-l3 px-1 py-0.5">https://dcp.sa/api/dc1</code> (Vercel proxy) or{' '}
-            <code className="rounded bg-dc1-surface-l3 px-1 py-0.5">http://76.13.179.86:8083/api</code>.
+            Base URL: <code className="rounded bg-dc1-surface-l3 px-1 py-0.5">https://api.dcp.sa/api</code> (direct) or{' '}
+            <code className="rounded bg-dc1-surface-l3 px-1 py-0.5">https://dcp.sa/api/dc1</code> (Vercel proxy).
           </p>
 
           <div className="mt-6 grid gap-4 rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4 text-sm text-dc1-text-secondary sm:grid-cols-2">

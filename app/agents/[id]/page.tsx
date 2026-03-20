@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
-const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
+const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || '') + '/api';
 const MC_TOKEN = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_MC_TOKEN || 'dc1-mc-gate0-2026')
   : 'dc1-mc-gate0-2026';
@@ -58,7 +58,7 @@ const mockAgents: Record<string, AgentProfile> = {
     ],
     ideas: [
       { idea: 'Add WebSocket for real-time job updates instead of polling', impact: 'high', feasibility: 'medium' },
-      { idea: 'Component library extraction for DC1 design system', impact: 'medium', feasibility: 'easy' },
+      { idea: 'Component library extraction for DCP design system', impact: 'medium', feasibility: 'easy' },
     ],
     feedback: [
       { from: 'NEXUS', task: 'Dashboard layout', type: 'praise', text: 'Clean grid layout, matches spec exactly' },

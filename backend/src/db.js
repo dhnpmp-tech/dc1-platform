@@ -33,6 +33,9 @@ db.exec(`
     location TEXT,
     ip_address TEXT,
     status TEXT DEFAULT 'pending',
+    approval_status TEXT DEFAULT 'pending',
+    approved_at TEXT,
+    rejected_reason TEXT,
     api_key TEXT,
     notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -58,6 +61,10 @@ db.exec(`
     updated_at TEXT,
     created_at TEXT,
     duration_minutes INTEGER,
+    logs_jsonl TEXT,
+    webhook_notified_at TEXT,
+    webhook_delivery_status TEXT,
+    webhook_delivery_attempts INTEGER DEFAULT 0,
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
@@ -115,6 +122,134 @@ try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is
    VALUES (?, ?, 1, ?)`).run('google/gemma-2b-it', 1, nowIso); } catch(e) {}
 try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
    VALUES (?, ?, 1, ?)`).run('TinyLlama/TinyLlama-1.1B-Chat-v1.0', 1, nowIso); } catch(e) {}
+
+// ─── GPU PRICING TABLE ───
+// Admin-controlled base rental rates per GPU model in halala/hour.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS gpu_pricing (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    gpu_model TEXT UNIQUE NOT NULL,
+    rate_halala INTEGER NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO gpu_pricing (gpu_model, rate_halala, updated_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)`
+  ).run('RTX 3060 Ti', 500);
+} catch (e) {}
+
+// ─── MODEL REGISTRY TABLE ───
+// Curated model catalog exposed to renters via GET /api/models.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS model_registry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    family TEXT NOT NULL,
+    vram_gb INTEGER NOT NULL,
+    quantization TEXT NOT NULL,
+    context_window INTEGER NOT NULL,
+    use_cases TEXT NOT NULL,
+    min_gpu_vram_gb INTEGER NOT NULL,
+    default_price_halala_per_min INTEGER NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+  )
+`);
+const modelSeedNow = new Date().toISOString();
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'mistralai/Mistral-7B-Instruct-v0.2',
+    'Mistral 7B Instruct',
+    'mistral',
+    14,
+    'bf16',
+    32768,
+    JSON.stringify(['chat', 'coding', 'arabic']),
+    16,
+    15,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'meta-llama/Meta-Llama-3-8B-Instruct',
+    'LLaMA 3 8B Instruct',
+    'llama',
+    16,
+    'bf16',
+    8192,
+    JSON.stringify(['chat', 'reasoning']),
+    16,
+    17,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'Qwen/Qwen2-7B-Instruct',
+    'Qwen2 7B Instruct',
+    'qwen',
+    14,
+    'bf16',
+    32768,
+    JSON.stringify(['chat', 'arabic', 'translation']),
+    16,
+    14,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'microsoft/Phi-3-mini-4k-instruct',
+    'Phi-3 Mini',
+    'phi',
+    4,
+    'int4',
+    4096,
+    JSON.stringify(['chat', 'classification']),
+    6,
+    8,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B',
+    'DeepSeek R1 7B',
+    'deepseek',
+    16,
+    'bf16',
+    32768,
+    JSON.stringify(['reasoning', 'coding']),
+    16,
+    18,
+    modelSeedNow
+  );
+} catch (e) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS recovery_events (
@@ -213,6 +348,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN rotated_at TEXT',
   // jobs columns (for existing DBs that had the old narrow schema)
   'ALTER TABLE jobs ADD COLUMN job_type TEXT',
   'ALTER TABLE jobs ADD COLUMN model TEXT',
@@ -254,6 +390,9 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN readiness_details TEXT',
   'ALTER TABLE providers ADD COLUMN daemon_version TEXT',
   'ALTER TABLE providers ADD COLUMN current_job_id TEXT',
+  'ALTER TABLE providers ADD COLUMN approval_status TEXT DEFAULT \'pending\'',
+  'ALTER TABLE providers ADD COLUMN approved_at TEXT',
+  'ALTER TABLE providers ADD COLUMN rejected_reason TEXT',
   // machine verification columns
   'ALTER TABLE providers ADD COLUMN verification_status TEXT DEFAULT \'unverified\'',
   'ALTER TABLE providers ADD COLUMN verification_score INTEGER',
@@ -277,6 +416,8 @@ const migrations = [
   // Job progress phase — daemon reports download/load/generate phases in real-time
   'ALTER TABLE jobs ADD COLUMN progress_phase TEXT',
   'ALTER TABLE jobs ADD COLUMN progress_updated_at TEXT',
+  // SSE job log streaming storage (JSON-lines)
+  'ALTER TABLE jobs ADD COLUMN logs_jsonl TEXT',
   // Refund tracking for failed/timed-out jobs
   'ALTER TABLE jobs ADD COLUMN refunded_at TEXT',
   // Cached HuggingFace models — daemon reports which models are pre-downloaded
@@ -307,6 +448,16 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN reputation_score REAL DEFAULT 100.0', // composite trust score (0–100)
   // Provider per-minute pricing — DCP-205 job router (NULL = use global COST_RATES)
   'ALTER TABLE providers ADD COLUMN price_per_min_halala INTEGER DEFAULT NULL',
+  // Canonical GPU info payload from daemon heartbeat (DCP-244)
+  'ALTER TABLE providers ADD COLUMN gpu_info_json TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_vram_mb INTEGER',
+  // Optional renter callback endpoint for job lifecycle webhooks
+  'ALTER TABLE renters ADD COLUMN webhook_url TEXT',
+  'ALTER TABLE renters ADD COLUMN rotated_at TEXT',
+  // Job completion callback delivery tracking
+  'ALTER TABLE jobs ADD COLUMN webhook_notified_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN webhook_delivery_status TEXT',
+  'ALTER TABLE jobs ADD COLUMN webhook_delivery_attempts INTEGER DEFAULT 0',
 ];
 
 migrations.forEach(sql => {
@@ -329,10 +480,24 @@ db.exec(`
     balance_halala INTEGER DEFAULT 0,
     total_spent_halala INTEGER DEFAULT 0,
     total_jobs INTEGER DEFAULT 0,
+    webhook_url TEXT,
+    rotated_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT
   )
 `);
+
+// ─── API KEY ROTATION AUDIT TABLE ───
+// Security audit trail + per-account rate limiting support.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS api_key_rotations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_type TEXT NOT NULL CHECK(account_type IN ('provider', 'renter')),
+    account_id INTEGER NOT NULL,
+    rotated_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_api_key_rotations_account_time ON api_key_rotations(account_type, account_id, rotated_at DESC)`);
 
 // ─── RENTER QUOTA TABLE ───
 // Per-renter submission/spend controls enforced at job submission.

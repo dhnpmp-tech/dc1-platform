@@ -23,8 +23,11 @@ function runStatement(sql, ...params) {
 // Import shared billing rates from jobs module
 const { COST_RATES } = require('./jobs');
 
-// Minimum daemon version required — daemons older than this get update_available: true
-const MIN_DAEMON_VERSION = '3.3.0';
+// Daemon versions:
+// - latest: preferred newest version for update nudges
+// - minimum: hard floor for compatibility checks
+const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '3.3.0').trim();
+const MIN_DAEMON_VERSION = (process.env.MIN_DAEMON_VERSION || LATEST_DAEMON_VERSION).trim();
 const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
 const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');
 const loginEmailLimiter = rateLimit({
@@ -67,13 +70,31 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
 function isPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }
-const marketplaceLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 30,
-    message: { error: 'Too many requests. Limit is 30 requests per minute.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
+
+const ROTATION_WINDOW_MS = 60 * 60 * 1000;
+const MAX_ROTATIONS_PER_WINDOW = 3;
+
+function isRotationRateLimited(accountType, accountId) {
+    const cutoff = new Date(Date.now() - ROTATION_WINDOW_MS).toISOString();
+    const row = db.get(
+        `SELECT COUNT(*) AS rotation_count
+         FROM api_key_rotations
+         WHERE account_type = ? AND account_id = ? AND rotated_at >= ?`,
+        accountType,
+        accountId,
+        cutoff
+    );
+    return Number(row?.rotation_count || 0) >= MAX_ROTATIONS_PER_WINDOW;
+}
+
+function recordRotationEvent(accountType, accountId, rotatedAt) {
+    runStatement(
+        'INSERT INTO api_key_rotations (account_type, account_id, rotated_at) VALUES (?, ?, ?)',
+        accountType,
+        accountId,
+        rotatedAt
+    );
+}
 const benchmarkLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 30,
@@ -144,9 +165,9 @@ router.post('/register', async (req, res) => {
 
         // Save to database
         const result = await runStatement(
-            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, created_at, resource_spec)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', new Date().toISOString(), resourceSpecJson]
+            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, resource_spec)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
         );
         
         // Generate installer URL
@@ -329,17 +350,25 @@ function computeReputationScore(providerId) {
 // ============================================================================
 router.post('/heartbeat', (req, res) => {
     try {
-        const { api_key, gpu_status, uptime, provider_ip, provider_hostname, cached_models, resource_spec } = req.body;
+        const { api_key, gpu_status, gpu_info, uptime, provider_ip, provider_hostname, cached_models, resource_spec } = req.body;
         const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
         if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
         if (gpu_status != null && !isPlainObject(gpu_status)) {
             return res.status(400).json({ error: 'gpu_status must be an object' });
         }
+        if (gpu_info != null && !isPlainObject(gpu_info)) {
+            return res.status(400).json({ error: 'gpu_info must be an object' });
+        }
 
         const gs = gpu_status || {};
+        const gi = gpu_info || {};
         const gpuName = normalizeString(gs.gpu_name, { maxLen: 200 });
         const gpuVramMib = toFiniteNumber(gs.gpu_vram_mib, { min: 0, max: 1024 * 1024 });
         const gpuDriver = normalizeString(gs.driver_version, { maxLen: 80 });
+        const gpuInfoName = normalizeString(gi.gpu_name, { maxLen: 200 });
+        const gpuInfoVramMb = toFiniteInt(gi.vram_mb, { min: 0, max: 1024 * 1024 });
+        const gpuInfoDriver = normalizeString(gi.driver_version, { maxLen: 80 });
+        const gpuInfoCuda = normalizeString(gi.cuda_version, { maxLen: 40 });
         const gpuUtil = toFiniteNumber(gs.gpu_util_pct, { min: 0, max: 100 });
         const gpuTemp = toFiniteNumber(gs.temp_c, { min: -40, max: 150 });
         const gpuPower = toFiniteNumber(gs.power_w, { min: 0, max: 2000 });
@@ -352,18 +381,37 @@ router.post('/heartbeat', (req, res) => {
         const now = new Date().toISOString();
 
         // Verify API key (sync — better-sqlite3)
-        const p = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
+        const p = db.get('SELECT id, approval_status FROM providers WHERE api_key = ?', cleanApiKey);
         if (!p) return res.status(401).json({ error: 'Invalid API key' });
+        if (p.approval_status !== 'approved') {
+            return res.status(403).json({ error: 'Provider is not approved yet' });
+        }
+
+        const resolvedGpuName = gpuInfoName || gpuName;
+        const resolvedGpuVramMib = gpuInfoVramMb != null ? gpuInfoVramMb : gpuVramMib;
+        const resolvedGpuDriver = gpuInfoDriver || gpuDriver;
+        const gpuInfoJson = (gpuInfoName || gpuInfoVramMb != null || gpuInfoDriver || gpuInfoCuda)
+            ? JSON.stringify({
+                gpu_name: gpuInfoName || null,
+                vram_mb: gpuInfoVramMb != null ? gpuInfoVramMb : null,
+                driver_version: gpuInfoDriver || null,
+                cuda_version: gpuInfoCuda || null,
+            })
+            : null;
 
         runStatement(`UPDATE providers SET
           gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = 'online',
           gpu_name_detected = COALESCE(?, gpu_name_detected),
           gpu_vram_mib = COALESCE(?, gpu_vram_mib),
           gpu_driver = COALESCE(?, gpu_driver),
+          gpu_vram_mb = COALESCE(?, gpu_vram_mb),
+          gpu_info_json = COALESCE(?, gpu_info_json),
           cached_models = COALESCE(?, cached_models)
           WHERE id = ?`,
           JSON.stringify(gpu_status || {}), providerIp || null, providerHostname || null, now,
-          gpuName, gpuVramMib, gpuDriver,
+          resolvedGpuName, resolvedGpuVramMib, resolvedGpuDriver,
+          gpuInfoVramMb != null ? gpuInfoVramMb : null,
+          gpuInfoJson,
           Array.isArray(cached_models) ? JSON.stringify(cached_models) : null,
           p.id
         );
@@ -371,11 +419,11 @@ router.post('/heartbeat', (req, res) => {
         const allGpus = Array.isArray(gs.all_gpus) ? gs.all_gpus.slice(0, 32) : null;
         const gpuCount = toFiniteInt(gs.gpu_count, { min: 1, max: 64 }) || (allGpus ? allGpus.length : 1);
         const computeCap = gs.compute_capability || null;
-        const cudaVersion = gs.cuda_version || null;
+        const cudaVersion = gpuInfoCuda || gs.cuda_version || null;
         runStatement(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info, gpu_metrics_json, gpu_count)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           p.id, now, providerIp || null, providerHostname || null,
-          gpuUtil, gpuTemp, gpuPower, gpuFreeVram, gpuVramMib,
+          gpuUtil, gpuTemp, gpuPower, gpuFreeVram, resolvedGpuVramMib,
           daemonVersion, pythonVersion, osInfo,
           allGpus ? JSON.stringify(allGpus) : null,
           gpuCount
@@ -417,9 +465,11 @@ router.post('/heartbeat', (req, res) => {
         );
 
         // Tell daemon if update is available (semantic version comparison)
-        const needsUpdate = !daemonVersion || compareVersions(daemonVersion, MIN_DAEMON_VERSION) < 0;
+        const needsUpdate = !daemonVersion || compareVersions(daemonVersion, LATEST_DAEMON_VERSION) < 0;
         return res.json({
             success: true, message: 'Heartbeat received', timestamp: now,
+            needs_update: needsUpdate,
+            latest_version: LATEST_DAEMON_VERSION,
             update_available: needsUpdate,
             min_version: MIN_DAEMON_VERSION,
         });
@@ -665,6 +715,9 @@ router.get('/me', async (req, res) => {
                 vram_reserve_gb: provider.vram_reserve_gb != null ? provider.vram_reserve_gb : 1,
                 temp_limit_c: provider.temp_limit_c != null ? provider.temp_limit_c : 85,
                 is_paused: Boolean(provider.is_paused),
+                approval_status: provider.approval_status || 'pending',
+                approved_at: provider.approved_at || null,
+                rejected_reason: provider.rejected_reason || null,
                 total_earnings_halala: provider.total_earnings ? Math.round(provider.total_earnings * 100) : 0,
                 total_jobs: provider.total_jobs || 0,
                 uptime_percent: provider.uptime_percent || 0,
@@ -1019,6 +1072,83 @@ router.get('/:api_key/jobs', (req, res) => {
     } catch (error) {
         console.error('Job poll error:', error);
         res.status(500).json({ error: 'Job poll failed' });
+    }
+});
+
+// ============================================================================
+// PATCH /api/providers/jobs/:job_id/logs - Provider daemon streams log lines
+// ============================================================================
+router.patch('/jobs/:job_id/logs', (req, res) => {
+    try {
+        const bodyKey = normalizeString(req.body?.api_key, { maxLen: 128, trim: false });
+        const headerKey = normalizeString(req.headers['x-provider-key'], { maxLen: 128, trim: false });
+        const apiKey = bodyKey || headerKey;
+        if (!apiKey) return res.status(401).json({ error: 'api_key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', apiKey);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const job = db.get(
+            'SELECT id, job_id FROM jobs WHERE (id = ? OR job_id = ?) AND provider_id = ? LIMIT 1',
+            req.params.job_id,
+            req.params.job_id,
+            provider.id
+        );
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+
+        const rawLines = Array.isArray(req.body?.lines)
+            ? req.body.lines
+            : (req.body?.line != null ? [{ level: req.body.level || 'info', message: req.body.line }] : []);
+        if (!Array.isArray(rawLines) || rawLines.length === 0) {
+            return res.status(400).json({ error: 'Provide line or lines[]' });
+        }
+
+        const VALID_LEVELS = new Set(['info', 'warn', 'error', 'debug']);
+        const normalized = rawLines
+            .slice(0, 500)
+            .map((entry) => {
+                const levelCandidate = String(entry?.level || '').toLowerCase();
+                const level = VALID_LEVELS.has(levelCandidate) ? levelCandidate : 'info';
+                const message = String(entry?.message || '').slice(0, 2000);
+                return { level, message };
+            })
+            .filter((entry) => entry.message.length > 0);
+        if (normalized.length === 0) return res.status(400).json({ error: 'No valid log lines provided' });
+
+        const maxRow = db.get('SELECT MAX(line_no) as max_line FROM job_logs WHERE job_id = ?', job.job_id);
+        let lineNo = (maxRow?.max_line || 0) + 1;
+        const now = new Date().toISOString();
+        const ts = Date.parse(now) || Date.now();
+
+        const insert = db.prepare(
+            'INSERT INTO job_logs (job_id, line_no, level, message, logged_at) VALUES (?, ?, ?, ?, ?)'
+        );
+        const updateJsonl = db.prepare(
+            `UPDATE jobs
+             SET logs_jsonl = substr(COALESCE(logs_jsonl, '') || ?, -1000000),
+                 updated_at = ?
+             WHERE id = ?`
+        );
+
+        const writeTx = db._db.transaction((rows) => {
+            const jsonlParts = [];
+            for (const row of rows) {
+                insert.run(job.job_id, lineNo++, row.level, row.message, now);
+                jsonlParts.push(JSON.stringify({
+                    type: 'log',
+                    line: row.message,
+                    ts,
+                    level: row.level,
+                }));
+            }
+            updateJsonl.run(`${jsonlParts.join('\n')}\n`, now, job.id);
+        });
+
+        writeTx(normalized);
+        res.json({ success: true, lines_written: normalized.length });
+    } catch (error) {
+        console.error('Provider job logs write error:', error);
+        res.status(500).json({ error: 'Failed to write job logs' });
     }
 });
 
@@ -1789,13 +1919,25 @@ router.post('/rotate-key', (req, res) => {
         const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-        const newKey = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
-        runStatement('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?',
-            newKey, new Date().toISOString(), provider.id);
+        if (isRotationRateLimited('provider', provider.id)) {
+            return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per hour' });
+        }
+
+        const newKey = `dc1-provider-${crypto.randomUUID()}`;
+        const nowIso = new Date().toISOString();
+        runStatement(
+            'UPDATE providers SET api_key = ?, rotated_at = ?, updated_at = ? WHERE id = ?',
+            newKey,
+            nowIso,
+            nowIso,
+            provider.id
+        );
+        recordRotationEvent('provider', provider.id, nowIso);
 
         res.json({
             success: true,
             message: 'API key rotated. Save the new key — the old one is now invalid.',
+            new_key: newKey,
             api_key: newKey,
             provider_id: provider.id
         });
@@ -1810,6 +1952,18 @@ router.post('/rotate-key', (req, res) => {
 // Public endpoint (renter key preferred but not required for browsing)
 // Returns GPU model, VRAM, CUDA version, compute capability, cost rates, availability
 // ============================================================================
+const EXPECTED_HEARTBEATS_PER_DAY = 24 * 60 * 2; // daemon heartbeat every 30 seconds
+
+function roundTo1(value) {
+    return Math.round((Number(value) || 0) * 10) / 10;
+}
+
+function computeReputationTier({ uptimePct, successRate, totalJobs }) {
+    if (uptimePct >= 95 && successRate >= 95 && totalJobs >= 10) return 'top';
+    if (uptimePct >= 80 && successRate >= 80) return 'reliable';
+    return 'new';
+}
+
 router.get('/available', (req, res) => {
     try {
         const { COST_RATES } = require('./jobs');
@@ -1819,13 +1973,32 @@ router.get('/available', (req, res) => {
         // when a heartbeat arrives (→ 'online'), not when the provider goes silent.
         const providers = db.all(
             `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
+                    gpu_vram_mb, gpu_info_json,
                     gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
                     status, location, run_mode, reliability_score, reputation_score,
-                    cached_models, last_heartbeat, uptime_percent, total_jobs, is_paused,
-                    created_at
-             FROM providers
-             WHERE is_paused = 0 AND last_heartbeat IS NOT NULL
-             ORDER BY reputation_score DESC NULLS LAST, gpu_vram_mib DESC NULLS LAST`
+                    cached_models, last_heartbeat, uptime_percent, total_jobs, is_paused, created_at,
+                    COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
+                    COALESCE(js.completed_jobs, 0) AS completed_jobs,
+                    COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
+                    COALESCE(js.total_jobs, 0) AS total_jobs_all
+             FROM providers p
+             LEFT JOIN (
+                SELECT provider_id, COUNT(*) AS heartbeats_7d
+                FROM heartbeat_log
+                WHERE datetime(received_at) >= datetime('now', '-7 days')
+                GROUP BY provider_id
+             ) hb ON hb.provider_id = p.id
+             LEFT JOIN (
+                SELECT provider_id,
+                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
+                       SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
+                       COUNT(*) AS total_jobs
+                FROM jobs
+                GROUP BY provider_id
+             ) js ON js.provider_id = p.id
+             WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
+               AND COALESCE(p.approval_status, 'pending') = 'approved'
+             ORDER BY p.reputation_score DESC NULLS LAST, p.gpu_vram_mib DESC NULLS LAST`
         );
 
         const now = Date.now();
@@ -1841,6 +2014,26 @@ router.get('/available', (req, res) => {
 
             let gpuSpec = null;
             if (p.gpu_spec_json) { try { gpuSpec = JSON.parse(p.gpu_spec_json); } catch {} }
+            let gpuInfo = null;
+            if (p.gpu_info_json) { try { gpuInfo = JSON.parse(p.gpu_info_json); } catch {} }
+
+            const createdAtMs = p.created_at ? new Date(p.created_at).getTime() : NaN;
+            const daysSinceRegistration = Number.isFinite(createdAtMs)
+                ? Math.max(1 / 24, (now - createdAtMs) / (1000 * 60 * 60 * 24))
+                : 7;
+            const uptimeWindowDays = Math.min(7, daysSinceRegistration);
+            const expectedHeartbeats = Math.max(1, uptimeWindowDays * EXPECTED_HEARTBEATS_PER_DAY);
+            const uptimePct = roundTo1(Math.min(100, (Number(p.heartbeats_7d || 0) / expectedHeartbeats) * 100));
+
+            const completedJobs = Number(p.completed_jobs || 0);
+            const terminalJobs = Number(p.terminal_jobs || 0);
+            const totalJobs = Number(p.total_jobs_all || 0);
+            const jobSuccessRate = roundTo1(terminalJobs > 0 ? (completedJobs / terminalJobs) * 100 : 0);
+            const reputationTier = computeReputationTier({
+                uptimePct,
+                successRate: jobSuccessRate,
+                totalJobs,
+            });
 
             acc.push({
                 id: p.id,
@@ -1848,11 +2041,20 @@ router.get('/available', (req, res) => {
                 // GPU spec
                 gpu_model: p.gpu_name_detected || p.gpu_model,
                 vram_gb: p.gpu_vram_mib ? Math.round(p.gpu_vram_mib / 1024 * 10) / 10 : null,
+                vram_mb: p.gpu_vram_mb != null ? p.gpu_vram_mb : (p.gpu_vram_mib != null ? p.gpu_vram_mib : null),
                 vram_mib: p.gpu_vram_mib,
                 gpu_count: p.gpu_count_reported || 1,
                 driver_version: p.gpu_driver,
                 compute_capability: p.gpu_compute_capability,
                 cuda_version: p.gpu_cuda_version,
+                gpu_info: {
+                    gpu_name: gpuInfo?.gpu_name || p.gpu_name_detected || p.gpu_model || null,
+                    vram_mb: gpuInfo?.vram_mb != null
+                        ? gpuInfo.vram_mb
+                        : (p.gpu_vram_mb != null ? p.gpu_vram_mb : (p.gpu_vram_mib != null ? p.gpu_vram_mib : null)),
+                    driver_version: gpuInfo?.driver_version || p.gpu_driver || null,
+                    cuda_version: gpuInfo?.cuda_version || p.gpu_cuda_version || null,
+                },
                 gpu_spec: gpuSpec,
                 // Graduated availability status
                 status: computedStatus,           // "online" | "degraded"
@@ -1864,8 +2066,11 @@ router.get('/available', (req, res) => {
                 // Quality
                 reliability_score: p.reliability_score,
                 reputation_score: p.reputation_score ?? 100,
-                uptime_percent: p.uptime_percent,
-                total_jobs_completed: p.total_jobs,
+                uptime_percent: uptimePct,
+                uptime_pct: uptimePct,
+                job_success_rate: jobSuccessRate,
+                total_jobs_completed: completedJobs,
+                reputation_tier: reputationTier,
                 cached_models: cachedModels,
                 // Pricing (halala per minute by job type)
                 cost_rates_halala_per_min: COST_RATES,
@@ -1897,26 +2102,74 @@ router.get('/available', (req, res) => {
 // GET /api/providers/marketplace — Public provider cards for marketplace page
 // Returns only online providers with minimal card fields (no auth required)
 // ============================================================================
-router.get('/marketplace', marketplaceLimiter, (req, res) => {
+router.get('/marketplace', (req, res) => {
     try {
-        const defaultPrice = COST_RATES.default || 10;
+        const defaultRateHalalaPerHour = 500;
         const providers = db.all(
-            `SELECT id, gpu_model, gpu_name_detected, gpu_vram_mib, vram_gb, uptime_percent, total_jobs
-             FROM providers
-             WHERE status = 'online' AND COALESCE(is_paused, 0) = 0
-             ORDER BY COALESCE(reputation_score, 0) DESC, id DESC`
+            `SELECT p.id, p.gpu_model, p.gpu_name_detected, p.gpu_vram_mib, p.vram_gb, p.uptime_percent, p.total_jobs, p.created_at,
+                    gp.rate_halala AS marketplace_rate_halala,
+                    COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
+                    COALESCE(js.completed_jobs, 0) AS completed_jobs,
+                    COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
+                    COALESCE(js.total_jobs, 0) AS total_jobs_all
+             FROM providers p
+             LEFT JOIN gpu_pricing gp
+               ON LOWER(TRIM(gp.gpu_model)) = LOWER(TRIM(COALESCE(p.gpu_name_detected, p.gpu_model)))
+             LEFT JOIN (
+                SELECT provider_id, COUNT(*) AS heartbeats_7d
+                FROM heartbeat_log
+                WHERE datetime(received_at) >= datetime('now', '-7 days')
+                GROUP BY provider_id
+             ) hb ON hb.provider_id = p.id
+             LEFT JOIN (
+                SELECT provider_id,
+                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
+                       SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
+                       COUNT(*) AS total_jobs
+                FROM jobs
+                GROUP BY provider_id
+             ) js ON js.provider_id = p.id
+             WHERE p.status = 'online' AND COALESCE(p.is_paused, 0) = 0
+               AND COALESCE(p.approval_status, 'pending') = 'approved'
+             ORDER BY COALESCE(p.reputation_score, 0) DESC, p.id DESC`
         );
 
-        const payload = providers.map((p) => ({
-            id: p.id,
-            gpu_model: p.gpu_name_detected || p.gpu_model || 'Unknown GPU',
-            vram_gb: p.vram_gb != null
-                ? Number(p.vram_gb)
-                : (p.gpu_vram_mib != null ? Math.round((p.gpu_vram_mib / 1024) * 10) / 10 : null),
-            price_per_min_halala: defaultPrice,
-            uptime_pct: p.uptime_percent != null ? Number(p.uptime_percent) : 0,
-            jobs_completed: p.total_jobs != null ? Number(p.total_jobs) : 0,
-        }));
+        const payload = providers.map((p) => {
+            const createdAtMs = p.created_at ? new Date(p.created_at).getTime() : NaN;
+            const daysSinceRegistration = Number.isFinite(createdAtMs)
+                ? Math.max(1 / 24, (Date.now() - createdAtMs) / (1000 * 60 * 60 * 24))
+                : 7;
+            const uptimeWindowDays = Math.min(7, daysSinceRegistration);
+            const expectedHeartbeats = Math.max(1, uptimeWindowDays * EXPECTED_HEARTBEATS_PER_DAY);
+            const uptimePct = roundTo1(Math.min(100, (Number(p.heartbeats_7d || 0) / expectedHeartbeats) * 100));
+
+            const completedJobs = Number(p.completed_jobs || 0);
+            const terminalJobs = Number(p.terminal_jobs || 0);
+            const totalJobs = Number(p.total_jobs_all || 0);
+            const jobSuccessRate = roundTo1(terminalJobs > 0 ? (completedJobs / terminalJobs) * 100 : 0);
+            const reputationTier = computeReputationTier({
+                uptimePct,
+                successRate: jobSuccessRate,
+                totalJobs,
+            });
+
+            const rateHalalaPerHour = Number.isInteger(p.marketplace_rate_halala)
+                ? p.marketplace_rate_halala
+                : defaultRateHalalaPerHour;
+            return {
+                id: p.id,
+                gpu_model: p.gpu_name_detected || p.gpu_model || 'Unknown GPU',
+                vram_gb: p.vram_gb != null
+                    ? Number(p.vram_gb)
+                    : (p.gpu_vram_mib != null ? Math.round((p.gpu_vram_mib / 1024) * 10) / 10 : null),
+                rate_halala: rateHalalaPerHour,
+                price_per_min_halala: Math.max(1, Math.round(rateHalalaPerHour / 60)),
+                uptime_pct: uptimePct,
+                job_success_rate: jobSuccessRate,
+                total_jobs_completed: completedJobs,
+                reputation_tier: reputationTier,
+            };
+        });
 
         res.json(payload);
     } catch (error) {

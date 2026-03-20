@@ -6,6 +6,7 @@
  */
 
 import Docker from 'dockerode';
+import { existsSync } from 'node:fs';
 import type {
   JobContainerConfig,
   ContainerResult,
@@ -17,8 +18,19 @@ import type {
 const MC_BASE = process.env['MC_API_URL'] ?? 'http://76.13.179.86:8084/api';
 const MC_TOKEN = process.env['MC_TOKEN'] ?? 'dc1-mc-gate0-2026';
 const AGENT_NAME = 'VOLT-DOCKER';
+const DEFAULT_PIDS_LIMIT = Number(process.env['DC1_CONTAINER_PIDS_LIMIT'] ?? 256);
+const DEFAULT_TMPFS_SIZE = process.env['DC1_CONTAINER_TMPFS_SIZE'] ?? '1g';
+const SECCOMP_PROFILE = process.env['DC1_DOCKER_SECCOMP_PROFILE'] ?? '/etc/dc1/seccomp-gpu-compute.json';
 
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+
+function buildSecurityOpts(): string[] {
+  const opts = ['no-new-privileges:true'];
+  if (existsSync(SECCOMP_PROFILE)) {
+    opts.push(`seccomp=${SECCOMP_PROFILE}`);
+  }
+  return opts;
+}
 
 // ── Helpers ──
 
@@ -99,9 +111,15 @@ function parseNvidiaSmiOutput(raw: string): GpuMetric[] {
 export async function launchJobContainer(
   config: JobContainerConfig,
 ): Promise<ContainerResult> {
+  const securityOpt = buildSecurityOpts();
+
   await audit('container.launch.start', 'job', config.jobId, {
     image: config.dockerImage,
     gpus: config.gpuDeviceIds,
+    cpuLimit: config.cpuLimit,
+    memoryLimit: config.memoryLimit,
+    pidsLimit: DEFAULT_PIDS_LIMIT,
+    securityOpt,
   });
 
   try {
@@ -123,7 +141,16 @@ export async function launchJobContainer(
       HostConfig: {
         NetworkMode: 'none', // CRITICAL: no internet
         Memory: config.memoryLimit,
+        MemorySwap: config.memoryLimit, // disable swap headroom
         NanoCpus: config.cpuLimit * 1e9,
+        PidsLimit: DEFAULT_PIDS_LIMIT,
+        ReadonlyRootfs: true,
+        Tmpfs: {
+          '/tmp': `rw,noexec,nosuid,size=${DEFAULT_TMPFS_SIZE}`,
+          '/var/tmp': 'rw,noexec,nosuid,size=256m',
+        },
+        CapDrop: ['ALL'],
+        SecurityOpt: securityOpt,
         DeviceRequests: [
           {
             Driver: '',

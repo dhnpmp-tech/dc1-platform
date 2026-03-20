@@ -6,10 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface Job {
   id: number
@@ -19,6 +16,7 @@ interface Job {
   submitted_at: string
   completed_at: string
   actual_cost_halala: number
+  params?: string | null
 }
 
 const HomeIcon = () => (
@@ -69,12 +67,40 @@ const navItems = [
   { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
 ]
 
+interface RetryState {
+  job: Job | null
+  loading: boolean
+  error: string
+  successId: number | null
+}
+
 export default function RenterJobsPage() {
   const router = useRouter()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [renterName, setRenterName] = useState('Renter')
   const [totalSpent, setTotalSpent] = useState(0)
+  const [retry, setRetry] = useState<RetryState>({ job: null, loading: false, error: '', successId: null })
+  const [exportingCsv, setExportingCsv] = useState(false)
+
+  const fetchJobs = async (apiKey: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey)}`)
+      if (!res.ok) {
+        localStorage.removeItem('dc1_renter_key')
+        router.push('/login')
+        return
+      }
+      const data = await res.json()
+      setRenterName(data.renter?.name || 'Renter')
+      setTotalSpent((data.renter?.total_spent_halala || 0) / 100)
+      setJobs(data.recent_jobs || [])
+    } catch (err) {
+      console.error('Failed to load jobs:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_renter_key')
@@ -82,30 +108,90 @@ export default function RenterJobsPage() {
       router.push('/login')
       return
     }
-
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey)}`)
-        if (!res.ok) {
-          localStorage.removeItem('dc1_renter_key')
-          router.push('/login')
-          return
-        }
-        const data = await res.json()
-        setRenterName(data.renter?.name || 'Renter')
-        setTotalSpent((data.renter?.total_spent_halala || 0) / 100)
-        setJobs(data.recent_jobs || [])
-      } catch (err) {
-        console.error('Failed to load jobs:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-    const interval = setInterval(fetchData, 30000)
+    fetchJobs(apiKey)
+    const interval = setInterval(() => fetchJobs(apiKey), 30000)
     return () => clearInterval(interval)
   }, [router])
+
+  const openRetryModal = async (job: Job) => {
+    // If params not loaded yet, fetch from job detail endpoint
+    if (!job.params) {
+      const apiKey = localStorage.getItem('dc1_renter_key') || ''
+      try {
+        const res = await fetch(`${API_BASE}/jobs/${job.id}`, { headers: { 'x-renter-key': apiKey } })
+        if (res.ok) {
+          const data = await res.json()
+          job = { ...job, params: data.job?.params ?? null }
+        }
+      } catch { /* ignore, proceed with what we have */ }
+    }
+    setRetry({ job, loading: false, error: '', successId: null })
+  }
+
+  const confirmRetry = async () => {
+    const apiKey = localStorage.getItem('dc1_renter_key') || ''
+    const { job } = retry
+    if (!job) return
+
+    setRetry(r => ({ ...r, loading: true, error: '' }))
+
+    let parsedParams: Record<string, unknown> = {}
+    try {
+      if (job.params) parsedParams = JSON.parse(job.params)
+    } catch { /* empty params ok */ }
+
+    const payload = {
+      job_type: job.job_type,
+      ...parsedParams,
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/jobs/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
+        body: JSON.stringify(payload),
+      })
+      if (res.status === 402) {
+        setRetry(r => ({ ...r, loading: false, error: 'insufficient_balance' }))
+        return
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setRetry(r => ({ ...r, loading: false, error: err.error || 'Failed to re-submit job' }))
+        return
+      }
+      const data = await res.json()
+      const newId = data.job_id || data.id
+      setRetry({ job: null, loading: false, error: '', successId: newId })
+      // Refresh job list
+      fetchJobs(apiKey)
+    } catch {
+      setRetry(r => ({ ...r, loading: false, error: 'Network error. Please try again.' }))
+    }
+  }
+
+  const exportCsv = async () => {
+    const apiKey = localStorage.getItem('dc1_renter_key')
+    if (!apiKey || exportingCsv) return
+    setExportingCsv(true)
+    try {
+      const res = await fetch(`${API_BASE}/renters/me/jobs/export?key=${encodeURIComponent(apiKey)}&format=csv`)
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dcp-jobs-${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('CSV export failed:', err)
+    } finally {
+      setExportingCsv(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -119,16 +205,50 @@ export default function RenterJobsPage() {
 
   const completedJobs = jobs.filter(j => j.status === 'completed').length
   const failedJobs = jobs.filter(j => j.status === 'failed').length
+  const hasFailedJobs = failedJobs > 0
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
       <div className="space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-dc1-text-primary">My Jobs</h1>
-          <p className="text-dc1-text-secondary text-sm mt-1">
-            {jobs.length} job{jobs.length !== 1 ? 's' : ''} total — auto-refreshes every 30s
-          </p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">My Jobs</h1>
+            <p className="text-dc1-text-secondary text-sm mt-1">
+              {jobs.length} job{jobs.length !== 1 ? 's' : ''} total — auto-refreshes every 30s
+            </p>
+          </div>
+          <button
+            onClick={exportCsv}
+            disabled={exportingCsv || jobs.length === 0}
+            className="btn btn-secondary min-h-[44px] px-4 flex items-center gap-2 self-start disabled:opacity-50"
+            aria-label="Export job history as CSV"
+          >
+            {exportingCsv ? (
+              <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" aria-hidden="true" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            )}
+            Export CSV
+          </button>
         </div>
+
+        {/* Re-submit success toast */}
+        {retry.successId && (
+          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+            <span className="text-status-success text-sm font-medium">
+              Job re-submitted: #{retry.successId}
+            </span>
+            <button
+              onClick={() => setRetry(r => ({ ...r, successId: null }))}
+              className="text-dc1-text-muted hover:text-dc1-text-primary text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -161,6 +281,7 @@ export default function RenterJobsPage() {
                 <th>Completed</th>
                 <th>Status</th>
                 <th>Cost</th>
+                {hasFailedJobs && <th className="sr-only">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -193,12 +314,25 @@ export default function RenterJobsPage() {
                           ? `${(j.actual_cost_halala / 100).toFixed(2)} SAR`
                           : '—'}
                       </td>
+                      {hasFailedJobs && (
+                        <td>
+                          {j.status === 'failed' && (
+                            <button
+                              onClick={() => openRetryModal(j)}
+                              className="text-xs font-semibold text-dc1-amber border border-dc1-amber/40 hover:bg-dc1-amber/10 rounded px-2 py-1 min-h-[32px] transition-colors"
+                              aria-label={`Retry job ${j.job_id || j.id}`}
+                            >
+                              Retry
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   )
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-dc1-text-secondary">
+                  <td colSpan={hasFailedJobs ? 7 : 6} className="text-center py-12 text-dc1-text-secondary">
                     No jobs yet. Head to the{' '}
                     <a href="/renter/playground" className="text-dc1-amber hover:underline">GPU Playground</a>{' '}
                     to run your first job!
@@ -209,6 +343,62 @@ export default function RenterJobsPage() {
           </table>
         </div>
       </div>
+
+      {/* Retry Confirmation Modal */}
+      {retry.job && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="retry-modal-title"
+        >
+          <div className="card w-full max-w-md p-6 space-y-5">
+            <h2 id="retry-modal-title" className="text-lg font-bold text-dc1-text-primary">
+              Re-submit Job?
+            </h2>
+            <p className="text-dc1-text-secondary text-sm">
+              Re-submit this job? It will use the same model and parameters and deduct balance again.
+            </p>
+            <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
+              <span className="text-dc1-text-muted">Type: </span>{(retry.job.job_type || '').replace(/_/g, ' ')}
+              <br />
+              <span className="text-dc1-text-muted">Original ID: </span>{retry.job.job_id || `#${retry.job.id}`}
+            </div>
+
+            {retry.error === 'insufficient_balance' ? (
+              <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
+                Insufficient balance. Please{' '}
+                <Link href="/renter/billing" className="underline font-semibold">top up your balance</Link>{' '}
+                first.
+              </div>
+            ) : retry.error ? (
+              <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
+                {retry.error}
+              </div>
+            ) : null}
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setRetry({ job: null, loading: false, error: '', successId: null })}
+                disabled={retry.loading}
+                className="btn btn-secondary min-h-[44px] px-4"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRetry}
+                disabled={retry.loading}
+                className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2"
+              >
+                {retry.loading && (
+                  <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                )}
+                {retry.loading ? 'Submitting…' : 'Re-submit Job'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   )
 }

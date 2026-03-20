@@ -18,9 +18,9 @@ cat > dc1-provider_1.0/DEBIAN/control << 'EOF'
 Package: dc1-provider
 Version: 1.0
 Architecture: amd64
-Maintainer: DC1 <support@dc1.sa>
-Description: DC1 Provider Daemon
- Automatic GPU provider setup for DC1 marketplace
+Maintainer: DCP <support@dcp.sa>
+Description: DCP Provider Daemon
+ Automatic GPU provider setup for DCP marketplace
 Depends: docker.io, nvidia-docker2, curl
 EOF
 
@@ -32,7 +32,7 @@ set -e
 # Start daemon
 /usr/local/bin/dc1-provider-setup "$@"
 
-echo "✓ DC1 Provider installed successfully"
+echo "✓ DCP Provider installed successfully"
 EOF
 
 chmod +x dc1-provider_1.0/DEBIAN/postinst

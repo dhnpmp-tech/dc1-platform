@@ -31,14 +31,88 @@ log_ok()   { echo -e "${GREEN}✓${NC} $1"; }
 log_info() { echo -e "${YELLOW}▶${NC} $1"; }
 log_err()  { echo -e "${RED}✗${NC} $1"; exit 1; }
 
+require_root() {
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        log_err "Run as root (example: sudo bash $0 $DOMAIN $EMAIL)"
+    fi
+}
+
+install_if_missing() {
+    local packages=()
+    local pkg=""
+    for pkg in "$@"; do
+        if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+            packages+=("$pkg")
+        fi
+    done
+
+    if [[ ${#packages[@]} -gt 0 ]]; then
+        log_info "Installing missing packages: ${packages[*]}"
+        apt-get update -qq
+        apt-get install -y --no-install-recommends "${packages[@]}"
+    else
+        log_info "Required packages already installed"
+    fi
+}
+
+ensure_renew_hook() {
+    local hook_dir="/etc/letsencrypt/renewal-hooks/deploy"
+    local hook_file="$hook_dir/reload-nginx.sh"
+    mkdir -p "$hook_dir"
+    cat > "$hook_file" <<'HOOK'
+#!/usr/bin/env bash
+set -euo pipefail
+systemctl reload nginx
+HOOK
+    chmod 755 "$hook_file"
+    log_ok "Certbot deploy hook installed: $hook_file"
+}
+
+ensure_renew_cron() {
+    local cron_line="0 3,15 * * * certbot renew --quiet"
+    if ! crontab -l 2>/dev/null | grep -qF "$cron_line"; then
+        (crontab -l 2>/dev/null; echo "$cron_line") | crontab -
+        log_ok "Cron renewal job added (twice daily at 03:00 and 15:00)"
+    else
+        log_ok "Cron renewal job already present"
+    fi
+}
+
+verify_health_json() {
+    local url="https://$DOMAIN/api/health"
+    local attempt=1
+    local body=""
+
+    while [[ $attempt -le 10 ]]; do
+        if body="$(curl -fsS --max-time 15 "$url" 2>/dev/null)"; then
+            if python3 - "$body" <<'PY'
+import json
+import sys
+json.loads(sys.argv[1])
+PY
+            then
+                log_ok "Health check passed: $url returned valid JSON"
+                return 0
+            fi
+        fi
+        log_info "Health check attempt $attempt/10 failed; retrying in 2s..."
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    log_err "Health check failed: $url did not return valid JSON after 10 attempts"
+}
+
 echo -e "\n${BLUE}════════════════════════════════════════${NC}"
 echo -e "${BLUE}  DC1 HTTPS Setup — $DOMAIN${NC}"
 echo -e "${BLUE}════════════════════════════════════════${NC}\n"
 
+require_root
+
 # ── 1. Install dependencies ──────────────────────────────────────────────────
-log_info "Installing nginx and certbot..."
-apt-get update -qq
-apt-get install -y --no-install-recommends nginx certbot python3-certbot-nginx
+install_if_missing nginx certbot python3-certbot-nginx
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl start nginx
 log_ok "nginx and certbot installed"
 
 # ── 2. Create certbot webroot ────────────────────────────────────────────────
@@ -79,6 +153,8 @@ certbot certonly \
     --webroot-path="$CERTBOT_WEBROOT" \
     --non-interactive \
     --agree-tos \
+    --keep-until-expiring \
+    --expand \
     --email "$EMAIL" \
     -d "$DOMAIN"
 log_ok "Certificate obtained: /etc/letsencrypt/live/$DOMAIN/"
@@ -94,17 +170,17 @@ log_ok "HTTPS reverse proxy active at https://$DOMAIN"
 
 # ── 6. Auto-renewal ──────────────────────────────────────────────────────────
 log_info "Configuring certificate auto-renewal..."
+ensure_renew_hook
 
-# Certbot installs a systemd timer on Ubuntu 20.04+ — verify it
+# Certbot installs a systemd timer on Ubuntu 20.04+ — verify/enable it
 if systemctl is-enabled certbot.timer &>/dev/null; then
+    systemctl enable certbot.timer >/dev/null 2>&1 || true
+    systemctl start certbot.timer >/dev/null 2>&1 || true
     log_ok "certbot.timer is enabled (systemd auto-renewal active)"
 else
-    # Fallback: cron job (runs twice daily as recommended by Let's Encrypt)
-    CRON_LINE="0 3,15 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'"
-    (crontab -l 2>/dev/null | grep -qF 'certbot renew') || \
-        (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
-    log_ok "Cron renewal job added (twice daily at 03:00 and 15:00)"
+    log_info "certbot.timer not enabled; relying on cron renewal"
 fi
+ensure_renew_cron
 
 # ── 7. Firewall ──────────────────────────────────────────────────────────────
 if command -v ufw &>/dev/null; then
@@ -113,7 +189,10 @@ if command -v ufw &>/dev/null; then
     log_ok "ufw: Nginx Full (80 + 443) allowed"
 fi
 
-# ── 8. Summary ───────────────────────────────────────────────────────────────
+# ── 8. Verify HTTPS health endpoint returns JSON ─────────────────────────────
+verify_health_json
+
+# ── 9. Summary ───────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}════════════════════════════════════════${NC}"
 echo -e "${GREEN}  HTTPS setup complete!${NC}"

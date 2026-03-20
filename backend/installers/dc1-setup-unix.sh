@@ -13,7 +13,7 @@ INSTALL_DIR="/opt/dc1-provider"
 LOG_DIR="$HOME/dc1-provider/logs"
 
 echo "============================================"
-echo "  DC1 Provider Setup v3.3.0"
+echo "  DCP Provider Setup v3.3.0"
 echo "  GPU Compute Marketplace — Saudi Arabia"
 echo "============================================"
 echo ""
@@ -143,12 +143,12 @@ else
     echo "  macOS providers will use bare-metal execution mode."
 fi
 
-# ── Step 6: Pull DC1 Worker Images ─────────────────────────────────────
-echo "[6/8] Pulling DC1 worker images..."
+# ── Step 6: Pull DCP Worker Images ─────────────────────────────────────
+echo "[6/8] Pulling DCP worker images..."
 if command -v docker &>/dev/null; then
     # For now, build from local Dockerfiles if registry not set
     # In production, these would be: docker pull ghcr.io/dhnpmp-tech/dc1-sd-worker:latest
-    echo "  [INFO] Worker images will be built on first job or pulled from DC1 registry."
+    echo "  [INFO] Worker images will be built on first job or pulled from DCP registry."
     echo "  Pre-pulling NVIDIA base image..."
     docker pull nvidia/cuda:12.2.0-runtime-ubuntu22.04 2>/dev/null && \
         echo "  NVIDIA CUDA base image cached." || \
@@ -156,7 +156,7 @@ if command -v docker &>/dev/null; then
 fi
 
 # ── Step 7: Download daemon + create service ────────────────────────────
-echo "[7/8] Downloading DC1 daemon..."
+echo "[7/8] Downloading DCP daemon..."
 mkdir -p "$INSTALL_DIR" "$LOG_DIR"
 curl -sL "${DC1_API_URL}/api/providers/download/daemon?key=${DC1_API_KEY}" -o "${INSTALL_DIR}/dc1-daemon.py"
 chmod +x "${INSTALL_DIR}/dc1-daemon.py"
@@ -181,7 +181,7 @@ if [ "$(uname)" = "Linux" ] && command -v systemctl &>/dev/null; then
     ACTUAL_HOME=$(eval echo ~"$ACTUAL_USER")
     cat > /etc/systemd/system/dc1-provider.service << SVC
 [Unit]
-Description=DC1 Provider Daemon
+Description=DCP Provider Daemon
 After=network.target docker.service
 Wants=docker.service
 
@@ -235,7 +235,7 @@ fi
 sleep 3
 echo ""
 echo "============================================"
-echo "  DC1 Provider Daemon v3.3.0 — INSTALLED"
+echo "  DCP Provider Daemon v3.3.0 — INSTALLED"
 echo "============================================"
 echo "  Daemon:  ${INSTALL_DIR}/dc1-daemon.py"
 echo "  Config:  ${INSTALL_DIR}/config.json"

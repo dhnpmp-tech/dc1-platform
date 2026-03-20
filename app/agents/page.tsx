@@ -39,7 +39,7 @@ const AGENTS: AgentInfo[] = [
   { name: 'SYNC', uuid: 'cb6a5cc5', role: 'QA — Tests & Integration', color: 'text-[#00d4ff]', borderColor: 'border-[#00d4ff]/30', badgeBg: 'bg-[#00d4ff]/10' },
 ];
 
-const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
+const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || '') + '/api';
 const MC_TOKEN = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_MC_TOKEN || 'dc1-mc-gate0-2026')
   : 'dc1-mc-gate0-2026';
@@ -134,7 +134,7 @@ export default function AgentsPage() {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-2xl font-bold text-[#00d4ff]">🤖 Agent Intelligence</h1>
-            <p className="text-sm text-gray-500">DC1 agent swarm — status & task progress</p>
+            <p className="text-sm text-gray-500">DCP agent swarm — status & task progress</p>
           </div>
           {error && (
             <div className="text-xs text-[#ffab00] bg-[#ffab00]/10 px-3 py-1 rounded-md">

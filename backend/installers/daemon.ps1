@@ -1,5 +1,5 @@
 <# 
-DC1 Provider Daemon - Windows Installer v2.0.0
+DCP Provider Daemon - Windows Installer v2.0.0
 ===============================================
 This is a THIN INSTALLER only. It:
   1. Finds or installs Python 3.12+
@@ -11,8 +11,8 @@ The actual daemon logic lives in dc1_daemon.py (shared across all platforms).
 All features (GPU logs, auto-update, event reporting, etc.) come from dc1_daemon.py.
 
 Usage:
-  .\daemon.ps1 -ApiKey "YOUR_KEY" -ApiUrl "http://your-server:8083"
-  .\daemon.ps1 -ApiKey "YOUR_KEY" -ApiUrl "http://your-server:8083" -RunMode "manual"
+  .\daemon.ps1 -ApiKey "YOUR_KEY" -ApiUrl "https://api.dcp.sa"
+  .\daemon.ps1 -ApiKey "YOUR_KEY" -ApiUrl "https://api.dcp.sa" -RunMode "manual"
 #>
 
 param(
@@ -33,7 +33,7 @@ $INSTALLER_VERSION = "2.0.0"
 $INSTALL_DIR = "$env:USERPROFILE\dc1-provider"
 
 Write-Host "`n================================================" -ForegroundColor Cyan
-Write-Host "  DC1 Provider Daemon - Windows Installer v$INSTALLER_VERSION" -ForegroundColor Cyan
+Write-Host "  DCP Provider Daemon - Windows Installer v$INSTALLER_VERSION" -ForegroundColor Cyan
 Write-Host "================================================`n" -ForegroundColor Cyan
 
 # --- Step 1: Find or install Python ---
@@ -91,7 +91,7 @@ New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
 Write-Host "  Install dir: $INSTALL_DIR" -ForegroundColor Green
 
 # --- Step 4: Download dc1_daemon.py from backend ---
-Write-Host "[4/5] Downloading daemon from DC1 backend..." -ForegroundColor Yellow
+Write-Host "[4/5] Downloading daemon from DCP backend..." -ForegroundColor Yellow
 $daemonUrl = "$ApiUrl/api/providers/download/daemon?key=$ApiKey"
 $daemonPath = "$INSTALL_DIR\dc1_daemon.py"
 
@@ -122,7 +122,7 @@ Write-Host "[5/5] Launching daemon..." -ForegroundColor Yellow
 # Create a launcher batch file for easy restart
 $launcherBat = @"
 @echo off
-echo Starting DC1 Provider Daemon...
+echo Starting DCP Provider Daemon...
 echo Press Ctrl+C to stop.
 "$pythonExe" "$daemonPath" --key "$ApiKey" --url "$ApiUrl"
 pause
@@ -133,7 +133,7 @@ Set-Content -Path "$INSTALL_DIR\start-dc1.bat" -Value $launcherBat
 $dashUrl = "$ApiUrl/provider?key=$ApiKey"
 
 Write-Host "`n================================================" -ForegroundColor Green
-Write-Host "  DC1 Provider Daemon installed successfully!" -ForegroundColor Green
+Write-Host "  DCP Provider Daemon installed successfully!" -ForegroundColor Green
 Write-Host "================================================" -ForegroundColor Green
 Write-Host "  Installer:    v$INSTALLER_VERSION"
 Write-Host "  Daemon:       dc1_daemon.py (auto-updating)"
@@ -141,7 +141,7 @@ Write-Host "  Install dir:  $INSTALL_DIR"
 Write-Host "  Python:       $pythonExe"
 Write-Host "  Dashboard:    $dashUrl"
 if ($RunMode -eq 'manual') {
-    Write-Host "`n  To start earning: double-click 'DC1 - My Earnings' on your Desktop" -ForegroundColor Cyan
+    Write-Host "`n  To start earning: double-click 'DCP - My Earnings' on your Desktop" -ForegroundColor Cyan
     Write-Host "  Or run: $INSTALL_DIR\start-dc1.bat`n"
 }
 Write-Host ""

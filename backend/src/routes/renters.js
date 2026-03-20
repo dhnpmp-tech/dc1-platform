@@ -38,6 +38,19 @@ function normalizeEmail(value) {
   return normalized;
 }
 
+function normalizeWebhookUrl(value) {
+  if (value == null) return null;
+  const normalized = normalizeString(value, { maxLen: 500 });
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 function toFiniteNumber(value, { min = null, max = null } = {}) {
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) return null;
@@ -50,6 +63,31 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
   const num = toFiniteNumber(value, { min, max });
   if (num == null || !Number.isInteger(num)) return null;
   return num;
+}
+
+const ROTATION_WINDOW_MS = 60 * 60 * 1000;
+const MAX_ROTATIONS_PER_WINDOW = 3;
+
+function isRotationRateLimited(accountType, accountId) {
+  const cutoff = new Date(Date.now() - ROTATION_WINDOW_MS).toISOString();
+  const row = db.get(
+    `SELECT COUNT(*) AS rotation_count
+     FROM api_key_rotations
+     WHERE account_type = ? AND account_id = ? AND rotated_at >= ?`,
+    accountType,
+    accountId,
+    cutoff
+  );
+  return Number(row?.rotation_count || 0) >= MAX_ROTATIONS_PER_WINDOW;
+}
+
+function recordRotationEvent(accountType, accountId, rotatedAt) {
+  runStatement(
+    'INSERT INTO api_key_rotations (account_type, account_id, rotated_at) VALUES (?, ?, ?)',
+    accountType,
+    accountId,
+    rotatedAt
+  );
 }
 
 // POST /api/renters/register
@@ -113,6 +151,7 @@ router.get('/me', (req, res) => {
         name: renter.name,
         email: renter.email,
         organization: renter.organization,
+        webhook_url: renter.webhook_url || null,
         balance_halala: renter.balance_halala,
         total_spent_halala: renter.total_spent_halala,
         total_jobs: renter.total_jobs,
@@ -123,6 +162,46 @@ router.get('/me', (req, res) => {
   } catch (error) {
     console.error('Renter me error:', error);
     res.status(500).json({ error: 'Failed to fetch renter data' });
+  }
+});
+
+// PATCH /api/renters/settings — update renter settings
+router.patch('/settings', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const hasWebhookField = Object.prototype.hasOwnProperty.call(req.body || {}, 'webhook_url');
+    if (!hasWebhookField) {
+      return res.status(400).json({ error: 'No supported settings provided. Use webhook_url.' });
+    }
+
+    const rawWebhookUrl = req.body.webhook_url;
+    const clearWebhook = rawWebhookUrl === null || rawWebhookUrl === undefined || String(rawWebhookUrl).trim() === '';
+    const webhookUrl = clearWebhook ? null : normalizeWebhookUrl(rawWebhookUrl);
+    if (!clearWebhook && !webhookUrl) {
+      return res.status(400).json({ error: 'webhook_url must be a valid http/https URL' });
+    }
+
+    runStatement(
+      'UPDATE renters SET webhook_url = ?, updated_at = ? WHERE id = ?',
+      webhookUrl,
+      new Date().toISOString(),
+      renter.id
+    );
+
+    return res.json({
+      success: true,
+      settings: {
+        webhook_url: webhookUrl,
+      },
+    });
+  } catch (error) {
+    console.error('Renter settings update error:', error);
+    return res.status(500).json({ error: 'Failed to update renter settings' });
   }
 });
 
@@ -380,13 +459,25 @@ router.post('/rotate-key', (req, res) => {
     const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
 
-    const newKey = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
-    runStatement('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?',
-      newKey, new Date().toISOString(), renter.id);
+    if (isRotationRateLimited('renter', renter.id)) {
+      return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per hour' });
+    }
+
+    const newKey = `dc1-renter-${crypto.randomUUID()}`;
+    const nowIso = new Date().toISOString();
+    runStatement(
+      'UPDATE renters SET api_key = ?, rotated_at = ?, updated_at = ? WHERE id = ?',
+      newKey,
+      nowIso,
+      nowIso,
+      renter.id
+    );
+    recordRotationEvent('renter', renter.id, nowIso);
 
     res.json({
       success: true,
       message: 'API key rotated. Save the new key — the old one is now invalid.',
+      new_key: newKey,
       api_key: newKey,
       renter_id: renter.id
     });
@@ -439,6 +530,75 @@ router.delete('/me', (req, res) => {
   } catch (error) {
     console.error('Renter delete error:', error);
     res.status(500).json({ error: 'Account deletion failed' });
+  }
+});
+
+// GET /api/renters/me/jobs/export?key=&format=csv&from_date=YYYY-MM-DD&to_date=YYYY-MM-DD&status=
+router.get('/me/jobs/export', (req, res) => {
+  try {
+    const { key, from_date, to_date, status: statusFilter } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const conditions = ['j.renter_id = ?'];
+    const params = [renter.id];
+
+    if (from_date && /^\d{4}-\d{2}-\d{2}$/.test(from_date)) {
+      conditions.push("DATE(COALESCE(j.submitted_at, j.created_at)) >= ?");
+      params.push(from_date);
+    }
+    if (to_date && /^\d{4}-\d{2}-\d{2}$/.test(to_date)) {
+      conditions.push("DATE(COALESCE(j.submitted_at, j.created_at)) <= ?");
+      params.push(to_date);
+    }
+    if (statusFilter && ['completed', 'failed', 'running', 'pending'].includes(statusFilter)) {
+      conditions.push('j.status = ?');
+      params.push(statusFilter);
+    }
+
+    const rows = db.all(
+      `SELECT j.id, j.job_id, j.job_type, j.status,
+              j.actual_cost_halala, j.cost_halala,
+              j.provider_id, j.submitted_at, j.completed_at
+       FROM jobs j
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY COALESCE(j.submitted_at, j.created_at) DESC
+       LIMIT 1000`,
+      ...params
+    );
+
+    const headers = ['job_id', 'model', 'status', 'cost_halala', 'cost_sar', 'provider_id', 'started_at', 'completed_at', 'duration_seconds'];
+    const csvRows = rows.map(r => {
+      const costHalala = r.actual_cost_halala ?? r.cost_halala ?? 0;
+      const startedAt = r.submitted_at || '';
+      const completedAt = r.completed_at || '';
+      const durationSec = (startedAt && completedAt)
+        ? Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000)
+        : '';
+      return [
+        r.job_id || r.id,
+        r.job_type || '',
+        r.status || '',
+        costHalala,
+        (costHalala / 100).toFixed(2),
+        r.provider_id || '',
+        startedAt,
+        completedAt,
+        durationSec,
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    });
+
+    const csv = [headers.join(','), ...csvRows].join('\r\n');
+    const today = new Date().toISOString().split('T')[0];
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=dcp-jobs-${today}.csv`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Renter CSV export error:', error);
+    res.status(500).json({ error: 'Export failed' });
   }
 });
 

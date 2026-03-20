@@ -23,6 +23,8 @@ interface ProviderData {
   isPaused: boolean
   lastHeartbeat: string
   daemonVersion: string
+  approvalStatus: 'pending' | 'approved' | 'rejected'
+  rejectedReason: string
   activeJob?: {
     id: string
     jobType: string
@@ -37,6 +39,12 @@ interface ProviderData {
     status: 'completed' | 'failed'
     completedAt: string
   }>
+}
+
+interface DaemonVersionInfo {
+  version: string
+  download_url: string
+  changelog?: string
 }
 
 // SVG Icon components
@@ -80,10 +88,25 @@ const getTempColor = (temp: number): string => {
   return 'bg-status-error'
 }
 
+const compareVersions = (v1: string, v2: string): number => {
+  const p1 = (v1 || '0').split('.').map((part) => Number(part) || 0)
+  const p2 = (v2 || '0').split('.').map((part) => Number(part) || 0)
+  const maxLen = Math.max(p1.length, p2.length)
+  for (let i = 0; i < maxLen; i += 1) {
+    const a = p1[i] || 0
+    const b = p2[i] || 0
+    if (a < b) return -1
+    if (a > b) return 1
+  }
+  return 0
+}
+
 export default function ProviderDashboard() {
   const router = useRouter()
   const { t } = useLanguage()
   const [providerData, setProviderData] = useState<ProviderData | null>(null)
+  const [latestDaemon, setLatestDaemon] = useState<DaemonVersionInfo | null>(null)
+  const [providerApiKey, setProviderApiKey] = useState('')
   const [loading, setLoading] = useState(true)
 
   const getNavItems = () => [
@@ -101,10 +124,7 @@ export default function ProviderDashboard() {
     if (!providerData) return
     const apiKey = localStorage.getItem('dc1_provider_key')
     if (!apiKey) return
-    const API_BASE =
-      typeof window !== 'undefined' && window.location.protocol === 'https:'
-        ? '/api/dc1'
-        : 'http://76.13.179.86:8083/api'
+    const API_BASE = '/api/dc1'
     const endpoint = providerData.isPaused ? 'resume' : 'pause'
     setTogglingPause(true)
     try {
@@ -129,10 +149,28 @@ export default function ProviderDashboard() {
   }
 
   useEffect(() => {
-    const API_BASE =
-      typeof window !== 'undefined' && window.location.protocol === 'https:'
-        ? '/api/dc1'
-        : 'http://76.13.179.86:8083/api'
+    const fetchLatestDaemonVersion = async () => {
+      try {
+        const API_BASE = '/api/dc1'
+        const res = await fetch(`${API_BASE}/daemon/latest-version`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (!data?.version) return
+        setLatestDaemon({
+          version: String(data.version),
+          download_url: String(data.download_url || '/api/dc1/providers/download/daemon'),
+          changelog: typeof data.changelog === 'string' ? data.changelog : undefined,
+        })
+      } catch {
+        // Non-blocking for dashboard rendering
+      }
+    }
+
+    fetchLatestDaemonVersion()
+  }, [])
+
+  useEffect(() => {
+    const API_BASE = '/api/dc1'
 
     const initializeDashboard = async () => {
       // Check for API key
@@ -141,6 +179,7 @@ export default function ProviderDashboard() {
         router.push('/provider/register')
         return
       }
+      setProviderApiKey(apiKey)
 
       try {
         // Fetch real provider data from VPS
@@ -164,6 +203,8 @@ export default function ProviderDashboard() {
           isPaused: Boolean(provider.is_paused),
           lastHeartbeat: provider.last_heartbeat || '',
           daemonVersion: provider.daemon_version || '',
+          approvalStatus: provider.approval_status || 'pending',
+          rejectedReason: provider.rejected_reason || '',
           todayEarnings: (provider.today_earnings_halala || 0) / 100,
           weekEarnings: (provider.week_earnings_halala || 0) / 100,
           totalEarnings: (provider.total_earnings_halala || 0) / 100,
@@ -208,6 +249,23 @@ export default function ProviderDashboard() {
     return () => clearInterval(interval)
   }, [router])
 
+  const daemonNeedsUpdate = Boolean(
+    latestDaemon?.version &&
+    (!providerData?.daemonVersion || compareVersions(providerData.daemonVersion, latestDaemon.version) < 0)
+  )
+  const daemonStatusLabel = daemonNeedsUpdate
+    ? t('provider.daemon_update')
+        .replace('{current}', providerData?.daemonVersion ? `v${providerData.daemonVersion}` : 'unknown')
+        .replace('{latest}', latestDaemon?.version ? `v${latestDaemon.version}` : 'latest')
+    : t('provider.daemon_current').replace('{version}', latestDaemon?.version ? `v${latestDaemon.version}` : (providerData?.daemonVersion ? `v${providerData.daemonVersion}` : '—'))
+
+  const daemonDownloadUrl = (() => {
+    if (!providerApiKey) return ''
+    const base = latestDaemon?.download_url || '/api/dc1/providers/download/daemon'
+    const separator = base.includes('?') ? '&' : '?'
+    return `${base}${separator}key=${encodeURIComponent(providerApiKey)}`
+  })()
+
   if (loading) {
     return (
       <DashboardLayout navItems={getNavItems()} role="provider" userName="Provider">
@@ -236,15 +294,26 @@ export default function ProviderDashboard() {
   return (
     <DashboardLayout navItems={getNavItems()} role="provider" userName={providerData.name}>
       <div className="space-y-8">
+        {providerData.approvalStatus === 'pending' && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-100 text-sm">
+            {t('provider.pending_approval')}
+          </div>
+        )}
+        {providerData.approvalStatus === 'rejected' && (
+          <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-100 text-sm">
+            {t('provider.rejected').replace('{reason}', providerData.rejectedReason || 'No reason provided')}
+          </div>
+        )}
+
         {/* Page Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <h1 className="text-3xl font-bold text-dc1-text-primary">{t('provider.dashboard')}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">{t('provider.dashboard')}</h1>
           <div className="flex items-center gap-3">
             <StatusBadge status={providerData.isPaused ? 'paused' : providerData.status} />
             <button
               onClick={handlePauseResume}
               disabled={togglingPause}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 ${
+              className={`px-4 py-2 min-h-[44px] rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 ${
                 providerData.isPaused
                   ? 'bg-status-success/20 text-status-success hover:bg-status-success/30 border border-status-success/30'
                   : 'bg-status-warning/20 text-status-warning hover:bg-status-warning/30 border border-status-warning/30'
@@ -254,6 +323,26 @@ export default function ProviderDashboard() {
             </button>
           </div>
         </div>
+
+        {latestDaemon && (
+          daemonNeedsUpdate ? (
+            <div className="rounded-lg border border-status-warning/40 bg-status-warning/10 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-status-warning">{daemonStatusLabel}</p>
+              {daemonDownloadUrl && (
+                <a
+                  href={daemonDownloadUrl}
+                  className="text-sm font-semibold text-dc1-amber hover:underline"
+                >
+                  Download Update
+                </a>
+              )}
+            </div>
+          ) : (
+            <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-status-success/15 text-status-success border border-status-success/30">
+              {daemonStatusLabel}
+            </div>
+          )
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">

@@ -6,10 +6,7 @@ import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage } from '@/app/lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 type Role = 'provider' | 'renter' | 'admin'
 type LoginMethod = 'email' | 'apikey'

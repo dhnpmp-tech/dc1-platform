@@ -4,9 +4,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-const API_BASE = typeof window !== 'undefined' && window.location.protocol === 'https:'
-  ? '/api/dc1'
-  : 'http://76.13.179.86:8083/api';
+const API_BASE = '/api/dc1';
 
 type JobType = 'llm_inference' | 'image_generation' | 'vllm_serve';
 
@@ -16,6 +14,8 @@ const LLM_MODELS = [
   { id: 'microsoft/Phi-3-mini-4k-instruct', label: 'Microsoft Phi-3 Mini (3.8B)', vram: '~4 GB', speed: 'Medium' },
   { id: 'mistralai/Mistral-7B-Instruct-v0.2', label: 'Mistral 7B Instruct v0.2', vram: '~14 GB', speed: 'Medium' },
   { id: 'meta-llama/Meta-Llama-3-8B-Instruct', label: 'Llama 3 8B Instruct', vram: '~16 GB', speed: 'Medium' },
+  { id: 'Qwen/Qwen2-7B-Instruct', label: 'Qwen2 7B Instruct', vram: '~14 GB', speed: 'Medium' },
+  { id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B', label: 'DeepSeek R1 7B', vram: '~16 GB', speed: 'Slow' },
   { id: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B', label: 'DeepSeek R1 Distill 8B', vram: '~16 GB', speed: 'Slow' },
 ] as const;
 
@@ -29,6 +29,8 @@ const VLLM_MODELS = [
   { id: 'microsoft/Phi-3-mini-4k-instruct', label: 'Microsoft Phi-3 Mini (3.8B)', vram: '~4 GB' },
   { id: 'mistralai/Mistral-7B-Instruct-v0.2', label: 'Mistral 7B Instruct v0.2', vram: '~14 GB' },
   { id: 'meta-llama/Meta-Llama-3-8B-Instruct', label: 'Llama 3 8B Instruct', vram: '~16 GB' },
+  { id: 'Qwen/Qwen2-7B-Instruct', label: 'Qwen2 7B Instruct', vram: '~14 GB' },
+  { id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B', label: 'DeepSeek R1 7B', vram: '~16 GB' },
 ] as const;
 
 const COST_RATES: Record<JobType, number> = {
@@ -105,6 +107,7 @@ export default function GpuPlaygroundPage() {
 function GpuPlayground() {
   const searchParams = useSearchParams();
   const preselectedProvider = searchParams.get('provider');
+  const preselectedModel = searchParams.get('model');
 
   // Auth
   const [renterKey, setRenterKey] = useState('');
@@ -164,6 +167,16 @@ function GpuPlayground() {
   const [endpointUrl, setEndpointUrl] = useState<string>('');
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!preselectedModel) return;
+    const selectedModel = preselectedModel;
+    const supported = LLM_MODELS.some(model => model.id === selectedModel);
+    if (!supported) return;
+    setJobType('llm_inference');
+    setLlmModel(selectedModel);
+    setVllmModel(selectedModel);
+  }, [preselectedModel]);
 
   // ── Auth ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -773,7 +786,7 @@ function GpuPlayground() {
                             <ProofRow label="Total Execution" value={`${viewingResult.total_time_s || 0}s`} />
                             <ProofRow label="Cost" value={`${viewingProof.cost_halala} halala (${(viewingProof.cost_halala / 100).toFixed(2)} SAR)`} />
                             <ProofRow label="Provider Earned" value={`${viewingProof.provider_earned_halala} halala (75%)`} />
-                            <ProofRow label="DC1 Fee" value={`${viewingProof.dc1_fee_halala} halala (25%)`} />
+                            <ProofRow label="DCP Fee" value={`${viewingProof.dc1_fee_halala} halala (25%)`} />
                           </div>
                         </div>
                       </div>
@@ -1240,7 +1253,7 @@ print(response.choices[0].message.content)`}</pre>
                       <ProofRow label="Total Execution" value={`${result.total_time_s || 0}s`} />
                       <ProofRow label="Cost" value={proof ? `${proof.cost_halala} halala (${(proof.cost_halala / 100).toFixed(2)} SAR)` : '—'} />
                       <ProofRow label="Provider Earned" value={proof ? `${proof.provider_earned_halala} halala (75%)` : '—'} />
-                      <ProofRow label="DC1 Fee" value={proof ? `${proof.dc1_fee_halala} halala (25%)` : '—'} />
+                      <ProofRow label="DCP Fee" value={proof ? `${proof.dc1_fee_halala} halala (25%)` : '—'} />
                     </div>
                   </div>
                 </div>

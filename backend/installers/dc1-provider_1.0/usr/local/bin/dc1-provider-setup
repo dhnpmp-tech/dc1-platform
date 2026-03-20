@@ -45,7 +45,7 @@ log_info() {
 # STEP 1: VALIDATE API KEY
 # ============================================================================
 
-log_header "DC1 Provider Setup - Starting"
+log_header "DCP Provider Setup - Starting"
 
 if [ -z "$DC1_API_KEY" ]; then
     log_error "API key required! Usage: $0 <API_KEY>"
@@ -85,7 +85,7 @@ log_success "Dependencies installed"
 # STEP 3: SETUP DC1 DIRECTORIES
 # ============================================================================
 
-log_header "Setting Up DC1 Directories"
+log_header "Setting Up DCP Directories"
 
 mkdir -p "$DC1_PROVIDER_DIR"/{jobs,logs,checkpoints,config}
 
@@ -108,10 +108,10 @@ EOF
 log_success "Configuration saved"
 
 # ============================================================================
-# STEP 5: START DC1 DAEMON
+# STEP 5: START DCP DAEMON
 # ============================================================================
 
-log_header "Starting DC1 Daemon"
+log_header "Starting DCP Daemon"
 
 # Create daemon script
 cat > "$DC1_PROVIDER_DIR/daemon.sh" << 'DAEMON_EOF'
@@ -140,7 +140,7 @@ send_heartbeat() {
         }" && log_msg "Heartbeat sent" || log_msg "Heartbeat failed"
 }
 
-log_msg "DC1 Daemon started (PID: $$)"
+log_msg "DCP Daemon started (PID: $$)"
 
 while true; do
     send_heartbeat
@@ -153,7 +153,7 @@ chmod +x "$DC1_PROVIDER_DIR/daemon.sh"
 # Start daemon in background
 nohup "$DC1_PROVIDER_DIR/daemon.sh" > /dev/null 2>&1 &
 
-log_success "DC1 Daemon started (running in background)"
+log_success "DCP Daemon started (running in background)"
 
 # ============================================================================
 # VERIFICATION
@@ -180,7 +180,7 @@ fi
 
 log_header "Setup Complete! 🎉"
 
-echo -e "${GREEN}Your DC1 provider is ready!${NC}\n"
+echo -e "${GREEN}Your DCP provider is ready!${NC}\n"
 echo "Configuration:"
 echo "  Location: $DC1_PROVIDER_DIR"
 echo "  API Key: ${DC1_API_KEY:0:20}..."
@@ -188,7 +188,7 @@ echo "  Status: Running in background"
 echo ""
 echo "Next steps:"
 echo "  1. Monitor logs: tail -f $DC1_PROVIDER_DIR/logs/daemon.log"
-echo "  2. View dashboard: Visit http://dc1.sa/provider/dashboard"
+echo "  2. View dashboard: Visit https://dcp.sa/provider/dashboard"
 echo "  3. Start earning: GPU will accept jobs automatically"
 echo ""
 

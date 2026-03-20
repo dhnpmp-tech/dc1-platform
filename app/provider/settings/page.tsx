@@ -3,11 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
+import { useLanguage } from '../../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -58,12 +56,15 @@ interface ProviderInfo {
 
 export default function ProviderSettingsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [showKey, setShowKey] = useState(false)
+  const [newlyRotatedKey, setNewlyRotatedKey] = useState('')
   const [rotating, setRotating] = useState(false)
   const [rotateConfirm, setRotateConfirm] = useState(false)
+  const [rotateError, setRotateError] = useState('')
   const [prefs, setPrefs] = useState({
     run_mode: 'always-on',
     scheduled_start: '23:00',
@@ -124,24 +125,27 @@ export default function ProviderSettingsPage() {
   const handleRotateKey = async () => {
     if (!provider) return
     setRotating(true)
+    setRotateError('')
     try {
-      const res = await fetch(`${API_BASE}/providers/rotate-key`, {
+      const res = await fetch(`${API_BASE}/providers/rotate-key?key=${encodeURIComponent(provider.api_key)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-provider-key': provider.api_key,
         },
       })
-      if (!res.ok) throw new Error('Failed to rotate key')
-      const data = await res.json()
-      const newKey = data.api_key
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to rotate key')
+      const newKey = data.new_key || data.api_key
+      if (!newKey) throw new Error('Rotation succeeded but new key was missing')
       localStorage.setItem('dc1_provider_key', newKey)
       setProvider({ ...provider, api_key: newKey })
-      setShowKey(true)
+      setNewlyRotatedKey(newKey)
+      setShowKey(false)
       setRotateConfirm(false)
-    } catch (err) {
+      setCopied(false)
+    } catch (err: any) {
       console.error('Key rotation failed:', err)
-      alert('Failed to rotate API key. Please try again.')
+      setRotateError(err?.message || 'Failed to rotate API key. Please try again.')
     } finally {
       setRotating(false)
     }
@@ -232,8 +236,36 @@ export default function ProviderSettingsPage() {
         <div className="card p-6 space-y-4">
           <h2 className="text-lg font-semibold text-dc1-text-primary">API Key</h2>
           <p className="text-sm text-dc1-text-secondary">
-            Your API key is used to authenticate your daemon with the DC1 platform.
+            Your API key is used to authenticate your daemon with the DCP platform.
           </p>
+          {newlyRotatedKey && (
+            <div className="rounded-lg border border-dc1-amber/40 bg-dc1-amber/10 p-4 space-y-3">
+              <p className="text-sm text-dc1-text-primary font-medium">
+                Your new API key (shown once)
+              </p>
+              <code className="block w-full text-xs sm:text-sm font-mono text-dc1-amber bg-dc1-surface-l3 border border-dc1-border rounded-lg p-3 break-all">
+                {newlyRotatedKey}
+              </code>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(newlyRotatedKey)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                  className="btn btn-secondary btn-sm"
+                >
+                  {copied ? 'Copied!' : t('settings.new_key_copy')}
+                </button>
+                <button
+                  onClick={() => setNewlyRotatedKey('')}
+                  className="btn btn-outline btn-sm"
+                >
+                  I saved this key
+                </button>
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <code className="flex-1 text-sm font-mono text-dc1-amber bg-dc1-surface-l3 border border-dc1-border rounded-lg p-3 break-all">
               {showKey ? provider?.api_key : '••••••••••••••••••••••••••••••••'}
@@ -259,13 +291,14 @@ export default function ProviderSettingsPage() {
                 onClick={() => setRotateConfirm(true)}
                 className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors"
               >
-                Rotate API Key
+                {t('settings.rotate_key')}
               </button>
             ) : (
               <div className="space-y-2">
                 <p className="text-sm text-status-error">
-                  This will invalidate your current key. Your daemon will need to be reconfigured with the new key.
+                  {t('settings.rotate_confirm')}
                 </p>
+                {rotateError && <p className="text-sm text-status-error">{rotateError}</p>}
                 <div className="flex gap-2">
                   <button
                     onClick={handleRotateKey}

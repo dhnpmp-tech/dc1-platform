@@ -102,6 +102,13 @@ function DetailRow({ label, value, highlight, mono }: { label: string; value: st
   )
 }
 
+interface RetryState {
+  open: boolean
+  loading: boolean
+  error: string
+  successId: number | string | null
+}
+
 export default function RenterJobDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -111,6 +118,7 @@ export default function RenterJobDetailPage() {
   const [loading, setLoading] = useState(true)
   const [renterName, setRenterName] = useState('Renter')
   const [error, setError] = useState('')
+  const [retry, setRetry] = useState<RetryState>({ open: false, loading: false, error: '', successId: null })
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_renter_key')
@@ -167,6 +175,41 @@ export default function RenterJobDetailPage() {
     return () => clearInterval(interval)
   }, [jobId, router])
 
+  const confirmRetry = async () => {
+    const apiKey = localStorage.getItem('dc1_renter_key') || ''
+    if (!job) return
+    setRetry(r => ({ ...r, loading: true, error: '' }))
+
+    let parsedParams: Record<string, unknown> = {}
+    try {
+      if (job.params) parsedParams = JSON.parse(job.params)
+    } catch { /* empty params ok */ }
+
+    const payload = { job_type: job.job_type, ...parsedParams }
+
+    try {
+      const res = await fetch(`${API_BASE}/jobs/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
+        body: JSON.stringify(payload),
+      })
+      if (res.status === 402) {
+        setRetry(r => ({ ...r, loading: false, error: 'insufficient_balance' }))
+        return
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setRetry(r => ({ ...r, loading: false, error: err.error || 'Failed to re-submit job' }))
+        return
+      }
+      const data = await res.json()
+      const newId = data.job_id || data.id
+      setRetry({ open: false, loading: false, error: '', successId: newId })
+    } catch {
+      setRetry(r => ({ ...r, loading: false, error: 'Network error. Please try again.' }))
+    }
+  }
+
   if (loading) {
     return (
       <DashboardLayout navItems={navItems} role="renter" userName="Renter">
@@ -210,13 +253,41 @@ export default function RenterJobDetailPage() {
         {/* Back link */}
         <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">&larr; Back to Jobs</Link>
 
+        {/* Re-submit success banner */}
+        {retry.successId && (
+          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+            <span className="text-status-success text-sm font-medium">
+              Job re-submitted: #{retry.successId} —{' '}
+              <Link href={`/renter/jobs/${retry.successId}`} className="underline">View new job</Link>
+            </span>
+            <button
+              onClick={() => setRetry(r => ({ ...r, successId: null }))}
+              className="text-dc1-text-muted hover:text-dc1-text-primary text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-dc1-text-primary">Job Detail</h1>
             <p className="text-dc1-text-muted text-sm font-mono mt-1">{job.job_id || `#${job.id}`}</p>
           </div>
-          <StatusBadge status={job.status as any} />
+          <div className="flex items-center gap-3">
+            <StatusBadge status={job.status as any} />
+            {job.status === 'failed' && (
+              <button
+                onClick={() => setRetry(r => ({ ...r, open: true, error: '' }))}
+                className="btn btn-primary text-sm min-h-[44px] px-4"
+                aria-label="Retry this job"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Job Info */}
@@ -323,13 +394,63 @@ export default function RenterJobDetailPage() {
           </div>
         )}
 
-        {/* Retry button for failed jobs */}
-        {job.status === 'failed' && (
-          <Link href="/renter/playground" className="btn btn-primary inline-block">
-            Try Again in Playground
-          </Link>
-        )}
       </div>
+
+      {/* Retry Confirmation Modal */}
+      {retry.open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="retry-modal-title"
+        >
+          <div className="card w-full max-w-md p-6 space-y-5">
+            <h2 id="retry-modal-title" className="text-lg font-bold text-dc1-text-primary">
+              Re-submit Job?
+            </h2>
+            <p className="text-dc1-text-secondary text-sm">
+              Re-submit this job? It will use the same model and parameters and deduct balance again.
+            </p>
+            <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
+              <span className="text-dc1-text-muted">Type: </span>{(job.job_type || '').replace(/_/g, ' ')}
+              <br />
+              <span className="text-dc1-text-muted">Job ID: </span>{job.job_id || `#${job.id}`}
+            </div>
+
+            {retry.error === 'insufficient_balance' ? (
+              <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
+                Insufficient balance. Please{' '}
+                <Link href="/renter/billing" className="underline font-semibold">top up your balance</Link>{' '}
+                first.
+              </div>
+            ) : retry.error ? (
+              <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
+                {retry.error}
+              </div>
+            ) : null}
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setRetry(r => ({ ...r, open: false, error: '' }))}
+                disabled={retry.loading}
+                className="btn btn-secondary min-h-[44px] px-4"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRetry}
+                disabled={retry.loading}
+                className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2"
+              >
+                {retry.loading && (
+                  <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                )}
+                {retry.loading ? 'Submitting…' : 'Re-submit Job'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   )
 }

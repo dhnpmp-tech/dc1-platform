@@ -1,6 +1,7 @@
 import * as https from 'https';
 import * as http from 'http';
 import * as vscode from 'vscode';
+import { IncomingMessage } from 'http';
 
 export interface Provider {
   id: string;
@@ -109,7 +110,7 @@ export class DC1Client {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'DC1-VSCode-Extension/0.1.0',
+          'User-Agent': 'DCP-VSCode-Extension/0.3.0',
           ...headers,
         },
         // Allow self-signed certs on the dev VPS
@@ -185,6 +186,96 @@ export class DC1Client {
   /** POST /api/jobs/:id/cancel */
   async cancelJob(apiKey: string, jobId: string): Promise<{ success: boolean }> {
     return this.request('POST', `/api/jobs/${jobId}/cancel`, { 'x-renter-key': apiKey });
+  }
+
+  /**
+   * Stream job logs via SSE (GET /api/jobs/:id/logs/stream).
+   * Returns a dispose() function to abort the stream.
+   * Calls onLine for each SSE data line, onEnd when stream closes, onError on failure.
+   */
+  streamJobLogs(
+    apiKey: string,
+    jobId: string,
+    onLine: (line: string) => void,
+    onEnd: () => void,
+    onError: (err: Error) => void
+  ): () => void {
+    const url = new URL(this.apiBase + `/api/jobs/${jobId}/logs/stream`);
+    const isHttps = url.protocol === 'https:';
+    const lib = isHttps ? https : http;
+
+    const options: http.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'x-renter-key': apiKey,
+        'User-Agent': 'DCP-VSCode-Extension/0.3.0',
+      },
+      ...(isHttps ? { rejectUnauthorized: false } : {}),
+    };
+
+    let req: http.ClientRequest | null = null;
+    let aborted = false;
+
+    const dispose = () => {
+      aborted = true;
+      req?.destroy();
+    };
+
+    try {
+      req = lib.request(options, (res: IncomingMessage) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          onError(new Error(`SSE stream returned HTTP ${res.statusCode}`));
+          return;
+        }
+
+        let buffer = '';
+        res.setEncoding('utf8');
+
+        res.on('data', (chunk: string) => {
+          if (aborted) { return; }
+          buffer += chunk;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const data = line.slice(5).trim();
+              if (data && data !== '[DONE]') {
+                onLine(data);
+              }
+            }
+          }
+        });
+
+        res.on('end', () => {
+          if (!aborted) { onEnd(); }
+        });
+
+        res.on('error', (err: Error) => {
+          if (!aborted) { onError(err); }
+        });
+      });
+
+      req.on('error', (err: Error) => {
+        if (!aborted) { onError(err); }
+      });
+
+      req.setTimeout(300_000, () => {
+        req?.destroy();
+        if (!aborted) { onEnd(); }
+      });
+
+      req.end();
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    return dispose;
   }
 
   /** POST /api/renters/topup */

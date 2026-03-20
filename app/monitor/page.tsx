@@ -35,10 +35,10 @@ function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
     return '/api/dc1';
   }
-  return 'http://76.13.179.86:8083/api';
+  return '/api/dc1';
 }
 
-const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
+const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || '') + '/api';
 
 const SERVICE_DEFS = [
   { name: 'VPS API', check: 'vps' },

@@ -6,10 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface Job {
   id: number
@@ -125,7 +122,7 @@ export default function ProviderJobsPage() {
   return (
     <DashboardLayout navItems={navItems} role="provider" userName={providerName}>
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-dc1-text-primary">Job History</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">Job History</h1>
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

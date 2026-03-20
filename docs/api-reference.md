@@ -24,15 +24,20 @@ Most read endpoints for renters accept `?key=` as a query param. All write endpo
 
 | Endpoint | Limit |
 |----------|-------|
-| `POST /providers/register` | 5 / IP / hour |
+| `POST /providers/register` | 5 / IP / 10 minutes |
 | `POST /providers/heartbeat` | 4 / IP / minute |
-| `POST /renters/register` | 5 / IP / hour |
-| `POST /jobs/submit` | 30 / IP / minute |
+| `POST /renters/register` | 5 / IP / 10 minutes |
+| `POST /jobs/submit` | 10 / API key / minute |
+| `GET /providers/marketplace` | 60 / API key / minute |
 | `POST /payments/topup` | 10 / IP / minute |
-| `GET /api/admin/*` | 100 / IP / minute |
+| `GET /api/admin/*` | 30 / admin token / minute |
 | All other `/api/*` | 300 / IP / minute |
 
-Exceeded rate limits return `429 Too Many Requests`.
+Exceeded rate limits return `429 Too Many Requests` with:
+
+```json
+{ "error": "Rate limit exceeded", "retryAfterMs": 60000 }
+```
 
 ---
 

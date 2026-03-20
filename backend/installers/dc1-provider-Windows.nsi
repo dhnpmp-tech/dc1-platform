@@ -1,5 +1,5 @@
 ; =============================================================================
-; DC1 Provider Daemon — Windows NSIS Installer v2.2
+; DCP Provider Daemon — Windows NSIS Installer v2.3
 ; =============================================================================
 ; Installs to %LOCALAPPDATA%\dc1-provider (NO admin required)
 ; GUI pages: Welcome → GPU Check → API Key → Run Mode → Schedule → Install → Finish
@@ -16,12 +16,12 @@
 !include "TextFunc.nsh"
 
 ; --------------- Product Info ---------------
-!define PRODUCT_NAME "DC1 Provider Daemon"
-!define PRODUCT_PUBLISHER "DC1"
+!define PRODUCT_NAME "DCP Provider Daemon"
+!define PRODUCT_PUBLISHER "DCP"
 !define PRODUCT_VERSION "3.3.0"
-!define PRODUCT_WEB_SITE "https://dc1.sa"
-!define DC1_API_BASE "http://76.13.179.86:8083"
-!define DASHBOARD_URL "${DC1_API_BASE}/provider"
+!define PRODUCT_WEB_SITE "https://dcp.sa"
+!define DCP_API_BASE "https://api.dcp.sa"
+!define DASHBOARD_URL "https://dcp.sa/provider"
 
 ; --------------- General Settings ---------------
 Name "${PRODUCT_NAME} v${PRODUCT_VERSION}"
@@ -35,10 +35,10 @@ VIProductVersion "${PRODUCT_VERSION}.0"
 VIFileVersion "${PRODUCT_VERSION}.0"
 VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
 VIAddVersionKey "CompanyName" "${PRODUCT_PUBLISHER}"
-VIAddVersionKey "FileDescription" "DC1 Provider Daemon Installer — Earn with your GPU"
+VIAddVersionKey "FileDescription" "DCP Provider Daemon Installer — Earn with your GPU"
 VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
-VIAddVersionKey "LegalCopyright" "© 2026 DC1. All rights reserved."
+VIAddVersionKey "LegalCopyright" "© 2026 DCP. All rights reserved."
 
 ; --------------- Brand ---------------
 !define MUI_ICON "dc1-icon.ico"
@@ -69,8 +69,8 @@ Var hEndTimeInput
 
 ; --------------- Pages ---------------
 ; 1. Welcome
-!define MUI_WELCOMEPAGE_TITLE "DC1 Provider Daemon v${PRODUCT_VERSION}"
-!define MUI_WELCOMEPAGE_TEXT "Welcome to the DC1 Provider setup.$\r$\n$\r$\nThis will install the DC1 daemon so your GPU starts earning credits automatically.$\r$\n$\r$\nWhat's new in v${PRODUCT_VERSION}:$\r$\n  • Auto-recovery: daemon restarts on crashes$\r$\n  • Auto-updates: stays current automatically$\r$\n  • Smart GPU guard: only accepts jobs your GPU can handle$\r$\n  • Connection monitoring: tracks bandwidth quality$\r$\n$\r$\nRequirements:$\r$\n  • NVIDIA GPU with 4 GB+ VRAM$\r$\n  • Internet connection$\r$\n  • No admin privileges needed$\r$\n$\r$\nClick Next to check your GPU."
+!define MUI_WELCOMEPAGE_TITLE "DCP Provider Daemon v${PRODUCT_VERSION}"
+!define MUI_WELCOMEPAGE_TEXT "Welcome to the DCP Provider setup.$\r$\n$\r$\nThis will install the DCP daemon so your GPU starts earning credits automatically.$\r$\n$\r$\nWhat's new in v${PRODUCT_VERSION}:$\r$\n  • Auto-recovery: daemon restarts on crashes$\r$\n  • Auto-updates: stays current automatically$\r$\n  • Smart GPU guard: only accepts jobs your GPU can handle$\r$\n  • Connection monitoring: tracks bandwidth quality$\r$\n$\r$\nRequirements:$\r$\n  • NVIDIA GPU with 4 GB+ VRAM$\r$\n  • Internet connection$\r$\n  • No admin privileges needed$\r$\n$\r$\nClick Next to check your GPU."
 !insertmacro MUI_PAGE_WELCOME
 
 ; 2. GPU Check (custom)
@@ -90,7 +90,7 @@ Page custom SchedulePageCreate SchedulePageLeave
 
 ; 7. Finish
 !define MUI_FINISHPAGE_TITLE "You're All Set!"
-!define MUI_FINISHPAGE_TEXT "DC1 Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\nDaemon: v3.3.0 (auto-updating)$\r$\n$\r$\nYour GPU is now earning DC1 credits.$\r$\nThe daemon will auto-recover from crashes and update itself.$\r$\nClick 'Open My Dashboard' to track your earnings."
+!define MUI_FINISHPAGE_TEXT "DCP Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\nDaemon: v3.3.0 (auto-updating)$\r$\n$\r$\nYour GPU is now earning DCP credits.$\r$\nThe daemon will auto-recover from crashes and update itself.$\r$\nClick 'Open My Dashboard' to track your earnings."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open My Dashboard"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenDashboard
@@ -165,7 +165,7 @@ Function GpuCheckPageCreate
         ${NSD_CreateLabel} 0 50u 100% 16u "VRAM:  $GPU_VRAM MB"
         Pop $0
 
-        ${NSD_CreateLabel} 0 76u 100% 28u "Your GPU is compatible with DC1. Click Next to continue."
+        ${NSD_CreateLabel} 0 76u 100% 28u "Your GPU is compatible with DCP. Click Next to continue."
         Pop $hGpuDetailLabel
         SetCtlColors $hGpuDetailLabel 0x666666 transparent
     ${Else}
@@ -178,7 +178,7 @@ Function GpuCheckPageCreate
         SendMessage $hGpuStatusLabel ${WM_SETFONT} $2 0
         SetCtlColors $hGpuStatusLabel 0xCC0000 transparent
 
-        ${NSD_CreateLabel} 0 30u 100% 48u "DC1 requires an NVIDIA GPU with 4 GB+ VRAM.$\r$\n$\r$\nPossible causes:$\r$\n  • No NVIDIA GPU installed$\r$\n  • NVIDIA drivers not installed$\r$\n  • nvidia-smi not in PATH"
+        ${NSD_CreateLabel} 0 30u 100% 48u "DCP requires an NVIDIA GPU with 4 GB+ VRAM.$\r$\n$\r$\nPossible causes:$\r$\n  • No NVIDIA GPU installed$\r$\n  • NVIDIA drivers not installed$\r$\n  • nvidia-smi not in PATH"
         Pop $0
 
         ${NSD_CreateLabel} 0 90u 100% 24u "You can still continue, but the daemon may not function correctly."
@@ -192,14 +192,14 @@ FunctionEnd
 Function GpuCheckPageLeave
     ; Allow user to continue even without GPU (they may install drivers later)
     ${If} $GPU_NAME == "Not detected"
-        MessageBox MB_YESNO|MB_ICONEXCLAMATION "No NVIDIA GPU was detected. The DC1 daemon requires an NVIDIA GPU to earn credits.$\r$\n$\r$\nContinue anyway?" IDYES +2
+        MessageBox MB_YESNO|MB_ICONEXCLAMATION "No NVIDIA GPU was detected. The DCP daemon requires an NVIDIA GPU to earn credits.$\r$\n$\r$\nContinue anyway?" IDYES +2
         Abort
     ${EndIf}
 FunctionEnd
 
 ; --------------- Page: API Key ---------------
 Function ApiKeyPageCreate
-    !insertmacro MUI_HEADER_TEXT "Provider API Key" "Enter your DC1 Provider API Key"
+    !insertmacro MUI_HEADER_TEXT "Provider API Key" "Enter your DCP Provider API Key"
     nsDialogs::Create 1018
     Pop $hApiKeyDlg
     ${If} $hApiKeyDlg == error
@@ -347,7 +347,7 @@ Section "Install"
 
     ; Show progress
     DetailPrint "====================================="
-    DetailPrint "DC1 Provider Setup v${PRODUCT_VERSION}"
+    DetailPrint "DCP Provider Setup v${PRODUCT_VERSION}"
     DetailPrint "====================================="
     DetailPrint "GPU:      $GPU_NAME ($GPU_VRAM MB)"
     DetailPrint "Run mode: $RUN_MODE"
@@ -405,6 +405,8 @@ Section "Uninstall"
     nsExec::ExecToLog 'powershell -Command "Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.MainModule.FileName -match ''dc1'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
 
     ; Stop and remove scheduled task
+    nsExec::ExecToLog 'schtasks /End /TN "DCPProviderDaemon"'
+    nsExec::ExecToLog 'schtasks /Delete /TN "DCPProviderDaemon" /F'
     nsExec::ExecToLog 'schtasks /End /TN "DC1ProviderDaemon"'
     nsExec::ExecToLog 'schtasks /Delete /TN "DC1ProviderDaemon" /F'
 
@@ -413,6 +415,7 @@ Section "Uninstall"
         nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\dc1-uninstall-helper.ps1"'
 
     ; Remove desktop shortcut
+    Delete "$DESKTOP\DCP - My Earnings.bat"
     Delete "$DESKTOP\DC1 - My Earnings.bat"
 
     ; Remove install directory (includes logs, config, daemon)
@@ -423,5 +426,5 @@ Section "Uninstall"
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider"
 
     ; Confirmation
-    MessageBox MB_OK "DC1 Provider Daemon has been uninstalled.$\n$\nThank you for being a DC1 provider!"
+    MessageBox MB_OK "DCP Provider Daemon has been uninstalled.$\n$\nThank you for being a DCP provider!"
 SectionEnd

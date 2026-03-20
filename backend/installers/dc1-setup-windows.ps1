@@ -12,7 +12,7 @@ $INSTALL_DIR = "$env:LOCALAPPDATA\DC1Provider"
 $LOG_DIR = "$env:USERPROFILE\dc1-provider\logs"
 
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  DC1 Provider Setup v3.3.0 (Windows)" -ForegroundColor Cyan
+Write-Host "  DCP Provider Setup v3.3.0 (Windows)" -ForegroundColor Cyan
 Write-Host "  GPU Compute Marketplace — Saudi Arabia" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
@@ -113,7 +113,7 @@ if ($dockerInstalled) {
 }
 
 # ── Step 6: Pre-pull base images ────────────────────────────────────────
-Write-Host "[6/8] Pulling DC1 base images..." -ForegroundColor Yellow
+Write-Host "[6/8] Pulling DCP base images..." -ForegroundColor Yellow
 if ($dockerInstalled) {
     try {
         & docker pull nvidia/cuda:12.2.0-runtime-ubuntu22.04 2>$null
@@ -126,7 +126,7 @@ if ($dockerInstalled) {
 }
 
 # ── Step 7: Download daemon ─────────────────────────────────────────────
-Write-Host "[7/8] Downloading DC1 daemon..." -ForegroundColor Yellow
+Write-Host "[7/8] Downloading DCP daemon..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
 New-Item -ItemType Directory -Path $LOG_DIR -Force | Out-Null
 
@@ -147,7 +147,7 @@ $config | Out-File "$INSTALL_DIR\config.json" -Encoding UTF8
 # ── Step 8: Scheduled task ──────────────────────────────────────────────
 Write-Host "[8/8] Creating Windows scheduled task..." -ForegroundColor Yellow
 
-$taskName = "DC1 Provider Daemon"
+$taskName = "DCP Provider Daemon"
 $taskAction = New-ScheduledTaskAction `
     -Execute $python `
     -Argument "$INSTALL_DIR\dc1-daemon.py" `
@@ -168,7 +168,7 @@ Register-ScheduledTask `
     -Action $taskAction `
     -Trigger $taskTrigger `
     -Settings $taskSettings `
-    -Description "DC1 GPU compute provider daemon v2.0 (Docker-enabled)" `
+    -Description "DCP GPU compute provider daemon v2.0 (Docker-enabled)" `
     -RunLevel Limited
 
 Write-Host "  Scheduled task '$taskName' created."
@@ -179,7 +179,7 @@ Start-Sleep -Seconds 3
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  DC1 Provider Daemon v3.3.0 — INSTALLED" -ForegroundColor Green
+Write-Host "  DCP Provider Daemon v3.3.0 — INSTALLED" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  Daemon:  $INSTALL_DIR\dc1-daemon.py"
 Write-Host "  Config:  $INSTALL_DIR\config.json"

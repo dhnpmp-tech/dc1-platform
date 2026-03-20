@@ -5,11 +5,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 const HomeIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg>)
 const ServerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12v4a2 2 0 002 2h10a2 2 0 002-2v-4" /></svg>)
@@ -33,6 +31,7 @@ const navItems = [
 
 export default function ProvidersPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -40,6 +39,8 @@ export default function ProvidersPage() {
   const [actionLoading, setActionLoading] = useState<number | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [rejectTarget, setRejectTarget] = useState<any | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -67,6 +68,20 @@ export default function ProvidersPage() {
       await fetch(`${API_BASE}/admin/providers/${id}/${action}`, {
         method: 'POST',
         headers: { 'x-admin-token': token!, 'Content-Type': 'application/json' },
+      })
+      await fetchProviders()
+    } catch (err) { console.error(err) }
+    finally { setActionLoading(null) }
+  }
+
+  const handleApproval = async (id: number, action: 'approve' | 'reject', reason?: string) => {
+    setActionLoading(id)
+    try {
+      const payload = action === 'reject' ? { reason } : {}
+      await fetch(`${API_BASE}/admin/providers/${id}/${action}`, {
+        method: 'PATCH',
+        headers: { 'x-admin-token': token!, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       })
       await fetchProviders()
     } catch (err) { console.error(err) }
@@ -109,6 +124,7 @@ export default function ProvidersPage() {
     if (filter === 'online' && !p.is_online) return false
     if (filter === 'offline' && (p.is_online || !p.last_heartbeat)) return false
     if (filter === 'suspended' && p.status !== 'suspended') return false
+    if (filter === 'pending_approval' && (p.approval_status || 'pending') !== 'pending') return false
     if (search && !p.name?.toLowerCase().includes(search.toLowerCase()) && !p.email?.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
@@ -123,7 +139,7 @@ export default function ProvidersPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Provider Management</h1>
         <p className="text-dc1-text-secondary">
-          {data ? `${data.total} total — ${data.online} online, ${data.offline} offline` : 'Loading...'}
+          {data ? `${data.total} total — ${data.online} online, ${data.offline} offline, ${data.pending_approval || 0} pending approval` : 'Loading...'}
         </p>
       </div>
 
@@ -138,7 +154,7 @@ export default function ProvidersPage() {
             onChange={e => setSearch(e.target.value)}
           />
           <div className="flex gap-2">
-            {['all', 'online', 'offline', 'suspended'].map(f => (
+            {['all', 'pending_approval', 'online', 'offline', 'suspended'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -148,7 +164,7 @@ export default function ProvidersPage() {
                     : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
                 }`}
               >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
+                {f === 'pending_approval' ? 'Pending Approval' : f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
           </div>
@@ -191,6 +207,7 @@ export default function ProvidersPage() {
                   <th>Provider</th>
                   <th>GPU</th>
                   <th>Status</th>
+                  <th>Approval</th>
                   <th>Uptime 24h</th>
                   <th>Jobs</th>
                   <th>Earnings</th>
@@ -216,36 +233,108 @@ export default function ProvidersPage() {
                       <StatusBadge status={p.status === 'suspended' ? 'warning' : p.is_online ? 'online' : 'offline'}
                         label={p.status === 'suspended' ? 'Suspended' : p.is_online ? 'Online' : p.last_heartbeat ? 'Offline' : 'Registered'} />
                     </td>
+                    <td>
+                      {(p.approval_status || 'pending') === 'approved' && (
+                        <span className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-300 border border-green-600/30">Approved</span>
+                      )}
+                      {(p.approval_status || 'pending') === 'pending' && (
+                        <span className="text-xs px-2 py-1 rounded bg-amber-600/20 text-amber-300 border border-amber-600/30">Pending</span>
+                      )}
+                      {(p.approval_status || 'pending') === 'rejected' && (
+                        <span className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-300 border border-red-600/30" title={p.rejected_reason || ''}>
+                          Rejected
+                        </span>
+                      )}
+                    </td>
                     <td className="text-sm">{p.uptime_24h !== null ? `${p.uptime_24h}%` : '—'}</td>
                     <td className="text-sm">{p.total_jobs || 0}</td>
                     <td className="text-sm">{p.total_earnings ? `${(p.total_earnings / 100).toFixed(2)} SAR` : '—'}</td>
                     <td className="text-xs text-dc1-text-secondary">{p.minutes_since_heartbeat !== null ? `${p.minutes_since_heartbeat}m ago` : 'Never'}</td>
                     <td>
-                      {p.status === 'suspended' ? (
-                        <button
-                          onClick={() => handleSuspend(p.id, 'unsuspend')}
-                          disabled={actionLoading === p.id}
-                          className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50"
-                        >
-                          {actionLoading === p.id ? '...' : 'Reactivate'}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleSuspend(p.id, 'suspend')}
-                          disabled={actionLoading === p.id}
-                          className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50"
-                        >
-                          {actionLoading === p.id ? '...' : 'Suspend'}
-                        </button>
-                      )}
+                      <div className="flex gap-2 items-center">
+                        {(p.approval_status || 'pending') === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => handleApproval(p.id, 'approve')}
+                              disabled={actionLoading === p.id}
+                              className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-300 hover:bg-green-600/30 disabled:opacity-50"
+                            >
+                              {actionLoading === p.id ? '...' : t('admin.approve')}
+                            </button>
+                            <button
+                              onClick={() => { setRejectTarget(p); setRejectReason('') }}
+                              disabled={actionLoading === p.id}
+                              className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-300 hover:bg-red-600/30 disabled:opacity-50"
+                            >
+                              {t('admin.reject')}
+                            </button>
+                          </>
+                        )}
+                        {p.status === 'suspended' ? (
+                          <button
+                            onClick={() => handleSuspend(p.id, 'unsuspend')}
+                            disabled={actionLoading === p.id}
+                            className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50"
+                          >
+                            {actionLoading === p.id ? '...' : 'Reactivate'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleSuspend(p.id, 'suspend')}
+                            disabled={actionLoading === p.id}
+                            className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+                          >
+                            {actionLoading === p.id ? '...' : 'Suspend'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={9} className="text-dc1-text-muted text-sm text-center">No providers found</td></tr>
+                  <tr><td colSpan={10} className="text-dc1-text-muted text-sm text-center">No providers found</td></tr>
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-md rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+            <h2 className="text-lg font-semibold text-dc1-text-primary mb-2">{t('admin.reject')} Provider</h2>
+            <p className="text-sm text-dc1-text-secondary mb-4">
+              Enter rejection reason for <span className="text-dc1-text-primary font-medium">{rejectTarget.name}</span>.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+              className="input w-full mb-4"
+              placeholder="Reason is required"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setRejectTarget(null); setRejectReason('') }}
+                className="px-3 py-2 rounded bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const reason = rejectReason.trim()
+                  if (!reason) return
+                  await handleApproval(rejectTarget.id, 'reject', reason)
+                  setRejectTarget(null)
+                  setRejectReason('')
+                }}
+                disabled={!rejectReason.trim() || actionLoading === rejectTarget.id}
+                className="px-3 py-2 rounded bg-red-600/20 text-red-300 hover:bg-red-600/30 disabled:opacity-50 text-sm"
+              >
+                {actionLoading === rejectTarget.id ? '...' : t('admin.reject')}
+              </button>
+            </div>
           </div>
         </div>
       )}

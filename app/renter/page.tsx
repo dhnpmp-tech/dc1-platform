@@ -7,10 +7,7 @@ import StatCard from '../components/ui/StatCard'
 import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface RenterInfo {
@@ -85,6 +82,8 @@ const GearIcon = () => (
   </svg>
 )
 
+const LOW_BALANCE_THRESHOLD_HALALA = 500
+
 // ── Main Component ─────────────────────────────────────────────────
 export default function RenterDashboard() {
   const { t } = useLanguage()
@@ -93,13 +92,27 @@ export default function RenterDashboard() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [authChecking, setAuthChecking] = useState(true)
   const [renterKey, setRenterKey] = useState('')
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setBannerDismissed(!!sessionStorage.getItem('dcp_low_balance_dismissed'))
+    }
+  }, [])
+
+  const dismissBanner = () => {
+    sessionStorage.setItem('dcp_low_balance_dismissed', '1')
+    setBannerDismissed(true)
+  }
+
+  const isLowBalance = !!renter && renter.balance_halala < LOW_BALANCE_THRESHOLD_HALALA
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
     { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
     { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
-    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon />, badge: isLowBalance },
     { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
@@ -265,10 +278,44 @@ export default function RenterDashboard() {
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renter.name}>
       <div className="space-y-8">
+        {/* Low Balance Banner */}
+        {isLowBalance && !bannerDismissed && (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-dc1-amber/10 border border-dc1-amber/30 text-sm"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <svg className="w-5 h-5 text-dc1-amber shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <span className="text-dc1-amber font-medium">
+                {t('renter.low_balance_warning').replace('{balance}', balance.toFixed(2))}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href="/renter/billing"
+                className="px-3 py-1.5 bg-dc1-amber text-dc1-void text-xs font-semibold rounded-md hover:bg-dc1-amber/90 transition-colors min-h-[44px] flex items-center"
+              >
+                {t('renter.top_up_now')}
+              </Link>
+              <button
+                onClick={dismissBanner}
+                aria-label="Dismiss"
+                className="p-1.5 text-dc1-amber/60 hover:text-dc1-amber transition-colors min-h-[44px] flex items-center"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Page Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-dc1-text-primary">{t('renter.dashboard')}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">{t('renter.dashboard')}</h1>
             <p className="text-dc1-text-secondary text-sm mt-1">{t('dashboard.welcome')}, {renter.name}</p>
           </div>
           <button onClick={handleLogout} className="btn btn-outline text-sm">

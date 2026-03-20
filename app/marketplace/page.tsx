@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
+import { useLanguage } from '../lib/i18n'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface CostRates {
@@ -52,13 +53,14 @@ function halalaPriceToSarHr(halalPerMin: number): string {
 }
 
 function formatAge(seconds: number | null): string {
-  if (seconds === null) return 'unknown'
-  if (seconds < 60) return `${seconds}s ago`
-  return `${Math.floor(seconds / 60)}m ago`
+  if (seconds === null) return '—'
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m`
 }
 
 // ── Provider Card ──────────────────────────────────────────────────
 function ProviderCard({ provider }: { provider: Provider }) {
+  const { t } = useLanguage()
   const rate = getDefaultRate(provider.cost_rates_halala_per_min)
   const vram = provider.vram_gb ?? null
   const uptime = provider.uptime_percent ?? provider.reliability_score ?? null
@@ -69,7 +71,7 @@ function ProviderCard({ provider }: { provider: Provider }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-bold text-dc1-text-primary leading-tight truncate group-hover:text-dc1-amber transition-colors">
-            {provider.gpu_model || 'Unknown GPU'}
+            {provider.gpu_model || t('marketplace.unknown')}
           </h3>
           <p className="text-xs text-dc1-text-muted mt-0.5 truncate">{provider.name}</p>
         </div>
@@ -79,7 +81,7 @@ function ProviderCard({ provider }: { provider: Provider }) {
             : 'bg-dc1-surface-l3 text-dc1-text-muted border border-dc1-border'
         }`}>
           {provider.is_live && <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />}
-          {provider.is_live ? 'Online' : 'Offline'}
+          {provider.is_live ? t('marketplace.online') : t('marketplace.offline')}
         </span>
       </div>
 
@@ -87,19 +89,19 @@ function ProviderCard({ provider }: { provider: Provider }) {
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         {vram !== null && (
           <div>
-            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">VRAM</dt>
+            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.vram_label')}</dt>
             <dd className="text-dc1-text-primary font-semibold mt-0.5">{vram} GB</dd>
           </div>
         )}
         {provider.gpu_count > 0 && (
           <div>
-            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">GPUs</dt>
+            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.gpus_label')}</dt>
             <dd className="text-dc1-text-primary font-semibold mt-0.5">{provider.gpu_count}×</dd>
           </div>
         )}
         {uptime !== null && (
           <div>
-            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">Uptime</dt>
+            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.uptime_label')}</dt>
             <dd className={`font-semibold mt-0.5 ${
               uptime >= 90 ? 'text-status-success' : uptime >= 70 ? 'text-dc1-amber' : 'text-status-error'
             }`}>
@@ -109,7 +111,7 @@ function ProviderCard({ provider }: { provider: Provider }) {
         )}
         {provider.location && (
           <div>
-            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">Region</dt>
+            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.region_label')}</dt>
             <dd className="text-dc1-text-primary font-semibold mt-0.5 truncate">{provider.location}</dd>
           </div>
         )}
@@ -118,21 +120,21 @@ function ProviderCard({ provider }: { provider: Provider }) {
       {/* Pricing */}
       <div className="bg-dc1-surface-l1 rounded-lg px-4 py-3 flex items-center justify-between">
         <div>
-          <p className="text-xs text-dc1-text-muted mb-0.5">Price (LLM inference)</p>
+          <p className="text-xs text-dc1-text-muted mb-0.5">{t('marketplace.price_llm')}</p>
           <p className="text-lg font-extrabold text-dc1-amber">
-            {halalaPriceToSarMin(rate)} <span className="text-xs font-normal text-dc1-text-secondary">SAR/min</span>
+            {halalaPriceToSarMin(rate)} <span className="text-xs font-normal text-dc1-text-secondary">{t('marketplace.sar_min')}</span>
           </p>
-          <p className="text-xs text-dc1-text-muted">{halalaPriceToSarHr(rate)} SAR/hr</p>
+          <p className="text-xs text-dc1-text-muted">{halalaPriceToSarHr(rate)} {t('marketplace.sar_hr')}</p>
         </div>
         {provider.heartbeat_age_seconds !== null && (
-          <p className="text-xs text-dc1-text-muted">Last seen: {formatAge(provider.heartbeat_age_seconds)}</p>
+          <p className="text-xs text-dc1-text-muted">{t('marketplace.last_seen')}: {formatAge(provider.heartbeat_age_seconds)}</p>
         )}
       </div>
 
       {/* Cached models */}
       {provider.cached_models && provider.cached_models.length > 0 && (
         <div>
-          <p className="text-xs text-dc1-text-muted mb-1.5">Cached models:</p>
+          <p className="text-xs text-dc1-text-muted mb-1.5">{t('marketplace.cached_models_label')}</p>
           <div className="flex flex-wrap gap-1">
             {provider.cached_models.slice(0, 3).map((m, i) => (
               <span key={i} className="text-xs px-2 py-0.5 rounded bg-dc1-amber/5 text-dc1-amber border border-dc1-amber/20">
@@ -152,9 +154,9 @@ function ProviderCard({ provider }: { provider: Provider }) {
       <Link
         href="/renter/register"
         className="mt-auto btn btn-primary w-full text-center text-sm"
-        aria-label={`Rent ${provider.gpu_model}`}
+        aria-label={`${t('marketplace.rent_now')} ${provider.gpu_model}`}
       >
-        Rent Now →
+        {t('marketplace.rent_now')}
       </Link>
     </article>
   )
@@ -187,6 +189,7 @@ function SkeletonCard() {
 
 // ── Main Page ──────────────────────────────────────────────────────
 export default function MarketplacePage() {
+  const { t, dir } = useLanguage()
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -252,7 +255,7 @@ export default function MarketplacePage() {
   const onlineCount = providers.filter(p => p.is_live).length
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" dir={dir}>
       <Header />
 
       <main className="flex-1">
@@ -262,21 +265,21 @@ export default function MarketplacePage() {
             <div className="max-w-2xl">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-xs font-medium mb-5">
                 <span className="w-1.5 h-1.5 bg-status-success rounded-full animate-pulse" />
-                {onlineCount > 0 ? `${onlineCount} GPUs online now` : 'Live GPU Marketplace'}
+                {onlineCount > 0 ? `${onlineCount} ${t('marketplace.live_gpus_online')}` : t('marketplace.live_badge')}
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold text-dc1-text-primary mb-4 leading-tight">
-                Rent GPU Compute<br />
-                <span className="text-dc1-amber">On Demand</span>
+                {t('marketplace.hero_title')}<br />
+                <span className="text-dc1-amber">{t('marketplace.hero_on_demand')}</span>
               </h1>
               <p className="text-dc1-text-secondary text-lg mb-8 leading-relaxed">
-                Browse live GPU providers in Saudi Arabia. No account needed to browse — pay per minute, cancel anytime.
+                {t('marketplace.hero_desc')}
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link href="/renter/register" className="btn btn-primary btn-lg">
-                  Get Started — Free
+                  {t('marketplace.get_started')}
                 </Link>
                 <Link href="/docs" className="btn btn-secondary btn-lg">
-                  View API Docs
+                  {t('marketplace.view_docs')}
                 </Link>
               </div>
             </div>
@@ -288,32 +291,32 @@ export default function MarketplacePage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row gap-3 items-center">
             <div className="relative flex-1 w-full">
               <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dc1-text-muted pointer-events-none"
+                className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dc1-text-muted pointer-events-none"
                 fill="none" viewBox="0 0 24 24" stroke="currentColor"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
                 type="text"
-                placeholder="Search GPU model, region..."
+                placeholder={t('marketplace.search_placeholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="input pl-9 w-full text-sm"
-                aria-label="Search providers"
+                className="input ps-9 w-full text-sm"
+                aria-label={t('marketplace.search_placeholder')}
               />
             </div>
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value as typeof sortBy)}
               className="input text-sm w-full sm:w-auto"
-              aria-label="Sort providers"
+              aria-label={t('common.sort_reputation')}
             >
-              <option value="availability">Online first</option>
-              <option value="price-asc">Price: low → high</option>
-              <option value="vram-desc">VRAM: high → low</option>
+              <option value="availability">{t('marketplace.sort_online')}</option>
+              <option value="price-asc">{t('marketplace.sort_price')}</option>
+              <option value="vram-desc">{t('marketplace.sort_vram')}</option>
             </select>
             <p className="text-xs text-dc1-text-muted whitespace-nowrap">
-              {loading ? 'Loading...' : `${sorted.length} of ${providers.length} providers`}
+              {loading ? t('common.loading') : `${sorted.length} / ${providers.length} ${t('marketplace.providers_count')}`}
             </p>
           </div>
         </section>
@@ -326,29 +329,29 @@ export default function MarketplacePage() {
             </div>
           ) : error ? (
             <div className="text-center py-20">
-              <p className="text-dc1-text-secondary mb-2">Could not load providers right now.</p>
+              <p className="text-dc1-text-secondary mb-2">{t('marketplace.error_msg')}</p>
               <button
                 onClick={fetchProviders}
                 className="btn btn-secondary btn-sm mt-4"
               >
-                Try Again
+                {t('marketplace.try_again')}
               </button>
             </div>
           ) : sorted.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-dc1-text-secondary mb-1">
                 {providers.length === 0
-                  ? 'No GPUs are online right now.'
-                  : 'No providers match your search.'}
+                  ? t('marketplace.no_gpus_online')
+                  : t('marketplace.no_match_search')}
               </p>
               <p className="text-sm text-dc1-text-muted">
                 {providers.length === 0
-                  ? 'Providers come online throughout the day — check back soon.'
-                  : 'Try a different search term.'}
+                  ? t('marketplace.check_back')
+                  : t('marketplace.try_different')}
               </p>
               {search && (
                 <button onClick={() => setSearch('')} className="btn btn-outline btn-sm mt-4">
-                  Clear search
+                  {t('marketplace.clear_search')}
                 </button>
               )}
             </div>
@@ -366,17 +369,17 @@ export default function MarketplacePage() {
           <section className="border-t border-dc1-border bg-dc1-surface-l1">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 text-center">
               <h2 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-3">
-                Ready to start computing?
+                {t('marketplace.cta_title')}
               </h2>
               <p className="text-dc1-text-secondary mb-8 max-w-xl mx-auto">
-                Create a free renter account and start submitting jobs in under 2 minutes.
+                {t('marketplace.cta_desc')}
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Link href="/renter/register" className="btn btn-primary btn-lg">
-                  Create Renter Account
+                  {t('marketplace.create_renter')}
                 </Link>
                 <Link href="/provider/register" className="btn btn-secondary btn-lg">
-                  Become a Provider
+                  {t('marketplace.become_provider')}
                 </Link>
               </div>
             </div>

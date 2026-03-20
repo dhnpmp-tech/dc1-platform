@@ -1,9 +1,9 @@
 {
-  "name": "dc1-compute",
-  "displayName": "DC1 GPU Compute",
-  "description": "Submit GPU compute jobs to DC1 — Saudi Arabia's decentralized GPU marketplace. Provider sidebar, job submission, live log streaming, wallet panel.",
-  "version": "0.1.0",
-  "publisher": "dc1-platform",
+  "name": "dcp-compute",
+  "displayName": "DCP GPU Compute",
+  "description": "Submit GPU compute jobs to DCP — Saudi Arabia's decentralized GPU marketplace. Provider sidebar, job submission, live log streaming, wallet panel.",
+  "version": "0.3.0",
+  "publisher": "dcp-platform",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -20,7 +20,7 @@
     "compute",
     "AI",
     "machine learning",
-    "DC1",
+    "DCP",
     "Saudi Arabia",
     "inference"
   ],
@@ -34,7 +34,7 @@
       "activitybar": [
         {
           "id": "dc1-explorer",
-          "title": "DC1 Compute",
+          "title": "DCP Compute",
           "icon": "media/dc1-icon.svg"
         }
       ]
@@ -43,7 +43,7 @@
       "explorer": [
         {
           "id": "dc1.providerStatus",
-          "name": "DC1 Provider",
+          "name": "DCP Provider",
           "icon": "$(server)",
           "visibility": "collapsed"
         }
@@ -64,58 +64,63 @@
     "commands": [
       {
         "command": "dc1.setProviderKey",
-        "title": "DC1: Set Provider API Key",
+        "title": "DCP: Set Provider API Key",
         "icon": "$(key)"
       },
       {
         "command": "dc1.clearProviderKey",
-        "title": "DC1: Clear Provider API Key",
+        "title": "DCP: Clear Provider API Key",
         "icon": "$(trash)"
       },
       {
         "command": "dc1.refreshProviderStatus",
-        "title": "DC1: Refresh Provider Status",
+        "title": "DCP: Refresh Provider Status",
         "icon": "$(refresh)"
       },
       {
         "command": "dc1.setup",
-        "title": "DC1: Set Renter API Key",
+        "title": "DCP: Set Renter API Key",
         "icon": "$(key)"
       },
       {
         "command": "dc1.submitJob",
-        "title": "DC1: Submit GPU Job",
+        "title": "DCP: Submit GPU Job",
         "icon": "$(play)"
       },
       {
         "command": "dc1.refreshGPUs",
-        "title": "DC1: Refresh Available GPUs",
+        "title": "DCP: Refresh Available GPUs",
         "icon": "$(refresh)"
       },
       {
         "command": "dc1.refreshJobs",
-        "title": "DC1: Refresh My Jobs",
+        "title": "DCP: Refresh My Jobs",
         "icon": "$(refresh)"
       },
       {
         "command": "dc1.viewJobLogs",
-        "title": "DC1: View Job Logs",
+        "title": "DCP: View Job Logs",
         "icon": "$(output)"
       },
       {
         "command": "dc1.cancelJob",
-        "title": "DC1: Cancel Job",
+        "title": "DCP: Cancel Job",
         "icon": "$(stop)"
       },
       {
         "command": "dc1.openWallet",
-        "title": "DC1: Wallet & Billing",
+        "title": "DCP: Wallet & Billing",
         "icon": "$(credit-card)"
       },
       {
         "command": "dc1.submitJobOnProvider",
-        "title": "DC1: Submit Job on This GPU",
+        "title": "DCP: Submit Job on This GPU",
         "icon": "$(play)"
+      },
+      {
+        "command": "dc1.openBillingPage",
+        "title": "DCP: Open Billing Page",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -165,12 +170,12 @@
       ]
     },
     "configuration": {
-      "title": "DC1 Compute",
+      "title": "DCP Compute",
       "properties": {
         "dc1.apiBase": {
           "type": "string",
           "default": "http://76.13.179.86:8083",
-          "description": "DC1 API base URL. Update to https://api.dc1st.com when HTTPS is live."
+          "description": "DCP API base URL. Update to https://api.dcp.sa when HTTPS is live."
         },
         "dc1.pollIntervalSeconds": {
           "type": "number",

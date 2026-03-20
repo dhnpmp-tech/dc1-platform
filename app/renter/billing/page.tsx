@@ -6,10 +6,7 @@ import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import { useLanguage } from '../../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -85,15 +82,6 @@ const DownloadIcon = () => (
   </svg>
 )
 
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-  { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
-  { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <AnalyticsIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <SettingsIcon /> },
-]
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -134,6 +122,16 @@ function TableSkeleton() {
 
 export default function BillingPage() {
   const { t } = useLanguage()
+
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <AnalyticsIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <SettingsIcon /> },
+  ]
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [renter, setRenter] = useState<Renter | null>(null)
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -293,10 +291,10 @@ export default function BillingPage() {
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
       {/* ── Page Header ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-dc1-text-primary mb-1">{t('billing.title')}</h1>
-          <p className="text-dc1-text-secondary">Track your compute spending and job history</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-1">{t('billing.title')}</h1>
+          <p className="text-dc1-text-secondary">{t('billing.subtitle')}</p>
         </div>
         <button
           className="btn btn-outline flex items-center gap-2 text-sm"
@@ -311,15 +309,15 @@ export default function BillingPage() {
 
       {/* ── Summary Cards ────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <StatCard label="Balance" value={`${balance.toFixed(2)} SAR`} accent="amber" />
-        <StatCard label={t('billing.total_spent')} value={`${invoices.length > 0 ? halalaToCurrency(invoiceTotalHalala) : totalSpent.toFixed(2)} SAR`} accent="default" />
+        <StatCard label={t('billing.balance')} value={`${balance.toFixed(2)} ${t('common.sar')}`} accent="amber" />
+        <StatCard label={t('billing.total_spent')} value={`${invoices.length > 0 ? halalaToCurrency(invoiceTotalHalala) : totalSpent.toFixed(2)} ${t('common.sar')}`} accent="default" />
         <StatCard label={t('billing.total_jobs')} value={String(invoices.length > 0 ? thisMonthInvoices.length : totalJobs)} accent="info" />
       </div>
 
       {/* ── Add Funds ────────────────────────────────────────────── */}
       <div className="card mb-8">
-        <h2 className="section-heading mb-4">Add Funds</h2>
-        <p className="text-sm text-dc1-text-secondary mb-4">Top up your account balance to run GPU jobs.</p>
+        <h2 className="section-heading mb-4">{t('billing.add_funds')}</h2>
+        <p className="text-sm text-dc1-text-secondary mb-4">{t('billing.add_funds_desc')}</p>
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -327,7 +325,7 @@ export default function BillingPage() {
                 <button
                   key={amt}
                   onClick={() => setTopupAmount(String(amt))}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${
+                  className={`px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium border transition ${
                     topupAmount === String(amt)
                       ? 'border-dc1-amber bg-dc1-amber/10 text-dc1-amber'
                       : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:border-dc1-amber/30'
@@ -340,7 +338,7 @@ export default function BillingPage() {
                 type="number"
                 min="1"
                 step="0.01"
-                placeholder="Custom"
+                placeholder={t('billing.custom_amount')}
                 value={topupAmount}
                 onChange={e => setTopupAmount(e.target.value)}
                 className="input w-28"
@@ -352,28 +350,28 @@ export default function BillingPage() {
             disabled={topupLoading || !topupAmount || parseFloat(topupAmount) <= 0}
             className="btn btn-primary px-6 disabled:opacity-50"
           >
-            {topupLoading ? 'Processing...' : 'Add Funds'}
+            {topupLoading ? t('billing.processing') : t('billing.add_funds')}
           </button>
         </div>
         {topupError && (
           <p className="text-sm text-status-error mt-3">{topupError}</p>
         )}
-        <p className="text-xs text-dc1-text-muted mt-3">Secure payment via Moyasar. You will be redirected to complete payment.</p>
+        <p className="text-xs text-dc1-text-muted mt-3">{t('billing.payment_note')}</p>
       </div>
 
       {/* ── Compute Rates ────────────────────────────────────────── */}
       <div className="card mb-8">
-        <h2 className="section-heading mb-4">Compute Rates</h2>
+        <h2 className="section-heading mb-4">{t('billing.compute_rates')}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-dc1-surface-l2 rounded-lg p-4 border border-dc1-border/50">
-            <p className="text-sm text-dc1-text-secondary mb-1">LLM Inference</p>
-            <p className="text-xl font-bold text-dc1-amber">15 halala/min</p>
-            <p className="text-xs text-dc1-text-muted mt-1">0.15 SAR per minute</p>
+            <p className="text-sm text-dc1-text-secondary mb-1">{t('billing.llm_rate')}</p>
+            <p className="text-xl font-bold text-dc1-amber">15 {t('billing.halala_per_min')}</p>
+            <p className="text-xs text-dc1-text-muted mt-1">0.15 {t('common.sar')} {t('common.min')}</p>
           </div>
           <div className="bg-dc1-surface-l2 rounded-lg p-4 border border-dc1-border/50">
-            <p className="text-sm text-dc1-text-secondary mb-1">Image Generation</p>
-            <p className="text-xl font-bold text-dc1-amber">20 halala/min</p>
-            <p className="text-xs text-dc1-text-muted mt-1">0.20 SAR per minute</p>
+            <p className="text-sm text-dc1-text-secondary mb-1">{t('billing.img_rate')}</p>
+            <p className="text-xl font-bold text-dc1-amber">20 {t('billing.halala_per_min')}</p>
+            <p className="text-xs text-dc1-text-muted mt-1">0.20 {t('common.sar')} {t('common.min')}</p>
           </div>
         </div>
       </div>
@@ -430,16 +428,16 @@ export default function BillingPage() {
       {/* ── Recent Jobs (fallback if no invoices endpoint yet) ───── */}
       {invoices.length === 0 && recentJobs.length > 0 && (
         <div className="card mb-8">
-          <h2 className="section-heading mb-4">Recent Jobs</h2>
+          <h2 className="section-heading mb-4">{t('billing.recent_jobs')}</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" role="table">
               <thead>
                 <tr className="border-b border-dc1-border text-dc1-text-muted text-xs uppercase tracking-wide">
-                  <th className="text-start pb-3 pr-4 font-medium">Job ID</th>
-                  <th className="text-start pb-3 pr-4 font-medium">Type</th>
-                  <th className="text-start pb-3 pr-4 font-medium">Status</th>
-                  <th className="text-end pb-3 pr-4 font-medium">Cost</th>
-                  <th className="text-end pb-3 font-medium">Submitted</th>
+                  <th className="text-start pb-3 pr-4 font-medium">{t('table.job_id')}</th>
+                  <th className="text-start pb-3 pr-4 font-medium">{t('table.type')}</th>
+                  <th className="text-start pb-3 pr-4 font-medium">{t('table.status')}</th>
+                  <th className="text-end pb-3 pr-4 font-medium">{t('table.cost')}</th>
+                  <th className="text-end pb-3 font-medium">{t('billing.submitted')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-dc1-border/50">

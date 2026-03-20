@@ -3,17 +3,16 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
+import { useLanguage } from '../../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface RenterInfo {
   id: number
   name: string
   email: string
   organization: string
+  webhook_url?: string | null
   balance_halala: number
   total_spent_halala: number
   total_jobs: number
@@ -70,13 +69,20 @@ const navItems = [
 
 export default function RenterSettingsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [renter, setRenter] = useState<RenterInfo | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [newlyRotatedKey, setNewlyRotatedKey] = useState('')
   const [rotating, setRotating] = useState(false)
   const [rotateConfirm, setRotateConfirm] = useState(false)
+  const [rotateError, setRotateError] = useState('')
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [savingWebhook, setSavingWebhook] = useState(false)
+  const [webhookMessage, setWebhookMessage] = useState('')
+  const [webhookError, setWebhookError] = useState('')
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
@@ -96,6 +102,7 @@ export default function RenterSettingsPage() {
         }
         const data = await res.json()
         setRenter(data.renter || null)
+        setWebhookUrl(data?.renter?.webhook_url || '')
       } catch (err) {
         console.error('Failed to load settings:', err)
       } finally {
@@ -113,24 +120,27 @@ export default function RenterSettingsPage() {
 
   const handleRotateKey = async () => {
     setRotating(true)
+    setRotateError('')
     try {
-      const res = await fetch(`${API_BASE}/renters/rotate-key`, {
+      const res = await fetch(`${API_BASE}/renters/rotate-key?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-renter-key': apiKey,
         },
       })
-      if (!res.ok) throw new Error('Failed to rotate key')
-      const data = await res.json()
-      const newKey = data.api_key
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to rotate key')
+      const newKey = data.new_key || data.api_key
+      if (!newKey) throw new Error('Rotation succeeded but new key was missing')
       localStorage.setItem('dc1_renter_key', newKey)
       setApiKey(newKey)
-      setShowKey(true)
+      setNewlyRotatedKey(newKey)
+      setShowKey(false)
       setRotateConfirm(false)
-    } catch (err) {
+      setCopied(false)
+    } catch (err: any) {
       console.error('Key rotation failed:', err)
-      alert('Failed to rotate API key. Please try again.')
+      setRotateError(err?.message || 'Failed to rotate API key. Please try again.')
     } finally {
       setRotating(false)
     }
@@ -139,6 +149,38 @@ export default function RenterSettingsPage() {
   const handleLogout = () => {
     localStorage.removeItem('dc1_renter_key')
     window.location.href = '/'
+  }
+
+  const handleSaveWebhook = async () => {
+    setSavingWebhook(true)
+    setWebhookMessage('')
+    setWebhookError('')
+    try {
+      const res = await fetch(`${API_BASE}/renters/settings`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-renter-key': apiKey,
+        },
+        body: JSON.stringify({
+          webhook_url: webhookUrl.trim() ? webhookUrl.trim() : null,
+        }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to save webhook URL')
+      }
+
+      const nextUrl = data?.settings?.webhook_url || ''
+      setWebhookUrl(nextUrl)
+      setRenter((prev) => (prev ? { ...prev, webhook_url: nextUrl } : prev))
+      setWebhookMessage('Webhook URL saved.')
+    } catch (err: any) {
+      setWebhookError(err?.message || 'Failed to save webhook URL')
+    } finally {
+      setSavingWebhook(false)
+    }
   }
 
   if (loading) {
@@ -213,12 +255,72 @@ export default function RenterSettingsPage() {
           </div>
         </div>
 
+        {/* Webhook Settings */}
+        <div className="card p-6 space-y-4">
+          <h2 className="section-heading">Job Completion Webhook</h2>
+          <p className="text-dc1-text-muted text-sm">
+            Receive a signed callback when a job finishes or fails.
+          </p>
+          <div className="space-y-2">
+            <label className="text-xs text-dc1-text-muted block">Webhook URL (optional)</label>
+            <input
+              type="url"
+              placeholder="https://your-app.example.com/dcp/webhook"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-dc1-amber/30"
+            />
+            <p className="text-xs text-dc1-text-muted">
+              Header: <span className="font-mono">X-DCP-Signature</span> (HMAC-SHA256).
+            </p>
+          </div>
+          {webhookMessage && <p className="text-xs text-status-success">{webhookMessage}</p>}
+          {webhookError && <p className="text-xs text-status-error">{webhookError}</p>}
+          <div className="flex justify-end">
+            <button
+              onClick={handleSaveWebhook}
+              disabled={savingWebhook}
+              className="btn btn-primary text-sm min-h-[44px] disabled:opacity-60"
+            >
+              {savingWebhook ? 'Saving...' : 'Save Webhook'}
+            </button>
+          </div>
+        </div>
+
         {/* API Key Management */}
         <div className="card p-6 space-y-4">
           <h2 className="section-heading">API Key</h2>
           <p className="text-dc1-text-muted text-sm">
-            Your API key is used to authenticate requests to the DC1 Platform.
+            Your API key is used to authenticate requests to the DCP Platform.
           </p>
+          {newlyRotatedKey && (
+            <div className="rounded-lg border border-dc1-amber/40 bg-dc1-amber/10 p-4 space-y-3">
+              <p className="text-sm text-dc1-text-primary font-medium">
+                Your new API key (shown once)
+              </p>
+              <code className="block w-full text-xs sm:text-sm font-mono text-dc1-amber bg-dc1-surface-l3 border border-dc1-border rounded-lg p-3 break-all">
+                {newlyRotatedKey}
+              </code>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(newlyRotatedKey)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                  className="btn btn-secondary text-sm px-3"
+                >
+                  {copied ? 'Copied!' : t('settings.new_key_copy')}
+                </button>
+                <button
+                  onClick={() => setNewlyRotatedKey('')}
+                  className="btn btn-outline text-sm px-3"
+                >
+                  I saved this key
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Key display */}
           <div className="flex items-center gap-2">
@@ -246,13 +348,14 @@ export default function RenterSettingsPage() {
                 onClick={() => setRotateConfirm(true)}
                 className="text-sm text-status-warning hover:text-status-warning/80 font-medium transition"
               >
-                Rotate API Key
+                {t('settings.rotate_key')}
               </button>
             ) : (
               <div className="bg-status-warning/5 border border-status-warning/20 rounded-lg p-4 space-y-3">
                 <p className="text-sm text-dc1-text-primary">
-                  Are you sure? This will invalidate your current key immediately. Any applications using the old key will stop working.
+                  {t('settings.rotate_confirm')}
                 </p>
+                {rotateError && <p className="text-sm text-status-error">{rotateError}</p>}
                 <div className="flex gap-2">
                   <button
                     onClick={handleRotateKey}

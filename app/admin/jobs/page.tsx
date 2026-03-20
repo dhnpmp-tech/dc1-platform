@@ -2,14 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 import StatCard from '../../components/ui/StatCard'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 const HomeIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg>)
 const ServerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12v4a2 2 0 002 2h10a2 2 0 002-2v-4" /></svg>)
@@ -196,17 +194,25 @@ export default function JobsPage() {
                     <td className="text-sm">{j.cost_halala ? `${(j.cost_halala / 100).toFixed(2)}` : '—'}</td>
                     <td className="text-xs text-dc1-text-secondary">{formatTime(j.created_at)}</td>
                     <td>
-                      {canCancel(j.status) ? (
-                        <button
-                          onClick={() => handleCancel(j.job_id)}
-                          disabled={actionLoading === j.job_id}
-                          className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/admin/jobs/detail?id=${encodeURIComponent(j.job_id || j.id)}`}
+                          className="text-xs px-2 py-1 rounded bg-dc1-amber/20 text-dc1-amber hover:bg-dc1-amber/30"
                         >
-                          {actionLoading === j.job_id ? '...' : 'Cancel'}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-dc1-text-muted">—</span>
-                      )}
+                          View
+                        </Link>
+                        {canCancel(j.status) ? (
+                          <button
+                            onClick={() => handleCancel(j.job_id)}
+                            disabled={actionLoading === j.job_id}
+                            className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+                          >
+                            {actionLoading === j.job_id ? '...' : 'Cancel'}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-dc1-text-muted">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

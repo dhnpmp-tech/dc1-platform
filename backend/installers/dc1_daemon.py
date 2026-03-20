@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DC1 Provider Daemon v3.3.0 — GPU Compute Marketplace
+DCP Provider Daemon v3.3.0 — GPU Compute Marketplace
 Runs as a background service on provider machines.
 
 Features:
@@ -63,13 +63,19 @@ CRASH_WINDOW = 600         # 10 minute window for counting crashes
 AUTO_UPDATE_CHECK = 300    # Check for updates every 5 minutes
 UPDATE_CRASH_THRESHOLD = 90  # If daemon crashes within 90s of update, rollback
 ROLLBACK_RECHECK_INTERVAL = 600  # After rollback, re-check for updates every 10 min
-CANONICAL_UPDATE_ENDPOINT = "https://dcp.sa/api/dc1/providers/download/daemon"
+CANONICAL_UPDATE_ENDPOINT = "https://api.dcp.sa/api/providers/download/daemon"
+CANONICAL_API_BASE_URL = "https://api.dcp.sa"
 
 # ─── CONTAINER SECURITY CONFIG ───────────────────────────────────────────────
 CONTAINER_CPU_LIMIT = "4"          # Max CPU cores per job container
 CONTAINER_MEMORY_LIMIT = "16g"     # Max RAM per job container (swap disabled)
 CONTAINER_PIDS_LIMIT = "256"       # Max PIDs (fork-bomb protection)
 CONTAINER_TMP_SIZE = "1g"          # tmpfs size for /tmp in container
+VLLM_CPU_LIMIT = "8"               # vLLM serve default CPU limit
+VLLM_MEMORY_LIMIT = "24g"          # vLLM serve default memory cap
+VLLM_PIDS_LIMIT = "512"            # vLLM serve process limit
+VLLM_TMP_SIZE = "2g"               # vLLM /tmp tmpfs size
+VLLM_SHM_SIZE = "4g"               # vLLM shared memory size
 _SECCOMP_PROFILE_PATH = None       # Cached seccomp profile path (written once)
 BANDWIDTH_CHECK_INTERVAL = 600   # Measure bandwidth every 10 minutes
 BANDWIDTH_TEST_SIZE = 102400     # 100KB test payload for speed measurement
@@ -152,6 +158,26 @@ def http_get(url, timeout=15):
     else:
         import urllib.request, urllib.error
         req = urllib.request.Request(url)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.getcode(), _safe_json(resp.read())
+        except urllib.error.HTTPError as e:
+            return e.code, _safe_json(e.read())
+
+def http_patch(url, data, timeout=15):
+    """PATCH JSON to URL, returns (status_code, response_dict)."""
+    if HAS_REQUESTS:
+        r = requests.patch(url, json=data, timeout=timeout)
+        return r.status_code, _safe_json(r.text)
+    else:
+        import urllib.request, urllib.error
+        body = json.dumps(data).encode()
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="PATCH",
+        )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.getcode(), _safe_json(resp.read())
@@ -433,10 +459,29 @@ def _resolve_download_url(download_url):
     if url.startswith("http://") or url.startswith("https://"):
         return url
     if url.startswith("/api/providers/"):
-        return f"https://dcp.sa/api/dc1{url[4:]}"
+        return f"{CANONICAL_API_BASE_URL}{url}"
     if url.startswith("/"):
-        return f"https://dcp.sa{url}"
+        return f"{CANONICAL_API_BASE_URL}{url}"
     return None
+
+def get_gpu_info():
+    """Return raw nvidia-smi output for heartbeat diagnostics."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        output = (result.stdout or result.stderr or "").strip()
+        if not output:
+            return "nvidia-smi produced no output"
+        # Keep payload size bounded while preserving the core diagnostics.
+        return output[:16000]
+    except FileNotFoundError:
+        return "nvidia-smi not found"
+    except Exception as e:
+        return f"nvidia-smi unavailable: {e}"
 
 def check_for_update():
     """Check if a newer daemon version is available and self-update."""
@@ -847,6 +892,7 @@ def build_resource_spec(gpu=None):
 def send_heartbeat():
     """Send heartbeat with GPU metrics to backend."""
     gpu = detect_gpu()
+    gpu_info = get_gpu_info()
     gpu_status = {}
     if gpu:
         gpu_status = {
@@ -873,6 +919,7 @@ def send_heartbeat():
         payload = {
             "api_key": API_KEY,
             "gpu_status": gpu_status,
+            "gpu_info": gpu_info,
             "provider_ip": None,
             "provider_hostname": platform.node(),
             "resource_spec": build_resource_spec(gpu),
@@ -1131,6 +1178,39 @@ def _ensure_seccomp_profile():
     return _SECCOMP_PROFILE_PATH
 
 
+def _container_profile_for_job(job_type):
+    """Return per-job container limits by workload class."""
+    profiles = {
+        "default": {
+            "cpu": CONTAINER_CPU_LIMIT,
+            "memory": CONTAINER_MEMORY_LIMIT,
+            "pids": CONTAINER_PIDS_LIMIT,
+            "tmp": CONTAINER_TMP_SIZE,
+            "shm": "2g",
+        },
+        "benchmark": {"cpu": "2", "memory": "8g", "pids": "128", "tmp": "512m", "shm": "1g"},
+        "llm-inference": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "llm_inference": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "image_generation": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "rendering": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+        "training": {"cpu": "8", "memory": "24g", "pids": "512", "tmp": "2g", "shm": "4g"},
+        "custom_container": {"cpu": CONTAINER_CPU_LIMIT, "memory": CONTAINER_MEMORY_LIMIT, "pids": CONTAINER_PIDS_LIMIT, "tmp": CONTAINER_TMP_SIZE, "shm": "2g"},
+    }
+    return profiles.get(job_type, profiles["default"])
+
+
+def _vllm_profile_for_model(model):
+    """Return vLLM limits sized to expected model footprint."""
+    small_models = {
+        "google/gemma-2b-it",
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "microsoft/Phi-3-mini-4k-instruct",
+    }
+    if model in small_models:
+        return {"cpu": "6", "memory": "16g", "pids": "256", "tmp": "1g", "shm": "3g"}
+    return {"cpu": VLLM_CPU_LIMIT, "memory": VLLM_MEMORY_LIMIT, "pids": VLLM_PIDS_LIMIT, "tmp": VLLM_TMP_SIZE, "shm": VLLM_SHM_SIZE}
+
+
 def run_docker_job(job_type, task_spec, job_dir, job_id=None):
     """Execute job inside Docker container with GPU access and network isolation."""
     # Local images built via backend/docker/build-images.sh
@@ -1198,6 +1278,7 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
 
     # Build seccomp profile path (written once per daemon lifetime, reused after)
     seccomp_path = _ensure_seccomp_profile()
+    container_profile = _container_profile_for_job(job_type)
 
     # Report pulling phase so backend transitions job status to 'pulling'
     if job_id:
@@ -1221,7 +1302,7 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
     report_event(
         "container_start",
         f"Launching {container_name}: image={image} "
-        f"cpu={CONTAINER_CPU_LIMIT} mem={CONTAINER_MEMORY_LIMIT} pids={CONTAINER_PIDS_LIMIT}",
+        f"cpu={container_profile['cpu']} mem={container_profile['memory']} pids={container_profile['pids']}",
         job_id=job_id,
     )
 
@@ -1236,14 +1317,14 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
             # Network isolation
             "--network", "none",
             # Resource limits (CPU, RAM, swap disabled, PID fork-bomb protection)
-            "--memory", CONTAINER_MEMORY_LIMIT,
-            "--memory-swap", CONTAINER_MEMORY_LIMIT,   # swap = memory, so swap headroom = 0
-            "--cpus", CONTAINER_CPU_LIMIT,
-            "--pids-limit", CONTAINER_PIDS_LIMIT,
-            "--shm-size", "2g",
+            "--memory", container_profile["memory"],
+            "--memory-swap", container_profile["memory"],   # swap = memory, so swap headroom = 0
+            "--cpus", container_profile["cpu"],
+            "--pids-limit", container_profile["pids"],
+            "--shm-size", container_profile["shm"],
             # Read-only root filesystem — writable areas supplied via tmpfs
             "--read-only",
-            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={CONTAINER_TMP_SIZE}",
+            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={container_profile['tmp']}",
             "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",
             # Drop all Linux capabilities — CUDA device access uses /dev/nvidia* not capabilities
             "--cap-drop", "all",
@@ -1256,16 +1337,70 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
         if seccomp_path:
             docker_cmd += ["--security-opt", f"seccomp={seccomp_path}"]
 
-        docker_cmd += [image, "python", "/dc1/job/task.py"]
+        docker_cmd += [image, "python", "-u", "/dc1/job/task.py"]
 
-        result = subprocess.run(
+        proc = subprocess.Popen(
             docker_cmd,
-            capture_output=True, text=True, encoding="utf-8", timeout=JOB_TIMEOUT
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            bufsize=1
         )
 
+        output_chunks = []
+        live_batch = []
+        last_flush = time.time()
+
+        while True:
+            if time.time() - start_ts > JOB_TIMEOUT:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                raise subprocess.TimeoutExpired(docker_cmd, JOB_TIMEOUT)
+
+            line = proc.stdout.readline() if proc.stdout else ""
+            if line:
+                output_chunks.append(line)
+                if len(output_chunks) > 10000:
+                    output_chunks = output_chunks[-10000:]
+
+                clean = line.rstrip("\r\n")
+                if clean:
+                    live_batch.append({"level": "info", "message": clean[:2000]})
+
+                if job_id and clean.startswith("[dc1-phase]"):
+                    phase = clean.split("]", 1)[1].strip()
+                    threading.Thread(
+                        target=report_job_progress,
+                        args=(job_id, phase),
+                        daemon=True
+                    ).start()
+
+                if clean.startswith("[dc1]"):
+                    log.info(f"  {clean}")
+
+                if job_id and len(live_batch) >= 10:
+                    post_job_log_lines(job_id, live_batch)
+                    live_batch = []
+                    last_flush = time.time()
+            else:
+                if proc.poll() is not None:
+                    break
+                if job_id and live_batch and (time.time() - last_flush >= 1.0):
+                    post_job_log_lines(job_id, live_batch)
+                    live_batch = []
+                    last_flush = time.time()
+                time.sleep(0.05)
+
+        if job_id and live_batch:
+            post_job_log_lines(job_id, live_batch)
+
+        returncode = proc.wait(timeout=10)
         duration = round(time.time() - start_ts, 1)
-        stdout = result.stdout[:MAX_STDOUT]
-        stderr = result.stderr[:MAX_STDOUT]
+        stdout = "".join(output_chunks)[:MAX_STDOUT]
+        stderr = ""
 
         # GPU memory wipe check: verify VRAM returns to pre-job baseline after container exits
         gpu_after = detect_gpu()
@@ -1280,7 +1415,7 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
                 job_id=job_id, severity="warning",
             )
 
-        if result.returncode == 0:
+        if returncode == 0:
             # Collect per-container GPU metrics from the just-finished run
             # (container may already be gone by here, so best-effort)
             gpu_metrics = collect_container_gpu_metrics(container_name)
@@ -1290,14 +1425,16 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
                 job_id=job_id,
             )
             return {"success": True, "result": stdout, "stderr": stderr,
-                    "metrics": {"container_gpu": gpu_metrics} if gpu_metrics else None}
+                    "metrics": {"container_gpu": gpu_metrics} if gpu_metrics else None,
+                    "logs_streamed": True}
         else:
             report_event(
                 "container_complete",
-                f"{container_name} failed in {duration}s, exit={result.returncode}",
+                f"{container_name} failed in {duration}s, exit={returncode}",
                 job_id=job_id, severity="warning",
             )
-            return {"success": False, "error": f"Exit code {result.returncode}: {stderr[:500]}"}
+            err_tail = "\n".join(stdout.splitlines()[-20:])[:500]
+            return {"success": False, "error": f"Exit code {returncode}: {err_tail}", "logs_streamed": True}
     except subprocess.TimeoutExpired:
         # Kill named container for reliable cleanup
         subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=10)
@@ -1331,23 +1468,35 @@ def report_job_progress(job_id, phase):
     except Exception as e:
         log.debug(f"Progress report failed (non-critical): {e}")
 
-def post_job_logs(job_id, stdout, stderr=""):
-    """Send collected job output lines to backend after execution completes."""
-    url = f"{API_URL}/api/jobs/{job_id}/logs"
-    lines = []
-    for line in (stdout or "").splitlines():
-        lines.append({"level": "info", "message": line})
-    for line in (stderr or "").splitlines():
-        lines.append({"level": "error", "message": line})
-    if not lines:
-        return
+def post_job_log_lines(job_id, lines):
+    """Send structured log lines to provider log-ingest endpoint."""
+    if not job_id or not lines:
+        return 0
+    url = f"{API_URL}/api/providers/jobs/{job_id}/logs"
+    payload = {"api_key": API_KEY, "lines": lines[:500]}
     try:
-        payload = {"api_key": API_KEY, "lines": lines[:500]}
-        code, _ = http_post(url, payload, timeout=15)
-        if code != 200:
-            log.debug(f"Job log upload HTTP {code} for {job_id}")
+        code, _ = http_patch(url, payload, timeout=8)
+        if code == 200:
+            return len(payload["lines"])
+        log.debug(f"Job log upload HTTP {code} for {job_id}")
+        return 0
     except Exception as e:
         log.debug(f"Job log upload failed (non-critical): {e}")
+        return 0
+
+def post_job_logs(job_id, stdout, stderr=""):
+    """Send collected stdout/stderr lines to backend after execution completes."""
+    lines = []
+    for line in (stdout or "").splitlines():
+        if line:
+            lines.append({"level": "info", "message": line[:2000]})
+    for line in (stderr or "").splitlines():
+        if line:
+            lines.append({"level": "error", "message": line[:2000]})
+    if not lines:
+        return
+    for i in range(0, len(lines), 500):
+        post_job_log_lines(job_id, lines[i:i + 500])
 
 def run_bare_metal_job(task_spec, job_id=None):
     """Execute job as a bare-metal subprocess with real-time phase reporting."""
@@ -1363,55 +1512,74 @@ def run_bare_metal_job(task_spec, job_id=None):
     log.info(f"Bare-metal exec: {temp_path}")
 
     # Stream stdout line-by-line to detect [dc1-phase] markers and report progress
-    stderr_path = temp_path + ".stderr"
     stdout_chunks = []
+    live_batch = []
+    last_flush = time.time()
     try:
-        with open(stderr_path, "w", encoding="utf-8") as stderr_file:
-            proc = subprocess.Popen(
-                [sys.executable, "-u", temp_path],  # -u: unbuffered stdout
-                stdout=subprocess.PIPE, stderr=stderr_file,
-                text=True, encoding="utf-8"
-            )
+        proc = subprocess.Popen(
+            [sys.executable, "-u", temp_path],  # -u: unbuffered stdout
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            bufsize=1
+        )
 
-            # Read stdout line by line with timeout
-            start_time = time.time()
-            while True:
-                # Check timeout
-                if time.time() - start_time > JOB_TIMEOUT:
-                    proc.kill()
-                    return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
+        # Read merged stdout/stderr line by line with timeout
+        start_time = time.time()
+        while True:
+            if time.time() - start_time > JOB_TIMEOUT:
+                proc.kill()
+                return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
 
-                line = proc.stdout.readline()
-                if not line and proc.poll() is not None:
+            line = proc.stdout.readline() if proc.stdout else ""
+            if not line:
+                if proc.poll() is not None:
                     break
-                if line:
-                    stdout_chunks.append(line)
-                    # Detect phase markers and report to backend
-                    if job_id and line.startswith("[dc1-phase]"):
-                        phase = line.strip().split("]", 1)[1].strip()
-                        # Report async to not block the job
-                        threading.Thread(
-                            target=report_job_progress,
-                            args=(job_id, phase),
-                            daemon=True
-                        ).start()
-                    # Log dc1 markers
-                    if line.startswith("[dc1]"):
-                        log.info(f"  {line.strip()}")
+                if job_id and live_batch and (time.time() - last_flush >= 1.0):
+                    post_job_log_lines(job_id, live_batch)
+                    live_batch = []
+                    last_flush = time.time()
+                time.sleep(0.05)
+                continue
 
-            returncode = proc.wait(timeout=10)
+            stdout_chunks.append(line)
+            if len(stdout_chunks) > 10000:
+                stdout_chunks = stdout_chunks[-10000:]
+
+            clean = line.strip()
+            if clean:
+                live_batch.append({"level": "info", "message": clean[:2000]})
+
+            # Detect phase markers and report to backend
+            if job_id and clean.startswith("[dc1-phase]"):
+                phase = clean.split("]", 1)[1].strip()
+                threading.Thread(
+                    target=report_job_progress,
+                    args=(job_id, phase),
+                    daemon=True
+                ).start()
+            if clean.startswith("[dc1]"):
+                log.info(f"  {clean}")
+
+            if job_id and len(live_batch) >= 10:
+                post_job_log_lines(job_id, live_batch)
+                live_batch = []
+                last_flush = time.time()
+
+        if job_id and live_batch:
+            post_job_log_lines(job_id, live_batch)
+
+        returncode = proc.wait(timeout=10)
 
         stdout = "".join(stdout_chunks)[:MAX_STDOUT]
         stderr = ""
-        try:
-            with open(stderr_path, "r", encoding="utf-8") as f:
-                stderr = f.read()[:2000]
-        except: pass
 
         if returncode == 0:
-            return {"success": True, "result": stdout, "stderr": stderr}
+            return {"success": True, "result": stdout, "stderr": stderr, "logs_streamed": True}
         else:
-            return {"success": False, "error": f"Exit code {returncode}: {stderr[:500]}"}
+            err_tail = "\n".join(stdout.splitlines()[-20:])[:500]
+            return {"success": False, "error": f"Exit code {returncode}: {err_tail}", "logs_streamed": True}
     except subprocess.TimeoutExpired:
         try: proc.kill()
         except: pass
@@ -1485,6 +1653,8 @@ def run_vllm_serve_job(task_spec, job_id=None):
 
     image = "vllm/vllm-openai:latest"
     container_name = f"dc1-vllm-{job_id or int(time.time())}"
+    seccomp_path = _ensure_seccomp_profile()
+    container_profile = _vllm_profile_for_model(model)
 
     # Allocate a free host port
     port = _find_free_port()
@@ -1508,7 +1678,12 @@ def run_vllm_serve_job(task_spec, job_id=None):
         return {"success": False, "error": f"vLLM pull error: {e}", "transient": True}
 
     report_job_progress(job_id, "loading_model")
-    report_event("container_start", f"Starting vLLM serve: {container_name} model={model} port={port}", job_id=job_id)
+    report_event(
+        "container_start",
+        f"Starting vLLM serve: {container_name} model={model} port={port} "
+        f"cpu={container_profile['cpu']} mem={container_profile['memory']} pids={container_profile['pids']}",
+        job_id=job_id
+    )
 
     # Start container detached — bridge network so the port is accessible from outside
     docker_cmd = [
@@ -1517,12 +1692,20 @@ def run_vllm_serve_job(task_spec, job_id=None):
         "--name", container_name,
         "--network", "bridge",
         "-p", f"{port}:8000",
-        "--memory", "24g",
-        "--memory-swap", "24g",
-        "--cpus", "8",
-        "--shm-size", "4g",
+        "--memory", container_profile["memory"],
+        "--memory-swap", container_profile["memory"],
+        "--cpus", container_profile["cpu"],
+        "--pids-limit", container_profile["pids"],
+        "--shm-size", container_profile["shm"],
+        "--tmpfs", f"/tmp:rw,noexec,nosuid,size={container_profile['tmp']}",
+        "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",
+        "--cap-drop", "all",
         "--security-opt", "no-new-privileges:true",
         "-e", f"HUGGING_FACE_HUB_TOKEN={os.environ.get('HF_TOKEN', '')}",
+    ]
+    if seccomp_path:
+        docker_cmd.extend(["--security-opt", f"seccomp={seccomp_path}"])
+    docker_cmd += [
         image,
         "--model", model,
         "--dtype", dtype,
@@ -1782,7 +1965,7 @@ def poll_and_execute():
         # Stream collected logs to backend (non-blocking, best-effort)
         stdout_output = outcome.get("result", "") if isinstance(outcome.get("result"), str) else ""
         stderr_output = outcome.get("stderr", "")
-        if stdout_output or stderr_output:
+        if (stdout_output or stderr_output) and not outcome.get("logs_streamed"):
             threading.Thread(
                 target=post_job_logs,
                 args=(job_id, stdout_output, stderr_output),
@@ -1915,7 +2098,7 @@ def precache_models():
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="DC1 Provider Daemon v3.3")
+    parser = argparse.ArgumentParser(description="DCP Provider Daemon v3.3")
     parser.add_argument("--key", help="Override API key")
     parser.add_argument("--url", help="Override API URL")
     parser.add_argument("--no-watchdog", action="store_true", help="Run without crash watchdog")
@@ -1929,10 +2112,10 @@ def main():
 
     # Validate configuration
     if API_KEY == "INJECT_KEY_HERE" or not API_KEY:
-        log.error("No API key configured. Use --key or download from DC1 dashboard.")
+        log.error("No API key configured. Use --key or download from DCP dashboard.")
         sys.exit(1)
     if API_URL == "INJECT_URL_HERE" or not API_URL:
-        log.error("No API URL configured. Use --url or download from DC1 dashboard.")
+        log.error("No API URL configured. Use --url or download from DCP dashboard.")
         sys.exit(1)
 
     # Register signal handlers for graceful shutdown
@@ -1951,7 +2134,7 @@ def main():
         except: pass
 
     log.info("=" * 60)
-    log.info(f"DC1 Provider Daemon v{DAEMON_VERSION}")
+    log.info(f"DCP Provider Daemon v{DAEMON_VERSION}")
     log.info(f"API URL: {API_URL}")
     log.info(f"API Key: {API_KEY[:20]}...")
     log.info(f"Logs: {LOG_DIR}")

@@ -8,7 +8,7 @@ $ErrorActionPreference = "Continue"
 $taskName = "DC1ProviderDaemon"
 $installDir = "$env:LOCALAPPDATA\dc1-provider"
 
-Write-Host "DC1 Provider Daemon — Uninstalling..."
+Write-Host "DCP Provider Daemon — Uninstalling..."
 
 # 1. Kill any running daemon Python processes (v3.2.0: watchdog parent + worker child)
 Write-Host "  Stopping daemon processes (watchdog + worker)..."
@@ -38,7 +38,7 @@ Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Silent
 
 # 3. Remove desktop shortcut
 Write-Host "  Removing desktop shortcut..."
-Remove-Item "$env:USERPROFILE\Desktop\DC1 - My Earnings.bat" -ErrorAction SilentlyContinue
+Remove-Item "$env:USERPROFILE\Desktop\DCP - My Earnings.bat" -ErrorAction SilentlyContinue
 
 # 4. Remove start/stop scripts
 Write-Host "  Removing helper scripts..."
@@ -73,12 +73,12 @@ Remove-Item "$installDir\dc1-daemon.py" -ErrorAction SilentlyContinue
 try {
     $dockerAvailable = & docker --version 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  Cleaning DC1 Docker resources..."
+        Write-Host "  Cleaning DCP Docker resources..."
         # Stop and remove any dc1 containers
         $containers = & docker ps -a --filter "name=dc1-" --format "{{.ID}}" 2>$null
         if ($containers) {
             & docker rm -f $containers 2>$null
-            Write-Host "    Removed DC1 containers."
+            Write-Host "    Removed DCP containers."
         }
         # Note: Not removing images by default (they're shared, large, and user may want them)
     }
@@ -89,5 +89,5 @@ Write-Host "  Cleaning temporary files..."
 Get-ChildItem "$installDir\_dc1_*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "DC1 Provider Daemon uninstalled successfully."
-Write-Host "Thank you for being a DC1 provider!"
+Write-Host "DCP Provider Daemon uninstalled successfully."
+Write-Host "Thank you for being a DCP provider!"

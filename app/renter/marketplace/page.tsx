@@ -4,11 +4,9 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface CostRates {
@@ -37,7 +35,10 @@ interface Provider {
   reliability_score: number | null
   reputation_score: number
   uptime_percent: number | null
+  uptime_pct: number | null
+  job_success_rate: number | null
   total_jobs_completed: number | null
+  reputation_tier: 'new' | 'reliable' | 'top'
   cached_models: string[]
   driver_version: string | null
   compute_capability: string | null
@@ -52,7 +53,22 @@ interface Filters {
   region: string
 }
 
-type SortOption = 'price-asc' | 'vram-desc' | 'availability'
+type SortOption = 'price-asc' | 'vram-desc' | 'availability' | 'reputation'
+type MarketplaceTab = 'gpus' | 'models'
+
+interface ModelRegistryEntry {
+  model_id: string
+  display_name: string
+  family: string
+  vram_gb: number
+  quantization: string
+  context_window: number
+  use_cases: string[]
+  min_gpu_vram_gb: number
+  providers_online: number
+  avg_price_sar_per_min: number
+  status: 'available' | 'no_providers'
+}
 
 // ── Constants ──────────────────────────────────────────────────────
 const GPU_MODEL_OPTIONS = ['RTX 3090', 'RTX 4090', 'A100', 'H100', 'Other']
@@ -110,6 +126,24 @@ function matchesRegion(location: string | null, region: string): boolean {
   const isKSA = loc.includes('KSA') || loc.includes('SAUDI') || loc.includes('RIYADH') || loc.includes('JEDDAH')
   const isUAE = loc.includes('UAE') || loc.includes('DUBAI') || loc.includes('ABU DHABI')
   return !isKSA && !isUAE
+}
+
+function reputationTierRank(tier: Provider['reputation_tier']): number {
+  if (tier === 'top') return 3
+  if (tier === 'reliable') return 2
+  return 1
+}
+
+function reputationTierBadgeClass(tier: Provider['reputation_tier']): string {
+  if (tier === 'top') return 'bg-dc1-amber/20 text-dc1-amber border-dc1-amber/30'
+  if (tier === 'reliable') return 'bg-status-success/15 text-status-success border-status-success/30'
+  return 'bg-dc1-surface-l2 text-dc1-text-muted border-dc1-border'
+}
+
+function reputationTierLabel(tier: Provider['reputation_tier'], t: (key: string) => string): string {
+  if (tier === 'top') return t('marketplace.reputation_top')
+  if (tier === 'reliable') return t('marketplace.reputation_reliable')
+  return t('marketplace.reputation_new')
 }
 
 // ── Icons ──────────────────────────────────────────────────────────
@@ -300,7 +334,7 @@ function FilterSidebar({
 }
 
 // ── GPU Card ───────────────────────────────────────────────────────
-function GPUCard({ provider }: { provider: Provider }) {
+function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => string }) {
   const llmRate = provider.cost_rates_halala_per_min?.['llm-inference']
     ?? provider.cost_rates_halala_per_min?.llm_inference
     ?? 15
@@ -319,6 +353,9 @@ function GPUCard({ provider }: { provider: Provider }) {
             {provider.gpu_model || 'Unknown GPU'}
           </h3>
           <p className="text-xs text-dc1-text-muted mt-0.5 truncate">{provider.name}</p>
+          <span className={`inline-flex mt-2 text-[10px] font-bold tracking-wide px-2 py-0.5 rounded border ${reputationTierBadgeClass(provider.reputation_tier)}`}>
+            {reputationTierLabel(provider.reputation_tier, t)}
+          </span>
         </div>
         <StatusBadge status={provider.is_live ? 'online' : 'offline'} size="sm" pulse={provider.is_live} />
       </div>
@@ -369,6 +406,14 @@ function GPUCard({ provider }: { provider: Provider }) {
             </dd>
           </div>
         )}
+        <div className="flex justify-between">
+          <dt>{t('marketplace.uptime')}</dt>
+          <dd className="text-dc1-text-primary font-medium">{(provider.uptime_pct ?? provider.uptime_percent ?? 0).toFixed(1)}%</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt>{t('marketplace.success_rate')}</dt>
+          <dd className="text-dc1-text-primary font-medium">{(provider.job_success_rate ?? 0).toFixed(1)}%</dd>
+        </div>
         {provider.heartbeat_age_seconds !== null && (
           <div className="flex justify-between">
             <dt>Last seen</dt>
@@ -427,14 +472,86 @@ function GPUCard({ provider }: { provider: Provider }) {
   )
 }
 
+function ModelCard({ model, t }: { model: ModelRegistryEntry; t: (key: string) => string }) {
+  const hasArabicSupport = model.use_cases.some(useCase => useCase.toLowerCase() === 'arabic')
+
+  return (
+    <article className="card hover:border-dc1-amber/30 transition-colors flex flex-col">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-base font-semibold text-dc1-text-primary">{model.display_name}</h3>
+          <p className="text-xs text-dc1-text-muted mt-1">{model.model_id}</p>
+        </div>
+        <StatusBadge status={model.status === 'available' ? 'online' : 'offline'} size="sm" pulse={model.status === 'available'} />
+      </div>
+
+      {hasArabicSupport && (
+        <span className="mt-3 inline-flex w-fit text-xs px-2 py-1 rounded border border-dc1-amber/30 bg-dc1-amber/10 text-dc1-amber font-medium">
+          {t('marketplace.arabic_support')}
+        </span>
+      )}
+
+      <dl className="mt-4 space-y-1.5 text-sm text-dc1-text-secondary flex-1">
+        <div className="flex justify-between">
+          <dt>VRAM</dt>
+          <dd className="text-dc1-text-primary font-medium">{model.vram_gb} GB</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt>Quantization</dt>
+          <dd className="text-dc1-text-primary font-medium">{model.quantization}</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt>Context</dt>
+          <dd className="text-dc1-text-primary font-medium">{model.context_window.toLocaleString()}</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt>Providers online</dt>
+          <dd className={`font-medium ${model.providers_online > 0 ? 'text-status-success' : 'text-dc1-text-muted'}`}>
+            {model.providers_online}
+          </dd>
+        </div>
+        <div className="flex justify-between">
+          <dt>Avg price</dt>
+          <dd className="text-dc1-amber font-semibold">{model.avg_price_sar_per_min.toFixed(2)} SAR/min</dd>
+        </div>
+      </dl>
+
+      <div className="mt-3 mb-4 flex flex-wrap gap-1">
+        {model.use_cases.map(useCase => (
+          <span key={useCase} className="text-xs px-2 py-0.5 rounded bg-dc1-surface-l2 text-dc1-text-secondary border border-dc1-border">
+            {useCase}
+          </span>
+        ))}
+      </div>
+
+      {model.providers_online > 0 ? (
+        <Link
+          href={`/renter/playground?model=${encodeURIComponent(model.model_id)}`}
+          className="btn btn-primary w-full text-center text-sm mt-auto"
+        >
+          Use in Playground
+        </Link>
+      ) : (
+        <div className="mt-auto rounded-md border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-muted">
+          {t('marketplace.no_providers_for_model')}
+        </div>
+      )}
+    </article>
+  )
+}
+
 // ── Main Page ──────────────────────────────────────────────────────
 export default function MarketplacePage() {
+  const { t } = useLanguage()
+  const [activeTab, setActiveTab] = useState<MarketplaceTab>('gpus')
   const [providers, setProviders] = useState<Provider[]>([])
+  const [models, setModels] = useState<ModelRegistryEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [modelsLoading, setModelsLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [renterName, setRenterName] = useState('Renter')
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [sortBy, setSortBy] = useState<SortOption>('availability')
+  const [sortBy, setSortBy] = useState<SortOption>('reputation')
   const [filters, setFilters] = useState<Filters>({
     minVram: 0,
     maxPriceSar: 50,
@@ -459,6 +576,20 @@ export default function MarketplacePage() {
     }
   }, [])
 
+  const fetchModels = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/models`)
+      if (res.ok) {
+        const data = await res.json()
+        setModels(Array.isArray(data) ? data : [])
+      }
+    } catch (err) {
+      console.error('Failed to load model registry:', err)
+    } finally {
+      setModelsLoading(false)
+    }
+  }, [])
+
   // Auth — get renter name
   useEffect(() => {
     const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
@@ -473,9 +604,11 @@ export default function MarketplacePage() {
   // Poll every 30s + countdown ticker
   useEffect(() => {
     fetchProviders()
+    fetchModels()
 
     const pollInterval = setInterval(() => {
       fetchProviders()
+      fetchModels()
       countdownRef.current = POLL_INTERVAL_MS / 1000
     }, POLL_INTERVAL_MS)
 
@@ -488,7 +621,7 @@ export default function MarketplacePage() {
       clearInterval(pollInterval)
       clearInterval(tickInterval)
     }
-  }, [fetchProviders])
+  }, [fetchProviders, fetchModels])
 
   // ── Filter + Sort ────────────────────────────────────────────────
   const filtered = providers.filter(p => {
@@ -501,6 +634,12 @@ export default function MarketplacePage() {
   })
 
   const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'reputation') {
+      const tierDelta = reputationTierRank(b.reputation_tier) - reputationTierRank(a.reputation_tier)
+      if (tierDelta !== 0) return tierDelta
+      if (a.is_live !== b.is_live) return a.is_live ? -1 : 1
+      return (b.reputation_score ?? 0) - (a.reputation_score ?? 0)
+    }
     if (sortBy === 'availability') {
       if (a.is_live !== b.is_live) return a.is_live ? -1 : 1
       return (b.reputation_score ?? 0) - (a.reputation_score ?? 0)
@@ -524,11 +663,19 @@ export default function MarketplacePage() {
           <div>
             <h1 className="text-2xl font-bold text-dc1-text-primary">GPU Marketplace</h1>
             <div className="flex items-center gap-3 mt-1 flex-wrap">
-              <span className="text-sm text-dc1-text-secondary">
-                <span className="text-status-success font-semibold">{onlineCount}</span> online
-                {' · '}
-                <span className="text-dc1-text-muted">{providers.length} total</span>
-              </span>
+              {activeTab === 'gpus' ? (
+                <span className="text-sm text-dc1-text-secondary">
+                  <span className="text-status-success font-semibold">{onlineCount}</span> online
+                  {' · '}
+                  <span className="text-dc1-text-muted">{providers.length} total</span>
+                </span>
+              ) : (
+                <span className="text-sm text-dc1-text-secondary">
+                  <span className="text-status-success font-semibold">{models.filter(m => m.status === 'available').length}</span> available
+                  {' · '}
+                  <span className="text-dc1-text-muted">{models.length} models</span>
+                </span>
+              )}
               {lastUpdated && (
                 <span className="text-xs text-dc1-text-muted flex items-center gap-1">
                   <RefreshIcon />
@@ -540,58 +687,80 @@ export default function MarketplacePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Mobile filter toggle */}
             <button
-              className="btn btn-outline text-sm flex items-center gap-1.5 sm:hidden"
-              onClick={() => setFiltersOpen(prev => !prev)}
-              aria-expanded={filtersOpen}
-              aria-controls="filter-panel"
+              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${activeTab === 'gpus' ? 'border-dc1-amber/40 bg-dc1-amber/10 text-dc1-amber' : 'border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'}`}
+              onClick={() => setActiveTab('gpus')}
             >
-              <FilterIcon />
-              Filters
-              {(filters.gpuModels.length > 0 || filters.minVram > 0 || filters.maxPriceSar < 50 || filters.region !== 'All Regions') && (
-                <span className="ml-1 bg-dc1-amber text-dc1-void text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                  !
-                </span>
-              )}
+              GPUs
             </button>
-
-            {/* Sort */}
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as SortOption)}
-              className="input text-sm"
-              aria-label="Sort GPUs"
+            <button
+              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${activeTab === 'models' ? 'border-dc1-amber/40 bg-dc1-amber/10 text-dc1-amber' : 'border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'}`}
+              onClick={() => setActiveTab('models')}
             >
-              <option value="availability">Online first</option>
-              <option value="price-asc">Price: low → high</option>
-              <option value="vram-desc">VRAM: high → low</option>
-            </select>
+              {t('marketplace.models_tab')}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {activeTab === 'gpus' && (
+              <>
+                {/* Mobile filter toggle */}
+                <button
+                  className="btn btn-outline text-sm flex items-center gap-1.5 sm:hidden"
+                  onClick={() => setFiltersOpen(prev => !prev)}
+                  aria-expanded={filtersOpen}
+                  aria-controls="filter-panel"
+                >
+                  <FilterIcon />
+                  Filters
+                  {(filters.gpuModels.length > 0 || filters.minVram > 0 || filters.maxPriceSar < 50 || filters.region !== 'All Regions') && (
+                    <span className="ml-1 bg-dc1-amber text-dc1-void text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                      !
+                    </span>
+                  )}
+                </button>
+
+                {/* Sort */}
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value as SortOption)}
+                  className="input text-sm"
+                  aria-label="Sort GPUs"
+                >
+                  <option value="reputation">Reputation: top tier first</option>
+                  <option value="availability">Online first</option>
+                  <option value="price-asc">Price: low → high</option>
+                  <option value="vram-desc">VRAM: high → low</option>
+                </select>
+              </>
+            )}
           </div>
         </div>
 
         {/* ── Layout: sidebar + cards ──────────────────────────────── */}
-        <div className="flex gap-6 items-start">
+        <div className="flex flex-col sm:flex-row gap-6 items-start">
           {/* Filter sidebar — desktop: always visible, mobile: toggle */}
-          <div
-            id="filter-panel"
-            className={`
-              w-56 flex-shrink-0
-              sm:block
-              ${filtersOpen ? 'block' : 'hidden'}
-              card p-4
-            `}
-          >
-            <FilterSidebar
-              filters={filters}
-              onChange={setFilters}
-              matchCount={filtered.length}
-            />
-          </div>
+          {activeTab === 'gpus' && (
+            <div
+              id="filter-panel"
+              className={`
+                w-full sm:w-56 sm:flex-shrink-0
+                sm:block
+                ${filtersOpen ? 'block' : 'hidden'}
+                card p-4
+              `}
+            >
+              <FilterSidebar
+                filters={filters}
+                onChange={setFilters}
+                matchCount={filtered.length}
+              />
+            </div>
+          )}
 
-          {/* GPU cards */}
+          {/* GPU cards / model cards */}
           <div className="flex-1 min-w-0">
-            {loading ? (
+            {activeTab === 'gpus' && loading ? (
               <div className="flex items-center justify-center py-20">
                 <div
                   className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full"
@@ -599,7 +768,7 @@ export default function MarketplacePage() {
                   role="status"
                 />
               </div>
-            ) : sorted.length === 0 ? (
+            ) : activeTab === 'gpus' && sorted.length === 0 ? (
               <div className="card text-center py-12">
                 <p className="text-dc1-text-secondary mb-2">
                   {providers.length === 0
@@ -612,10 +781,28 @@ export default function MarketplacePage() {
                     : 'Try relaxing your filters.'}
                 </p>
               </div>
-            ) : (
+            ) : activeTab === 'gpus' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {sorted.map(p => (
-                  <GPUCard key={p.id} provider={p} />
+                  <GPUCard key={p.id} provider={p} t={t} />
+                ))}
+              </div>
+            ) : modelsLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <div
+                  className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full"
+                  aria-label="Loading models"
+                  role="status"
+                />
+              </div>
+            ) : models.length === 0 ? (
+              <div className="card text-center py-12">
+                <p className="text-dc1-text-secondary mb-2">{t('marketplace.no_providers_for_model')}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {models.map(model => (
+                  <ModelCard key={model.model_id} model={model} t={t} />
                 ))}
               </div>
             )}

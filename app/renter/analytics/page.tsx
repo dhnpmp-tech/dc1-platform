@@ -5,10 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface RenterInfo {
   name: string
@@ -76,11 +73,17 @@ const navItems = [
   { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
 ]
 
+type DateRange = 'this_month' | 'last_month' | 'custom'
+
 export default function RenterAnalyticsPage() {
   const router = useRouter()
   const [renter, setRenter] = useState<RenterInfo | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
+  const [dateRange, setDateRange] = useState<DateRange>('this_month')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [downloadingReport, setDownloadingReport] = useState(false)
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
@@ -129,6 +132,47 @@ export default function RenterAnalyticsPage() {
     )
   }
 
+  const downloadReport = async () => {
+    const key = localStorage.getItem('dc1_renter_key')
+    if (!key || downloadingReport) return
+    setDownloadingReport(true)
+    try {
+      const now = new Date()
+      let from = ''
+      let to = ''
+      if (dateRange === 'this_month') {
+        from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+        to = now.toISOString().split('T')[0]
+      } else if (dateRange === 'last_month') {
+        const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        const last = new Date(now.getFullYear(), now.getMonth(), 0)
+        from = first.toISOString().split('T')[0]
+        to = last.toISOString().split('T')[0]
+      } else {
+        from = customFrom
+        to = customTo
+      }
+      const params = new URLSearchParams({ key, format: 'csv' })
+      if (from) params.set('from_date', from)
+      if (to) params.set('to_date', to)
+      const res = await fetch(`${API_BASE}/renters/me/jobs/export?${params}`)
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dcp-report-${from || 'all'}-to-${to || 'all'}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Report download failed:', err)
+    } finally {
+      setDownloadingReport(false)
+    }
+  }
+
   // Compute analytics
   const totalSpent = (renter.total_spent_halala || 0) / 100
   const balance = (renter.balance_halala || 0) / 100
@@ -173,9 +217,58 @@ export default function RenterAnalyticsPage() {
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renter.name}>
       <div className="space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-dc1-text-primary">Usage Analytics</h1>
-          <p className="text-dc1-text-secondary text-sm mt-1">Track your GPU usage and spending patterns</p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl font-bold text-dc1-text-primary">Usage Analytics</h1>
+            <p className="text-dc1-text-secondary text-sm mt-1">Track your GPU usage and spending patterns</p>
+          </div>
+
+          {/* Download Report */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={dateRange}
+              onChange={e => setDateRange(e.target.value as DateRange)}
+              className="input text-sm min-h-[44px] px-3 py-2"
+              aria-label="Report date range"
+            >
+              <option value="this_month">This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {dateRange === 'custom' && (
+              <>
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  className="input text-sm min-h-[44px] px-3 py-2"
+                  aria-label="From date"
+                />
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  className="input text-sm min-h-[44px] px-3 py-2"
+                  aria-label="To date"
+                />
+              </>
+            )}
+            <button
+              onClick={downloadReport}
+              disabled={downloadingReport || (dateRange === 'custom' && (!customFrom || !customTo))}
+              className="btn btn-secondary min-h-[44px] px-4 flex items-center gap-2 disabled:opacity-50"
+              aria-label="Download report as CSV"
+            >
+              {downloadingReport ? (
+                <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" aria-hidden="true" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              )}
+              Download Report
+            </button>
+          </div>
         </div>
 
         {/* Top Stats */}

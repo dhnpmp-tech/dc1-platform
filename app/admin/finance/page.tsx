@@ -5,10 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 // Nav icons
 const HomeIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg>)
@@ -99,7 +96,7 @@ export default function FinanceDashboard() {
         {/* Revenue Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Total Revenue" value={`${halalaToSar(at.total_revenue)} SAR`} accent="success" icon={<CurrencyIcon />} />
-          <StatCard label="DC1 Fees (25%)" value={`${halalaToSar(at.total_dc1_fees)} SAR`} accent="amber" icon={<CurrencyIcon />} />
+          <StatCard label="DCP Fees (25%)" value={`${halalaToSar(at.total_dc1_fees)} SAR`} accent="amber" icon={<CurrencyIcon />} />
           <StatCard label="Provider Payouts (75%)" value={`${halalaToSar(at.total_provider_payouts)} SAR`} accent="info" icon={<CurrencyIcon />} />
           <StatCard label="Completed Jobs" value={String(at.completed_jobs || 0)} accent="default" />
         </div>
@@ -109,17 +106,17 @@ export default function FinanceDashboard() {
           <div className="card">
             <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">Today</h3>
             <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(td.revenue)} SAR</p>
-            <p className="text-xs text-dc1-text-muted mt-1">{td.jobs || 0} jobs · DC1 fee: {halalaToSar(td.dc1_fees)} SAR</p>
+            <p className="text-xs text-dc1-text-muted mt-1">{td.jobs || 0} jobs · DCP fee: {halalaToSar(td.dc1_fees)} SAR</p>
           </div>
           <div className="card">
             <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">This Week</h3>
             <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(wk.revenue)} SAR</p>
-            <p className="text-xs text-dc1-text-muted mt-1">{wk.jobs || 0} jobs · DC1 fee: {halalaToSar(wk.dc1_fees)} SAR</p>
+            <p className="text-xs text-dc1-text-muted mt-1">{wk.jobs || 0} jobs · DCP fee: {halalaToSar(wk.dc1_fees)} SAR</p>
           </div>
           <div className="card">
             <h3 className="text-sm font-medium text-dc1-text-secondary mb-3">This Month</h3>
             <p className="text-2xl font-bold text-dc1-text-primary">{halalaToSar(mo.revenue)} SAR</p>
-            <p className="text-xs text-dc1-text-muted mt-1">{mo.jobs || 0} jobs · DC1 fee: {halalaToSar(mo.dc1_fees)} SAR</p>
+            <p className="text-xs text-dc1-text-muted mt-1">{mo.jobs || 0} jobs · DCP fee: {halalaToSar(mo.dc1_fees)} SAR</p>
           </div>
         </div>
 
@@ -220,7 +217,7 @@ export default function FinanceDashboard() {
                   <th>Renter</th>
                   <th>Provider</th>
                   <th>Revenue</th>
-                  <th>DC1 Fee</th>
+                  <th>DCP Fee</th>
                   <th>Provider Cut</th>
                   <th>Date</th>
                 </tr>

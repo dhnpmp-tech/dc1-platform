@@ -116,6 +116,15 @@ export default function HomePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
+              <Link
+                href="/earn"
+                className="inline-flex items-center gap-2 text-sm font-medium text-dc1-text-secondary hover:text-dc1-amber transition-colors"
+              >
+                {t('landing.earn_calc')}
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
             </div>
             <p className="text-dc1-text-secondary text-sm mt-6">
               {t('landing.already_account')}{' '}
@@ -391,7 +400,7 @@ Invoke-WebRequest \`
                   max={24}
                   value={calcHours}
                   onChange={e => setCalcHours(Number(e.target.value))}
-                  className="w-full accent-[#F5A524]"
+                  className="w-full accent-dc1-amber"
                 />
                 <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
                   <span>1h</span>
@@ -413,7 +422,7 @@ Invoke-WebRequest \`
                   max={31}
                   value={calcDays}
                   onChange={e => setCalcDays(Number(e.target.value))}
-                  className="w-full accent-[#F5A524]"
+                  className="w-full accent-dc1-amber"
                 />
                 <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
                   <span>1d</span>

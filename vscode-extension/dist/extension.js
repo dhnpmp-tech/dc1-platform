@@ -1,0 +1,2137 @@
+/******/ (() => { // webpackBootstrap
+/******/ 	"use strict";
+/******/ 	var __webpack_modules__ = ({
+
+/***/ "./src/api/dc1Client.ts":
+/*!******************************!*\
+  !*** ./src/api/dc1Client.ts ***!
+  \******************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.dc1 = exports.DC1Client = exports.JOB_TYPES = void 0;
+const https = __importStar(__webpack_require__(/*! https */ "https"));
+const http = __importStar(__webpack_require__(/*! http */ "http"));
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+exports.JOB_TYPES = [
+    { value: 'llm_inference', label: 'LLM Inference' },
+    { value: 'image_generation', label: 'Image Generation' },
+    { value: 'vllm_serve', label: 'vLLM Serve (endpoint)' },
+    { value: 'training', label: 'Training' },
+    { value: 'rendering', label: 'Rendering' },
+    { value: 'benchmark', label: 'Benchmark' },
+    { value: 'custom_container', label: 'Custom Container' },
+];
+class DC1Client {
+    get apiBase() {
+        return vscode.workspace.getConfiguration('dc1').get('apiBase', 'http://76.13.179.86:8083');
+    }
+    request(method, path, headers = {}, body) {
+        return new Promise((resolve, reject) => {
+            const url = new URL(this.apiBase + path);
+            const isHttps = url.protocol === 'https:';
+            const lib = isHttps ? https : http;
+            const options = {
+                hostname: url.hostname,
+                port: url.port || (isHttps ? 443 : 80),
+                path: url.pathname + url.search,
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'DCP-VSCode-Extension/0.3.0',
+                    ...headers,
+                },
+                // Allow self-signed certs on the dev VPS
+                ...(isHttps ? { rejectUnauthorized: false } : {}),
+            };
+            const req = lib.request(options, (res) => {
+                let data = '';
+                res.on('data', (chunk) => (data += chunk));
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (res.statusCode && res.statusCode >= 400) {
+                            reject(new Error(parsed.error || parsed.message || `HTTP ${res.statusCode}`));
+                        }
+                        else {
+                            resolve(parsed);
+                        }
+                    }
+                    catch {
+                        reject(new Error(`Failed to parse response: ${data.slice(0, 200)}`));
+                    }
+                });
+            });
+            req.on('error', reject);
+            req.setTimeout(15000, () => {
+                req.destroy();
+                reject(new Error('Request timed out after 15s'));
+            });
+            if (body) {
+                req.write(JSON.stringify(body));
+            }
+            req.end();
+        });
+    }
+    /** GET /api/renters/available-providers — no auth required */
+    async getAvailableProviders() {
+        return this.request('GET', '/api/renters/available-providers');
+    }
+    /** GET /api/providers/me?key= */
+    async getProviderInfo(apiKey) {
+        return this.request('GET', `/api/providers/me?key=${encodeURIComponent(apiKey)}`);
+    }
+    /** GET /api/renters/me?key= */
+    async getRenterInfo(apiKey) {
+        return this.request('GET', `/api/renters/me?key=${encodeURIComponent(apiKey)}`);
+    }
+    /** GET /api/renters/me?key= — returns jobs array too */
+    async getMyJobs(apiKey) {
+        const data = await this.request('GET', `/api/renters/me?key=${encodeURIComponent(apiKey)}`);
+        return data.jobs || [];
+    }
+    /** POST /api/jobs/submit */
+    async submitJob(apiKey, payload) {
+        return this.request('POST', '/api/jobs/submit', { 'x-renter-key': apiKey }, payload);
+    }
+    /** GET /api/jobs/:id/output */
+    async getJobOutput(apiKey, jobId) {
+        return this.request('GET', `/api/jobs/${jobId}/output`, { 'x-renter-key': apiKey });
+    }
+    /** GET /api/jobs/:id/logs */
+    async getJobLogs(apiKey, jobId) {
+        return this.request('GET', `/api/jobs/${jobId}/logs`, { 'x-renter-key': apiKey });
+    }
+    /** POST /api/jobs/:id/cancel */
+    async cancelJob(apiKey, jobId) {
+        return this.request('POST', `/api/jobs/${jobId}/cancel`, { 'x-renter-key': apiKey });
+    }
+    /**
+     * Stream job logs via SSE (GET /api/jobs/:id/logs/stream).
+     * Returns a dispose() function to abort the stream.
+     * Calls onLine for each SSE data line, onEnd when stream closes, onError on failure.
+     */
+    streamJobLogs(apiKey, jobId, onLine, onEnd, onError) {
+        const url = new URL(this.apiBase + `/api/jobs/${jobId}/logs/stream`);
+        const isHttps = url.protocol === 'https:';
+        const lib = isHttps ? https : http;
+        const options = {
+            hostname: url.hostname,
+            port: url.port || (isHttps ? 443 : 80),
+            path: url.pathname + url.search,
+            method: 'GET',
+            headers: {
+                'Accept': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'x-renter-key': apiKey,
+                'User-Agent': 'DCP-VSCode-Extension/0.3.0',
+            },
+            ...(isHttps ? { rejectUnauthorized: false } : {}),
+        };
+        let req = null;
+        let aborted = false;
+        const dispose = () => {
+            aborted = true;
+            req?.destroy();
+        };
+        try {
+            req = lib.request(options, (res) => {
+                if (res.statusCode && res.statusCode >= 400) {
+                    onError(new Error(`SSE stream returned HTTP ${res.statusCode}`));
+                    return;
+                }
+                let buffer = '';
+                res.setEncoding('utf8');
+                res.on('data', (chunk) => {
+                    if (aborted) {
+                        return;
+                    }
+                    buffer += chunk;
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() ?? '';
+                    for (const line of lines) {
+                        if (line.startsWith('data:')) {
+                            const data = line.slice(5).trim();
+                            if (data && data !== '[DONE]') {
+                                onLine(data);
+                            }
+                        }
+                    }
+                });
+                res.on('end', () => {
+                    if (!aborted) {
+                        onEnd();
+                    }
+                });
+                res.on('error', (err) => {
+                    if (!aborted) {
+                        onError(err);
+                    }
+                });
+            });
+            req.on('error', (err) => {
+                if (!aborted) {
+                    onError(err);
+                }
+            });
+            req.setTimeout(300000, () => {
+                req?.destroy();
+                if (!aborted) {
+                    onEnd();
+                }
+            });
+            req.end();
+        }
+        catch (err) {
+            onError(err instanceof Error ? err : new Error(String(err)));
+        }
+        return dispose;
+    }
+    /** POST /api/renters/topup */
+    async topUp(apiKey, amountSar) {
+        return this.request('POST', '/api/renters/topup', { 'x-renter-key': apiKey }, { amount_sar: amountSar });
+    }
+    /** GET /api/jobs/:id — single job status */
+    async getJob(apiKey, jobId) {
+        return this.request('GET', `/api/jobs/${jobId}`, { 'x-renter-key': apiKey });
+    }
+}
+exports.DC1Client = DC1Client;
+exports.dc1 = new DC1Client();
+
+
+/***/ }),
+
+/***/ "./src/auth/AuthManager.ts":
+/*!*********************************!*\
+  !*** ./src/auth/AuthManager.ts ***!
+  \*********************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.AuthManager = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+const RENTER_SECRET_KEY = 'dc1.renterApiKey';
+const PROVIDER_SECRET_KEY = 'dc1.providerKey';
+class AuthManager {
+    constructor(secrets) {
+        this.secrets = secrets;
+        this._onDidChangeKey = new vscode.EventEmitter();
+        this.onDidChangeKey = this._onDidChangeKey.event;
+        this._onDidChangeProviderKey = new vscode.EventEmitter();
+        this.onDidChangeProviderKey = this._onDidChangeProviderKey.event;
+    }
+    async load() {
+        this._apiKey = await this.secrets.get(RENTER_SECRET_KEY);
+        this._providerKey = await this.secrets.get(PROVIDER_SECRET_KEY);
+    }
+    // ── Renter key accessors ──────────────────────────────────────────
+    get apiKey() {
+        return this._apiKey;
+    }
+    get isAuthenticated() {
+        return !!this._apiKey;
+    }
+    async setApiKey(key) {
+        await this.secrets.store(RENTER_SECRET_KEY, key);
+        this._apiKey = key;
+        this._onDidChangeKey.fire(key);
+    }
+    async clearApiKey() {
+        await this.secrets.delete(RENTER_SECRET_KEY);
+        this._apiKey = undefined;
+        this._onDidChangeKey.fire(undefined);
+    }
+    /**
+     * Prompt user for their DC1 renter API key, validate it, then store it.
+     * Returns true if the key was saved successfully.
+     */
+    async promptAndSave() {
+        const current = this._apiKey;
+        const input = await vscode.window.showInputBox({
+            title: 'DC1 Compute — Set Renter API Key',
+            prompt: 'Enter your DC1 Renter API key (from dcp.sa/renter/register)',
+            value: current,
+            password: true,
+            placeHolder: 'rk_xxxxxxxxxxxxxxxx',
+            ignoreFocusOut: true,
+            validateInput: (v) => (v.trim().length < 10 ? 'API key looks too short' : undefined),
+        });
+        if (!input) {
+            return false;
+        }
+        const key = input.trim();
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'DC1: Validating renter API key…', cancellable: false }, async () => {
+            try {
+                const info = await dc1Client_1.dc1.getRenterInfo(key);
+                await this.setApiKey(key);
+                vscode.window.showInformationMessage(`DC1: Authenticated as ${info.name} (balance: ${(info.balance_halala / 100).toFixed(2)} SAR)`);
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                vscode.window.showErrorMessage(`DC1: Invalid renter API key — ${msg}`);
+                throw err;
+            }
+        });
+        return this.isAuthenticated;
+    }
+    /** Ensure renter key is set; prompt if not. Returns the key or undefined. */
+    async ensureKey() {
+        if (this._apiKey) {
+            return this._apiKey;
+        }
+        const saved = await this.promptAndSave();
+        return saved ? this._apiKey : undefined;
+    }
+    // ── Provider key accessors ────────────────────────────────────────
+    get providerKey() {
+        return this._providerKey;
+    }
+    get isProviderAuthenticated() {
+        return !!this._providerKey;
+    }
+    async setProviderKey(key) {
+        await this.secrets.store(PROVIDER_SECRET_KEY, key);
+        this._providerKey = key;
+        this._onDidChangeProviderKey.fire(key);
+    }
+    async clearProviderKey() {
+        await this.secrets.delete(PROVIDER_SECRET_KEY);
+        this._providerKey = undefined;
+        this._onDidChangeProviderKey.fire(undefined);
+    }
+    /**
+     * Prompt user for their DC1 provider API key, validate it, then store it.
+     * Returns true if the key was saved successfully.
+     */
+    async promptAndSaveProvider() {
+        const current = this._providerKey;
+        const input = await vscode.window.showInputBox({
+            title: 'DC1 Compute — Set Provider API Key',
+            prompt: 'Enter your DC1 Provider API key (from dcp.sa/provider/register)',
+            value: current,
+            password: true,
+            placeHolder: 'pk_xxxxxxxxxxxxxxxx',
+            ignoreFocusOut: true,
+            validateInput: (v) => (v.trim().length < 10 ? 'API key looks too short' : undefined),
+        });
+        if (!input) {
+            return false;
+        }
+        const key = input.trim();
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'DC1: Validating provider API key…', cancellable: false }, async () => {
+            try {
+                const info = await dc1Client_1.dc1.getProviderInfo(key);
+                await this.setProviderKey(key);
+                const earningsSar = (info.total_earnings_halala / 100).toFixed(2);
+                vscode.window.showInformationMessage(`DC1: Connected as provider ${info.name} — ${info.gpu_model} — ${earningsSar} SAR earned`);
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                vscode.window.showErrorMessage(`DC1: Invalid provider API key — ${msg}`);
+                throw err;
+            }
+        });
+        return this.isProviderAuthenticated;
+    }
+    dispose() {
+        this._onDidChangeKey.dispose();
+        this._onDidChangeProviderKey.dispose();
+    }
+}
+exports.AuthManager = AuthManager;
+
+
+/***/ }),
+
+/***/ "./src/extension.ts":
+/*!**************************!*\
+  !*** ./src/extension.ts ***!
+  \**************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.activate = activate;
+exports.deactivate = deactivate;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const AuthManager_1 = __webpack_require__(/*! ./auth/AuthManager */ "./src/auth/AuthManager.ts");
+const dc1Client_1 = __webpack_require__(/*! ./api/dc1Client */ "./src/api/dc1Client.ts");
+const GPUTreeProvider_1 = __webpack_require__(/*! ./providers/GPUTreeProvider */ "./src/providers/GPUTreeProvider.ts");
+const JobsTreeProvider_1 = __webpack_require__(/*! ./providers/JobsTreeProvider */ "./src/providers/JobsTreeProvider.ts");
+const ProviderStatusTreeProvider_1 = __webpack_require__(/*! ./providers/ProviderStatusTreeProvider */ "./src/providers/ProviderStatusTreeProvider.ts");
+const JobsTreeProvider_2 = __webpack_require__(/*! ./providers/JobsTreeProvider */ "./src/providers/JobsTreeProvider.ts");
+const GPUTreeProvider_2 = __webpack_require__(/*! ./providers/GPUTreeProvider */ "./src/providers/GPUTreeProvider.ts");
+const JobSubmitPanel_1 = __webpack_require__(/*! ./panels/JobSubmitPanel */ "./src/panels/JobSubmitPanel.ts");
+const WalletPanel_1 = __webpack_require__(/*! ./panels/WalletPanel */ "./src/panels/WalletPanel.ts");
+function activate(context) {
+    // ── Auth ──────────────────────────────────────────────────────────
+    const auth = new AuthManager_1.AuthManager(context.secrets);
+    auth.load().then(() => {
+        if (auth.isAuthenticated) {
+            jobsProvider.refresh();
+            updateStatusBar();
+        }
+        // Provider status bar is always shown (connected or not)
+        updateProviderStatusBar();
+        if (auth.isProviderAuthenticated) {
+            providerStatusProvider.refresh();
+        }
+    });
+    // ── Tree providers ────────────────────────────────────────────────
+    const gpuProvider = new GPUTreeProvider_1.GPUTreeProvider();
+    const jobsProvider = new JobsTreeProvider_1.JobsTreeProvider(auth);
+    const providerStatusProvider = new ProviderStatusTreeProvider_1.ProviderStatusTreeProvider(auth);
+    context.subscriptions.push(vscode.window.registerTreeDataProvider('dc1.availableGPUs', gpuProvider), vscode.window.registerTreeDataProvider('dc1.myJobs', jobsProvider), vscode.window.registerTreeDataProvider('dc1.providerStatus', providerStatusProvider), gpuProvider, jobsProvider, providerStatusProvider);
+    // ── Provider status bar ───────────────────────────────────────────
+    const providerStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
+    providerStatusBar.command = 'dc1.setProviderKey';
+    providerStatusBar.tooltip = 'DC1 Provider — click to configure API key';
+    context.subscriptions.push(providerStatusBar);
+    function updateProviderStatusBar() {
+        if (auth.isProviderAuthenticated) {
+            providerStatusBar.text = '$(server) DC1 Provider ✅';
+            providerStatusBar.tooltip = 'DC1 Provider connected — click to change key';
+        }
+        else {
+            providerStatusBar.text = '$(server) DC1 Provider ❌';
+            providerStatusBar.tooltip = 'DC1 Provider — not configured. Click to set API key.';
+        }
+        providerStatusBar.show();
+    }
+    updateProviderStatusBar();
+    auth.onDidChangeProviderKey(() => {
+        updateProviderStatusBar();
+        providerStatusProvider.refresh();
+    });
+    // ── Renter budget status bar ──────────────────────────────────────
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.command = 'dc1.openBillingPage';
+    statusBarItem.tooltip = 'DCP Wallet Balance — click to view billing';
+    context.subscriptions.push(statusBarItem);
+    async function updateStatusBar() {
+        const key = auth.apiKey;
+        if (!key) {
+            statusBarItem.text = 'DCP: — SAR';
+            statusBarItem.show();
+            return;
+        }
+        try {
+            const info = await dc1Client_1.dc1.getRenterInfo(key);
+            const sar = (info.balance_halala / 100).toFixed(2);
+            statusBarItem.text = `DCP: ${sar} SAR`;
+            statusBarItem.tooltip = `DCP Wallet: ${sar} SAR — click to view billing`;
+            statusBarItem.show();
+        }
+        catch {
+            statusBarItem.text = 'DCP: — SAR';
+            statusBarItem.show();
+        }
+    }
+    // Refresh status bar every 60s
+    const statusBarTimer = setInterval(() => {
+        if (auth.isAuthenticated) {
+            updateStatusBar();
+        }
+    }, 60000);
+    context.subscriptions.push({ dispose: () => clearInterval(statusBarTimer) });
+    // Update status bar when key changes
+    auth.onDidChangeKey(() => updateStatusBar());
+    statusBarItem.show();
+    // Per-job output channels (keyed by job_id)
+    const jobChannels = new Map();
+    function getOrCreateJobChannel(jobId) {
+        if (!jobChannels.has(jobId)) {
+            const ch = vscode.window.createOutputChannel(`DCP Job #${jobId}`);
+            context.subscriptions.push(ch);
+            jobChannels.set(jobId, ch);
+        }
+        return jobChannels.get(jobId);
+    }
+    // ── Commands ──────────────────────────────────────────────────────
+    // dc1.setProviderKey — set/update provider API key
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.setProviderKey', async () => {
+        await auth.promptAndSaveProvider();
+        updateProviderStatusBar();
+        providerStatusProvider.refresh();
+    }));
+    // dc1.clearProviderKey
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.clearProviderKey', async () => {
+        const confirm = await vscode.window.showWarningMessage('Clear DC1 Provider API key?', { modal: true }, 'Clear');
+        if (confirm !== 'Clear') {
+            return;
+        }
+        await auth.clearProviderKey();
+        updateProviderStatusBar();
+        vscode.window.showInformationMessage('DC1: Provider API key cleared.');
+    }));
+    // dc1.refreshProviderStatus
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.refreshProviderStatus', () => {
+        providerStatusProvider.refresh();
+    }));
+    // dc1.setup — set/update renter API key
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.setup', async () => {
+        await auth.promptAndSave();
+        await updateStatusBar();
+        jobsProvider.refresh();
+    }));
+    // dc1.refreshGPUs
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.refreshGPUs', () => {
+        gpuProvider.refresh();
+    }));
+    // dc1.refreshJobs
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.refreshJobs', () => {
+        jobsProvider.refresh();
+        updateStatusBar();
+    }));
+    // dc1.submitJob — open job submit panel with all available GPUs
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.submitJob', async () => {
+        const key = await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        const providers = gpuProvider.getProviders();
+        JobSubmitPanel_1.JobSubmitPanel.show(context.extensionUri, auth, providers);
+    }));
+    // dc1.submitJobOnProvider — pre-select a GPU from tree context menu
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.submitJobOnProvider', async (providerOrNode) => {
+        const key = await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        const provider = providerOrNode instanceof GPUTreeProvider_2.GPUNode ? providerOrNode.provider : providerOrNode;
+        const providers = gpuProvider.getProviders();
+        JobSubmitPanel_1.JobSubmitPanel.show(context.extensionUri, auth, providers, provider);
+    }));
+    // dc1.openBillingPage — open DCP billing page in browser
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.openBillingPage', () => {
+        vscode.env.openExternal(vscode.Uri.parse('https://dcp.sa/renter/billing'));
+    }));
+    // dc1.viewJobLogs — stream job logs to per-job output channel
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.viewJobLogs', async (jobOrNode) => {
+        const key = await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        const job = jobOrNode instanceof JobsTreeProvider_2.JobNode ? jobOrNode.job : jobOrNode;
+        const jobId = job.job_id;
+        const ch = getOrCreateJobChannel(jobId);
+        ch.show(true);
+        ch.appendLine(`${'─'.repeat(60)}`);
+        ch.appendLine(`DCP Job #${jobId}  |  Type: ${job.job_type}  |  Status: ${job.status}`);
+        ch.appendLine(`${'─'.repeat(60)}`);
+        if (job.status === 'completed') {
+            try {
+                const output = await dc1Client_1.dc1.getJobOutput(key, jobId);
+                if (output.result) {
+                    ch.appendLine(output.result);
+                }
+                else {
+                    ch.appendLine(`Status: ${output.status}`);
+                    if (output.message) {
+                        ch.appendLine(output.message);
+                    }
+                }
+            }
+            catch (err) {
+                ch.appendLine(`Error fetching output: ${err instanceof Error ? err.message : String(err)}`);
+            }
+            return;
+        }
+        if (job.status === 'running' || job.status === 'pending' || job.status === 'queued') {
+            ch.appendLine(`Job is ${job.status}. Attempting live log stream…`);
+            // Capture narrowed key for use in closures
+            const streamKey = key;
+            // Try SSE streaming first; fall back to polling if stream errors immediately
+            let sseConnected = false;
+            let sseDispose = null;
+            sseDispose = dc1Client_1.dc1.streamJobLogs(streamKey, jobId, (line) => {
+                sseConnected = true;
+                ch.appendLine(line);
+            }, () => {
+                // Stream ended — fetch final output
+                ch.appendLine('\n--- Stream closed. Fetching final output… ---');
+                dc1Client_1.dc1.getJobOutput(streamKey, jobId).then((output) => {
+                    if (output.result) {
+                        ch.appendLine(output.result);
+                    }
+                    const icon = output.status === 'completed' ? '✅' : '❌';
+                    ch.appendLine(`\n${icon} Job ${output.status}.`);
+                    jobsProvider.refresh();
+                    updateStatusBar();
+                }).catch(() => {
+                    ch.appendLine('Could not fetch final output.');
+                });
+            }, (err) => {
+                if (!sseConnected) {
+                    // SSE not available — fall back to polling
+                    ch.appendLine(`Log stream unavailable (${err.message}). Falling back to polling…`);
+                    startPolling();
+                }
+                else {
+                    ch.appendLine(`Stream error: ${err.message}`);
+                }
+            });
+            context.subscriptions.push({ dispose: () => sseDispose?.() });
+            function startPolling() {
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const output = await dc1Client_1.dc1.getJobOutput(streamKey, jobId);
+                        if (output.status === 'completed') {
+                            clearInterval(pollInterval);
+                            if (output.result) {
+                                ch.appendLine('\n--- RESULT ---');
+                                ch.appendLine(output.result);
+                            }
+                            ch.appendLine('\n✅ Job completed.');
+                            jobsProvider.refresh();
+                            updateStatusBar();
+                        }
+                        else if (output.status === 'failed' || output.status === 'cancelled') {
+                            clearInterval(pollInterval);
+                            ch.appendLine(`\n❌ Job ${output.status}: ${output.message ?? ''}`);
+                            jobsProvider.refresh();
+                        }
+                        else {
+                            if (output.progress_phase) {
+                                ch.appendLine(`Phase: ${output.progress_phase}`);
+                            }
+                        }
+                    }
+                    catch {
+                        clearInterval(pollInterval);
+                        ch.appendLine('Polling stopped due to error.');
+                    }
+                }, vscode.workspace.getConfiguration('dc1').get('pollIntervalSeconds', 10) * 1000);
+                context.subscriptions.push({ dispose: () => clearInterval(pollInterval) });
+            }
+            return;
+        }
+        ch.appendLine(`Job status: ${job.status}. No logs available.`);
+    }));
+    // dc1.cancelJob
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.cancelJob', async (jobOrNode) => {
+        const key = await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        const job = jobOrNode instanceof JobsTreeProvider_2.JobNode ? jobOrNode.job : jobOrNode;
+        const confirm = await vscode.window.showWarningMessage(`Cancel job ${job.job_id}? This may still incur partial charges.`, { modal: true }, 'Cancel Job');
+        if (confirm !== 'Cancel Job') {
+            return;
+        }
+        try {
+            await dc1Client_1.dc1.cancelJob(key, job.job_id);
+            vscode.window.showInformationMessage(`DC1: Job ${job.job_id} cancelled.`);
+            jobsProvider.refresh();
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`DC1: Cancel failed — ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }));
+    // dc1.openWallet
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.openWallet', async () => {
+        const key = await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        WalletPanel_1.WalletPanel.show(context.extensionUri, auth);
+    }));
+    context.subscriptions.push(auth);
+    updateStatusBar();
+}
+function deactivate() {
+    // Nothing extra — subscriptions cleaned up by VS Code
+}
+
+
+/***/ }),
+
+/***/ "./src/panels/JobSubmitPanel.ts":
+/*!**************************************!*\
+  !*** ./src/panels/JobSubmitPanel.ts ***!
+  \**************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.JobSubmitPanel = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+class JobSubmitPanel {
+    static show(extensionUri, auth, providers, preselectedProvider) {
+        if (JobSubmitPanel._current) {
+            JobSubmitPanel._current._panel.reveal(vscode.ViewColumn.Beside);
+            JobSubmitPanel._current.updateProviders(providers, preselectedProvider);
+            return;
+        }
+        new JobSubmitPanel(extensionUri, auth, providers, preselectedProvider);
+    }
+    constructor(extensionUri, auth, providers, preselected) {
+        this.auth = auth;
+        this.providers = providers;
+        this.preselected = preselected;
+        this._disposables = [];
+        this._panel = vscode.window.createWebviewPanel('dc1JobSubmit', 'DC1 — Submit GPU Job', vscode.ViewColumn.Beside, {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
+            retainContextWhenHidden: true,
+        });
+        JobSubmitPanel._current = this;
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        this._panel.webview.onDidReceiveMessage((msg) => this.handleMessage(msg), null, this._disposables);
+        this._panel.webview.html = this.buildHtml(providers, preselected);
+    }
+    updateProviders(providers, preselected) {
+        this.providers = providers;
+        this.preselected = preselected;
+        this._panel.webview.html = this.buildHtml(providers, preselected);
+    }
+    async handleMessage(msg) {
+        if (msg.type === 'cancel') {
+            this._panel.dispose();
+            return;
+        }
+        if (msg.type === 'submit') {
+            const key = await this.auth.ensureKey();
+            if (!key) {
+                return;
+            }
+            const payload = msg.payload;
+            // Post message back to webview: submitting
+            this._panel.webview.postMessage({ type: 'submitting' });
+            try {
+                const result = await dc1Client_1.dc1.submitJob(key, payload);
+                this._panel.webview.postMessage({
+                    type: 'success',
+                    jobId: result.job_id,
+                    costSar: (result.cost_halala / 100).toFixed(2),
+                    status: result.status,
+                });
+                vscode.window.showInformationMessage(`DC1: Job submitted! ID: ${result.job_id} | Cost: ${(result.cost_halala / 100).toFixed(2)} SAR`, 'View Jobs').then((action) => {
+                    if (action === 'View Jobs') {
+                        vscode.commands.executeCommand('dc1.refreshJobs');
+                    }
+                });
+            }
+            catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                this._panel.webview.postMessage({ type: 'error', message: errMsg });
+            }
+        }
+    }
+    buildHtml(providers, preselected) {
+        const providersJson = JSON.stringify(providers);
+        const jobTypesJson = JSON.stringify(dc1Client_1.JOB_TYPES);
+        const preselectedId = preselected?.id ?? '';
+        const nonce = getNonce();
+        return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DC1 — Submit GPU Job</title>
+  <style>
+    :root {
+      --amber: #F5A524;
+      --void: #07070E;
+      --surface: #111118;
+      --surface2: #1a1a24;
+      --text: #e8e8f0;
+      --muted: #888898;
+      --border: #2a2a3a;
+      --error: #ff4a4a;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--vscode-font-family, 'Inter', sans-serif);
+      font-size: 13px;
+      padding: 20px;
+      line-height: 1.5;
+    }
+    h1 {
+      color: var(--amber);
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+    .subtitle { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase;
+            letter-spacing: 0.08em; margin-bottom: 6px; font-weight: 600; }
+    select, input, textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--amber); }
+    .gpu-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .gpu-card.selected { border-color: var(--amber); background: #1e1a10; }
+    .gpu-card:hover { border-color: #444458; }
+    .gpu-name { font-weight: 600; font-size: 13px; }
+    .gpu-meta { color: var(--muted); font-size: 11px; margin-top: 3px; }
+    .live-dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--success); margin-right: 5px; vertical-align: middle;
+    }
+    .row { display: flex; gap: 12px; }
+    .row .form-group { flex: 1; }
+    .job-type-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .jt-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 12px;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .jt-btn.selected { border-color: var(--amber); color: var(--amber); background: #1e1a10; }
+    .jt-btn:hover { border-color: #444458; }
+    .params-row { display: flex; gap: 8px; }
+    .params-row input { flex: 1; }
+    textarea { resize: vertical; min-height: 80px; font-family: var(--vscode-editor-font-family, monospace); }
+    .btn-primary {
+      background: var(--amber);
+      color: var(--void);
+      border: none;
+      border-radius: 6px;
+      padding: 10px 24px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 8px;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .alert { padding: 10px 14px; border-radius: 6px; margin-top: 14px; font-size: 12px; }
+    .alert-error { background: #1f0a0a; border: 1px solid #3d1010; color: #ff8080; }
+    .alert-success { background: #0a1f10; border: 1px solid #103d18; color: #60e890; }
+    .cost-preview { color: var(--amber); font-size: 12px; margin-top: 4px; }
+    .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; }
+    #noProviders { color: var(--muted); font-size: 12px; padding: 12px;
+                   border: 1px dashed var(--border); border-radius: 6px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>⚡ Submit GPU Job</h1>
+  <div class="subtitle">DC1 Compute — Saudi Arabia's GPU Marketplace</div>
+
+  <div class="form-group">
+    <div class="section-title">1 · Select Provider GPU</div>
+    <div id="providerList"></div>
+    <div id="noProviders" style="display:none">No GPUs online. Refresh the sidebar to check again.</div>
+  </div>
+
+  <div class="form-group">
+    <div class="section-title">2 · Job Type</div>
+    <div class="job-type-grid" id="jobTypeGrid"></div>
+  </div>
+
+  <div class="form-group" id="promptGroup">
+    <label>Prompt / Task</label>
+    <textarea id="promptInput" placeholder="Enter your prompt or task description…" rows="3"></textarea>
+  </div>
+
+  <div class="form-group" id="modelGroup">
+    <label>Model</label>
+    <input type="text" id="modelInput" value="meta-llama/Llama-3.1-8B-Instruct"
+           placeholder="e.g. meta-llama/Llama-3.1-8B-Instruct">
+  </div>
+
+  <div class="row">
+    <div class="form-group">
+      <label>Duration (minutes)</label>
+      <input type="number" id="durationInput" value="10" min="1" max="1440">
+      <div class="cost-preview" id="costPreview">Estimated cost: calculating…</div>
+    </div>
+    <div class="form-group">
+      <label>Min VRAM (GB)</label>
+      <input type="number" id="vramInput" value="" min="1" max="80" placeholder="Any">
+    </div>
+    <div class="form-group">
+      <label>Priority</label>
+      <select id="priorityInput">
+        <option value="2" selected>Normal</option>
+        <option value="1">High</option>
+        <option value="3">Low</option>
+      </select>
+    </div>
+  </div>
+
+  <button class="btn-primary" id="submitBtn" disabled>Submit Job</button>
+  <div id="alertBox"></div>
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const PROVIDERS = ${providersJson};
+    const JOB_TYPES = ${jobTypesJson};
+    const PRESELECTED_ID = '${preselectedId}';
+
+    // Cost rates from backend (halala/minute)
+    const COST_RATES = {
+      'llm_inference': 5,
+      'llm-inference': 5,
+      'image_generation': 8,
+      'rendering': 6,
+      'training': 10,
+      'benchmark': 3,
+      'custom_container': 5,
+      'vllm_serve': 7,
+      'default': 5
+    };
+
+    let selectedProviderId = PRESELECTED_ID || (PROVIDERS[0]?.id ?? '');
+    let selectedJobType = 'llm_inference';
+
+    // Render providers
+    const list = document.getElementById('providerList');
+    const noProv = document.getElementById('noProviders');
+    if (PROVIDERS.length === 0) {
+      list.style.display = 'none';
+      noProv.style.display = 'block';
+    } else {
+      PROVIDERS.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'gpu-card' + (p.id === selectedProviderId ? ' selected' : '');
+        card.dataset.id = p.id;
+        const vram = p.vram_gb ? p.vram_gb + 'GB' : '?GB';
+        const count = p.gpu_count > 1 ? ' × ' + p.gpu_count : '';
+        const live = p.is_live ? '<span class="live-dot"></span>' : '⚠️ ';
+        card.innerHTML =
+          '<div class="gpu-name">' + live + (p.gpu_model || 'Unknown GPU') + count + '</div>' +
+          '<div class="gpu-meta">' + vram + ' VRAM' +
+          (p.location ? ' · ' + p.location : '') +
+          (p.reliability_score !== null ? ' · ' + p.reliability_score + '% reliability' : '') + '</div>';
+        card.addEventListener('click', () => {
+          document.querySelectorAll('.gpu-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedProviderId = p.id;
+          updateSubmitState();
+        });
+        list.appendChild(card);
+      });
+    }
+
+    // Render job types
+    const grid = document.getElementById('jobTypeGrid');
+    JOB_TYPES.forEach(jt => {
+      const btn = document.createElement('div');
+      btn.className = 'jt-btn' + (jt.value === selectedJobType ? ' selected' : '');
+      btn.textContent = jt.label;
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.jt-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedJobType = jt.value;
+        updateParamVisibility();
+        updateCostPreview();
+        updateSubmitState();
+      });
+      grid.appendChild(btn);
+    });
+
+    function updateParamVisibility() {
+      const needsPrompt = ['llm_inference', 'llm-inference', 'image_generation', 'vllm_serve'].includes(selectedJobType);
+      document.getElementById('promptGroup').style.display = needsPrompt ? '' : 'none';
+      document.getElementById('modelGroup').style.display = needsPrompt ? '' : 'none';
+    }
+
+    function updateCostPreview() {
+      const mins = parseInt(document.getElementById('durationInput').value) || 10;
+      const rate = COST_RATES[selectedJobType] || COST_RATES['default'];
+      const halala = rate * mins;
+      document.getElementById('costPreview').textContent =
+        'Estimated cost: ' + (halala / 100).toFixed(2) + ' SAR (' + halala + ' halala)';
+    }
+
+    function updateSubmitState() {
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = !selectedProviderId || PROVIDERS.length === 0;
+    }
+
+    document.getElementById('durationInput').addEventListener('input', updateCostPreview);
+
+    document.getElementById('submitBtn').addEventListener('click', () => {
+      const duration = parseInt(document.getElementById('durationInput').value);
+      const vram = parseInt(document.getElementById('vramInput').value) || undefined;
+      const priority = parseInt(document.getElementById('priorityInput').value);
+      const prompt = document.getElementById('promptInput').value.trim();
+      const model = document.getElementById('modelInput').value.trim();
+
+      if (!duration || duration <= 0) {
+        showAlert('Please enter a valid duration.', 'error');
+        return;
+      }
+
+      const payload = {
+        provider_id: selectedProviderId,
+        job_type: selectedJobType,
+        duration_minutes: duration,
+        priority,
+        ...(vram ? { gpu_requirements: { min_vram_gb: vram } } : {}),
+        ...(prompt || model ? { params: {
+          ...(prompt ? { prompt } : {}),
+          ...(model ? { model } : {})
+        }} : {})
+      };
+
+      vscode.postMessage({ type: 'submit', payload });
+    });
+
+    function showAlert(msg, type) {
+      const box = document.getElementById('alertBox');
+      box.innerHTML = '<div class="alert alert-' + type + '">' + escapeHtml(msg) + '</div>';
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    window.addEventListener('message', e => {
+      const msg = e.data;
+      const btn = document.getElementById('submitBtn');
+      if (msg.type === 'submitting') {
+        btn.disabled = true;
+        btn.textContent = 'Submitting…';
+        document.getElementById('alertBox').innerHTML = '';
+      } else if (msg.type === 'success') {
+        btn.disabled = false;
+        btn.textContent = 'Submit Job';
+        showAlert('✅ Job submitted! ID: ' + msg.jobId + ' · Cost: ' + msg.costSar + ' SAR · Status: ' + msg.status, 'success');
+      } else if (msg.type === 'error') {
+        btn.disabled = false;
+        btn.textContent = 'Submit Job';
+        showAlert('❌ ' + msg.message, 'error');
+      }
+    });
+
+    // Init
+    updateParamVisibility();
+    updateCostPreview();
+    updateSubmitState();
+  </script>
+</body>
+</html>`;
+    }
+    dispose() {
+        JobSubmitPanel._current = undefined;
+        this._panel.dispose();
+        this._disposables.forEach((d) => d.dispose());
+        this._disposables = [];
+    }
+}
+exports.JobSubmitPanel = JobSubmitPanel;
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+}
+
+
+/***/ }),
+
+/***/ "./src/panels/WalletPanel.ts":
+/*!***********************************!*\
+  !*** ./src/panels/WalletPanel.ts ***!
+  \***********************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.WalletPanel = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+class WalletPanel {
+    static show(extensionUri, auth) {
+        if (WalletPanel._current) {
+            WalletPanel._current._panel.reveal(vscode.ViewColumn.Beside);
+            WalletPanel._current.loadData();
+            return;
+        }
+        new WalletPanel(extensionUri, auth);
+    }
+    constructor(extensionUri, auth) {
+        this.auth = auth;
+        this._disposables = [];
+        this._panel = vscode.window.createWebviewPanel('dc1Wallet', 'DC1 — Wallet & Billing', vscode.ViewColumn.Beside, {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
+        });
+        WalletPanel._current = this;
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        this._panel.webview.onDidReceiveMessage((msg) => this.handleMessage(msg), null, this._disposables);
+        this._panel.webview.html = this.buildHtml(undefined, true);
+        this.loadData();
+    }
+    async loadData() {
+        const key = this.auth.apiKey;
+        if (!key) {
+            this._panel.webview.html = this.buildHtml(undefined, false, 'No API key set. Run "DC1: Set API Key" first.');
+            return;
+        }
+        try {
+            this._info = await dc1Client_1.dc1.getRenterInfo(key);
+            this._panel.webview.html = this.buildHtml(this._info, false);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            this._panel.webview.html = this.buildHtml(undefined, false, msg);
+        }
+    }
+    async handleMessage(msg) {
+        if (msg.type === 'refresh') {
+            this._panel.webview.html = this.buildHtml(this._info, true);
+            await this.loadData();
+            return;
+        }
+        if (msg.type === 'topup') {
+            const key = await this.auth.ensureKey();
+            if (!key) {
+                return;
+            }
+            this._panel.webview.postMessage({ type: 'topping_up' });
+            try {
+                const result = await dc1Client_1.dc1.topUp(key, msg.amountSar);
+                const newBalSar = (result.new_balance_halala / 100).toFixed(2);
+                vscode.window.showInformationMessage(`DC1: Top-up successful! New balance: ${newBalSar} SAR`);
+                this._panel.webview.postMessage({ type: 'topup_success', newBalanceSar: newBalSar });
+                await this.loadData();
+            }
+            catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                vscode.window.showErrorMessage(`DC1: Top-up failed — ${errMsg}`);
+                this._panel.webview.postMessage({ type: 'topup_error', message: errMsg });
+            }
+        }
+    }
+    buildHtml(info, loading, error) {
+        const nonce = getNonce();
+        const balanceSar = info ? (info.balance_halala / 100).toFixed(2) : '—';
+        const name = info?.name ?? '—';
+        const email = info?.email ?? '—';
+        const totalJobs = info?.total_jobs ?? 0;
+        const apiKeyPreview = info?.api_key ? info.api_key.slice(0, 8) + '…' : '—';
+        return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DC1 Wallet</title>
+  <style>
+    :root {
+      --amber: #F5A524; --void: #07070E; --surface: #111118;
+      --surface2: #1a1a24; --text: #e8e8f0; --muted: #888898; --border: #2a2a3a;
+      --error: #ff4a4a; --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--surface); color: var(--text); font-family: var(--vscode-font-family, 'Inter', sans-serif);
+           font-size: 13px; padding: 20px; line-height: 1.5; }
+    h1 { color: var(--amber); font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+    .balance-card { background: linear-gradient(135deg, #1a1508 0%, #1a1a24 100%);
+                    border: 1px solid var(--amber); border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; }
+    .balance-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .balance-amount { font-size: 36px; font-weight: 800; color: var(--amber); margin: 4px 0; }
+    .balance-halala { color: var(--muted); font-size: 12px; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+    .stat-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .stat-value { font-size: 15px; font-weight: 700; margin-top: 2px; }
+    .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; }
+    .topup-row { display: flex; gap: 8px; align-items: flex-end; }
+    .topup-row input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+                       color: var(--text); padding: 8px 10px; font-size: 13px; outline: none; }
+    .topup-row input:focus { border-color: var(--amber); }
+    .btn-amber { background: var(--amber); color: var(--void); border: none; border-radius: 6px;
+                 padding: 9px 18px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .btn-amber:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-secondary { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px;
+                     padding: 7px 14px; font-size: 12px; cursor: pointer; margin-top: 12px; }
+    .btn-secondary:hover { border-color: var(--text); color: var(--text); }
+    .alert { padding: 10px 14px; border-radius: 6px; margin-top: 12px; font-size: 12px; }
+    .alert-error { background: #1f0a0a; border: 1px solid #3d1010; color: #ff8080; }
+    .alert-success { background: #0a1f10; border: 1px solid #103d18; color: #60e890; }
+    .note { color: var(--muted); font-size: 11px; margin-top: 8px; line-height: 1.6; }
+    .loading { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  </style>
+</head>
+<body>
+  <h1>💳 Wallet & Billing</h1>
+  <div class="subtitle">DC1 Compute — Saudi Arabia's GPU Marketplace</div>
+
+  ${loading ? '<div class="loading">⏳ Loading wallet…</div>' : ''}
+  ${error ? `<div class="alert alert-error">❌ ${escapeHtmlStatic(error)}</div>` : ''}
+
+  ${!loading && !error && info ? `
+  <div class="balance-card">
+    <div class="balance-label">Available Balance</div>
+    <div class="balance-amount">${balanceSar} SAR</div>
+    <div class="balance-halala">${info.balance_halala} halala</div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Account Name</div>
+      <div class="stat-value">${escapeHtmlStatic(name)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Jobs</div>
+      <div class="stat-value">${totalJobs}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Email</div>
+      <div class="stat-value" style="font-size:12px">${escapeHtmlStatic(email)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">API Key</div>
+      <div class="stat-value" style="font-family:monospace;font-size:12px">${apiKeyPreview}</div>
+    </div>
+  </div>
+  ` : ''}
+
+  ${!loading ? `
+  <div class="section-title">Top Up Balance</div>
+  <div class="topup-row">
+    <input type="number" id="topupAmount" value="50" min="1" max="1000" placeholder="Amount in SAR">
+    <button class="btn-amber" id="topupBtn">Top Up (SAR)</button>
+  </div>
+  <div class="note">
+    Max 1000 SAR per transaction. Payment gateway integration coming soon.<br>
+    Contact support@dc1st.com to manually top up your account.
+  </div>
+  <div id="alertBox"></div>
+  <button class="btn-secondary" id="refreshBtn">↻ Refresh Balance</button>
+  ` : ''}
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+
+    const topupBtn = document.getElementById('topupBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
+
+    if (topupBtn) {
+      topupBtn.addEventListener('click', () => {
+        const amount = parseFloat(document.getElementById('topupAmount').value);
+        if (!amount || amount <= 0) { showAlert('Enter a valid amount.', 'error'); return; }
+        if (amount > 1000) { showAlert('Max top-up is 1000 SAR.', 'error'); return; }
+        vscode.postMessage({ type: 'topup', amountSar: amount });
+      });
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'refresh' });
+      });
+    }
+
+    function showAlert(msg, type) {
+      const box = document.getElementById('alertBox');
+      if (box) {
+        box.innerHTML = '<div class="alert alert-' + type + '">' + escapeHtml(msg) + '</div>';
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    window.addEventListener('message', e => {
+      const msg = e.data;
+      if (msg.type === 'topping_up') {
+        if (topupBtn) { topupBtn.disabled = true; topupBtn.textContent = 'Processing…'; }
+      } else if (msg.type === 'topup_success') {
+        if (topupBtn) { topupBtn.disabled = false; topupBtn.textContent = 'Top Up (SAR)'; }
+        showAlert('✅ Top-up successful! New balance: ' + msg.newBalanceSar + ' SAR', 'success');
+      } else if (msg.type === 'topup_error') {
+        if (topupBtn) { topupBtn.disabled = false; topupBtn.textContent = 'Top Up (SAR)'; }
+        showAlert('❌ ' + msg.message, 'error');
+      }
+    });
+  </script>
+</body>
+</html>`;
+    }
+    dispose() {
+        WalletPanel._current = undefined;
+        this._panel.dispose();
+        this._disposables.forEach((d) => d.dispose());
+        this._disposables = [];
+    }
+}
+exports.WalletPanel = WalletPanel;
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+}
+/** Server-side HTML escaping for template literals */
+function escapeHtmlStatic(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+
+/***/ }),
+
+/***/ "./src/providers/GPUTreeProvider.ts":
+/*!******************************************!*\
+  !*** ./src/providers/GPUTreeProvider.ts ***!
+  \******************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.GPUTreeProvider = exports.GPUNode = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+/** A single GPU provider node in the sidebar tree */
+class GPUNode extends vscode.TreeItem {
+    constructor(provider) {
+        const label = provider.gpu_model || 'Unknown GPU';
+        super(label, vscode.TreeItemCollapsibleState.Collapsed);
+        this.provider = provider;
+        this.contextValue = 'gpu';
+        this.id = `gpu-${provider.id}`;
+        this.tooltip = this.buildTooltip();
+        const vramText = provider.vram_gb ? `${provider.vram_gb}GB` : '?GB';
+        this.description = `${vramText} VRAM`;
+        this.iconPath = provider.is_live
+            ? new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'))
+            : new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('testing.iconSkipped'));
+    }
+    buildTooltip() {
+        const p = this.provider;
+        const md = new vscode.MarkdownString();
+        md.appendMarkdown(`## ${p.gpu_model || 'GPU'}\n\n`);
+        md.appendMarkdown(`| Field | Value |\n|---|---|\n`);
+        md.appendMarkdown(`| Provider | ${p.name} |\n`);
+        md.appendMarkdown(`| VRAM | ${p.vram_gb ?? '?'} GB |\n`);
+        md.appendMarkdown(`| GPU Count | ${p.gpu_count} |\n`);
+        if (p.cuda_version) {
+            md.appendMarkdown(`| CUDA | ${p.cuda_version} |\n`);
+        }
+        if (p.compute_capability) {
+            md.appendMarkdown(`| Compute CC | ${p.compute_capability} |\n`);
+        }
+        if (p.driver_version) {
+            md.appendMarkdown(`| Driver | ${p.driver_version} |\n`);
+        }
+        if (p.location) {
+            md.appendMarkdown(`| Location | ${p.location} |\n`);
+        }
+        if (p.reliability_score !== null) {
+            md.appendMarkdown(`| Reliability | ${p.reliability_score}% |\n`);
+        }
+        md.appendMarkdown(`| Live | ${p.is_live ? '✅ Yes' : '⚠️ No'} |\n`);
+        if (p.cached_models.length > 0) {
+            md.appendMarkdown(`\n**Cached models:** ${p.cached_models.join(', ')}`);
+        }
+        return md;
+    }
+}
+exports.GPUNode = GPUNode;
+/** Child node showing a spec detail under a GPU node */
+class SpecNode extends vscode.TreeItem {
+    constructor(label, detail, icon = 'info') {
+        super(`${label}: ${detail}`, vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon(icon);
+        this.contextValue = 'spec';
+    }
+}
+class GPUTreeProvider {
+    constructor() {
+        this._providers = [];
+        this._loading = false;
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        this.refresh();
+        this.startAutoRefresh();
+    }
+    startAutoRefresh() {
+        const cfg = vscode.workspace.getConfiguration('dc1');
+        if (cfg.get('autoRefreshGPUs', true)) {
+            this._refreshTimer = setInterval(() => this.refresh(), 30000);
+        }
+    }
+    refresh() {
+        this._loading = true;
+        this._error = undefined;
+        this._onDidChangeTreeData.fire();
+        dc1Client_1.dc1.getAvailableProviders()
+            .then(({ providers }) => {
+            this._providers = providers;
+            this._loading = false;
+            this._onDidChangeTreeData.fire();
+        })
+            .catch((err) => {
+            this._loading = false;
+            this._error = err instanceof Error ? err.message : String(err);
+            this._onDidChangeTreeData.fire();
+        });
+    }
+    getTreeItem(element) {
+        return element;
+    }
+    getChildren(element) {
+        if (!element) {
+            // Root — return provider nodes
+            if (this._loading) {
+                const loading = new vscode.TreeItem('Loading GPUs…');
+                loading.iconPath = new vscode.ThemeIcon('loading~spin');
+                return [loading];
+            }
+            if (this._error) {
+                const err = new vscode.TreeItem(`Error: ${this._error}`);
+                err.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
+                return [err];
+            }
+            if (this._providers.length === 0) {
+                const empty = new vscode.TreeItem('No GPUs online right now');
+                empty.iconPath = new vscode.ThemeIcon('info');
+                return [empty];
+            }
+            return this._providers.map((p) => new GPUNode(p));
+        }
+        // Children of a GPU node — spec details
+        if (element instanceof GPUNode) {
+            const p = element.provider;
+            const items = [];
+            if (p.vram_gb) {
+                items.push(new SpecNode('VRAM', `${p.vram_gb} GB`, 'chip'));
+            }
+            if (p.gpu_count > 1) {
+                items.push(new SpecNode('GPU Count', `${p.gpu_count}`, 'server'));
+            }
+            if (p.cuda_version) {
+                items.push(new SpecNode('CUDA', p.cuda_version, 'versions'));
+            }
+            if (p.compute_capability) {
+                items.push(new SpecNode('Compute CC', p.compute_capability, 'settings-gear'));
+            }
+            if (p.driver_version) {
+                items.push(new SpecNode('Driver', p.driver_version, 'package'));
+            }
+            if (p.location) {
+                items.push(new SpecNode('Location', p.location, 'globe'));
+            }
+            if (p.reliability_score !== null) {
+                items.push(new SpecNode('Reliability', `${p.reliability_score}%`, 'pulse'));
+            }
+            if (p.cached_models.length > 0) {
+                const modelsNode = new vscode.TreeItem('Cached Models', vscode.TreeItemCollapsibleState.None);
+                modelsNode.description = p.cached_models.slice(0, 3).join(', ') + (p.cached_models.length > 3 ? '…' : '');
+                modelsNode.iconPath = new vscode.ThemeIcon('database');
+                items.push(modelsNode);
+            }
+            const submitBtn = new vscode.TreeItem('Submit Job on This GPU');
+            submitBtn.iconPath = new vscode.ThemeIcon('play');
+            submitBtn.command = {
+                command: 'dc1.submitJobOnProvider',
+                title: 'Submit Job',
+                arguments: [element.provider],
+            };
+            items.push(submitBtn);
+            return items;
+        }
+        return [];
+    }
+    /** Get the list of providers (for use in job submit panel) */
+    getProviders() {
+        return this._providers;
+    }
+    dispose() {
+        if (this._refreshTimer) {
+            clearInterval(this._refreshTimer);
+        }
+        this._onDidChangeTreeData.dispose();
+    }
+}
+exports.GPUTreeProvider = GPUTreeProvider;
+
+
+/***/ }),
+
+/***/ "./src/providers/JobsTreeProvider.ts":
+/*!*******************************************!*\
+  !*** ./src/providers/JobsTreeProvider.ts ***!
+  \*******************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.JobsTreeProvider = exports.JobNode = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+const STATUS_ICONS = {
+    completed: { icon: 'check', color: 'testing.iconPassed' },
+    running: { icon: 'sync~spin', color: 'charts.blue' },
+    pending: { icon: 'clock', color: 'charts.yellow' },
+    queued: { icon: 'list-ordered', color: 'charts.yellow' },
+    failed: { icon: 'error', color: 'testing.iconFailed' },
+    cancelled: { icon: 'circle-slash', color: 'disabledForeground' },
+};
+class JobNode extends vscode.TreeItem {
+    constructor(job) {
+        const label = `${job.job_type.replace(/_/g, ' ')} — ${job.job_id.slice(0, 8)}`;
+        super(label, vscode.TreeItemCollapsibleState.None);
+        this.job = job;
+        const iconCfg = STATUS_ICONS[job.status] ?? { icon: 'question', color: undefined };
+        this.iconPath = new vscode.ThemeIcon(iconCfg.icon, iconCfg.color ? new vscode.ThemeColor(iconCfg.color) : undefined);
+        this.description = job.status;
+        this.contextValue = job.status === 'running' || job.status === 'pending' ? 'job_running' : 'job';
+        this.id = `job-${job.job_id}`;
+        this.tooltip = this.buildTooltip();
+        // Click to view logs
+        this.command = {
+            command: 'dc1.viewJobLogs',
+            title: 'View Job Logs',
+            arguments: [job],
+        };
+    }
+    buildTooltip() {
+        const j = this.job;
+        const md = new vscode.MarkdownString();
+        md.appendMarkdown(`**Job ${j.job_id}**\n\n`);
+        md.appendMarkdown(`- Type: \`${j.job_type}\`\n`);
+        md.appendMarkdown(`- Status: **${j.status}**\n`);
+        if (j.progress_phase) {
+            md.appendMarkdown(`- Phase: ${j.progress_phase}\n`);
+        }
+        if (j.submitted_at) {
+            md.appendMarkdown(`- Submitted: ${new Date(j.submitted_at).toLocaleString()}\n`);
+        }
+        if (j.started_at) {
+            md.appendMarkdown(`- Started: ${new Date(j.started_at).toLocaleString()}\n`);
+        }
+        if (j.completed_at) {
+            md.appendMarkdown(`- Completed: ${new Date(j.completed_at).toLocaleString()}\n`);
+        }
+        if (j.cost_halala || j.actual_cost_halala) {
+            const halala = j.actual_cost_halala || j.cost_halala || 0;
+            md.appendMarkdown(`- Cost: ${(halala / 100).toFixed(2)} SAR\n`);
+        }
+        return md;
+    }
+}
+exports.JobNode = JobNode;
+class JobsTreeProvider {
+    constructor(auth) {
+        this.auth = auth;
+        this._jobs = [];
+        this._loading = false;
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        auth.onDidChangeKey(() => {
+            this._jobs = [];
+            this.refresh();
+        });
+        this.refresh();
+        this.startPolling();
+    }
+    startPolling() {
+        const cfg = vscode.workspace.getConfiguration('dc1');
+        const interval = cfg.get('pollIntervalSeconds', 10) * 1000;
+        this._pollTimer = setInterval(() => {
+            if (this.auth.isAuthenticated) {
+                this.refresh();
+            }
+        }, interval);
+    }
+    refresh() {
+        const key = this.auth.apiKey;
+        if (!key) {
+            this._jobs = [];
+            this._onDidChangeTreeData.fire();
+            return;
+        }
+        this._loading = true;
+        this._error = undefined;
+        this._onDidChangeTreeData.fire();
+        dc1Client_1.dc1.getMyJobs(key)
+            .then((jobs) => {
+            this._jobs = jobs;
+            this._loading = false;
+            this._onDidChangeTreeData.fire();
+        })
+            .catch((err) => {
+            this._loading = false;
+            this._error = err instanceof Error ? err.message : String(err);
+            this._onDidChangeTreeData.fire();
+        });
+    }
+    getTreeItem(element) {
+        return element;
+    }
+    getChildren(element) {
+        if (element) {
+            return [];
+        }
+        if (!this.auth.isAuthenticated) {
+            const node = new vscode.TreeItem('Set API key to see your jobs');
+            node.iconPath = new vscode.ThemeIcon('key');
+            node.command = { command: 'dc1.setup', title: 'Set API Key' };
+            return [node];
+        }
+        if (this._loading) {
+            const node = new vscode.TreeItem('Loading jobs…');
+            node.iconPath = new vscode.ThemeIcon('loading~spin');
+            return [node];
+        }
+        if (this._error) {
+            const node = new vscode.TreeItem(`Error: ${this._error}`);
+            node.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
+            return [node];
+        }
+        if (this._jobs.length === 0) {
+            const node = new vscode.TreeItem('No jobs yet — submit one!');
+            node.iconPath = new vscode.ThemeIcon('info');
+            return [node];
+        }
+        return this._jobs.map((j) => new JobNode(j));
+    }
+    getJobs() {
+        return this._jobs;
+    }
+    dispose() {
+        if (this._pollTimer) {
+            clearInterval(this._pollTimer);
+        }
+        this._onDidChangeTreeData.dispose();
+    }
+}
+exports.JobsTreeProvider = JobsTreeProvider;
+
+
+/***/ }),
+
+/***/ "./src/providers/ProviderStatusTreeProvider.ts":
+/*!*****************************************************!*\
+  !*** ./src/providers/ProviderStatusTreeProvider.ts ***!
+  \*****************************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ProviderStatusTreeProvider = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+/** A single status row in the DC1 Provider sidebar */
+class StatusItem extends vscode.TreeItem {
+    constructor(label, value, icon, color) {
+        super(`${label}: ${value}`, vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon(icon, color ? new vscode.ThemeColor(color) : undefined);
+        this.contextValue = 'statusItem';
+    }
+}
+/** Formats a heartbeat timestamp as a human-readable "X min ago" string */
+function timeAgo(isoString) {
+    if (!isoString) {
+        return 'never';
+    }
+    const diffMs = Date.now() - new Date(isoString).getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) {
+        return `${diffSec}s ago`;
+    }
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) {
+        return `${diffMin}m ago`;
+    }
+    return `${Math.floor(diffMin / 60)}h ago`;
+}
+class ProviderStatusTreeProvider {
+    constructor(auth) {
+        this.auth = auth;
+        this._loading = false;
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        // Refresh when provider key changes
+        auth.onDidChangeProviderKey(() => {
+            this._info = undefined;
+            this._error = undefined;
+            this.refresh();
+        });
+        this.refresh();
+        this.startAutoRefresh();
+    }
+    startAutoRefresh() {
+        // Auto-refresh every 60s
+        this._refreshTimer = setInterval(() => {
+            if (this.auth.isProviderAuthenticated) {
+                this.refresh();
+            }
+        }, 60000);
+    }
+    refresh() {
+        const key = this.auth.providerKey;
+        if (!key) {
+            this._info = undefined;
+            this._error = undefined;
+            this._onDidChangeTreeData.fire();
+            return;
+        }
+        this._loading = true;
+        this._error = undefined;
+        this._onDidChangeTreeData.fire();
+        dc1Client_1.dc1.getProviderInfo(key)
+            .then((info) => {
+            this._info = info;
+            this._loading = false;
+            this._onDidChangeTreeData.fire();
+        })
+            .catch((err) => {
+            this._loading = false;
+            this._error = err instanceof Error ? err.message : String(err);
+            this._onDidChangeTreeData.fire();
+        });
+    }
+    getTreeItem(element) {
+        return element;
+    }
+    getChildren(element) {
+        if (element) {
+            return [];
+        }
+        if (!this.auth.isProviderAuthenticated) {
+            const node = new vscode.TreeItem('Set your DC1 Provider API key');
+            node.iconPath = new vscode.ThemeIcon('key');
+            node.command = { command: 'dc1.setProviderKey', title: 'Set Provider API Key' };
+            return [node];
+        }
+        if (this._loading) {
+            const node = new vscode.TreeItem('Loading provider status…');
+            node.iconPath = new vscode.ThemeIcon('loading~spin');
+            return [node];
+        }
+        if (this._error) {
+            const items = [];
+            const errNode = new vscode.TreeItem('VPS offline — last known data');
+            errNode.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
+            items.push(errNode);
+            // If we have cached data, still show it
+            if (this._info) {
+                items.push(...this.buildStatusItems(this._info));
+            }
+            return items;
+        }
+        if (!this._info) {
+            const node = new vscode.TreeItem('No provider data yet');
+            node.iconPath = new vscode.ThemeIcon('info');
+            return [node];
+        }
+        return this.buildStatusItems(this._info);
+    }
+    buildStatusItems(info) {
+        const items = [];
+        // Online status
+        const onlineLabel = info.is_live ? '🟢 Online' : '🔴 Offline';
+        const onlineIcon = info.is_live ? 'circle-filled' : 'circle-outline';
+        const onlineColor = info.is_live ? 'testing.iconPassed' : 'testing.iconFailed';
+        const onlineNode = new vscode.TreeItem(onlineLabel, vscode.TreeItemCollapsibleState.None);
+        onlineNode.iconPath = new vscode.ThemeIcon(onlineIcon, new vscode.ThemeColor(onlineColor));
+        onlineNode.contextValue = 'statusItem';
+        items.push(onlineNode);
+        // GPU Model
+        items.push(new StatusItem('GPU', info.gpu_model || 'Unknown', 'chip'));
+        // VRAM
+        const vramLabel = info.vram_gb != null ? `${info.vram_gb} GB` : 'Unknown';
+        items.push(new StatusItem('VRAM', vramLabel, 'database'));
+        // Jobs Completed
+        items.push(new StatusItem('Jobs Completed', String(info.total_jobs), 'check-all'));
+        // Earnings
+        const totalSar = (info.total_earnings_halala / 100).toFixed(2);
+        const todaySar = (info.today_earnings_halala / 100).toFixed(2);
+        items.push(new StatusItem('Earnings (total)', `${totalSar} SAR`, 'credit-card'));
+        items.push(new StatusItem('Earnings (today)', `${todaySar} SAR`, 'trending-up'));
+        // Last Heartbeat
+        items.push(new StatusItem('Last Heartbeat', timeAgo(info.last_heartbeat), 'pulse'));
+        return items;
+    }
+    /** Returns last known provider info (may be stale) */
+    getProviderInfo() {
+        return this._info;
+    }
+    dispose() {
+        if (this._refreshTimer) {
+            clearInterval(this._refreshTimer);
+        }
+        this._onDidChangeTreeData.dispose();
+    }
+}
+exports.ProviderStatusTreeProvider = ProviderStatusTreeProvider;
+
+
+/***/ }),
+
+/***/ "vscode":
+/*!*************************!*\
+  !*** external "vscode" ***!
+  \*************************/
+/***/ ((module) => {
+
+module.exports = require("vscode");
+
+/***/ }),
+
+/***/ "http":
+/*!***********************!*\
+  !*** external "http" ***!
+  \***********************/
+/***/ ((module) => {
+
+module.exports = require("http");
+
+/***/ }),
+
+/***/ "https":
+/*!************************!*\
+  !*** external "https" ***!
+  \************************/
+/***/ ((module) => {
+
+module.exports = require("https");
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		__webpack_modules__[moduleId].call(module.exports, module, module.exports, __webpack_require__);
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/************************************************************************/
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = __webpack_require__("./src/extension.ts");
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
+/******/ })()
+;
+//# sourceMappingURL=extension.js.map

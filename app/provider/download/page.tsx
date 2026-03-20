@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 
-const DAEMON_VERSION = 'v3.4.0'
+const DAEMON_VERSION = 'v3.3.0'
 
 type OS = 'windows' | 'linux' | 'macos'
 
@@ -23,7 +23,7 @@ const OS_CARDS: {
     icon: '⊞',
     downloadType: 'exe',
     primaryLabel: 'Download Installer (.exe)',
-    primaryAction: '/api/dc1/providers/daemon/windows',
+    primaryAction: '/api/dc1/providers/download-windows-exe',
   },
   {
     id: 'linux',

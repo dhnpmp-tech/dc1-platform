@@ -42,16 +42,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── Provider status bar ───────────────────────────────────────────
   const providerStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
   providerStatusBar.command = 'dc1.setProviderKey';
-  providerStatusBar.tooltip = 'DC1 Provider — click to configure API key';
+  providerStatusBar.tooltip = 'DCP Provider — click to configure API key';
   context.subscriptions.push(providerStatusBar);
 
   function updateProviderStatusBar(): void {
     if (auth.isProviderAuthenticated) {
-      providerStatusBar.text = '$(server) DC1 Provider ✅';
-      providerStatusBar.tooltip = 'DC1 Provider connected — click to change key';
+      providerStatusBar.text = '$(server) DCP Provider ✅';
+      providerStatusBar.tooltip = 'DCP Provider connected — click to change key';
     } else {
-      providerStatusBar.text = '$(server) DC1 Provider ❌';
-      providerStatusBar.tooltip = 'DC1 Provider — not configured. Click to set API key.';
+      providerStatusBar.text = '$(server) DCP Provider ❌';
+      providerStatusBar.tooltip = 'DCP Provider — not configured. Click to set API key.';
     }
     providerStatusBar.show();
   }
@@ -62,26 +62,27 @@ export function activate(context: vscode.ExtensionContext): void {
     providerStatusProvider.refresh();
   });
 
-  // ── Renter status bar ─────────────────────────────────────────────
+  // ── Renter budget status bar ──────────────────────────────────────
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.command = 'dc1.openWallet';
-  statusBarItem.tooltip = 'DC1 Wallet Balance — click to open';
+  statusBarItem.command = 'dc1.openBillingPage';
+  statusBarItem.tooltip = 'DCP Wallet Balance — click to view billing';
   context.subscriptions.push(statusBarItem);
 
   async function updateStatusBar(): Promise<void> {
     const key = auth.apiKey;
     if (!key) {
-      statusBarItem.text = '$(credit-card) DC1 — Not connected';
+      statusBarItem.text = 'DCP: — SAR';
       statusBarItem.show();
       return;
     }
     try {
       const info = await dc1.getRenterInfo(key);
       const sar = (info.balance_halala / 100).toFixed(2);
-      statusBarItem.text = `$(credit-card) DC1 ${sar} SAR`;
+      statusBarItem.text = `DCP: ${sar} SAR`;
+      statusBarItem.tooltip = `DCP Wallet: ${sar} SAR — click to view billing`;
       statusBarItem.show();
     } catch {
-      statusBarItem.text = '$(credit-card) DC1';
+      statusBarItem.text = 'DCP: — SAR';
       statusBarItem.show();
     }
   }
@@ -96,9 +97,17 @@ export function activate(context: vscode.ExtensionContext): void {
   auth.onDidChangeKey(() => updateStatusBar());
   statusBarItem.show();
 
-  // Output channel for job logs
-  const outputChannel = vscode.window.createOutputChannel('DC1 Job Logs', { log: true });
-  context.subscriptions.push(outputChannel);
+  // Per-job output channels (keyed by job_id)
+  const jobChannels = new Map<string, vscode.OutputChannel>();
+
+  function getOrCreateJobChannel(jobId: string): vscode.OutputChannel {
+    if (!jobChannels.has(jobId)) {
+      const ch = vscode.window.createOutputChannel(`DCP Job #${jobId}`);
+      context.subscriptions.push(ch);
+      jobChannels.set(jobId, ch);
+    }
+    return jobChannels.get(jobId)!;
+  }
 
   // ── Commands ──────────────────────────────────────────────────────
 
@@ -115,14 +124,14 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.clearProviderKey', async () => {
       const confirm = await vscode.window.showWarningMessage(
-        'Clear DC1 Provider API key?',
+        'Clear DCP Provider API key?',
         { modal: true },
         'Clear'
       );
       if (confirm !== 'Clear') { return; }
       await auth.clearProviderKey();
       updateProviderStatusBar();
-      vscode.window.showInformationMessage('DC1: Provider API key cleared.');
+      vscode.window.showInformationMessage('DCP: Provider API key cleared.');
     })
   );
 
@@ -178,7 +187,14 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // dc1.viewJobLogs — stream job logs to output channel
+  // dc1.openBillingPage — open DCP billing page in browser
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.openBillingPage', () => {
+      vscode.env.openExternal(vscode.Uri.parse('https://dcp.sa/renter/billing'));
+    })
+  );
+
+  // dc1.viewJobLogs — stream job logs to per-job output channel
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.viewJobLogs', async (jobOrNode: Job | JobNode) => {
       const key = await auth.ensureKey();
@@ -187,63 +203,106 @@ export function activate(context: vscode.ExtensionContext): void {
       const job = jobOrNode instanceof JobNode ? jobOrNode.job : jobOrNode;
       const jobId = job.job_id;
 
-      outputChannel.show(true);
-      outputChannel.appendLine(`\n${'─'.repeat(60)}`);
-      outputChannel.appendLine(`DC1 Job: ${jobId}  |  Type: ${job.job_type}  |  Status: ${job.status}`);
-      outputChannel.appendLine(`${'─'.repeat(60)}`);
+      const ch = getOrCreateJobChannel(jobId);
+      ch.show(true);
+      ch.appendLine(`${'─'.repeat(60)}`);
+      ch.appendLine(`DCP Job #${jobId}  |  Type: ${job.job_type}  |  Status: ${job.status}`);
+      ch.appendLine(`${'─'.repeat(60)}`);
 
       if (job.status === 'completed') {
-        // Fetch output
         try {
           const output = await dc1.getJobOutput(key, jobId);
           if (output.result) {
-            outputChannel.appendLine(output.result);
+            ch.appendLine(output.result);
           } else {
-            outputChannel.appendLine(`Status: ${output.status}`);
-            if (output.message) { outputChannel.appendLine(output.message); }
+            ch.appendLine(`Status: ${output.status}`);
+            if (output.message) { ch.appendLine(output.message); }
           }
         } catch (err) {
-          outputChannel.appendLine(`Error fetching output: ${err instanceof Error ? err.message : String(err)}`);
+          ch.appendLine(`Error fetching output: ${err instanceof Error ? err.message : String(err)}`);
         }
         return;
       }
 
-      // For running jobs, poll logs
       if (job.status === 'running' || job.status === 'pending' || job.status === 'queued') {
-        outputChannel.appendLine(`Job is ${job.status}. Polling for output…`);
+        ch.appendLine(`Job is ${job.status}. Attempting live log stream…`);
 
-        const pollInterval = setInterval(async () => {
-          try {
-            const output = await dc1.getJobOutput(key, jobId);
-            if (output.status === 'completed') {
-              clearInterval(pollInterval);
+        // Capture narrowed key for use in closures
+        const streamKey = key;
+
+        // Try SSE streaming first; fall back to polling if stream errors immediately
+        let sseConnected = false;
+        let sseDispose: (() => void) | null = null;
+
+        sseDispose = dc1.streamJobLogs(
+          streamKey,
+          jobId,
+          (line) => {
+            sseConnected = true;
+            ch.appendLine(line);
+          },
+          () => {
+            // Stream ended — fetch final output
+            ch.appendLine('\n--- Stream closed. Fetching final output… ---');
+            dc1.getJobOutput(streamKey, jobId).then((output) => {
               if (output.result) {
-                outputChannel.appendLine('\n--- RESULT ---');
-                outputChannel.appendLine(output.result);
+                ch.appendLine(output.result);
               }
-              outputChannel.appendLine('\n✅ Job completed.');
+              const icon = output.status === 'completed' ? '✅' : '❌';
+              ch.appendLine(`\n${icon} Job ${output.status}.`);
               jobsProvider.refresh();
               updateStatusBar();
-            } else if (output.status === 'failed' || output.status === 'cancelled') {
-              clearInterval(pollInterval);
-              outputChannel.appendLine(`\n❌ Job ${output.status}: ${output.message ?? ''}`);
-              jobsProvider.refresh();
+            }).catch(() => {
+              ch.appendLine('Could not fetch final output.');
+            });
+          },
+          (err) => {
+            if (!sseConnected) {
+              // SSE not available — fall back to polling
+              ch.appendLine(`Log stream unavailable (${err.message}). Falling back to polling…`);
+              startPolling();
             } else {
-              if (output.progress_phase) {
-                outputChannel.appendLine(`Phase: ${output.progress_phase}`);
-              }
+              ch.appendLine(`Stream error: ${err.message}`);
             }
-          } catch {
-            clearInterval(pollInterval);
-            outputChannel.appendLine('Polling stopped due to error.');
           }
-        }, vscode.workspace.getConfiguration('dc1').get('pollIntervalSeconds', 10) * 1000);
+        );
 
-        context.subscriptions.push({ dispose: () => clearInterval(pollInterval) });
+        context.subscriptions.push({ dispose: () => sseDispose?.() });
+
+        function startPolling(): void {
+          const pollInterval = setInterval(async () => {
+            try {
+              const output = await dc1.getJobOutput(streamKey, jobId);
+              if (output.status === 'completed') {
+                clearInterval(pollInterval);
+                if (output.result) {
+                  ch.appendLine('\n--- RESULT ---');
+                  ch.appendLine(output.result);
+                }
+                ch.appendLine('\n✅ Job completed.');
+                jobsProvider.refresh();
+                updateStatusBar();
+              } else if (output.status === 'failed' || output.status === 'cancelled') {
+                clearInterval(pollInterval);
+                ch.appendLine(`\n❌ Job ${output.status}: ${output.message ?? ''}`);
+                jobsProvider.refresh();
+              } else {
+                if (output.progress_phase) {
+                  ch.appendLine(`Phase: ${output.progress_phase}`);
+                }
+              }
+            } catch {
+              clearInterval(pollInterval);
+              ch.appendLine('Polling stopped due to error.');
+            }
+          }, vscode.workspace.getConfiguration('dc1').get('pollIntervalSeconds', 10) * 1000);
+          context.subscriptions.push({ dispose: () => clearInterval(pollInterval) });
+        }
+
         return;
       }
 
-      outputChannel.appendLine(`Job status: ${job.status}. No logs available.`);
+      ch.appendLine(`Job status: ${job.status}. No logs available.`);
     })
   );
 
@@ -263,10 +322,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
       try {
         await dc1.cancelJob(key, job.job_id);
-        vscode.window.showInformationMessage(`DC1: Job ${job.job_id} cancelled.`);
+        vscode.window.showInformationMessage(`DCP: Job ${job.job_id} cancelled.`);
         jobsProvider.refresh();
       } catch (err) {
-        vscode.window.showErrorMessage(`DC1: Cancel failed — ${err instanceof Error ? err.message : String(err)}`);
+        vscode.window.showErrorMessage(`DCP: Cancel failed — ${err instanceof Error ? err.message : String(err)}`);
       }
     })
   );

@@ -1,5 +1,5 @@
 # =============================================================================
-# DC1 Provider Daemon — Setup Helper v2.2
+# DCP Provider Daemon — Setup Helper v2.3
 # Called by the NSIS installer with user selections from the GUI pages.
 # Bundles daemon v3.2.0 with watchdog, auto-update, event logging.
 # =============================================================================
@@ -8,7 +8,7 @@ param(
     [string]$RunMode = "always-on",
     [string]$ScheduledStart = "23:00",
     [string]$ScheduledEnd = "07:00",
-    [string]$ApiUrl = "$($env:DC1_API_URL ?? 'https://api.dcp.sa')",
+    [string]$ApiUrl = "$(if ($env:DCP_API_URL) { $env:DCP_API_URL } elseif ($env:DC1_API_URL) { $env:DC1_API_URL } else { 'https://api.dcp.sa' })",
     [string]$InstallDir = "$env:LOCALAPPDATA\dc1-provider",
     [string]$GpuName = "unknown",
     [string]$GpuVram = "0"
@@ -29,7 +29,7 @@ function Log {
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 Log "============================================="
-Log "  DC1 Provider Setup Helper v3.3.0"
+Log "  DCP Provider Setup Helper v3.3.0"
 Log "  Daemon version: 3.3.0"
 Log "============================================="
 Log "ApiKey:     $($ApiKey.Substring(0, [Math]::Min(20, $ApiKey.Length)))..."
@@ -42,7 +42,7 @@ Log ""
 # ---------------------------------------------------------------------------
 # Step 1: Validate API Key with the server
 # ---------------------------------------------------------------------------
-Log "[1/8] Validating API key with DC1 server..."
+Log "[1/8] Validating API key with DCP server..."
 try {
     $statusUrl = "$ApiUrl/api/providers/heartbeat"
     $testBody = @{
@@ -68,7 +68,7 @@ try {
         Log "  Server response: $errMsg"
         exit 2
     } elseif ($errMsg -match "Unable to connect|timeout|network") {
-        Log "  WARNING: Could not reach DC1 server at $ApiUrl"
+        Log "  WARNING: Could not reach DCP server at $ApiUrl"
         Log "  Error: $errMsg"
         Log "  Continuing with offline install — daemon will retry when online."
     } else {
@@ -212,20 +212,37 @@ if ($LASTEXITCODE -ne 0) {
 Log "  requests package installed."
 
 # ---------------------------------------------------------------------------
-# Step 5: Deploy dc1_daemon.py with API key baked in
+# Step 5: Download latest dc1_daemon.py from API (fallback to bundled template)
 # ---------------------------------------------------------------------------
-Log "[5/8] Deploying daemon script..."
-$templatePath = Join-Path $InstallDir "dc1_daemon.py"
-if (Test-Path $templatePath) {
-    $daemonContent = Get-Content $templatePath -Raw
-    $daemonContent = $daemonContent -replace '\{\{API_KEY\}\}', $ApiKey
-    $daemonContent = $daemonContent -replace '\{\{API_URL\}\}', $ApiUrl
-    Set-Content -Path $templatePath -Value $daemonContent -Encoding UTF8
-    Log "  dc1_daemon.py deployed with API key."
-} else {
-    Log "  WARNING: dc1_daemon.py template not found at $templatePath — generating inline."
-    Log "  NOTE: This is a minimal fallback daemon. The full v3.2.0 daemon should be bundled by the installer."
-    Log "  The daemon will auto-update itself to the full version on first update check."
+Log "[5/8] Fetching latest daemon from API..."
+$daemonPath = Join-Path $InstallDir "dc1_daemon.py"
+$daemonDownloadUrl = "$ApiUrl/api/providers/download/daemon?key=$ApiKey"
+$downloaded = $false
+
+try {
+    $ProgressPreference = 'SilentlyContinue'
+    Invoke-WebRequest -Uri $daemonDownloadUrl -OutFile $daemonPath -UseBasicParsing -TimeoutSec 30
+    if ((Test-Path $daemonPath) -and ((Get-Item $daemonPath).Length -gt 1024)) {
+        Log "  Downloaded daemon from API: $daemonDownloadUrl"
+        $downloaded = $true
+    } else {
+        Log "  WARNING: Downloaded daemon appears invalid (too small)."
+    }
+} catch {
+    Log "  WARNING: Failed to download daemon from API: $($_.Exception.Message)"
+}
+
+if (-not $downloaded) {
+    $bundledPath = Join-Path $InstallDir "dc1_daemon.py"
+    if (Test-Path $bundledPath) {
+        $daemonContent = Get-Content $bundledPath -Raw
+        $daemonContent = $daemonContent -replace '\{\{API_KEY\}\}', $ApiKey
+        $daemonContent = $daemonContent -replace '\{\{API_URL\}\}', $ApiUrl
+        Set-Content -Path $daemonPath -Value $daemonContent -Encoding UTF8
+        Log "  Using bundled daemon fallback from installer package."
+    } else {
+        Log "  WARNING: Bundled daemon not found. Generating minimal fallback daemon."
+        Log "  NOTE: Minimal fallback will auto-update when network is available."
     # Fallback: generate minimal daemon inline (will auto-update to full v3.2.0)
     $daemonPy = @"
 import requests, time, datetime, socket, subprocess, sys, platform
@@ -285,14 +302,15 @@ def send_heartbeat():
         return False
 
 if __name__ == "__main__":
-    print("DC1 Provider Daemon v" + DAEMON_VERSION + " starting...")
+    print("DCP Provider Daemon v" + DAEMON_VERSION + " starting...")
     send_heartbeat()
     while True:
         time.sleep(INTERVAL)
         send_heartbeat()
 "@
-    Set-Content -Path $templatePath -Value $daemonPy -Encoding UTF8
+    Set-Content -Path $daemonPath -Value $daemonPy -Encoding UTF8
     Log "  dc1_daemon.py generated inline."
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -319,7 +337,7 @@ Log "  config.json saved."
 # Step 7: Register scheduled task (mode-dependent)
 # ---------------------------------------------------------------------------
 Log "[7/8] Configuring run mode: $RunMode..."
-$taskName = "DC1ProviderDaemon"
+$taskName = "DCPProviderDaemon"
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
 $action = New-ScheduledTaskAction -Execute $pythonExe -Argument "$InstallDir\dc1_daemon.py" -WorkingDirectory $InstallDir
@@ -329,10 +347,10 @@ $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest 
 if ($RunMode -eq 'manual') {
     # Manual mode: no scheduled task — create start/stop scripts
     # v3.2.0: daemon runs as watchdog parent + worker child, so start normally (watchdog handles restarts)
-    $startScript = "@echo off`r`necho Starting DC1 Provider Daemon (v3.2.0 with auto-recovery)...`r`nstart /min `"DC1 Daemon`" `"$pythonExe`" `"$InstallDir\dc1_daemon.py`"`r`necho Done. Your GPU is now earning.`r`ntimeout /t 3"
+    $startScript = "@echo off`r`necho Starting DCP Provider Daemon (v3.2.0 with auto-recovery)...`r`nstart /min `"DCP Daemon`" `"$pythonExe`" `"$InstallDir\dc1_daemon.py`"`r`necho Done. Your GPU is now earning.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\start-dc1.bat" -Value $startScript -Encoding ASCII
     # v3.2.0: kill by command-line match to catch both watchdog and worker processes
-    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    $stopScript = "@echo off`r`necho Stopping DCP Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
     Log "  Manual mode — no auto-start task created."
     Log "  Start earning: double-click $InstallDir\start-dc1.bat"
@@ -346,7 +364,7 @@ if ($RunMode -eq 'manual') {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
     Log "  Scheduled mode — runs daily at $triggerTime (until $ScheduledEnd)."
     # Stop script for when user wakes up — kills both watchdog and worker processes
-    $stopScript = "@echo off`r`necho Stopping DC1 Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    $stopScript = "@echo off`r`necho Stopping DCP Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
     Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
 } else {
     # Always-on (default): start at every login
@@ -363,8 +381,8 @@ Log "[8/8] Final setup..."
 # Create dashboard shortcut
 $dashUrl = "$ApiUrl/provider?key=$ApiKey"
 $shortcutContent = "@echo off`r`nstart `"`" `"$dashUrl`""
-Set-Content -Path "$env:USERPROFILE\Desktop\DC1 - My Earnings.bat" -Value $shortcutContent -Encoding ASCII
-Log "  Desktop shortcut created: 'DC1 - My Earnings'"
+Set-Content -Path "$env:USERPROFILE\Desktop\DCP - My Earnings.bat" -Value $shortcutContent -Encoding ASCII
+Log "  Desktop shortcut created: 'DCP - My Earnings'"
 
 # Start daemon (unless manual mode)
 if ($RunMode -eq 'manual') {
@@ -405,7 +423,7 @@ if ($RunMode -eq 'manual') {
 
 Log ""
 Log "============================================="
-Log "  DC1 Setup Complete!"
+Log "  DCP Setup Complete!"
 Log "============================================="
 Log "  GPU:       $(if ($gpu.detected) { "$($gpu.name) ($($gpu.vram_mb) MB)" } else { "$GpuName ($GpuVram MB)" })"
 Log "  Mode:      $RunMode"

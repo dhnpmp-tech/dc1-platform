@@ -5,10 +5,7 @@ import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface RegistrationFormData {
   fullName: string
@@ -297,12 +294,12 @@ export default function ProviderRegisterPage() {
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
                       <code className="text-dc1-amber">
-                        curl -fsSL http://76.13.179.86:8083/api/providers/download/daemon?key={apiKey} -o dc1_daemon.py && python3 dc1_daemon.py
+                        curl -fsSL https://api.dcp.sa/api/providers/download/daemon?key={apiKey} -o dc1_daemon.py && python3 dc1_daemon.py
                       </code>
                       <button
                         onClick={() =>
                           copyToClipboard(
-                            `curl -fsSL http://76.13.179.86:8083/api/providers/download/daemon?key=${apiKey} -o dc1_daemon.py && python3 dc1_daemon.py`,
+                            `curl -fsSL https://api.dcp.sa/api/providers/download/daemon?key=${apiKey} -o dc1_daemon.py && python3 dc1_daemon.py`,
                             1
                           )
                         }
@@ -347,12 +344,12 @@ export default function ProviderRegisterPage() {
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
                       <code className="text-dc1-amber">
-                        irm http://76.13.179.86:8083/api/providers/download/setup?key={apiKey}&os=windows | iex
+                        irm https://api.dcp.sa/api/providers/download/setup?key={apiKey}&os=windows | iex
                       </code>
                       <button
                         onClick={() =>
                           copyToClipboard(
-                            `irm http://76.13.179.86:8083/api/providers/download/setup?key=${apiKey}&os=windows | iex`,
+                            `irm https://api.dcp.sa/api/providers/download/setup?key=${apiKey}&os=windows | iex`,
                             2
                           )
                         }

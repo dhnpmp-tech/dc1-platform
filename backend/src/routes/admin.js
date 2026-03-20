@@ -1,8 +1,11 @@
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 const db = require('../db');
 const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../services/notifications');
+const DB_PATH = process.env.DC1_DB_PATH || path.join(__dirname, '..', '..', 'data', 'providers.db');
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
 // Requires DC1_ADMIN_TOKEN env var.
@@ -61,6 +64,98 @@ function normalizeIdArray(value, { maxItems = 500 } = {}) {
   return ids.length > 0 ? ids : null;
 }
 
+function normalizeGpuModel(value) {
+  return normalizeString(value, { maxLen: 120 });
+}
+
+// === GET /api/admin/pricing - List GPU model prices ===
+router.get('/pricing', (req, res) => {
+  try {
+    const rows = db.all(
+      `SELECT id, gpu_model, rate_halala, updated_at
+       FROM gpu_pricing
+       ORDER BY LOWER(gpu_model) ASC`
+    );
+    res.json({ prices: rows });
+  } catch (error) {
+    console.error('Admin pricing list error:', error);
+    res.status(500).json({ error: 'Failed to fetch GPU pricing' });
+  }
+});
+
+// === POST /api/admin/pricing - Create price for a GPU model ===
+router.post('/pricing', (req, res) => {
+  try {
+    const gpuModel = normalizeGpuModel(req.body?.gpu_model);
+    const rateHalala = toFiniteInt(req.body?.rate_halala, { min: 100, max: 100000 });
+
+    if (!gpuModel) {
+      return res.status(400).json({ error: 'gpu_model is required' });
+    }
+    if (rateHalala == null) {
+      return res.status(400).json({ error: 'rate_halala must be an integer between 100 and 100000' });
+    }
+
+    const result = db.prepare(
+      `INSERT INTO gpu_pricing (gpu_model, rate_halala, updated_at)
+       VALUES (?, ?, CURRENT_TIMESTAMP)`
+    ).run(gpuModel, rateHalala);
+
+    const row = db.get(
+      `SELECT id, gpu_model, rate_halala, updated_at
+       FROM gpu_pricing
+       WHERE id = ?`,
+      result.lastInsertRowid
+    );
+
+    res.status(201).json({ success: true, price: row });
+  } catch (error) {
+    if (error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'Pricing for this gpu_model already exists. Use PATCH to update it.' });
+    }
+    console.error('Admin pricing create error:', error);
+    res.status(500).json({ error: 'Failed to create GPU pricing' });
+  }
+});
+
+// === PATCH /api/admin/pricing/:model - Update existing model price ===
+router.patch('/pricing/:model', (req, res) => {
+  try {
+    const modelParam = decodeURIComponent(req.params.model || '');
+    const gpuModel = normalizeGpuModel(modelParam);
+    const rateHalala = toFiniteInt(req.body?.rate_halala, { min: 100, max: 100000 });
+
+    if (!gpuModel) {
+      return res.status(400).json({ error: 'model path parameter is required' });
+    }
+    if (rateHalala == null) {
+      return res.status(400).json({ error: 'rate_halala must be an integer between 100 and 100000' });
+    }
+
+    const result = db.prepare(
+      `UPDATE gpu_pricing
+       SET rate_halala = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE gpu_model = ?`
+    ).run(rateHalala, gpuModel);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'GPU model pricing not found' });
+    }
+
+    const row = db.get(
+      `SELECT id, gpu_model, rate_halala, updated_at
+       FROM gpu_pricing
+       WHERE gpu_model = ?`,
+      gpuModel
+    );
+
+    res.json({ success: true, price: row });
+  } catch (error) {
+    console.error('Admin pricing update error:', error);
+    res.status(500).json({ error: 'Failed to update GPU pricing' });
+  }
+});
+
 // === GET /api/admin/providers - All providers (api_key intentionally excluded) ===
 router.get('/providers', (req, res) => {
   try {
@@ -79,6 +174,7 @@ router.get('/providers', (req, res) => {
     else if (statusFilter === 'offline') { where += ` AND last_heartbeat IS NOT NULL AND last_heartbeat <= datetime('now', '-5 minutes')`; }
     else if (statusFilter === 'registered') { where += ` AND last_heartbeat IS NULL`; }
     else if (statusFilter === 'suspended') { where += ` AND status = 'suspended'`; }
+    else if (statusFilter === 'pending_approval') { where += ` AND COALESCE(approval_status, 'pending') = 'pending'`; }
 
     const countRow = db.get(`SELECT COUNT(*) as total FROM providers WHERE ${where}`, ...wParams);
     const total = countRow?.total || 0;
@@ -95,7 +191,7 @@ router.get('/providers', (req, res) => {
               status, gpu_status, provider_ip, provider_hostname,
               last_heartbeat, gpu_name_detected, gpu_vram_mib, gpu_driver,
               gpu_compute, total_earnings, total_jobs, uptime_percent,
-              run_mode, is_paused, created_at, updated_at
+              run_mode, is_paused, approval_status, approved_at, rejected_reason, created_at, updated_at
        FROM providers WHERE ${where} ORDER BY
          CASE WHEN status = 'online' THEN 0 ELSE 1 END,
          last_heartbeat DESC, created_at DESC ${paginationSql}`,
@@ -126,6 +222,7 @@ router.get('/providers', (req, res) => {
       return {
         ...p,
         gpu_status: gpu_status_parsed,
+        approval_status: p.approval_status || 'pending',
         is_online: isOnline,
         minutes_since_heartbeat: minutesSinceHeartbeat !== null ? Math.round(minutesSinceHeartbeat) : null,
         status: isOnline ? 'online' : (p.last_heartbeat ? 'offline' : 'registered'),
@@ -138,6 +235,7 @@ router.get('/providers', (req, res) => {
       online: enriched.filter(p => p.is_online).length,
       offline: enriched.filter(p => !p.is_online && p.last_heartbeat).length,
       registered: enriched.filter(p => !p.last_heartbeat).length,
+      pending_approval: enriched.filter(p => (p.approval_status || 'pending') === 'pending').length,
       providers: enriched
     };
     if (page > 0) {
@@ -224,6 +322,134 @@ router.get('/dashboard', (req, res) => {
   } catch (error) {
     console.error('Admin dashboard error:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard' });
+  }
+});
+
+// === GET /api/admin/metrics - Operational system metrics ===
+router.get('/metrics', (req, res) => {
+  try {
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const oneHourAgoIso = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+    const oneDayAgoIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const fiveMinAgoIso = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+
+    const todayStart = new Date(now);
+    todayStart.setUTCHours(0, 0, 0, 0);
+
+    const weekStart = new Date(now);
+    const dayOfWeek = weekStart.getUTCDay(); // 0=Sun
+    const daysSinceMonday = (dayOfWeek + 6) % 7;
+    weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMonday);
+    weekStart.setUTCHours(0, 0, 0, 0);
+
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+
+    const pendingJobs = db.get(`SELECT COUNT(*) as count FROM jobs WHERE status = 'pending'`);
+    const runningJobs = db.get(`SELECT COUNT(*) as count FROM jobs WHERE status IN ('running', 'queued')`);
+    const failedLast1h = db.get(
+      `SELECT COUNT(*) as count
+       FROM jobs
+       WHERE status = 'failed'
+         AND COALESCE(completed_at, updated_at, created_at, submitted_at) >= ?`,
+      oneHourAgoIso
+    );
+    const avgWaitRow = db.get(
+      `SELECT AVG((julianday(started_at) - julianday(submitted_at)) * 86400.0) as avg_wait_seconds
+       FROM jobs
+       WHERE started_at IS NOT NULL
+         AND submitted_at IS NOT NULL
+         AND submitted_at >= ?`,
+      oneDayAgoIso
+    );
+
+    const onlineProviders = db.get('SELECT COUNT(*) as count FROM providers WHERE last_heartbeat > ?', fiveMinAgoIso);
+    const totalProviders = db.get('SELECT COUNT(*) as count FROM providers');
+    const pendingApproval = db.get(
+      `SELECT COUNT(*) as count
+       FROM providers
+       WHERE COALESCE(approval_status, 'pending') = 'pending'`
+    );
+    const heartbeatAge = db.get(
+      `SELECT AVG((julianday(?) - julianday(last_heartbeat)) * 86400.0) as avg_age_seconds
+       FROM providers
+       WHERE last_heartbeat IS NOT NULL`,
+      nowIso
+    );
+
+    const totalRenters = db.get('SELECT COUNT(*) as count FROM renters');
+    const activeRenters24h = db.get(
+      `SELECT COUNT(*) as count
+       FROM renters
+       WHERE COALESCE(updated_at, created_at) >= ?`,
+      oneDayAgoIso
+    );
+    const totalRenterBalance = db.get(
+      `SELECT COALESCE(SUM(balance_halala), 0) as total_balance_halala
+       FROM renters`
+    );
+
+    const todayRevenue = db.get(
+      `SELECT COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0) as total
+       FROM jobs
+       WHERE status = 'completed'
+         AND COALESCE(completed_at, updated_at, created_at) >= ?`,
+      todayStart.toISOString()
+    );
+    const weekRevenue = db.get(
+      `SELECT COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0) as total
+       FROM jobs
+       WHERE status = 'completed'
+         AND COALESCE(completed_at, updated_at, created_at) >= ?`,
+      weekStart.toISOString()
+    );
+    const monthRevenue = db.get(
+      `SELECT COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0) as total
+       FROM jobs
+       WHERE status = 'completed'
+         AND COALESCE(completed_at, updated_at, created_at) >= ?`,
+      monthStart.toISOString()
+    );
+
+    let dbSizeBytes = 0;
+    try {
+      dbSizeBytes = fs.statSync(DB_PATH).size;
+    } catch (_) {
+      dbSizeBytes = 0;
+    }
+
+    res.json({
+      queue: {
+        pending_jobs: pendingJobs?.count || 0,
+        running_jobs: runningJobs?.count || 0,
+        failed_last_1h: failedLast1h?.count || 0,
+        avg_wait_seconds: Math.max(0, Math.round(avgWaitRow?.avg_wait_seconds || 0)),
+      },
+      providers: {
+        online: onlineProviders?.count || 0,
+        total_registered: totalProviders?.count || 0,
+        pending_approval: pendingApproval?.count || 0,
+        avg_heartbeat_age_seconds: Math.max(0, Math.round(heartbeatAge?.avg_age_seconds || 0)),
+      },
+      renters: {
+        total_registered: totalRenters?.count || 0,
+        active_last_24h: activeRenters24h?.count || 0,
+        total_balance_halala: totalRenterBalance?.total_balance_halala || 0,
+      },
+      revenue: {
+        today_halala: todayRevenue?.total || 0,
+        this_week_halala: weekRevenue?.total || 0,
+        this_month_halala: monthRevenue?.total || 0,
+      },
+      system: {
+        uptime_seconds: Math.round(process.uptime()),
+        db_size_bytes: dbSizeBytes,
+        node_version: process.version,
+      },
+    });
+  } catch (error) {
+    console.error('Admin metrics error:', error);
+    res.status(500).json({ error: 'Failed to fetch admin metrics' });
   }
 });
 
@@ -654,6 +880,69 @@ router.get('/renters/:id', (req, res) => {
 });
 
 // ============================================================================
+// PATCH /api/admin/providers/:id/approve - Approve provider
+// ============================================================================
+router.patch('/providers/:id/approve', (req, res) => {
+  try {
+    const provider = db.get('SELECT id, name, approval_status FROM providers WHERE id = ?', req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE providers
+       SET approval_status = 'approved',
+           approved_at = ?,
+           rejected_reason = NULL,
+           updated_at = ?
+       WHERE id = ?`
+    ).run(now, now, req.params.id);
+
+    try {
+      db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)')
+        .run('provider_approved', 'provider', provider.id, `Approved provider "${provider.name}"`, now);
+    } catch (e) {}
+
+    res.json({ success: true, provider_id: provider.id, approval_status: 'approved', approved_at: now });
+  } catch (error) {
+    console.error('Approve provider error:', error);
+    res.status(500).json({ error: 'Failed to approve provider' });
+  }
+});
+
+// ============================================================================
+// PATCH /api/admin/providers/:id/reject - Reject provider
+// ============================================================================
+router.patch('/providers/:id/reject', (req, res) => {
+  try {
+    const reason = normalizeString(req.body?.reason, { maxLen: 400 });
+    if (!reason) return res.status(400).json({ error: 'Rejection reason is required' });
+
+    const provider = db.get('SELECT id, name FROM providers WHERE id = ?', req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE providers
+       SET approval_status = 'rejected',
+           rejected_reason = ?,
+           approved_at = NULL,
+           updated_at = ?
+       WHERE id = ?`
+    ).run(reason, now, req.params.id);
+
+    try {
+      db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)')
+        .run('provider_rejected', 'provider', provider.id, `Rejected provider "${provider.name}": ${reason}`, now);
+    } catch (e) {}
+
+    res.json({ success: true, provider_id: provider.id, approval_status: 'rejected', rejected_reason: reason });
+  } catch (error) {
+    console.error('Reject provider error:', error);
+    res.status(500).json({ error: 'Failed to reject provider' });
+  }
+});
+
+// ============================================================================
 // POST /api/admin/providers/:id/suspend - Suspend provider
 // ============================================================================
 router.post('/providers/:id/suspend', (req, res) => {
@@ -678,8 +967,8 @@ router.post('/providers/:id/unsuspend', (req, res) => {
     const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', req.params.id);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
     const now = new Date().toISOString();
-    db.run('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?', 'offline', now, req.params.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'provider_unsuspended', 'provider', provider.id, `Unsuspended provider "${provider.name}"`, now); } catch(e) {}
+    db.prepare('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?').run('offline', now, req.params.id);
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('provider_unsuspended', 'provider', provider.id, `Unsuspended provider "${provider.name}"`, now); } catch(e) {}
     res.json({ success: true, message: `Provider ${provider.name} unsuspended` });
   } catch (error) {
     console.error('Unsuspend provider error:', error);
@@ -694,8 +983,8 @@ router.post('/renters/:id/suspend', (req, res) => {
   try {
     const renter = db.get('SELECT id, name, status FROM renters WHERE id = ?', req.params.id);
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
-    db.run('UPDATE renters SET status = ? WHERE id = ?', 'suspended', req.params.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'renter_suspended', 'renter', renter.id, `Suspended renter "${renter.name}"`, new Date().toISOString()); } catch(e) {}
+    db.prepare('UPDATE renters SET status = ? WHERE id = ?').run('suspended', req.params.id);
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('renter_suspended', 'renter', renter.id, `Suspended renter "${renter.name}"`, new Date().toISOString()); } catch(e) {}
     res.json({ success: true, message: `Renter ${renter.name} suspended` });
   } catch (error) {
     console.error('Suspend renter error:', error);
@@ -710,8 +999,8 @@ router.post('/renters/:id/unsuspend', (req, res) => {
   try {
     const renter = db.get('SELECT id, name, status FROM renters WHERE id = ?', req.params.id);
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
-    db.run('UPDATE renters SET status = ? WHERE id = ?', 'active', req.params.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'renter_unsuspended', 'renter', renter.id, `Reactivated renter "${renter.name}"`, new Date().toISOString()); } catch(e) {}
+    db.prepare('UPDATE renters SET status = ? WHERE id = ?').run('active', req.params.id);
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('renter_unsuspended', 'renter', renter.id, `Reactivated renter "${renter.name}"`, new Date().toISOString()); } catch(e) {}
     res.json({ success: true, message: `Renter ${renter.name} reactivated` });
   } catch (error) {
     console.error('Unsuspend renter error:', error);
@@ -735,8 +1024,8 @@ router.post('/renters/:id/balance', (req, res) => {
     const newBalance = renter.balance_halala + amountHalala;
     if (newBalance < 0) return res.status(400).json({ error: 'Balance cannot go below 0' });
 
-    db.run('UPDATE renters SET balance_halala = ? WHERE id = ?', newBalance, req.params.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'balance_adjusted', 'renter', renter.id, `Adjusted balance by ${amountHalala} halala for "${renter.name}": ${normalizeString(reason, { maxLen: 300 }) || 'No reason'}`, new Date().toISOString()); } catch(e) {}
+    db.prepare('UPDATE renters SET balance_halala = ? WHERE id = ?').run(newBalance, req.params.id);
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('balance_adjusted', 'renter', renter.id, `Adjusted balance by ${amountHalala} halala for "${renter.name}": ${normalizeString(reason, { maxLen: 300 }) || 'No reason'}`, new Date().toISOString()); } catch(e) {}
     res.json({
       success: true,
       renter_id: renter.id,
@@ -770,11 +1059,11 @@ router.post('/bulk/providers', (req, res) => {
         const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', id);
         if (!provider) { failed++; continue; }
         if (action === 'suspend') {
-          db.run('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?', 'suspended', now, id);
+          db.prepare('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?').run('suspended', now, id);
         } else {
-          db.run('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?', 'offline', now, id);
+          db.prepare('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?').run('offline', now, id);
         }
-        try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)',
+        try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run(
           `bulk_provider_${action}`, 'provider', id, `Bulk ${action}: "${provider.name}"`, now); } catch(e) {}
         success++;
       } catch (e) { failed++; }
@@ -809,13 +1098,13 @@ router.post('/bulk/renters', (req, res) => {
         const renter = db.get('SELECT id, name, status, balance_halala FROM renters WHERE id = ?', id);
         if (!renter) { failed++; continue; }
         if (action === 'suspend') {
-          db.run('UPDATE renters SET status = ? WHERE id = ?', 'suspended', id);
+          db.prepare('UPDATE renters SET status = ? WHERE id = ?').run('suspended', id);
         } else if (action === 'unsuspend') {
-          db.run('UPDATE renters SET status = ? WHERE id = ?', 'active', id);
+          db.prepare('UPDATE renters SET status = ? WHERE id = ?').run('active', id);
         } else if (action === 'credit') {
-          db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?', amountHalala, id);
+          db.prepare('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?').run(amountHalala, id);
         }
-        try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)',
+        try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run(
           `bulk_renter_${action}`, 'renter', id, `Bulk ${action}: "${renter.name}"${action === 'credit' ? ` +${amountHalala} halala: ${normalizeString(reason, { maxLen: 300 }) || 'bulk credit'}` : ''}`, now); } catch(e) {}
         success++;
       } catch (e) { failed++; }
@@ -887,13 +1176,13 @@ router.post('/jobs/:id/cancel', (req, res) => {
       return res.status(400).json({ error: `Job already ${job.status}` });
     }
 
-    db.run('UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?',
+    db.prepare('UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?').run(
       'cancelled', new Date().toISOString(), job.id);
 
     // Refund renter if job had a cost
     let refunded = 0;
     if (job.cost_halala && job.cost_halala > 0 && job.renter_id) {
-      db.run('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?',
+      db.prepare('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?').run(
         job.cost_halala, job.renter_id);
       refunded = job.cost_halala;
     }
@@ -908,6 +1197,55 @@ router.post('/jobs/:id/cancel', (req, res) => {
   } catch (error) {
     console.error('Admin cancel job error:', error);
     res.status(500).json({ error: 'Failed to cancel job' });
+  }
+});
+
+// ============================================================================
+// POST /api/admin/jobs/:id/requeue - Re-queue a failed job
+// ============================================================================
+router.post('/jobs/:id/requeue', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.id, req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.status !== 'failed') {
+      return res.status(400).json({ error: 'Only failed jobs can be re-queued' });
+    }
+
+    const timeoutSeconds = Number.isFinite(Number(job.max_duration_seconds))
+      ? Math.max(60, Number(job.max_duration_seconds))
+      : 600;
+    const timeoutAt = new Date(Date.now() + timeoutSeconds * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace('Z', '');
+    const now = new Date().toISOString();
+
+    db.prepare(
+      `UPDATE jobs
+       SET status = 'pending',
+           error = NULL,
+           result = NULL,
+           completed_at = NULL,
+           started_at = NULL,
+           picked_up_at = NULL,
+           assigned_at = NULL,
+           progress_phase = NULL,
+           progress_updated_at = NULL,
+           timeout_at = ?,
+           updated_at = ?
+       WHERE id = ?`
+    ).run(timeoutAt, now, job.id);
+
+    res.json({
+      success: true,
+      job_id: job.job_id || job.id,
+      previous_status: job.status,
+      new_status: 'pending',
+      timeout_at: timeoutAt
+    });
+  } catch (error) {
+    console.error('Admin re-queue job error:', error);
+    res.status(500).json({ error: 'Failed to re-queue job' });
   }
 });
 
@@ -1083,8 +1421,8 @@ router.post('/providers/:id/rotate-key', (req, res) => {
 
     const newKey = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
     const now = new Date().toISOString();
-    db.run('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?', newKey, now, provider.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'key_rotated', 'provider', provider.id, `Force-rotated API key for "${provider.name}"`, now); } catch(e) {}
+    db.prepare('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?').run(newKey, now, provider.id);
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('key_rotated', 'provider', provider.id, `Force-rotated API key for "${provider.name}"`, now); } catch(e) {}
 
     res.json({ success: true, provider_id: provider.id, name: provider.name, new_api_key: newKey });
   } catch (error) {
@@ -1103,8 +1441,8 @@ router.post('/renters/:id/rotate-key', (req, res) => {
 
     const newKey = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
     const now = new Date().toISOString();
-    db.run('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?', newKey, now, renter.id);
-    try { db.run('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)', 'key_rotated', 'renter', renter.id, `Force-rotated API key for "${renter.name}"`, now); } catch(e) {}
+    db.prepare('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?').run(newKey, now, renter.id);
+    try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('key_rotated', 'renter', renter.id, `Force-rotated API key for "${renter.name}"`, now); } catch(e) {}
 
     res.json({ success: true, renter_id: renter.id, name: renter.name, new_api_key: newKey });
   } catch (error) {
@@ -1171,13 +1509,13 @@ router.post('/withdrawals/:id/approve', (req, res) => {
 
     const now = new Date().toISOString();
     const notes = normalizeString(req.body.notes, { maxLen: 500 }) || 'Approved by admin';
-    db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
+    db.prepare('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?').run(
       'approved', now, notes, w.id);
 
     // Log to audit
     try {
-      db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
-              VALUES (?, ?, ?, ?, ?)`,
+      db.prepare(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?)`).run(
         'withdrawal_approved', 'withdrawal', w.id,
         `Approved ${w.amount_sar} SAR for provider ${w.provider_id}`, now);
     } catch(e) { /* audit table may not exist yet */ }
@@ -1200,12 +1538,12 @@ router.post('/withdrawals/:id/reject', (req, res) => {
 
     const now = new Date().toISOString();
     const reason = normalizeString(req.body.reason, { maxLen: 500 }) || 'Rejected by admin';
-    db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
+    db.prepare('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?').run(
       'rejected', now, reason, w.id);
 
     try {
-      db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
-              VALUES (?, ?, ?, ?, ?)`,
+      db.prepare(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?)`).run(
         'withdrawal_rejected', 'withdrawal', w.id,
         `Rejected ${w.amount_sar} SAR for provider ${w.provider_id}: ${reason || 'No reason'}`, now);
     } catch(e) {}
@@ -1228,12 +1566,12 @@ router.post('/withdrawals/:id/complete', (req, res) => {
 
     const now = new Date().toISOString();
     const notes = normalizeString(req.body.notes, { maxLen: 500 }) || 'Payment sent';
-    db.run('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?',
+    db.prepare('UPDATE withdrawals SET status = ?, processed_at = ?, notes = ? WHERE id = ?').run(
       'completed', now, notes, w.id);
 
     try {
-      db.run(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
-              VALUES (?, ?, ?, ?, ?)`,
+      db.prepare(`INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?)`).run(
         'withdrawal_completed', 'withdrawal', w.id,
         `Paid ${w.amount_sar} SAR to provider ${w.provider_id}`, now);
     } catch(e) {}
@@ -1819,12 +2157,14 @@ router.post('/payments/:paymentId/refund', (req, res) => {
           return res.status(502).json({ error: 'Moyasar refund failed', details: result });
         }
         const now = new Date().toISOString();
-        db.run(
+        db.prepare(
           `UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ?, gateway_response = ? WHERE payment_id = ?`,
+        ).run(
           now, refundAmount, JSON.stringify(result), paymentId
         );
-        db.run(
+        db.prepare(
           `UPDATE renters SET balance_halala = MAX(0, balance_halala - ?), updated_at = ? WHERE id = ?`,
+        ).run(
           refundAmount, now, payment.renter_id
         );
         res.json({ success: true, type: 'moyasar', payment_id: paymentId, refunded_halala: refundAmount, refunded_sar: refundAmount / 100 });

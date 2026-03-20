@@ -22,6 +22,7 @@ const rateLimit = require('express-rate-limit');
 const request   = require('supertest');
 const express   = require('express');
 const db        = require('../../src/db');
+const { jobSubmitLimiter } = require('../../src/middleware/rateLimiter');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -159,6 +160,40 @@ describe('Rate limiting — job submission (max: 30/min)', () => {
 
     const statuses = await hitNTimes(app, 'post', '/api/jobs/submit', 4, {});
     expect(statuses[3]).toBe(429);
+  });
+});
+
+describe('Rate limiting — per API key policy (DCP-270)', () => {
+  it('enforces 10 requests/minute per renter key and returns retryAfterMs', async () => {
+    const app = buildLimitedApp('post', '/api/jobs/submit', jobSubmitLimiter, makeOkHandler());
+    const keyA = 'dc1-renter-key-a';
+    const keyB = 'dc1-renter-key-b';
+
+    for (let i = 0; i < 10; i++) {
+      const res = await request(app)
+        .post('/api/jobs/submit')
+        .set('x-renter-key', keyA)
+        .send({});
+      expect(res.status).toBe(200);
+    }
+
+    const blocked = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', keyA)
+      .send({});
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toEqual({
+      error: 'Rate limit exceeded',
+      retryAfterMs: 60000,
+    });
+
+    const differentKey = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', keyB)
+      .send({});
+
+    expect(differentKey.status).toBe(200);
   });
 });
 

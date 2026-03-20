@@ -5,9 +5,33 @@ const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const paymentsRouter = require('./routes/payments');
+const { startJobSweep, getSweepMetrics } = require('./services/jobSweep');
+const {
+  registerLimiter,
+  jobSubmitLimiter,
+  marketplaceLimiter,
+  adminLimiter,
+} = require('./middleware/rateLimiter');
 
 const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
+
+function getLatestDaemonVersion() {
+  const configured = (process.env.DAEMON_VERSION || '').trim();
+  if (configured) return configured;
+
+  const daemonCandidates = [
+    path.join(__dirname, '../installers/dc1_daemon.py'),
+    path.join(__dirname, '../installers/dc1-daemon.py'),
+  ];
+  for (const daemonPath of daemonCandidates) {
+    if (!fs.existsSync(daemonPath)) continue;
+    const script = fs.readFileSync(daemonPath, 'utf8');
+    const versionMatch = script.match(/DAEMON_VERSION\s*=\s*"([^"]+)"/);
+    if (versionMatch && versionMatch[1]) return versionMatch[1];
+  }
+  return '3.3.0';
+}
 
 // ── CORS Lockdown ─────────────────────────────────────────────────────
 // Additional origins can be injected via CORS_ORIGINS (comma-separated)
@@ -69,15 +93,9 @@ app.use((req, res, next) => {
 });
 
 // ── Rate Limiting ───────────────────────────────────────────────────────
-// Registration: 5 attempts per IP per hour (prevents spam)
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  message: { error: 'Too many registration attempts. Try again in 1 hour.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Registration: 5 attempts per IP per 10 minutes
 app.use('/api/providers/register', registerLimiter);
+app.use('/api/renters/register', registerLimiter);
 
 // Heartbeat: 4 per minute per IP (daemon sends every 30s = 2/min normally)
 const heartbeatLimiter = rateLimit({
@@ -89,24 +107,13 @@ const heartbeatLimiter = rateLimit({
 });
 app.use('/api/providers/heartbeat', heartbeatLimiter);
 
-// Job submission: 30 per IP per minute
-const jobSubmitLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: { error: 'Too many job submissions. Slow down.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Job submission: 10 requests per API key per minute
 app.use('/api/jobs/submit', jobSubmitLimiter);
 
-// Admin endpoints: 100 per IP per minute
-const adminLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  message: { error: 'Admin rate limit exceeded.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Marketplace listing: 60 requests per API key per minute
+app.use('/api/providers/marketplace', marketplaceLimiter);
+
+// Admin endpoints: 30 requests per token per minute
 app.use('/api/admin', adminLimiter);
 
 // Login endpoints: 10 attempts per IP per 15 minutes
@@ -122,16 +129,6 @@ app.use('/api/renters/login', loginLimiter);
 app.use('/api/providers/login-email', loginLimiter);
 app.use('/api/renters/login-email', loginLimiter);
 app.use('/api/admin/login', loginLimiter);
-
-// Renter registration: 5 per IP per hour (same policy as provider registration)
-const renterRegisterLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  message: { error: 'Too many registration attempts. Try again in 1 hour.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/renters/register', renterRegisterLimiter);
 
 // Balance top-up: 10 per IP per minute (financial operation — prevent abuse)
 const topupLimiter = rateLimit({
@@ -202,6 +199,9 @@ app.use('/api/sync', syncRouter);
 const rentersRouter = require('./routes/renters');
 app.use('/api/renters', rentersRouter);
 
+const modelsRouter = require('./routes/models');
+app.use('/api/models', modelsRouter);
+
 const verificationRouter = require('./routes/verification');
 app.use('/api/verification', verificationRouter);
 
@@ -218,11 +218,15 @@ const fallbackRouter = require('./routes/fallback');
 app.use('/api/fallback', fallbackRouter);
 
 const db = require('./db');
+const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);
+const sweepIntervalMs = Number.isFinite(sweepIntervalMsRaw) && sweepIntervalMsRaw > 0 ? sweepIntervalMsRaw : 30000;
+startJobSweep(db, sweepIntervalMs);
 
 // Health check
 app.get('/api/health', (req, res) => {
   try {
     db.prepare('SELECT 1').get();
+    const sweep = getSweepMetrics();
 
     const providersTotal = db.prepare(
       `SELECT COUNT(*) AS count FROM providers`
@@ -246,11 +250,25 @@ app.get('/api/health', (req, res) => {
       db: 'ok',
       providers: { total: providersTotal, online: providersOnline },
       jobs: { queued: jobsQueued, running: jobsRunning },
+      sweepErrors: sweep.sweepErrors,
+      sweep,
     });
   } catch (err) {
     console.error('[health] Failed to run health checks:', err?.message || err);
     res.status(500).json({ error: 'Health check failed' });
   }
+});
+
+// Public daemon latest-version endpoint (no auth required)
+app.get('/api/daemon/latest-version', (req, res) => {
+  const latestVersion = getLatestDaemonVersion();
+  const downloadUrl = (process.env.DAEMON_DOWNLOAD_URL || 'https://api.dcp.sa/api/providers/download/daemon').trim();
+  const changelog = (process.env.DAEMON_CHANGELOG || 'Stability and security improvements.').trim();
+  res.json({
+    version: latestVersion,
+    download_url: downloadUrl,
+    changelog,
+  });
 });
 
 // OpenAPI spec — GET /api/docs

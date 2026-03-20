@@ -5,11 +5,9 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface EarningsData {
   total_earned_sar: number
@@ -140,6 +138,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 export default function EarningsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [providerName, setProviderName] = useState('Provider')
   const [tab, setTab] = useState<'overview' | 'jobs' | 'daemon' | 'withdrawals'>('overview')
   const [earnings, setEarnings] = useState<EarningsData | null>(null)
@@ -150,6 +149,10 @@ export default function EarningsPage() {
   const [daemonInfo, setDaemonInfo] = useState<DaemonInfo | null>(null)
   const [daemonEvents, setDaemonEvents] = useState<DaemonEvent[]>([])
   const [loading, setLoading] = useState(true)
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false)
+  const [withdrawLoading, setWithdrawLoading] = useState(false)
+  const [withdrawSuccess, setWithdrawSuccess] = useState(false)
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
     const key = localStorage.getItem('dc1_provider_key')
@@ -196,6 +199,29 @@ export default function EarningsPage() {
     setLoading(false)
   }, [router])
 
+  const handleWithdraw = useCallback(async () => {
+    const key = localStorage.getItem('dc1_provider_key')
+    if (!key) return
+    setWithdrawLoading(true)
+    setWithdrawError(null)
+    try {
+      const res = await fetch(`${API_BASE}/providers/withdraw?key=${encodeURIComponent(key)}`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `Request failed (${res.status})`)
+      }
+      setShowWithdrawModal(false)
+      setWithdrawSuccess(true)
+      setTimeout(() => setWithdrawSuccess(false), 6000)
+      await fetchAll()
+    } catch (err: any) {
+      setWithdrawError(err.message || 'Withdrawal request failed.')
+    }
+    setWithdrawLoading(false)
+  }, [fetchAll])
+
   useEffect(() => {
     fetchAll()
     const interval = setInterval(fetchAll, 60000)
@@ -218,9 +244,9 @@ export default function EarningsPage() {
     <DashboardLayout navItems={navItems} role="provider" userName={providerName}>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-dc1-text-primary">Earnings & History</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">Earnings & History</h1>
             <p className="text-dc1-text-secondary text-sm mt-1">Track your GPU earnings, job history, and daemon status</p>
           </div>
           <button onClick={fetchAll} className="btn btn-secondary text-sm">
@@ -417,21 +443,41 @@ export default function EarningsPage() {
         {/* Tab: Withdrawals */}
         {tab === 'withdrawals' && (
           <div className="space-y-4">
+            {/* Success banner */}
+            {withdrawSuccess && (
+              <div className="rounded-xl px-4 py-3 bg-status-success/10 border border-status-success/30 text-status-success text-sm flex items-center gap-2">
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                {t('provider.withdraw.success')}
+              </div>
+            )}
+
             {/* Balance card */}
             {earnings && (
               <div className="card bg-gradient-to-r from-dc1-amber/10 to-transparent border-dc1-amber/20">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-4">
                   <div>
                     <div className="text-dc1-text-secondary text-sm">Available for Withdrawal</div>
                     <div className="text-3xl font-bold text-dc1-amber mt-1">{earnings.available_sar.toFixed(2)} SAR</div>
                     <div className="text-xs text-dc1-text-muted mt-1">Min withdrawal: 10 SAR</div>
                   </div>
-                  {earnings.pending_withdrawal_sar > 0 && (
-                    <div className="text-right">
-                      <div className="text-xs text-status-warning">Pending</div>
-                      <div className="text-lg text-status-warning">{earnings.pending_withdrawal_sar.toFixed(2)} SAR</div>
-                    </div>
-                  )}
+                  <div className="flex flex-col items-end gap-2">
+                    {earnings.pending_withdrawal_sar > 0 && (
+                      <div className="text-right">
+                        <div className="text-xs text-status-warning">
+                          {t('provider.withdraw.pending').replace('{amount}', earnings.pending_withdrawal_sar.toFixed(2))}
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => { setWithdrawError(null); setShowWithdrawModal(true) }}
+                      disabled={earnings.available_sar <= 0}
+                      className="btn btn-primary text-sm min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {t('provider.withdraw.button')}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -465,6 +511,44 @@ export default function EarningsPage() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Withdrawal confirmation modal */}
+        {showWithdrawModal && earnings && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+            <div className="bg-dc1-surface-l1 border border-dc1-border rounded-2xl p-6 w-full max-w-sm shadow-xl">
+              <h2 className="text-lg font-bold text-dc1-text-primary mb-2">Confirm Withdrawal</h2>
+              <p className="text-dc1-text-secondary text-sm mb-6">
+                {t('provider.withdraw.confirm').replace('{amount}', earnings.available_sar.toFixed(2))}
+              </p>
+              {withdrawError && (
+                <div className="mb-4 rounded-lg px-3 py-2 bg-status-error/10 border border-status-error/30 text-status-error text-xs">
+                  {withdrawError}
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowWithdrawModal(false)}
+                  disabled={withdrawLoading}
+                  className="btn btn-secondary flex-1 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleWithdraw}
+                  disabled={withdrawLoading}
+                  className="btn btn-primary flex-1 text-sm"
+                >
+                  {withdrawLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                      Processing…
+                    </span>
+                  ) : 'Confirm'}
+                </button>
+              </div>
             </div>
           </div>
         )}

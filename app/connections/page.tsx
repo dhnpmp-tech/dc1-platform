@@ -50,7 +50,7 @@ function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
     return '/api/dc1';
   }
-  return 'http://76.13.179.86:8083/api';
+  return '/api/dc1';
 }
 
 export default function ConnectionsPage() {
@@ -93,7 +93,7 @@ export default function ConnectionsPage() {
     }
 
     // Check Mission Control API
-    const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || 'http://76.13.179.86:8084') + '/api';
+    const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || '') + '/api';
     try {
       const start = performance.now();
       const res = await fetch(`${MC_BASE}/health`, { signal: AbortSignal.timeout(5000) });

@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('crypto');
-const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../db');
 const { getChainEscrow } = require('../services/escrow-chain');
@@ -30,6 +29,61 @@ const MAX_JOB_PRIORITY = 10;
 
 function signTaskSpec(taskSpec) {
   return crypto.createHmac('sha256', HMAC_SECRET).update(taskSpec).digest('hex');
+}
+
+function signWebhookPayload(secret, payloadJson) {
+  return crypto.createHmac('sha256', secret).update(payloadJson).digest('hex');
+}
+
+async function notifyRenterJobWebhook(job, eventName, details = {}) {
+  try {
+    if (!job?.renter_id) return { sent: false, reason: 'missing_renter_id' };
+
+    const renter = db.get(
+      'SELECT id, api_key, webhook_url, status FROM renters WHERE id = ?',
+      job.renter_id
+    );
+    if (!renter || renter.status !== 'active' || !renter.webhook_url) {
+      return { sent: false, reason: 'webhook_not_configured' };
+    }
+
+    const now = new Date().toISOString();
+    const payload = {
+      event: eventName,
+      timestamp: now,
+      job: {
+        id: job.id,
+        job_id: job.job_id,
+        renter_id: job.renter_id,
+        provider_id: job.provider_id,
+        status: job.status,
+        job_type: job.job_type,
+        submitted_at: job.submitted_at,
+        started_at: job.started_at,
+        completed_at: details.completed_at || now,
+      },
+      billing: details.billing || null,
+    };
+    const payloadJson = JSON.stringify(payload);
+    const secret = process.env.DCP_WEBHOOK_SECRET || renter.api_key;
+    const signature = signWebhookPayload(secret, payloadJson);
+
+    const response = await fetch(renter.webhook_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-DCP-Event': eventName,
+        'X-DCP-Signature': signature,
+      },
+      body: payloadJson,
+      signal: AbortSignal.timeout(5000),
+    });
+
+    return { sent: true, ok: response.ok, status: response.status };
+  } catch (error) {
+    console.error('[jobs/webhook] Failed to notify renter webhook:', error.message);
+    return { sent: false, reason: error.message };
+  }
 }
 
 function parsePriority(value) {
@@ -117,6 +171,61 @@ function getAuthenticatedActor(req) {
   return null;
 }
 
+const TERMINAL_JOB_STATUSES = new Set(['done', 'completed', 'failed', 'cancelled', 'permanently_failed', 'timed_out']);
+
+function normalizeIncomingLogLines(rawLines) {
+  if (!Array.isArray(rawLines)) return [];
+  const VALID_LEVELS = new Set(['info', 'warn', 'error', 'debug']);
+  const out = [];
+  for (const row of rawLines.slice(0, 500)) {
+    const levelCandidate = String(row?.level || '').toLowerCase();
+    const level = VALID_LEVELS.has(levelCandidate) ? levelCandidate : 'info';
+    const message = String(row?.message || '').slice(0, 2000);
+    if (!message) continue;
+    out.push({ level, message });
+  }
+  return out;
+}
+
+function appendJobLogs(job, lines) {
+  if (!job || !job.job_id || !Array.isArray(lines) || lines.length === 0) {
+    return 0;
+  }
+
+  const maxRow = db.get('SELECT MAX(line_no) as max_line FROM job_logs WHERE job_id = ?', job.job_id);
+  let lineNo = (maxRow?.max_line || 0) + 1;
+  const now = new Date().toISOString();
+
+  const insert = db.prepare(
+    'INSERT INTO job_logs (job_id, line_no, level, message, logged_at) VALUES (?, ?, ?, ?, ?)'
+  );
+  const updateJsonl = db.prepare(
+    `UPDATE jobs
+     SET logs_jsonl = substr(COALESCE(logs_jsonl, '') || ?, -1000000),
+         updated_at = ?
+     WHERE id = ?`
+  );
+
+  const writeTx = db._db.transaction((rows) => {
+    const jsonlParts = [];
+    for (const row of rows) {
+      insert.run(job.job_id, lineNo++, row.level, row.message, now);
+      jsonlParts.push(JSON.stringify({
+        type: 'log',
+        line: row.message,
+        ts: Date.parse(now) || Date.now(),
+        level: row.level,
+      }));
+    }
+    if (jsonlParts.length > 0) {
+      updateJsonl.run(`${jsonlParts.join('\n')}\n`, now, job.id);
+    }
+  });
+
+  writeTx(lines);
+  return lines.length;
+}
+
 // Renter auth middleware — validates renter API key from header or query
 function requireRenter(req, res, next) {
   const key = req.headers['x-renter-key'] || req.query.renter_key;
@@ -130,19 +239,6 @@ function requireRenter(req, res, next) {
   req.renter = renter;
   next();
 }
-
-function getRenterRateLimitKey(req) {
-  return req.headers['x-renter-key'] || req.query.renter_key || req.query.key || `renter-id:${req.renter?.id || 'unknown'}`;
-}
-
-const renterSubmitLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyGenerator: getRenterRateLimitKey,
-  message: { error: 'Too many job submissions for this renter API key. Try again in 1 minute.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 function logQuotaCheck(renterId, checkType, allowed, limitValue, currentValue, requestedValue, reason, jobId = null) {
   try {
@@ -464,7 +560,7 @@ function getJobRouter() {
 
 // POST /api/jobs/submit — requires renter auth
 // provider_id is optional: omit to auto-route to best GPU-fit provider (DCP-205)
-router.post('/submit', requireRenter, renterSubmitLimiter, (req, res) => {
+router.post('/submit', requireRenter, (req, res) => {
   try {
     const {
       provider_id: reqProviderId,
@@ -1037,6 +1133,17 @@ router.post('/:job_id/result', (req, res) => {
     const promoted = promoteNextQueuedJob(job.provider_id);
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', [job.id]);
+
+    // Fire-and-forget renter callback (if configured). Never blocks settlement response.
+    notifyRenterJobWebhook(updated, result ? 'job.completed' : 'job.failed', {
+      completed_at: now,
+      billing: {
+        actual_cost_halala: actualCostHalala,
+        provider_earned_halala: providerEarned,
+        dc1_fee_halala: dc1Fee,
+      },
+    }).catch(() => {});
+
     res.json({
       success: true,
       job: updated,
@@ -1559,27 +1666,13 @@ router.post('/:job_id/logs', (req, res) => {
       req.params.job_id, req.params.job_id, provider.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
-    // Get current max line_no for this job
-    const maxRow = db.get('SELECT MAX(line_no) as max_line FROM job_logs WHERE job_id = ?', job.job_id);
-    let lineNo = (maxRow?.max_line || 0) + 1;
+    const normalized = normalizeIncomingLogLines(lines);
+    if (normalized.length === 0) {
+      return res.status(400).json({ error: 'No valid log lines provided' });
+    }
 
-    const now = new Date().toISOString();
-    const VALID_LEVELS = new Set(['info', 'warn', 'error', 'debug']);
-    const insert = db.prepare(
-      'INSERT INTO job_logs (job_id, line_no, level, message, logged_at) VALUES (?, ?, ?, ?, ?)'
-    );
-
-    const insertMany = db._db.transaction((rows) => {
-      for (const row of rows) {
-        const levelCandidate = String(row.level || '').toLowerCase();
-        const level = VALID_LEVELS.has(levelCandidate) ? levelCandidate : 'info';
-        const message = String(row.message || '').slice(0, 2000); // cap line length
-        insert.run(job.job_id, lineNo++, level, message, now);
-      }
-    });
-
-    insertMany(lines.slice(0, 500)); // cap batch size
-    res.json({ success: true, lines_written: Math.min(lines.length, 500) });
+    const linesWritten = appendJobLogs(job, normalized);
+    res.json({ success: true, lines_written: linesWritten });
   } catch (error) {
     console.error('Job logs write error:', error);
     res.status(500).json({ error: 'Failed to write job logs' });
@@ -1613,6 +1706,105 @@ router.get('/:job_id/logs', (req, res) => {
   } catch (error) {
     console.error('Job logs read error:', error);
     res.status(500).json({ error: 'Failed to read job logs' });
+  }
+});
+
+// GET /api/jobs/:job_id/logs/stream?key=RENT
+// Server-Sent Events stream for renter-owned job logs in near real-time.
+router.get('/:job_id/logs/stream', (req, res) => {
+  let interval = null;
+  let keepalive = null;
+  let closed = false;
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (interval) clearInterval(interval);
+    if (keepalive) clearInterval(keepalive);
+    try { res.end(); } catch (_) {}
+  };
+
+  try {
+    const renterKey = req.query.key || req.headers['x-renter-key'];
+    if (!renterKey) return res.status(401).json({ error: 'Renter API key required (?key=...)' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', renterKey, 'active');
+    if (!renter) return res.status(401).json({ error: 'Invalid renter API key' });
+
+    const job = db.get(
+      'SELECT id, job_id, status, renter_id FROM jobs WHERE (id = ? OR job_id = ?) LIMIT 1',
+      req.params.job_id,
+      req.params.job_id
+    );
+    if (!job || job.renter_id !== renter.id) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (res.flushHeaders) res.flushHeaders();
+
+    const sendLogEvent = (line, loggedAt) => {
+      const ts = loggedAt ? Date.parse(loggedAt) : Date.now();
+      res.write(`data: ${JSON.stringify({ type: 'log', line, ts: Number.isFinite(ts) ? ts : Date.now() })}\n\n`);
+    };
+
+    let lastLine = Math.max(parseInt(req.query.since, 10) || 0, 0);
+    const pollAndFlush = () => {
+      if (closed) return;
+      const newRows = db.all(
+        `SELECT line_no, message, logged_at
+         FROM job_logs
+         WHERE job_id = ? AND line_no > ?
+         ORDER BY line_no ASC
+         LIMIT 200`,
+        job.job_id,
+        lastLine
+      );
+      for (const row of newRows) {
+        sendLogEvent(row.message, row.logged_at);
+        lastLine = row.line_no;
+      }
+
+      const latest = db.get('SELECT status FROM jobs WHERE id = ?', job.id);
+      if (!latest || TERMINAL_JOB_STATUSES.has(String(latest.status || '').toLowerCase())) {
+        res.write(`data: ${JSON.stringify({ type: 'end', status: latest?.status || 'done', ts: Date.now() })}\n\n`);
+        cleanup();
+      }
+    };
+
+    // If already terminal, return last 50 lines and close.
+    if (TERMINAL_JOB_STATUSES.has(String(job.status || '').toLowerCase())) {
+      const tail = db.all(
+        `SELECT line_no, message, logged_at
+         FROM job_logs
+         WHERE job_id = ?
+         ORDER BY line_no DESC
+         LIMIT 50`,
+        job.job_id
+      ).reverse();
+      for (const row of tail) {
+        sendLogEvent(row.message, row.logged_at);
+      }
+      res.write(`data: ${JSON.stringify({ type: 'end', status: job.status || 'done', ts: Date.now() })}\n\n`);
+      return cleanup();
+    }
+
+    // Initial flush + steady polling.
+    pollAndFlush();
+    interval = setInterval(pollAndFlush, 1000);
+    keepalive = setInterval(() => {
+      if (!closed) res.write(': keep-alive\n\n');
+    }, 15000);
+
+    req.on('close', cleanup);
+    req.on('aborted', cleanup);
+  } catch (error) {
+    console.error('Job logs SSE error:', error);
+    if (!res.headersSent) return res.status(500).json({ error: 'Failed to stream logs' });
+    cleanup();
   }
 });
 
