@@ -445,7 +445,15 @@ function GpuPlayground() {
   useEffect(() => {
     fetch(`${API_BASE}/containers/registry`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.images) setContainerImages(d.images); })
+      .then(d => {
+        if (d?.images && Array.isArray(d.images)) {
+          // API returns objects with {id, image_ref, image_type, ...} — extract image_type strings
+          const imageTypes: string[] = d.images.map((img: unknown) =>
+            typeof img === 'string' ? img : (img as Record<string, unknown>)?.image_type || (img as Record<string, unknown>)?.image_ref || String(img)
+          ).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
+          setContainerImages(imageTypes);
+        }
+      })
       .catch(() => {});
   }, []);
 
