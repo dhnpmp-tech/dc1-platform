@@ -2,10 +2,34 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
+const {
+  normalizeImageRef,
+  validateAndNormalizeImageRef,
+  isDockerHubImageRef,
+} = require('../lib/container-registry');
 const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../services/notifications');
+const { sendWithdrawalApprovedEmail } = require('../services/emailService');
+const { resolveAttemptLogPath } = require('../services/job-execution-logs');
 const DB_PATH = process.env.DC1_DB_PATH || path.join(__dirname, '..', '..', 'data', 'providers.db');
+const IMAGE_REGISTRY_ALLOWLIST = Array.from(new Set(
+  [
+    ...(process.env.DCP_IMAGE_REGISTRY_ALLOWLIST || 'docker.io,ghcr.io')
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean),
+    ...((process.env.DCP_PRIVATE_REGISTRY || '')
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean)),
+  ]
+));
+const IMAGE_APPROVAL_WINDOW_MINUTES = Number.parseInt(process.env.DCP_IMAGE_APPROVAL_WINDOW_MINUTES || '10', 10);
+const IMAGE_APPROVAL_MAX_REQUESTS = Number.parseInt(process.env.DCP_IMAGE_APPROVAL_MAX_REQUESTS || '20', 10);
+const TRIVY_TIMEOUT_MS = Number.parseInt(process.env.DCP_TRIVY_TIMEOUT_MS || '180000', 10);
+const DOCKER_TIMEOUT_MS = Number.parseInt(process.env.DCP_DOCKER_TIMEOUT_MS || '30000', 10);
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
 // Requires DC1_ADMIN_TOKEN env var.
@@ -66,6 +90,210 @@ function normalizeIdArray(value, { maxItems = 500 } = {}) {
 
 function normalizeGpuModel(value) {
   return normalizeString(value, { maxLen: 120 });
+}
+
+function normalizeImageType(value) {
+  const normalized = normalizeString(value, { maxLen: 60 });
+  return normalized ? normalized.toLowerCase() : null;
+}
+
+function parseRegistryFromImageRef(imageRef) {
+  const normalized = normalizeImageRef(imageRef)?.toLowerCase();
+  if (!normalized) return null;
+  const first = normalized.split('/')[0] || '';
+  if (!first) return 'docker.io';
+  if (first.includes('.') || first.includes(':') || first === 'localhost') return first;
+  return 'docker.io';
+}
+
+function isTrustedRegistry(registry) {
+  return IMAGE_REGISTRY_ALLOWLIST.includes(String(registry || '').toLowerCase());
+}
+
+function stripDigest(imageRef) {
+  return String(imageRef || '').split('@')[0];
+}
+
+function parsePinnedDigest(imageRef) {
+  const match = String(imageRef || '').toLowerCase().match(/@sha256:([a-f0-9]{64})$/);
+  return match ? `sha256:${match[1]}` : null;
+}
+
+function runCommand(command, args, timeoutMs) {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  if (result.error) {
+    if (result.error.code === 'ENOENT') {
+      return { ok: false, error: `${command} command not found` };
+    }
+    return { ok: false, error: result.error.message || `${command} command failed` };
+  }
+  if (typeof result.status !== 'number') {
+    return { ok: false, error: `${command} command timed out` };
+  }
+  return {
+    ok: result.status === 0,
+    status: result.status,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+  };
+}
+
+function assertPublicImageExists(imageRef) {
+  const inspect = runCommand('docker', ['manifest', 'inspect', imageRef], DOCKER_TIMEOUT_MS);
+  if (!inspect.ok) {
+    return { ok: false, error: 'Image does not exist or is not publicly accessible' };
+  }
+  return { ok: true };
+}
+
+function resolveImageDigest(imageRef) {
+  const pull = runCommand('docker', ['pull', '--quiet', imageRef], DOCKER_TIMEOUT_MS);
+  if (!pull.ok) {
+    return { ok: false, error: 'Unable to pull image for digest resolution' };
+  }
+
+  const inspect = runCommand(
+    'docker',
+    ['image', 'inspect', '--format', '{{json .RepoDigests}}', stripDigest(imageRef)],
+    DOCKER_TIMEOUT_MS
+  );
+  if (!inspect.ok) {
+    return { ok: false, error: 'Unable to inspect image digest' };
+  }
+
+  let repoDigests = [];
+  try {
+    repoDigests = JSON.parse(inspect.stdout || '[]');
+  } catch {
+    return { ok: false, error: 'Failed to parse image digest metadata' };
+  }
+
+  const pinnedRef = Array.isArray(repoDigests)
+    ? repoDigests.find((entry) => typeof entry === 'string' && /@sha256:[a-f0-9]{64}$/i.test(entry))
+    : null;
+  const digestMatch = String(pinnedRef || '').match(/@sha256:([a-f0-9]{64})$/i);
+  if (!digestMatch) {
+    return { ok: false, error: 'Image digest not found after pull' };
+  }
+
+  return {
+    ok: true,
+    resolvedDigest: `sha256:${digestMatch[1].toLowerCase()}`,
+    pinnedRef,
+  };
+}
+
+function runCriticalImageScan(imageRef) {
+  const result = runCommand(
+    'trivy',
+    ['image', '--quiet', '--format', 'json', '--severity', 'CRITICAL', imageRef],
+    TRIVY_TIMEOUT_MS
+  );
+  if (!result.ok && result.status !== 1) {
+    return { ok: false, error: 'Image scan failed' };
+  }
+
+  let report = { Results: [] };
+  try {
+    report = result.stdout ? JSON.parse(result.stdout) : { Results: [] };
+  } catch {
+    return { ok: false, error: 'Image scan returned invalid JSON output' };
+  }
+
+  const findings = Array.isArray(report.Results) ? report.Results : [];
+  let criticalCount = 0;
+  for (const item of findings) {
+    const vulns = Array.isArray(item?.Vulnerabilities) ? item.Vulnerabilities : [];
+    for (const vuln of vulns) {
+      if (String(vuln?.Severity || '').toUpperCase() === 'CRITICAL') criticalCount += 1;
+    }
+  }
+  if (result.status === 1 && criticalCount === 0) criticalCount = 1;
+
+  return {
+    ok: true,
+    criticalCount,
+    reportJson: JSON.stringify(report),
+  };
+}
+
+function adminActorFingerprint(req) {
+  const token = String(req.headers['x-admin-token'] || req.headers.authorization || req.ip || 'admin');
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function consumeAdminRateLimit(actionKey, actorFingerprint) {
+  const maxRequests = Number.isFinite(IMAGE_APPROVAL_MAX_REQUESTS) && IMAGE_APPROVAL_MAX_REQUESTS > 0
+    ? IMAGE_APPROVAL_MAX_REQUESTS
+    : 20;
+  const windowMinutes = Number.isFinite(IMAGE_APPROVAL_WINDOW_MINUTES) && IMAGE_APPROVAL_WINDOW_MINUTES > 0
+    ? IMAGE_APPROVAL_WINDOW_MINUTES
+    : 10;
+
+  const row = db.get(
+    `SELECT COUNT(*) AS count
+       FROM admin_rate_limit_log
+      WHERE action_key = ?
+        AND actor_fingerprint = ?
+        AND created_at >= datetime('now', ?)`,
+    actionKey,
+    actorFingerprint,
+    `-${windowMinutes} minutes`
+  );
+  if ((row?.count || 0) >= maxRequests) return false;
+
+  db.prepare(
+    `INSERT INTO admin_rate_limit_log (action_key, actor_fingerprint, created_at)
+     VALUES (?, ?, datetime('now'))`
+  ).run(actionKey, actorFingerprint);
+  return true;
+}
+
+function grantRenterCredit({ renterId, amountHalala, reason, grantedBy = 'admin', now = new Date().toISOString() }) {
+  const normalizedReason = normalizeString(reason, { maxLen: 300 });
+  if (!normalizedReason) {
+    return { error: 'reason_required' };
+  }
+
+  const renter = db.get('SELECT id, name, balance_halala FROM renters WHERE id = ?', renterId);
+  if (!renter) {
+    return { error: 'not_found' };
+  }
+
+  const nextBalance = (renter.balance_halala || 0) + amountHalala;
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE renters SET balance_halala = ?, updated_at = ? WHERE id = ?')
+      .run(nextBalance, now, renterId);
+    db.prepare(
+      `INSERT INTO credit_grants (renter_id, amount_halala, reason, granted_by, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(renterId, amountHalala, normalizedReason, grantedBy, now);
+    try {
+      db.prepare(
+        'INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)'
+      ).run(
+        'renter_credit_granted',
+        'renter',
+        renterId,
+        `Granted ${amountHalala} halala to "${renter.name}": ${normalizedReason}`,
+        now
+      );
+    } catch (e) {}
+  });
+  tx();
+
+  return {
+    renter_id: renter.id,
+    name: renter.name,
+    previous_balance: renter.balance_halala || 0,
+    granted_halala: amountHalala,
+    new_balance: nextBalance,
+    reason: normalizedReason
+  };
 }
 
 // === GET /api/admin/pricing - List GPU model prices ===
@@ -153,6 +381,234 @@ router.patch('/pricing/:model', (req, res) => {
   } catch (error) {
     console.error('Admin pricing update error:', error);
     res.status(500).json({ error: 'Failed to update GPU pricing' });
+  }
+});
+
+// === POST /api/admin/containers/approve-image - Allowlist custom image ===
+router.post('/containers/approve-image', (req, res) => {
+  try {
+    const validated = validateAndNormalizeImageRef(req.body?.image_ref);
+    if (validated.error) {
+      return res.status(400).json({ error: validated.error });
+    }
+
+    const imageRef = validated.value;
+    const registry = parseRegistryFromImageRef(imageRef);
+    if (!registry || !isTrustedRegistry(registry)) {
+      return res.status(400).json({ error: `Registry '${registry || 'unknown'}' is not trusted` });
+    }
+
+    const actor = adminActorFingerprint(req);
+    if (!consumeAdminRateLimit('image_approve', actor)) {
+      return res.status(429).json({ error: 'Image approval rate limit exceeded. Try again later.' });
+    }
+
+    const existsCheck = assertPublicImageExists(imageRef);
+    if (!existsCheck.ok) {
+      return res.status(400).json({ error: existsCheck.error });
+    }
+
+    const digestCheck = resolveImageDigest(imageRef);
+    if (!digestCheck.ok) {
+      return res.status(502).json({ error: digestCheck.error });
+    }
+
+    const requestedDigest = parsePinnedDigest(imageRef);
+    if (requestedDigest && requestedDigest !== digestCheck.resolvedDigest) {
+      return res.status(409).json({ error: 'Provided digest does not match resolved image digest' });
+    }
+
+    const scan = runCriticalImageScan(imageRef);
+    if (!scan.ok) {
+      return res.status(502).json({ error: scan.error });
+    }
+
+    const description = normalizeString(req.body?.description, { maxLen: 400 });
+    const imageType = normalizeImageType(req.body?.image_type)
+      || (isDockerHubImageRef(imageRef) ? 'docker_hub' : 'custom');
+    const approvedAt = new Date().toISOString();
+
+    let scanId = null;
+    const tx = db._db.transaction(() => {
+      const scanInsert = db.prepare(
+        `INSERT INTO image_scans
+           (image_ref, registry, resolved_digest, scanned_at, critical_count, scan_report_json, approved, approved_at, approved_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        imageRef,
+        registry,
+        digestCheck.resolvedDigest,
+        approvedAt,
+        scan.criticalCount,
+        scan.reportJson,
+        scan.criticalCount === 0 ? 1 : 0,
+        scan.criticalCount === 0 ? approvedAt : null,
+        scan.criticalCount === 0 ? actor : null,
+        approvedAt
+      );
+      scanId = scanInsert.lastInsertRowid;
+
+      if (scan.criticalCount === 0) {
+        db.prepare(
+          `INSERT INTO allowed_images (image_ref, image_type, description, approved_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(image_ref) DO UPDATE SET
+             image_type = excluded.image_type,
+             description = excluded.description,
+             approved_at = excluded.approved_at`
+        ).run(imageRef, imageType, description || null, approvedAt);
+
+        db.prepare(
+          `INSERT INTO approved_container_images
+             (image_ref, registry, resolved_digest, scan_id, is_active, approved_at, approved_by, last_validated_at)
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+           ON CONFLICT(image_ref) DO UPDATE SET
+             registry = excluded.registry,
+             resolved_digest = excluded.resolved_digest,
+             scan_id = excluded.scan_id,
+             is_active = 1,
+             approved_at = excluded.approved_at,
+             approved_by = excluded.approved_by,
+             last_validated_at = excluded.last_validated_at`
+        ).run(
+          imageRef,
+          registry,
+          digestCheck.resolvedDigest,
+          scanId,
+          approvedAt,
+          actor,
+          approvedAt
+        );
+      }
+    });
+    tx();
+
+    if (scan.criticalCount > 0) {
+      return res.status(400).json({
+        error: 'Image contains CRITICAL vulnerabilities and cannot be approved',
+        image_ref: imageRef,
+        critical_count: scan.criticalCount,
+        scan_id: scanId,
+      });
+    }
+
+    const row = db.get(
+      `SELECT id, image_ref, image_type, description, approved_at
+       FROM allowed_images
+       WHERE lower(image_ref) = lower(?)
+       LIMIT 1`,
+      imageRef
+    );
+
+    res.status(201).json({
+      success: true,
+      image: row,
+      scan_id: scanId,
+      critical_count: scan.criticalCount,
+      resolved_digest: digestCheck.resolvedDigest,
+      pinned_ref: digestCheck.pinnedRef || `${stripDigest(imageRef)}@${digestCheck.resolvedDigest}`,
+    });
+  } catch (error) {
+    console.error('Admin approve-image error:', error);
+    res.status(500).json({ error: 'Failed to approve container image' });
+  }
+});
+
+// === POST /api/admin/containers/scan-image - Scan without approval ===
+router.post('/containers/scan-image', (req, res) => {
+  try {
+    const validated = validateAndNormalizeImageRef(req.body?.image_ref);
+    if (validated.error) return res.status(400).json({ error: validated.error });
+    const imageRef = validated.value;
+    const registry = parseRegistryFromImageRef(imageRef);
+    if (!registry || !isTrustedRegistry(registry)) {
+      return res.status(400).json({ error: `Registry '${registry || 'unknown'}' is not trusted` });
+    }
+
+    const actor = adminActorFingerprint(req);
+    if (!consumeAdminRateLimit('image_scan', actor)) {
+      return res.status(429).json({ error: 'Image scan rate limit exceeded. Try again later.' });
+    }
+
+    const existsCheck = assertPublicImageExists(imageRef);
+    if (!existsCheck.ok) return res.status(400).json({ error: existsCheck.error });
+
+    const digestCheck = resolveImageDigest(imageRef);
+    if (!digestCheck.ok) return res.status(502).json({ error: digestCheck.error });
+
+    const requestedDigest = parsePinnedDigest(imageRef);
+    if (requestedDigest && requestedDigest !== digestCheck.resolvedDigest) {
+      return res.status(409).json({ error: 'Provided digest does not match resolved image digest' });
+    }
+
+    const scan = runCriticalImageScan(imageRef);
+    if (!scan.ok) return res.status(502).json({ error: scan.error });
+
+    const now = new Date().toISOString();
+    const insert = db.prepare(
+      `INSERT INTO image_scans
+         (image_ref, registry, resolved_digest, scanned_at, critical_count, scan_report_json, approved, approved_at, approved_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?)`
+    ).run(
+      imageRef,
+      registry,
+      digestCheck.resolvedDigest,
+      now,
+      scan.criticalCount,
+      scan.reportJson,
+      now
+    );
+
+    return res.json({
+      success: true,
+      scan_id: insert.lastInsertRowid,
+      image_ref: imageRef,
+      resolved_digest: digestCheck.resolvedDigest,
+      critical_count: scan.criticalCount,
+      blocked: scan.criticalCount > 0,
+    });
+  } catch (error) {
+    console.error('Admin scan-image error:', error);
+    return res.status(500).json({ error: 'Failed to scan image' });
+  }
+});
+
+// === GET /api/admin/containers/security-status - Approved images + scan status ===
+router.get('/containers/security-status', (req, res) => {
+  try {
+    const approvedImages = db.all(
+      `SELECT a.id,
+              a.image_ref,
+              a.registry,
+              a.resolved_digest,
+              a.approved_at,
+              a.last_validated_at,
+              s.scanned_at,
+              s.critical_count,
+              s.approved
+         FROM approved_container_images a
+         LEFT JOIN image_scans s ON s.id = a.scan_id
+        WHERE a.is_active = 1
+        ORDER BY a.approved_at DESC`
+    );
+    const recentScans = db.all(
+      `SELECT id, image_ref, registry, resolved_digest, scanned_at, critical_count, approved
+         FROM image_scans
+        ORDER BY scanned_at DESC
+        LIMIT 100`
+    );
+
+    return res.json({
+      allowed_registries: IMAGE_REGISTRY_ALLOWLIST,
+      approved_images: approvedImages.map((row) => ({
+        ...row,
+        pinned_ref: `${stripDigest(row.image_ref)}@${row.resolved_digest}`,
+      })),
+      recent_scans: recentScans,
+    });
+  } catch (error) {
+    console.error('Admin containers security-status error:', error);
+    return res.status(500).json({ error: 'Failed to fetch container security status' });
   }
 });
 
@@ -630,6 +1086,61 @@ router.get('/providers/:id', (req, res) => {
 });
 
 // GET /api/admin/jobs/:id - Full job detail with exact billing split
+router.get('/jobs/:id/history', (req, res) => {
+  try {
+    const job = db.get(
+      `SELECT id, job_id, provider_id, renter_id, status, job_type, model,
+              submitted_at, started_at, completed_at, cost_halala, actual_cost_halala
+       FROM jobs
+       WHERE id = ? OR job_id = ?`,
+      req.params.id,
+      req.params.id
+    );
+    if (!job) return res.status(404).json({ error: 'Not found' });
+
+    const executions = db.all(
+      `SELECT id, attempt_number, started_at, ended_at, exit_code, log_path, gpu_seconds_used, cost_halala
+       FROM job_executions
+       WHERE job_id = ?
+       ORDER BY attempt_number ASC`,
+      job.job_id
+    );
+
+    const withMetrics = executions.map((row) => {
+      let providerMetrics = null;
+      if (job.provider_id && row.started_at) {
+        providerMetrics = db.get(
+          `SELECT AVG(gpu_util_pct) AS avg_gpu_util_pct,
+                  AVG(gpu_temp_c) AS avg_gpu_temp_c,
+                  MAX(gpu_temp_c) AS max_gpu_temp_c,
+                  AVG(gpu_power_w) AS avg_gpu_power_w,
+                  MAX(gpu_count) AS max_gpu_count
+           FROM heartbeat_log
+           WHERE provider_id = ?
+             AND received_at >= ?
+             AND received_at <= ?`,
+          job.provider_id,
+          row.started_at,
+          row.ended_at || new Date().toISOString()
+        );
+      }
+      return {
+        ...row,
+        log_available: !!resolveAttemptLogPath(job.job_id, row.attempt_number),
+        provider_metrics: providerMetrics || null,
+      };
+    });
+
+    res.json({
+      job,
+      executions: withMetrics,
+    });
+  } catch (error) {
+    console.error('Admin job history error:', error);
+    res.status(500).json({ error: 'Failed to fetch job history' });
+  }
+});
+
 router.get('/jobs/:id', (req, res) => {
   try {
     const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.id, req.params.id);
@@ -1009,6 +1520,37 @@ router.post('/renters/:id/unsuspend', (req, res) => {
 });
 
 // ============================================================================
+// POST /api/admin/renters/:id/credit - Grant renter credits
+// ============================================================================
+router.post('/renters/:id/credit', (req, res) => {
+  try {
+    const amountHalala = toFiniteInt(req.body?.amount_halala, { min: 1, max: 100000000 });
+    if (amountHalala == null) {
+      return res.status(400).json({ error: 'amount_halala must be a positive integer' });
+    }
+
+    const granted = grantRenterCredit({
+      renterId: req.params.id,
+      amountHalala,
+      reason: req.body?.reason,
+      grantedBy: 'admin'
+    });
+
+    if (granted.error === 'reason_required') {
+      return res.status(400).json({ error: 'reason is required' });
+    }
+    if (granted.error === 'not_found') {
+      return res.status(404).json({ error: 'Renter not found' });
+    }
+
+    res.json({ success: true, ...granted });
+  } catch (error) {
+    console.error('Grant renter credit error:', error);
+    res.status(500).json({ error: 'Failed to grant renter credits' });
+  }
+});
+
+// ============================================================================
 // POST /api/admin/renters/:id/balance - Admin balance adjustment
 // ============================================================================
 router.post('/renters/:id/balance', (req, res) => {
@@ -1102,10 +1644,21 @@ router.post('/bulk/renters', (req, res) => {
         } else if (action === 'unsuspend') {
           db.prepare('UPDATE renters SET status = ? WHERE id = ?').run('active', id);
         } else if (action === 'credit') {
-          db.prepare('UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?').run(amountHalala, id);
+          const granted = grantRenterCredit({
+            renterId: id,
+            amountHalala,
+            reason: reason || 'bulk credit',
+            grantedBy: 'admin_bulk'
+          });
+          if (granted.error) {
+            failed++;
+            continue;
+          }
         }
-        try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run(
-          `bulk_renter_${action}`, 'renter', id, `Bulk ${action}: "${renter.name}"${action === 'credit' ? ` +${amountHalala} halala: ${normalizeString(reason, { maxLen: 300 }) || 'bulk credit'}` : ''}`, now); } catch(e) {}
+        if (action !== 'credit') {
+          try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run(
+            `bulk_renter_${action}`, 'renter', id, `Bulk ${action}: "${renter.name}"`, now); } catch(e) {}
+        }
         success++;
       } catch (e) { failed++; }
     }
@@ -1499,6 +2052,77 @@ router.get('/withdrawals', (req, res) => {
 });
 
 // ============================================================================
+// PATCH /api/admin/withdrawals/:id - Update withdrawal request status
+// Supports new withdrawal_requests state machine: pending -> processing -> paid/failed
+// ============================================================================
+router.patch('/withdrawals/:id', (req, res) => {
+  try {
+    const withdrawalId = normalizeString(req.params.id, { maxLen: 120, trim: true });
+    if (!withdrawalId) return res.status(400).json({ error: 'Withdrawal id is required' });
+
+    const nextStatus = normalizeString(req.body?.status, { maxLen: 20 })?.toLowerCase();
+    if (!nextStatus || !['processing', 'paid', 'failed'].includes(nextStatus)) {
+      return res.status(400).json({ error: 'status must be one of: processing, paid, failed' });
+    }
+
+    const adminNote = normalizeString(req.body?.admin_note, { maxLen: 500 });
+    const existing = db.get(
+      `SELECT id, provider_id, amount_halala, status
+       FROM withdrawal_requests
+       WHERE id = ?`,
+      withdrawalId
+    );
+    if (!existing) return res.status(404).json({ error: 'Withdrawal request not found' });
+
+    const allowedTransitions = {
+      pending: ['processing'],
+      processing: ['paid', 'failed'],
+      paid: [],
+      failed: [],
+    };
+    const allowed = allowedTransitions[existing.status] || [];
+    if (!allowed.includes(nextStatus)) {
+      return res.status(400).json({
+        error: `Invalid status transition from ${existing.status} to ${nextStatus}`
+      });
+    }
+
+    const now = new Date().toISOString();
+    const transitionTx = db.transaction(() => {
+      if (nextStatus === 'failed') {
+        db.prepare(
+          `UPDATE providers
+           SET claimable_earnings_halala = claimable_earnings_halala + ?,
+               updated_at = ?
+           WHERE id = ?`
+        ).run(existing.amount_halala, now, existing.provider_id);
+      }
+
+      db.prepare(
+        `UPDATE withdrawal_requests
+         SET status = ?,
+             admin_note = COALESCE(?, admin_note),
+             processed_at = CASE WHEN ? IN ('paid', 'failed') THEN ? ELSE processed_at END
+         WHERE id = ?`
+      ).run(nextStatus, adminNote, nextStatus, now, withdrawalId);
+    });
+    transitionTx();
+
+    const withdrawal_request = db.get(
+      `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at
+       FROM withdrawal_requests
+       WHERE id = ?`,
+      withdrawalId
+    );
+
+    return res.json({ withdrawal_request });
+  } catch (error) {
+    console.error('Admin update withdrawal status error:', error);
+    return res.status(500).json({ error: 'Failed to update withdrawal status' });
+  }
+});
+
+// ============================================================================
 // POST /api/admin/withdrawals/:id/approve - Approve withdrawal
 // ============================================================================
 router.post('/withdrawals/:id/approve', (req, res) => {
@@ -1506,6 +2130,7 @@ router.post('/withdrawals/:id/approve', (req, res) => {
     const w = db.get('SELECT * FROM withdrawals WHERE id = ? OR withdrawal_id = ?', req.params.id, req.params.id);
     if (!w) return res.status(404).json({ error: 'Withdrawal not found' });
     if (w.status !== 'pending') return res.status(400).json({ error: `Cannot approve — status is ${w.status}` });
+    const provider = db.get('SELECT id, email FROM providers WHERE id = ?', w.provider_id);
 
     const now = new Date().toISOString();
     const notes = normalizeString(req.body.notes, { maxLen: 500 }) || 'Approved by admin';
@@ -1521,6 +2146,11 @@ router.post('/withdrawals/:id/approve', (req, res) => {
     } catch(e) { /* audit table may not exist yet */ }
 
     res.json({ success: true, withdrawal_id: w.withdrawal_id, new_status: 'approved', amount_sar: w.amount_sar });
+
+    if (provider?.email) {
+      sendWithdrawalApprovedEmail(provider.email, Number(w.amount_sar || 0))
+        .catch((e) => console.error('[admin.withdrawals.approve] email failed:', e.message));
+    }
   } catch (error) {
     console.error('Approve withdrawal error:', error);
     res.status(500).json({ error: 'Failed to approve withdrawal' });

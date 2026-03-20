@@ -202,6 +202,9 @@ app.use('/api/renters', rentersRouter);
 const modelsRouter = require('./routes/models');
 app.use('/api/models', modelsRouter);
 
+const vllmRouter = require('./routes/vllm');
+app.use('/api/vllm', vllmRouter);
+
 const verificationRouter = require('./routes/verification');
 app.use('/api/verification', verificationRouter);
 
@@ -209,6 +212,9 @@ app.use('/api/payments', paymentsRouter);
 
 const templatesRouter = require('./routes/templates');
 app.use('/api/templates', templatesRouter);
+
+const containersRouter = require('./routes/containers');
+app.use('/api/containers', containersRouter);
 
 // Initialize Supabase sync bridge
 const supabaseSync = require('./services/supabase-sync');

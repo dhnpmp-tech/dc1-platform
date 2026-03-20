@@ -1,6 +1,22 @@
 import * as vscode from 'vscode';
-import { dc1, Provider, JOB_TYPES, SubmitJobRequest } from '../api/dc1Client';
+import { dc1, Provider, JOB_TYPES, SubmitJobRequest, ContainerSpec } from '../api/dc1Client';
 import { AuthManager } from '../auth/AuthManager';
+
+// Friendly container type definitions shown in the panel
+const CONTAINER_TYPES = [
+  { value: 'pytorch-cuda', label: 'PyTorch + CUDA', computeType: 'inference' },
+  { value: 'vllm-serve',   label: 'vLLM Serve (LLM inference)', computeType: 'inference' },
+  { value: 'training',     label: 'Training (fine-tuning)', computeType: 'training' },
+  { value: 'rendering',    label: 'Rendering (ComfyUI)', computeType: 'rendering' },
+];
+
+const VRAM_OPTIONS = [
+  { mb: 4096,  label: '4 GB' },
+  { mb: 8192,  label: '8 GB' },
+  { mb: 16384, label: '16 GB' },
+  { mb: 24576, label: '24 GB' },
+  { mb: 40960, label: '40 GB' },
+];
 
 type WebviewMessage =
   | { type: 'submit'; payload: SubmitJobRequest }
@@ -16,25 +32,27 @@ export class JobSubmitPanel {
     extensionUri: vscode.Uri,
     auth: AuthManager,
     providers: Provider[],
-    preselectedProvider?: Provider
+    preselectedProvider?: Provider,
+    registryImages: string[] = []
   ): void {
     if (JobSubmitPanel._current) {
       JobSubmitPanel._current._panel.reveal(vscode.ViewColumn.Beside);
       JobSubmitPanel._current.updateProviders(providers, preselectedProvider);
       return;
     }
-    new JobSubmitPanel(extensionUri, auth, providers, preselectedProvider);
+    new JobSubmitPanel(extensionUri, auth, providers, preselectedProvider, registryImages);
   }
 
   private constructor(
     extensionUri: vscode.Uri,
     private readonly auth: AuthManager,
     private providers: Provider[],
-    private preselected?: Provider
+    private preselected?: Provider,
+    private registryImages: string[] = []
   ) {
     this._panel = vscode.window.createWebviewPanel(
       'dc1JobSubmit',
-      'DC1 — Submit GPU Job',
+      'DCP — Submit GPU Job',
       vscode.ViewColumn.Beside,
       {
         enableScripts: true,
@@ -51,13 +69,13 @@ export class JobSubmitPanel {
       this._disposables
     );
 
-    this._panel.webview.html = this.buildHtml(providers, preselected);
+    this._panel.webview.html = this.buildHtml(providers, preselected, registryImages);
   }
 
   updateProviders(providers: Provider[], preselected?: Provider): void {
     this.providers = providers;
     this.preselected = preselected;
-    this._panel.webview.html = this.buildHtml(providers, preselected);
+    this._panel.webview.html = this.buildHtml(providers, preselected, this.registryImages);
   }
 
   private async handleMessage(msg: WebviewMessage): Promise<void> {
@@ -85,10 +103,13 @@ export class JobSubmitPanel {
         });
 
         vscode.window.showInformationMessage(
-          `DC1: Job submitted! ID: ${result.job_id} | Cost: ${(result.cost_halala / 100).toFixed(2)} SAR`,
+          `DCP: Job submitted! ID: ${result.job_id} | Cost: ${(result.cost_halala / 100).toFixed(2)} SAR`,
+          'Stream Logs',
           'View Jobs'
         ).then((action) => {
-          if (action === 'View Jobs') {
+          if (action === 'Stream Logs') {
+            vscode.commands.executeCommand('dc1.streamLogs', result.job_id);
+          } else if (action === 'View Jobs') {
             vscode.commands.executeCommand('dc1.refreshJobs');
           }
         });
@@ -100,11 +121,19 @@ export class JobSubmitPanel {
     }
   }
 
-  private buildHtml(providers: Provider[], preselected?: Provider): string {
+  private buildHtml(providers: Provider[], preselected?: Provider, registryImages: string[] = []): string {
     const providersJson = JSON.stringify(providers);
     const jobTypesJson = JSON.stringify(JOB_TYPES);
     const preselectedId = preselected?.id ?? '';
     const nonce = getNonce();
+
+    // Build container type list: start with static types, add any extra from registry
+    const registryExtras = registryImages
+      .filter(img => !CONTAINER_TYPES.some(ct => img.includes(ct.value)))
+      .map(img => ({ value: img, label: img, computeType: 'inference' }));
+    const allContainerTypes = [...CONTAINER_TYPES, ...registryExtras];
+    const containerTypesJson = JSON.stringify(allContainerTypes);
+    const vramOptionsJson = JSON.stringify(VRAM_OPTIONS);
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -113,7 +142,7 @@ export class JobSubmitPanel {
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DC1 — Submit GPU Job</title>
+  <title>DCP — Submit GPU Job</title>
   <style>
     :root {
       --amber: #F5A524;
@@ -222,11 +251,25 @@ export class JobSubmitPanel {
                      letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; }
     #noProviders { color: var(--muted); font-size: 12px; padding: 12px;
                    border: 1px dashed var(--border); border-radius: 6px; text-align: center; }
+    .toggle-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .toggle-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+    .toggle-btn.selected { border-color: var(--amber); color: var(--amber); background: #1e1a10; }
+    .toggle-btn:hover { border-color: #444458; }
+    .container-spec-row { display: flex; gap: 12px; flex-direction: column; }
   </style>
 </head>
 <body>
   <h1>⚡ Submit GPU Job</h1>
-  <div class="subtitle">DC1 Compute — Saudi Arabia's GPU Marketplace</div>
+  <div class="subtitle">DCP Compute — Saudi Arabia's GPU Marketplace</div>
 
   <div class="form-group">
     <div class="section-title">1 · Select Provider GPU</div>
@@ -250,15 +293,33 @@ export class JobSubmitPanel {
            placeholder="e.g. meta-llama/Llama-3.1-8B-Instruct">
   </div>
 
+  <div class="form-group">
+    <div class="section-title">3 · Container Spec</div>
+    <div class="container-spec-row">
+      <div>
+        <label>Container Type</label>
+        <select id="containerTypeSelect"></select>
+      </div>
+      <div>
+        <label>VRAM Required</label>
+        <div class="toggle-row" id="vramToggle"></div>
+      </div>
+      <div>
+        <label>GPU Count</label>
+        <div class="toggle-row" id="gpuCountToggle">
+          <button class="toggle-btn selected" data-count="1">1×</button>
+          <button class="toggle-btn" data-count="2">2×</button>
+          <button class="toggle-btn" data-count="4">4×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="row">
     <div class="form-group">
       <label>Duration (minutes)</label>
       <input type="number" id="durationInput" value="10" min="1" max="1440">
       <div class="cost-preview" id="costPreview">Estimated cost: calculating…</div>
-    </div>
-    <div class="form-group">
-      <label>Min VRAM (GB)</label>
-      <input type="number" id="vramInput" value="" min="1" max="80" placeholder="Any">
     </div>
     <div class="form-group">
       <label>Priority</label>
@@ -278,6 +339,8 @@ export class JobSubmitPanel {
     const PROVIDERS = ${providersJson};
     const JOB_TYPES = ${jobTypesJson};
     const PRESELECTED_ID = '${preselectedId}';
+    const CONTAINER_TYPES = ${containerTypesJson};
+    const VRAM_OPTIONS = ${vramOptionsJson};
 
     // Cost rates from backend (halala/minute)
     const COST_RATES = {
@@ -294,6 +357,46 @@ export class JobSubmitPanel {
 
     let selectedProviderId = PRESELECTED_ID || (PROVIDERS[0]?.id ?? '');
     let selectedJobType = 'llm_inference';
+    let selectedContainerType = CONTAINER_TYPES[0]?.value ?? 'pytorch-cuda';
+    let selectedVramMb = VRAM_OPTIONS[1]?.mb ?? 8192; // default 8 GB
+    let selectedGpuCount = 1;
+
+    // Populate container type dropdown
+    const ctSelect = document.getElementById('containerTypeSelect');
+    CONTAINER_TYPES.forEach(ct => {
+      const opt = document.createElement('option');
+      opt.value = ct.value;
+      opt.textContent = ct.label;
+      if (ct.value === selectedContainerType) { opt.selected = true; }
+      ctSelect.appendChild(opt);
+    });
+    ctSelect.addEventListener('change', () => {
+      selectedContainerType = ctSelect.value;
+    });
+
+    // Populate VRAM toggle buttons
+    const vramToggle = document.getElementById('vramToggle');
+    VRAM_OPTIONS.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'toggle-btn' + (opt.mb === selectedVramMb ? ' selected' : '');
+      btn.textContent = opt.label;
+      btn.dataset.mb = String(opt.mb);
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#vramToggle .toggle-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedVramMb = opt.mb;
+      });
+      vramToggle.appendChild(btn);
+    });
+
+    // GPU count toggle
+    document.querySelectorAll('#gpuCountToggle .toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#gpuCountToggle .toggle-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedGpuCount = parseInt(btn.dataset.count);
+      });
+    });
 
     // Render providers
     const list = document.getElementById('providerList');
@@ -364,7 +467,6 @@ export class JobSubmitPanel {
 
     document.getElementById('submitBtn').addEventListener('click', () => {
       const duration = parseInt(document.getElementById('durationInput').value);
-      const vram = parseInt(document.getElementById('vramInput').value) || undefined;
       const priority = parseInt(document.getElementById('priorityInput').value);
       const prompt = document.getElementById('promptInput').value.trim();
       const model = document.getElementById('modelInput').value.trim();
@@ -374,12 +476,20 @@ export class JobSubmitPanel {
         return;
       }
 
+      const ctDef = CONTAINER_TYPES.find(ct => ct.value === selectedContainerType);
+      const containerSpec = {
+        image_type: selectedContainerType,
+        vram_required_mb: selectedVramMb,
+        gpu_count: selectedGpuCount,
+        compute_type: ctDef?.computeType ?? 'inference',
+      };
+
       const payload = {
         provider_id: selectedProviderId,
         job_type: selectedJobType,
         duration_minutes: duration,
+        container_spec: containerSpec,
         priority,
-        ...(vram ? { gpu_requirements: { min_vram_gb: vram } } : {}),
         ...(prompt || model ? { params: {
           ...(prompt ? { prompt } : {}),
           ...(model ? { model } : {})

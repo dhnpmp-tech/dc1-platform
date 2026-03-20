@@ -75,6 +75,10 @@ export default function ProviderSettingsPage() {
   })
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [prefsSaved, setPrefsSaved] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deletingAccount, setDeletingAccount] = useState(false)
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_provider_key')
@@ -180,6 +184,27 @@ export default function ProviderSettingsPage() {
     localStorage.removeItem('dc1_provider_key')
     localStorage.removeItem('dc1_user_data')
     window.location.href = '/'
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!provider || deleteConfirmText !== 'DELETE') return
+    setDeletingAccount(true)
+    setDeleteError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(provider.api_key)}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete account')
+
+      localStorage.removeItem('dc1_provider_key')
+      localStorage.removeItem('dc1_user_data')
+      window.location.href = '/'
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Failed to delete account')
+      setDeletingAccount(false)
+    }
   }
 
   if (loading) {
@@ -474,6 +499,22 @@ export default function ProviderSettingsPage() {
         {/* Danger Zone */}
         <div className="card p-6 border-status-error/20 space-y-4">
           <h2 className="text-lg font-semibold text-status-error">Account Actions</h2>
+          <div className="rounded-lg border border-status-error/30 bg-status-error/5 p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-status-error">Delete Account</h3>
+            <p className="text-xs text-dc1-text-secondary">
+              This permanently deletes your provider account, cancels active jobs, and revokes daemon access.
+            </p>
+            <button
+              onClick={() => {
+                setShowDeleteModal(true)
+                setDeleteConfirmText('')
+                setDeleteError('')
+              }}
+              className="px-4 py-2 rounded-lg border border-status-error/40 text-status-error text-sm font-medium hover:bg-status-error/10 transition"
+            >
+              Delete Account
+            </button>
+          </div>
           <button
             onClick={handleLogout}
             className="px-4 py-2 rounded-lg border border-status-error/30 text-status-error text-sm font-medium hover:bg-status-error/10 transition"
@@ -482,6 +523,45 @@ export default function ProviderSettingsPage() {
           </button>
         </div>
       </div>
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-xl border border-dc1-border bg-dc1-surface-l1 p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-status-error">Confirm Account Deletion</h2>
+            <p className="text-sm text-dc1-text-secondary">
+              This action cannot be undone. Type <span className="font-mono text-dc1-text-primary">DELETE</span> to continue.
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Type DELETE"
+              className="w-full px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-status-error/30"
+            />
+            {deleteError && <p className="text-sm text-status-error">{deleteError}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  if (deletingAccount) return
+                  setShowDeleteModal(false)
+                  setDeleteConfirmText('')
+                  setDeleteError('')
+                }}
+                className="btn btn-outline text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deletingAccount || deleteConfirmText !== 'DELETE'}
+                className="btn text-sm bg-status-error/20 text-status-error border border-status-error/40 hover:bg-status-error/30 disabled:opacity-50"
+              >
+                {deletingAccount ? 'Deleting...' : 'Delete Permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   )
 }

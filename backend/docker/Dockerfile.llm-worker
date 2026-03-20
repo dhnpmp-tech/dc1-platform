@@ -3,6 +3,8 @@
 ARG BASE_IMAGE=dc1/base-worker:latest
 FROM ${BASE_IMAGE}
 
+USER root
+
 # LLM inference dependencies
 RUN pip3 install --no-cache-dir \
     transformers \
@@ -18,6 +20,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer; \
 AutoTokenizer.from_pretrained('microsoft/phi-2', trust_remote_code=True); \
 AutoModelForCausalLM.from_pretrained('microsoft/phi-2', trust_remote_code=True); \
 print('Phi-2 cached.')"
+
+USER dcp:dcp
 
 LABEL dc1.worker.type="llm-inference"
 LABEL dc1.worker.version="1.0"

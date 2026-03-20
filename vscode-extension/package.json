@@ -2,7 +2,7 @@
   "name": "dcp-compute",
   "displayName": "DCP GPU Compute",
   "description": "Submit GPU compute jobs to DCP — Saudi Arabia's decentralized GPU marketplace. Provider sidebar, job submission, live log streaming, wallet panel.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "dcp-platform",
   "license": "MIT",
   "repository": {
@@ -121,6 +121,16 @@
         "command": "dc1.openBillingPage",
         "title": "DCP: Open Billing Page",
         "icon": "$(link-external)"
+      },
+      {
+        "command": "dc1.streamLogs",
+        "title": "DCP: Stream Job Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "dc1.stopLogStream",
+        "title": "DCP: Stop Log Stream",
+        "icon": "$(stop)"
       }
     ],
     "menus": {

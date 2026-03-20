@@ -17,6 +17,7 @@ interface Job {
   completed_at: string
   actual_cost_halala: number
   params?: string | null
+  container_spec?: string | null
 }
 
 const HomeIcon = () => (
@@ -74,6 +75,13 @@ interface RetryState {
   successId: number | null
 }
 
+interface SaveTplState {
+  job: Job | null
+  name: string
+  saving: boolean
+  saved: boolean
+}
+
 export default function RenterJobsPage() {
   const router = useRouter()
   const [jobs, setJobs] = useState<Job[]>([])
@@ -82,6 +90,7 @@ export default function RenterJobsPage() {
   const [totalSpent, setTotalSpent] = useState(0)
   const [retry, setRetry] = useState<RetryState>({ job: null, loading: false, error: '', successId: null })
   const [exportingCsv, setExportingCsv] = useState(false)
+  const [saveTpl, setSaveTpl] = useState<SaveTplState>({ job: null, name: '', saving: false, saved: false })
 
   const fetchJobs = async (apiKey: string) => {
     try {
@@ -193,6 +202,39 @@ export default function RenterJobsPage() {
     }
   }
 
+  const openSaveTemplateModal = (job: Job) => {
+    setSaveTpl({ job, name: '', saving: false, saved: false })
+  }
+
+  const confirmSaveTemplate = async () => {
+    const apiKey = localStorage.getItem('dc1_renter_key') || ''
+    const { job, name } = saveTpl
+    if (!job || !name.trim()) return
+    setSaveTpl(s => ({ ...s, saving: true }))
+    let parsedParams: Record<string, unknown> = {}
+    try { if (job.params) parsedParams = JSON.parse(job.params) } catch { /* ok */ }
+    try {
+      const res = await fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          job_type: job.job_type,
+          model: parsedParams.model || job.job_type,
+          resource_spec_json: JSON.stringify(parsedParams),
+        }),
+      })
+      if (res.ok) {
+        setSaveTpl(s => ({ ...s, saving: false, saved: true }))
+        setTimeout(() => setSaveTpl({ job: null, name: '', saving: false, saved: false }), 2000)
+      } else {
+        setSaveTpl(s => ({ ...s, saving: false }))
+      }
+    } catch {
+      setSaveTpl(s => ({ ...s, saving: false }))
+    }
+  }
+
   if (loading) {
     return (
       <DashboardLayout navItems={navItems} role="renter" userName="Renter">
@@ -281,7 +323,7 @@ export default function RenterJobsPage() {
                 <th>Completed</th>
                 <th>Status</th>
                 <th>Cost</th>
-                {hasFailedJobs && <th className="sr-only">Actions</th>}
+                <th className="sr-only">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -297,7 +339,22 @@ export default function RenterJobsPage() {
                           {(j.job_id || `#${j.id}`).slice(0, 16)}
                         </Link>
                       </td>
-                      <td className="text-sm">{(j.job_type || '').replace(/_/g, ' ')}</td>
+                      <td className="text-sm">
+                        <div className="flex flex-col gap-1">
+                          <span>{(j.job_type || '').replace(/_/g, ' ')}</span>
+                          {j.container_spec && (() => {
+                            try {
+                              const spec = JSON.parse(j.container_spec)
+                              if (spec.image_type) return (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-dc1-amber/15 text-dc1-amber border border-dc1-amber/25 w-fit font-mono">
+                                  {spec.image_type}
+                                </span>
+                              )
+                            } catch { /* skip */ }
+                            return null
+                          })()}
+                        </div>
+                      </td>
                       <td className="text-sm text-dc1-text-secondary">
                         {j.submitted_at
                           ? new Date(j.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -314,8 +371,8 @@ export default function RenterJobsPage() {
                           ? `${(j.actual_cost_halala / 100).toFixed(2)} SAR`
                           : '—'}
                       </td>
-                      {hasFailedJobs && (
-                        <td>
+                      <td>
+                        <div className="flex items-center gap-1">
                           {j.status === 'failed' && (
                             <button
                               onClick={() => openRetryModal(j)}
@@ -325,14 +382,22 @@ export default function RenterJobsPage() {
                               Retry
                             </button>
                           )}
-                        </td>
-                      )}
+                          <button
+                            onClick={() => openSaveTemplateModal(j)}
+                            className="text-xs text-dc1-text-muted border border-white/10 hover:border-dc1-amber/40 hover:text-dc1-amber rounded px-2 py-1 min-h-[32px] transition-colors"
+                            aria-label={`Save job ${j.job_id || j.id} as template`}
+                            title="Save as Template"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   )
                 })
               ) : (
                 <tr>
-                  <td colSpan={hasFailedJobs ? 7 : 6} className="text-center py-12 text-dc1-text-secondary">
+                  <td colSpan={7} className="text-center py-12 text-dc1-text-secondary">
                     No jobs yet. Head to the{' '}
                     <a href="/renter/playground" className="text-dc1-amber hover:underline">GPU Playground</a>{' '}
                     to run your first job!
@@ -397,6 +462,59 @@ export default function RenterJobsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Save Template Modal */}
+      {saveTpl.job && !saveTpl.saved && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="save-tpl-modal-title"
+        >
+          <div className="card w-full max-w-sm p-6 space-y-4">
+            <h2 id="save-tpl-modal-title" className="text-lg font-bold text-dc1-text-primary">Save as Template</h2>
+            <p className="text-dc1-text-secondary text-sm">Name this job configuration to reuse it later from the Playground.</p>
+            <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
+              <span className="text-dc1-text-muted">Type: </span>{(saveTpl.job.job_type || '').replace(/_/g, ' ')}
+            </div>
+            <input
+              type="text"
+              placeholder="e.g. Arabic Summariser"
+              className="w-full bg-dc1-surface-l2 border border-white/10 rounded-lg px-4 py-3 text-dc1-text-primary placeholder-dc1-text-muted focus:outline-none focus:border-dc1-amber/60 transition text-sm"
+              value={saveTpl.name}
+              onChange={e => setSaveTpl(s => ({ ...s, name: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') confirmSaveTemplate() }}
+              autoFocus
+              maxLength={120}
+            />
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setSaveTpl({ job: null, name: '', saving: false, saved: false })}
+                disabled={saveTpl.saving}
+                className="btn btn-secondary min-h-[44px] px-4"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSaveTemplate}
+                disabled={saveTpl.saving || !saveTpl.name.trim()}
+                className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2"
+              >
+                {saveTpl.saving && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />}
+                {saveTpl.saving ? 'Saving…' : 'Save Template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Template Success Toast */}
+      {saveTpl.saved && (
+        <div className="fixed bottom-6 right-6 z-50 bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 flex items-center gap-2 text-status-success text-sm font-medium shadow-lg">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          Template saved!
         </div>
       )}
     </DashboardLayout>

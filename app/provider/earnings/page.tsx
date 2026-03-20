@@ -9,6 +9,14 @@ import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
+interface TrendPoint {
+  date: string
+  earnings_halala: number
+  jobs_completed: number
+}
+
+type TrendPeriod = '7d' | '30d' | '90d'
+
 interface EarningsData {
   total_earned_sar: number
   pending_withdrawal_sar: number
@@ -54,11 +62,12 @@ interface JobStats {
 }
 
 interface Withdrawal {
-  withdrawal_id: string
-  amount_sar: number
-  payout_method: string
-  status: string
-  requested_at: string
+  id: string
+  amount_halala: number
+  status: 'pending' | 'processing' | 'paid' | 'failed'
+  iban: string
+  admin_note: string | null
+  created_at: string
   processed_at: string | null
 }
 
@@ -119,6 +128,112 @@ const GpuIcon = () => (
   </svg>
 )
 
+// ── Earnings Trend Chart (pure SVG, no external deps) ────────────────────────
+const W = 600
+const H = 160
+const PAD = { top: 10, right: 10, bottom: 30, left: 44 }
+const CHART_W = W - PAD.left - PAD.right
+const CHART_H = H - PAD.top - PAD.bottom
+
+function EarningsTrendChart({ data, isRTL }: { data: TrendPoint[]; isRTL: boolean }) {
+  const [tooltip, setTooltip] = useState<{ i: number; x: number; y: number } | null>(null)
+
+  const display = isRTL ? [...data].slice().reverse() : data
+  const maxVal = Math.max(...display.map(d => d.earnings_halala), 1)
+  const n = display.length
+
+  function barX(i: number) {
+    return PAD.left + (i / n) * CHART_W
+  }
+  const barW = Math.max(4, Math.min(28, CHART_W / Math.max(n, 1) - 2))
+
+  // Y-axis ticks (0, mid, max) in SAR
+  const maxSar = maxVal / 100
+  const midSar = maxSar / 2
+  const yTicks = [
+    { label: `${maxSar.toFixed(1)}`, y: PAD.top },
+    { label: `${midSar.toFixed(1)}`, y: PAD.top + CHART_H / 2 },
+    { label: '0', y: PAD.top + CHART_H },
+  ]
+
+  // Date labels: show first, middle, last
+  const labelIdxs = n <= 1 ? [0] : [0, Math.floor(n / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i)
+
+  return (
+    <div className="relative select-none">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        onMouseLeave={() => setTooltip(null)}
+      >
+        {/* Y-axis ticks */}
+        {yTicks.map(tick => (
+          <g key={tick.label}>
+            <line x1={PAD.left - 4} y1={tick.y} x2={PAD.left + CHART_W} y2={tick.y}
+              stroke="#ffffff10" strokeWidth="1" />
+            <text x={PAD.left - 6} y={tick.y + 4} textAnchor="end"
+              fontSize="10" fill="#9ca3af">{tick.label}</text>
+          </g>
+        ))}
+
+        {/* Bars */}
+        {display.map((d, i) => {
+          const barH = Math.max((d.earnings_halala / maxVal) * CHART_H, d.earnings_halala > 0 ? 2 : 0)
+          const x = barX(i) + (CHART_W / n - barW) / 2
+          const y = PAD.top + CHART_H - barH
+          return (
+            <g key={d.date}
+              onMouseEnter={() => setTooltip({ i, x: barX(i) + CHART_W / n / 2, y })}
+              style={{ cursor: 'default' }}
+            >
+              {/* Hover area */}
+              <rect x={barX(i)} y={PAD.top} width={CHART_W / n} height={CHART_H}
+                fill="transparent" />
+              {/* Actual bar */}
+              <rect x={x} y={y} width={barW} height={barH}
+                fill="#F5A524" rx="2" opacity={tooltip?.i === i ? 1 : 0.8} />
+            </g>
+          )
+        })}
+
+        {/* X-axis date labels */}
+        {labelIdxs.map(i => {
+          if (i >= display.length) return null
+          const d = display[i]
+          const x = barX(i) + CHART_W / n / 2
+          const dateLabel = new Date(d.date + 'T00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          return (
+            <text key={d.date} x={x} y={H - 4} textAnchor="middle"
+              fontSize="10" fill="#9ca3af">{dateLabel}</text>
+          )
+        })}
+
+        {/* Tooltip box */}
+        {tooltip && tooltip.i < display.length && (() => {
+          const d = display[tooltip.i]
+          const sar = (d.earnings_halala / 100).toFixed(2)
+          const dateStr = new Date(d.date + 'T00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          const bx = Math.min(Math.max(tooltip.x - 55, 2), W - 112)
+          const by = Math.max(tooltip.y - 56, 4)
+          return (
+            <g>
+              <rect x={bx} y={by} width={110} height={50} rx="6"
+                fill="#1a1a2e" stroke="#F5A524" strokeWidth="1" opacity="0.95" />
+              <text x={bx + 55} y={by + 16} textAnchor="middle"
+                fontSize="11" fill="#F5A524" fontWeight="600">{dateStr}</text>
+              <text x={bx + 55} y={by + 31} textAnchor="middle"
+                fontSize="11" fill="#e5e7eb">{sar} SAR</text>
+              <text x={bx + 55} y={by + 45} textAnchor="middle"
+                fontSize="10" fill="#9ca3af">{d.jobs_completed} jobs</text>
+            </g>
+          )
+        })()}
+      </svg>
+    </div>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const navItems = [
   { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
   { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
@@ -136,9 +251,29 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function maskIban(iban: string): string {
+  const clean = (iban || '').toUpperCase().replace(/\s+/g, '')
+  if (clean.length <= 8) return clean
+  return `${clean.slice(0, 4)}${'*'.repeat(Math.max(clean.length - 8, 4))}${clean.slice(-4)}`
+}
+
+function statusBadgeClass(status: Withdrawal['status']): string {
+  if (status === 'pending') return 'bg-dc1-amber/10 text-dc1-amber border-dc1-amber/30'
+  if (status === 'processing') return 'bg-status-info/10 text-status-info border-status-info/30'
+  if (status === 'paid') return 'bg-status-success/10 text-status-success border-status-success/30'
+  return 'bg-status-error/10 text-status-error border-status-error/30'
+}
+
+function statusLabel(status: Withdrawal['status']): string {
+  if (status === 'pending') return 'Pending'
+  if (status === 'processing') return 'Processing'
+  if (status === 'paid') return 'Paid'
+  return 'Failed'
+}
+
 export default function EarningsPage() {
   const router = useRouter()
-  const { t } = useLanguage()
+  const { t, isRTL } = useLanguage()
   const [providerName, setProviderName] = useState('Provider')
   const [tab, setTab] = useState<'overview' | 'jobs' | 'daemon' | 'withdrawals'>('overview')
   const [earnings, setEarnings] = useState<EarningsData | null>(null)
@@ -153,6 +288,11 @@ export default function EarningsPage() {
   const [withdrawLoading, setWithdrawLoading] = useState(false)
   const [withdrawSuccess, setWithdrawSuccess] = useState(false)
   const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [withdrawAmountSar, setWithdrawAmountSar] = useState('')
+  const [withdrawIban, setWithdrawIban] = useState('')
+  const [trendData, setTrendData] = useState<TrendPoint[]>([])
+  const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>('30d')
+  const [trendLoading, setTrendLoading] = useState(false)
 
   const fetchAll = useCallback(async () => {
     const key = localStorage.getItem('dc1_provider_key')
@@ -177,7 +317,7 @@ export default function EarningsPage() {
         fetch(`${API_BASE}/providers/earnings?key=${encodeURIComponent(key)}`),
         fetch(`${API_BASE}/providers/earnings-daily?key=${encodeURIComponent(key)}&days=30`),
         fetch(`${API_BASE}/providers/job-history?key=${encodeURIComponent(key)}&limit=50`),
-        fetch(`${API_BASE}/providers/withdrawal-history?key=${encodeURIComponent(key)}`),
+        fetch(`${API_BASE}/providers/me/withdrawals?key=${encodeURIComponent(key)}`),
         fetch(`${API_BASE}/providers/daemon-logs?key=${encodeURIComponent(key)}&limit=30`),
       ])
       if (eRes.ok) setEarnings(await eRes.json())
@@ -201,18 +341,44 @@ export default function EarningsPage() {
 
   const handleWithdraw = useCallback(async () => {
     const key = localStorage.getItem('dc1_provider_key')
-    if (!key) return
+    if (!key || !earnings) return
+
+    const amountSar = Number(withdrawAmountSar)
+    if (!Number.isFinite(amountSar) || amountSar < 10) {
+      setWithdrawError('Minimum withdrawal is 10 SAR.')
+      return
+    }
+
+    const amountHalala = Math.round(amountSar * 100)
+    if (amountHalala > Math.round(earnings.available_sar * 100)) {
+      setWithdrawError('Requested amount exceeds available balance.')
+      return
+    }
+
+    const normalizedIban = withdrawIban.trim().toUpperCase().replace(/\s+/g, '')
+    if (!/^SA\d{22}$/.test(normalizedIban)) {
+      setWithdrawError('IBAN must be Saudi format: SA followed by 22 digits.')
+      return
+    }
+
     setWithdrawLoading(true)
     setWithdrawError(null)
     try {
-      const res = await fetch(`${API_BASE}/providers/withdraw?key=${encodeURIComponent(key)}`, {
+      const res = await fetch(`${API_BASE}/providers/me/withdraw?key=${encodeURIComponent(key)}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount_halala: amountHalala,
+          iban: normalizedIban,
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || `Request failed (${res.status})`)
       }
       setShowWithdrawModal(false)
+      setWithdrawAmountSar('')
+      setWithdrawIban('')
       setWithdrawSuccess(true)
       setTimeout(() => setWithdrawSuccess(false), 6000)
       await fetchAll()
@@ -220,13 +386,30 @@ export default function EarningsPage() {
       setWithdrawError(err.message || 'Withdrawal request failed.')
     }
     setWithdrawLoading(false)
-  }, [fetchAll])
+  }, [earnings, fetchAll, withdrawAmountSar, withdrawIban])
+
+  const fetchTrend = useCallback(async (period: TrendPeriod) => {
+    const key = localStorage.getItem('dc1_provider_key')
+    if (!key) return
+    setTrendLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/providers/me/earnings/history?key=${encodeURIComponent(key)}&period=${period}`)
+      if (res.ok) setTrendData(await res.json())
+    } catch (err) {
+      console.error('Trend fetch error:', err)
+    }
+    setTrendLoading(false)
+  }, [])
 
   useEffect(() => {
     fetchAll()
     const interval = setInterval(fetchAll, 60000)
     return () => clearInterval(interval)
   }, [fetchAll])
+
+  useEffect(() => {
+    fetchTrend(trendPeriod)
+  }, [fetchTrend, trendPeriod])
 
   const maxDailyEarning = Math.max(...daily.map(d => d.earned_halala), 1)
 
@@ -282,6 +465,53 @@ export default function EarningsPage() {
         {/* Tab: Overview */}
         {tab === 'overview' && (
           <div className="space-y-6">
+            {/* Earnings Trend Chart */}
+            <div className="card">
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <h3 className="text-sm font-semibold text-dc1-text-secondary">{t('provider.earnings_trend')}</h3>
+                <div className="flex gap-1 bg-dc1-surface-l2 rounded-lg p-0.5">
+                  {(['7d', '30d', '90d'] as TrendPeriod[]).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setTrendPeriod(p)}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                        trendPeriod === p
+                          ? 'bg-dc1-amber/10 text-dc1-amber'
+                          : 'text-dc1-text-muted hover:text-dc1-text-secondary'
+                      }`}
+                    >
+                      {t(`provider.period_${p}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {trendLoading ? (
+                <div className="flex justify-center py-10">
+                  <div className="animate-spin h-6 w-6 border-2 border-dc1-amber border-t-transparent rounded-full" />
+                </div>
+              ) : trendData.length === 0 ? (
+                <p className="text-dc1-text-muted text-sm py-8 text-center">No earnings data for this period.</p>
+              ) : (
+                <>
+                  <EarningsTrendChart data={trendData} isRTL={isRTL} />
+                  {/* Summary line */}
+                  {(() => {
+                    const totalHalala = trendData.reduce((s, d) => s + d.earnings_halala, 0)
+                    const totalSar = (totalHalala / 100).toFixed(2)
+                    const days = trendPeriod === '7d' ? 7 : trendPeriod === '30d' ? 30 : 90
+                    const avgSar = (totalHalala / 100 / days).toFixed(2)
+                    return (
+                      <p className="text-xs text-dc1-text-muted mt-3">
+                        Total: <span className="text-dc1-amber font-semibold">{totalSar} SAR</span>{' '}
+                        over {days} days — avg <span className="text-dc1-text-secondary">{avgSar} SAR/day</span>
+                      </p>
+                    )
+                  })()}
+                </>
+              )}
+            </div>
+
             {/* Daily chart */}
             <div className="card">
               <h3 className="text-sm text-dc1-text-secondary mb-4">Daily Earnings (Last 30 Days)</h3>
@@ -458,7 +688,7 @@ export default function EarningsPage() {
               <div className="card bg-gradient-to-r from-dc1-amber/10 to-transparent border-dc1-amber/20">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div>
-                    <div className="text-dc1-text-secondary text-sm">Available for Withdrawal</div>
+                    <div className="text-dc1-text-secondary text-sm">{t('provider.withdraw')}</div>
                     <div className="text-3xl font-bold text-dc1-amber mt-1">{earnings.available_sar.toFixed(2)} SAR</div>
                     <div className="text-xs text-dc1-text-muted mt-1">Min withdrawal: 10 SAR</div>
                   </div>
@@ -466,26 +696,74 @@ export default function EarningsPage() {
                     {earnings.pending_withdrawal_sar > 0 && (
                       <div className="text-right">
                         <div className="text-xs text-status-warning">
-                          {t('provider.withdraw.pending').replace('{amount}', earnings.pending_withdrawal_sar.toFixed(2))}
+                          {t('provider.withdrawal_pending').replace('{amount}', earnings.pending_withdrawal_sar.toFixed(2))}
                         </div>
                       </div>
                     )}
                     <button
-                      onClick={() => { setWithdrawError(null); setShowWithdrawModal(true) }}
-                      disabled={earnings.available_sar <= 0}
+                      onClick={() => {
+                        setWithdrawError(null)
+                        setWithdrawAmountSar(earnings.available_sar >= 10 ? earnings.available_sar.toFixed(2) : '')
+                        setShowWithdrawModal(true)
+                      }}
+                      disabled={earnings.available_sar < 10}
                       className="btn btn-primary text-sm min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      {t('provider.withdraw.button')}
+                      {t('provider.withdraw')}
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* Withdrawal request form */}
+            <div className="card space-y-4">
+              <h3 className="section-heading">{t('provider.withdraw')}</h3>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs text-dc1-text-secondary">Amount (SAR)</span>
+                  <input
+                    type="number"
+                    min={10}
+                    step={0.01}
+                    max={earnings ? earnings.available_sar : undefined}
+                    value={withdrawAmountSar}
+                    onChange={(e) => setWithdrawAmountSar(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 text-sm text-dc1-text-primary focus:outline-none focus:ring-2 focus:ring-dc1-amber/40"
+                    placeholder="10.00"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-dc1-text-secondary">{t('provider.iban')}</span>
+                  <input
+                    type="text"
+                    value={withdrawIban}
+                    onChange={(e) => setWithdrawIban(e.target.value.toUpperCase())}
+                    className="mt-1 w-full rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 text-sm text-dc1-text-primary uppercase focus:outline-none focus:ring-2 focus:ring-dc1-amber/40"
+                    placeholder="SA0000000000000000000000"
+                  />
+                </label>
+              </div>
+              {withdrawError && (
+                <div className="rounded-lg px-3 py-2 bg-status-error/10 border border-status-error/30 text-status-error text-xs">
+                  {withdrawError}
+                </div>
+              )}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowWithdrawModal(true)}
+                  disabled={!earnings || earnings.available_sar < 10 || withdrawLoading}
+                  className="btn btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {t('provider.withdraw')}
+                </button>
+              </div>
+            </div>
+
             {/* Withdrawal History */}
             <div className="table-container">
               <div className="px-4 py-3 border-b border-dc1-border">
-                <h3 className="section-heading">Withdrawal History</h3>
+                <h3 className="section-heading">{t('provider.withdrawal_history')}</h3>
               </div>
               {withdrawals.length === 0 ? (
                 <div className="p-6 text-center text-dc1-text-muted text-sm">No withdrawals yet.</div>
@@ -495,17 +773,23 @@ export default function EarningsPage() {
                     <tr>
                       <th>Date</th>
                       <th>Amount</th>
-                      <th>Method</th>
+                      <th>{t('provider.iban')}</th>
                       <th>Status</th>
+                      <th>Admin Note</th>
                     </tr>
                   </thead>
                   <tbody>
                     {withdrawals.map(w => (
-                      <tr key={w.withdrawal_id}>
-                        <td className="text-sm text-dc1-text-secondary">{new Date(w.requested_at).toLocaleDateString()}</td>
-                        <td className="text-dc1-amber font-semibold">{w.amount_sar.toFixed(2)} SAR</td>
-                        <td className="text-sm text-dc1-text-secondary">{(w.payout_method || '').replace(/_/g, ' ')}</td>
-                        <td><StatusBadge status={w.status === 'completed' ? 'completed' : w.status === 'pending' ? 'pending' : 'failed'} size="sm" /></td>
+                      <tr key={w.id}>
+                        <td className="text-sm text-dc1-text-secondary">{new Date(w.created_at).toLocaleDateString()}</td>
+                        <td className="text-dc1-amber font-semibold">{(w.amount_halala / 100).toFixed(2)} SAR</td>
+                        <td className="text-sm text-dc1-text-secondary font-mono">{maskIban(w.iban)}</td>
+                        <td>
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusBadgeClass(w.status)}`}>
+                            {statusLabel(w.status)}
+                          </span>
+                        </td>
+                        <td className="text-sm text-dc1-text-secondary">{w.admin_note || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -521,8 +805,18 @@ export default function EarningsPage() {
             <div className="bg-dc1-surface-l1 border border-dc1-border rounded-2xl p-6 w-full max-w-sm shadow-xl">
               <h2 className="text-lg font-bold text-dc1-text-primary mb-2">Confirm Withdrawal</h2>
               <p className="text-dc1-text-secondary text-sm mb-6">
-                {t('provider.withdraw.confirm').replace('{amount}', earnings.available_sar.toFixed(2))}
+                {t('provider.withdraw.confirm').replace('{amount}', withdrawAmountSar || '0')}
               </p>
+              <div className="mb-4 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary space-y-1">
+                <div className="flex justify-between">
+                  <span>Amount</span>
+                  <span className="font-semibold text-dc1-text-primary">{withdrawAmountSar || '0.00'} SAR</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{t('provider.iban')}</span>
+                  <span className="font-mono text-dc1-text-primary">{withdrawIban.trim() ? maskIban(withdrawIban) : '—'}</span>
+                </div>
+              </div>
               {withdrawError && (
                 <div className="mb-4 rounded-lg px-3 py-2 bg-status-error/10 border border-status-error/30 text-status-error text-xs">
                   {withdrawError}

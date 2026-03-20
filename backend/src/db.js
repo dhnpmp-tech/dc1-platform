@@ -27,11 +27,16 @@ db.exec(`
     gpu_model TEXT,
     gpu_count INTEGER DEFAULT 1,
     vram_gb INTEGER,
+    vram_mb INTEGER,
+    supported_compute_types TEXT,
+    gpu_profile_source TEXT DEFAULT 'manual',
+    gpu_profile_updated_at TEXT,
     os TEXT DEFAULT 'linux',
     bandwidth_mbps INTEGER,
     storage_tb REAL,
     location TEXT,
     ip_address TEXT,
+    cost_per_gpu_second_halala REAL DEFAULT 0.25,
     status TEXT DEFAULT 'pending',
     approval_status TEXT DEFAULT 'pending',
     approved_at TEXT,
@@ -51,9 +56,16 @@ db.exec(`
     job_type TEXT,
     model TEXT,
     status TEXT DEFAULT 'pending',
+    container_id TEXT,
+    workspace_volume_name TEXT,
+    checkpoint_name TEXT,
+    checkpoint_path TEXT,
+    checkpoint_enabled INTEGER DEFAULT 0,
+    checkpointed_at TEXT,
     vram_required INTEGER DEFAULT 0,
     cost_halala INTEGER DEFAULT 0,
     gpu_requirements TEXT,
+    container_spec TEXT,
     notes TEXT,
     submitted_at TEXT,
     started_at TEXT,
@@ -65,9 +77,26 @@ db.exec(`
     webhook_notified_at TEXT,
     webhook_delivery_status TEXT,
     webhook_delivery_attempts INTEGER DEFAULT 0,
+    completion_email_sent_at TEXT,
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    attempt_number INTEGER NOT NULL,
+    started_at TEXT,
+    ended_at TEXT,
+    exit_code INTEGER,
+    log_path TEXT,
+    gpu_seconds_used REAL DEFAULT 0,
+    cost_halala INTEGER DEFAULT 0
+  )
+`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_job_exec_job_attempt ON job_executions(job_id, attempt_number)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_job_exec_job_id ON job_executions(job_id, started_at DESC)`);
 
 // ─── SERVE SESSIONS TABLE ───
 // Tracks active vLLM serving sessions exposed through DC1 proxy.
@@ -251,6 +280,18 @@ try {
   );
 } catch (e) {}
 
+// ─── CONTAINER IMAGE ALLOWLIST ─────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS allowed_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_ref TEXT NOT NULL UNIQUE,
+    image_type TEXT NOT NULL DEFAULT 'custom',
+    description TEXT,
+    approved_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_allowed_images_approved_at ON allowed_images(approved_at DESC)`);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS recovery_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -342,6 +383,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN last_heartbeat TEXT',
   'ALTER TABLE providers ADD COLUMN gpu_name_detected TEXT',
   'ALTER TABLE providers ADD COLUMN gpu_vram_mib INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN vram_mb INTEGER',
   'ALTER TABLE providers ADD COLUMN gpu_driver TEXT',
   'ALTER TABLE providers ADD COLUMN gpu_compute TEXT',
   'ALTER TABLE providers ADD COLUMN total_earnings REAL DEFAULT 0',
@@ -349,16 +391,24 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN rotated_at TEXT',
+  'ALTER TABLE providers ADD COLUMN cost_per_gpu_second_halala REAL DEFAULT 0.25',
   // jobs columns (for existing DBs that had the old narrow schema)
   'ALTER TABLE jobs ADD COLUMN job_type TEXT',
   'ALTER TABLE jobs ADD COLUMN model TEXT',
   'ALTER TABLE jobs ADD COLUMN cost_halala INTEGER DEFAULT 0',
   'ALTER TABLE jobs ADD COLUMN gpu_requirements TEXT',
+  'ALTER TABLE jobs ADD COLUMN container_spec TEXT',
   'ALTER TABLE jobs ADD COLUMN notes TEXT',
   'ALTER TABLE jobs ADD COLUMN submitted_at TEXT',
   'ALTER TABLE jobs ADD COLUMN started_at TEXT',
   'ALTER TABLE jobs ADD COLUMN completed_at TEXT',
   'ALTER TABLE jobs ADD COLUMN duration_minutes INTEGER',
+  'ALTER TABLE jobs ADD COLUMN container_id TEXT',
+  'ALTER TABLE jobs ADD COLUMN workspace_volume_name TEXT',
+  'ALTER TABLE jobs ADD COLUMN checkpoint_name TEXT',
+  'ALTER TABLE jobs ADD COLUMN checkpoint_path TEXT',
+  'ALTER TABLE jobs ADD COLUMN checkpoint_enabled INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN checkpointed_at TEXT',
   // jobs columns added by sync E2E branch (needed on deployed VPS)
   'ALTER TABLE jobs ADD COLUMN assigned_at TEXT',
   'ALTER TABLE jobs ADD COLUMN picked_up_at TEXT',
@@ -426,6 +476,9 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN priority INTEGER DEFAULT 2',         // 1=high, 2=normal, 3=low
   'ALTER TABLE jobs ADD COLUMN retry_count INTEGER DEFAULT 0',      // how many times job was retried
   'ALTER TABLE jobs ADD COLUMN max_retries INTEGER DEFAULT 2',      // transient failure retry ceiling
+  // Container crash recovery telemetry — daemon-managed retry metadata
+  'ALTER TABLE jobs ADD COLUMN restart_count INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN last_error TEXT',
   // GPU metrics — DCP-19: multi-GPU data stored as JSON per heartbeat
   'ALTER TABLE heartbeat_log ADD COLUMN gpu_metrics_json TEXT',     // full all_gpus array from daemon
   'ALTER TABLE heartbeat_log ADD COLUMN gpu_count INTEGER DEFAULT 1',
@@ -451,6 +504,9 @@ const migrations = [
   // Canonical GPU info payload from daemon heartbeat (DCP-244)
   'ALTER TABLE providers ADD COLUMN gpu_info_json TEXT',
   'ALTER TABLE providers ADD COLUMN gpu_vram_mb INTEGER',
+  'ALTER TABLE providers ADD COLUMN supported_compute_types TEXT',
+  'ALTER TABLE providers ADD COLUMN gpu_profile_source TEXT DEFAULT \'manual\'',
+  'ALTER TABLE providers ADD COLUMN gpu_profile_updated_at TEXT',
   // Optional renter callback endpoint for job lifecycle webhooks
   'ALTER TABLE renters ADD COLUMN webhook_url TEXT',
   'ALTER TABLE renters ADD COLUMN rotated_at TEXT',
@@ -458,6 +514,9 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN webhook_notified_at TEXT',
   'ALTER TABLE jobs ADD COLUMN webhook_delivery_status TEXT',
   'ALTER TABLE jobs ADD COLUMN webhook_delivery_attempts INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN completion_email_sent_at TEXT',
+  'ALTER TABLE job_executions ADD COLUMN gpu_seconds_used REAL DEFAULT 0',
+  'ALTER TABLE job_executions ADD COLUMN cost_halala INTEGER DEFAULT 0',
 ];
 
 migrations.forEach(sql => {
@@ -487,6 +546,21 @@ db.exec(`
   )
 `);
 
+// ─── CREDIT GRANTS TABLE ───
+// Immutable audit trail for admin-issued renter credits.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS credit_grants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    renter_id INTEGER NOT NULL,
+    amount_halala INTEGER NOT NULL CHECK (amount_halala > 0),
+    reason TEXT NOT NULL,
+    granted_by TEXT NOT NULL DEFAULT 'admin',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (renter_id) REFERENCES renters(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_credit_grants_renter_time ON credit_grants(renter_id, created_at DESC)`);
+
 // ─── API KEY ROTATION AUDIT TABLE ───
 // Security audit trail + per-account rate limiting support.
 db.exec(`
@@ -498,6 +572,53 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_api_key_rotations_account_time ON api_key_rotations(account_type, account_id, rotated_at DESC)`);
+
+// ─── IMAGE SECURITY TABLES ───
+// Trivy scan evidence + approved image digest pinning for container execution policy.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS image_scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_ref TEXT NOT NULL,
+    registry TEXT NOT NULL,
+    resolved_digest TEXT,
+    scanned_at TEXT NOT NULL,
+    critical_count INTEGER NOT NULL DEFAULT 0,
+    scan_report_json TEXT,
+    approved INTEGER NOT NULL DEFAULT 0,
+    approved_at TEXT,
+    approved_by TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_image_scans_image_time ON image_scans(image_ref, scanned_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_image_scans_digest ON image_scans(resolved_digest, scanned_at DESC)`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS approved_container_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_ref TEXT NOT NULL UNIQUE,
+    registry TEXT NOT NULL,
+    resolved_digest TEXT NOT NULL,
+    scan_id INTEGER,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    approved_at TEXT NOT NULL,
+    approved_by TEXT,
+    last_validated_at TEXT,
+    FOREIGN KEY (scan_id) REFERENCES image_scans(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_approved_container_images_active ON approved_container_images(is_active, approved_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_approved_container_images_digest ON approved_container_images(resolved_digest)`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_rate_limit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_key TEXT NOT NULL,
+    actor_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_rate_limit_log_action_actor_time ON admin_rate_limit_log(action_key, actor_fingerprint, created_at DESC)`);
 
 // ─── RENTER QUOTA TABLE ───
 // Per-renter submission/spend controls enforced at job submission.
@@ -575,6 +696,21 @@ db.exec(`
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS withdrawal_requests (
+    id TEXT PRIMARY KEY,
+    provider_id INTEGER NOT NULL,
+    amount_halala INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','paid','failed')),
+    iban TEXT NOT NULL,
+    admin_note TEXT,
+    created_at TEXT NOT NULL,
+    processed_at TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_provider ON withdrawal_requests(provider_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_status ON withdrawal_requests(status, created_at DESC)`);
 
 // ─── VERIFICATION RUNS TABLE ───
 db.exec(`
@@ -668,6 +804,23 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_job_sweep_log_job_id ON job_sweep_log(job_id, swept_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_job_sweep_log_swept_at ON job_sweep_log(swept_at DESC)`);
+
+// ─── JOB TEMPLATES TABLE ─── (DCP-304: renter job templates)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    renter_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    job_type TEXT NOT NULL,
+    model TEXT NOT NULL,
+    system_prompt TEXT,
+    max_tokens INTEGER,
+    resource_spec_json TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (renter_id) REFERENCES renters(id) ON DELETE CASCADE
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_job_templates_renter ON job_templates(renter_id, created_at DESC)`);
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap

@@ -13,7 +13,7 @@ import type {
   ContainerMetrics,
   GpuMetric,
   AuditPayload,
-} from '../types/jobs.js';
+} from '../types/jobs.ts';
 
 const MC_BASE = process.env['MC_API_URL'] ?? 'http://76.13.179.86:8084/api';
 const MC_TOKEN = process.env['MC_TOKEN'] ?? 'dc1-mc-gate0-2026';
@@ -21,6 +21,14 @@ const AGENT_NAME = 'VOLT-DOCKER';
 const DEFAULT_PIDS_LIMIT = Number(process.env['DC1_CONTAINER_PIDS_LIMIT'] ?? 256);
 const DEFAULT_TMPFS_SIZE = process.env['DC1_CONTAINER_TMPFS_SIZE'] ?? '1g';
 const SECCOMP_PROFILE = process.env['DC1_DOCKER_SECCOMP_PROFILE'] ?? '/etc/dc1/seccomp-gpu-compute.json';
+const ALLOWED_DOCKER_IMAGES = (process.env['DC1_ALLOWED_DOCKER_IMAGES'] ??
+  'dc1/base-worker:latest,dc1/general-worker:latest,dc1/llm-worker:latest,dc1/sd-worker:latest,pytorch/pytorch:latest')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+const ALLOW_PULL_MISSING_APPROVED = process.env['DC1_ALLOW_PULL_MISSING_APPROVED'] === 'true';
+const REQUIRE_PINNED_DIGEST = process.env['DCP_REQUIRE_PINNED_IMAGE_DIGEST'] === 'true';
+const SHA256_PIN_RE = /@sha256:[a-f0-9]{64}$/i;
 
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
@@ -30,6 +38,14 @@ function buildSecurityOpts(): string[] {
     opts.push(`seccomp=${SECCOMP_PROFILE}`);
   }
   return opts;
+}
+
+function isAllowedDockerImage(image: string): boolean {
+  return ALLOWED_DOCKER_IMAGES.includes(image);
+}
+
+function isDigestPinnedImage(image: string): boolean {
+  return SHA256_PIN_RE.test(image);
 }
 
 // ── Helpers ──
@@ -112,6 +128,23 @@ export async function launchJobContainer(
   config: JobContainerConfig,
 ): Promise<ContainerResult> {
   const securityOpt = buildSecurityOpts();
+  if (REQUIRE_PINNED_DIGEST && !isDigestPinnedImage(config.dockerImage)) {
+    await audit('container.launch.rejected.image_unpinned', 'job', config.jobId, {
+      image: config.dockerImage,
+    });
+    throw new Error(
+      `Docker image must be digest pinned (@sha256:...) when DCP_REQUIRE_PINNED_IMAGE_DIGEST=true: ${config.dockerImage}`,
+    );
+  }
+  if (!isAllowedDockerImage(config.dockerImage)) {
+    await audit('container.launch.rejected.image_not_allowlisted', 'job', config.jobId, {
+      image: config.dockerImage,
+      allowedImages: ALLOWED_DOCKER_IMAGES,
+    });
+    throw new Error(
+      `Docker image not allowed: ${config.dockerImage}. Configure DC1_ALLOWED_DOCKER_IMAGES to approve it.`,
+    );
+  }
 
   await audit('container.launch.start', 'job', config.jobId, {
     image: config.dockerImage,
@@ -123,8 +156,13 @@ export async function launchJobContainer(
   });
 
   try {
-    // Pull image if missing
+    // Pull image only when explicitly enabled for approved images.
     if (!(await imageExists(config.dockerImage))) {
+      if (!ALLOW_PULL_MISSING_APPROVED) {
+        throw new Error(
+          `Approved image is not present locally and pull is disabled: ${config.dockerImage}`,
+        );
+      }
       await pullImage(config.dockerImage);
     }
 
@@ -150,6 +188,7 @@ export async function launchJobContainer(
           '/var/tmp': 'rw,noexec,nosuid,size=256m',
         },
         CapDrop: ['ALL'],
+        CapAdd: ['SYS_PTRACE'],
         SecurityOpt: securityOpt,
         DeviceRequests: [
           {

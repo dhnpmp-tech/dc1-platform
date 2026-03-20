@@ -4,6 +4,8 @@
 ARG BASE_IMAGE=dc1/base-worker:latest
 FROM ${BASE_IMAGE}
 
+USER root
+
 # Additional compute and scientific libraries
 RUN pip3 install --no-cache-dir \
     scipy \
@@ -11,6 +13,8 @@ RUN pip3 install --no-cache-dir \
     pandas \
     scikit-learn \
     opencv-python-headless
+
+USER dcp:dcp
 
 LABEL dc1.worker.type="general"
 LABEL dc1.worker.version="1.0"

@@ -36,6 +36,46 @@ interface Provider {
   compute_capability: string | null
   cuda_version: string | null
   cost_rates_halala_per_min: CostRates | null
+  supported_compute_types?: string[]
+}
+
+// Shape returned by /providers/public
+interface PublicProvider {
+  gpu_model: string
+  vram_mb: number | null
+  gpu_count: number
+  supported_compute_types: string[]
+  cost_per_hour_sar: number
+  jobs_completed: number
+  online: true
+}
+
+// ── Normalization ──────────────────────────────────────────────────
+function normalizePublic(p: PublicProvider, idx: number): Provider {
+  const halalaPerMin = Math.round((p.cost_per_hour_sar * 100) / 60)
+  return {
+    id: idx,
+    name: p.gpu_model,
+    gpu_model: p.gpu_model,
+    vram_gb: p.vram_mb !== null ? Math.round((p.vram_mb / 1024) * 10) / 10 : null,
+    gpu_count: p.gpu_count,
+    status: 'online',
+    is_live: true,
+    heartbeat_age_seconds: null,
+    location: null,
+    reliability_score: null,
+    reputation_score: 0,
+    uptime_percent: null,
+    total_jobs_completed: p.jobs_completed,
+    cached_models: [],
+    compute_capability: null,
+    cuda_version: null,
+    cost_rates_halala_per_min: {
+      'llm-inference': halalaPerMin,
+      default: halalaPerMin,
+    },
+    supported_compute_types: p.supported_compute_types,
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -58,30 +98,66 @@ function formatAge(seconds: number | null): string {
   return `${Math.floor(seconds / 60)}m`
 }
 
+// ── Sign-up Overlay ────────────────────────────────────────────────
+function SignUpOverlay({ gpu, onClose }: { gpu: Provider; onClose: () => void }) {
+  const { t } = useLanguage()
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-dc1-void/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-dc1-surface-l2 border border-dc1-amber/30 rounded-2xl p-8 max-w-sm w-full mx-4 shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 rounded-xl bg-dc1-amber/10 border border-dc1-amber/20 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-dc1-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-bold text-dc1-text-primary mb-1">{gpu.gpu_model}</h3>
+          <p className="text-dc1-text-muted text-sm">{t('marketplace.sign_up_to_start')}</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <Link href="/renter/register" className="btn btn-primary w-full text-center">
+            {t('marketplace.create_renter')}
+          </Link>
+          <button onClick={onClose} className="btn btn-secondary w-full">
+            {t('marketplace.clear_search')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Provider Card ──────────────────────────────────────────────────
-function ProviderCard({ provider }: { provider: Provider }) {
+function ProviderCard({ provider, onClick }: { provider: Provider; onClick: () => void }) {
   const { t } = useLanguage()
   const rate = getDefaultRate(provider.cost_rates_halala_per_min)
   const vram = provider.vram_gb ?? null
   const uptime = provider.uptime_percent ?? provider.reliability_score ?? null
+  const computeTypes = provider.supported_compute_types ?? []
 
   return (
-    <article className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5 flex flex-col gap-4 hover:border-dc1-amber/30 hover:shadow-amber transition-all duration-200 group">
+    <article
+      className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5 flex flex-col gap-4 hover:border-dc1-amber/30 hover:shadow-amber transition-all duration-200 group cursor-pointer"
+      onClick={onClick}
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-bold text-dc1-text-primary leading-tight truncate group-hover:text-dc1-amber transition-colors">
             {provider.gpu_model || t('marketplace.unknown')}
           </h3>
-          <p className="text-xs text-dc1-text-muted mt-0.5 truncate">{provider.name}</p>
+          {provider.name !== provider.gpu_model && (
+            <p className="text-xs text-dc1-text-muted mt-0.5 truncate">{provider.name}</p>
+          )}
         </div>
-        <span className={`flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
-          provider.is_live
-            ? 'bg-status-success/10 text-status-success border border-status-success/20'
-            : 'bg-dc1-surface-l3 text-dc1-text-muted border border-dc1-border'
-        }`}>
-          {provider.is_live && <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />}
-          {provider.is_live ? t('marketplace.online') : t('marketplace.offline')}
+        <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-status-success/10 text-status-success border border-status-success/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
+          {t('marketplace.online')}
         </span>
       </div>
 
@@ -95,30 +171,45 @@ function ProviderCard({ provider }: { provider: Provider }) {
         )}
         {provider.gpu_count > 0 && (
           <div>
-            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.gpus_label')}</dt>
+            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.gpu_count')}</dt>
             <dd className="text-dc1-text-primary font-semibold mt-0.5">{provider.gpu_count}×</dd>
           </div>
         )}
         {uptime !== null && (
           <div>
             <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.uptime_label')}</dt>
-            <dd className={`font-semibold mt-0.5 ${
-              uptime >= 90 ? 'text-status-success' : uptime >= 70 ? 'text-dc1-amber' : 'text-status-error'
-            }`}>
+            <dd className={`font-semibold mt-0.5 ${uptime >= 90 ? 'text-status-success' : uptime >= 70 ? 'text-dc1-amber' : 'text-status-error'}`}>
               {uptime.toFixed(1)}%
             </dd>
           </div>
         )}
-        {provider.location && (
+        {provider.total_jobs_completed !== null && provider.total_jobs_completed > 0 && (
           <div>
+            <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.jobs_completed')}</dt>
+            <dd className="text-dc1-text-primary font-semibold mt-0.5">{provider.total_jobs_completed}</dd>
+          </div>
+        )}
+        {provider.location && (
+          <div className="col-span-2">
             <dt className="text-dc1-text-muted text-xs uppercase tracking-wide">{t('marketplace.region_label')}</dt>
             <dd className="text-dc1-text-primary font-semibold mt-0.5 truncate">{provider.location}</dd>
           </div>
         )}
       </dl>
 
+      {/* Compute type badges */}
+      {computeTypes.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {computeTypes.map((ct, i) => (
+            <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-dc1-surface-l3 text-dc1-text-secondary border border-dc1-border">
+              {ct.replace(/-/g, ' ')}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Pricing */}
-      <div className="bg-dc1-surface-l1 rounded-lg px-4 py-3 flex items-center justify-between">
+      <div className="bg-dc1-surface-l1 rounded-lg px-4 py-3 flex items-center justify-between mt-auto">
         <div>
           <p className="text-xs text-dc1-text-muted mb-0.5">{t('marketplace.price_llm')}</p>
           <p className="text-lg font-extrabold text-dc1-amber">
@@ -149,15 +240,6 @@ function ProviderCard({ provider }: { provider: Provider }) {
           </div>
         </div>
       )}
-
-      {/* CTA */}
-      <Link
-        href="/renter/register"
-        className="mt-auto btn btn-primary w-full text-center text-sm"
-        aria-label={`${t('marketplace.rent_now')} ${provider.gpu_model}`}
-      >
-        {t('marketplace.rent_now')}
-      </Link>
     </article>
   )
 }
@@ -182,8 +264,44 @@ function SkeletonCard() {
         ))}
       </div>
       <div className="bg-dc1-surface-l1 rounded-lg h-16" />
-      <div className="h-9 bg-dc1-surface-l3 rounded-lg" />
     </div>
+  )
+}
+
+// ── Market Rates Summary ───────────────────────────────────────────
+function MarketRates({ providers }: { providers: Provider[] }) {
+  const { t } = useLanguage()
+  const live = providers.filter(p => p.is_live)
+  if (live.length === 0) return null
+
+  const rates = live.map(p => getDefaultRate(p.cost_rates_halala_per_min))
+  const minRate = Math.min(...rates)
+  const maxRate = Math.max(...rates)
+  const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length
+
+  return (
+    <section className="bg-dc1-surface-l1/50 border-b border-dc1-border">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-semibold text-dc1-text-muted uppercase tracking-wider">{t('marketplace.market_rates')}</span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-dc1-text-muted">{t('marketplace.market_min')}</span>
+              <span className="text-sm font-bold text-status-success">{halalaPriceToSarHr(minRate)} {t('marketplace.sar_hr')}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-dc1-text-muted">{t('marketplace.market_avg')}</span>
+              <span className="text-sm font-bold text-dc1-amber">{halalaPriceToSarHr(avgRate)} {t('marketplace.sar_hr')}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-dc1-text-muted">{t('marketplace.market_max')}</span>
+              <span className="text-sm font-bold text-dc1-text-secondary">{halalaPriceToSarHr(maxRate)} {t('marketplace.sar_hr')}</span>
+            </div>
+          </div>
+          <div className="ms-auto text-xs text-dc1-text-muted">{live.length} {t('marketplace.live_gpus_online')}</div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -195,14 +313,27 @@ export default function MarketplacePage() {
   const [error, setError] = useState(false)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'price-asc' | 'vram-desc' | 'availability'>('availability')
+  const [filterComputeType, setFilterComputeType] = useState<string>('all')
+  const [filterMinVram, setFilterMinVram] = useState<string>('')
+  const [filterMaxPrice, setFilterMaxPrice] = useState<string>('')
+  const [selectedGpu, setSelectedGpu] = useState<Provider | null>(null)
 
   const fetchProviders = useCallback(async () => {
     try {
-      // Try /providers/marketplace first, fall back to /providers/available
-      let res = await fetch('/api/dc1/providers/marketplace')
-      if (!res.ok) {
-        res = await fetch('/api/dc1/providers/available')
+      // Try /providers/public first (no auth, 30s cached), then fall back
+      let res = await fetch('/api/dc1/providers/public')
+      if (res.ok) {
+        const data: PublicProvider[] = await res.json()
+        if (Array.isArray(data)) {
+          setProviders(data.map((p, i) => normalizePublic(p, i)))
+          setError(false)
+          return
+        }
       }
+
+      // Fallback to /providers/marketplace then /providers/available
+      res = await fetch('/api/dc1/providers/marketplace')
+      if (!res.ok) res = await fetch('/api/dc1/providers/available')
       if (res.ok) {
         const data = await res.json()
         const list: Provider[] = Array.isArray(data)
@@ -228,13 +359,29 @@ export default function MarketplacePage() {
 
   // Filter
   const filtered = providers.filter(p => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (
-      (p.gpu_model ?? '').toLowerCase().includes(q) ||
-      (p.location ?? '').toLowerCase().includes(q) ||
-      (p.name ?? '').toLowerCase().includes(q)
-    )
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      const nameMatch = (p.gpu_model ?? '').toLowerCase().includes(q) ||
+        (p.location ?? '').toLowerCase().includes(q) ||
+        (p.name ?? '').toLowerCase().includes(q)
+      if (!nameMatch) return false
+    }
+    if (filterComputeType !== 'all' && p.supported_compute_types) {
+      const has = p.supported_compute_types.some(ct =>
+        ct.toLowerCase().includes(filterComputeType.toLowerCase())
+      )
+      if (!has) return false
+    }
+    if (filterMinVram !== '') {
+      const minVram = parseFloat(filterMinVram)
+      if (!isNaN(minVram) && (p.vram_gb ?? 0) < minVram) return false
+    }
+    if (filterMaxPrice !== '') {
+      const maxPrice = parseFloat(filterMaxPrice)
+      const rateHr = parseFloat(halalaPriceToSarHr(getDefaultRate(p.cost_rates_halala_per_min)))
+      if (!isNaN(maxPrice) && rateHr > maxPrice) return false
+    }
+    return true
   })
 
   // Sort
@@ -286,10 +433,14 @@ export default function MarketplacePage() {
           </div>
         </section>
 
+        {/* Market rates bar */}
+        {!loading && !error && <MarketRates providers={providers} />}
+
         {/* Search + Filter bar */}
         <section className="border-b border-dc1-border bg-dc1-surface-l1/50 sticky top-0 z-10 backdrop-blur-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row gap-3 items-center">
-            <div className="relative flex-1 w-full">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row gap-3 items-center flex-wrap">
+            {/* Search */}
+            <div className="relative flex-1 min-w-48 w-full sm:w-auto">
               <svg
                 className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dc1-text-muted pointer-events-none"
                 fill="none" viewBox="0 0 24 24" stroke="currentColor"
@@ -305,6 +456,45 @@ export default function MarketplacePage() {
                 aria-label={t('marketplace.search_placeholder')}
               />
             </div>
+
+            {/* Compute type filter */}
+            <select
+              value={filterComputeType}
+              onChange={e => setFilterComputeType(e.target.value)}
+              className="input text-sm w-full sm:w-auto"
+              aria-label={t('marketplace.filter_compute_type')}
+            >
+              <option value="all">{t('marketplace.all_types')}</option>
+              <option value="inference">{t('marketplace.compute_inference')}</option>
+              <option value="training">{t('marketplace.compute_training')}</option>
+              <option value="rendering">{t('marketplace.compute_rendering')}</option>
+            </select>
+
+            {/* Min VRAM filter */}
+            <input
+              type="number"
+              min="0"
+              step="4"
+              placeholder={t('marketplace.filter_vram')}
+              value={filterMinVram}
+              onChange={e => setFilterMinVram(e.target.value)}
+              className="input text-sm w-full sm:w-36"
+              aria-label={t('marketplace.filter_vram')}
+            />
+
+            {/* Max price filter */}
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder={t('marketplace.filter_price')}
+              value={filterMaxPrice}
+              onChange={e => setFilterMaxPrice(e.target.value)}
+              className="input text-sm w-full sm:w-40"
+              aria-label={t('marketplace.filter_price')}
+            />
+
+            {/* Sort */}
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value as typeof sortBy)}
@@ -315,6 +505,7 @@ export default function MarketplacePage() {
               <option value="price-asc">{t('marketplace.sort_price')}</option>
               <option value="vram-desc">{t('marketplace.sort_vram')}</option>
             </select>
+
             <p className="text-xs text-dc1-text-muted whitespace-nowrap">
               {loading ? t('common.loading') : `${sorted.length} / ${providers.length} ${t('marketplace.providers_count')}`}
             </p>
@@ -330,10 +521,7 @@ export default function MarketplacePage() {
           ) : error ? (
             <div className="text-center py-20">
               <p className="text-dc1-text-secondary mb-2">{t('marketplace.error_msg')}</p>
-              <button
-                onClick={fetchProviders}
-                className="btn btn-secondary btn-sm mt-4"
-              >
+              <button onClick={fetchProviders} className="btn btn-secondary btn-sm mt-4">
                 {t('marketplace.try_again')}
               </button>
             </div>
@@ -349,16 +537,19 @@ export default function MarketplacePage() {
                   ? t('marketplace.check_back')
                   : t('marketplace.try_different')}
               </p>
-              {search && (
-                <button onClick={() => setSearch('')} className="btn btn-outline btn-sm mt-4">
+              {(search || filterComputeType !== 'all' || filterMinVram || filterMaxPrice) && (
+                <button
+                  onClick={() => { setSearch(''); setFilterComputeType('all'); setFilterMinVram(''); setFilterMaxPrice('') }}
+                  className="btn btn-outline btn-sm mt-4"
+                >
                   {t('marketplace.clear_search')}
                 </button>
               )}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {sorted.map(p => (
-                <ProviderCard key={p.id} provider={p} />
+              {sorted.map((p, i) => (
+                <ProviderCard key={`${p.id}-${i}`} provider={p} onClick={() => setSelectedGpu(p)} />
               ))}
             </div>
           )}
@@ -388,6 +579,11 @@ export default function MarketplacePage() {
       </main>
 
       <Footer />
+
+      {/* Sign-up overlay */}
+      {selectedGpu && (
+        <SignUpOverlay gpu={selectedGpu} onClose={() => setSelectedGpu(null)} />
+      )}
     </div>
   )
 }

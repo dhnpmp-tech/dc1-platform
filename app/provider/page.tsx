@@ -6,6 +6,7 @@ import DashboardLayout from '../components/layout/DashboardLayout'
 import StatusBadge from '../components/ui/StatusBadge'
 import StatCard from '../components/ui/StatCard'
 import { useLanguage } from '../lib/i18n'
+import ProviderWizard from './components/ProviderWizard'
 
 interface ProviderData {
   id: string
@@ -17,6 +18,11 @@ interface ProviderData {
   jobsCompleted: number
   gpuUptime: number
   gpuModel: string
+  vramMb: number
+  gpuCount: number
+  supportedComputeTypes: Array<'inference' | 'training' | 'rendering'>
+  gpuProfileSource: 'manual' | 'daemon'
+  autoDetected: boolean
   temperature: number
   gpuUsage: number
   vramUsage: number
@@ -46,6 +52,11 @@ interface DaemonVersionInfo {
   download_url: string
   changelog?: string
 }
+
+const GPU_MODEL_PRESETS = ['RTX 3060 Ti', 'RTX 3080', 'RTX 4090', 'A100', 'H100']
+const COMPUTE_TYPES: Array<'inference' | 'training' | 'rendering'> = ['inference', 'training', 'rendering']
+const isComputeType = (value: string): value is 'inference' | 'training' | 'rendering' =>
+  COMPUTE_TYPES.includes(value as 'inference' | 'training' | 'rendering')
 
 // SVG Icon components
 const HomeIcon = () => (
@@ -108,6 +119,16 @@ export default function ProviderDashboard() {
   const [latestDaemon, setLatestDaemon] = useState<DaemonVersionInfo | null>(null)
   const [providerApiKey, setProviderApiKey] = useState('')
   const [loading, setLoading] = useState(true)
+  const [showWizard, setShowWizard] = useState(false)
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
+  const [profileSaved, setProfileSaved] = useState(false)
+  const [gpuProfileDraft, setGpuProfileDraft] = useState({
+    gpuModel: '',
+    vramMb: 4096,
+    gpuCount: 1,
+    supportedComputeTypes: ['inference'] as Array<'inference' | 'training' | 'rendering'>,
+  })
 
   const getNavItems = () => [
     { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
@@ -118,6 +139,22 @@ export default function ProviderDashboard() {
   ]
   const [togglingPause, setTogglingPause] = useState(false)
   const [dailyEarnings, setDailyEarnings] = useState<Array<{ day: string; earned_halala: number; completed: number }>>([])
+
+  const toggleComputeType = (computeType: 'inference' | 'training' | 'rendering') => {
+    setGpuProfileDraft((prev) => {
+      if (prev.supportedComputeTypes.includes(computeType)) {
+        const next = prev.supportedComputeTypes.filter((item) => item !== computeType)
+        return {
+          ...prev,
+          supportedComputeTypes: next.length > 0 ? next : prev.supportedComputeTypes,
+        }
+      }
+      return {
+        ...prev,
+        supportedComputeTypes: [...prev.supportedComputeTypes, computeType],
+      }
+    })
+  }
 
 
   const handlePauseResume = async () => {
@@ -145,6 +182,50 @@ export default function ProviderDashboard() {
       console.error('Pause/resume failed:', err)
     } finally {
       setTogglingPause(false)
+    }
+  }
+
+  const handleSaveGpuProfile = async () => {
+    if (!providerApiKey) return
+    setProfileSaving(true)
+    setProfileError('')
+    setProfileSaved(false)
+    try {
+      const API_BASE = '/api/dc1'
+      const res = await fetch(`${API_BASE}/providers/me/gpu-profile?key=${encodeURIComponent(providerApiKey)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gpu_model: gpuProfileDraft.gpuModel.trim(),
+          vram_mb: gpuProfileDraft.vramMb,
+          gpu_count: gpuProfileDraft.gpuCount,
+          supported_compute_types: gpuProfileDraft.supportedComputeTypes,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || t('common.error'))
+      }
+      setProviderData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          gpuModel: data?.profile?.gpu_model || gpuProfileDraft.gpuModel,
+          vramMb: Number(data?.profile?.vram_mb || gpuProfileDraft.vramMb),
+          gpuCount: Number(data?.profile?.gpu_count || gpuProfileDraft.gpuCount),
+          supportedComputeTypes: Array.isArray(data?.profile?.supported_compute_types)
+            ? data.profile.supported_compute_types
+            : gpuProfileDraft.supportedComputeTypes,
+          gpuProfileSource: 'manual',
+          autoDetected: false,
+        }
+      })
+      setProfileSaved(true)
+      setTimeout(() => setProfileSaved(false), 2400)
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : t('common.error'))
+    } finally {
+      setProfileSaving(false)
     }
   }
 
@@ -194,6 +275,11 @@ export default function ProviderDashboard() {
 
         const data = await res.json()
         const provider = data.provider || {}
+        const supportedComputeTypes = Array.isArray(provider.supported_compute_types)
+          ? provider.supported_compute_types.filter((item: string) => isComputeType(item))
+          : ['inference']
+        const vramMb = Number(provider.vram_mb || provider.gpu_vram_mb || 0)
+        const gpuCount = Number(provider.gpu_count || provider.gpu_count_reported || 1)
 
         // Map real data to ProviderData shape, filling gaps with defaults
         setProviderData({
@@ -211,6 +297,11 @@ export default function ProviderDashboard() {
           jobsCompleted: provider.total_jobs || 0,
           gpuUptime: provider.uptime_percent || 0,
           gpuModel: provider.gpu_model || 'Unknown GPU',
+          vramMb: Number.isFinite(vramMb) && vramMb > 0 ? vramMb : 4096,
+          gpuCount: Number.isFinite(gpuCount) && gpuCount > 0 ? gpuCount : 1,
+          supportedComputeTypes: supportedComputeTypes.length > 0 ? supportedComputeTypes : ['inference'],
+          gpuProfileSource: provider.gpu_profile_source === 'daemon' ? 'daemon' : 'manual',
+          autoDetected: Boolean(provider.auto_detected),
           temperature: provider.gpu_temp || 0,
           gpuUsage: provider.gpu_usage || 0,
           vramUsage: provider.vram_usage || 0,
@@ -228,6 +319,12 @@ export default function ProviderDashboard() {
             status: j.status === 'completed' ? 'completed' : 'failed',
             completedAt: j.completed_at || '',
           })),
+        })
+        setGpuProfileDraft({
+          gpuModel: provider.gpu_model || '',
+          vramMb: Number.isFinite(vramMb) && vramMb > 0 ? vramMb : 4096,
+          gpuCount: Number.isFinite(gpuCount) && gpuCount > 0 ? gpuCount : 1,
+          supportedComputeTypes: supportedComputeTypes.length > 0 ? supportedComputeTypes : ['inference'],
         })
         // Fetch daily earnings for chart
         try {
@@ -249,6 +346,15 @@ export default function ProviderDashboard() {
     return () => clearInterval(interval)
   }, [router])
 
+  useEffect(() => {
+    if (!providerData || !providerApiKey) return
+    const alreadyCompleted = localStorage.getItem('wizard_completed') === 'true'
+    const shouldShowWizard = providerData.jobsCompleted === 0 && !providerData.lastHeartbeat && !alreadyCompleted
+    if (shouldShowWizard) {
+      setShowWizard(true)
+    }
+  }, [providerApiKey, providerData])
+
   const daemonNeedsUpdate = Boolean(
     latestDaemon?.version &&
     (!providerData?.daemonVersion || compareVersions(providerData.daemonVersion, latestDaemon.version) < 0)
@@ -265,6 +371,8 @@ export default function ProviderDashboard() {
     const separator = base.includes('?') ? '&' : '?'
     return `${base}${separator}key=${encodeURIComponent(providerApiKey)}`
   })()
+  const selectedVramGb = Math.max(4, Math.min(80, Math.round((gpuProfileDraft.vramMb || 4096) / 1024)))
+  const computeTypeLabel = (value: 'inference' | 'training' | 'rendering') => t(`provider.compute_${value}`)
 
   if (loading) {
     return (
@@ -380,6 +488,131 @@ export default function ProviderDashboard() {
               </svg>
             }
           />
+        </div>
+
+        <div className="card">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+            <h2 className="section-heading">{t('provider.gpu_profile')}</h2>
+            {providerData.autoDetected && (
+              <span className="inline-flex items-center rounded-full border border-status-info/40 bg-status-info/15 px-3 py-1 text-xs font-semibold text-status-info">
+                {t('provider.auto_detected')}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3">
+              <p className="text-xs text-dc1-text-muted mb-1">{t('provider.gpu_model')}</p>
+              <p className="text-sm font-semibold text-dc1-text-primary">{providerData.gpuModel}</p>
+            </div>
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3">
+              <p className="text-xs text-dc1-text-muted mb-1">{t('provider.vram')}</p>
+              <p className="text-sm font-semibold text-dc1-text-primary">{Math.max(1, Math.round(providerData.vramMb / 1024))} GB</p>
+            </div>
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3">
+              <p className="text-xs text-dc1-text-muted mb-1">{t('provider.gpu_count')}</p>
+              <p className="text-sm font-semibold text-dc1-text-primary">{providerData.gpuCount}</p>
+            </div>
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3">
+              <p className="text-xs text-dc1-text-muted mb-1">{t('provider.compute_types')}</p>
+              <p className="text-sm font-semibold text-dc1-text-primary">
+                {(providerData.supportedComputeTypes || []).map((item) => computeTypeLabel(item)).join(' · ')}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <label htmlFor="provider-gpu-model" className="block text-sm font-medium text-dc1-text-secondary mb-2">
+                {t('provider.gpu_model')}
+              </label>
+              <input
+                id="provider-gpu-model"
+                list="provider-gpu-presets"
+                value={gpuProfileDraft.gpuModel}
+                onChange={(event) => setGpuProfileDraft((prev) => ({ ...prev, gpuModel: event.target.value }))}
+                className="w-full rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 text-dc1-text-primary focus:outline-none focus:border-dc1-amber"
+                placeholder="RTX 4090"
+              />
+              <datalist id="provider-gpu-presets">
+                {GPU_MODEL_PRESETS.map((model) => <option key={model} value={model} />)}
+              </datalist>
+            </div>
+
+            <div>
+              <p className="block text-sm font-medium text-dc1-text-secondary mb-2">{t('provider.gpu_count')}</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 2, 4, 8].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => setGpuProfileDraft((prev) => ({ ...prev, gpuCount: count }))}
+                    className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+                      gpuProfileDraft.gpuCount === count
+                        ? 'border-dc1-amber bg-dc1-amber/20 text-dc1-amber'
+                        : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:border-dc1-amber/60'
+                    }`}
+                  >
+                    {count}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-dc1-text-secondary">{t('provider.vram')}</p>
+              <span className="text-sm font-semibold text-dc1-text-primary">{selectedVramGb} GB</span>
+            </div>
+            <input
+              type="range"
+              min={4}
+              max={80}
+              step={4}
+              value={selectedVramGb}
+              onChange={(event) => {
+                const nextGb = Number(event.target.value)
+                setGpuProfileDraft((prev) => ({ ...prev, vramMb: nextGb * 1024 }))
+              }}
+              className="w-full accent-dc1-amber"
+            />
+          </div>
+
+          <div className="mt-6">
+            <p className="text-sm font-medium text-dc1-text-secondary mb-3">{t('provider.compute_types')}</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              {COMPUTE_TYPES.map((computeType) => (
+                <label key={computeType} className="inline-flex items-center gap-2 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={gpuProfileDraft.supportedComputeTypes.includes(computeType)}
+                    onChange={() => toggleComputeType(computeType)}
+                    className="accent-dc1-amber"
+                  />
+                  <span className="text-sm text-dc1-text-primary">{computeTypeLabel(computeType)}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {profileError && (
+            <p className="mt-4 text-sm text-status-error">{profileError}</p>
+          )}
+          {profileSaved && (
+            <p className="mt-4 text-sm text-status-success">{t('provider.profile_saved')}</p>
+          )}
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveGpuProfile}
+              disabled={profileSaving}
+              className="rounded-lg bg-dc1-amber text-dc1-void px-4 py-2 min-h-[44px] font-semibold hover:bg-dc1-amber/90 disabled:opacity-60"
+            >
+              {profileSaving ? t('provider.updating') : t('provider.save_profile')}
+            </button>
+          </div>
         </div>
 
         {/* GPU Health Section */}
@@ -564,6 +797,23 @@ export default function ProviderDashboard() {
           </div>
         </div>
       </div>
+      {showWizard && providerData && (
+        <ProviderWizard
+          providerId={providerData.id}
+          apiKey={providerApiKey}
+          onComplete={() => setShowWizard(false)}
+          onDismiss={() => setShowWizard(false)}
+          onHeartbeatDetected={() => {
+            setProviderData((prev) => {
+              if (!prev) return prev
+              return {
+                ...prev,
+                lastHeartbeat: new Date().toISOString(),
+              }
+            })
+          }}
+        />
+      )}
     </DashboardLayout>
   )
 }

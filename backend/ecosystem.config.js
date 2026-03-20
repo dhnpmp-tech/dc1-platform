@@ -2,7 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'dc1-provider-onboarding',
-      script: 'src/server.js',
+      script: '/bin/sh',
+      args: '-lc "/root/dc1-platform/infra/setup-model-cache.sh && node src/server.js"',
       cwd: '/root/dc1-platform/backend',
       instances: 1,
       autorestart: true,
@@ -73,6 +74,20 @@ module.exports = {
 
         // Telegram bot token used by scripts/vps-health.sh to send threshold alerts
         TELEGRAM_BOT_TOKEN: 'CHANGE_ME_telegram_bot_token'
+      }
+    },
+    {
+      name: 'dcp-job-volume-cleanup-cron',
+      script: '/bin/sh',
+      args: '-lc "node /root/dc1-platform/backend/src/scripts/cleanup-job-volumes.js >> /root/dc1-platform/backend/logs/volume-cleanup.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '30 2 * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production'
       }
     }
   ]

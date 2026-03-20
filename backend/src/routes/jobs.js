@@ -1,8 +1,21 @@
 const express = require('express');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
+const { validateAndNormalizeImageRef, isApprovedImageRef } = require('../lib/container-registry');
 const { getChainEscrow } = require('../services/escrow-chain');
+const {
+  sendJobQueued,
+  sendJobStarted,
+  sendJobCompleted,
+  sendJobFailed,
+} = require('../services/emailService');
+const {
+  appendAttemptLogLines,
+  getAttemptLogPath,
+  resolveAttemptLogPath,
+} = require('../services/job-execution-logs');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -26,6 +39,7 @@ const HAS_RETRY_REASON = JOB_COLUMNS.has('retry_reason');
 const DEFAULT_JOB_PRIORITY = 5;
 const MIN_JOB_PRIORITY = 0;
 const MAX_JOB_PRIORITY = 10;
+const ACTIVE_JOB_STATUSES = new Set(['assigned', 'pulling', 'running']);
 
 function signTaskSpec(taskSpec) {
   return crypto.createHmac('sha256', HMAC_SECRET).update(taskSpec).digest('hex');
@@ -100,6 +114,63 @@ function normalizeModelField(modelValue) {
   return model.length > 0 ? model : null;
 }
 
+function normalizeString(value, { maxLen = 500, trim = true } = {}) {
+  if (typeof value !== 'string') return null;
+  const next = trim ? value.trim() : value;
+  if (!next) return null;
+  return next.slice(0, maxLen);
+}
+
+function parseContainerSpec(containerSpecRaw) {
+  if (!containerSpecRaw) return null;
+  if (typeof containerSpecRaw === 'string') {
+    try {
+      const parsed = JSON.parse(containerSpecRaw);
+      return isPlainObject(parsed) ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  return isPlainObject(containerSpecRaw) ? containerSpecRaw : null;
+}
+
+function fireAndForgetJobEmail(event, job, details = {}) {
+  try {
+    if (!job?.renter_id) return;
+    const renter = db.get('SELECT email FROM renters WHERE id = ?', job.renter_id);
+    const renterEmail = normalizeString(renter?.email, { maxLen: 254 })?.toLowerCase();
+    if (!renterEmail) return;
+
+    const containerSpec = parseContainerSpec(job.container_spec);
+    const payload = {
+      job_id: job.job_id,
+      job_type: job.job_type,
+      image_type: containerSpec?.image_type || null,
+      estimated_duration_minutes: Number((details.estimated_duration_minutes ?? job.duration_minutes) || 0),
+      quoted_cost_halala: Number((details.quoted_cost_halala ?? job.cost_halala) || 0),
+      queue_position: details.queue_position,
+      actual_cost_halala: Number((details.actual_cost_halala ?? job.actual_cost_halala) || 0),
+      gpu_seconds_used: details.gpu_seconds_used,
+      refunded_amount_halala: Number((details.refunded_amount_halala ?? job.cost_halala) || 0),
+      retry_attempts: Number((details.retry_attempts ?? job.retry_count) || 0),
+      last_error: normalizeString(details.last_error || job.last_error || job.error, { maxLen: 1000 }),
+    };
+
+    let pendingSend = null;
+    if (event === 'queued') pendingSend = sendJobQueued(renterEmail, payload);
+    if (event === 'started') pendingSend = sendJobStarted(renterEmail, payload);
+    if (event === 'completed') pendingSend = sendJobCompleted(renterEmail, payload);
+    if (event === 'failed') pendingSend = sendJobFailed(renterEmail, payload);
+    if (!pendingSend || typeof pendingSend.then !== 'function') return;
+
+    pendingSend.catch((err) => {
+      console.error(`[jobs/email:${event}] Failed for ${job.job_id}:`, err.message);
+    });
+  } catch (error) {
+    console.error(`[jobs/email:${event}] Unexpected error:`, error.message);
+  }
+}
+
 function toFiniteNumber(value, { min = null, max = null } = {}) {
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) return null;
@@ -116,6 +187,97 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function looksLikeRawPythonTaskSpec(value) {
+  if (typeof value !== 'string') return false;
+  const task = value.trim();
+  if (!task) return false;
+  if (task.startsWith('#!') && task.toLowerCase().includes('python')) return true;
+  return /\b(import|from|def|class|lambda|subprocess|os\.|sys\.)\b/.test(task);
+}
+
+function normalizeContainerSpec(rawContainerSpec) {
+  if (!isPlainObject(rawContainerSpec)) {
+    return { error: 'container_spec is required and must be an object' };
+  }
+
+  const imageType = normalizeString(rawContainerSpec.image_type, { maxLen: 120 });
+  if (!imageType) {
+    return { error: 'container_spec.image_type is required' };
+  }
+
+  let modelId = null;
+  if (rawContainerSpec.model_id != null) {
+    modelId = normalizeString(rawContainerSpec.model_id, { maxLen: 200 });
+    if (!modelId) {
+      return { error: 'container_spec.model_id must be a non-empty string when provided' };
+    }
+  }
+
+  let env = null;
+  if (rawContainerSpec.env != null) {
+    if (!isPlainObject(rawContainerSpec.env)) {
+      return { error: 'container_spec.env must be an object when provided' };
+    }
+    try {
+      JSON.stringify(rawContainerSpec.env);
+      env = rawContainerSpec.env;
+    } catch (_) {
+      return { error: 'container_spec.env must be JSON-serializable' };
+    }
+  }
+
+  let enableCheckpoint = false;
+  if (rawContainerSpec.enable_checkpoint != null) {
+    if (typeof rawContainerSpec.enable_checkpoint !== 'boolean') {
+      return { error: 'container_spec.enable_checkpoint must be boolean when provided' };
+    }
+    enableCheckpoint = rawContainerSpec.enable_checkpoint;
+  }
+
+  const vramRequiredMb = toFiniteInt(rawContainerSpec.vram_required_mb, { min: 0, max: 1024 * 1024 });
+  if (rawContainerSpec.vram_required_mb != null && vramRequiredMb == null) {
+    return { error: 'container_spec.vram_required_mb must be a non-negative integer when provided' };
+  }
+
+  const gpuCount = toFiniteInt(rawContainerSpec.gpu_count, { min: 1, max: 64 });
+  if (rawContainerSpec.gpu_count != null && gpuCount == null) {
+    return { error: 'container_spec.gpu_count must be an integer between 1 and 64 when provided' };
+  }
+
+  const computeTypeRaw = normalizeString(rawContainerSpec.compute_type, { maxLen: 32 });
+  const computeType = computeTypeRaw ? computeTypeRaw.toLowerCase() : null;
+  const allowedComputeTypes = new Set(['inference', 'training', 'rendering']);
+  if (computeType && !allowedComputeTypes.has(computeType)) {
+    return { error: 'container_spec.compute_type must be one of: inference, training, rendering' };
+  }
+
+  let image = null;
+  const requestedImage = rawContainerSpec.image ?? rawContainerSpec.image_override;
+  if (requestedImage != null) {
+    const validatedImage = validateAndNormalizeImageRef(requestedImage);
+    if (validatedImage.error) {
+      return { error: validatedImage.error };
+    }
+    if (!isApprovedImageRef(db, validatedImage.value)) {
+      return { error: 'container_spec.image is not approved. Use GET /api/containers/registry for allowed images.' };
+    }
+    image = validatedImage.value;
+  }
+
+  return {
+    value: {
+      image_type: imageType,
+      vram_required_mb: vramRequiredMb != null ? vramRequiredMb : 0,
+      gpu_count: gpuCount != null ? gpuCount : 1,
+      compute_type: computeType || 'inference',
+      ...(modelId ? { model_id: modelId } : {}),
+      ...(image ? { image } : {}),
+      ...(env ? { env } : {}),
+      ...(enableCheckpoint ? { enable_checkpoint: true } : {}),
+    },
+  };
 }
 
 function inferRetryReason(job) {
@@ -162,6 +324,26 @@ function canReadJob(req, job) {
   return false;
 }
 
+function resolveAttemptNumber(jobId, requestedAttempt) {
+  const parsed = toFiniteInt(requestedAttempt, { min: 1 });
+  if (parsed != null) return parsed;
+  const latest = db.get(
+    `SELECT attempt_number FROM job_executions
+     WHERE job_id = ?
+     ORDER BY attempt_number DESC
+     LIMIT 1`,
+    jobId
+  );
+  return Number(latest?.attempt_number || 1);
+}
+
+function canControlJob(req, job) {
+  if (isAdmin(req)) return true;
+  const provider = getProviderFromReq(req);
+  if (provider && job.provider_id && provider.id === job.provider_id) return true;
+  return false;
+}
+
 function getAuthenticatedActor(req) {
   if (isAdmin(req)) return { type: 'admin', id: null };
   const provider = getProviderFromReq(req);
@@ -172,6 +354,32 @@ function getAuthenticatedActor(req) {
 }
 
 const TERMINAL_JOB_STATUSES = new Set(['done', 'completed', 'failed', 'cancelled', 'permanently_failed', 'timed_out']);
+
+function safeCheckpointName(jobId) {
+  return `cp-${String(jobId || '').replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 64)}`;
+}
+
+function runDockerCommand(args) {
+  return execFileSync('docker', args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+function resolveJobContainerId(job) {
+  if (job.container_id) return String(job.container_id);
+  if (!job.job_id) return null;
+  try {
+    const result = runDockerCommand([
+      'ps',
+      '--filter', `name=dcp-job-${job.job_id}`,
+      '--format', '{{.ID}}',
+    ]);
+    return result ? result.split('\n')[0].trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 function normalizeIncomingLogLines(rawLines) {
   if (!Array.isArray(rawLines)) return [];
@@ -280,6 +488,43 @@ function promoteNextQueuedJob(providerId) {
     return nextQueued;
   }
   return null;
+}
+
+function getQueuePosition(job) {
+  if (!job || job.status !== 'queued') return null;
+
+  const jobPriority = Number.isFinite(Number(job.priority))
+    ? Number(job.priority)
+    : DEFAULT_JOB_PRIORITY;
+  const jobCreatedAt = job.created_at || '';
+
+  if (job.provider_id == null) {
+    const ahead = db.get(
+      `SELECT COUNT(*) AS cnt
+       FROM jobs
+       WHERE status = 'queued'
+         AND provider_id IS NULL
+         AND (
+           COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) > ?
+           OR (COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) = ? AND created_at < ?)
+         )`,
+      [jobPriority, jobPriority, jobCreatedAt]
+    );
+    return (ahead?.cnt || 0) + 1;
+  }
+
+  const ahead = db.get(
+    `SELECT COUNT(*) AS cnt
+     FROM jobs
+     WHERE provider_id = ?
+       AND status IN ('queued', 'pending', 'running')
+       AND (
+         COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) > ?
+         OR (COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) = ? AND created_at < ?)
+       )`,
+    [job.provider_id, jobPriority, jobPriority, jobCreatedAt]
+  );
+  return (ahead?.cnt || 0) + 1;
 }
 
 // Cost rates in halala per minute by job type
@@ -567,6 +812,7 @@ router.post('/submit', requireRenter, (req, res) => {
       job_type,
       duration_minutes,
       gpu_requirements,
+      container_spec,
       task_spec,
       params: bodyParams,
       max_duration_seconds,
@@ -596,18 +842,25 @@ router.post('/submit', requireRenter, (req, res) => {
 
     // Block raw Python task_spec from renters — all execution must go through templates
     // Raw Python means arbitrary code execution on provider hardware
-    if (task_spec && typeof task_spec === 'string' && task_spec.includes('import ')) {
+    if (looksLikeRawPythonTaskSpec(task_spec)) {
       return res.status(400).json({
         error: 'Raw Python task_spec is not allowed. Use the params field with a supported job_type instead.',
         docs: 'POST /api/jobs/submit with { job_type, params: { prompt, model, ... } }'
       });
     }
 
+    const normalizedContainer = normalizeContainerSpec(container_spec);
+    if (normalizedContainer.error) {
+      return res.status(400).json({ error: normalizedContainer.error });
+    }
+    const containerSpecJson = JSON.stringify(normalizedContainer.value);
+
     // ── Provider resolution ───────────────────────────────────────────────────
     // If provider_id given: validate it directly (manual selection).
     // If omitted: auto-route to best GPU-fit provider via jobRouter (DCP-205).
-    let provider;
-    let provider_id;
+    let provider = null;
+    let provider_id = null;
+    let routedMatchFound = false;
 
     if (requestedProviderId != null) {
       // Manual provider selection — validate existence and heartbeat freshness
@@ -623,6 +876,7 @@ router.post('/submit', requireRenter, (req, res) => {
         return res.status(400).json({ error: 'Provider is not online', provider_status: provider.status });
       }
       provider_id = provider.id;
+      routedMatchFound = true;
     } else {
       // Auto-routing: pick best available provider matching VRAM + uptime criteria
       const minVramGb = toFiniteNumber(gpu_requirements?.min_vram_gb, { min: 0, max: 1024 }) || 0;
@@ -633,33 +887,31 @@ router.post('/submit', requireRenter, (req, res) => {
         globalRateHalala: globalRate,
       });
 
-      if (!routed) {
-        // No provider available — renter should retry after 60s
-        res.set('Retry-After', '60');
-        return res.status(503).json({
-          error: 'No available providers match your job requirements. Please retry shortly.',
-          retry_after_seconds: 60,
-          min_vram_gb: minVramGb,
-        });
+      if (routed) {
+        provider = db.get('SELECT * FROM providers WHERE id = ?', routed.provider.id);
+        provider_id = routed.provider.id;
+        routedMatchFound = true;
+        console.log(`[jobs/submit] Auto-routed job (${job_type}) to provider #${provider_id} (${provider.name})`);
+      } else {
+        console.log(`[jobs/submit] No capable provider online. Queueing job (${job_type}) globally.`);
       }
-
-      provider = db.get('SELECT * FROM providers WHERE id = ?', routed.provider.id);
-      provider_id = routed.provider.id;
-      console.log(`[jobs/submit] Auto-routed job (${job_type}) to provider #${provider_id} (${provider.name})`);
     }
 
     // Check if provider is busy (has a running or pending job)
-    const busyJob = db.get(
-      `SELECT id, job_id, status FROM jobs WHERE provider_id = ? AND status IN ('running', 'pending')`,
-      provider_id
-    );
-    const isQueued = !!busyJob; // Will create as 'queued' instead of 'pending'
+    let busyJob = null;
+    if (provider_id != null) {
+      busyJob = db.get(
+        `SELECT id, job_id, status FROM jobs WHERE provider_id = ? AND status IN ('running', 'pending')`,
+        provider_id
+      );
+    }
+    const isQueued = !routedMatchFound || !!busyJob; // queued if no match or assigned provider is busy
 
     // Validate GPU requirements if specified
     if (gpu_requirements != null && !isPlainObject(gpu_requirements)) {
       return res.status(400).json({ error: 'gpu_requirements must be an object' });
     }
-    if (gpu_requirements) {
+    if (gpu_requirements && provider) {
       const req_vram = toFiniteNumber(gpu_requirements.min_vram_gb, { min: 0, max: 1024 });
       const providerVram = provider.gpu_vram_mib ? provider.gpu_vram_mib / 1024 : provider.vram_gb;
       if (req_vram && providerVram && providerVram < req_vram) {
@@ -819,23 +1071,29 @@ router.post('/submit', requireRenter, (req, res) => {
     // Stringify task_spec if it's an object, then HMAC-sign
     const taskSpecStr = finalTaskSpec ? (typeof finalTaskSpec === 'string' ? finalTaskSpec : JSON.stringify(finalTaskSpec)) : null;
     const taskSpecHmac = taskSpecStr ? signTaskSpec(taskSpecStr) : null;
+    const workspaceVolumeName = `dcp-job-${job_id}`;
+    const checkpointEnabled = normalizedContainer.value?.enable_checkpoint === true ? 1 : 0;
 
     // If provider is busy, job goes into 'queued'; otherwise 'pending' (ready for daemon)
     const initialStatus = isQueued ? 'queued' : 'pending';
 
     const result = runStatement(
       `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
-        cost_halala, gpu_requirements, task_spec, task_spec_hmac, max_duration_seconds, timeout_at, notes, created_at, priority)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+        notes, created_at, priority, workspace_volume_name, checkpoint_enabled)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
+      containerSpecJson,
       taskSpecStr,
       taskSpecHmac,
       timeout,
       isQueued ? null : timeoutAt, // Don't start timeout clock for queued jobs
       null,
       now,
-      jobPriority
+      jobPriority,
+      workspaceVolumeName,
+      checkpointEnabled
     );
 
     const job = db.get('SELECT * FROM jobs WHERE id = ?', result.lastInsertRowid);
@@ -844,33 +1102,28 @@ router.post('/submit', requireRenter, (req, res) => {
     // Escrow expires at job timeout + 30-minute settlement buffer
     const escrowExpiresAt = new Date(Date.now() + (timeout + 1800) * 1000).toISOString();
     const renterKey = req.headers['x-renter-key'] || req.query.renter_key;
-    try {
-      runStatement(
-        `INSERT INTO escrow_holds (id, renter_api_key, provider_id, job_id, amount_halala, status, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, 'held', ?, ?)`,
-        'esc-' + job_id, renterKey, provider_id, job_id, cost_halala, now, escrowExpiresAt
-      );
-    } catch (e) {
-      console.error('[escrow] Failed to create hold for job', job_id, ':', e.message);
+    if (provider_id != null) {
+      try {
+        runStatement(
+          `INSERT INTO escrow_holds (id, renter_api_key, provider_id, job_id, amount_halala, status, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, 'held', ?, ?)`,
+          'esc-' + job_id, renterKey, provider_id, job_id, cost_halala, now, escrowExpiresAt
+        );
+      } catch (e) {
+        console.error('[escrow] Failed to create hold for job', job_id, ':', e.message);
+      }
     }
 
     // On-chain escrow (opt-in via ESCROW_CONTRACT_ADDRESS) — fire-and-forget, never blocks job creation
     const chainEscrow = getChainEscrow();
-    if (chainEscrow.isEnabled()) {
+    if (chainEscrow.isEnabled() && provider_id != null) {
       const expiryMs = new Date(escrowExpiresAt).getTime();
-      chainEscrow.depositAndLock(job_id, provider.wallet_address || null, cost_halala, expiryMs)
+      chainEscrow.depositAndLock(job_id, provider?.wallet_address || null, cost_halala, expiryMs)
         .catch(err => console.error('[escrow-chain] depositAndLock async error:', err.message));
     }
 
     // Calculate queue position if queued
-    let queue_position = null;
-    if (isQueued) {
-      const ahead = db.get(
-        `SELECT COUNT(*) as cnt FROM jobs WHERE provider_id = ? AND status IN ('queued', 'pending', 'running') AND id < ?`,
-        provider_id, job.id
-      );
-      queue_position = ahead ? ahead.cnt : 1;
-    }
+    const queue_position = isQueued ? getQueuePosition(job) : null;
 
     res.status(201).json({
       success: true,
@@ -889,11 +1142,27 @@ router.post('/submit', requireRenter, (req, res) => {
         max_duration_seconds: timeout,
         timeout_at: job.timeout_at,
         gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
+        container_spec: normalizedContainer.value,
+        workspace_volume_name: workspaceVolumeName,
+        checkpoint_enabled: checkpointEnabled === 1,
         task_spec_signed: !!taskSpecHmac,
         priority: jobPriority,
         queue_position: queue_position
       },
-      ...(isQueued ? { queued: true, message: `Provider is busy. Your job is #${queue_position} in queue and will run automatically when the provider is free.` } : {})
+      ...(isQueued
+        ? {
+          queued: true,
+          message: routedMatchFound
+            ? `Provider is busy. Your job is #${queue_position} in queue and will run automatically when the provider is free.`
+            : `No capable provider is currently available. Your job is queued at position #${queue_position} and will start when a matching provider heartbeats.`
+        }
+        : {})
+    });
+
+    fireAndForgetJobEmail('queued', job, {
+      quoted_cost_halala: Number(cost_halala || 0),
+      queue_position,
+      estimated_duration_minutes: Number(durationMinutes || 0),
     });
   } catch (error) {
     console.error('Job submit error:', error);
@@ -940,6 +1209,9 @@ function fetchAndAssignNextJob(providerId) {
 
   const updated = db.get('SELECT * FROM jobs WHERE id = ?', [job.id]);
   if (!updated) return null;
+  fireAndForgetJobEmail('started', updated, {
+    estimated_duration_minutes: Number(updated.duration_minutes || 0),
+  });
   updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
   return updated;
 }
@@ -1144,6 +1416,14 @@ router.post('/:job_id/result', (req, res) => {
       },
     }).catch(() => {});
 
+    fireAndForgetJobEmail(result ? 'completed' : 'failed', updated, {
+      actual_cost_halala: actualCostHalala,
+      gpu_seconds_used: durationSeconds != null ? Number(durationSeconds) : null,
+      refunded_amount_halala: Number(job.cost_halala || 0),
+      retry_attempts: Number(updated?.retry_count || 0),
+      last_error: normalizeString(jobError || updated?.error, { maxLen: 1000 }),
+    });
+
     res.json({
       success: true,
       job: updated,
@@ -1171,16 +1451,16 @@ router.get('/active', (req, res) => {
     let jobs = [];
     if (actor.type === 'admin') {
       jobs = db.all(
-        `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`
+        `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running', 'paused') ORDER BY submitted_at DESC`
       );
     } else if (actor.type === 'provider') {
       jobs = db.all(
-        `SELECT * FROM jobs WHERE provider_id = ? AND status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`,
+        `SELECT * FROM jobs WHERE provider_id = ? AND status IN ('queued', 'pending', 'running', 'paused') ORDER BY submitted_at DESC`,
         actor.id
       );
     } else {
       jobs = db.all(
-        `SELECT * FROM jobs WHERE renter_id = ? AND status IN ('queued', 'pending', 'running') ORDER BY submitted_at DESC`,
+        `SELECT * FROM jobs WHERE renter_id = ? AND status IN ('queued', 'pending', 'running', 'paused') ORDER BY submitted_at DESC`,
         actor.id
       );
     }
@@ -1192,7 +1472,7 @@ router.get('/active', (req, res) => {
 });
 
 // GET /api/jobs/queue/:provider_id — show queue for a provider
-router.get('/queue/:provider_id', (req, res) => {
+router.get('/queue/:provider_id(\\d+)', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
     if (!actor) {
@@ -1234,6 +1514,161 @@ router.get('/queue/:provider_id', (req, res) => {
     res.json({ queue: jobs, total: jobs.length });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch queue' });
+  }
+});
+
+// GET /api/jobs/queue/status
+// Queue depth grouped by compute_type + vram_required_mb.
+router.get('/queue/status', (req, res) => {
+  try {
+    const queued = db.all(
+      `SELECT container_spec
+       FROM jobs
+       WHERE status = 'queued'
+       ORDER BY COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC, created_at ASC`
+    );
+
+    const grouped = new Map();
+    for (const row of queued) {
+      let containerSpec = null;
+      try { containerSpec = row.container_spec ? JSON.parse(row.container_spec) : null; } catch (_) {}
+
+      const computeType = String(containerSpec?.compute_type || 'inference').toLowerCase();
+      const vramRequiredMb = Number.isFinite(Number(containerSpec?.vram_required_mb))
+        ? Number(containerSpec.vram_required_mb)
+        : 0;
+      const key = `${computeType}:${vramRequiredMb}`;
+      const bucket = grouped.get(key) || {
+        compute_type: computeType,
+        vram_required_mb: vramRequiredMb,
+        depth: 0,
+      };
+      bucket.depth += 1;
+      grouped.set(key, bucket);
+    }
+
+    const buckets = Array.from(grouped.values()).sort((a, b) => {
+      if (a.compute_type !== b.compute_type) return a.compute_type.localeCompare(b.compute_type);
+      return a.vram_required_mb - b.vram_required_mb;
+    });
+
+    return res.json({
+      queued_total: queued.length,
+      buckets,
+    });
+  } catch (error) {
+    console.error('Queue status error:', error);
+    return res.status(500).json({ error: 'Failed to fetch queue status' });
+  }
+});
+
+// POST /api/jobs/:job_id/pause
+// Creates a Docker checkpoint and marks the job paused.
+router.post('/:job_id/pause', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canControlJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+    if (!ACTIVE_JOB_STATUSES.has(String(job.status || '').toLowerCase())) {
+      return res.status(400).json({ error: 'Job is not active', current_status: job.status });
+    }
+    if (!job.checkpoint_enabled) {
+      return res.status(400).json({ error: 'Checkpointing is not enabled for this job' });
+    }
+
+    const containerId = resolveJobContainerId(job);
+    if (!containerId) {
+      return res.status(409).json({ error: 'Active container not found for this job' });
+    }
+
+    const checkpointName = safeCheckpointName(job.job_id || job.id);
+    const checkpointPath = `/var/lib/docker/containers/${containerId}/checkpoints/${checkpointName}`;
+    try {
+      runDockerCommand(['checkpoint', 'create', containerId, checkpointName]);
+    } catch (error) {
+      return res.status(500).json({ error: `Failed to create checkpoint: ${error.message}` });
+    }
+
+    const now = new Date().toISOString();
+    runStatement(
+      `UPDATE jobs
+       SET status = 'paused',
+           container_id = ?,
+           checkpoint_name = ?,
+           checkpoint_path = ?,
+           checkpointed_at = ?,
+           updated_at = ?
+       WHERE id = ?`,
+      containerId,
+      checkpointName,
+      checkpointPath,
+      now,
+      now,
+      job.id
+    );
+
+    return res.json({
+      success: true,
+      job_id: job.job_id,
+      status: 'paused',
+      container_id: containerId,
+      checkpoint_name: checkpointName,
+      checkpoint_path: checkpointPath,
+    });
+  } catch (error) {
+    console.error('Job pause error:', error);
+    return res.status(500).json({ error: 'Failed to pause job' });
+  }
+});
+
+// POST /api/jobs/:job_id/resume
+// Resumes a paused Docker container from the last checkpoint.
+router.post('/:job_id/resume', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canControlJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+    if (String(job.status || '').toLowerCase() !== 'paused') {
+      return res.status(400).json({ error: 'Job is not paused', current_status: job.status });
+    }
+    if (!job.checkpoint_name) {
+      return res.status(400).json({ error: 'No checkpoint found for this job' });
+    }
+
+    const containerId = job.container_id || resolveJobContainerId(job);
+    if (!containerId) {
+      return res.status(409).json({ error: 'Container not found for resume' });
+    }
+
+    try {
+      runDockerCommand(['start', '--checkpoint', String(job.checkpoint_name), containerId]);
+    } catch (error) {
+      return res.status(500).json({ error: `Failed to resume checkpoint: ${error.message}` });
+    }
+
+    const now = new Date().toISOString();
+    runStatement(
+      `UPDATE jobs
+       SET status = 'running',
+           container_id = ?,
+           updated_at = ?
+       WHERE id = ?`,
+      containerId,
+      now,
+      job.id
+    );
+
+    return res.json({
+      success: true,
+      job_id: job.job_id,
+      status: 'running',
+      container_id: containerId,
+      checkpoint_name: job.checkpoint_name,
+      checkpoint_path: job.checkpoint_path,
+    });
+  } catch (error) {
+    console.error('Job resume error:', error);
+    return res.status(500).json({ error: 'Failed to resume job' });
   }
 });
 
@@ -1351,13 +1786,9 @@ router.get('/:job_id', (req, res) => {
     }
     job.gpu_requirements = job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null;
 
-    // Add queue position for queued jobs
+    // Add queue position for queued jobs (priority-aware).
     if (job.status === 'queued') {
-      const ahead = db.get(
-        `SELECT COUNT(*) as cnt FROM jobs WHERE provider_id = ? AND status IN ('queued', 'pending', 'running') AND created_at < ?`,
-        job.provider_id, job.created_at
-      );
-      job.queue_position = ahead ? ahead.cnt : 1;
+      job.queue_position = getQueuePosition(job);
     }
 
     applyRetryMetadata(job);
@@ -1442,6 +1873,11 @@ router.post('/:job_id/complete', (req, res) => {
     }
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
+    fireAndForgetJobEmail('completed', updated, {
+      actual_cost_halala,
+      refunded_amount_halala: 0,
+      retry_attempts: Number(updated?.retry_count || 0),
+    });
     updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
     res.json({
       success: true,
@@ -1509,6 +1945,12 @@ router.post('/:job_id/fail', (req, res) => {
     }
 
     promoteNextQueuedJob(job.provider_id);
+    const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
+    fireAndForgetJobEmail('failed', updated || job, {
+      refunded_amount_halala: Number(job.cost_halala || 0),
+      retry_attempts: Number(updated?.retry_count || job.retry_count || 0),
+      last_error: normalizeString(jobError || updated?.error || job.error, { maxLen: 1000 }),
+    });
     res.json({ success: true, job_id: job.job_id, refunded_halala: job.cost_halala });
   } catch (error) {
     console.error('Job fail error:', error);
@@ -1655,7 +2097,7 @@ router.post('/:job_id/endpoint-ready', (req, res) => {
 // Accepts: { api_key, lines: [{ level, message }] }
 router.post('/:job_id/logs', (req, res) => {
   try {
-    const { api_key, lines } = req.body;
+    const { api_key, lines, attempt_number } = req.body;
     if (!api_key) return res.status(401).json({ error: 'api_key required' });
     if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ error: 'lines array required' });
 
@@ -1672,7 +2114,17 @@ router.post('/:job_id/logs', (req, res) => {
     }
 
     const linesWritten = appendJobLogs(job, normalized);
-    res.json({ success: true, lines_written: linesWritten });
+    const attemptNumber = resolveAttemptNumber(job.job_id, attempt_number);
+    const logPath = appendAttemptLogLines(job.job_id, attemptNumber, normalized);
+    runStatement(
+      `UPDATE job_executions
+       SET log_path = COALESCE(log_path, ?)
+       WHERE job_id = ? AND attempt_number = ?`,
+      logPath || getAttemptLogPath(job.job_id, attemptNumber),
+      job.job_id,
+      attemptNumber
+    );
+    res.json({ success: true, lines_written: linesWritten, attempt_number: attemptNumber });
   } catch (error) {
     console.error('Job logs write error:', error);
     res.status(500).json({ error: 'Failed to write job logs' });
@@ -1686,6 +2138,34 @@ router.get('/:job_id/logs', (req, res) => {
     const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+
+    if (req.query.attempt != null) {
+      const attemptNumber = toFiniteInt(req.query.attempt, { min: 1 });
+      if (attemptNumber == null) {
+        return res.status(400).json({ error: 'attempt must be a positive integer' });
+      }
+      const execution = db.get(
+        `SELECT attempt_number FROM job_executions WHERE job_id = ? AND attempt_number = ?`,
+        job.job_id,
+        attemptNumber
+      );
+      if (!execution) {
+        return res.status(404).json({ error: 'Execution attempt not found' });
+      }
+      const resolved = resolveAttemptLogPath(job.job_id, attemptNumber);
+      if (!resolved) {
+        return res.status(404).json({ error: 'Log file not found for this attempt' });
+      }
+      res.setHeader(
+        'Content-Type',
+        resolved.gzipped ? 'application/gzip' : 'text/plain; charset=utf-8'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${job.job_id}-attempt-${attemptNumber}.log${resolved.gzipped ? '.gz' : ''}"`
+      );
+      return res.sendFile(resolved.path);
+    }
 
     const since = parseInt(req.query.since) || 0;
     const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
@@ -1706,6 +2186,45 @@ router.get('/:job_id/logs', (req, res) => {
   } catch (error) {
     console.error('Job logs read error:', error);
     res.status(500).json({ error: 'Failed to read job logs' });
+  }
+});
+
+// GET /api/jobs/:job_id/history — renter-scoped execution history
+router.get('/:job_id/history', (req, res) => {
+  try {
+    const job = db.get(
+      `SELECT id, job_id, renter_id, provider_id, status, submitted_at, started_at, completed_at,
+              cost_halala, actual_cost_halala, actual_duration_minutes, job_type, model
+       FROM jobs
+       WHERE id = ? OR job_id = ?`,
+      req.params.job_id,
+      req.params.job_id
+    );
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const renter = getRenterFromReq(req);
+    if (!renter || renter.id !== job.renter_id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const executions = db.all(
+      `SELECT id, attempt_number, started_at, ended_at, exit_code, log_path, gpu_seconds_used, cost_halala
+       FROM job_executions
+       WHERE job_id = ?
+       ORDER BY attempt_number ASC`,
+      job.job_id
+    );
+
+    res.json({
+      job,
+      executions: executions.map((row) => ({
+        ...row,
+        log_available: !!resolveAttemptLogPath(job.job_id, row.attempt_number),
+      })),
+    });
+  } catch (error) {
+    console.error('Job history error:', error);
+    res.status(500).json({ error: 'Failed to fetch job history' });
   }
 });
 
@@ -1805,6 +2324,37 @@ router.get('/:job_id/logs/stream', (req, res) => {
     console.error('Job logs SSE error:', error);
     if (!res.headersSent) return res.status(500).json({ error: 'Failed to stream logs' });
     cleanup();
+  }
+});
+
+// GET /api/jobs/:job_id/executions?key=RENTER_KEY
+// Returns execution attempt history for a job from the job_executions table.
+// Auth: renter key (must own job), provider key (must own job), or admin token.
+router.get('/:job_id/executions', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+
+    const executions = db.all(
+      `SELECT attempt_number, started_at, ended_at, exit_code, gpu_seconds_used, cost_halala
+       FROM job_executions
+       WHERE job_id = ?
+       ORDER BY attempt_number ASC`,
+      job.job_id
+    );
+
+    res.json({
+      job_id: job.job_id,
+      status: job.status,
+      cost_halala: job.cost_halala || 0,
+      actual_cost_halala: job.actual_cost_halala || 0,
+      retry_count: job.retry_count || 0,
+      executions,
+    });
+  } catch (error) {
+    console.error('Job executions error:', error);
+    res.status(500).json({ error: 'Failed to fetch executions' });
   }
 });
 
@@ -2046,6 +2596,12 @@ function enforceJobTimeouts() {
         );
       } catch(e) { console.error('[timeout] Escrow expire error:', e); }
       console.log(`[timeout] Job ${job.job_id} timed out (provider ${job.provider_id})`);
+      const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
+      fireAndForgetJobEmail('failed', updated || job, {
+        refunded_amount_halala: Number(job.cost_halala || 0),
+        retry_attempts: Number((updated || job).retry_count || 0),
+        last_error: 'Job timed out — provider may be offline or model too large',
+      });
       // Auto-dispatch: promote next queued job for this provider
       promoteNextQueuedJob(job.provider_id);
     }

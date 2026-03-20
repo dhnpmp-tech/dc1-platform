@@ -25,6 +25,17 @@ interface JobDetail {
   progress_phase: string
   result: string | null
   params: string | null
+  container_id: string | null
+  retry_count: number
+}
+
+interface LatestExecution {
+  attempt_number: number
+  started_at: string | null
+  ended_at: string | null
+  exit_code: number | null
+  gpu_seconds_used: number
+  cost_halala: number
 }
 
 // Nav icons
@@ -81,6 +92,7 @@ export default function ProviderJobDetailPage() {
   const router = useRouter()
   const jobId = params.id as string
   const [job, setJob] = useState<JobDetail | null>(null)
+  const [latestExec, setLatestExec] = useState<LatestExecution | null>(null)
   const [loading, setLoading] = useState(true)
   const [providerName, setProviderName] = useState('Provider')
   const [error, setError] = useState('')
@@ -114,6 +126,20 @@ export default function ProviderJobDetailPage() {
         }
         const jobData = await jobRes.json()
         setJob(jobData.job || null)
+
+        // Fetch execution stats (latest attempt)
+        try {
+          const execRes = await fetch(`${API_BASE}/jobs/${jobId}/executions`, {
+            headers: { 'x-provider-key': apiKey },
+          })
+          if (execRes.ok) {
+            const execData = await execRes.json()
+            const execs: LatestExecution[] = execData.executions || []
+            if (execs.length > 0) {
+              setLatestExec(execs[execs.length - 1])
+            }
+          }
+        } catch { /* executions endpoint may not have data */ }
       } catch (err) {
         console.error('Failed to load job:', err)
         setError('Failed to load job details')
@@ -204,6 +230,41 @@ export default function ProviderJobDetailPage() {
             {Object.entries(parsedParams).map(([key, value]) => (
               <DetailRow key={key} label={key.replace(/_/g, ' ')} value={String(value)} mono />
             ))}
+          </div>
+        )}
+
+        {/* Container Stats */}
+        {(latestExec || job.container_id) && (
+          <div className="card">
+            <h2 className="section-heading mb-4">Container Stats</h2>
+            {job.container_id && (
+              <DetailRow label="Container ID" value={job.container_id.slice(0, 12)} mono />
+            )}
+            {latestExec && (
+              <>
+                <DetailRow
+                  label="Exit Code"
+                  value={latestExec.exit_code != null ? String(latestExec.exit_code) : '—'}
+                />
+                <DetailRow
+                  label="GPU Seconds Used"
+                  value={latestExec.gpu_seconds_used ? `${latestExec.gpu_seconds_used.toFixed(2)}s` : '—'}
+                />
+                {latestExec.started_at && latestExec.ended_at && (
+                  <DetailRow
+                    label="Container Duration"
+                    value={`${Math.round((new Date(latestExec.ended_at).getTime() - new Date(latestExec.started_at).getTime()) / 1000)}s`}
+                  />
+                )}
+                <DetailRow
+                  label="Attempt #"
+                  value={String(latestExec.attempt_number)}
+                />
+              </>
+            )}
+            {job.retry_count > 0 && (
+              <DetailRow label="Total Retries" value={String(job.retry_count)} />
+            )}
           </div>
         )}
 

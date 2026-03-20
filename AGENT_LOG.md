@@ -4,6 +4,221 @@
 > **Format**: `## [YYYY-MM-DD HH:MM UTC] AGENT_NAME  Summary`
 > **Agents**: Claude-Cowork (VPS/deploy), Cursor (IDE/analysis), Codex (GitHub/PRs), Nexus (OpenClaw)
 
+## [2026-03-20 07:07 UTC] Codex — DCP-332: Job lifecycle email notifications wired (queued/started/completed/failed)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: wire renter job lifecycle email notifications with bilingual templates and non-blocking delivery`
+- **Files**: `backend/src/services/emailService.js`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
+- **Impact**: Added `sendJobQueued`, `sendJobStarted`, `sendJobCompleted`, `sendJobFailed` templates/methods (EN+AR + footer), preserved legacy `sendJobCompleteEmail` compatibility, and wired fire-and-forget email triggers on job submit, daemon pickup/start, completion, failure/refund, and timeout/fail paths in both `jobs.js` and `providers.js` with renter email existence checks and no job-flow blocking.
+
+## [2026-03-20 06:50 UTC] IDE Extension Developer — DCP-326: container_spec support + live log streaming in VS Code extension
+
+- **DCP-326 DONE**: Breaking fix for job submission (container_spec now required by backend) + live log streaming commands
+- **`vscode-extension/src/api/dc1Client.ts`**: Added `ContainerSpec` interface; `container_spec: ContainerSpec` (required) added to `SubmitJobRequest`; added `getContainerRegistry()` (`GET /api/containers/registry`); User-Agent bumped to 0.4.0
+- **`vscode-extension/src/panels/JobSubmitPanel.ts`**: Added `CONTAINER_TYPES` + `VRAM_OPTIONS` constants; `show()` now accepts `registryImages[]`; webview rebuilt with new "3 · Container Spec" section — image type select (pytorch-cuda / vllm-serve / training / rendering + registry extras), VRAM toggle (4/8/16/24/40 GB), GPU count toggle (1×/2×/4×); `container_spec` in submit payload; old min-VRAM input removed; DC1 → DCP branding; success notification offers "Stream Logs" → `dc1.streamLogs`
+- **`vscode-extension/src/extension.ts`**: `dc1.submitJob` + `dc1.submitJobOnProvider` fetch registry before opening panel; added `startLogStream()` + `logStreamStatusBar`; registered `dc1.streamLogs` (output channel, SSE stream, status bar) and `dc1.stopLogStream` commands; output channel renamed to "DCP Job Logs - {id}"
+- **`vscode-extension/package.json`**: Added `dc1.streamLogs` + `dc1.stopLogStream`; version 0.3.0 → 0.4.0
+- **Breaking**: `container_spec` now required in all job payloads — required by backend DCP-311/317
+- **No new npm deps**
+
+---
+
+---
+
+## [2026-03-20 06:50 UTC] Budget Analyst — DCP-327: Q2 OPEX projections v2
+
+- **DCP-327 DONE**: Created `docs/cost-reports/2026-Q2-projections-v2.md`
+- **Key corrections from v1**: Agent model tier corrected Opus → **Sonnet 4.6** (actual runtime); GPU rate corrected 5 SAR/hr → **2.4 SAR/hr** (seed-data actuals)
+- **Docker cost impact**: ~20 SAR/mo VPS-side only (logs + registry metadata); model-cache on provider machines; Trivy free; tooling open-source — **negligible OPEX impact**
+- **DCP-266 savings (Section 3)**: 9 agents → Haiku 4.5 + event-triggered; 6 agents stay Sonnet. Savings: ~4,572 SAR/mo; post-Haiku agent API: ~2,324 SAR/mo; total monthly OPEX post-DCP-266: ~5,707 SAR
+- **Break-even (Section 4)**: ~7 active GPUs at full utilization covers SaaS floor (2,956 SAR). 30-provider June target → 12,960 SAR DCP revenue/mo (+7,253 surplus)
+- **Files changed**: `docs/cost-reports/2026-Q2-projections-v2.md`, `AGENT_LOG.md`
+
+---
+
+## [2026-03-20 06:45 UTC] Frontend Developer — DCP-325: Admin container registry management UI
+
+- **DCP-325 DONE**: New admin page for container registry + security scanning
+- **`app/admin/containers/page.tsx`** (new): Full container registry admin UI with 2 tabs:
+  - **Registry tab**: Table of all approved images (image_ref, registry, SHA256 digest, approved_at, scan status badge — CLEAN/CRITICAL/PENDING/NOT_SCANNED); Approve new image form (image_ref input + image_type dropdown → `POST /api/admin/containers/approve-image`; shows Trivy scan progress + CVE error block on critical fail); Re-scan button per row → `POST /api/admin/containers/scan-image`
+  - **Security Status tab**: Summary cards (total/clean/critical/unscanned counts); Re-scan All button; per-image scan table; Recent Scan Log (last 100 scans from `GET /api/admin/containers/security-status`); amber warning banner when any image has critical CVEs
+- **`app/admin/page.tsx`**: Added `ContainerIcon` + `nav.containers` nav item to admin navItems
+- **`app/admin/jobs/page.tsx`**, **`fleet`**, **`finance`**, **`security`**, **`withdrawals`**, **`providers/page.tsx`**, **`renters/page.tsx`**: Added ContainerIcon + Containers nav item to each page's navItems
+- **`app/admin/jobs/detail/page.tsx`**, **`renters/[id]/page.tsx`**: Same nav updates
+- **`app/lib/i18n.tsx`**: Added `nav.containers` in EN ('Containers') + AR ('الحاويات')
+- **No breaking changes** — additive only; no new npm deps; no hardcoded IPs; relative imports; RTL-aware (ms-/me- spacing, text-start/end)
+- **Files changed**: `app/admin/containers/page.tsx` (new), `app/admin/page.tsx`, 9 other admin pages, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+
+---
+
+## [2026-03-20 06:48 UTC] Codex — DCP-328: PDPL privacy page, consent banner, and account deletion/export flows
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add PDPL export/deletion APIs, legal privacy page, consent banner, and settings deletion UX`
+- **Files**: `backend/src/routes/renters.js`, `backend/src/routes/providers.js`, `app/components/ui/CookieConsent.tsx`, `app/layout.tsx`, `app/legal/privacy/page.tsx`, `app/components/layout/Footer.tsx`, `app/renter/settings/page.tsx`, `app/provider/settings/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Added `GET /api/renters/me/export` (account + jobs metadata + billing history, excluding verbose logs), changed `DELETE /api/renters/me` and `DELETE /api/providers/me` to hard-delete accounts with job anonymization/cancellation behavior, wired global cookie consent storage (`dcp_consent`), added new `/legal/privacy` bilingual page, and connected renter/provider settings pages to destructive-delete confirmation modals (`DELETE` typed confirmation) that call the new deletion semantics.
+
+## [2026-03-20 06:30 UTC] Frontend Developer — DCP-321: Container spec selector in playground + container badge in jobs list
+
+- **DCP-321 DONE**: Container spec UI added to playground, container_type badge in jobs list, i18n keys added
+- **`app/renter/playground/page.tsx`**: Added `ImageType`, `IMAGE_TYPE_TO_COMPUTE`, `VRAM_OPTIONS` constants; added state for `imageType`, `vramRequiredMb`, `gpuCount`, `containerImages`, `queueWait`; fetches `GET /api/containers/registry` on mount for image type dropdown; fetches `GET /api/jobs/queue/status` on imageType/vram change to show estimated queue wait; added "Container" section in the form (between model and provider) with: image_type dropdown (falls back to static list if registry unavailable), GPU count 1×/2×/4× toggle, VRAM slider (4/8/16/24/40 GB), compute_type auto-label, queue wait banner (green = no queue, yellow = N jobs ahead); `container_spec` now passed in job submission payload
+- **`app/renter/jobs/page.tsx`**: Added `container_spec?: string | null` to Job interface; job Type column now shows amber monospace badge with `image_type` if container_spec is present (parsed safely)
+- **`app/lib/i18n.tsx`**: Added 6 keys in EN + AR: `renter.container_spec`, `renter.image_type`, `renter.vram_required`, `renter.gpu_count`, `renter.compute_type`, `renter.queue_wait_estimate`
+- **No breaking changes** — additive only; no new npm deps; no hardcoded IPs; relative imports only
+- **Files changed**: `app/renter/playground/page.tsx`, `app/renter/jobs/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+
+---
+
+## [2026-03-20 07:00 UTC] CEO — Sprint 19 launched + DCP-329 code review created for Sprint 18
+
+- **DCP-329 CREATED** (CR2): Code review for Sprint 18 batch (DCP-325/326/327/328)
+- **DCP-330** → Backend Architect: Job event email notifications (started/completed/failed/refunded)
+- **DCP-331** → ML Infra Engineer: vLLM streaming inference POST /api/vllm/complete (Phase B)
+- **DCP-332** → Founding Engineer: Provider withdrawal request UI + state machine
+- **DCP-333** → Frontend Developer: Public GPU marketplace /marketplace (no auth, Phase B)
+- **DCP-320 reminder**: posted 2-item targeted re-check — Docker deploy manifest blocked on PASS
+- **Files changed**: AGENT_LOG.md only
+
+---
+
+## [2026-03-20 06:35 UTC] CEO — Sprint 18: 4 issues assigned covering admin UI, extension, PDPL, budget
+
+- **DCP-325** → Frontend Developer: Admin container registry management UI (approve images, view Trivy scans)
+- **DCP-326** → IDE Extension Developer: VS Code extension Docker/container_spec support + live log streaming
+- **DCP-327** → Security Engineer: PDPL compliance — privacy policy page, data deletion endpoint, cookie consent
+- **DCP-328** → Budget Analyst: Updated Q2 OPEX projections v2 — Docker cost impact + Haiku migration savings
+- **Rationale**: Admin has no UI for registry mgmt; extension breaks without container_spec; PDPL required before launch; budget data needed for board to action DCP-266
+- **DCP-320 status**: Awaiting Code Reviewer 1 re-check (import + dockerode fixes applied)
+- **Files changed**: AGENT_LOG.md only
+
+---
+
+## [2026-03-20 06:10 UTC] CEO — 4 new issues created for idle team while DCP-320 re-reviews
+
+- **DCP-321** → Frontend Developer: Renter container_spec selector in job submission UI
+- **DCP-322** → Founding Engineer: Provider GPU capability profile editor (VRAM, gpu_count, compute types)
+- **DCP-323/324** → QA Engineer + DevRel Engineer: Docker integration tests + provider Docker setup guide
+- **Rationale**: Docker API complete but renters/providers have no UI to use it; tests and docs needed before beta
+- **Files changed**: AGENT_LOG.md only
+
+---
+
+## [2026-03-20 06:08 UTC] CEO — DCP-320 FAIL fixed: import extension + dockerode dependency
+
+- **DCP-320 re-review**: Fixed 2 issues flagged by Code Reviewer 1
+- **Fix 1** `backend/src/services/docker-manager.ts` line 16: `../types/jobs.js` → `../types/jobs.ts`
+- **Fix 2** `backend/package.json`: added `dockerode: ^4.0.2` (deps) + `@types/dockerode: ^3.3.29` (devDeps), removed duplicate devDependencies key
+- **DCP-320 re-assigned** to Code Reviewer 1 for targeted re-check
+- **Files changed**: `backend/src/services/docker-manager.ts`, `backend/package.json`, `AGENT_LOG.md`
+
+---
+
+## [2026-03-20 06:02 UTC] CEO — Docker Wave complete: DCP-350/351 closed, DCP-320 code review created
+
+- **DCP-350 DONE**: Foundation subtasks DCP-309–313 all verified complete
+- **DCP-351 DONE**: Expansion subtasks DCP-314–319 all verified complete
+- **DCP-320 CREATED**: Code review for entire Docker wave → Code Reviewer 1
+- **DCP-308 escalated**: 11 deploy batches queued, board briefed on DCP-84 + DCP-266 urgency
+- **Files changed**: AGENT_LOG.md only
+
+---
+
+## [2026-03-20 06:00 UTC] Frontend Developer — DCP-318: Live log streaming (SSE) + job history UI
+
+- **DCP-318 DONE**: SSE log streaming frontend + job history tab + provider container stats
+- **Backend** (`backend/src/routes/jobs.js`): Added `GET /api/jobs/:job_id/executions` endpoint — reads `job_executions` table (attempt_number, started_at, ended_at, exit_code, gpu_seconds_used, cost_halala); auth: renter key, provider key, or admin token; inserted after SSE stream route
+- **Renter job detail** (`app/renter/jobs/[id]/page.tsx`): Full rewrite with 3-tab layout:
+  - **Overview tab**: Existing job info / params / output / error cards (unchanged UX)
+  - **Live Logs tab**: `LogStream` component — EventSource connects to `GET /api/jobs/:id/logs/stream?key=`; terminal-style dark window (monospace, green text on void black); auto-scroll toggle; amber blinking cursor while live; connect/disconnect on Page Visibility API; Reconnect button on disconnect; download link for full log
+  - **History tab**: `HistoryTab` component — fetches executions endpoint; shows cost breakdown (quoted vs actual) + per-attempt cards (attempt #, started/ended, exit code badge, duration, GPU-s, cost); graceful empty state; download logs link per attempt
+- **Provider job detail** (`app/provider/jobs/[id]/page.tsx`): Added `LatestExecution` interface; fetches `GET /api/jobs/:id/executions` on load; shows "Container Stats" card (container ID, exit code, GPU seconds used, container duration, attempt #, retry count) — renders only when data exists
+- **No breaking changes** — additive only; no new npm deps; no hardcoded IPs; RTL-aware (text-end for download links, flex-wrap on status bar)
+- **Files changed**: `backend/src/routes/jobs.js`, `app/renter/jobs/[id]/page.tsx`, `app/provider/jobs/[id]/page.tsx`
+
+---
+
+## [2026-03-20 05:48 UTC] Codex — DCP-317: VRAM-aware routing + priority queue visibility
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add capability-aware provider job matching and global queued-job dispatch`
+- **Files**: `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/src/db.js`, `AGENT_LOG.md`
+- **Impact**: Job `container_spec` now carries `vram_required_mb`, `gpu_count`, and `compute_type` (inference/training/rendering); auto-routed jobs with no current capable provider are accepted into a global `queued` lane (instead of returning 503) with priority-aware `queue_position`; `/api/providers/jobs/next` and `/api/providers/:api_key/jobs` now only claim jobs a provider can run by VRAM, GPU count, and compute capability; added `GET /api/jobs/queue/status` for queue depth grouped by compute type + VRAM bucket; heartbeat persists canonical provider profile fields (`vram_mb`, `gpu_count`, `gpu_model`) used by routing filters.
+
+## [2026-03-20 05:38 UTC] CEO — DCP-351: Docker Expansion breakdown → 6 subtasks assigned
+
+- **DCP-351 BLOCKED** (on DCP-350 wave): Board expansion directive actioned
+- **DCP-314** → DevOps Automator: /workspace volume + snapshot/pause/resume (CRIU)
+- **DCP-315** → Backend Architect: Fault tolerance + auto-restart + container registry
+- **DCP-316** → Founding Engineer: Job recall DB + GPU-seconds cost metering
+- **DCP-317** → ML Infrastructure Engineer: GPU routing (VRAM match) + priority queue
+- **DCP-318** → Frontend Developer: Live log streaming (SSE) + job history UI
+- **DCP-319** → Security Engineer: Trivy image scanning + Docker Hub SHA256 validation
+- **Dependency**: DCP-309–313 must complete before DCP-314–319 start
+
+---
+
+## [2026-03-20 05:46 UTC] Codex — DCP-314: Workspace volumes + pause/resume checkpoints + volume cleanup
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add per-job workspace volume persistence, Docker checkpoint pause/resume APIs, and 7-day volume cleanup cron`
+- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/installers/dc1_daemon.py`, `infra/docker/run-job.sh`, `backend/src/services/cleanup.js`, `backend/src/scripts/cleanup-job-volumes.js`, `backend/ecosystem.config.js`, `AGENT_LOG.md`
+- **Impact**: Jobs now persist `/workspace` to named volumes (`dcp-job-{job_id}`); providers/admin can pause/resume checkpoint-enabled jobs via `/api/jobs/:job_id/pause|resume`; cleanup now prunes aged workspace volumes and PM2 includes a daily volume cleanup cron process.
+
+## [2026-03-20 05:26 UTC] Codex — DCP-313: Model cache bootstrap, prefetch, and heartbeat metrics
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add model-cache bootstrap + prefetch scripts; expose cache disk metrics in daemon heartbeat`
+- **Files**: `infra/setup-model-cache.sh`, `infra/docker/prefetch-models.sh`, `backend/ecosystem.config.js`, `backend/installers/dc1_daemon.py`, `backend/src/routes/providers.js`, `docs/provider-setup.md`
+- **Impact**: PM2 startup now ensures `/opt/dcp/model-cache` and `dcp-model-cache` volume exist before backend boot; new prefetch script warms cache for llama3-8b/mistral-7b; daemon heartbeat now reports model cache disk usage fields for monitoring.
+
+---
+
+## [2026-03-20 05:22 UTC] CEO — DCP-350: P0 Docker breakdown → 5 subtasks assigned to full team
+
+- **DCP-350 BLOCKED** (on team execution): Board P0 directive actioned — broke into 5 critical subtasks
+- **DCP-309** → ML Infrastructure Engineer: 4 Dockerfiles (pytorch-cuda, vllm-serve, training, rendering) + run-job.sh
+- **DCP-310** → Backend Architect: Daemon rewrite — subprocess→docker, nvidia-smi GPU detection, URL→api.dcp.sa
+- **DCP-311** → Founding Engineer: jobs.js container_spec field + block raw Python job submissions
+- **DCP-312** → Security Engineer: Container security audit, hardening, policy doc
+- **DCP-313** → DevOps Automator: /opt/dcp/model-cache volume setup + bootstrap scripts
+- **Execution order**: DCP-309 first → DCP-310/311/313 parallel → DCP-312 → code review batch
+- **No code written**: CEO role is coordination; team agents write the code
+- **Files changed**: AGENT_LOG.md only
+
+---
+
+## [2026-03-20 08:00 UTC] Frontend Developer — DCP-305: Provider earnings trend chart — daily/weekly/monthly view
+
+- **DCP-305 DONE**: Earnings trend chart with 3 time periods, SVG-based, RTL-aware
+- **Backend** (`backend/src/routes/providers.js`): Added `GET /api/providers/me/earnings/history?key=&period=7d|30d|90d` route — queries jobs table grouped by date, returns `[{ date, earnings_halala, jobs_completed }]` ascending; period defaults to 30d
+- **Frontend** (`app/provider/earnings/page.tsx`):
+  - `EarningsTrendChart` component — pure SVG bar chart, amber (#F5A524) bars, y-axis SAR labels, x-axis date labels (first/mid/last), SVG tooltip on hover (date + SAR + jobs count)
+  - Period selector (7d / 30d / 90d) button group in card header
+  - Summary line: total SAR + avg SAR/day for the period
+  - RTL-aware: reverses date order in AR locale so newest is leftmost
+  - Spinner during fetch, empty state when no data
+  - Chart rendered above existing daily bar list in Overview tab
+- **i18n** (`app/lib/i18n.tsx`): Added 4 keys EN+AR: `provider.earnings_trend`, `provider.period_7d`, `provider.period_30d`, `provider.period_90d`
+- **No breaking changes** — additive only; no new npm deps; no hardcoded IPs
+- **Files changed**: `backend/src/routes/providers.js`, `app/provider/earnings/page.tsx`, `app/lib/i18n.tsx`
+
+---
+
+## [2026-03-20 07:10 UTC] Frontend Developer — DCP-304: Renter job templates — save and reuse job configurations
+
+- **DCP-304 DONE**: Job templates feature end-to-end
+- **Backend** (`backend/src/db.js`): Added `job_templates` table (id, renter_id, name, job_type, model, system_prompt, max_tokens, resource_spec_json, created_at) with index on renter_id + created_at
+- **Backend** (`backend/src/routes/renters.js`): Added 3 endpoints:
+  - `GET /api/renters/me/templates?key=` — list templates (sorted newest first, max 50)
+  - `POST /api/renters/me/templates?key=` — save template (capped at 50/renter, name+job_type+model required)
+  - `DELETE /api/renters/me/templates/:id?key=` — delete template (ownership-scoped)
+- **Playground** (`app/renter/playground/page.tsx`):
+  - Templates dropdown in header (badge with count, shows all saved templates by name+model)
+  - "Load Template" fills model/params into form and switches to New Job view
+  - Delete button per template in dropdown
+  - "Save as Template" button after successful job (non-vLLM) — opens name modal → saves to API → green toast
+  - Templates fetched on login/auth
+- **Jobs page** (`app/renter/jobs/page.tsx`):
+  - Save icon button on every job row → opens modal with template name input → POST to API → success toast
+- **i18n** (`app/lib/i18n.tsx`): Added 4 keys in EN + AR: `renter.save_template`, `renter.templates`, `renter.template_name`, `renter.load_template`
+- **No breaking changes** — additive only; no new npm deps; no hardcoded IPs
+- **Files changed**: `backend/src/db.js`, `backend/src/routes/renters.js`, `app/renter/playground/page.tsx`, `app/renter/jobs/page.tsx`, `app/lib/i18n.tsx`
+
 ---
 
 ## [2026-03-20 06:30 UTC] DevRel Engineer — DCP-296: Provider earnings calculator — /earn page + landing widget
@@ -137,6 +352,12 @@
 ---
 
 ## [2026-03-20 02:30 UTC] CEO — DCP-268 PASS (conditional); DCP-269 deploy manifest created; Sprint 12 launched (DCP-270 to DCP-275)
+
+## [2026-03-20 06:27 UTC] Codex — DCP-322: Provider GPU capability profile editor + daemon-preference guards
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add provider GPU profile patch API, dashboard editor UI, and i18n for capability profile`
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `app/provider/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Added `PATCH /api/providers/me/gpu-profile?key=` with validation (`vram_mb` 1024–327680, `gpu_count` 1–8, compute types inference/training/rendering) and daemon-recency guard that blocks manual hardware overrides when daemon profile is newer; provider `/me` now returns `vram_mb`, `gpu_count`, `supported_compute_types`, and profile source metadata; heartbeat stamps daemon profile source/timestamp and can infer supported compute types from `resource_spec`; provider dashboard now includes GPU Profile summary + editor card (model preset list, VRAM slider 4–80 GB, GPU count selector, compute-type checkboxes, auto-detected badge, save flow).
 
 - **DCP-268 PASS** (Code Reviewer 2): All 8 writable files clean. Known fail: admin/jobs/[id] (root-owned, non-blocking)
 - **DCP-269 CREATED**: Deploy manifest for Sprint 11 + IP cleanup + branding sweep — awaiting Claude-Cowork
@@ -2757,3 +2978,145 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 - **DCP-300 CREATED** (CR2): Code review for Sprint 15 — milestone 300th issue
 - **Platform status**: 15 sprints complete, 9 deploy batches queued
 - **Q2 goal**: Need 30 providers by June — /earn page (DCP-296) is key recruitment lever
+
+---
+
+## [2026-03-20 04:45 UTC] CEO — DCP-300 PASS; DCP-301 deploy manifest; Sprint 16 launched (DCP-302 to DCP-306)
+
+- **DCP-300 PASS** (CR2): Sprint 15 approved — all 11 checks clean
+- **DCP-301 CREATED**: Deploy manifest for Sprint 15 — deploy queue now 10 batches deep
+- **Sprint 16 launched** — final pre-launch sprint (5 issues):
+  - DCP-302 (CRITICAL) → Backend Architect: Admin manual credit grant (beta testing unblocked without DCP-84)
+  - DCP-303 → Founding Engineer: Email notifications via Resend (welcome, job complete, withdrawal)
+  - DCP-304 → Frontend Developer: Renter job templates (save + reuse)
+  - DCP-305 → Frontend Developer: Provider earnings trend chart (SVG, no libs, RTL-aware)
+  - DCP-306 → DevOps Automator: Provider onboarding wizard (4-step, heartbeat detection, confetti)
+- **Deploy queue**: 10 batches (DCP-172 through DCP-301) awaiting board/Claude-Cowork
+- **CRITICAL NOTE**: DCP-302 (admin credit grant) unblocks beta testing WITHOUT needing DCP-84 (Moyasar)
+
+## [2026-03-20 04:55 UTC] Codex — DCP-302: Admin manual credit grant endpoint + audit trail
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — Added dedicated renter credit grant API with persistent `credit_grants` audit records, and updated admin renter UI to use grant-credits flow with success toast.
+- **Files**: `backend/src/db.js`, `backend/src/routes/admin.js`, `app/admin/renters/page.tsx`, `app/lib/i18n.tsx`
+- **Impact**: Admins can now grant positive test credits through `POST /api/admin/renters/:id/credit` with required reason and auditable records (`credit_grants`). Bulk credit action now writes to the same credit audit table per renter. UI action is renamed to “Grant Credits” and shows success/error feedback after credit operations.
+
+## [2026-03-20 04:56 UTC] Codex — DCP-306: Provider onboarding wizard (first-run modal)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — Added a 4-step provider onboarding wizard modal with daemon install commands, first-heartbeat polling, first-job guidance, and live-ready completion state.
+- **Files**: `app/provider/components/ProviderWizard.tsx` (new), `app/provider/page.tsx`, `app/lib/i18n.tsx`
+- **Impact**: New providers with zero jobs and no heartbeat now see guided setup automatically; wizard completion is persisted in localStorage (`wizard_completed`); `/provider` now supports first-run activation flow with EN/AR copy.
+
+## [2026-03-20 04:57 UTC] Codex — DCP-303: Resend transactional email flow wired
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — Added a dedicated Resend-backed email service and wired welcome, job-complete, and withdrawal-approved notifications.
+- **Files**: `backend/src/services/emailService.js` (new), `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/services/jobSweep.js`, `backend/src/routes/admin.js`, `backend/src/db.js`
+- **Impact**: Provider/renter registration now sends bilingual welcome emails via Resend; job sweep now sends one completion email per finished job (`jobs.completion_email_sent_at` prevents duplicates); admin withdrawal approval now sends provider payout-approval email; when `RESEND_API_KEY` is missing, sends are skipped with warning (no request flow failures).
+
+---
+
+## [2026-03-20 05:00 UTC] CEO — Sprint 16 DONE; DCP-307 review queued; DCP-308 LAUNCH GATE created
+
+- **Sprint 16 ALL DONE** (5 issues): DCP-302 through DCP-306 complete
+- **CEO pre-checks**: DC1 clean, IPs clean, aliases clean, db.run() clean
+- **DCP-307 CREATED** (CR1): Code review for Sprint 16 — platform feature-complete
+- **DCP-308 CREATED** (CRITICAL): LAUNCH GATE — comprehensive board checklist for going live
+  - 7 steps: cost reduction → infra setup → 11 deploy batches → verification → SDKs → fixes → launch
+  - Full inventory of what's built and ready
+  - Monthly burn rates at current vs post-DCP-266 rates
+  - Break-even projection: June 2026 (30 providers)
+- **STRATEGIC PIVOT**: Engineering complete. Focus now shifts to board execution.
+  - No more feature sprints until deploy queue is cleared
+  - Next CEO priority: ensure board acts on DCP-308 checklist
+
+## [2026-03-20 05:25 UTC] Codex — DCP-311: container_spec enforced for job submission + daemon polling
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — Added `container_spec` schema/migration, enforced submission validation, and returned `container_spec` in provider daemon job poll payloads.
+- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`
+- **Impact**: `POST /api/jobs/submit` now requires `container_spec` with `image_type` (optional `model_id`, `env` object). Daemon poll responses now include `container_spec`; compatibility route `GET /api/providers/jobs/next` added (auth via `x-provider-key` or `?key=`). Raw Python `task_spec` detection was tightened.
+
+## [2026-03-20 05:26 UTC] Codex — DCP-312: Container security hardening (allowlist, seccomp, non-root)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — Hardened job container launcher and Docker manager with image allowlisting, pull restrictions, strict egress/network controls, seccomp enforcement, and safer command/input validation; updated worker Dockerfiles to run as non-root by default; added formal container security policy doc.
+- **Files**: `infra/docker/run-job.sh`, `backend/src/services/docker-manager.ts`, `backend/docker/Dockerfile.base`, `backend/docker/Dockerfile.general-worker`, `backend/docker/Dockerfile.llm-worker`, `backend/docker/Dockerfile.sd-worker`, `docs/container-security-policy.md`, `AGENT_LOG.md`
+- **Impact**: Arbitrary image execution/pull paths are now blocked by default unless explicitly allowlisted; job launcher now fails closed when seccomp profile is missing and requires explicit + allowlisted egress; worker runtime user defaults to non-root (`dcp`) reducing privilege risk across job containers.
+
+## [2026-03-20 05:27 UTC] Codex — DCP-309: Docker templates + template-mode run-job orchestrator
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add backend docker templates and extend infra/docker/run-job.sh with template-mode orchestration`
+- **Files**: `backend/docker-templates/pytorch-cuda.Dockerfile`, `backend/docker-templates/vllm-serve.Dockerfile`, `backend/docker-templates/training.Dockerfile`, `backend/docker-templates/rendering.Dockerfile`, `backend/docker-templates/dcp-entrypoint.sh`, `backend/docker-templates/run_payload.py`, `infra/docker/run-job.sh`, `docs/job-execution.md`, `AGENT_LOG.md`
+- **Impact**: New GPU template images are defined in `backend/docker-templates/`. `infra/docker/run-job.sh` now supports a new interface `run-job.sh <container_type> <model_path> <job_payload> <output_dir>` with `--gpus all`, `/opt/dcp/model-cache` mount, log streaming, timeout enforcement, and forced cleanup while keeping legacy `--job-id/--image` mode backward compatible.
+
+## [2026-03-20 05:29 UTC] Codex — DCP-310: Daemon container-spec enforcement + run-job.sh execution path
+
+- **Commit**: `N/A (Paperclip container: git commands disabled)` — `feat: enforce container_spec and route script jobs through infra/docker/run-job.sh`
+- **Files**: `backend/installers/dc1_daemon.py`, `AGENT_LOG.md`
+- **Impact**:
+  - Daemon now requires `container_spec` for script jobs and rejects raw Python execution when missing.
+  - Script job execution now goes through `infra/docker/run-job.sh` with parsed container settings (`image`, `job_cmd`, `network`, `cpus`, `memory`, `tmpfs_size`, `gpus`, `pids_limit`).
+  - Added heartbeat GPU aggregate fields from `nvidia-smi` output path: `gpu_count` and `vram_mb`.
+  - Added canonical daemon download candidate URL `https://api.dcp.sa/installers/daemon` for self-update downloads (with existing API endpoint fallback).
+
+## [2026-03-20 05:48 UTC] Codex — DCP-316: job execution history + GPU-seconds cost metering
+- **Commit**: `N/A (Paperclip container: git disabled)`  Implemented execution-attempt persistence, downloadable per-attempt logs, and GPU-seconds-based settlement in daemon/provider result flow.
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/src/services/job-execution-logs.js` (new), `backend/installers/dc1_daemon.py`, `AGENT_LOG.md`
+- **Impact**:
+  - Added `job_executions` table (`attempt_number`, timestamps, exit code, `gpu_seconds_used`, `cost_halala`, `log_path`) plus indexes.
+  - Added `providers.cost_per_gpu_second_halala` (default `0.25`) and switched `/api/providers/job-result` billing to `actual_cost_halala = gpu_seconds_used * cost_per_gpu_second_halala` (rounded halala), with fallback rate derived from existing per-minute job type rates.
+  - Daemon now sends `gpu_seconds_used` and `attempt_number` in `/api/providers/job-result` payloads; `gpu_count` is propagated into metrics.
+  - On job pickup, backend now creates an execution attempt row and returns `attempt_number` to daemon in poll payload.
+  - Full streamed logs are persisted under `/opt/dcp/job-logs/{job_id}/{attempt}.log` and auto-gzipped after 24h via shared log service.
+  - Added renter-scoped `GET /api/jobs/:job_id/history` and file-download support `GET /api/jobs/:job_id/logs?attempt=N`.
+  - Added admin `GET /api/admin/jobs/:id/history` including per-attempt provider telemetry aggregates from heartbeat data.
+
+## [2026-03-20 05:52 UTC] Codex — DCP-315: fault tolerance + container registry allowlist
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add container registry endpoints + image allowlist validation; persist daemon restart telemetry with crash auto-restart`
+- **Files**: `backend/src/db.js`, `backend/src/server.js`, `backend/src/lib/container-registry.js` (new), `backend/src/routes/containers.js` (new), `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/src/routes/providers.js`, `backend/installers/dc1_daemon.py`, `AGENT_LOG.md`
+- **Impact**:
+  - Added `allowed_images` table and new jobs columns `restart_count` + `last_error` (idempotent migrations in `db.js`).
+  - Added public `GET /api/containers/registry` to return template images + admin-approved custom images.
+  - Added admin `POST /api/admin/containers/approve-image` to allowlist/update custom image refs.
+  - Job submission now validates `container_spec.image` against built-in templates or `allowed_images`; Docker Hub refs require SHA256 pinning (`hub.docker.com/r/user/image:tag@sha256:...`).
+  - Daemon now checks container health with `docker inspect --format={{.State.Status}}`, auto-restarts crashed jobs up to 3 times with backoff `10s/30s/90s`, and sends `restart_count` + `last_error` in job-result payloads.
+  - Provider `/api/providers/job-result` now stores restart telemetry, returns it in response, and sends renter failure webhook when a job fails after crash-retry exhaustion (`restart_count >= 3`).
+
+## [2026-03-20 05:53 UTC] Codex — DCP-319: image scan gate, digest pinning, and runtime hardening
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add Trivy-backed image approval gates, trusted-registry validation, digest pinning metadata, and container runtime hardening`
+- **Files**: `backend/src/db.js`, `backend/src/routes/admin.js`, `backend/src/routes/templates.js`, `backend/src/services/docker-manager.ts`, `infra/docker/run-job.sh`, `infra/security/scan-image.sh`, `infra/security/scan-template-images.sh`, `docs/container-security-policy.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added persistent image security tables: `image_scans`, `approved_container_images`, `admin_rate_limit_log`.
+  - Upgraded admin image approval flow (`/api/admin/containers/approve-image`) to enforce trusted registries, public-manifest checks, digest resolution, CRITICAL Trivy scan blocking, and approval rate limiting.
+  - Added `POST /api/admin/containers/scan-image` (scan-only) and `GET /api/admin/containers/security-status` (dashboard-ready status for approved images + recent scans).
+  - Extended template whitelist endpoint to include DB-backed approved images and digest-pinned refs.
+  - Hardened runtime launcher with `--security-opt no-new-privileges:true`, `--cap-drop ALL`, `--cap-add SYS_PTRACE`, and optional digest verification (`--pinned-digest`, `--require-pinned-digest`, `DCP_REQUIRE_PINNED_IMAGE_DIGEST=true`).
+  - Added reusable Trivy scripts for single-image and template-image scan gates under `infra/security/`.
+
+## [2026-03-20 06:04 UTC] Codex — DCP-320: Docker wave review (FAIL)
+
+- **Commit**: `N/A (review-only; git disabled)` — `review: fail DCP-320 due to missing import target and missing backend dependency`
+- **Files**: `backend/src/services/docker-manager.ts`, `backend/package.json`, `AGENT_LOG.md`
+- **Impact**: Block deploy for Docker wave until import path and dependency issues are fixed; Paperclip review comment includes exact check numbers and line refs.
+
+## [2026-03-20 06:28 UTC] Codex — DCP-324: Docker-wave integration test suite
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: add Docker wave integration contracts for jobs/containers/admin/provider flows`
+- **Files**: `backend/tests/integration/docker-system.test.js`, `AGENT_LOG.md`
+- **Impact**: Added end-to-end API contract coverage for DCP-309–319 scope (container_spec validation, container registry/admin image approval, VRAM-aware queue/assignment, execution history/log access, restart_count failure threshold). Test execution in this container is blocked by missing `better-sqlite3` native bindings (`node-v137`), so runtime verification must be run where bindings are available.
+
+## [2026-03-20 07:02 UTC] Codex — DCP-320 re-review (PASS)
+
+- **Commit**: `N/A (review-only; git disabled)` — `review: pass docker wave after import-path and dependency fixes`
+- **Files**: `backend/src/services/docker-manager.ts`, `backend/package.json`, `AGENT_LOG.md`
+- **Impact**: Previously flagged review blockers are resolved; DCP-320 now passes reviewer checklist and is ready for operator push flow.
+
+## [2026-03-20 07:06 UTC] Codex — DCP-330: Provider withdrawal request flow + admin state machine
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add provider withdrawal_requests ledger flow with admin status transitions and earnings UI updates`
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/admin.js`, `app/provider/earnings/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Added `withdrawal_requests` table and new provider endpoints `POST /api/providers/me/withdraw?key=` + `GET /api/providers/me/withdrawals?key=` using claimable halala balances with IBAN validation and min 1000-halala check; added admin `PATCH /api/admin/withdrawals/:id` transition rules (`pending -> processing -> paid/failed`) with automatic claimable refund on `failed`; updated provider earnings Withdrawals tab with amount+IBAN request UX, confirmation modal, masked IBAN history, and status badges (pending/processing/paid/failed); added required EN/AR i18n keys.
+
+## [2026-03-20 07:07 UTC] Codex — DCP-333: vLLM completion + streaming API routes
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add /api/vllm completion, SSE streaming, and model registry endpoints`
+- **Files**: `backend/src/routes/vllm.js`, `backend/src/server.js`, `AGENT_LOG.md`
+- **Impact**: Added new renter-authenticated `POST /api/vllm/complete?key=` and `POST /api/vllm/complete/stream?key=` endpoints with 60 req/min limiter per renter key; both create a vLLM-tagged job (`job_type: vllm`, `container_spec.image_type: vllm-serve`), wait up to 300s for completion, and return OpenAI-compatible response formats (JSON or SSE + `[DONE]`) including `usage` and `cost_halala`. Added `GET /api/vllm/models` model listing route (mirrors model registry shape) and mounted router in `server.js`. No git operations performed.

@@ -68,10 +68,18 @@ export interface JobOutput {
   progress_phase?: string;
 }
 
+export interface ContainerSpec {
+  image_type: string;
+  vram_required_mb: number;
+  gpu_count: 1 | 2 | 4;
+  compute_type?: string;
+}
+
 export interface SubmitJobRequest {
   provider_id: string;
   job_type: string;
   duration_minutes: number;
+  container_spec: ContainerSpec;
   gpu_requirements?: { min_vram_gb?: number };
   params?: Record<string, unknown>;
   priority?: 1 | 2 | 3;
@@ -110,7 +118,7 @@ export class DC1Client {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'DCP-VSCode-Extension/0.3.0',
+          'User-Agent': 'DCP-VSCode-Extension/0.4.0',
           ...headers,
         },
         // Allow self-signed certs on the dev VPS
@@ -213,7 +221,7 @@ export class DC1Client {
         'Accept': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'x-renter-key': apiKey,
-        'User-Agent': 'DCP-VSCode-Extension/0.3.0',
+        'User-Agent': 'DCP-VSCode-Extension/0.4.0',
       },
       ...(isHttps ? { rejectUnauthorized: false } : {}),
     };
@@ -286,6 +294,11 @@ export class DC1Client {
   /** GET /api/jobs/:id — single job status */
   async getJob(apiKey: string, jobId: string): Promise<Job> {
     return this.request('GET', `/api/jobs/${jobId}`, { 'x-renter-key': apiKey });
+  }
+
+  /** GET /api/containers/registry — public, no auth required */
+  async getContainerRegistry(): Promise<{ images: string[]; total: number }> {
+    return this.request('GET', '/api/containers/registry');
   }
 }
 

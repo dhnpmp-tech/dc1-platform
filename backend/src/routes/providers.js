@@ -8,8 +8,18 @@ const router = express.Router();
 // Database (use existing connection)
 const db = require('../db');
 const { sendAlert } = require('../services/notifications');
-const { sendWelcomeEmail } = require('../services/email');
+const {
+    sendWelcomeEmail,
+    sendJobStarted,
+    sendJobCompleted,
+    sendJobFailed,
+} = require('../services/emailService');
 const { getBenchmarkResult } = require('../services/benchmarkRunner');
+const {
+    appendAttemptLogLines,
+    appendAttemptRawText,
+    getAttemptLogPath,
+} = require('../services/job-execution-logs');
 
 function flattenRunParams(params) {
     if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -39,6 +49,7 @@ const loginEmailLimiter = rateLimit({
 });
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SAUDI_IBAN_REGEX = /^SA\d{22}$/i;
 
 function normalizeString(value, { maxLen = 500, trim = true } = {}) {
     if (typeof value !== 'string') return null;
@@ -69,6 +80,53 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
 
 function isPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseContainerSpec(containerSpecRaw) {
+    if (!containerSpecRaw) return null;
+    if (typeof containerSpecRaw === 'string') {
+        try {
+            const parsed = JSON.parse(containerSpecRaw);
+            return isPlainObject(parsed) ? parsed : null;
+        } catch (_) {
+            return null;
+        }
+    }
+    return isPlainObject(containerSpecRaw) ? containerSpecRaw : null;
+}
+
+function fireAndForgetJobEmail(event, job, details = {}) {
+    try {
+        if (!job?.renter_id) return;
+        const renter = db.get('SELECT email FROM renters WHERE id = ?', job.renter_id);
+        const renterEmail = normalizeString(renter?.email, { maxLen: 254 })?.toLowerCase();
+        if (!renterEmail) return;
+
+        const containerSpec = parseContainerSpec(job.container_spec);
+        const payload = {
+            job_id: job.job_id,
+            job_type: job.job_type,
+            image_type: containerSpec?.image_type || null,
+            estimated_duration_minutes: Number((details.estimated_duration_minutes ?? job.duration_minutes) || 0),
+            actual_cost_halala: Number((details.actual_cost_halala ?? job.actual_cost_halala) || 0),
+            gpu_seconds_used: details.gpu_seconds_used,
+            refunded_amount_halala: Number((details.refunded_amount_halala ?? job.cost_halala) || 0),
+            retry_attempts: Number((details.retry_attempts ?? job.restart_count ?? job.retry_count) || 0),
+            last_error: normalizeString(details.last_error || job.last_error || job.error, { maxLen: 1000 }),
+        };
+
+        let pendingSend = null;
+        if (event === 'started') pendingSend = sendJobStarted(renterEmail, payload);
+        if (event === 'completed') pendingSend = sendJobCompleted(renterEmail, payload);
+        if (event === 'failed') pendingSend = sendJobFailed(renterEmail, payload);
+        if (!pendingSend || typeof pendingSend.then !== 'function') return;
+
+        pendingSend.catch((err) => {
+            console.error(`[providers/email:${event}] Failed for ${job.job_id}:`, err.message);
+        });
+    } catch (error) {
+        console.error(`[providers/email:${event}] Unexpected error:`, error.message);
+    }
 }
 
 const ROTATION_WINDOW_MS = 60 * 60 * 1000;
@@ -113,6 +171,63 @@ function compareVersions(v1, v2) {
         if (a > b) return 1;
     }
     return 0;
+}
+
+function signWebhookPayload(secret, payloadJson) {
+    return crypto.createHmac('sha256', secret).update(payloadJson).digest('hex');
+}
+
+async function notifyRenterJobWebhook(job, eventName, details = {}) {
+    try {
+        if (!job?.renter_id) return { sent: false, reason: 'missing_renter_id' };
+
+        const renter = db.get(
+            'SELECT id, api_key, webhook_url, status FROM renters WHERE id = ?',
+            job.renter_id
+        );
+        if (!renter || renter.status !== 'active' || !renter.webhook_url) {
+            return { sent: false, reason: 'webhook_not_configured' };
+        }
+
+        const now = new Date().toISOString();
+        const payload = {
+            event: eventName,
+            timestamp: now,
+            job: {
+                id: job.id,
+                job_id: job.job_id,
+                renter_id: job.renter_id,
+                provider_id: job.provider_id,
+                status: job.status,
+                job_type: job.job_type,
+                submitted_at: job.submitted_at,
+                started_at: job.started_at,
+                completed_at: details.completed_at || now,
+                restart_count: Number(job.restart_count || 0),
+                last_error: details.last_error || job.last_error || null,
+            },
+            billing: details.billing || null,
+        };
+        const payloadJson = JSON.stringify(payload);
+        const secret = process.env.DCP_WEBHOOK_SECRET || renter.api_key;
+        const signature = signWebhookPayload(secret, payloadJson);
+
+        const response = await fetch(renter.webhook_url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-DCP-Event': eventName,
+                'X-DCP-Signature': signature,
+            },
+            body: payloadJson,
+            signal: AbortSignal.timeout(5000),
+        });
+
+        return { sent: true, ok: response.ok, status: response.status };
+    } catch (error) {
+        console.error('[providers/webhook] Failed to notify renter webhook:', error.message);
+        return { sent: false, reason: error.message };
+    }
 }
 
 // ============================================================================
@@ -182,7 +297,8 @@ router.post('/register', async (req, res) => {
         });
 
         // Fire-and-forget welcome email — does not affect registration response
-        sendWelcomeEmail('provider', { name: cleanName, email: cleanEmail, apiKey: api_key });
+        sendWelcomeEmail(cleanEmail, cleanName, api_key, 'provider')
+            .catch((e) => console.error('[providers.register] welcome email failed:', e.message));
         
     } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -337,6 +453,7 @@ function computeReputationScore(providerId) {
 // Optional payload fields:
 //   cached_models  {array}   List of model names already downloaded on the node
 //   resource_spec  {object}  Ocean-style resource specification object
+//   model_cache    {object}  Cache disk metrics for /opt/dcp/model-cache
 //   uptime         {number}  (reserved — not currently used)
 //
 // Response:
@@ -389,6 +506,8 @@ router.post('/heartbeat', (req, res) => {
 
         const resolvedGpuName = gpuInfoName || gpuName;
         const resolvedGpuVramMib = gpuInfoVramMb != null ? gpuInfoVramMb : gpuVramMib;
+        const resolvedTotalVramMb = toFiniteInt(gs.vram_mb, { min: 0, max: 1024 * 1024 })
+            || (resolvedGpuVramMib != null ? Math.round(resolvedGpuVramMib) : null);
         const resolvedGpuDriver = gpuInfoDriver || gpuDriver;
         const gpuInfoJson = (gpuInfoName || gpuInfoVramMb != null || gpuInfoDriver || gpuInfoCuda)
             ? JSON.stringify({
@@ -405,14 +524,23 @@ router.post('/heartbeat', (req, res) => {
           gpu_vram_mib = COALESCE(?, gpu_vram_mib),
           gpu_driver = COALESCE(?, gpu_driver),
           gpu_vram_mb = COALESCE(?, gpu_vram_mb),
+          vram_mb = COALESCE(?, vram_mb),
+          gpu_count = COALESCE(?, gpu_count),
+          gpu_model = COALESCE(?, gpu_model),
           gpu_info_json = COALESCE(?, gpu_info_json),
-          cached_models = COALESCE(?, cached_models)
+          cached_models = COALESCE(?, cached_models),
+          gpu_profile_source = 'daemon',
+          gpu_profile_updated_at = ?
           WHERE id = ?`,
           JSON.stringify(gpu_status || {}), providerIp || null, providerHostname || null, now,
           resolvedGpuName, resolvedGpuVramMib, resolvedGpuDriver,
           gpuInfoVramMb != null ? gpuInfoVramMb : null,
+          resolvedTotalVramMb,
+          toFiniteInt(gs.gpu_count, { min: 1, max: 64 }) || null,
+          resolvedGpuName,
           gpuInfoJson,
           Array.isArray(cached_models) ? JSON.stringify(cached_models) : null,
+          now,
           p.id
         );
 
@@ -449,7 +577,14 @@ router.post('/heartbeat', (req, res) => {
             const resourceSpecJson = typeof resource_spec === 'string'
                 ? resource_spec
                 : JSON.stringify(resource_spec);
-            runStatement('UPDATE providers SET resource_spec = ? WHERE id = ?', resourceSpecJson, p.id);
+            const parsedSpec = safeJsonParse(resourceSpecJson);
+            const discovered = discoverComputeTypesFromResourceSpec(parsedSpec);
+            runStatement(
+                'UPDATE providers SET resource_spec = ?, supported_compute_types = COALESCE(?, supported_compute_types) WHERE id = ?',
+                resourceSpecJson,
+                discovered.size > 0 ? JSON.stringify(Array.from(discovered)) : null,
+                p.id
+            );
         }
 
         // Store daemon version on provider record for job assignment checks
@@ -694,6 +829,15 @@ router.get('/me', async (req, res) => {
         if (provider.resource_spec) {
             try { resourceSpec = JSON.parse(provider.resource_spec); } catch (_) {}
         }
+        const declaredComputeTypes = parseSupportedComputeTypesField(provider.supported_compute_types);
+        const discoveredComputeTypes = discoverComputeTypesFromResourceSpec(resourceSpec);
+        const supportedComputeTypes = declaredComputeTypes.size > 0
+            ? Array.from(declaredComputeTypes)
+            : (discoveredComputeTypes.size > 0 ? Array.from(discoveredComputeTypes) : ['inference', 'training', 'rendering']);
+
+        const profileSource = (provider.gpu_profile_source || '').trim().toLowerCase() === 'daemon'
+            ? 'daemon'
+            : 'manual';
 
         const payload = {
             provider: {
@@ -705,6 +849,12 @@ router.get('/me', async (req, res) => {
                 gpu_count_reported: provider.gpu_count_reported || 1,
                 gpu_compute_capability: provider.gpu_compute_capability || null,
                 gpu_cuda_version: provider.gpu_cuda_version || null,
+                vram_mb: toFiniteInt(provider.vram_mb, { min: 0, max: 1024 * 1024 }) || 0,
+                gpu_count: toFiniteInt(provider.gpu_count, { min: 1, max: 64 }) || 1,
+                supported_compute_types: supportedComputeTypes,
+                gpu_profile_source: profileSource,
+                gpu_profile_updated_at: provider.gpu_profile_updated_at || provider.last_heartbeat || null,
+                auto_detected: profileSource === 'daemon',
                 resource_spec: resourceSpec,
                 last_heartbeat: provider.last_heartbeat || null,
                 daemon_version: provider.daemon_version || null,
@@ -732,6 +882,108 @@ router.get('/me', async (req, res) => {
     } catch (error) {
         console.error('Provider me error:', error);
         res.status(500).json({ error: 'Failed to fetch provider data' });
+    }
+});
+
+// ============================================================================
+// PATCH /api/providers/me/gpu-profile - Manual provider GPU profile override
+// ============================================================================
+router.patch('/me/gpu-profile', (req, res) => {
+    try {
+        const key = normalizeString(req.query.key, { maxLen: 128, trim: false });
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get(
+            `SELECT id, gpu_model, vram_mb, gpu_count, supported_compute_types, resource_spec,
+                    last_heartbeat, gpu_profile_source, gpu_profile_updated_at
+             FROM providers
+             WHERE api_key = ?`,
+            key
+        );
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const fields = {};
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'gpu_model')) {
+            const gpuModel = normalizeString(req.body.gpu_model, { maxLen: 120 });
+            if (!gpuModel) return res.status(400).json({ error: 'gpu_model must be a non-empty string' });
+            fields.gpu_model = gpuModel;
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'vram_mb')) {
+            const vramMb = toFiniteInt(req.body.vram_mb, { min: 1024, max: 327680 });
+            if (vramMb == null) return res.status(400).json({ error: 'vram_mb must be between 1024 and 327680' });
+            fields.vram_mb = vramMb;
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'gpu_count')) {
+            const gpuCount = toFiniteInt(req.body.gpu_count, { min: 1, max: 8 });
+            if (gpuCount == null) return res.status(400).json({ error: 'gpu_count must be between 1 and 8' });
+            fields.gpu_count = gpuCount;
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'supported_compute_types')) {
+            const rawTypes = req.body.supported_compute_types;
+            if (!Array.isArray(rawTypes) || rawTypes.length === 0) {
+                return res.status(400).json({ error: 'supported_compute_types must be a non-empty array' });
+            }
+            const normalized = [];
+            for (const item of rawTypes) {
+                const token = parseComputeTypeToken(item);
+                if (!token) {
+                    return res.status(400).json({ error: 'supported_compute_types supports only inference, training, rendering' });
+                }
+                if (!normalized.includes(token)) normalized.push(token);
+            }
+            fields.supported_compute_types = JSON.stringify(normalized);
+        }
+
+        if (Object.keys(fields).length === 0) {
+            return res.status(400).json({ error: 'No valid profile fields provided' });
+        }
+
+        const daemonReportedAt = provider.last_heartbeat ? new Date(provider.last_heartbeat).getTime() : 0;
+        const profileUpdatedAt = provider.gpu_profile_updated_at ? new Date(provider.gpu_profile_updated_at).getTime() : 0;
+        const daemonIsNewer = provider.gpu_profile_source === 'daemon' && daemonReportedAt >= profileUpdatedAt;
+        const wantsHardwareOverride = fields.gpu_model != null || fields.vram_mb != null || fields.gpu_count != null;
+        if (daemonIsNewer && wantsHardwareOverride) {
+            return res.status(409).json({
+                error: 'Daemon-reported GPU profile is newer. Stop daemon heartbeat before applying manual hardware overrides.',
+            });
+        }
+
+        const now = new Date().toISOString();
+        const updateKeys = Object.keys(fields);
+        const setClause = updateKeys.map((keyName) => `${keyName} = ?`).join(', ');
+        const values = updateKeys.map((keyName) => fields[keyName]);
+
+        runStatement(
+            `UPDATE providers
+             SET ${setClause}, gpu_profile_source = 'manual', gpu_profile_updated_at = ?, updated_at = ?
+             WHERE id = ?`,
+            [...values, now, now, provider.id]
+        );
+
+        const resourceSpec = safeJsonParse(provider.resource_spec);
+        const declaredComputeTypes = fields.supported_compute_types
+            ? parseSupportedComputeTypesField(fields.supported_compute_types)
+            : parseSupportedComputeTypesField(provider.supported_compute_types);
+        const discoveredComputeTypes = discoverComputeTypesFromResourceSpec(resourceSpec);
+        const supportedComputeTypes = declaredComputeTypes.size > 0
+            ? Array.from(declaredComputeTypes)
+            : (discoveredComputeTypes.size > 0 ? Array.from(discoveredComputeTypes) : ['inference', 'training', 'rendering']);
+
+        return res.json({
+            success: true,
+            profile: {
+                gpu_model: fields.gpu_model ?? provider.gpu_model,
+                vram_mb: fields.vram_mb ?? provider.vram_mb ?? 0,
+                gpu_count: fields.gpu_count ?? provider.gpu_count ?? 1,
+                supported_compute_types: supportedComputeTypes,
+                gpu_profile_source: 'manual',
+                gpu_profile_updated_at: now,
+                auto_detected: false,
+            },
+        });
+    } catch (error) {
+        console.error('Provider GPU profile update error:', error);
+        return res.status(500).json({ error: 'Failed to update GPU profile' });
     }
 });
 
@@ -1023,54 +1275,286 @@ router.post('/readiness', (req, res) => {
 // ============================================================================
 // GET /api/providers/:api_key/jobs - Daemon polls for assigned pending jobs
 // ============================================================================
+function normalizeComputeType(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'training') return 'training';
+    if (raw === 'rendering') return 'rendering';
+    return 'inference';
+}
+
+const SUPPORTED_COMPUTE_TYPES = new Set(['inference', 'training', 'rendering']);
+
+function parseComputeTypeToken(value) {
+    const token = String(value || '').trim().toLowerCase();
+    if (!SUPPORTED_COMPUTE_TYPES.has(token)) return null;
+    return token;
+}
+
+function parseSupportedComputeTypesField(raw) {
+    let source = raw;
+    if (typeof source === 'string') {
+        try {
+            source = JSON.parse(source);
+        } catch (_) {
+            source = source.split(',').map((item) => item.trim()).filter(Boolean);
+        }
+    }
+
+    if (!Array.isArray(source)) return new Set();
+    const parsed = new Set();
+    for (const item of source) {
+        const normalized = parseComputeTypeToken(item);
+        if (normalized) parsed.add(normalized);
+    }
+    return parsed;
+}
+
+function discoverComputeTypesFromResourceSpec(resourceSpec) {
+    const discovered = new Set();
+    if (!resourceSpec) return discovered;
+    const addCapability = (value) => {
+        const token = String(value || '').toLowerCase();
+        if (token.includes('train')) discovered.add('training');
+        if (token.includes('render')) discovered.add('rendering');
+        if (token.includes('infer') || token.includes('llm') || token.includes('serve')) discovered.add('inference');
+    };
+
+    if (Array.isArray(resourceSpec.compute_types)) {
+        resourceSpec.compute_types.forEach(addCapability);
+    }
+    if (Array.isArray(resourceSpec?.capabilities?.compute_types)) {
+        resourceSpec.capabilities.compute_types.forEach(addCapability);
+    }
+    if (Array.isArray(resourceSpec.compute_environments)) {
+        resourceSpec.compute_environments.forEach((env) => {
+            if (typeof env === 'string') {
+                addCapability(env);
+                return;
+            }
+            addCapability(env?.id);
+            addCapability(env?.name);
+            if (Array.isArray(env?.tags)) env.tags.forEach(addCapability);
+            if (Array.isArray(env?.compute_types)) env.compute_types.forEach(addCapability);
+        });
+    }
+
+    return discovered;
+}
+
+function getProviderRoutingProfile(provider) {
+    const vramMb =
+        toFiniteInt(provider.vram_mb, { min: 0, max: 1024 * 1024 }) ||
+        toFiniteInt(provider.gpu_vram_mb, { min: 0, max: 1024 * 1024 }) ||
+        (toFiniteInt(provider.gpu_vram_mib, { min: 0, max: 1024 * 1024 }) != null
+            ? Math.round(provider.gpu_vram_mib)
+            : null) ||
+        (toFiniteNumber(provider.vram_gb, { min: 0, max: 1024 }) != null
+            ? Math.round(Number(provider.vram_gb) * 1024)
+            : 0);
+
+    const gpuCount =
+        toFiniteInt(provider.gpu_count_reported, { min: 1, max: 64 }) ||
+        toFiniteInt(provider.gpu_count, { min: 1, max: 64 }) ||
+        1;
+
+    const declared = parseSupportedComputeTypesField(provider.supported_compute_types);
+    const supported = declared.size > 0
+        ? declared
+        : new Set(['inference', 'training', 'rendering']);
+
+    if (declared.size === 0) {
+        const resourceSpec = safeJsonParse(provider.resource_spec);
+        const discovered = discoverComputeTypesFromResourceSpec(resourceSpec);
+        if (discovered.size > 0) {
+            supported.clear();
+            discovered.forEach((cap) => supported.add(cap));
+        }
+    }
+
+    return {
+        vram_mb: Number(vramMb || 0),
+        gpu_count: Number(gpuCount || 1),
+        supported_compute_types: supported,
+    };
+}
+
+function parseJobContainerRequirements(containerSpecRaw) {
+    let containerSpec = null;
+    try { containerSpec = containerSpecRaw ? JSON.parse(containerSpecRaw) : null; } catch (_) {}
+    const vramRequiredMb = toFiniteInt(containerSpec?.vram_required_mb, { min: 0, max: 1024 * 1024 }) || 0;
+    const gpuCount = toFiniteInt(containerSpec?.gpu_count, { min: 1, max: 64 }) || 1;
+    const computeType = normalizeComputeType(containerSpec?.compute_type);
+    return {
+        vram_required_mb: vramRequiredMb,
+        gpu_count: gpuCount,
+        compute_type: computeType,
+        container_spec: containerSpec,
+    };
+}
+
+function providerMatchesJob(providerProfile, jobRequirements) {
+    if (!providerProfile.supported_compute_types.has(jobRequirements.compute_type)) {
+        return false;
+    }
+    if (providerProfile.vram_mb < jobRequirements.vram_required_mb) {
+        return false;
+    }
+    if (providerProfile.gpu_count < jobRequirements.gpu_count) {
+        return false;
+    }
+    return true;
+}
+
+function buildNextPendingJob(providerId) {
+    const provider = db.get(
+        `SELECT id, is_paused, last_heartbeat, resource_spec, supported_compute_types, gpu_count, gpu_count_reported,
+                vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb
+         FROM providers
+         WHERE id = ?`,
+        providerId
+    );
+    if (!provider || Number(provider.is_paused || 0) === 1) return null;
+    const providerStatus = computeProviderStatus(provider.last_heartbeat, Date.now());
+    if (providerStatus.status === 'offline') return null;
+
+    const providerProfile = getProviderRoutingProfile(provider);
+    const candidates = db.all(
+        `SELECT id, job_id, job_type, model, priority, task_spec, task_spec_hmac, gpu_requirements,
+                container_spec, duration_minutes, max_duration_seconds, status, created_at, provider_id,
+                renter_id, cost_halala
+         FROM jobs
+         WHERE status IN ('pending', 'queued')
+           AND task_spec IS NOT NULL
+           AND picked_up_at IS NULL
+           AND (provider_id = ? OR provider_id IS NULL)
+         ORDER BY
+           COALESCE(priority, 5) DESC,
+           CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+           created_at ASC
+         LIMIT 200`,
+        providerId
+    );
+
+    let job = null;
+    let parsedContainerSpec = null;
+    const now = new Date().toISOString();
+    for (const candidate of candidates) {
+        const requirements = parseJobContainerRequirements(candidate.container_spec);
+        if (!providerMatchesJob(providerProfile, requirements)) {
+            continue;
+        }
+
+        const updateResult = runStatement(
+            `UPDATE jobs
+             SET provider_id = ?,
+                 picked_up_at = ?,
+                 status = 'running',
+                 started_at = COALESCE(started_at, ?),
+                 timeout_at = datetime(?, '+' || COALESCE(max_duration_seconds, 600) || ' seconds')
+             WHERE id = ?
+               AND status IN ('pending', 'queued')
+               AND picked_up_at IS NULL
+               AND (provider_id = ? OR provider_id IS NULL)`,
+            providerId, now, now, now, candidate.id, providerId
+        );
+        if ((updateResult?.changes || 0) !== 1) {
+            continue;
+        }
+
+        job = candidate;
+        parsedContainerSpec = requirements.container_spec;
+        break;
+    }
+
+    if (!job) return null;
+
+    const nextAttemptRow = db.get(
+        'SELECT COALESCE(MAX(attempt_number), 0) + 1 AS attempt_number FROM job_executions WHERE job_id = ?',
+        job.job_id
+    );
+    const attemptNumber = Number(nextAttemptRow?.attempt_number || 1);
+    const logPath = getAttemptLogPath(job.job_id, attemptNumber);
+    runStatement(
+        `INSERT INTO job_executions (job_id, attempt_number, started_at, log_path, gpu_seconds_used, cost_halala)
+         VALUES (?, ?, ?, ?, 0, 0)`,
+        job.job_id,
+        attemptNumber,
+        now,
+        logPath
+    );
+    const escrowExpirySeconds = Number(job.max_duration_seconds || 600) + 1800;
+    const escrowExpiresAt = new Date(Date.now() + (escrowExpirySeconds * 1000)).toISOString();
+    const renterApiKey = job.renter_id != null
+        ? db.get('SELECT api_key FROM renters WHERE id = ?', job.renter_id)?.api_key
+        : null;
+    if (renterApiKey && Number.isFinite(Number(job.cost_halala)) && Number(job.cost_halala) > 0) {
+        runStatement(
+            `INSERT OR IGNORE INTO escrow_holds (id, renter_api_key, provider_id, job_id, amount_halala, status, created_at, expires_at)
+             VALUES (?, ?, ?, ?, ?, 'held', ?, ?)`,
+            `esc-${job.job_id}`,
+            renterApiKey,
+            providerId,
+            job.job_id,
+            Number(job.cost_halala),
+            now,
+            escrowExpiresAt
+        );
+    }
+    runStatement(`UPDATE providers SET current_job_id = ? WHERE id = ?`, job.job_id, providerId);
+
+    let taskSpec = job.task_spec;
+    try { taskSpec = JSON.parse(taskSpec); } catch {}
+
+    fireAndForgetJobEmail('started', job, {
+        estimated_duration_minutes: Number(job.duration_minutes || 0),
+    });
+
+    return {
+        id: job.id,
+        job_id: job.job_id,
+        job_type: job.job_type,
+        model: job.model || null,
+        priority: Number.isInteger(job.priority) ? job.priority : 5,
+        task_spec: taskSpec,
+        task_spec_hmac: job.task_spec_hmac,
+        attempt_number: attemptNumber,
+        container_spec: parsedContainerSpec,
+        gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
+        duration_minutes: job.duration_minutes,
+        max_duration_seconds: job.max_duration_seconds || 600
+    };
+}
+
 router.get('/:api_key/jobs', (req, res) => {
     try {
         const { api_key } = req.params;
         const provider = db.get('SELECT id, readiness_status FROM providers WHERE api_key = ?', api_key);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
-
-        // Find next pending job using priority routing (higher first, FIFO tie-breaker)
-        const job = db.get(
-            `SELECT id, job_id, job_type, model, priority, task_spec, task_spec_hmac, gpu_requirements, duration_minutes, max_duration_seconds
-             FROM jobs WHERE provider_id = ? AND status = 'pending'
-             ORDER BY COALESCE(priority, 5) DESC, created_at ASC LIMIT 1`,
-            provider.id
-        );
-
-        if (!job) {
-            return res.json({ job: null });
-        }
-
-        // Mark as picked up
-        const now = new Date().toISOString();
-        runStatement(
-            `UPDATE jobs SET picked_up_at = ?, status = 'running', started_at = COALESCE(started_at, ?),
-             timeout_at = datetime(?, '+' || COALESCE(max_duration_seconds, 600) || ' seconds')
-             WHERE id = ?`,
-            now, now, now, job.id
-        );
-        runStatement(`UPDATE providers SET current_job_id = ? WHERE id = ?`, job.job_id, provider.id);
-
-        // Parse task_spec if it's a string
-        let taskSpec = job.task_spec;
-        try { taskSpec = JSON.parse(taskSpec); } catch {}
-
-        res.json({
-            job: {
-                id: job.id,
-                job_id: job.job_id,
-                job_type: job.job_type,
-                model: job.model || null,
-                priority: Number.isInteger(job.priority) ? job.priority : 5,
-                task_spec: taskSpec,
-                task_spec_hmac: job.task_spec_hmac,
-                gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
-                duration_minutes: job.duration_minutes,
-                max_duration_seconds: job.max_duration_seconds || 600
-            }
-        });
+        const job = buildNextPendingJob(provider.id);
+        return res.json({ job: job || null });
     } catch (error) {
         console.error('Job poll error:', error);
+        res.status(500).json({ error: 'Job poll failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/jobs/next - Daemon polls next pending job by API key
+// Auth: x-provider-key header or ?key=
+// ============================================================================
+router.get('/jobs/next', (req, res) => {
+    try {
+        const cleanApiKey = normalizeString(
+            req.headers['x-provider-key'] || req.query.key,
+            { maxLen: 128, trim: false }
+        );
+        if (!cleanApiKey) return res.status(400).json({ error: 'Provider API key required' });
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+        const job = buildNextPendingJob(provider.id);
+        return res.json({ job: job || null });
+    } catch (error) {
+        console.error('Job next poll error:', error);
         res.status(500).json({ error: 'Job poll failed' });
     }
 });
@@ -1115,6 +1599,16 @@ router.patch('/jobs/:job_id/logs', (req, res) => {
             .filter((entry) => entry.message.length > 0);
         if (normalized.length === 0) return res.status(400).json({ error: 'No valid log lines provided' });
 
+        const latestAttempt = db.get(
+            `SELECT attempt_number FROM job_executions
+             WHERE job_id = ?
+             ORDER BY attempt_number DESC
+             LIMIT 1`,
+            job.job_id
+        );
+        const requestedAttempt = toFiniteInt(req.body?.attempt_number, { min: 1 });
+        const attemptNumber = requestedAttempt || Number(latestAttempt?.attempt_number || 1);
+
         const maxRow = db.get('SELECT MAX(line_no) as max_line FROM job_logs WHERE job_id = ?', job.job_id);
         let lineNo = (maxRow?.max_line || 0) + 1;
         const now = new Date().toISOString();
@@ -1145,7 +1639,16 @@ router.patch('/jobs/:job_id/logs', (req, res) => {
         });
 
         writeTx(normalized);
-        res.json({ success: true, lines_written: normalized.length });
+        const logPath = appendAttemptLogLines(job.job_id, attemptNumber, normalized);
+        runStatement(
+            `UPDATE job_executions
+             SET log_path = COALESCE(log_path, ?)
+             WHERE job_id = ? AND attempt_number = ?`,
+            logPath,
+            job.job_id,
+            attemptNumber
+        );
+        res.json({ success: true, lines_written: normalized.length, attempt_number: attemptNumber });
     } catch (error) {
         console.error('Provider job logs write error:', error);
         res.status(500).json({ error: 'Failed to write job logs' });
@@ -1157,12 +1660,27 @@ router.patch('/jobs/:job_id/logs', (req, res) => {
 // ============================================================================
 router.post('/job-result', (req, res) => {
     try {
-        const { api_key, job_id, result, success, error: jobError, metrics } = req.body;
+        const {
+            api_key,
+            job_id,
+            result,
+            success,
+            error: jobError,
+            metrics,
+            gpu_seconds_used,
+            exit_code,
+            attempt_number,
+            restart_count,
+            last_error,
+        } = req.body;
         const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
         const cleanJobId = normalizeString(job_id, { maxLen: 80, trim: true });
         if (!cleanApiKey || !cleanJobId) return res.status(400).json({ error: 'api_key and job_id required' });
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
+        const provider = db.get(
+            'SELECT id, cost_per_gpu_second_halala FROM providers WHERE api_key = ?',
+            cleanApiKey
+        );
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         const job = db.get('SELECT * FROM jobs WHERE job_id = ? AND provider_id = ?', cleanJobId, provider.id);
@@ -1172,28 +1690,42 @@ router.post('/job-result', (req, res) => {
         const now = new Date().toISOString();
         const successFlag = success === true || success === 'true' || success === 1;
         const newStatus = successFlag ? 'completed' : 'failed';
+        const restartCount = toFiniteInt(restart_count, { min: 0, max: 100 }) ?? 0;
+        const lastError = normalizeString(last_error, { maxLen: 1000 }) || normalizeString(jobError, { maxLen: 1000 }) || null;
 
         // Calculate actual duration and billing
         const startedAt = job.started_at || job.submitted_at;
         const actualMinutes = startedAt ? Math.ceil((Date.now() - new Date(startedAt).getTime()) / 60000) : job.duration_minutes || 0;
+        const elapsedSeconds = startedAt
+            ? Math.max(0, (Date.now() - new Date(startedAt).getTime()) / 1000)
+            : Math.max(0, Number(actualMinutes || 0) * 60);
+        const metricsGpuCount = toFiniteInt(metrics?.gpu_count, { min: 1, max: 64 });
+        const gpuCount = metricsGpuCount || 1;
+        const reportedGpuSeconds = toFiniteNumber(gpu_seconds_used, { min: 0 });
+        const actualGpuSeconds = reportedGpuSeconds != null
+            ? reportedGpuSeconds
+            : Math.round(elapsedSeconds * gpuCount * 1000) / 1000;
 
-        // Billing rates (halala/minute) — use shared COST_RATES from jobs module
-        const ratePerMin = COST_RATES[job.job_type] || COST_RATES['default'];
-        const actualCostHalala = actualMinutes * ratePerMin;
+        // Billing rates (halala / GPU-second)
+        const fallbackGpuSecondRate = (COST_RATES[job.job_type] || COST_RATES['default']) / 60;
+        const providerGpuSecondRate = toFiniteNumber(provider.cost_per_gpu_second_halala, { min: 0 });
+        const ratePerGpuSecond = providerGpuSecondRate != null ? providerGpuSecondRate : fallbackGpuSecondRate;
+        const actualCostHalala = Math.max(0, Math.round(actualGpuSeconds * ratePerGpuSecond));
         const providerEarned = Math.floor(actualCostHalala * 0.75);
         const dc1Fee = actualCostHalala - providerEarned;
 
         runStatement(
             `UPDATE jobs SET status = ?, result = ?, error = ?, completed_at = ?,
              actual_duration_minutes = ?, actual_cost_halala = ?,
-             provider_earned_halala = ?, dc1_fee_halala = ?
+             provider_earned_halala = ?, dc1_fee_halala = ?,
+             restart_count = ?, last_error = ?
              WHERE id = ?`,
-            newStatus, typeof result === 'string' ? result : JSON.stringify(result || {}), jobError || null, now,
-            actualMinutes, actualCostHalala, providerEarned, dc1Fee, job.id
+            newStatus, typeof result === 'string' ? result : JSON.stringify(result || {}), lastError, now,
+            actualMinutes, actualCostHalala, providerEarned, dc1Fee, restartCount, lastError, job.id
         );
 
         // Update provider stats
-        if (success) {
+        if (successFlag) {
             runStatement(
                 `UPDATE providers SET total_earnings = total_earnings + ?, claimable_earnings_halala = claimable_earnings_halala + ?, total_jobs = total_jobs + 1, current_job_id = NULL WHERE id = ?`,
                 providerEarned / 100, providerEarned, provider.id  // total_earnings is in SAR, claimable in halala
@@ -1203,15 +1735,15 @@ router.post('/job-result', (req, res) => {
         }
 
         // ── Release escrow to provider (or back to renter on failure) ──
-        if (success) {
+        if (successFlag) {
             runStatement(
                 `UPDATE escrow_holds SET status = 'released_provider', resolved_at = ? WHERE job_id = ? AND status IN ('held','locked')`,
-                now, job_id
+                now, cleanJobId
             );
         } else {
             runStatement(
                 `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ? WHERE job_id = ? AND status IN ('held','locked')`,
-                now, job_id
+                now, cleanJobId
             );
         }
 
@@ -1220,18 +1752,77 @@ router.post('/job-result', (req, res) => {
         // Now settle: refund difference if actual < estimated, or charge extra.
         if (job.renter_id) {
             const estimatedCost = job.cost_halala || 0;
-            const delta = estimatedCost - actualCostHalala; // positive = refund, negative = extra charge
-            if (delta !== 0) {
+            if (successFlag) {
+                const delta = estimatedCost - actualCostHalala; // positive = refund, negative = extra charge
+                if (delta !== 0) {
+                    runStatement(
+                        `UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?`,
+                        delta, job.renter_id
+                    );
+                }
                 runStatement(
-                    `UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?`,
-                    delta, job.renter_id
+                    `UPDATE renters SET total_spent_halala = total_spent_halala + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
+                    actualCostHalala, job.renter_id
                 );
+            } else {
+                // Failure path: release full pre-paid quote to renter
+                if (estimatedCost > 0 && !job.refunded_at) {
+                    runStatement(
+                        `UPDATE renters SET balance_halala = balance_halala + ? WHERE id = ?`,
+                        estimatedCost,
+                        job.renter_id
+                    );
+                    runStatement(
+                        `UPDATE jobs SET refunded_at = ? WHERE id = ?`,
+                        now,
+                        job.id
+                    );
+                }
             }
-            // Update renter spending stats
-            runStatement(
-                `UPDATE renters SET total_spent_halala = total_spent_halala + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
-                actualCostHalala, job.renter_id
-            );
+        }
+
+        const latestAttempt = db.get(
+            `SELECT attempt_number FROM job_executions WHERE job_id = ? ORDER BY attempt_number DESC LIMIT 1`,
+            cleanJobId
+        );
+        const attempted = toFiniteInt(attempt_number, { min: 1 }) || Number(latestAttempt?.attempt_number || 1);
+        const resolvedExitCode = toFiniteInt(exit_code, { min: -255, max: 255 });
+        runStatement(
+            `UPDATE job_executions
+             SET ended_at = ?, exit_code = ?, gpu_seconds_used = ?, cost_halala = ?, log_path = COALESCE(log_path, ?)
+             WHERE job_id = ? AND attempt_number = ?`,
+            now,
+            resolvedExitCode != null ? resolvedExitCode : (successFlag ? 0 : 1),
+            actualGpuSeconds,
+            actualCostHalala,
+            getAttemptLogPath(cleanJobId, attempted),
+            cleanJobId,
+            attempted
+        );
+
+        const textResult = typeof result === 'string' ? result : null;
+        if (textResult) {
+            appendAttemptRawText(cleanJobId, attempted, `\n${textResult}\n`);
+        }
+
+        const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
+        fireAndForgetJobEmail(successFlag ? 'completed' : 'failed', updated || job, {
+            actual_cost_halala: actualCostHalala,
+            gpu_seconds_used: actualGpuSeconds,
+            refunded_amount_halala: successFlag ? 0 : Number(job.cost_halala || 0),
+            retry_attempts: Number(restartCount || 0),
+            last_error: lastError,
+        });
+        if (!successFlag && restartCount >= 3 && updated) {
+            notifyRenterJobWebhook(updated, 'job.failed', {
+                completed_at: now,
+                last_error: lastError,
+                billing: {
+                    actual_cost_halala: actualCostHalala,
+                    provider_earned_halala: providerEarned,
+                    dc1_fee_halala: dc1Fee,
+                },
+            }).catch(() => {});
         }
 
         res.json({
@@ -1239,9 +1830,13 @@ router.post('/job-result', (req, res) => {
             job_id: cleanJobId,
             status: newStatus,
             actual_minutes: actualMinutes,
+            gpu_seconds_used: actualGpuSeconds,
+            rate_per_gpu_second_halala: ratePerGpuSecond,
             cost_halala: actualCostHalala,
             provider_earned_halala: providerEarned,
-            dc1_fee_halala: dc1Fee
+            dc1_fee_halala: dc1Fee,
+            restart_count: restartCount,
+            last_error: lastError
         });
     } catch (error) {
         console.error('Job result error:', error);
@@ -1354,26 +1949,44 @@ router.get('/earnings', (req, res) => {
         );
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
-        // Get pending withdrawal amount (in halala — convert from SAR column)
+        // Legacy pending withdrawals table (SAR)
         const pending = db.get(
             `SELECT COALESCE(SUM(amount_sar), 0) as pending_sar FROM withdrawals WHERE provider_id = ? AND status = 'pending'`,
             provider.id
         ) || { pending_sar: 0 };
 
-        // Get completed withdrawals total
+        // Legacy completed withdrawals table (SAR)
         const completed = db.get(
             `SELECT COALESCE(SUM(amount_sar), 0) as withdrawn_sar FROM withdrawals WHERE provider_id = ? AND status = 'completed'`,
             provider.id
         ) || { withdrawn_sar: 0 };
 
+        // New withdrawal state machine table (halala)
+        const requestSummary = db.get(
+            `SELECT
+                COALESCE(SUM(CASE WHEN status IN ('pending', 'processing') THEN amount_halala ELSE 0 END), 0) AS pending_halala,
+                COALESCE(SUM(CASE WHEN status = 'paid' THEN amount_halala ELSE 0 END), 0) AS paid_halala
+             FROM withdrawal_requests
+             WHERE provider_id = ?`,
+            provider.id
+        ) || { pending_halala: 0, paid_halala: 0 };
+
         // Prefer escrow-based halala tracking (DCP-32); fall back to total_earnings SAR for pre-escrow providers
         const claimableHalala = provider.claimable_earnings_halala || 0;
-        const totalEarnedHalala = claimableHalala > 0
+        const usesClaimableLedger = claimableHalala > 0;
+        const totalEarnedHalala = usesClaimableLedger
             ? claimableHalala
             : Math.round((provider.total_earnings || 0) * 100);
         const pendingHalala = Math.round((pending.pending_sar || 0) * 100);
         const withdrawnHalala = Math.round((completed.withdrawn_sar || 0) * 100);
-        const availableHalala = Math.max(0, totalEarnedHalala - pendingHalala - withdrawnHalala);
+        const legacyAvailableHalala = Math.max(0, totalEarnedHalala - pendingHalala - withdrawnHalala);
+        const availableHalala = usesClaimableLedger ? claimableHalala : legacyAvailableHalala;
+        const pendingWithdrawalHalala = usesClaimableLedger
+            ? (requestSummary.pending_halala || 0)
+            : pendingHalala;
+        const withdrawnTotalHalala = usesClaimableLedger
+            ? (requestSummary.paid_halala || 0)
+            : withdrawnHalala;
 
         // Escrow breakdown: active holds and recent releases
         const escrowSummary = db.get(
@@ -1392,9 +2005,9 @@ router.get('/earnings', (req, res) => {
             total_earned_sar: provider.total_earnings,
             total_earned_halala: totalEarnedHalala,
             claimable_earnings_halala: claimableHalala,
-            pending_withdrawal_sar: pending.pending_sar || 0,
-            withdrawn_sar: completed.withdrawn_sar || 0,
-            available_sar: (availableHalala / 100).toFixed(2),
+            pending_withdrawal_sar: Number((pendingWithdrawalHalala / 100).toFixed(2)),
+            withdrawn_sar: Number((withdrawnTotalHalala / 100).toFixed(2)),
+            available_sar: Number((availableHalala / 100).toFixed(2)),
             available_halala: availableHalala,
             total_jobs: provider.total_jobs,
             escrow: {
@@ -1407,6 +2020,97 @@ router.get('/earnings', (req, res) => {
     } catch (error) {
         console.error('Earnings check error:', error);
         res.status(500).json({ error: 'Earnings check failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/me/withdraw — Create withdrawal request (pending)
+// ============================================================================
+router.post('/me/withdraw', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get(
+            'SELECT id, claimable_earnings_halala FROM providers WHERE api_key = ?',
+            api_key
+        );
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const amount_halala = toFiniteInt(req.body?.amount_halala, { min: 1000 });
+        if (amount_halala == null) {
+            return res.status(400).json({ error: 'amount_halala must be an integer and at least 1000' });
+        }
+
+        const iban = normalizeString(req.body?.iban, { maxLen: 24 })?.toUpperCase() || '';
+        if (!SAUDI_IBAN_REGEX.test(iban)) {
+            return res.status(400).json({ error: 'Invalid IBAN format. Expected SA followed by 22 digits' });
+        }
+
+        const claimable = toFiniteInt(provider.claimable_earnings_halala, { min: 0 }) || 0;
+        if (amount_halala > claimable) {
+            return res.status(400).json({
+                error: 'Requested amount exceeds claimable earnings',
+                claimable_earnings_halala: claimable
+            });
+        }
+
+        const now = new Date().toISOString();
+        const requestId = `wreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        const createRequestTx = db.transaction(() => {
+            db.prepare(
+                `INSERT INTO withdrawal_requests
+                 (id, provider_id, amount_halala, status, iban, created_at)
+                 VALUES (?, ?, ?, 'pending', ?, ?)`
+            ).run(requestId, provider.id, amount_halala, iban, now);
+
+            db.prepare(
+                `UPDATE providers
+                 SET claimable_earnings_halala = claimable_earnings_halala - ?, updated_at = ?
+                 WHERE id = ?`
+            ).run(amount_halala, now, provider.id);
+        });
+        createRequestTx();
+
+        const withdrawal_request = db.get(
+            `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at
+             FROM withdrawal_requests
+             WHERE id = ?`,
+            requestId
+        );
+
+        return res.status(201).json({ withdrawal_request });
+    } catch (error) {
+        console.error('Create provider withdrawal request error:', error);
+        return res.status(500).json({ error: 'Failed to create withdrawal request' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/me/withdrawals — List provider withdrawal requests
+// ============================================================================
+router.get('/me/withdrawals', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const withdrawals = db.all(
+            `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at
+             FROM withdrawal_requests
+             WHERE provider_id = ?
+             ORDER BY created_at DESC
+             LIMIT 100`,
+            provider.id
+        );
+
+        return res.json({ withdrawals });
+    } catch (error) {
+        console.error('List provider withdrawal requests error:', error);
+        return res.status(500).json({ error: 'Failed to fetch withdrawals' });
     }
 });
 
@@ -1588,6 +2292,39 @@ router.get('/earnings-daily', (req, res) => {
     } catch (error) {
         console.error('Earnings daily error:', error);
         res.status(500).json({ error: 'Failed to fetch daily earnings' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/me/earnings/history — Earnings trend (7d / 30d / 90d)
+// ============================================================================
+router.get('/me/earnings/history', (req, res) => {
+    try {
+        const api_key = req.query.key || req.headers['x-provider-key'];
+        if (!api_key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', api_key);
+        if (!provider) return res.status(401).json({ error: 'Invalid API key' });
+
+        const periodMap = { '7d': 7, '30d': 30, '90d': 90 };
+        const days = periodMap[req.query.period] || 30;
+        const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        const rows = db.all(
+            `SELECT DATE(completed_at) as date,
+                    COALESCE(SUM(CASE WHEN status='completed' THEN provider_earned_halala ELSE 0 END), 0) as earnings_halala,
+                    SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as jobs_completed
+             FROM jobs
+             WHERE provider_id = ? AND completed_at >= ?
+             GROUP BY DATE(completed_at)
+             ORDER BY date ASC`,
+            provider.id, sinceDate
+        );
+
+        res.json(rows);
+    } catch (error) {
+        console.error('Earnings history error:', error);
+        res.status(500).json({ error: 'Failed to fetch earnings history' });
     }
 });
 
@@ -2179,6 +2916,81 @@ router.get('/marketplace', (req, res) => {
 });
 
 // ============================================================================
+// GET /api/providers/public — Anonymized GPU listings for public marketplace
+// No auth required. Cached 30s to avoid hammering DB on landing page loads.
+// Returns online providers only (heartbeat within 5 minutes).
+// Fields: gpu_model, vram_mb, gpu_count, supported_compute_types,
+//         cost_per_hour_sar, jobs_completed — NO email, api_key, or earnings.
+// ============================================================================
+let _publicCache = null;
+let _publicCacheAt = 0;
+const PUBLIC_CACHE_TTL_MS = 30 * 1000;
+
+router.get('/public', (req, res) => {
+    try {
+        const now = Date.now();
+        if (_publicCache && (now - _publicCacheAt) < PUBLIC_CACHE_TTL_MS) {
+            res.setHeader('X-Cache', 'HIT');
+            return res.json(_publicCache);
+        }
+
+        const fiveMinutesAgo = new Date(now - 5 * 60 * 1000).toISOString();
+        const rows = db.all(
+            `SELECT p.id, p.gpu_model, p.gpu_name_detected, p.gpu_vram_mib, p.vram_gb,
+                    p.gpu_count, p.supported_compute_types,
+                    p.cost_per_gpu_second_halala,
+                    COALESCE(js.completed_jobs, 0) AS jobs_completed
+             FROM providers p
+             LEFT JOIN (
+                SELECT provider_id,
+                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs
+                FROM jobs
+                GROUP BY provider_id
+             ) js ON js.provider_id = p.id
+             WHERE p.status = 'online'
+               AND p.last_heartbeat >= ?
+               AND COALESCE(p.is_paused, 0) = 0
+             ORDER BY p.id DESC`,
+            fiveMinutesAgo
+        );
+
+        const payload = rows.map(p => {
+            const vramMb = p.gpu_vram_mib != null
+                ? Number(p.gpu_vram_mib)
+                : (p.vram_gb != null ? Math.round(Number(p.vram_gb) * 1024) : null);
+
+            let computeTypes = [];
+            try {
+                if (p.supported_compute_types) {
+                    computeTypes = JSON.parse(p.supported_compute_types);
+                }
+            } catch (_) {}
+
+            const costPerSecHalala = Number(p.cost_per_gpu_second_halala || 0.25);
+            const costPerHourSar = parseFloat(((costPerSecHalala * 3600) / 100).toFixed(2));
+
+            return {
+                gpu_model: p.gpu_name_detected || p.gpu_model || 'Unknown GPU',
+                vram_mb: vramMb,
+                gpu_count: Number(p.gpu_count || 1),
+                supported_compute_types: computeTypes,
+                cost_per_hour_sar: costPerHourSar,
+                jobs_completed: Number(p.jobs_completed || 0),
+                online: true,
+            };
+        });
+
+        _publicCache = payload;
+        _publicCacheAt = now;
+        res.setHeader('X-Cache', 'MISS');
+        res.json(payload);
+    } catch (error) {
+        console.error('Public providers error:', error);
+        res.status(500).json({ error: 'Failed to fetch public providers' });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/:id/benchmarks — Most recent benchmark result for provider
 // ============================================================================
 router.get('/:id/benchmarks', benchmarkLimiter, (req, res) => {
@@ -2311,9 +3123,9 @@ router.get('/:id/gpu-metrics', (req, res) => {
 });
 
 // ============================================================================
-// DELETE /api/providers/me — PDPL right to erasure (soft delete)
-// Anonymizes PII while preserving job records for financial audit trail.
-// Auth: x-provider-key header or key query param
+// DELETE /api/providers/me — PDPL right to erasure
+// Anonymizes provider-linked jobs, cancels in-progress jobs, and deletes account.
+// Auth: x-provider-key header or key query param.
 // ============================================================================
 router.delete('/me', (req, res) => {
     try {
@@ -2325,38 +3137,53 @@ router.delete('/me', (req, res) => {
         if (provider.status === 'deleted') return res.status(410).json({ error: 'Account already deleted' });
 
         const now = new Date().toISOString();
-        const anonId = 'deleted-' + provider.id;
 
-        // Soft delete: anonymize all PII columns, invalidate key, mark deleted
-        runStatement(
-            `UPDATE providers SET
-               name        = ?,
-               email       = ?,
-               phone       = NULL,
-               api_key     = ?,
-               status      = 'deleted',
-               ip_address  = NULL,
-               hostname    = NULL,
-               updated_at  = ?
-             WHERE id = ?`,
-            anonId,
-            anonId + '@deleted.invalid',
-            'revoked-' + crypto.randomBytes(8).toString('hex'),
+        const cancelledJobs = runStatement(
+            `UPDATE jobs SET
+               status = 'cancelled',
+               error = COALESCE(error, 'Cancelled: provider account deleted by PDPL request'),
+               completed_at = COALESCE(completed_at, ?),
+               updated_at = ?
+             WHERE provider_id = ?
+               AND status IN ('queued', 'pending', 'running', 'paused')`,
+            now,
             now,
             provider.id
         );
 
-        // Job records are intentionally retained with provider_id for financial audit (SAMA 7-year req)
-        console.log(`[pdpl] Provider ${provider.id} account deleted and PII anonymized`);
+        runStatement(
+            `UPDATE jobs SET
+               provider_id = NULL,
+               updated_at = ?
+             WHERE provider_id = ?
+               AND status IN ('completed', 'failed', 'cancelled')`,
+            now,
+            provider.id
+        );
 
-        res.json({
-            success: true,
-            message: 'Your account has been deleted and personal data anonymized in accordance with PDPL. Financial records are retained for 7 years as required by SAMA regulations.',
+        runStatement('DELETE FROM serve_sessions WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM escrow_holds WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM withdrawals WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM withdrawal_requests WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM heartbeat_log WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM daemon_events WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM benchmark_runs WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM bottleneck_events WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM verification_runs WHERE provider_id = ?', provider.id);
+        runStatement('DELETE FROM recovery_events WHERE provider_id = ? OR from_provider_id = ? OR to_provider_id = ?', provider.id, provider.id, provider.id);
+        runStatement('DELETE FROM api_key_rotations WHERE account_type = ? AND account_id = ?', 'provider', provider.id);
+
+        const deleted = runStatement('DELETE FROM providers WHERE id = ?', provider.id);
+        if (!deleted.changes) return res.status(500).json({ error: 'Account deletion failed' });
+
+        return res.json({
+            deleted: true,
+            cancelled_jobs: cancelledJobs.changes || 0,
             deleted_at: now,
         });
     } catch (error) {
         console.error('Provider delete error:', error);
-        res.status(500).json({ error: 'Account deletion failed' });
+        return res.status(500).json({ error: 'Account deletion failed' });
     }
 });
 

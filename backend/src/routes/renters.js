@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../db');
 const { COST_RATES } = require('./jobs');
-const { sendWelcomeEmail } = require('../services/email');
+const { sendWelcomeEmail } = require('../services/emailService');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -119,7 +119,8 @@ router.post('/register', (req, res) => {
     });
 
     // Fire-and-forget welcome email — does not affect registration response
-    sendWelcomeEmail('renter', { name: cleanName, email: cleanEmail, apiKey: api_key });
+    sendWelcomeEmail(cleanEmail, cleanName, api_key, 'renter')
+      .catch((e) => console.error('[renters.register] welcome email failed:', e.message));
   } catch (error) {
     if (error.message && error.message.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'A renter with this email already exists' });
@@ -487,9 +488,76 @@ router.post('/rotate-key', (req, res) => {
   }
 });
 
-// DELETE /api/renters/me — PDPL right to erasure (soft delete)
-// Anonymizes PII while preserving job records for financial audit trail.
-// Auth: x-renter-key header or key query param
+// GET /api/renters/me/export — PDPL right to access/export
+// Returns account data, job metadata, and billing history.
+// Explicitly excludes job stdout/stderr and verbose execution logs.
+router.get('/me/export', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
+
+    const renter = db.get(
+      `SELECT id, name, email, organization, status, balance_halala, total_spent_halala, total_jobs, created_at, updated_at
+       FROM renters WHERE api_key = ?`,
+      key
+    );
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const jobs = db.all(
+      `SELECT id, job_id, job_type, status, model, provider_id,
+              cost_halala, actual_cost_halala, duration_minutes, actual_duration_minutes,
+              submitted_at, started_at, completed_at, created_at, updated_at,
+              container_spec, gpu_requirements, notes
+       FROM jobs
+       WHERE renter_id = ?
+       ORDER BY COALESCE(completed_at, submitted_at, created_at) DESC`,
+      renter.id
+    );
+
+    const payments = db.all(
+      `SELECT payment_id, amount_sar, amount_halala, status, source_type, description,
+              created_at, confirmed_at, refunded_at, refund_amount_halala
+       FROM payments
+       WHERE renter_id = ?
+       ORDER BY created_at DESC`,
+      renter.id
+    );
+
+    const creditGrants = db.all(
+      `SELECT amount_halala, reason, granted_by, created_at
+       FROM credit_grants
+       WHERE renter_id = ?
+       ORDER BY created_at DESC`,
+      renter.id
+    );
+
+    const jobCharges = db.all(
+      `SELECT job_id, status, cost_halala, actual_cost_halala, submitted_at, completed_at
+       FROM jobs
+       WHERE renter_id = ? AND status IN ('completed', 'failed', 'cancelled')
+       ORDER BY COALESCE(completed_at, submitted_at, created_at) DESC`,
+      renter.id
+    );
+
+    return res.json({
+      account: renter,
+      jobs,
+      billing_history: {
+        payments,
+        credit_grants: creditGrants,
+        job_charges: jobCharges,
+      },
+      exported_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Renter export error:', error);
+    return res.status(500).json({ error: 'Failed to export renter data' });
+  }
+});
+
+// DELETE /api/renters/me — PDPL right to erasure
+// Anonymizes renter-linked jobs and permanently deletes the renter account.
+// Auth: x-renter-key header or key query param.
 router.delete('/me', (req, res) => {
   try {
     const key = req.headers['x-renter-key'] || req.query.key;
@@ -500,36 +568,41 @@ router.delete('/me', (req, res) => {
     if (renter.status === 'deleted') return res.status(410).json({ error: 'Account already deleted' });
 
     const now = new Date().toISOString();
-    const anonId = 'deleted-' + renter.id;
 
-    // Soft delete: anonymize PII, invalidate key, mark deleted
+    // Remove direct renter references and strip model/system prompt material.
     runStatement(
-      `UPDATE renters SET
-         name         = ?,
-         email        = ?,
-         organization = NULL,
-         api_key      = ?,
-         status       = 'deleted',
-         updated_at   = ?
-       WHERE id = ?`,
-      anonId,
-      anonId + '@deleted.invalid',
-      'revoked-' + crypto.randomBytes(8).toString('hex'),
+      `UPDATE jobs SET
+         renter_id = NULL,
+         model = NULL,
+         task_spec = NULL,
+         updated_at = ?
+       WHERE renter_id = ?`,
       now,
       renter.id
     );
 
-    // Job and payment records are retained with renter_id for financial audit (SAMA 7-year req)
-    console.log(`[pdpl] Renter ${renter.id} account deleted and PII anonymized`);
+    // Remove linkage from escrow holds that store renter API key.
+    runStatement(
+      `UPDATE escrow_holds SET renter_api_key = ? WHERE renter_api_key = ?`,
+      `deleted-renter-${renter.id}`,
+      key
+    );
 
-    res.json({
-      success: true,
-      message: 'Your account has been deleted and personal data anonymized in accordance with PDPL. Financial records are retained for 7 years as required by SAMA regulations.',
-      deleted_at: now,
-    });
+    // Remove direct renter-owned rows.
+    runStatement('DELETE FROM job_templates WHERE renter_id = ?', renter.id);
+    runStatement('DELETE FROM renter_quota WHERE renter_id = ?', renter.id);
+    runStatement('DELETE FROM quota_log WHERE renter_id = ?', renter.id);
+    runStatement('DELETE FROM credit_grants WHERE renter_id = ?', renter.id);
+    runStatement('DELETE FROM payments WHERE renter_id = ?', renter.id);
+    runStatement('DELETE FROM api_key_rotations WHERE account_type = ? AND account_id = ?', 'renter', renter.id);
+
+    const deleted = runStatement('DELETE FROM renters WHERE id = ?', renter.id);
+    if (!deleted.changes) return res.status(500).json({ error: 'Account deletion failed' });
+
+    return res.json({ deleted: true, deleted_at: now });
   } catch (error) {
     console.error('Renter delete error:', error);
-    res.status(500).json({ error: 'Account deletion failed' });
+    return res.status(500).json({ error: 'Account deletion failed' });
   }
 });
 
@@ -599,6 +672,87 @@ router.get('/me/jobs/export', (req, res) => {
   } catch (error) {
     console.error('Renter CSV export error:', error);
     res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+// ─── JOB TEMPLATES ─── (DCP-304)
+
+// GET /api/renters/me/templates?key=
+router.get('/me/templates', (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+    const templates = db.all(
+      'SELECT id, name, job_type, model, system_prompt, max_tokens, resource_spec_json, created_at FROM job_templates WHERE renter_id = ? ORDER BY created_at DESC',
+      renter.id
+    );
+    res.json({ templates });
+  } catch (error) {
+    console.error('Template list error:', error);
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+// POST /api/renters/me/templates?key=
+router.post('/me/templates', (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const { name, job_type, model, system_prompt, max_tokens, resource_spec_json } = req.body;
+    const cleanName = normalizeString(name, { maxLen: 120 });
+    const cleanJobType = normalizeString(job_type, { maxLen: 60 });
+    const cleanModel = normalizeString(model, { maxLen: 200 });
+    if (!cleanName || !cleanJobType || !cleanModel) {
+      return res.status(400).json({ error: 'name, job_type and model are required' });
+    }
+
+    // Cap templates per renter at 50
+    const count = db.get('SELECT COUNT(*) AS n FROM job_templates WHERE renter_id = ?', renter.id);
+    if (count && count.n >= 50) {
+      return res.status(409).json({ error: 'Template limit reached (50). Delete one to save more.' });
+    }
+
+    const now = new Date().toISOString();
+    const result = runStatement(
+      `INSERT INTO job_templates (renter_id, name, job_type, model, system_prompt, max_tokens, resource_spec_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      renter.id, cleanName, cleanJobType, cleanModel,
+      normalizeString(system_prompt, { maxLen: 2000 }) || null,
+      toFiniteInt(max_tokens, { min: 1, max: 4096 }) || null,
+      normalizeString(resource_spec_json, { maxLen: 2000 }) || null,
+      now
+    );
+    res.status(201).json({ success: true, template_id: result.lastInsertRowid });
+  } catch (error) {
+    console.error('Template save error:', error);
+    res.status(500).json({ error: 'Failed to save template' });
+  }
+});
+
+// DELETE /api/renters/me/templates/:id?key=
+router.delete('/me/templates/:id', (req, res) => {
+  try {
+    const { key } = req.query;
+    const { id } = req.params;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+    const templateId = toFiniteInt(id, { min: 1 });
+    if (!templateId) return res.status(400).json({ error: 'Invalid template ID' });
+    const result = runStatement(
+      'DELETE FROM job_templates WHERE id = ? AND renter_id = ?',
+      templateId, renter.id
+    );
+    if (result.changes === 0) return res.status(404).json({ error: 'Template not found' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Template delete error:', error);
+    res.status(500).json({ error: 'Failed to delete template' });
   }
 });
 

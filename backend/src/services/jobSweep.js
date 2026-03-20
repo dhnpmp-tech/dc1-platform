@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { sendJobCompleteEmail } = require('./emailService');
 
 let sweepTimer = null;
 let loggedRetryMigrationHint = false;
@@ -116,6 +117,7 @@ function buildSweepStatements(db) {
   const hasWebhookNotifiedAt = columns.has('webhook_notified_at');
   const hasWebhookDeliveryStatus = columns.has('webhook_delivery_status');
   const hasWebhookDeliveryAttempts = columns.has('webhook_delivery_attempts');
+  const hasCompletionEmailSentAt = columns.has('completion_email_sent_at');
 
   const runningCandidatesSql = hasStartedAt && hasDuration
     ? `
@@ -153,6 +155,20 @@ function buildSweepStatements(db) {
     `
     : null;
 
+  const completionEmailCandidatesSql = hasRenterId && hasCompletionEmailSentAt
+    ? `
+      SELECT id, job_id, renter_id, status, model, job_type,
+             actual_cost_halala, cost_halala, provider_earned_halala,
+             actual_duration_minutes, duration_minutes
+      FROM jobs
+      WHERE renter_id IS NOT NULL
+        AND completion_email_sent_at IS NULL
+        AND status IN ('done', 'completed')
+      ORDER BY COALESCE(completed_at, created_at) ASC, id ASC
+      LIMIT 25
+    `
+    : null;
+
   const queueDepthSql = `
     SELECT
       SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
@@ -174,6 +190,7 @@ function buildSweepStatements(db) {
     hasWebhookNotifiedAt,
     hasWebhookDeliveryStatus,
     hasWebhookDeliveryAttempts,
+    hasCompletionEmailSentAt,
     touchColumn: hasStatusUpdatedAt ? 'status_updated_at' : (hasUpdatedAt ? 'updated_at' : null),
     runningCandidatesStmt: runningCandidatesSql
       ? safePrepare(db, runningCandidatesSql, 'prepare running candidates statement')
@@ -185,9 +202,12 @@ function buildSweepStatements(db) {
     webhookCandidatesStmt: webhookCandidatesSql
       ? safePrepare(db, webhookCandidatesSql, 'prepare webhook candidates statement')
       : null,
+    completionEmailCandidatesStmt: completionEmailCandidatesSql
+      ? safePrepare(db, completionEmailCandidatesSql, 'prepare completion email candidates statement')
+      : null,
     renterWebhookStmt: safePrepare(
       db,
-      `SELECT id, api_key, webhook_url, status FROM renters WHERE id = ?`,
+      `SELECT id, api_key, webhook_url, email, name, status FROM renters WHERE id = ?`,
       'prepare renter webhook lookup statement'
     ),
     queueDepthStmt: safePrepare(db, queueDepthSql, 'prepare queue depth statement'),
@@ -334,6 +354,19 @@ function markWebhookDelivery(state, jobId, attempts, status, detail) {
   }
 }
 
+function markCompletionEmailSent(state, jobId) {
+  if (!state.hasCompletionEmailSentAt) return;
+  try {
+    safePrepare(
+      state.db,
+      'UPDATE jobs SET completion_email_sent_at = ? WHERE id = ?',
+      'prepare completion email sent update'
+    ).run(new Date().toISOString(), jobId);
+  } catch (error) {
+    recordSweepError(`update completion email sent for job ${jobId}`, error);
+  }
+}
+
 async function deliverWebhookWithRetry(webhookUrl, secret, payload) {
   const payloadJson = JSON.stringify(payload);
   const signature = createWebhookSignature(secret, payloadJson);
@@ -420,6 +453,49 @@ async function processWebhookCandidates(state) {
   }
 }
 
+async function processCompletionEmailCandidates(state) {
+  if (!state.completionEmailCandidatesStmt || !state.hasCompletionEmailSentAt) return;
+
+  const candidates = safeAll(state.completionEmailCandidatesStmt, 'query completion email candidates');
+  for (const job of candidates) {
+    if (!job || !job.id || !job.renter_id) continue;
+
+    let renter;
+    try {
+      renter = state.renterWebhookStmt.get(job.renter_id);
+    } catch (error) {
+      recordSweepError(`lookup renter email for job ${job.id}`, error);
+      continue;
+    }
+
+    if (!renter || renter.status !== 'active' || !renter.email) {
+      markCompletionEmailSent(state, job.id);
+      continue;
+    }
+
+    const totalHalala = Number(job.actual_cost_halala ?? job.cost_halala ?? 0);
+    const providerEarningHalala = Number(job.provider_earned_halala);
+    const durationMinutes = Number(job.actual_duration_minutes ?? job.duration_minutes);
+    const result = await sendJobCompleteEmail(
+      renter.email,
+      job.job_id || String(job.id),
+      totalHalala / 100,
+      job.model || job.job_type || 'General compute',
+      {
+        durationMinutes: Number.isFinite(durationMinutes) ? durationMinutes : undefined,
+        providerEarningSar: Number.isFinite(providerEarningHalala) ? providerEarningHalala / 100 : undefined,
+      }
+    );
+
+    if (result?.ok || result?.reason === 'not_configured' || result?.reason === 'invalid_arguments') {
+      markCompletionEmailSent(state, job.id);
+      continue;
+    }
+
+    recordSweepError(`send job complete email for job ${job.id}`, new Error(result?.reason || 'unknown email failure'));
+  }
+}
+
 async function runSweep(state) {
   if (state.sweepInFlight) return;
   state.sweepInFlight = true;
@@ -455,6 +531,7 @@ async function runSweep(state) {
       }
     }
 
+    await processCompletionEmailCandidates(state);
     await processWebhookCandidates(state);
   } catch (error) {
     recordSweepError('sweep tick failed', error);

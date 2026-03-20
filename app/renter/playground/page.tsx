@@ -93,8 +93,35 @@ interface HistoryJob {
   actual_cost_halala: number;
 }
 
+interface JobTemplate {
+  id: number;
+  name: string;
+  job_type: string;
+  model: string;
+  system_prompt: string | null;
+  max_tokens: number | null;
+  resource_spec_json: string | null;
+  created_at: string;
+}
+
 type Phase = 'idle' | 'submitting' | 'polling' | 'done' | 'error';
 type ViewMode = 'new' | 'history';
+type ImageType = 'pytorch-cuda' | 'vllm-serve' | 'training' | 'rendering';
+
+const IMAGE_TYPE_TO_COMPUTE: Record<ImageType, string> = {
+  'pytorch-cuda': 'inference',
+  'vllm-serve': 'inference',
+  'training': 'training',
+  'rendering': 'rendering',
+};
+
+const VRAM_OPTIONS = [
+  { value: 4096, label: '4 GB' },
+  { value: 8192, label: '8 GB' },
+  { value: 16384, label: '16 GB' },
+  { value: 24576, label: '24 GB' },
+  { value: 40960, label: '40 GB' },
+];
 
 export default function GpuPlaygroundPage() {
   return (
@@ -154,6 +181,21 @@ function GpuPlayground() {
   const [vllmDtype, setVllmDtype] = useState<'float16' | 'bfloat16' | 'float32'>('float16');
   const [vllmMaxModelLen, setVllmMaxModelLen] = useState(4096);
 
+  // Templates
+  const [templates, setTemplates] = useState<JobTemplate[]>([]);
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [saveTemplateModal, setSaveTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateSaved, setTemplateSaved] = useState(false);
+
+  // Container spec
+  const [imageType, setImageType] = useState<ImageType>('pytorch-cuda');
+  const [vramRequiredMb, setVramRequiredMb] = useState<number>(4096);
+  const [gpuCount, setGpuCount] = useState<1 | 2 | 4>(1);
+  const [containerImages, setContainerImages] = useState<string[]>([]);
+  const [queueWait, setQueueWait] = useState<number | null>(null);
+
   // Job execution
   const [phase, setPhase] = useState<Phase>('idle');
   const [jobId, setJobId] = useState<number | null>(null);
@@ -205,6 +247,11 @@ function GpuPlayground() {
         if (data.recent_jobs) {
           setJobHistory(data.recent_jobs);
         }
+        // Load templates
+        fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(key)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d?.templates) setTemplates(d.templates); })
+          .catch(() => {});
       } else {
         setRenterName(null);
         sessionStorage.removeItem('dc1_renter_key');
@@ -344,6 +391,26 @@ function GpuPlayground() {
     if (renterName) fetchProviders();
   }, [renterName, fetchProviders]);
 
+  useEffect(() => {
+    fetch(`${API_BASE}/containers/registry`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.images) setContainerImages(d.images); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const computeType = IMAGE_TYPE_TO_COMPUTE[imageType];
+    fetch(`${API_BASE}/jobs/queue/status`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d?.queue) { setQueueWait(null); return; }
+        const bucket = (d.queue as Array<{ compute_type: string; vram_bucket: string | number; count: number }>)
+          .find(b => b.compute_type === computeType && Number(b.vram_bucket) <= vramRequiredMb);
+        setQueueWait(bucket ? bucket.count : 0);
+      })
+      .catch(() => setQueueWait(null));
+  }, [imageType, vramRequiredMb]);
+
   // ── Submit job ───────────────────────────────────────────────────
   async function submitJob() {
     if (jobType !== 'vllm_serve' && !prompt.trim()) return;
@@ -380,6 +447,13 @@ function GpuPlayground() {
     }
 
     try {
+      const containerSpec = {
+        image_type: imageType,
+        vram_required_mb: vramRequiredMb,
+        gpu_count: gpuCount,
+        compute_type: IMAGE_TYPE_TO_COMPUTE[imageType],
+      };
+
       const res = await fetch(`${API_BASE}/jobs/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': renterKey },
@@ -388,6 +462,7 @@ function GpuPlayground() {
           job_type: jobType,
           duration_minutes: durationMinutes,
           params,
+          container_spec: containerSpec,
         }),
       });
 
@@ -538,6 +613,82 @@ function GpuPlayground() {
     } catch { /* ignore */ }
   }
 
+  async function fetchTemplates() {
+    if (!renterKey) return;
+    try {
+      const res = await fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(renterKey)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTemplates(data.templates || []);
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function saveTemplate() {
+    if (!templateName.trim()) return;
+    setSavingTemplate(true);
+    try {
+      let model = jobType === 'llm_inference' ? llmModel : jobType === 'image_generation' ? sdModel : vllmModel;
+      const res = await fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(renterKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: templateName.trim(),
+          job_type: jobType,
+          model,
+          max_tokens: jobType === 'llm_inference' ? maxTokens : null,
+          resource_spec_json: JSON.stringify(
+            jobType === 'llm_inference'
+              ? { prompt: prompt.trim(), temperature }
+              : jobType === 'image_generation'
+              ? { steps, width: imgWidth, height: imgHeight }
+              : { max_model_len: vllmMaxModelLen, dtype: vllmDtype, duration_minutes: vllmDuration }
+          ),
+        }),
+      });
+      if (res.ok) {
+        setSaveTemplateModal(false);
+        setTemplateName('');
+        setTemplateSaved(true);
+        fetchTemplates();
+        setTimeout(() => setTemplateSaved(false), 3000);
+      }
+    } catch { /* ignore */ }
+    finally { setSavingTemplate(false); }
+  }
+
+  function loadTemplate(tpl: JobTemplate) {
+    setShowTemplateDropdown(false);
+    const spec = tpl.resource_spec_json ? (() => { try { return JSON.parse(tpl.resource_spec_json!); } catch { return {}; } })() : {};
+    if (tpl.job_type === 'llm_inference') {
+      setJobType('llm_inference');
+      setLlmModel(tpl.model);
+      if (tpl.max_tokens) setMaxTokens(tpl.max_tokens);
+      if (spec.prompt) setPrompt(spec.prompt);
+      if (spec.temperature != null) setTemperature(spec.temperature);
+    } else if (tpl.job_type === 'image_generation') {
+      setJobType('image_generation');
+      setSdModel(tpl.model);
+      if (spec.steps) setSteps(spec.steps);
+      if (spec.width) setImgWidth(spec.width);
+      if (spec.height) setImgHeight(spec.height);
+    } else if (tpl.job_type === 'vllm_serve') {
+      setJobType('vllm_serve');
+      setVllmModel(tpl.model);
+      if (spec.max_model_len) setVllmMaxModelLen(spec.max_model_len);
+      if (spec.dtype) setVllmDtype(spec.dtype);
+      if (spec.duration_minutes) setVllmDuration(spec.duration_minutes);
+    }
+    setViewMode('new');
+  }
+
+  async function deleteTemplate(id: number) {
+    try {
+      await fetch(`${API_BASE}/renters/me/templates/${id}?key=${encodeURIComponent(renterKey)}`, { method: 'DELETE' });
+      fetchTemplates();
+    } catch { /* ignore */ }
+  }
+
   function resetForm() {
     setPhase('idle');
     setResult(null);
@@ -644,6 +795,7 @@ function GpuPlayground() {
 
   // ── Main UI ──────────────────────────────────────────────────────
   return (
+    <>
     <div className="min-h-screen bg-[#0d1117] text-white">
       <div className="max-w-3xl mx-auto px-4 py-8">
 
@@ -668,7 +820,7 @@ function GpuPlayground() {
         </div>
 
         {/* ── View Mode Toggle ──────────────────────────────────── */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-6 flex-wrap">
           <button
             onClick={() => setViewMode('new')}
             className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition ${
@@ -694,7 +846,55 @@ function GpuPlayground() {
               </span>
             )}
           </button>
+          {/* Templates dropdown */}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setShowTemplateDropdown(v => !v)}
+              className="px-4 py-2.5 rounded-xl font-semibold text-sm bg-white/5 text-white/50 border border-white/10 hover:border-[#FFD700]/40 hover:text-[#FFD700] transition flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10M4 18h6" /></svg>
+              Templates
+              {templates.length > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-white/10">{templates.length}</span>
+              )}
+            </button>
+            {showTemplateDropdown && (
+              <div className="absolute right-0 top-full mt-2 w-72 bg-[#1a1f2e] border border-white/10 rounded-xl shadow-2xl z-30 overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/10">
+                  <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Saved Templates</span>
+                </div>
+                {templates.length === 0 ? (
+                  <div className="px-4 py-5 text-sm text-white/30 text-center">No templates yet. Save a job config to reuse it.</div>
+                ) : (
+                  <div className="max-h-72 overflow-y-auto">
+                    {templates.map(tpl => (
+                      <div key={tpl.id} className="flex items-center justify-between px-4 py-3 hover:bg-white/5 border-b border-white/5 last:border-0">
+                        <button
+                          onClick={() => loadTemplate(tpl)}
+                          className="flex-1 text-left"
+                        >
+                          <div className="text-sm font-medium text-white/80">{tpl.name}</div>
+                          <div className="text-xs text-white/30 mt-0.5">{tpl.job_type.replace(/_/g, ' ')} · {tpl.model.split('/').pop()}</div>
+                        </button>
+                        <button
+                          onClick={() => deleteTemplate(tpl.id)}
+                          className="ml-2 p-1 text-white/20 hover:text-red-400 transition shrink-0"
+                          title="Delete template"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
+        {/* Close template dropdown on outside click */}
+        {showTemplateDropdown && (
+          <div className="fixed inset-0 z-20" onClick={() => setShowTemplateDropdown(false)} />
+        )}
 
         {/* ════════════════════════════════════════════════════════ */}
         {/* ── JOB HISTORY VIEW ─────────────────────────────────── */}
@@ -949,6 +1149,102 @@ function GpuPlayground() {
                       <option key={m.id} value={m.id}>{m.label} — {m.vram} VRAM</option>
                     ))}
                   </select>
+                )}
+              </div>
+
+              {/* Container Spec */}
+              <div className="border border-white/10 rounded-xl p-4 space-y-4 bg-white/[0.02]">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-[#F5A524]" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  <span className="text-sm font-semibold text-white/80">Container</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Image Type */}
+                  <div>
+                    <label className="block text-xs text-white/50 mb-1.5">Image Type</label>
+                    <select
+                      className={inputCls}
+                      value={imageType}
+                      onChange={e => setImageType(e.target.value as ImageType)}
+                      disabled={isRunning}
+                    >
+                      {(containerImages.length > 0
+                        ? containerImages
+                        : ['pytorch-cuda', 'vllm-serve', 'training', 'rendering']
+                      ).map(img => (
+                        <option key={img} value={img}>{img}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-white/30 mt-1">
+                      Compute type: <span className="text-[#F5A524]">{IMAGE_TYPE_TO_COMPUTE[imageType]}</span>
+                    </p>
+                  </div>
+
+                  {/* GPU Count */}
+                  <div>
+                    <label className="block text-xs text-white/50 mb-1.5">GPU Count</label>
+                    <div className="flex gap-2">
+                      {([1, 2, 4] as const).map(n => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setGpuCount(n)}
+                          disabled={isRunning}
+                          className={`flex-1 py-2.5 rounded-lg text-sm font-semibold border transition ${
+                            gpuCount === n
+                              ? 'border-[#F5A524] bg-[#F5A524]/10 text-[#F5A524]'
+                              : 'border-white/10 bg-white/5 text-white/50 hover:border-white/20'
+                          } disabled:opacity-50`}
+                        >
+                          {n}×
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* VRAM Slider */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs text-white/50">VRAM Required</label>
+                    <span className="text-xs text-[#F5A524] font-semibold">
+                      {VRAM_OPTIONS.find(o => o.value === vramRequiredMb)?.label ?? `${vramRequiredMb / 1024} GB`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={VRAM_OPTIONS.length - 1}
+                    step={1}
+                    className="w-full accent-[#F5A524]"
+                    value={VRAM_OPTIONS.findIndex(o => o.value === vramRequiredMb)}
+                    onChange={e => setVramRequiredMb(VRAM_OPTIONS[Number(e.target.value)].value)}
+                    disabled={isRunning}
+                  />
+                  <div className="flex justify-between text-xs text-white/25 mt-1">
+                    {VRAM_OPTIONS.map(o => <span key={o.value}>{o.label}</span>)}
+                  </div>
+                </div>
+
+                {/* Queue wait estimate */}
+                {queueWait !== null && queueWait > 0 && (
+                  <div className="flex items-center gap-2 text-xs text-yellow-400/80 bg-yellow-500/5 border border-yellow-500/20 rounded-lg px-3 py-2">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {queueWait} job{queueWait !== 1 ? 's' : ''} ahead in queue for this configuration
+                  </div>
+                )}
+                {queueWait === 0 && (
+                  <div className="flex items-center gap-2 text-xs text-green-400/80 bg-green-500/5 border border-green-500/20 rounded-lg px-3 py-2">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    No queue — this configuration should start immediately
+                  </div>
                 )}
               </div>
 
@@ -1278,6 +1574,22 @@ print(response.choices[0].message.content)`}</pre>
                   )}
                 </div>
 
+                {/* Save as Template */}
+                {templateSaved ? (
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-sm">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Template saved!
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setTemplateName(''); setSaveTemplateModal(true); }}
+                    className="w-full py-2.5 rounded-xl font-semibold text-sm border border-[#FFD700]/30 text-[#FFD700] hover:bg-[#FFD700]/10 transition flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                    Save as Template
+                  </button>
+                )}
+
                 {/* Run Another */}
                 <button
                   onClick={resetForm}
@@ -1295,6 +1607,44 @@ print(response.choices[0].message.content)`}</pre>
         )}
       </div>
     </div>
+
+    {/* Save Template Modal */}
+    {saveTemplateModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true" aria-labelledby="save-tpl-title">
+        <div className="bg-[#1a1f2e] border border-white/10 rounded-xl w-full max-w-sm p-6 space-y-4">
+          <h2 id="save-tpl-title" className="text-base font-bold text-white">Save as Template</h2>
+          <p className="text-white/40 text-sm">Name this configuration so you can load it later.</p>
+          <input
+            type="text"
+            placeholder="e.g. Arabic Summariser"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#FFD700]/60 transition text-sm"
+            value={templateName}
+            onChange={e => setTemplateName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') saveTemplate(); }}
+            autoFocus
+            maxLength={120}
+          />
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => setSaveTemplateModal(false)}
+              disabled={savingTemplate}
+              className="px-4 py-2 rounded-lg text-sm font-semibold bg-white/5 text-white/50 hover:bg-white/10 border border-white/10 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveTemplate}
+              disabled={savingTemplate || !templateName.trim()}
+              className="px-4 py-2 rounded-lg text-sm font-semibold bg-[#FFD700] text-[#0d1117] hover:bg-[#FFD700]/90 disabled:opacity-50 transition flex items-center gap-2"
+            >
+              {savingTemplate && <span className="animate-spin h-3.5 w-3.5 border-2 border-[#0d1117] border-t-transparent rounded-full" />}
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

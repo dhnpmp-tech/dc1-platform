@@ -1,0 +1,313 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { useLanguage } from '../../lib/i18n'
+
+interface ProviderWizardProps {
+  providerId: string
+  apiKey: string
+  onComplete: () => void
+  onDismiss: () => void
+  onHeartbeatDetected?: () => void
+}
+
+type Platform = 'windows' | 'linux' | 'macos'
+
+const WIZARD_STORAGE_KEY = 'wizard_completed'
+
+const platformOptions: Array<{ id: Platform; label: string }> = [
+  { id: 'windows', label: 'Windows' },
+  { id: 'linux', label: 'Linux' },
+  { id: 'macos', label: 'macOS' },
+]
+
+export default function ProviderWizard({
+  providerId,
+  apiKey,
+  onComplete,
+  onDismiss,
+  onHeartbeatDetected,
+}: ProviderWizardProps) {
+  const { t } = useLanguage()
+  const [step, setStep] = useState(1)
+  const [platform, setPlatform] = useState<Platform>('windows')
+  const [copied, setCopied] = useState(false)
+  const [heartbeatDetected, setHeartbeatDetected] = useState(false)
+
+  const installCommand = useMemo(() => {
+    if (platform === 'windows') {
+      return `powershell -c "iwr https://api.dcp.sa/api/providers/download/installer -OutF setup.ps1; .\\setup.ps1 ${apiKey}"`
+    }
+    return `curl -fsSL https://api.dcp.sa/api/providers/install.sh | bash -s ${apiKey}`
+  }, [apiKey, platform])
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  useEffect(() => {
+    if (step !== 2 || heartbeatDetected || !apiKey) return
+
+    let cancelled = false
+    const API_BASE = '/api/dc1'
+
+    const pollHeartbeat = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const provider = data?.provider || {}
+        const lastHeartbeat =
+          provider.last_heartbeat ||
+          provider.last_heartbeat_at ||
+          provider.lastHeartbeat ||
+          null
+
+        if (!cancelled && lastHeartbeat) {
+          setHeartbeatDetected(true)
+          onHeartbeatDetected?.()
+          setTimeout(() => {
+            if (!cancelled) {
+              setStep(3)
+            }
+          }, 900)
+        }
+      } catch {
+        // keep polling; transient failures are expected on first-run setup
+      }
+    }
+
+    pollHeartbeat()
+    const interval = setInterval(pollHeartbeat, 5000)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [apiKey, heartbeatDetected, onHeartbeatDetected, step])
+
+  const copyInstallCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(installCommand)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  const finishWizard = () => {
+    localStorage.setItem(WIZARD_STORAGE_KEY, 'true')
+    onComplete()
+  }
+
+  const closeWizard = () => {
+    localStorage.setItem(WIZARD_STORAGE_KEY, 'true')
+    onDismiss()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="relative w-full max-w-3xl rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6 shadow-2xl">
+        <button
+          type="button"
+          onClick={closeWizard}
+          className="absolute right-4 top-4 text-dc1-text-muted hover:text-dc1-text-primary"
+          aria-label={t('provider.wizard.dismiss')}
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-bold text-dc1-text-primary">{t('provider.wizard.title')}</h2>
+          <span className="rounded-full bg-dc1-amber/20 px-3 py-1 text-xs font-semibold text-dc1-amber">
+            {t('provider.wizard.step_count').replace('{current}', String(step)).replace('{total}', '4')}
+          </span>
+        </div>
+
+        <div className="mb-6 h-2 overflow-hidden rounded-full bg-dc1-surface-l3">
+          <div
+            className="h-full bg-gradient-to-r from-dc1-amber to-status-success transition-all duration-500"
+            style={{ width: `${(step / 4) * 100}%` }}
+          />
+        </div>
+
+        {step === 1 && (
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-lg font-semibold text-dc1-text-primary">{t('provider.wizard.step1.title')}</h3>
+              <p className="mt-1 text-sm text-dc1-text-secondary">{t('provider.wizard.step1.desc')}</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {platformOptions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setPlatform(item.id)}
+                  className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                    platform === item.id
+                      ? 'border-dc1-amber bg-dc1-amber/20 text-dc1-amber'
+                      : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+              <p className="mb-2 text-xs uppercase tracking-wide text-dc1-text-muted">{t('provider.wizard.install_command')}</p>
+              <code className="block whitespace-pre-wrap break-all text-sm text-dc1-text-primary">{installCommand}</code>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={copyInstallCommand}
+                className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3"
+              >
+                {copied ? t('provider.wizard.copied') : t('provider.wizard.copy')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="rounded-lg bg-dc1-amber px-5 py-2 text-sm font-semibold text-black hover:brightness-110"
+              >
+                {t('provider.wizard.next')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-lg font-semibold text-dc1-text-primary">{t('provider.wizard.step2.title')}</h3>
+              <p className="mt-1 text-sm text-dc1-text-secondary">{t('provider.wizard.step2.desc')}</p>
+            </div>
+
+            {!heartbeatDetected ? (
+              <div className="flex items-center gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-dc1-amber border-t-transparent" />
+                <p className="text-sm text-dc1-text-secondary">{t('provider.wizard.step2.waiting')}</p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 rounded-lg border border-status-success/40 bg-status-success/10 p-4">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-status-success text-black">✓</span>
+                <p className="text-sm font-semibold text-status-success">{t('provider.wizard.step2.connected')}</p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3"
+              >
+                {t('provider.wizard.back')}
+              </button>
+              {heartbeatDetected && (
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className="rounded-lg bg-dc1-amber px-5 py-2 text-sm font-semibold text-black hover:brightness-110"
+                >
+                  {t('provider.wizard.next')}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-lg font-semibold text-dc1-text-primary">{t('provider.wizard.step3.title')}</h3>
+              <p className="mt-1 text-sm text-dc1-text-secondary">{t('provider.wizard.step3.desc')}</p>
+            </div>
+
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+              <p className="mb-2 text-xs uppercase tracking-wide text-dc1-text-muted">{t('provider.wizard.test_command')}</p>
+              <code className="block text-sm text-dc1-text-primary">dcp-provider test</code>
+            </div>
+
+            <a
+              href="/renter/playground"
+              className="inline-flex text-sm font-semibold text-dc1-amber hover:underline"
+            >
+              {t('provider.wizard.step3.link')}
+            </a>
+
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3"
+              >
+                {t('provider.wizard.back')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(4)}
+                className="rounded-lg bg-dc1-amber px-5 py-2 text-sm font-semibold text-black hover:brightness-110"
+              >
+                {t('provider.wizard.next')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="relative overflow-hidden rounded-xl border border-status-success/40 bg-status-success/10 p-5">
+            <div className="absolute inset-x-0 top-0 h-20 confetti-strip" />
+            <h3 className="text-lg font-semibold text-dc1-text-primary">{t('provider.wizard.step4.title')}</h3>
+            <p className="mt-1 text-sm text-dc1-text-secondary">{t('provider.wizard.step4.desc')}</p>
+            <p className="mt-3 break-all rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-sm text-dc1-text-primary">
+              dcp.sa/earn?ref={providerId}
+            </p>
+            <div className="mt-5 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={finishWizard}
+                className="rounded-lg bg-dc1-amber px-5 py-2 text-sm font-semibold text-black hover:brightness-110"
+              >
+                {t('provider.wizard.go_dashboard')}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style jsx>{`
+        .confetti-strip {
+          background:
+            radial-gradient(circle at 10% 40%, #f5a524 4px, transparent 5px),
+            radial-gradient(circle at 30% 65%, #22c55e 4px, transparent 5px),
+            radial-gradient(circle at 50% 35%, #38bdf8 4px, transparent 5px),
+            radial-gradient(circle at 70% 60%, #f43f5e 4px, transparent 5px),
+            radial-gradient(circle at 90% 30%, #f5a524 4px, transparent 5px);
+          animation: confettiDrop 1.8s ease-in-out infinite;
+          opacity: 0.9;
+        }
+
+        @keyframes confettiDrop {
+          0% {
+            transform: translateY(-8px);
+            opacity: 0;
+          }
+          35% {
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(20px);
+            opacity: 0;
+          }
+        }
+      `}</style>
+    </div>
+  )
+}

@@ -3,6 +3,8 @@
 ARG BASE_IMAGE=dc1/base-worker:latest
 FROM ${BASE_IMAGE}
 
+USER root
+
 # Stable Diffusion dependencies
 RUN pip3 install --no-cache-dir \
     diffusers[torch] \
@@ -20,6 +22,8 @@ StableDiffusionPipeline.from_pretrained( \
     'stabilityai/stable-diffusion-2-1-base', \
     torch_dtype='auto' \
 ); print('SD 2.1 base cached.')"
+
+USER dcp:dcp
 
 # Label for DC1 daemon image selection
 LABEL dc1.worker.type="image_generation"

@@ -3,6 +3,23 @@
 This document defines the runtime contract for isolated job containers launched by:
 
 - `infra/docker/run-job.sh`
+- template Dockerfiles in `backend/docker-templates/`
+
+## Template Container Types
+
+The orchestrator supports these template types:
+
+- `pytorch-cuda` → `dcp/pytorch-cuda:latest`
+- `vllm-serve` → `dcp/vllm-serve:latest`
+- `training` → `dcp/training:latest`
+- `rendering` → `dcp/rendering:latest`
+
+Docker build contexts are in `backend/docker-templates/`:
+
+- `pytorch-cuda.Dockerfile`
+- `vllm-serve.Dockerfile`
+- `training.Dockerfile`
+- `rendering.Dockerfile`
 
 ## Isolation Baseline
 
@@ -26,7 +43,25 @@ When `--db-path` is provided, the script logs launched `container_id` to the SQL
 
 ## Usage
 
-Minimal example:
+Template mode (preferred):
+
+```bash
+infra/docker/run-job.sh \
+  vllm-serve \
+  /opt/dcp/models/mistral-7b \
+  /tmp/dcp/jobs/JOB-123/payload.json \
+  /tmp/dcp/jobs/JOB-123/output \
+  --timeout-seconds 1800
+```
+
+Template mode mounts:
+
+- `/opt/dcp/model-cache` (host cache, writable)
+- `/opt/dcp/model` (model_path, read-only)
+- `/opt/dcp/input/job_payload.json` (payload JSON, read-only)
+- `/opt/dcp/output` (output_dir, writable)
+
+Legacy mode (backward compatible):
 
 ```bash
 infra/docker/run-job.sh \
@@ -59,6 +94,18 @@ infra/docker/run-job.sh \
 ## CLI Options
 
 ```text
+Template mode positional:
+container_type           Required in template mode
+model_path               Required in template mode
+job_payload              Required in template mode
+output_dir               Required in template mode
+
+Template mode flags:
+--timeout-seconds N      Timeout in seconds before forced cleanup (default: 3600)
+--model-cache-dir PATH   Host dir mounted to /opt/dcp/model-cache (default: /opt/dcp/model-cache)
+--image IMAGE            Optional image override for container_type
+
+Legacy mode flags:
 --job-id JOB_ID           Required logical job id (jobs.job_id)
 --image IMAGE             Required docker image
 --job-cmd CMD             Command run inside container (default: python /dc1/job/task.py)

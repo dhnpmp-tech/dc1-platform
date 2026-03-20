@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
@@ -21,9 +21,12 @@ interface JobDetail {
   completed_at: string
   error: string | null
   actual_cost_halala: number
+  cost_halala: number
   actual_duration_minutes: number
   progress_phase: string
   params: string | null
+  retry_count: number
+  max_retries: number
 }
 
 interface JobOutput {
@@ -41,6 +44,24 @@ interface JobOutput {
   height?: number
   steps?: number
   seed?: number
+}
+
+interface Execution {
+  attempt_number: number
+  started_at: string | null
+  ended_at: string | null
+  exit_code: number | null
+  gpu_seconds_used: number
+  cost_halala: number
+}
+
+interface ExecutionHistory {
+  job_id: string
+  status: string
+  cost_halala: number
+  actual_cost_halala: number
+  retry_count: number
+  executions: Execution[]
 }
 
 // Nav icons
@@ -102,12 +123,305 @@ function DetailRow({ label, value, highlight, mono }: { label: string; value: st
   )
 }
 
+type StreamStatus = 'connecting' | 'live' | 'completed' | 'failed'
+
+function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string; jobStatus: string }) {
+  const [lines, setLines] = useState<string[]>([])
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting')
+  const [autoScroll, setAutoScroll] = useState(true)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const esRef = useRef<EventSource | null>(null)
+  const closedRef = useRef(false)
+
+  const connect = useCallback(() => {
+    if (esRef.current) {
+      esRef.current.close()
+    }
+    closedRef.current = false
+    setStreamStatus('connecting')
+
+    const url = `${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs/stream?key=${encodeURIComponent(apiKey)}`
+    const es = new EventSource(url)
+    esRef.current = es
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data)
+        if (data.type === 'log') {
+          setLines(prev => [...prev, data.line])
+          setStreamStatus('live')
+        } else if (data.type === 'end') {
+          setStreamStatus(data.status === 'completed' ? 'completed' : 'failed')
+          es.close()
+        }
+      } catch { /* ignore parse errors */ }
+    }
+
+    es.onerror = () => {
+      if (!closedRef.current) {
+        setStreamStatus('failed')
+      }
+    }
+  }, [jobId, apiKey])
+
+  const disconnect = useCallback(() => {
+    closedRef.current = true
+    esRef.current?.close()
+  }, [])
+
+  useEffect(() => {
+    if (!apiKey) return
+    connect()
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        disconnect()
+      } else {
+        connect()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      disconnect()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [connect, disconnect])
+
+  useEffect(() => {
+    if (autoScroll && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [lines, autoScroll])
+
+  const statusLabel: Record<StreamStatus, string> = {
+    connecting: 'Connecting...',
+    live: 'Live',
+    completed: 'Completed',
+    failed: 'Disconnected',
+  }
+
+  const statusColor: Record<StreamStatus, string> = {
+    connecting: 'text-dc1-text-muted',
+    live: 'text-green-400',
+    completed: 'text-dc1-amber',
+    failed: 'text-status-error',
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Status bar */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          {streamStatus === 'live' && (
+            <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
+          )}
+          <span className={`text-sm font-medium ${statusColor[streamStatus]}`}>
+            {statusLabel[streamStatus]}
+          </span>
+          {lines.length > 0 && (
+            <span className="text-xs text-dc1-text-muted">· {lines.length} lines</span>
+          )}
+        </div>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-dc1-text-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={e => setAutoScroll(e.target.checked)}
+              className="accent-amber-500 h-4 w-4"
+            />
+            Auto-scroll
+          </label>
+          {(streamStatus === 'failed' || streamStatus === 'completed') && (
+            <button
+              onClick={() => { setLines([]); connect() }}
+              className="text-sm text-dc1-amber hover:underline"
+            >
+              Reconnect
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Terminal window */}
+      <div className="rounded-lg border border-dc1-border overflow-hidden" style={{ background: '#07070e' }}>
+        <div className="flex items-center gap-1.5 px-4 py-2 border-b border-dc1-border/40" style={{ background: '#0d0d16' }}>
+          <span className="h-3 w-3 rounded-full bg-red-500/60" />
+          <span className="h-3 w-3 rounded-full bg-yellow-500/60" />
+          <span className="h-3 w-3 rounded-full bg-green-500/60" />
+          <span className="ml-2 text-xs text-dc1-text-muted font-mono">
+            job/{jobId} · stdout/stderr
+          </span>
+        </div>
+        <div
+          className="h-72 overflow-y-auto p-4 font-mono text-sm leading-relaxed"
+          style={{ scrollbarColor: '#F5A524 #07070e' }}
+          role="log"
+          aria-label="Job log output"
+          aria-live="polite"
+        >
+          {lines.length === 0 ? (
+            <span className="text-dc1-text-muted/60 italic">
+              {streamStatus === 'connecting' ? 'Connecting to log stream...' : 'No output yet.'}
+            </span>
+          ) : (
+            lines.map((line, i) => (
+              <div key={i} className="text-green-300/90 whitespace-pre-wrap break-all">
+                {line}
+              </div>
+            ))
+          )}
+          {streamStatus === 'live' && (
+            <span
+              className="inline-block h-[1em] w-2 bg-dc1-amber animate-pulse align-text-bottom ml-0.5"
+              aria-hidden="true"
+            />
+          )}
+          <div ref={bottomRef} />
+        </div>
+      </div>
+
+      {/* Download link */}
+      <div className="text-end">
+        <a
+          href={`${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs?since=0&limit=1000`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-dc1-amber hover:underline"
+          download={`dcp-job-${jobId}.log`}
+        >
+          Download full log ↓
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function HistoryTab({ jobId, apiKey, job }: { jobId: string; apiKey: string; job: JobDetail }) {
+  const [history, setHistory] = useState<ExecutionHistory | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!apiKey) return
+    fetch(`${API_BASE}/jobs/${encodeURIComponent(jobId)}/executions`, {
+      headers: { 'x-renter-key': apiKey },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setHistory(data))
+      .catch(() => setHistory(null))
+      .finally(() => setLoading(false))
+  }, [jobId, apiKey])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-10">
+        <div className="animate-spin h-6 w-6 border-2 border-dc1-amber border-t-transparent rounded-full" />
+      </div>
+    )
+  }
+
+  const quotedSAR = ((history?.cost_halala || job.cost_halala || 0) / 100).toFixed(2)
+  const actualSAR = ((history?.actual_cost_halala || job.actual_cost_halala || 0) / 100).toFixed(2)
+  const executions = history?.executions || []
+
+  return (
+    <div className="space-y-5">
+      {/* Cost breakdown */}
+      <div className="card">
+        <h2 className="section-heading mb-4">Cost Breakdown</h2>
+        <DetailRow label="Quoted Cost" value={`${quotedSAR} SAR`} />
+        <DetailRow label="Actual Cost" value={`${actualSAR} SAR`} highlight />
+        <DetailRow label="Retry Attempts" value={String(job.retry_count || 0)} />
+      </div>
+
+      {/* Execution attempts */}
+      <div className="card">
+        <h2 className="section-heading mb-4">Execution Attempts</h2>
+        {executions.length === 0 ? (
+          <div className="py-6 text-center">
+            <p className="text-dc1-text-muted text-sm">No execution records yet.</p>
+            <p className="text-dc1-text-muted/60 text-xs mt-1">
+              Records appear after each attempt completes.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {executions.map((ex) => {
+              const duration = ex.started_at && ex.ended_at
+                ? Math.round((new Date(ex.ended_at).getTime() - new Date(ex.started_at).getTime()) / 1000)
+                : null
+              const durationStr = duration != null
+                ? duration >= 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`
+                : '—'
+              const costSAR = ((ex.cost_halala || 0) / 100).toFixed(4)
+
+              return (
+                <div
+                  key={ex.attempt_number}
+                  className="bg-dc1-surface-l2 rounded-lg px-4 py-3 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-dc1-text-primary">
+                      Attempt #{ex.attempt_number}
+                    </span>
+                    <span className={`text-xs font-mono px-2 py-0.5 rounded ${ex.exit_code === 0 ? 'bg-status-success/10 text-status-success' : ex.exit_code != null ? 'bg-status-error/10 text-status-error' : 'bg-dc1-surface-l1 text-dc1-text-muted'}`}>
+                      {ex.exit_code != null ? `exit ${ex.exit_code}` : 'pending'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div>
+                      <div className="text-dc1-text-muted">Started</div>
+                      <div className="text-dc1-text-secondary font-mono">
+                        {ex.started_at ? new Date(ex.started_at).toLocaleTimeString() : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-dc1-text-muted">Ended</div>
+                      <div className="text-dc1-text-secondary font-mono">
+                        {ex.ended_at ? new Date(ex.ended_at).toLocaleTimeString() : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-dc1-text-muted">Duration</div>
+                      <div className="text-dc1-text-secondary">{durationStr}</div>
+                    </div>
+                    <div>
+                      <div className="text-dc1-text-muted">GPU-s</div>
+                      <div className="text-dc1-text-secondary">
+                        {ex.gpu_seconds_used ? ex.gpu_seconds_used.toFixed(1) : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-dc1-text-muted">Cost: {costSAR} SAR</span>
+                    <a
+                      href={`${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs?since=0&limit=1000`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-dc1-amber hover:underline"
+                    >
+                      Download logs ↓
+                    </a>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 interface RetryState {
   open: boolean
   loading: boolean
   error: string
   successId: number | string | null
 }
+
+type TabId = 'overview' | 'logs' | 'history'
 
 export default function RenterJobDetailPage() {
   const params = useParams()
@@ -117,20 +431,22 @@ export default function RenterJobDetailPage() {
   const [output, setOutput] = useState<JobOutput | null>(null)
   const [loading, setLoading] = useState(true)
   const [renterName, setRenterName] = useState('Renter')
+  const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState('')
   const [retry, setRetry] = useState<RetryState>({ open: false, loading: false, error: '', successId: null })
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
 
   useEffect(() => {
-    const apiKey = localStorage.getItem('dc1_renter_key')
-    if (!apiKey) {
+    const key = localStorage.getItem('dc1_renter_key')
+    if (!key) {
       router.push('/login')
       return
     }
+    setApiKey(key)
 
     const fetchData = async () => {
       try {
-        // Fetch renter name
-        const meRes = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey)}`)
+        const meRes = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
         if (!meRes.ok) {
           localStorage.removeItem('dc1_renter_key')
           router.push('/login')
@@ -139,9 +455,8 @@ export default function RenterJobDetailPage() {
         const meData = await meRes.json()
         setRenterName(meData.renter?.name || 'Renter')
 
-        // Fetch job detail
         const jobRes = await fetch(`${API_BASE}/jobs/${jobId}`, {
-          headers: { 'x-renter-key': apiKey },
+          headers: { 'x-renter-key': key },
         })
         if (!jobRes.ok) {
           setError('Job not found or access denied')
@@ -150,7 +465,6 @@ export default function RenterJobDetailPage() {
         const jobData = await jobRes.json()
         setJob(jobData.job || null)
 
-        // Try to fetch output if job is completed
         if (jobData.job?.status === 'completed') {
           try {
             const outRes = await fetch(`${API_BASE}/jobs/${jobData.job.id}/output`, {
@@ -176,7 +490,6 @@ export default function RenterJobDetailPage() {
   }, [jobId, router])
 
   const confirmRetry = async () => {
-    const apiKey = localStorage.getItem('dc1_renter_key') || ''
     if (!job) return
     setRetry(r => ({ ...r, loading: true, error: '' }))
 
@@ -247,6 +560,13 @@ export default function RenterJobDetailPage() {
     if (job.params) parsedParams = JSON.parse(job.params)
   } catch { /* ignore */ }
 
+  const isTerminal = ['completed', 'failed', 'permanently_failed', 'cancelled'].includes(job.status)
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'logs', label: 'Live Logs' },
+    { id: 'history', label: 'History' },
+  ]
+
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
       <div className="space-y-6 max-w-3xl">
@@ -290,110 +610,155 @@ export default function RenterJobDetailPage() {
           </div>
         </div>
 
-        {/* Job Info */}
-        <div className="card">
-          <h2 className="section-heading mb-4">Job Information</h2>
-          <DetailRow label="Job Type" value={(job.job_type || '').replace(/_/g, ' ')} />
-          <DetailRow label="Status" value={job.status} />
-          {job.progress_phase && <DetailRow label="Progress" value={job.progress_phase.replace(/_/g, ' ')} />}
-          <DetailRow label="Submitted" value={job.submitted_at ? new Date(job.submitted_at).toLocaleString() : '—'} />
-          <DetailRow label="Started" value={job.started_at ? new Date(job.started_at).toLocaleString() : '—'} />
-          <DetailRow label="Completed" value={job.completed_at ? new Date(job.completed_at).toLocaleString() : '—'} />
-          <DetailRow label="Duration" value={durationStr} />
-          <DetailRow label="Cost" value={cost > 0 ? `${cost.toFixed(2)} SAR` : '—'} highlight />
+        {/* Tab bar */}
+        <div className="flex border-b border-dc1-border" role="tablist">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                activeTab === tab.id
+                  ? 'border-dc1-amber text-dc1-amber'
+                  : 'border-transparent text-dc1-text-muted hover:text-dc1-text-primary'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Job Parameters */}
-        {parsedParams && (
-          <div className="card">
-            <h2 className="section-heading mb-4">Job Parameters</h2>
-            {Object.entries(parsedParams).map(([key, value]) => (
-              <DetailRow key={key} label={key.replace(/_/g, ' ')} value={String(value)} mono />
-            ))}
-          </div>
-        )}
+        {/* Tab: Overview */}
+        {activeTab === 'overview' && (
+          <div className="space-y-5">
+            {/* Job Info */}
+            <div className="card">
+              <h2 className="section-heading mb-4">Job Information</h2>
+              <DetailRow label="Job Type" value={(job.job_type || '').replace(/_/g, ' ')} />
+              <DetailRow label="Status" value={job.status} />
+              {job.progress_phase && <DetailRow label="Progress" value={job.progress_phase.replace(/_/g, ' ')} />}
+              <DetailRow label="Submitted" value={job.submitted_at ? new Date(job.submitted_at).toLocaleString() : '—'} />
+              <DetailRow label="Started" value={job.started_at ? new Date(job.started_at).toLocaleString() : '—'} />
+              <DetailRow label="Completed" value={job.completed_at ? new Date(job.completed_at).toLocaleString() : '—'} />
+              <DetailRow label="Duration" value={durationStr} />
+              <DetailRow label="Cost" value={cost > 0 ? `${cost.toFixed(2)} SAR` : '—'} highlight />
+            </div>
 
-        {/* Output */}
-        {output && (
-          <div className="card">
-            <h2 className="section-heading mb-4">Output</h2>
-            {output.type === 'text' && output.response && (
-              <div className="space-y-3">
-                <div className="bg-dc1-surface-l2 rounded-lg p-4">
-                  <pre className="text-sm text-dc1-text-primary whitespace-pre-wrap break-words">{output.response}</pre>
-                </div>
-                {output.tokens_generated && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                      <div className="text-dc1-text-primary font-semibold">{output.tokens_generated}</div>
-                      <div className="text-dc1-text-muted">Tokens</div>
+            {/* Job Parameters */}
+            {parsedParams && (
+              <div className="card">
+                <h2 className="section-heading mb-4">Job Parameters</h2>
+                {Object.entries(parsedParams).map(([key, value]) => (
+                  <DetailRow key={key} label={key.replace(/_/g, ' ')} value={String(value)} mono />
+                ))}
+              </div>
+            )}
+
+            {/* Output */}
+            {output && (
+              <div className="card">
+                <h2 className="section-heading mb-4">Output</h2>
+                {output.type === 'text' && output.response && (
+                  <div className="space-y-3">
+                    <div className="bg-dc1-surface-l2 rounded-lg p-4">
+                      <pre className="text-sm text-dc1-text-primary whitespace-pre-wrap break-words">{output.response}</pre>
                     </div>
-                    {output.tokens_per_second && (
-                      <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                        <div className="text-dc1-text-primary font-semibold">{output.tokens_per_second.toFixed(1)}</div>
-                        <div className="text-dc1-text-muted">Tok/s</div>
+                    {output.tokens_generated && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                          <div className="text-dc1-text-primary font-semibold">{output.tokens_generated}</div>
+                          <div className="text-dc1-text-muted">Tokens</div>
+                        </div>
+                        {output.tokens_per_second && (
+                          <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                            <div className="text-dc1-text-primary font-semibold">{output.tokens_per_second.toFixed(1)}</div>
+                            <div className="text-dc1-text-muted">Tok/s</div>
+                          </div>
+                        )}
+                        {output.gen_time_s && (
+                          <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                            <div className="text-dc1-text-primary font-semibold">{output.gen_time_s.toFixed(1)}s</div>
+                            <div className="text-dc1-text-muted">Gen Time</div>
+                          </div>
+                        )}
+                        <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                          <div className="text-dc1-text-primary font-semibold">{output.model || '—'}</div>
+                          <div className="text-dc1-text-muted">Model</div>
+                        </div>
                       </div>
                     )}
-                    {output.gen_time_s && (
-                      <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                        <div className="text-dc1-text-primary font-semibold">{output.gen_time_s.toFixed(1)}s</div>
-                        <div className="text-dc1-text-muted">Gen Time</div>
-                      </div>
-                    )}
-                    <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                      <div className="text-dc1-text-primary font-semibold">{output.model || '—'}</div>
-                      <div className="text-dc1-text-muted">Model</div>
+                  </div>
+                )}
+                {output.type === 'image' && output.image_base64 && (
+                  <div className="space-y-3">
+                    <img
+                      src={`data:image/${output.format || 'png'};base64,${output.image_base64}`}
+                      alt="Generated image"
+                      className="rounded-lg max-w-full border border-dc1-border"
+                    />
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      {output.width && output.height && (
+                        <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                          <div className="text-dc1-text-primary font-semibold">{output.width}x{output.height}</div>
+                          <div className="text-dc1-text-muted">Resolution</div>
+                        </div>
+                      )}
+                      {output.steps && (
+                        <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                          <div className="text-dc1-text-primary font-semibold">{output.steps}</div>
+                          <div className="text-dc1-text-muted">Steps</div>
+                        </div>
+                      )}
+                      {output.seed != null && (
+                        <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                          <div className="text-dc1-text-primary font-semibold font-mono">{output.seed}</div>
+                          <div className="text-dc1-text-muted">Seed</div>
+                        </div>
+                      )}
+                      {output.gen_time_s && (
+                        <div className="bg-dc1-surface-l2 rounded p-2 text-center">
+                          <div className="text-dc1-text-primary font-semibold">{output.gen_time_s.toFixed(1)}s</div>
+                          <div className="text-dc1-text-muted">Gen Time</div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
             )}
-            {output.type === 'image' && output.image_base64 && (
-              <div className="space-y-3">
-                <img
-                  src={`data:image/${output.format || 'png'};base64,${output.image_base64}`}
-                  alt="Generated image"
-                  className="rounded-lg max-w-full border border-dc1-border"
-                />
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  {output.width && output.height && (
-                    <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                      <div className="text-dc1-text-primary font-semibold">{output.width}x{output.height}</div>
-                      <div className="text-dc1-text-muted">Resolution</div>
-                    </div>
-                  )}
-                  {output.steps && (
-                    <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                      <div className="text-dc1-text-primary font-semibold">{output.steps}</div>
-                      <div className="text-dc1-text-muted">Steps</div>
-                    </div>
-                  )}
-                  {output.seed != null && (
-                    <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                      <div className="text-dc1-text-primary font-semibold font-mono">{output.seed}</div>
-                      <div className="text-dc1-text-muted">Seed</div>
-                    </div>
-                  )}
-                  {output.gen_time_s && (
-                    <div className="bg-dc1-surface-l2 rounded p-2 text-center">
-                      <div className="text-dc1-text-primary font-semibold">{output.gen_time_s.toFixed(1)}s</div>
-                      <div className="text-dc1-text-muted">Gen Time</div>
-                    </div>
-                  )}
-                </div>
+
+            {/* Error */}
+            {job.error && (
+              <div className="card border-status-error/30 bg-status-error/5">
+                <h2 className="section-heading text-status-error mb-2">Error</h2>
+                <pre className="text-sm text-dc1-text-secondary whitespace-pre-wrap break-words">{job.error}</pre>
               </div>
             )}
           </div>
         )}
 
-        {/* Error */}
-        {job.error && (
-          <div className="card border-status-error/30 bg-status-error/5">
-            <h2 className="section-heading text-status-error mb-2">Error</h2>
-            <pre className="text-sm text-dc1-text-secondary whitespace-pre-wrap break-words">{job.error}</pre>
+        {/* Tab: Live Logs */}
+        {activeTab === 'logs' && (
+          <div className="card">
+            <h2 className="section-heading mb-4">Live Log Stream</h2>
+            {apiKey ? (
+              <LogStream jobId={String(job.id)} apiKey={apiKey} jobStatus={job.status} />
+            ) : (
+              <p className="text-dc1-text-muted text-sm">Authentication required.</p>
+            )}
+            {isTerminal && (
+              <p className="mt-3 text-xs text-dc1-text-muted">
+                This job has finished — showing last captured output.
+              </p>
+            )}
           </div>
         )}
 
+        {/* Tab: History */}
+        {activeTab === 'history' && apiKey && (
+          <HistoryTab jobId={String(job.id)} apiKey={apiKey} job={job} />
+        )}
       </div>
 
       {/* Retry Confirmation Modal */}

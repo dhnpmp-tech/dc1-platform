@@ -1,12 +1,16 @@
-# DC1 Platform - GPU Rental Network
+# DCP Platform — Saudi Arabia's GPU Compute Marketplace
 
-## 🚀 Overview
+## Overview
 
-Complete Next.js 14 dashboard platform for DC1 GPU Rental Network with three role-based dashboards:
+Next.js 14 dashboard platform for DCP — a decentralized GPU compute marketplace. Three role-based dashboards:
 
-- **Provider Dashboard** - Manage GPUs, view earnings, track rentals, withdraw funds
-- **Renter Dashboard** - GPU marketplace, advanced filters, billing management, rebate tracking
-- **Admin Dashboard** - Platform KPIs, machine health, provider leaderboard (email auth: @dc1st.com)
+- **Provider Dashboard** - Register GPUs, view earnings, track job history, manage daemon
+- **Renter Dashboard** - GPU marketplace, submit compute jobs, billing management
+- **Admin Dashboard** - Platform KPIs, machine health, provider leaderboard
+
+**Provider requirements:** NVIDIA GPU (8 GB+ VRAM), Docker 20.10+, NVIDIA Container Toolkit, Python 3.8+, Ubuntu 20.04+. See [docs/provider-setup.md](docs/provider-setup.md) for full setup guide.
+
+> Powered by Docker
 
 ## ✨ Features
 
@@ -14,7 +18,7 @@ Complete Next.js 14 dashboard platform for DC1 GPU Rental Network with three rol
 ### All Dashboards
 - **Real-time Data** - Live Supabase integration with subscriptions
 - **Responsive Design** - Mobile, tablet, and desktop compatible
-- **DC1 Branding** - Custom colors (#1a1a1a black, #FFD700 gold, #00A8E1 cyan)
+- **DCP Design System** - Amber (#F5A524), Void Black (#07070E), Inter font
 - **Modern UI** - Clean, intuitive interfaces with Tailwind-like styling
 
 ### Provider Dashboard

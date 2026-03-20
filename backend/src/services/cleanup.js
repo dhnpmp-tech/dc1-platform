@@ -2,6 +2,7 @@
 // Data retention cleanup service — DCP-59
 // Runs daily at 2:00 AM UTC, enforces PDPL/SAMA retention policies
 const db = require('../db');
+const { execFileSync } = require('child_process');
 
 let lastRunAt = null;
 let lastStats = null;
@@ -16,7 +17,7 @@ function runCleanup() {
 
   // heartbeat_log: 30-day retention
   try {
-    const r = db.run(`DELETE FROM heartbeat_log WHERE received_at < datetime('now', '-30 days')`);
+    const r = db.prepare(`DELETE FROM heartbeat_log WHERE received_at < datetime('now', '-30 days')`).run();
     stats.heartbeat_log_deleted = r.changes;
   } catch (e) {
     console.warn('[cleanup] heartbeat_log error:', e.message);
@@ -25,7 +26,7 @@ function runCleanup() {
 
   // job_logs: 90-day retention
   try {
-    const r = db.run(`DELETE FROM job_logs WHERE logged_at < datetime('now', '-90 days')`);
+    const r = db.prepare(`DELETE FROM job_logs WHERE logged_at < datetime('now', '-90 days')`).run();
     stats.job_logs_deleted = r.changes;
   } catch (e) {
     console.warn('[cleanup] job_logs error:', e.message);
@@ -34,14 +35,14 @@ function runCleanup() {
 
   // daemon_events: 30 days for non-critical, 180 days for critical severity
   try {
-    const r1 = db.run(`
+    const r1 = db.prepare(`
       DELETE FROM daemon_events
       WHERE severity != 'critical' AND received_at < datetime('now', '-30 days')
-    `);
-    const r2 = db.run(`
+    `).run();
+    const r2 = db.prepare(`
       DELETE FROM daemon_events
       WHERE severity = 'critical' AND received_at < datetime('now', '-180 days')
-    `);
+    `).run();
     stats.daemon_events_deleted = (r1.changes || 0) + (r2.changes || 0);
   } catch (e) {
     console.warn('[cleanup] daemon_events error:', e.message);
@@ -52,18 +53,23 @@ function runCleanup() {
   // The job record itself is kept; only bulk payload columns are cleared
   // payments table is NEVER touched (7-year PDPL/SAMA financial requirement)
   try {
-    const r = db.run(`
+    const r = db.prepare(`
       UPDATE jobs
       SET task_spec = NULL, result = NULL
       WHERE status IN ('completed', 'failed')
         AND completed_at < datetime('now', '-90 days')
         AND (task_spec IS NOT NULL OR result IS NOT NULL)
-    `);
+    `).run();
     stats.jobs_purged_payload = r.changes;
   } catch (e) {
     console.warn('[cleanup] jobs payload purge error:', e.message);
     stats.jobs_purged_payload = 0;
   }
+
+  const volumeStats = runJobVolumeCleanup();
+  stats.workspace_volumes_attempted = volumeStats.attempted;
+  stats.workspace_volumes_deleted = volumeStats.deleted;
+  stats.workspace_volumes_failed = volumeStats.failed;
 
   // WAL checkpoint after deletions
   try {
@@ -94,6 +100,45 @@ function runCleanup() {
 
   console.log('[cleanup] Done:', JSON.stringify(stats));
   return stats;
+}
+
+function runJobVolumeCleanup() {
+  let rows = [];
+  try {
+    rows = db.prepare(`
+      SELECT DISTINCT workspace_volume_name
+      FROM jobs
+      WHERE workspace_volume_name IS NOT NULL
+        AND workspace_volume_name != ''
+        AND status IN ('completed','failed','cancelled','timed_out','permanently_failed')
+        AND COALESCE(completed_at, updated_at, created_at) < datetime('now', '-7 days')
+    `).all();
+  } catch (e) {
+    console.warn('[cleanup] workspace volume query error:', e.message);
+    return { attempted: 0, deleted: 0, failed: 0 };
+  }
+
+  const volumes = rows
+    .map((row) => String(row.workspace_volume_name || '').trim())
+    .filter(Boolean);
+
+  let deleted = 0;
+  let failed = 0;
+
+  for (const volume of volumes) {
+    try {
+      execFileSync('docker', ['volume', 'rm', volume], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      deleted += 1;
+    } catch (e) {
+      failed += 1;
+      console.warn(`[cleanup] workspace volume cleanup failed for ${volume}:`, e.message);
+    }
+  }
+
+  return { attempted: volumes.length, deleted, failed };
 }
 
 // ─── Stats for admin endpoint ─────────────────────────────────────────────────
@@ -141,6 +186,16 @@ function getStats() {
     `)?.cnt ?? 0;
   } catch { pending_deletions.jobs_payload_purge = null; }
 
+  try {
+    pending_deletions.workspace_volumes = db.prepare(`
+      SELECT COUNT(*) as cnt FROM jobs
+      WHERE workspace_volume_name IS NOT NULL
+        AND workspace_volume_name != ''
+        AND status IN ('completed','failed','cancelled','timed_out','permanently_failed')
+        AND COALESCE(completed_at, updated_at, created_at) < datetime('now', '-7 days')
+    `).get()?.cnt ?? 0;
+  } catch { pending_deletions.workspace_volumes = null; }
+
   return {
     last_run_at: lastRunAt,
     last_run_stats: lastStats,
@@ -151,6 +206,7 @@ function getStats() {
       job_logs: '90 days',
       daemon_events: '30 days (critical: 180 days)',
       jobs_payload: '90 days (record retained, task_spec/result nulled)',
+      workspace_volumes: '7 days after completion',
       payments: 'never (PDPL/SAMA 7-year requirement)',
     },
   };
@@ -177,4 +233,4 @@ function schedule() {
   console.log(`[cleanup] Daily cleanup scheduled at 2:00 AM UTC (next run in ~${Math.round(delay / 3600000)}h)`);
 }
 
-module.exports = { runCleanup, schedule, getStats };
+module.exports = { runCleanup, runJobVolumeCleanup, schedule, getStats };

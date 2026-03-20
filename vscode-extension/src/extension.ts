@@ -102,11 +102,67 @@ export function activate(context: vscode.ExtensionContext): void {
 
   function getOrCreateJobChannel(jobId: string): vscode.OutputChannel {
     if (!jobChannels.has(jobId)) {
-      const ch = vscode.window.createOutputChannel(`DCP Job #${jobId}`);
+      const ch = vscode.window.createOutputChannel(`DCP Job Logs - ${jobId}`);
       context.subscriptions.push(ch);
       jobChannels.set(jobId, ch);
     }
     return jobChannels.get(jobId)!;
+  }
+
+  // ── Log streaming state ───────────────────────────────────────────
+  let activeStreamDispose: (() => void) | null = null;
+  let activeStreamJobId: string | null = null;
+
+  const logStreamStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+  logStreamStatusBar.command = 'dc1.stopLogStream';
+  logStreamStatusBar.tooltip = 'DCP: Log stream active — click to stop';
+  context.subscriptions.push(logStreamStatusBar);
+
+  function startLogStream(key: string, jobId: string): void {
+    // Stop any existing stream first
+    if (activeStreamDispose) {
+      activeStreamDispose();
+      activeStreamDispose = null;
+      activeStreamJobId = null;
+    }
+
+    const ch = getOrCreateJobChannel(jobId);
+    ch.show(true);
+    ch.appendLine(`${'─'.repeat(60)}`);
+    ch.appendLine(`DCP: Streaming logs for job #${jobId}`);
+    ch.appendLine(`${'─'.repeat(60)}`);
+
+    logStreamStatusBar.text = `$(loading~spin) DCP: Streaming #${jobId}`;
+    logStreamStatusBar.show();
+
+    activeStreamJobId = jobId;
+    activeStreamDispose = dc1.streamJobLogs(
+      key,
+      jobId,
+      (line) => ch.appendLine(line),
+      () => {
+        // Stream ended
+        dc1.getJobOutput(key, jobId).then((output) => {
+          const icon = output.status === 'completed' ? '✅' : '❌';
+          ch.appendLine(`\n${icon} Job ${output.status}.`);
+          if (output.result) { ch.appendLine(output.result); }
+        }).catch(() => {
+          ch.appendLine('Could not fetch final output.');
+        });
+        logStreamStatusBar.text = `$(check) DCP: Job #${jobId} complete`;
+        setTimeout(() => logStreamStatusBar.hide(), 5000);
+        activeStreamDispose = null;
+        activeStreamJobId = null;
+        jobsProvider.refresh();
+        updateStatusBar();
+      },
+      (err) => {
+        ch.appendLine(`Stream error: ${err.message}`);
+        logStreamStatusBar.hide();
+        activeStreamDispose = null;
+        activeStreamJobId = null;
+      }
+    );
   }
 
   // ── Commands ──────────────────────────────────────────────────────
@@ -172,7 +228,12 @@ export function activate(context: vscode.ExtensionContext): void {
       const key = await auth.ensureKey();
       if (!key) { return; }
       const providers = gpuProvider.getProviders();
-      JobSubmitPanel.show(context.extensionUri, auth, providers);
+      let registryImages: string[] = [];
+      try {
+        const reg = await dc1.getContainerRegistry();
+        registryImages = reg.images;
+      } catch { /* use empty fallback */ }
+      JobSubmitPanel.show(context.extensionUri, auth, providers, undefined, registryImages);
     })
   );
 
@@ -183,7 +244,12 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!key) { return; }
       const provider = providerOrNode instanceof GPUNode ? providerOrNode.provider : providerOrNode;
       const providers = gpuProvider.getProviders();
-      JobSubmitPanel.show(context.extensionUri, auth, providers, provider);
+      let registryImages: string[] = [];
+      try {
+        const reg = await dc1.getContainerRegistry();
+        registryImages = reg.images;
+      } catch { /* use empty fallback */ }
+      JobSubmitPanel.show(context.extensionUri, auth, providers, provider, registryImages);
     })
   );
 
@@ -326,6 +392,43 @@ export function activate(context: vscode.ExtensionContext): void {
         jobsProvider.refresh();
       } catch (err) {
         vscode.window.showErrorMessage(`DCP: Cancel failed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })
+  );
+
+  // dc1.streamLogs — start live log stream for a job id
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.streamLogs', async (jobIdArg?: string) => {
+      const key = await auth.ensureKey();
+      if (!key) { return; }
+
+      let jobId = jobIdArg;
+      if (!jobId) {
+        jobId = await vscode.window.showInputBox({
+          prompt: 'Enter Job ID to stream logs for',
+          placeHolder: 'e.g. abc123',
+        });
+      }
+      if (!jobId) { return; }
+
+      startLogStream(key, jobId.trim());
+    })
+  );
+
+  // dc1.stopLogStream — stop the active log stream
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.stopLogStream', () => {
+      if (!activeStreamDispose) {
+        vscode.window.showInformationMessage('DCP: No active log stream.');
+        return;
+      }
+      activeStreamDispose();
+      activeStreamDispose = null;
+      const stoppedId = activeStreamJobId;
+      activeStreamJobId = null;
+      logStreamStatusBar.hide();
+      if (stoppedId) {
+        vscode.window.showInformationMessage(`DCP: Stopped log stream for job #${stoppedId}.`);
       }
     })
   );

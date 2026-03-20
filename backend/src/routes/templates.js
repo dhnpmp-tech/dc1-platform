@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
+const db = require('../db');
 
 // Templates are stored as JSON files in /docker-templates at the repo root
 const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
@@ -52,7 +53,24 @@ router.get('/whitelist', (req, res) => {
   const templates = loadTemplates();
   const fromTemplates = templates.flatMap(t => t.approved_images || []);
   const fromImages = templates.map(t => t.image).filter(i => i && i !== 'custom');
-  const all = [...new Set([...APPROVED_IMAGES_EXTRA, ...fromImages, ...fromTemplates])];
+  let approvedFromDb = [];
+  try {
+    approvedFromDb = db.all(
+      `SELECT image_ref, resolved_digest
+         FROM approved_container_images
+        WHERE is_active = 1
+        ORDER BY approved_at DESC`
+    ).flatMap((row) => {
+      const refs = [];
+      if (row.image_ref) refs.push(row.image_ref);
+      if (row.image_ref && row.resolved_digest) refs.push(`${String(row.image_ref).split('@')[0]}@${row.resolved_digest}`);
+      return refs;
+    });
+  } catch (_) {
+    approvedFromDb = [];
+  }
+
+  const all = [...new Set([...APPROVED_IMAGES_EXTRA, ...fromImages, ...fromTemplates, ...approvedFromDb])];
   res.json({ approved_images: all });
 });
 

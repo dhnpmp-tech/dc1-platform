@@ -4,6 +4,9 @@ FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV HOME=/tmp
+ENV XDG_CACHE_HOME=/tmp/.cache
+ENV HF_HOME=/tmp/.cache/huggingface
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,8 +25,15 @@ RUN pip3 install --no-cache-dir \
 RUN pip3 install --no-cache-dir \
     requests psutil numpy pillow
 
+# Least privilege: runtime executes as a dedicated non-root user.
+RUN groupadd --system --gid 10001 dcp \
+    && useradd --system --uid 10001 --gid 10001 --create-home --home-dir /home/dcp dcp
+
 # Working directory for DC1 tasks
 WORKDIR /dc1/job
+RUN chown -R dcp:dcp /dc1 /home/dcp
+
+USER dcp:dcp
 
 # Default: run whatever script is mounted
 CMD ["python", "/dc1/job/task.py"]

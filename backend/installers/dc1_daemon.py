@@ -42,6 +42,7 @@ import argparse
 import traceback
 import shutil
 import signal
+import shlex
 from pathlib import Path
 from datetime import datetime
 
@@ -58,12 +59,15 @@ MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
 RESULT_POST_RETRIES = 3    # Retry result submission up to 3 times
+MAX_CONTAINER_RESTARTS = 3
+CONTAINER_RESTART_BACKOFFS = [10, 30, 90]
 MAX_CRASH_RESTARTS = 5     # Max restarts within the crash window
 CRASH_WINDOW = 600         # 10 minute window for counting crashes
 AUTO_UPDATE_CHECK = 300    # Check for updates every 5 minutes
 UPDATE_CRASH_THRESHOLD = 90  # If daemon crashes within 90s of update, rollback
 ROLLBACK_RECHECK_INTERVAL = 600  # After rollback, re-check for updates every 10 min
 CANONICAL_UPDATE_ENDPOINT = "https://api.dcp.sa/api/providers/download/daemon"
+CANONICAL_INSTALLER_DOWNLOAD_URL = "https://api.dcp.sa/installers/daemon"
 CANONICAL_API_BASE_URL = "https://api.dcp.sa"
 
 # ─── CONTAINER SECURITY CONFIG ───────────────────────────────────────────────
@@ -79,6 +83,7 @@ VLLM_SHM_SIZE = "4g"               # vLLM shared memory size
 _SECCOMP_PROFILE_PATH = None       # Cached seccomp profile path (written once)
 BANDWIDTH_CHECK_INTERVAL = 600   # Measure bandwidth every 10 minutes
 BANDWIDTH_TEST_SIZE = 102400     # 100KB test payload for speed measurement
+MODEL_CACHE_PATH = "/opt/dcp/model-cache"
 
 # VRAM requirements per job type (MiB) — jobs need at least this much free VRAM
 VRAM_REQUIREMENTS = {
@@ -449,6 +454,10 @@ def _candidate_update_endpoints():
     """Ordered update endpoints: canonical first, legacy fallback second."""
     return [CANONICAL_UPDATE_ENDPOINT, _legacy_update_endpoint()]
 
+def _candidate_download_urls():
+    """Ordered daemon download URLs: installer URL first, API fallbacks after."""
+    return [CANONICAL_INSTALLER_DOWNLOAD_URL] + _candidate_update_endpoints()
+
 def _resolve_download_url(download_url):
     """Normalize download_url from check_only response."""
     if not download_url:
@@ -511,7 +520,7 @@ def perform_update(new_version, preferred_download_url=None):
         download_candidates = []
         if preferred_download_url:
             download_candidates.append(preferred_download_url)
-        for endpoint in _candidate_update_endpoints():
+        for endpoint in _candidate_download_urls():
             download_candidates.append(f"{endpoint}?key={API_KEY}")
 
         new_code = None
@@ -530,7 +539,7 @@ def perform_update(new_version, preferred_download_url=None):
                     with urllib.request.urlopen(download_url, timeout=30) as resp:
                         candidate_code = resp.read().decode("utf-8")
 
-                if "DC1 Provider Daemon" not in candidate_code or "def main()" not in candidate_code:
+                if ("DCP Provider Daemon" not in candidate_code and "DC1 Provider Daemon" not in candidate_code) or "def main()" not in candidate_code:
                     raise Exception("Downloaded file doesn't look like a valid daemon")
 
                 new_code = candidate_code
@@ -655,6 +664,14 @@ def detect_gpu():
     except Exception as e:
         log.error(f"GPU detection error: {e}")
         return None
+
+def get_detected_gpu_count():
+    """Return number of visible GPUs, defaulting to 1 for metering fallback."""
+    gpu = detect_gpu()
+    if not gpu:
+        return 1
+    all_gpus = gpu.get("all_gpus", [gpu])
+    return max(1, len(all_gpus))
 
 def collect_container_gpu_metrics(container_name):
     """
@@ -887,17 +904,58 @@ def build_resource_spec(gpu=None):
 
     return {"resources": resources}
 
+def get_model_cache_metrics():
+    """Return disk usage metrics for the shared model cache path."""
+    if not os.path.isdir(MODEL_CACHE_PATH):
+        return {
+            "path": MODEL_CACHE_PATH,
+            "exists": False,
+            "total_gb": None,
+            "free_gb": None,
+            "used_gb": None,
+            "used_percent": None,
+        }
+    try:
+        usage = shutil.disk_usage(MODEL_CACHE_PATH)
+        total_gb = round(usage.total / 1024 / 1024 / 1024, 2)
+        free_gb = round(usage.free / 1024 / 1024 / 1024, 2)
+        used_gb = round((usage.total - usage.free) / 1024 / 1024 / 1024, 2)
+        used_percent = round(((usage.total - usage.free) / usage.total) * 100, 1) if usage.total else 0.0
+        return {
+            "path": MODEL_CACHE_PATH,
+            "exists": True,
+            "total_gb": total_gb,
+            "free_gb": free_gb,
+            "used_gb": used_gb,
+            "used_percent": used_percent,
+        }
+    except Exception as e:
+        log.debug(f"Model cache metric collection failed: {e}")
+        return {
+            "path": MODEL_CACHE_PATH,
+            "exists": False,
+            "total_gb": None,
+            "free_gb": None,
+            "used_gb": None,
+            "used_percent": None,
+        }
+
 # ─── HEARTBEAT ───────────────────────────────────────────────────────────────
 
 def send_heartbeat():
     """Send heartbeat with GPU metrics to backend."""
     gpu = detect_gpu()
     gpu_info = get_gpu_info()
+    cache_metrics = get_model_cache_metrics()
     gpu_status = {}
     if gpu:
+        all_gpus = gpu.get("all_gpus", [gpu])
+        gpu_count = len(all_gpus) or 1
+        total_vram_mb = sum(int(g.get("gpu_vram_mib", 0) or 0) for g in all_gpus)
         gpu_status = {
             "gpu_name": gpu["gpu_name"],
             "gpu_vram_mib": gpu["gpu_vram_mib"],
+            "vram_mb": total_vram_mb,
             "free_vram_mib": gpu["free_vram_mib"],
             "memory_used_mb": gpu["memory_used_mb"],
             "gpu_util_pct": gpu["gpu_util_pct"],
@@ -908,11 +966,17 @@ def send_heartbeat():
             "python_version": platform.python_version(),
             "os_info": f"{platform.system()} {platform.release()}",
             # Multi-GPU: full list of all detected GPUs (aggregated metrics)
-            "all_gpus": gpu.get("all_gpus", []),
-            "gpu_count": len(gpu.get("all_gpus", [])) or 1,
+            "all_gpus": all_gpus,
+            "gpu_count": gpu_count,
             "compute_capability": gpu.get("compute_capability"),
             "cuda_version": gpu.get("cuda_version"),
         }
+    gpu_status["model_cache_path"] = cache_metrics["path"]
+    gpu_status["model_cache_exists"] = cache_metrics["exists"]
+    gpu_status["model_cache_total_gb"] = cache_metrics["total_gb"]
+    gpu_status["model_cache_free_gb"] = cache_metrics["free_gb"]
+    gpu_status["model_cache_used_gb"] = cache_metrics["used_gb"]
+    gpu_status["model_cache_used_percent"] = cache_metrics["used_percent"]
 
     url = f"{API_URL}/api/providers/heartbeat"
     try:
@@ -923,6 +987,7 @@ def send_heartbeat():
             "provider_ip": None,
             "provider_hostname": platform.node(),
             "resource_spec": build_resource_spec(gpu),
+            "model_cache": cache_metrics,
         }
         # Include bandwidth stats if available
         with _bw_lock:
@@ -1211,8 +1276,62 @@ def _vllm_profile_for_model(model):
     return {"cpu": VLLM_CPU_LIMIT, "memory": VLLM_MEMORY_LIMIT, "pids": VLLM_PIDS_LIMIT, "tmp": VLLM_TMP_SIZE, "shm": VLLM_SHM_SIZE}
 
 
-def run_docker_job(job_type, task_spec, job_dir, job_id=None):
-    """Execute job inside Docker container with GPU access and network isolation."""
+def _resolve_run_job_script():
+    """Find infra/docker/run-job.sh from common install locations."""
+    candidates = []
+    env_path = os.environ.get("DCP_RUN_JOB_SH", "").strip()
+    if env_path:
+        candidates.append(Path(env_path).expanduser())
+
+    daemon_path = Path(__file__).resolve()
+    for parent in [daemon_path.parent] + list(daemon_path.parents):
+        candidates.append(parent / "infra" / "docker" / "run-job.sh")
+    candidates.append(Path.cwd() / "infra" / "docker" / "run-job.sh")
+
+    seen = set()
+    for candidate in candidates:
+        candidate_str = str(candidate)
+        if candidate_str in seen:
+            continue
+        seen.add(candidate_str)
+        if candidate.is_file():
+            return candidate_str
+    return None
+
+def _normalize_container_spec(container_spec):
+    """Return container_spec as dict or None."""
+    if isinstance(container_spec, str):
+        try:
+            parsed = json.loads(container_spec)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return None
+        return None
+    if isinstance(container_spec, dict):
+        return container_spec
+    return None
+
+def _docker_container_status(container_ref):
+    """Return Docker container state string (running/exited/dead/...) or None."""
+    if not container_ref:
+        return None
+    try:
+        inspect = subprocess.run(
+            ["docker", "inspect", "--format={{.State.Status}}", str(container_ref)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if inspect.returncode != 0:
+            return None
+        status = (inspect.stdout or "").strip().lower()
+        return status or None
+    except Exception:
+        return None
+
+def run_docker_job(job_type, task_spec, container_spec, job_id=None):
+    """Execute script jobs via infra/docker/run-job.sh with crash auto-restart."""
     # Local images built via backend/docker/build-images.sh
     IMAGE_MAP = {
         "image_generation":  "dc1/sd-worker:latest",
@@ -1223,8 +1342,7 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
         "benchmark":         "dc1/general-worker:latest",
         "custom_container":  "dc1/general-worker:latest",
     }
-    # Approved Docker images — renter-specified overrides must be in this set
-    APPROVED_IMAGES = {
+    TEMPLATE_IMAGES = {
         "dc1/general-worker:latest",
         "dc1/llm-worker:latest",
         "dc1/sd-worker:latest",
@@ -1234,225 +1352,231 @@ def run_docker_job(job_type, task_spec, job_dir, job_id=None):
         "nvcr.io/nvidia/pytorch:24.01-py3",
         "nvcr.io/nvidia/tensorflow:24.01-tf2-py3",
         "tensorflow/tensorflow:2.15.0-gpu",
+        "vllm/vllm-openai:latest",
+        "dcp/pytorch-cuda:latest",
+        "dcp/vllm-serve:latest",
+        "dcp/training:latest",
+        "dcp/rendering:latest",
     }
 
-    image = IMAGE_MAP.get(job_type, "dc1/general-worker:latest")
-
-    # Unique container name for reliable timeout kill
-    container_name = f"dc1-job-{job_id or int(time.time())}"
-
-    # Parse task_spec — may be string (Python script) or dict (JSON with image_override/script)
+    # Parse task_spec — may be string (Python script) or dict (JSON with script)
     if isinstance(task_spec, str):
-        # Try to parse as JSON first (custom_container sends JSON string)
         try:
-            import json as _json
-            parsed = _json.loads(task_spec)
+            parsed = json.loads(task_spec)
             if isinstance(parsed, dict):
                 task_spec = parsed
         except Exception:
             pass
 
-    # image_override: renter-specified image for custom_container jobs — validate against whitelist
-    if isinstance(task_spec, dict) and task_spec.get("image_override"):
-        override = task_spec["image_override"].strip()
-        if override in APPROVED_IMAGES:
-            image = override
-            log.info(f"Using renter-specified image override: {image}")
-        else:
-            log.warning(f"Rejected image_override '{override}' — not in approved whitelist. Using default.")
-            report_event("container_image_rejected", {"job_id": job_id, "rejected_image": override, "using": image})
+    container_spec = _normalize_container_spec(container_spec)
+    if not container_spec:
+        return {"success": False, "error": "Missing or invalid container_spec. Raw Python execution is disabled.", "restart_count": 0}
+
+    image = str(container_spec.get("image") or container_spec.get("image_override") or IMAGE_MAP.get(job_type, "dc1/general-worker:latest")).strip()
+    lower_image = image.lower()
+    is_hub = lower_image.startswith("hub.docker.com/r/")
+    hub_pinned = "@sha256:" in lower_image and len(lower_image.split("@sha256:")[-1]) == 64
+    generic_ok = bool(lower_image) and "/" in lower_image and (" " not in lower_image)
+    if lower_image not in TEMPLATE_IMAGES and not (is_hub and hub_pinned) and not generic_ok:
+        report_event("container_image_rejected", {"job_id": job_id, "rejected_image": image}, job_id=job_id, severity="warning")
+        return {"success": False, "error": f"Rejected container image '{image}'", "restart_count": 0}
 
     script = task_spec if isinstance(task_spec, str) else task_spec.get("script", "")
     if not script:
-        return {"success": False, "error": "No script in task_spec"}
+        return {"success": False, "error": "No script in task_spec", "restart_count": 0}
 
+    run_job_script = _resolve_run_job_script()
+    if not run_job_script:
+        return {"success": False, "error": "run-job.sh not found (expected infra/docker/run-job.sh)", "restart_count": 0}
+
+    job_dir = tempfile.mkdtemp(prefix="dc1-job-")
     task_path = os.path.join(job_dir, "task.py")
     with open(task_path, "w", encoding="utf-8") as f:
         f.write(script)
 
-    log.info(f"Docker exec: image={image}, container={container_name}")
-
-    # GPU VRAM baseline — used after completion to detect memory leak / residual allocation
-    gpu_before = detect_gpu()
-    vram_before = gpu_before.get("memory_used_mb") if gpu_before else None
-
-    # Build seccomp profile path (written once per daemon lifetime, reused after)
-    seccomp_path = _ensure_seccomp_profile()
     container_profile = _container_profile_for_job(job_type)
+    limits = container_spec.get("limits", {}) if isinstance(container_spec.get("limits"), dict) else {}
+    network = str(container_spec.get("network", "none"))
+    if not (network == "none" or network.startswith("bridge:")):
+        network = "none"
+    cpus = str(container_spec.get("cpus", limits.get("cpus", container_profile["cpu"])))
+    memory = str(container_spec.get("memory", limits.get("memory", container_profile["memory"])))
+    tmpfs_size = str(container_spec.get("tmpfs_size", limits.get("tmpfs_size", container_profile["tmp"])))
+    gpus = str(container_spec.get("gpus", "all"))
+    pids_limit = str(container_spec.get("pids_limit", limits.get("pids_limit", container_profile["pids"])))
+    stream_logs = bool(container_spec.get("stream_logs", True))
+    raw_job_cmd = container_spec.get("job_cmd") or container_spec.get("command") or container_spec.get("cmd") or "python /dc1/job/task.py"
+    if isinstance(raw_job_cmd, list):
+        job_cmd = " ".join(shlex.quote(str(part)) for part in raw_job_cmd)
+    else:
+        job_cmd = str(raw_job_cmd)
 
-    # Report pulling phase so backend transitions job status to 'pulling'
-    if job_id:
-        report_job_progress(job_id, "pulling")
+    safe_job_id = "".join(ch if (ch.isalnum() or ch in "._-") else "-" for ch in str(job_id or int(time.time())))
+    workspace_volume = f"dcp-job-{safe_job_id}"
+    checkpoint_enabled = bool(container_spec.get("enable_checkpoint", False))
+    checkpoint_name = f"cp-{safe_job_id[:64]}"
 
-    # Pre-pull image to separate pull time from execution; pull failures are transient
+    run_job_cmd = [
+        "bash", run_job_script,
+        "--job-id", str(job_id or int(time.time())),
+        "--image", image,
+        "--host-job-dir", job_dir,
+        "--job-cmd", job_cmd,
+        "--network", network,
+        "--cpus", cpus,
+        "--memory", memory,
+        "--tmpfs-size", tmpfs_size,
+        "--gpus", gpus,
+        "--pids-limit", pids_limit,
+        "--workspace-volume", workspace_volume,
+        "--checkpoint-name", checkpoint_name,
+    ]
+    if checkpoint_enabled:
+        run_job_cmd.append("--enable-checkpoint")
+    if not stream_logs:
+        run_job_cmd.append("--no-stream-logs")
+
+    restart_count = 0
+    last_error = None
     try:
-        pull = subprocess.run(
-            ["docker", "pull", image],
-            capture_output=True, text=True, timeout=300
-        )
-        if pull.returncode != 0:
-            log.warning(f"Docker pull failed for {image}: {pull.stderr[:300]}")
-            return {"success": False, "error": f"Docker image pull failed: {pull.stderr[:200]}", "transient": True}
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": "Docker image pull timed out (300s)", "transient": True}
-    except Exception as e:
-        return {"success": False, "error": f"Docker pull error: {e}", "transient": True}
-
-    # Audit: container lifecycle start
-    report_event(
-        "container_start",
-        f"Launching {container_name}: image={image} "
-        f"cpu={container_profile['cpu']} mem={container_profile['memory']} pids={container_profile['pids']}",
-        job_id=job_id,
-    )
-
-    start_ts = time.time()
-    try:
-        # Build docker run command with full security hardening
-        docker_cmd = [
-            "docker", "run",
-            "--gpus", "all",
-            "--rm",
-            "--name", container_name,
-            # Network isolation
-            "--network", "none",
-            # Resource limits (CPU, RAM, swap disabled, PID fork-bomb protection)
-            "--memory", container_profile["memory"],
-            "--memory-swap", container_profile["memory"],   # swap = memory, so swap headroom = 0
-            "--cpus", container_profile["cpu"],
-            "--pids-limit", container_profile["pids"],
-            "--shm-size", container_profile["shm"],
-            # Read-only root filesystem — writable areas supplied via tmpfs
-            "--read-only",
-            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={container_profile['tmp']}",
-            "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",
-            # Drop all Linux capabilities — CUDA device access uses /dev/nvidia* not capabilities
-            "--cap-drop", "all",
-            # Block privilege escalation via setuid/setgid
-            "--security-opt", "no-new-privileges:true",
-            # Mount task script read-only
-            "-v", f"{job_dir}:/dc1/job:ro",
-        ]
-        # Attach custom seccomp profile if successfully written
-        if seccomp_path:
-            docker_cmd += ["--security-opt", f"seccomp={seccomp_path}"]
-
-        docker_cmd += [image, "python", "-u", "/dc1/job/task.py"]
-
-        proc = subprocess.Popen(
-            docker_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            bufsize=1
-        )
-
-        output_chunks = []
-        live_batch = []
-        last_flush = time.time()
-
         while True:
-            if time.time() - start_ts > JOB_TIMEOUT:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-                raise subprocess.TimeoutExpired(docker_cmd, JOB_TIMEOUT)
-
-            line = proc.stdout.readline() if proc.stdout else ""
-            if line:
-                output_chunks.append(line)
-                if len(output_chunks) > 10000:
-                    output_chunks = output_chunks[-10000:]
-
-                clean = line.rstrip("\r\n")
-                if clean:
-                    live_batch.append({"level": "info", "message": clean[:2000]})
-
-                if job_id and clean.startswith("[dc1-phase]"):
-                    phase = clean.split("]", 1)[1].strip()
-                    threading.Thread(
-                        target=report_job_progress,
-                        args=(job_id, phase),
-                        daemon=True
-                    ).start()
-
-                if clean.startswith("[dc1]"):
-                    log.info(f"  {clean}")
-
-                if job_id and len(live_batch) >= 10:
-                    post_job_log_lines(job_id, live_batch)
-                    live_batch = []
-                    last_flush = time.time()
-            else:
-                if proc.poll() is not None:
-                    break
-                if job_id and live_batch and (time.time() - last_flush >= 1.0):
-                    post_job_log_lines(job_id, live_batch)
-                    live_batch = []
-                    last_flush = time.time()
-                time.sleep(0.05)
-
-        if job_id and live_batch:
-            post_job_log_lines(job_id, live_batch)
-
-        returncode = proc.wait(timeout=10)
-        duration = round(time.time() - start_ts, 1)
-        stdout = "".join(output_chunks)[:MAX_STDOUT]
-        stderr = ""
-
-        # GPU memory wipe check: verify VRAM returns to pre-job baseline after container exits
-        gpu_after = detect_gpu()
-        vram_after = gpu_after.get("memory_used_mb") if gpu_after else None
-        vram_delta = (vram_after - vram_before) if (vram_before is not None and vram_after is not None) else None
-        if vram_delta is not None and vram_delta > 512:
-            # Residual VRAM allocation — log as warning (NVIDIA driver normally frees on container exit)
             report_event(
-                "container_vram_leak",
-                f"{container_name}: +{vram_delta} MiB residual VRAM after job exit "
-                f"(before={vram_before} after={vram_after})",
-                job_id=job_id, severity="warning",
-            )
-
-        if returncode == 0:
-            # Collect per-container GPU metrics from the just-finished run
-            # (container may already be gone by here, so best-effort)
-            gpu_metrics = collect_container_gpu_metrics(container_name)
-            report_event(
-                "container_complete",
-                f"{container_name} succeeded in {duration}s, exit=0, vram_delta={vram_delta}MiB",
+                "container_start",
+                f"Launching container for job {job_id}: image={image} cpu={cpus} mem={memory} pids={pids_limit} volume={workspace_volume} checkpoint={checkpoint_enabled} restart_count={restart_count}",
                 job_id=job_id,
             )
-            return {"success": True, "result": stdout, "stderr": stderr,
-                    "metrics": {"container_gpu": gpu_metrics} if gpu_metrics else None,
-                    "logs_streamed": True}
-        else:
+
+            start_ts = time.time()
+            container_id = None
+            try:
+                proc = subprocess.Popen(
+                    run_job_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    bufsize=1
+                )
+
+                output_chunks = []
+                live_batch = []
+                last_flush = time.time()
+                last_health_check = 0.0
+
+                while True:
+                    if time.time() - start_ts > JOB_TIMEOUT:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                        raise subprocess.TimeoutExpired(run_job_cmd, JOB_TIMEOUT)
+
+                    line = proc.stdout.readline() if proc.stdout else ""
+                    if line:
+                        output_chunks.append(line)
+                        if len(output_chunks) > 10000:
+                            output_chunks = output_chunks[-10000:]
+
+                        clean = line.rstrip("\r\n")
+                        if clean:
+                            live_batch.append({"level": "info", "message": clean[:2000]})
+                            if "container_id=" in clean:
+                                container_id = clean.split("container_id=", 1)[1].split()[0].strip()
+
+                        if job_id and clean.startswith("[dc1-phase]"):
+                            phase = clean.split("]", 1)[1].strip()
+                            threading.Thread(target=report_job_progress, args=(job_id, phase), daemon=True).start()
+
+                        if clean.startswith("[dc1]"):
+                            log.info(f"  {clean}")
+
+                        if job_id and len(live_batch) >= 10:
+                            post_job_log_lines(job_id, live_batch)
+                            live_batch = []
+                            last_flush = time.time()
+                    else:
+                        if proc.poll() is not None:
+                            break
+                        if job_id and live_batch and (time.time() - last_flush >= 1.0):
+                            post_job_log_lines(job_id, live_batch)
+                            live_batch = []
+                            last_flush = time.time()
+
+                        if container_id and (time.time() - last_health_check >= 5.0):
+                            status = _docker_container_status(container_id)
+                            if status:
+                                log.debug(f"[container-health] job={job_id} container={container_id[:12]} status={status}")
+                                if status in ("exited", "dead"):
+                                    report_event(
+                                        "container_crash_detected",
+                                        f"Container crashed for job {job_id}: status={status}",
+                                        job_id=job_id,
+                                        severity="warning",
+                                    )
+                            last_health_check = time.time()
+                        time.sleep(0.05)
+
+                if job_id and live_batch:
+                    post_job_log_lines(job_id, live_batch)
+
+                returncode = proc.wait(timeout=10)
+                duration = round(time.time() - start_ts, 1)
+                stdout = "".join(output_chunks)[:MAX_STDOUT]
+                stderr = ""
+
+                if returncode == 0:
+                    report_event("container_complete", f"Container job {job_id} succeeded in {duration}s, exit=0", job_id=job_id)
+                    return {
+                        "success": True,
+                        "result": stdout,
+                        "stderr": stderr,
+                        "logs_streamed": True,
+                        "restart_count": restart_count,
+                        "last_error": None,
+                    }
+
+                status = _docker_container_status(container_id) or "exited"
+                err_tail = "\n".join(stdout.splitlines()[-20:])[:500]
+                last_error = f"Exit code {returncode} (status={status}): {err_tail}"
+                report_event(
+                    "container_complete",
+                    f"Container job {job_id} failed in {duration}s, exit={returncode}, status={status}",
+                    job_id=job_id,
+                    severity="warning",
+                )
+            except subprocess.TimeoutExpired:
+                if container_id:
+                    try:
+                        subprocess.run(["docker", "rm", "-f", container_id], capture_output=True, timeout=10)
+                    except Exception:
+                        pass
+                timeout_msg = f"Job timed out after {JOB_TIMEOUT}s"
+                report_event("container_timeout", f"Container job {job_id} killed after {JOB_TIMEOUT}s timeout", job_id=job_id, severity="error")
+                return {"success": False, "error": timeout_msg, "restart_count": restart_count, "last_error": timeout_msg}
+            except Exception as e:
+                last_error = f"{type(e).__name__}: {e}"
+                report_event("container_error", f"Container job {job_id} error: {last_error}", job_id=job_id, severity="error")
+
+            if restart_count >= MAX_CONTAINER_RESTARTS:
+                return {
+                    "success": False,
+                    "error": last_error or "Container crashed repeatedly",
+                    "logs_streamed": True,
+                    "restart_count": restart_count,
+                    "last_error": last_error,
+                }
+
+            backoff = CONTAINER_RESTART_BACKOFFS[min(restart_count, len(CONTAINER_RESTART_BACKOFFS) - 1)]
+            next_restart_num = restart_count + 1
             report_event(
-                "container_complete",
-                f"{container_name} failed in {duration}s, exit={returncode}",
-                job_id=job_id, severity="warning",
+                "container_restart",
+                f"Restarting crashed container for job {job_id}: attempt {next_restart_num}/{MAX_CONTAINER_RESTARTS}, backoff={backoff}s",
+                job_id=job_id,
+                severity="warning",
             )
-            err_tail = "\n".join(stdout.splitlines()[-20:])[:500]
-            return {"success": False, "error": f"Exit code {returncode}: {err_tail}", "logs_streamed": True}
-    except subprocess.TimeoutExpired:
-        # Kill named container for reliable cleanup
-        subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=10)
-        report_event(
-            "container_timeout",
-            f"{container_name} killed after {JOB_TIMEOUT}s timeout",
-            job_id=job_id, severity="error",
-        )
-        return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
-    except Exception as e:
-        report_event(
-            "container_error",
-            f"{container_name} error: {type(e).__name__}: {e}",
-            job_id=job_id, severity="error",
-        )
-        return {"success": False, "error": str(e)}
+            time.sleep(backoff)
+            restart_count = next_restart_num
     finally:
-        # Always clean up the temp job directory
         shutil.rmtree(job_dir, ignore_errors=True)
 
 def report_job_progress(job_id, phase):
@@ -1499,98 +1623,8 @@ def post_job_logs(job_id, stdout, stderr=""):
         post_job_log_lines(job_id, lines[i:i + 500])
 
 def run_bare_metal_job(task_spec, job_id=None):
-    """Execute job as a bare-metal subprocess with real-time phase reporting."""
-    script = task_spec if isinstance(task_spec, str) else task_spec.get("script", "")
-    if not script:
-        return {"success": False, "error": "No script in task_spec"}
-
-    # Write to temp file and execute
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
-        f.write(script)
-        temp_path = f.name
-
-    log.info(f"Bare-metal exec: {temp_path}")
-
-    # Stream stdout line-by-line to detect [dc1-phase] markers and report progress
-    stdout_chunks = []
-    live_batch = []
-    last_flush = time.time()
-    try:
-        proc = subprocess.Popen(
-            [sys.executable, "-u", temp_path],  # -u: unbuffered stdout
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            bufsize=1
-        )
-
-        # Read merged stdout/stderr line by line with timeout
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > JOB_TIMEOUT:
-                proc.kill()
-                return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
-
-            line = proc.stdout.readline() if proc.stdout else ""
-            if not line:
-                if proc.poll() is not None:
-                    break
-                if job_id and live_batch and (time.time() - last_flush >= 1.0):
-                    post_job_log_lines(job_id, live_batch)
-                    live_batch = []
-                    last_flush = time.time()
-                time.sleep(0.05)
-                continue
-
-            stdout_chunks.append(line)
-            if len(stdout_chunks) > 10000:
-                stdout_chunks = stdout_chunks[-10000:]
-
-            clean = line.strip()
-            if clean:
-                live_batch.append({"level": "info", "message": clean[:2000]})
-
-            # Detect phase markers and report to backend
-            if job_id and clean.startswith("[dc1-phase]"):
-                phase = clean.split("]", 1)[1].strip()
-                threading.Thread(
-                    target=report_job_progress,
-                    args=(job_id, phase),
-                    daemon=True
-                ).start()
-            if clean.startswith("[dc1]"):
-                log.info(f"  {clean}")
-
-            if job_id and len(live_batch) >= 10:
-                post_job_log_lines(job_id, live_batch)
-                live_batch = []
-                last_flush = time.time()
-
-        if job_id and live_batch:
-            post_job_log_lines(job_id, live_batch)
-
-        returncode = proc.wait(timeout=10)
-
-        stdout = "".join(stdout_chunks)[:MAX_STDOUT]
-        stderr = ""
-
-        if returncode == 0:
-            return {"success": True, "result": stdout, "stderr": stderr, "logs_streamed": True}
-        else:
-            err_tail = "\n".join(stdout.splitlines()[-20:])[:500]
-            return {"success": False, "error": f"Exit code {returncode}: {err_tail}", "logs_streamed": True}
-    except subprocess.TimeoutExpired:
-        try: proc.kill()
-        except: pass
-        return {"success": False, "error": f"Job timed out after {JOB_TIMEOUT}s"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    finally:
-        try:
-            os.unlink(temp_path)
-        except:
-            pass
+    """Bare-metal execution is disabled for security and isolation."""
+    return {"success": False, "error": "Bare-metal execution disabled. container_spec is required."}
 
 def _find_free_port(start=8100, end=8199):
     """Find a free TCP port in [start, end] for vLLM container binding."""
@@ -1809,11 +1843,12 @@ def run_vllm_serve_job(task_spec, job_id=None):
 
 
 def execute_job(job):
-    """Execute a job — Docker preferred, bare-metal fallback, benchmark special case."""
+    """Execute a job with Docker-only script execution."""
     global _current_job_id
     job_id = job["job_id"]
     job_type = job.get("job_type", "benchmark")
     task_spec = job.get("task_spec", {})
+    container_spec = job.get("container_spec")
     with _job_lock:
         _current_job_id = job_id
 
@@ -1822,6 +1857,8 @@ def execute_job(job):
             task_spec = json.loads(task_spec)
         except:
             pass  # Keep as string (it might be raw Python code)
+    if isinstance(task_spec, dict) and not container_spec:
+        container_spec = task_spec.get("container_spec")
 
     log.info(f"Executing job {job_id} (type: {job_type})")
 
@@ -1837,16 +1874,16 @@ def execute_job(job):
         if job_type == "benchmark" or (isinstance(task_spec, dict) and task_spec.get("benchmark")):
             return run_gpu_benchmark(task_spec if isinstance(task_spec, dict) else {})
 
-        # Script-based jobs — Docker > bare-metal
+        # Script-based jobs — Docker only
         has_script = (isinstance(task_spec, str) and len(task_spec) > 10) or \
                      (isinstance(task_spec, dict) and task_spec.get("script"))
 
         if has_script:
-            if check_docker():
-                job_dir = tempfile.mkdtemp(prefix="dc1-job-")
-                return run_docker_job(job_type, task_spec, job_dir, job_id=job_id)
-            else:
-                return run_bare_metal_job(task_spec, job_id=job_id)
+            if not container_spec:
+                return {"success": False, "error": "Job rejected: missing container_spec. Raw Python execution is disabled."}
+            if not check_docker():
+                return {"success": False, "error": "Docker not available. container_spec jobs require Docker execution."}
+            return run_docker_job(job_type, task_spec, container_spec, job_id=job_id)
         else:
             # No script — fall back to benchmark
             log.info(f"No script in task_spec — running default benchmark")
@@ -1899,6 +1936,7 @@ def poll_and_execute():
             http_post(f"{API_URL}/api/providers/job-result", {
                 "api_key": API_KEY, "job_id": job_id, "success": False,
                 "error": f"Insufficient VRAM: {free_vram} MiB free, {required_vram} MiB required",
+                "gpu_seconds_used": 0,
             }, timeout=15)
         except: pass
         return
@@ -1914,6 +1952,7 @@ def poll_and_execute():
             http_post(f"{API_URL}/api/providers/job-result", {
                 "api_key": API_KEY, "job_id": job_id, "success": False,
                 "error": f"Insufficient disk space: {disk_detail}",
+                "gpu_seconds_used": 0,
             }, timeout=15)
         except: pass
         return
@@ -1931,6 +1970,7 @@ def poll_and_execute():
                 http_post(f"{API_URL}/api/providers/job-result", {
                     "api_key": API_KEY, "job_id": job_id, "success": False,
                     "error": "HMAC verification failed — task_spec rejected for security",
+                    "gpu_seconds_used": 0,
                 }, timeout=15)
             except: pass
             return
@@ -1948,6 +1988,8 @@ def poll_and_execute():
             outcome = {"success": False, "error": error_detail[:1000]}
 
         elapsed = round(time.time() - start_time, 1)
+        gpu_count = get_detected_gpu_count()
+        gpu_seconds_used = round(max(0.0, elapsed) * max(1, gpu_count), 3)
 
         # Report event based on outcome
         if outcome.get("success"):
@@ -1977,12 +2019,20 @@ def poll_and_execute():
         payload = {
             "api_key": API_KEY,
             "job_id": job_id,
+            "attempt_number": job.get("attempt_number"),
             "result": outcome.get("result", {}),
             "success": outcome.get("success", False),
             "error": outcome.get("error"),
+            "gpu_seconds_used": gpu_seconds_used,
             "metrics": outcome.get("metrics"),
             "transient": outcome.get("transient", False),
+            "restart_count": int(outcome.get("restart_count", 0) or 0),
+            "last_error": outcome.get("last_error") or outcome.get("error"),
         }
+        if isinstance(payload["metrics"], dict):
+            payload["metrics"].setdefault("gpu_count", gpu_count)
+        else:
+            payload["metrics"] = {"gpu_count": gpu_count}
         result_size = len(str(payload.get("result", "")))
         log.info(f"Job {job_id} submitting result ({result_size} bytes)...")
 
