@@ -447,11 +447,14 @@ function GpuPlayground() {
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.images && Array.isArray(d.images)) {
-          // API returns objects with {id, image_ref, image_type, ...} — extract image_type strings
-          const imageTypes: string[] = d.images.map((img: unknown) =>
-            typeof img === 'string' ? img : (img as Record<string, unknown>)?.image_type || (img as Record<string, unknown>)?.image_ref || String(img)
-          ).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
-          setContainerImages(imageTypes);
+          // API returns objects with {id, image_ref, image_type, ...} — extract valid image types
+          const validTypes = new Set(['pytorch-cuda', 'vllm-serve', 'training', 'rendering']);
+          const imageTypes: string[] = d.images
+            .map((img: unknown) => typeof img === 'string' ? img : (img as Record<string, unknown>)?.image_type || '')
+            .filter((v: string) => validTypes.has(v))
+            .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
+          // Only use API results if they contain valid image types; otherwise fallback to hardcoded list
+          if (imageTypes.length > 0) setContainerImages(imageTypes);
         }
       })
       .catch(() => {});
