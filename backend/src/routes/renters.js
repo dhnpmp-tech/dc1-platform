@@ -556,22 +556,27 @@ router.post('/login-email', loginEmailLimiter, (req, res) => {
     const cleanEmail = normalizeEmail(email);
     if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
 
-    const renter = db.get('SELECT * FROM renters WHERE email = ? AND status = ?', cleanEmail, 'active');
+    let renter = db.get('SELECT * FROM renters WHERE email = ? AND status = ?', cleanEmail, 'active');
     if (!renter) {
       // Also try case-insensitive
-      const renterCI = db.get('SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?', cleanEmail, 'active');
-      if (!renterCI) {
+      renter = db.get('SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?', cleanEmail, 'active');
+      if (!renter) {
         return res.status(404).json({ error: 'No renter account found with this email. Register first at /renter/register' });
       }
-      return res.json({
-        success: true,
-        message: 'Account found. Log in via your dashboard to retrieve your key.'
-      });
     }
 
     res.json({
       success: true,
-      message: 'Account found. Log in via your dashboard to retrieve your key.'
+      api_key: renter.api_key,
+      renter: {
+        id: renter.id,
+        name: renter.name,
+        email: renter.email,
+        organization: renter.organization,
+        balance_halala: renter.balance_halala,
+        total_spent_halala: renter.total_spent_halala,
+        total_jobs: renter.total_jobs,
+      }
     });
   } catch (error) {
     console.error('Renter email login error:', error);
