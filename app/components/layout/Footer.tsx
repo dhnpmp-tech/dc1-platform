@@ -7,13 +7,12 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="md:col-span-1">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center mb-4">
               <img
                 src="/logo.svg"
-                alt="DCP."
+                alt="DCP"
                 className="h-10 w-auto"
               />
-              <span className="text-lg font-bold">DCP.</span>
             </div>
             <p className="text-sm text-dc1-text-secondary leading-relaxed">
               Power, Digitalized. The transparent, reliable GPU compute marketplace.

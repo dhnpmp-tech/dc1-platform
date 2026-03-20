@@ -25,15 +25,12 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 shrink-0">
+          <Link href="/" className="flex items-center shrink-0">
             <img
               src="/logo.svg"
               alt="DCP"
               className="h-9 w-auto"
             />
-            <span className="text-lg font-bold text-dc1-text-primary hidden sm:block">
-              DCP.
-            </span>
           </Link>
 
           {/* Desktop Nav */}

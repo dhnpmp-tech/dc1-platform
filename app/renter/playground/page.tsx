@@ -1,8 +1,57 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense, Component, ErrorInfo, ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+
+// ErrorBoundary to capture the actual crash error
+class PlaygroundErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null; errorInfo: ErrorInfo | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    this.setState({ errorInfo });
+    console.error('PlaygroundErrorBoundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#0d1117] text-white p-8">
+          <div className="max-w-2xl mx-auto">
+            <h1 className="text-2xl font-bold text-red-400 mb-4">Playground Render Error</h1>
+            <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-4">
+              <p className="font-mono text-sm text-red-300">{this.state.error?.message}</p>
+              <p className="font-mono text-xs text-red-300/60 mt-2">{this.state.error?.stack}</p>
+            </div>
+            {this.state.errorInfo && (
+              <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-4">
+                <p className="text-sm font-semibold text-yellow-300 mb-2">Component Stack:</p>
+                <pre className="font-mono text-xs text-yellow-300/60 whitespace-pre-wrap">{this.state.errorInfo.componentStack}</pre>
+              </div>
+            )}
+            <button
+              onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
+              className="px-4 py-2 rounded-lg bg-[#00D9FF] text-[#0d1117] font-semibold text-sm"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const API_BASE = '/api/dc1';
 
@@ -125,9 +174,11 @@ const VRAM_OPTIONS = [
 
 export default function GpuPlaygroundPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0d1117] flex items-center justify-center"><div className="animate-spin h-8 w-8 border-2 border-[#FFD700] border-t-transparent rounded-full" /></div>}>
-      <GpuPlayground />
-    </Suspense>
+    <PlaygroundErrorBoundary>
+      <Suspense fallback={<div className="min-h-screen bg-[#0d1117] flex items-center justify-center"><div className="animate-spin h-8 w-8 border-2 border-[#FFD700] border-t-transparent rounded-full" /></div>}>
+        <GpuPlayground />
+      </Suspense>
+    </PlaygroundErrorBoundary>
   );
 }
 

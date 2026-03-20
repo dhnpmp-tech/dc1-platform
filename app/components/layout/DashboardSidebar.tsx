@@ -48,7 +48,6 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
         </Link>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-dc1-text-primary truncate">DCP.</p>
             <p className="text-xs text-dc1-amber truncate">{roleLabels[role]}</p>
           </div>
         )}
