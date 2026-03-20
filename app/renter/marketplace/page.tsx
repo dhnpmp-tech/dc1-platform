@@ -462,12 +462,20 @@ function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => stri
       )}
 
       {/* CTA */}
-      <Link
-        href={`/renter/playground?provider=${provider.id}`}
-        className="btn btn-primary w-full text-center text-sm mt-auto"
-      >
-        Rent Now
-      </Link>
+      <div className="flex gap-2 mt-auto">
+        <Link
+          href={`/renter/marketplace/providers/${provider.id}`}
+          className="btn text-sm flex-1 text-center bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3 border border-dc1-border"
+        >
+          View Profile
+        </Link>
+        <Link
+          href={`/renter/playground?provider=${provider.id}`}
+          className="btn btn-primary text-sm flex-1 text-center"
+        >
+          Rent Now
+        </Link>
+      </div>
     </article>
   )
 }

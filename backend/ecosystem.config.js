@@ -42,7 +42,7 @@ module.exports = {
 
         // ── Backend URL (injected into daemon downloads) ──────────────────────
         // Set to HTTPS once api.dcp.sa DNS + SSL setup is complete
-        BACKEND_URL: 'http://76.13.179.86:8083',
+        BACKEND_URL: process.env.BACKEND_URL || 'https://api.dcp.sa',
 
         // ── Resend Email Service (DCP-54) ─────────────────────────────────────
         // Get API key from: https://resend.com/api-keys
@@ -84,6 +84,20 @@ module.exports = {
       instances: 1,
       autorestart: false,
       cron_restart: '30 2 * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production'
+      }
+    },
+    {
+      name: 'dcp-stale-provider-sweep-cron',
+      script: '/bin/sh',
+      args: '-lc "node /root/dc1-platform/backend/src/scripts/sweep-stale-providers.js >> /root/dc1-platform/backend/logs/stale-provider-sweep.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '*/5 * * * *',
       watch: false,
       max_memory_restart: '100M',
       env: {

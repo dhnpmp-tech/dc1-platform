@@ -20,12 +20,23 @@ interface Renter {
 }
 
 interface Invoice {
-  id: string
+  id: number
+  job_id?: string | null
+  invoice_at?: string | null
   created_at: string
   job_type: string
-  provider_gpu: string
+  provider_name?: string | null
+  gpu_model?: string | null
   duration_minutes: number
-  cost_halala: number
+  amount_halala: number
+  amount_sar?: number
+  status: string
+}
+
+interface Pagination {
+  page: number
+  limit: number
+  total: number
 }
 
 interface RecentJob {
@@ -135,13 +146,16 @@ export default function BillingPage() {
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [renter, setRenter] = useState<Renter | null>(null)
   const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [pagination, setPagination] = useState<Pagination>({ page: 1, limit: 20, total: 0 })
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [loading, setLoading] = useState(true)
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
   const [rotating, setRotating] = useState(false)
   const [rotateConfirm, setRotateConfirm] = useState(false)
+  const [showTopupModal, setShowTopupModal] = useState(false)
   const [topupAmount, setTopupAmount] = useState('')
+  const [topupMethod, setTopupMethod] = useState<'mada' | 'creditcard' | 'applepay'>('mada')
   const [topupLoading, setTopupLoading] = useState(false)
   const [topupError, setTopupError] = useState('')
 
@@ -162,7 +176,7 @@ export default function BillingPage() {
       try {
         const [profileRes, invRes] = await Promise.all([
           fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey!)}`),
-          fetch(`${API_BASE}/renters/me/invoices?key=${encodeURIComponent(apiKey!)}`).catch(() => null),
+          fetch(`${API_BASE}/renters/me/invoices?key=${encodeURIComponent(apiKey!)}&page=${pagination.page}&limit=${pagination.limit}`).catch(() => null),
         ])
 
         if (profileRes.ok) {
@@ -174,6 +188,12 @@ export default function BillingPage() {
         if (invRes && invRes.ok) {
           const invData = await invRes.json()
           setInvoices(invData.invoices ?? [])
+          setPagination((prev) => ({
+            ...prev,
+            page: Number(invData?.pagination?.page || prev.page),
+            limit: Number(invData?.pagination?.limit || prev.limit),
+            total: Number(invData?.pagination?.total || 0),
+          }))
         }
       } catch (err) {
         console.error('Billing fetch error:', err)
@@ -183,7 +203,7 @@ export default function BillingPage() {
     }
 
     fetchData()
-  }, [apiKey])
+  }, [apiKey, pagination.page, pagination.limit])
 
   const copyApiKey = () => {
     if (!apiKey) return
@@ -217,7 +237,7 @@ export default function BillingPage() {
   const handleTopup = async () => {
     if (!apiKey) return
     const amountSar = parseFloat(topupAmount)
-    if (!amountSar || amountSar <= 0) return
+    if (!amountSar || amountSar < 10 || amountSar > 1000) return
     setTopupLoading(true)
     setTopupError('')
     try {
@@ -225,7 +245,7 @@ export default function BillingPage() {
       const res = await fetch(`${API_BASE}/payments/topup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
-        body: JSON.stringify({ amount_halala: amountHalala }),
+        body: JSON.stringify({ amount_halala: amountHalala, payment_method: topupMethod }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -245,13 +265,25 @@ export default function BillingPage() {
     }
   }
 
+  const handleDownloadInvoiceCsv = (invoiceId: number) => {
+    if (!apiKey) return
+    const href = `${API_BASE}/renters/me/invoices/${invoiceId}/csv?key=${encodeURIComponent(apiKey)}`
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleDownloadAllCsv = () => {
+    if (!apiKey) return
+    const href = `${API_BASE}/renters/me/invoices/export.csv?key=${encodeURIComponent(apiKey)}`
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }
+
   // Compute summary stats for this month's invoices
   const now = new Date()
   const thisMonthInvoices = invoices.filter(inv => {
     const d = new Date(inv.created_at)
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
   })
-  const invoiceTotalHalala = thisMonthInvoices.reduce((sum, inv) => sum + (inv.cost_halala ?? 0), 0)
+  const invoiceTotalHalala = thisMonthInvoices.reduce((sum, inv) => sum + (inv.amount_halala ?? 0), 0)
 
   // ── No-account state ──
   if (!loading && apiKey !== null && !apiKey) {
@@ -296,67 +328,28 @@ export default function BillingPage() {
           <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-1">{t('billing.title')}</h1>
           <p className="text-dc1-text-secondary">{t('billing.subtitle')}</p>
         </div>
-        <button
-          className="btn btn-outline flex items-center gap-2 text-sm"
-          disabled
-          title="Coming soon"
-          aria-label="Download CSV (coming soon)"
-        >
-          <DownloadIcon />
-          {t('billing.download_csv')}
-        </button>
+        <div className="text-xs text-dc1-text-muted">
+          {pagination.total > 0 ? `${pagination.total} invoices` : 'No invoices yet'}
+        </div>
       </div>
 
-      {/* ── Summary Cards ────────────────────────────────────────── */}
+      {/* ── Balance Card + Stats ──────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <StatCard label={t('billing.balance')} value={`${balance.toFixed(2)} ${t('common.sar')}`} accent="amber" />
-        <StatCard label={t('billing.total_spent')} value={`${invoices.length > 0 ? halalaToCurrency(invoiceTotalHalala) : totalSpent.toFixed(2)} ${t('common.sar')}`} accent="default" />
-        <StatCard label={t('billing.total_jobs')} value={String(invoices.length > 0 ? thisMonthInvoices.length : totalJobs)} accent="info" />
-      </div>
-
-      {/* ── Add Funds ────────────────────────────────────────────── */}
-      <div className="card mb-8">
-        <h2 className="section-heading mb-4">{t('billing.add_funds')}</h2>
-        <p className="text-sm text-dc1-text-secondary mb-4">{t('billing.add_funds_desc')}</p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              {[5, 10, 25, 50].map(amt => (
-                <button
-                  key={amt}
-                  onClick={() => setTopupAmount(String(amt))}
-                  className={`px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium border transition ${
-                    topupAmount === String(amt)
-                      ? 'border-dc1-amber bg-dc1-amber/10 text-dc1-amber'
-                      : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:border-dc1-amber/30'
-                  }`}
-                >
-                  {amt} SAR
-                </button>
-              ))}
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                placeholder={t('billing.custom_amount')}
-                value={topupAmount}
-                onChange={e => setTopupAmount(e.target.value)}
-                className="input w-28"
-              />
-            </div>
+        {/* Balance card with Top Up CTA */}
+        <div className="card p-5 flex flex-col justify-between border border-dc1-amber/20 bg-dc1-amber/5">
+          <div>
+            <p className="text-xs text-dc1-text-muted uppercase tracking-wide mb-1">{t('billing.balance')}</p>
+            <p className="text-3xl font-bold text-dc1-amber">{balance.toFixed(2)} <span className="text-lg font-normal">{t('common.sar')}</span></p>
           </div>
           <button
-            onClick={handleTopup}
-            disabled={topupLoading || !topupAmount || parseFloat(topupAmount) <= 0}
-            className="btn btn-primary px-6 disabled:opacity-50"
+            onClick={() => { setShowTopupModal(true); setTopupError(''); setTopupAmount(''); setTopupMethod('mada') }}
+            className="btn btn-primary mt-4 w-full"
           >
-            {topupLoading ? t('billing.processing') : t('billing.add_funds')}
+            {t('billing.add_funds')}
           </button>
         </div>
-        {topupError && (
-          <p className="text-sm text-status-error mt-3">{topupError}</p>
-        )}
-        <p className="text-xs text-dc1-text-muted mt-3">{t('billing.payment_note')}</p>
+        <StatCard label={t('billing.total_spent')} value={`${invoices.length > 0 ? halalaToCurrency(invoiceTotalHalala) : totalSpent.toFixed(2)} ${t('common.sar')}`} accent="default" />
+        <StatCard label={t('billing.total_jobs')} value={String(invoices.length > 0 ? thisMonthInvoices.length : totalJobs)} accent="info" />
       </div>
 
       {/* ── Compute Rates ────────────────────────────────────────── */}
@@ -378,7 +371,18 @@ export default function BillingPage() {
 
       {/* ── Invoice History ──────────────────────────────────────── */}
       <div className="card mb-8">
-        <h2 className="section-heading mb-4">{t('billing.title')}</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="section-heading">{t('billing.title')}</h2>
+          {invoices.length > 0 && (
+            <button
+              onClick={handleDownloadAllCsv}
+              className="btn btn-outline btn-sm inline-flex items-center gap-1.5"
+            >
+              <DownloadIcon />
+              {t('billing.download_csv')}
+            </button>
+          )}
+        </div>
 
         {invoices.length === 0 ? (
           <div className="text-center py-10">
@@ -393,34 +397,81 @@ export default function BillingPage() {
               <thead>
                 <tr className="border-b border-dc1-border text-dc1-text-muted text-xs uppercase tracking-wide">
                   <th className="text-start pb-3 pr-4 font-medium">{t('billing.date')}</th>
+                  <th className="text-start pb-3 pr-4 font-medium">{t('table.job_id')}</th>
                   <th className="text-start pb-3 pr-4 font-medium">{t('billing.job_type')}</th>
                   <th className="text-start pb-3 pr-4 font-medium">{t('billing.provider')}</th>
+                  <th className="text-start pb-3 pr-4 font-medium">{t('table.status')}</th>
                   <th className="text-end pb-3 pr-4 font-medium">{t('billing.duration')}</th>
                   <th className="text-end pb-3 font-medium">{t('billing.cost')}</th>
+                  <th className="text-end pb-3 font-medium">{t('billing.download_csv')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-dc1-border/50">
                 {invoices.map(inv => (
                   <tr key={inv.id} className="hover:bg-dc1-surface-l2/50 transition-colors">
                     <td className="py-3 pr-4 text-dc1-text-secondary whitespace-nowrap">
-                      {formatDate(inv.created_at)}
+                      <div>{formatDate(inv.invoice_at || inv.created_at)}</div>
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-xs text-dc1-amber whitespace-nowrap">
+                      {inv.job_id || '—'}
                     </td>
                     <td className="py-3 pr-4 text-dc1-text-primary font-medium">
                       {formatJobType(inv.job_type)}
                     </td>
                     <td className="py-3 pr-4 text-dc1-text-secondary">
-                      {inv.provider_gpu || '—'}
+                      {inv.provider_name || inv.gpu_model || '—'}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                        inv.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                        inv.status === 'running' ? 'bg-blue-500/20 text-blue-400' :
+                        inv.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                        'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {inv.status}
+                      </span>
                     </td>
                     <td className="py-3 pr-4 text-dc1-text-secondary text-end whitespace-nowrap">
                       {inv.duration_minutes} min
                     </td>
                     <td className="py-3 text-dc1-amber font-semibold text-end whitespace-nowrap">
-                      {halalaToCurrency(inv.cost_halala)} SAR
+                      {halalaToCurrency(inv.amount_halala)} SAR
+                    </td>
+                    <td className="py-3 text-end">
+                      <button
+                        onClick={() => handleDownloadInvoiceCsv(inv.id)}
+                        className="btn btn-outline btn-sm inline-flex items-center gap-1"
+                        aria-label={`Download invoice ${inv.id} CSV`}
+                      >
+                        <DownloadIcon />
+                        CSV
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {pagination.total > pagination.limit && (
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button
+              onClick={() => setPagination((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+              disabled={pagination.page <= 1}
+              className="btn btn-outline btn-sm disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-dc1-text-muted">
+              Page {pagination.page} of {Math.max(1, Math.ceil(pagination.total / pagination.limit))}
+            </span>
+            <button
+              onClick={() => setPagination((prev) => ({ ...prev, page: prev.page + 1 }))}
+              disabled={pagination.page >= Math.ceil(pagination.total / pagination.limit)}
+              className="btn btn-outline btn-sm disabled:opacity-50"
+            >
+              Next
+            </button>
           </div>
         )}
       </div>
@@ -524,6 +575,113 @@ export default function BillingPage() {
           </div>
         )}
       </div>
+      {/* ── Top Up Modal ─────────────────────────────────────────── */}
+      {showTopupModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="topup-title">
+          <div className="w-full max-w-md rounded-xl border border-dc1-border bg-dc1-surface-l1 p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 id="topup-title" className="text-lg font-semibold text-dc1-text-primary">{t('billing.add_funds')}</h2>
+              <button
+                onClick={() => setShowTopupModal(false)}
+                className="text-dc1-text-muted hover:text-dc1-text-primary transition"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Amount */}
+            <div className="space-y-2">
+              <label className="text-xs text-dc1-text-muted uppercase tracking-wide block">Amount (SAR)</label>
+              <div className="flex flex-wrap gap-2">
+                {[10, 25, 50, 100].map(amt => (
+                  <button
+                    key={amt}
+                    onClick={() => setTopupAmount(String(amt))}
+                    className={`px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border transition ${
+                      topupAmount === String(amt)
+                        ? 'border-dc1-amber bg-dc1-amber/10 text-dc1-amber'
+                        : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:border-dc1-amber/30'
+                    }`}
+                  >
+                    {amt} SAR
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min="10"
+                max="1000"
+                step="1"
+                placeholder={t('billing.custom_amount')}
+                value={topupAmount}
+                onChange={e => setTopupAmount(e.target.value)}
+                className="input w-full mt-1"
+              />
+              {topupAmount && (parseFloat(topupAmount) < 10 || parseFloat(topupAmount) > 1000) && (
+                <p className="text-xs text-status-error">Amount must be between 10 and 1,000 SAR</p>
+              )}
+            </div>
+
+            {/* Payment Method */}
+            <div className="space-y-2">
+              <label className="text-xs text-dc1-text-muted uppercase tracking-wide block">Payment Method</label>
+              <div className="space-y-2">
+                {([
+                  { id: 'mada', label: 'Mada', desc: 'Saudi debit card' },
+                  { id: 'creditcard', label: 'Visa / Mastercard', desc: 'International credit card' },
+                  { id: 'applepay', label: 'Apple Pay', desc: 'Pay with Touch ID or Face ID' },
+                ] as const).map(method => (
+                  <label
+                    key={method.id}
+                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${
+                      topupMethod === method.id
+                        ? 'border-dc1-amber bg-dc1-amber/5'
+                        : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-amber/30'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="topupMethod"
+                      value={method.id}
+                      checked={topupMethod === method.id}
+                      onChange={() => setTopupMethod(method.id)}
+                      className="accent-dc1-amber"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-dc1-text-primary">{method.label}</div>
+                      <div className="text-xs text-dc1-text-muted">{method.desc}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {topupError && <p className="text-sm text-status-error">{topupError}</p>}
+
+            <p className="text-xs text-dc1-text-muted">{t('billing.payment_note')}</p>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowTopupModal(false)}
+                className="btn btn-outline flex-1"
+                disabled={topupLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTopup}
+                disabled={topupLoading || !topupAmount || parseFloat(topupAmount) < 10 || parseFloat(topupAmount) > 1000}
+                className="btn btn-primary flex-1 disabled:opacity-50"
+              >
+                {topupLoading ? t('billing.processing') : `Pay ${topupAmount ? parseFloat(topupAmount).toFixed(2) : '0.00'} SAR`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   )
 }

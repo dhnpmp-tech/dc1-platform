@@ -7,7 +7,10 @@ import { ProviderStatusTreeProvider } from './providers/ProviderStatusTreeProvid
 import { JobNode } from './providers/JobsTreeProvider';
 import { GPUNode } from './providers/GPUTreeProvider';
 import { JobSubmitPanel } from './panels/JobSubmitPanel';
+import { VllmSubmitPanel } from './panels/VllmSubmitPanel';
 import { WalletPanel } from './panels/WalletPanel';
+import { SettingsPanel } from './panels/SettingsPanel';
+import { ModelStatusPanel } from './panels/ModelStatusPanel';
 import { Provider, Job } from './api/dc1Client';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -71,18 +74,25 @@ export function activate(context: vscode.ExtensionContext): void {
   async function updateStatusBar(): Promise<void> {
     const key = auth.apiKey;
     if (!key) {
-      statusBarItem.text = 'DCP: — SAR';
+      statusBarItem.text = '$(circuit-board) DCP: Ready';
+      statusBarItem.tooltip = 'DCP Compute — click to view billing';
       statusBarItem.show();
       return;
     }
     try {
       const info = await dc1.getRenterInfo(key);
       const sar = (info.balance_halala / 100).toFixed(2);
-      statusBarItem.text = `DCP: ${sar} SAR`;
-      statusBarItem.tooltip = `DCP Wallet: ${sar} SAR — click to view billing`;
+      const jobs = await dc1.getMyJobs(key);
+      const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'pending' || j.status === 'queued');
+      if (activeJobs.length > 0) {
+        statusBarItem.text = `$(loading~spin) DCP: ${activeJobs.length} job${activeJobs.length > 1 ? 's' : ''} running`;
+      } else {
+        statusBarItem.text = `$(circuit-board) DCP: Ready`;
+      }
+      statusBarItem.tooltip = `DCP Wallet: ${sar} SAR — ${info.total_jobs} total jobs — click to view billing`;
       statusBarItem.show();
     } catch {
-      statusBarItem.text = 'DCP: — SAR';
+      statusBarItem.text = '$(circuit-board) DCP: Ready';
       statusBarItem.show();
     }
   }
@@ -222,9 +232,33 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // dc1.submitJob — open job submit panel with all available GPUs
+  // dc1.submitJob — open vLLM inference panel (model selector → POST /api/vllm/complete)
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.submitJob', async () => {
+      // Check for API key — show guidance if missing
+      const settingsKey = vscode.workspace.getConfiguration('dc1').get<string>('renterApiKey', '').trim();
+      if (!settingsKey && !auth.isAuthenticated) {
+        const action = await vscode.window.showWarningMessage(
+          'DCP: Set your renter API key to submit inference jobs.',
+          'Set Key in Settings',
+          'Set Key via Command'
+        );
+        if (action === 'Set Key in Settings') {
+          vscode.commands.executeCommand('workbench.action.openSettings', 'dc1.renterApiKey');
+          return;
+        } else if (action === 'Set Key via Command') {
+          await auth.promptAndSave();
+        } else {
+          return;
+        }
+      }
+      VllmSubmitPanel.show(context.extensionUri, auth);
+    })
+  );
+
+  // dc1.submitContainerJob — open container-based job submit panel (advanced)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.submitContainerJob', async () => {
       const key = await auth.ensureKey();
       if (!key) { return; }
       const providers = gpuProvider.getProviders();
@@ -415,6 +449,58 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // dc1.watchJobLogs — stream logs for a job ID to a named output channel
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.watchJobLogs', async (jobIdArg?: string) => {
+      const key = auth.apiKey
+        || vscode.workspace.getConfiguration('dc1').get<string>('renterApiKey', '').trim()
+        || await auth.ensureKey();
+      if (!key) { return; }
+
+      let jobId = jobIdArg;
+      if (!jobId) {
+        jobId = await vscode.window.showInputBox({
+          title: 'DCP: Watch Job Logs',
+          prompt: 'Enter the Job ID to stream logs for',
+          placeHolder: 'e.g. job-1234567890-abc123',
+          ignoreFocusOut: true,
+        });
+      }
+      if (!jobId) { return; }
+
+      const id = jobId.trim();
+      const ch = vscode.window.createOutputChannel(`DCP Job ${id}`);
+      context.subscriptions.push(ch);
+      ch.show(true);
+      ch.appendLine(`${'─'.repeat(60)}`);
+      ch.appendLine(`DCP: Streaming logs for job ${id}`);
+      ch.appendLine(`${'─'.repeat(60)}`);
+
+      const dispose = dc1.streamJobLogs(
+        key,
+        id,
+        (line) => ch.appendLine(line),
+        () => {
+          ch.appendLine('\n--- Stream closed ---');
+          dc1.getJobOutput(key, id).then((output) => {
+            const icon = output.status === 'completed' ? '✅' : '❌';
+            ch.appendLine(`${icon} Job ${output.status}.`);
+            if (output.result) { ch.appendLine(output.result); }
+          }).catch(() => {
+            ch.appendLine('Could not fetch final output.');
+          });
+          jobsProvider.refresh();
+          updateStatusBar();
+        },
+        (err) => {
+          ch.appendLine(`Stream error: ${err.message}`);
+        }
+      );
+
+      context.subscriptions.push({ dispose });
+    })
+  );
+
   // dc1.stopLogStream — stop the active log stream
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.stopLogStream', () => {
@@ -439,6 +525,20 @@ export function activate(context: vscode.ExtensionContext): void {
       const key = await auth.ensureKey();
       if (!key) { return; }
       WalletPanel.show(context.extensionUri, auth);
+    })
+  );
+
+  // dc1.showSettings — settings webview (apiBase + renterApiKey)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.showSettings', () => {
+      SettingsPanel.show(context.extensionUri);
+    })
+  );
+
+  // dc1.modelStatus — model cache status table
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.modelStatus', () => {
+      ModelStatusPanel.show(context.extensionUri);
     })
   );
 

@@ -4,6 +4,213 @@
 > **Format**: `## [YYYY-MM-DD HH:MM UTC] AGENT_NAME  Summary`
 > **Agents**: Claude-Cowork (VPS/deploy), Cursor (IDE/analysis), Codex (GitHub/PRs), Nexus (OpenClaw)
 
+## [2026-03-20 13:30 UTC] Frontend Developer — DCP-138: Renter billing UI — topup modal + payment history complete
+
+- `app/renter/billing/page.tsx`: Upgraded billing page with:
+  - Balance card with prominent "Top Up" CTA button (replaces inline form)
+  - Modal dialog for top-up: amount presets (10/25/50/100 SAR), custom amount input, min 10 / max 1000 SAR validation
+  - Payment method radio buttons: Mada / Visa+Mastercard / Apple Pay (sends `payment_method` to `POST /api/dc1/payments/topup`)
+  - Bulk "Download CSV" button on invoice history header → `GET /api/dc1/renters/me/invoices/export.csv?key=`
+  - No hardcoded IPs, relative imports, DashboardLayout, DCP branding
+- `app/renter/billing/confirm/page.tsx`: Hardcoded IP removal BLOCKED — file owned by root (chown needed by Claude-Cowork/DevOps). Existing `/api/dc1` fallback is sufficient for HTTPS; file needs chown fix (tracked in DCP-339).
+- No breaking changes — additive modal, payment method is backward-compatible (server ignores unknown fields gracefully)
+
+## [2026-03-20 13:10 UTC] CEO — Heartbeat: Sprint 23 LAUNCHED, DCP-343 cleared, Sprint 22 review created
+
+- **DCP-343 DONE** ✅ — Sprint 20 code review closed. All dc1- branding fixes verified.
+- **DCP-197 updated** — DCP-343 blocker cleared. Both DCP-197 (Sprints 19-20) + DCP-236 (Sprint 21) ready for Claude-Cowork push.
+- **DCP-111 repurposed** → Sprint 22 code review (DCP-162, DCP-235, DCP-237, DCP-238, DCP-240, DCP-242, DCP-245, DCP-253). Assigned to CR1.
+- **SPRINT 23 LAUNCHED** — 5 issues created (repurposed):
+  - DCP-148: Moyasar payment integration (Backend Architect)
+  - DCP-147: Provider payout/withdrawal system (Backend Architect)
+  - DCP-146: PDPL compliance — data export + account deletion (Security Engineer)
+  - DCP-138: Renter billing UI — topup form + payment history (Frontend Developer)
+  - DCP-137: Admin withdrawals dashboard (Frontend Developer)
+- **DCP-245** still todo (billing history endpoint — Backend Architect)
+- **Board blockers**: Paperclip DB fix, VPS env vars (MOYASAR_SECRET_KEY needed for 23-A), agent cost switch to Haiku (DCP-266).
+
+## [2026-03-20 12:55 UTC] CEO — DCP-343 Fix Round 5: dc1- branding eliminated from docs + jobs.js filenames
+
+- **`docs/api-reference.md`**: All `dc1-renter-`, `dc1-...` example key values → `dcp-renter-`, `dcp-...`
+- **`docs/openapi.yaml`**: `dc1-provider-`, `dc1-renter-` prefixes → `dcp-`; `dc1-platform-api` → `dcp-platform-api`
+- **`backend/src/routes/jobs.js`**: `attachment; filename="dc1-{id}.png"` → `dcp-{id}.png` (2 locations); `[dc1-phase]` log markers → `[dcp-phase]` (4 locations)
+- **Syntax check**: `node --check jobs.js` → OK. Zero `dc1-` in all 3 files.
+- **DCP-343**: Fix comment posted, CR2 pinged for final review.
+
+## [2026-03-20 12:45 UTC] CEO — Heartbeat: DCP-343 re-review ping, Sprint 22 DCP-245 assigned, Sprint 21 deploy manifest created
+
+- **DCP-343**: Pinged @Code-Reviewer-2 for re-review. Fix applied 12:01 UTC (jobs.js DC1→DCP). Awaiting PASS.
+- **DCP-245** (Sprint 22 billing history): Assigned to Backend Architect. Spec: `GET /api/renters/me/invoices?key=&page=&limit=20` + CSV export endpoint. Frontend Developer to follow with UI.
+- **DCP-236** repurposed as Sprint 21 deploy manifest (DCP-344–349) — REVIEW PASSED (DCP-105 12:06 UTC). Assigned to DevOps Automator.
+- **Sprint 22 status**: 7/8 DONE (DCP-162, DCP-235, DCP-237, DCP-238, DCP-240, DCP-242, DCP-253 all done). Only DCP-245 remaining.
+- **DCP-105** (Sprint 21 code review): PASSED ✅ — all 11 checks clean.
+- **Deploy queue for Claude-Cowork**: DCP-197 (Sprints 19-20) + DCP-236 (Sprint 21) both blocked pending GitHub push. Board must action.
+- **Board blockers outstanding**: Paperclip DB fix (DCP-350 null issueNumber), VPS env vars (DCP-84), agent cost reduction (DCP-266), root file chown (billing/confirm + admin/jobs/[id] pages), DNS api.dcp.sa.
+
+## [2026-03-20 12:30 UTC] Frontend Developer — DCP-142: Provider public profile page complete
+
+- **DCP-142 DONE**: Provider public profile page at `/renter/marketplace/providers/[id]`
+- **`app/renter/marketplace/providers/[id]/page.tsx`** (new): Full provider profile — GPU model, VRAM, price/hr (SAR), jobs completed, uptime %, available now badge; 4-stat header row; hardware specs card; cached models card; pricing + reliability sidebar; "Rent GPU" CTA → `/renter/playground?provider={id}`; back nav to marketplace; uses `GET /api/dc1/providers/available` (no auth, rich data); relative imports, no hardcoded IPs
+- **`app/renter/marketplace/page.tsx`**: Updated `GPUCard` CTA — split single "Rent Now" button into 2-button row: "View Profile" (→ `/renter/marketplace/providers/{id}`) + "Rent Now" (→ `/renter/playground?provider={id}`)
+- **`backend/src/routes/providers.js`**: Added `id: p.id` to `/api/providers/public` payload (was selected in SQL but omitted from response)
+- **No breaking changes** — additive new page; marketplace CTA is backward-compatible; public endpoint change is additive
+
+## [2026-03-20 12:30 UTC] Codex — DCP-236: Sprint 21 deploy manifest heartbeat processed (blocked for operator action)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: process deployment heartbeat and escalate host-only actions`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory Paperclip heartbeat flow (`inbox-lite` → checkout → heartbeat-context → comment/status update).
+  - Checked out and processed critical deploy issue `DCP-236`; deployment remains blocked because container cannot run required host operations (`git pull/push`, `pm2 restart`).
+  - Updated `DCP-236` status to `blocked` with handoff instructions for Claude-Cowork and linked related blocked deploy issue `DCP-197`.
+
+## [2026-03-20 12:20 UTC] IDE Extension Developer — DCP-237: VS Code settings webview + model cache status
+
+- **DCP-237 DONE**: Two new VS Code extension commands implemented
+- **`vscode-extension/src/panels/SettingsPanel.ts`** (**new**): Webview panel for `dc1.showSettings` — shows current `dc1.apiBase` and `dc1.renterApiKey` (masked with bullet chars), allows editing and saving via `vscode.workspace.getConfiguration('dc1').update()` targeting `ConfigurationTarget.Global`; password/text toggle for key visibility; button to open secure key prompt via `dc1.setup`
+- **`vscode-extension/src/panels/ModelStatusPanel.ts`** (**new**): Webview panel for `dc1.modelStatus` — fetches `GET /api/vllm/models` via `dc1.getVllmModels()`; renders summary stat cards (total/available/providers) + table of models with columns: Model, Status, Providers Online, Min VRAM, Context Window, Est. Cold Start (heuristic from vram_gb), Price SAR/min; Refresh button re-fetches live
+- **`vscode-extension/src/extension.ts`**: Imported `SettingsPanel` + `ModelStatusPanel`; registered `dc1.showSettings` and `dc1.modelStatus` commands
+- **`vscode-extension/package.json`**: Added `dc1.showSettings` (`$(settings-gear)` icon) and `dc1.modelStatus` (`$(database)` icon) to `contributes.commands`
+- **Note**: Status bar active-job-count display was already implemented in prior sprint (DCP-345) — no changes needed
+- **No breaking changes** — additive only; no new npm deps
+
+## [2026-03-20 12:15 UTC] Frontend Developer — DCP-238: Renter analytics dashboard complete
+
+- **DCP-238 DONE**: Renter analytics page at `/renter/analytics` fully rebuilt against new backend endpoint
+- **`backend/src/routes/renters.js`**: Added `GET /api/renters/me/analytics?key=&period=` — returns `daily_spend[]` (day, total_halala, job_count), `status_counts[]`, `avg_duration_minutes`, `completed_job_count`, `top_gpus[]` (join with providers for gpu_model); supports 7d/30d/90d periods
+- **`app/renter/analytics/page.tsx`**: Full rewrite — period selector (7d/30d/90d), 4 StatCards (spend, job count, success rate, avg duration), SVG bar chart (daily spend, groups into weeks for 90d), SVG donut chart (job status distribution with legend), horizontal bar chart (top 5 GPU models by job count + SAR); uses `const API_BASE = '/api/dc1'`, relative imports, DashboardLayout; no new npm deps
+- **No breaking changes** — additive backend endpoint; frontend rewrite stays in existing file
+
+## [2026-03-20 12:10 UTC] DevRel Engineer — DCP-242: Docs landing page complete
+
+- **DCP-242 DONE**: Created `app/docs/page.tsx` — public docs landing page at `/docs`
+- **`app/docs/page.tsx`** (new, client component):
+  - Section 1 — Quickstart: 3-step guide (register, get API key, submit first job via curl) with copyable code blocks; links to `/docs/quickstart`
+  - Section 2 — SDKs: cards for `dc1-renter-sdk` (npm) and `dc1_provider` (PyPI) with install commands
+  - Section 3 — Resources grid: API Reference (`/docs/api`), OpenAPI spec (`/docs/openapi.yaml`), Support (`/support`)
+  - Uses `Header` + `Footer` layout (matches `/docs/quickstart` and `[[...slug]]` pattern); docs quick-nav links to Quickstart, Provider Guide, Renter Guide, API Reference
+  - No hardcoded IPs, no DC1 branding strings — all references use "DCP"
+- **No breaking changes** — additive new file; `[[...slug]]` catch-all continues to handle all sub-routes; `page.tsx` takes precedence for exact `/docs` path in Next.js App Router
+
+## [2026-03-20 12:07 UTC] Codex — DCP-253: Security hardening for queue auth, admin test auth, and rate-limit IP keying
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: close auth bypass surfaces on queue status/test routes and harden IP-based rate limit keys`
+- **Files**: `backend/src/server.js`, `backend/src/routes/jobs.js`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/jobs/queue/status` now requires authenticated actor (admin/provider/renter) and scopes queued data by actor to reduce cross-tenant visibility.
+  - Added backwards-compatible `queue` alias in queue-status response so older clients keep parsing while server now returns scoped data.
+  - `POST /api/jobs/test` now fails closed when `DC1_ADMIN_TOKEN` is missing and accepts either `x-admin-token` or `Authorization: Bearer`.
+  - Server-level rate limiters now use explicit `ipKeyGenerator` and explicit `trust proxy` configuration (`TRUST_PROXY_HOPS`, default `false`) to reduce X-Forwarded-For spoof/evasion risk.
+  - Renter playground queue-status request now sends `x-renter-key` and supports both `buckets` and legacy `queue` response shapes.
+
+## [2026-03-20 08:55 UTC] Frontend Developer — DCP-346: Admin fleet health dashboard complete
+
+- **DCP-346 DONE**: Fleet health dashboard upgraded with real-time GPU utilization UI
+- **`app/admin/fleet/page.tsx`**: Added fleet summary StatCards (Online/Stale/Offline/Total VRAM from `GET /api/admin/providers/health`); provider table (Email, GPU Model, VRAM, Last Heartbeat, Status badge); Sweep Stale button (`POST /api/admin/providers/sweep-stale`); auto-refresh changed from 60s → 30s; imported `StatusBadge`; added `useCallback` for `fetchFleetHealth`; helper functions `formatHeartbeat` + `providerStatus`
+- **`backend/src/routes/admin.js`**: Added `POST /api/admin/providers/sweep-stale` endpoint — marks providers with >15min stale heartbeat as offline, requeues their running/pending jobs, returns count summary
+- **No breaking changes** — existing daemon-health + events sections intact; new sections prepended
+
+## [2026-03-20 08:38 UTC] Frontend Developer — DCP-344: Arabic RTL foundation complete
+
+- **DCP-344 DONE**: Arabic RTL UI foundation wired across all dashboard pages
+- **`app/globals.css`**: Added RTL overrides — font-family IBM Plex Sans Arabic for `[dir="rtl"]`, sidebar flip (right:0, border-left), surface/card/table text-align:right, table padding flip, label alignment, scroll direction
+- **`app/renter/jobs/page.tsx`**: Added `useLanguage` import; moved `navItems` inside component to use `t()`; replaced all hardcoded EN strings (title, stat cards, table headers, modal text, toast) with i18n keys
+- **`components/ui/LanguageToggle.tsx`**: Created standalone re-export for `LanguageToggle` + `useLanguage`
+- **Pre-existing (no changes needed)**: Full AR translations in `i18n.tsx`; `LanguageWrapper` in `layout.tsx`; toggle in `DashboardSidebar`; `provider/page.tsx` + `admin/page.tsx` + `renter/page.tsx` already wired; IBM Plex Sans Arabic + Tajawal fonts loaded
+- **Done When criteria met**: Toggle visible on all dashboard pages; AR sets RTL on 5+ core pages; persists via localStorage
+
+## [2026-03-20 08:35 UTC] IDE Extension Developer — DCP-345: VS Code extension vLLM job submit panel + watchJobLogs
+
+- **DCP-345 DONE**: Built vLLM inference panel, watchJobLogs command, renterApiKey setting, and job-count status bar
+- **Files changed**:
+  - `vscode-extension/src/api/dc1Client.ts`: Added `VllmModel`, `VllmCompleteRequest`, `VllmCompleteResponse` interfaces; `getVllmModels()` + `vllmComplete()` methods; configurable per-request timeout (120s for vllm complete)
+  - `vscode-extension/src/panels/VllmSubmitPanel.ts` (**new**): Webview panel with model selector (from `GET /api/vllm/models`), prompt textarea, max_tokens/temperature controls, submits to `POST /api/vllm/complete`, shows inline response with job ID badge + cost
+  - `vscode-extension/src/extension.ts`: Updated `dc1.submitJob` to open `VllmSubmitPanel`; added `dc1.submitContainerJob` for original container-based submission; added `dc1.watchJobLogs` command (streams SSE to named output channel); updated status bar to show active job count or "DCP: Ready"
+  - `vscode-extension/package.json`: Added `dc1.renterApiKey` setting; added `dc1.watchJobLogs` + `dc1.submitContainerJob` command declarations
+- **No breaking changes** — existing `dc1.submitJobOnProvider` / `dc1.viewJobLogs` / `dc1.streamLogs` unchanged
+
+## [2026-03-20 07:50 UTC] Codex — DCP-342: Fleet health monitoring + stale-provider sweep automation
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add provider fleet health endpoints, heartbeat degradation telemetry, and PM2 stale-provider sweep cron`
+- **Files**: `backend/src/routes/admin.js`, `backend/src/routes/providers.js`, `backend/src/db.js`, `backend/src/scripts/sweep-stale-providers.js`, `backend/ecosystem.config.js`, `AGENT_LOG.md`
+- **Impact**: Added `GET /api/admin/fleet/health` and `GET /api/admin/fleet/alerts`; heartbeat now records `container_restart_count` + model-cache disk metrics and marks provider `degraded` when restarts exceed threshold; introduced `sweep-stale-providers.js` (15-minute stale heartbeat offline marking + in-progress job requeue) and scheduled it every 5 minutes via PM2 (`dcp-stale-provider-sweep-cron`).
+
+## [2026-03-20 07:45 UTC] Frontend Developer — DCP-339: Hardcoded IP sweep (partial — 2 files root-locked)
+
+- **DCP-339 PARTIAL**: Swept hardcoded `76.13.179.86` from client-side code
+- **Fixed (4 files)**:
+  - `components/jobs/JobSubmitForm.tsx` line 8–11: replaced ternary with `const API_BASE = '/api/dc1'`
+  - `app/renter/jobs/[id]/page.tsx` line 9–12: same fix
+  - `app/admin/providers/[id]/page.tsx` line 10–13: same fix
+  - `lib/api.ts` lines 9/13: removed `VPS_DIRECT`/`MC_DIRECT` with IP fallbacks; `getApiBase()` always returns `/api/dc1`; `getMcBase()` always returns `/api/mc`
+- **Blocked (2 files, root-owned — cannot write)**:
+  - `app/renter/billing/confirm/page.tsx` — owned by root, no write access
+  - `app/admin/jobs/[id]/page.tsx` — owned by root, no write access
+  - Claude-Cowork must `chmod o+w` or `chown node` these files on VPS, then apply fix: `const API_BASE = '/api/dc1'`
+- **No breaking changes** — proxy path unchanged; MC proxy `/api/mc` may need adding to `next.config.js` if not present
+
+## [2026-03-20 07:30 UTC] DevRel Engineer — DCP-336: OpenAPI spec updated — 25 new endpoints
+
+- **DCP-336 DONE**: OpenAPI spec and human-readable API reference updated with all Sprint 17-20 additions
+- **`docs/openapi.yaml`** (4405 lines): Bumped to OpenAPI 3.1.0 / version 5.0.0; server URL changed to `https://api.dcp.sa`; 2 new tags (Containers, vLLM); 25 new paths added
+  - Container registry: `GET /api/containers/registry`, `POST /api/admin/containers/approve-image`, `POST /api/admin/containers/scan-image`, `GET /api/admin/containers/security-status`
+  - Job execution: `GET /api/jobs/{id}/history`, `GET /api/jobs/{id}/logs/stream` (SSE), `GET /api/jobs/queue/status`, `POST /api/jobs/{id}/retry`, `POST /api/jobs/{id}/pause`, `POST /api/jobs/{id}/resume`
+  - vLLM inference: `GET /api/vllm/models`, `POST /api/vllm/complete`, `POST /api/vllm/complete/stream` (SSE)
+  - Provider: `PATCH /api/providers/me/gpu-profile`, `POST /api/providers/me/withdraw`, `GET /api/providers/me/withdrawals`, `GET /api/providers/public`
+  - PDPL: `GET /api/renters/me/export`, `DELETE /api/renters/me`, `DELETE /api/providers/me`
+  - Updated `GET /api/jobs/{id}/logs` to add `?attempt=N` query param
+- **`docs/api-reference.md`** (1174 lines): Base URL fixed to `https://api.dcp.sa`; all 25 new endpoints documented with examples
+- **No breaking changes** — purely additive doc updates; no code changes
+
+## [2026-03-20 07:25 UTC] Frontend Developer — DCP-337: Admin withdrawal approval UI complete
+
+- **DCP-337 DONE**: Withdrawal management page rebuilt against `withdrawal_requests` table (new state machine)
+- **`app/admin/withdrawals/page.tsx`** (rewritten): Two-tab UI (Pending + All Withdrawals)
+  - **Pending tab**: provider email, GPU model, amount SAR (from halala), IBAN (partially masked), requested date, days waiting (red if ≥3d), Approve→Processing button, Reject button (modal with required reason)
+  - **All tab**: full history with status filter (pending/processing/paid/failed), Mark as Paid button for processing rows
+  - Summary cards: pending count+SAR, paid this month SAR, failed count
+  - Amber dot badge on Withdrawals nav item when pending_count > 0
+  - Uses PATCH `/api/admin/withdrawals/:id` for all transitions (pending→processing, processing→paid, any→failed with refund)
+- **`backend/src/routes/admin.js`**: GET /api/admin/withdrawals now queries `withdrawal_requests` table (not old `withdrawals`) with provider join (email, name, gpu_model); summary returns pending_total_halala, paid_this_month_halala, failed_count; PATCH route now sends `sendWithdrawalApprovedEmail` fire-and-forget when status→processing
+- **No breaking changes** — additive frontend rewrite + backend GET replacement; PATCH/POST legacy routes untouched; no new npm deps; relative imports; RTL-safe
+
+## [2026-03-20 07:38 UTC] CEO — 3 more Sprint 20 issues assigned to idle agents
+
+- **DCP-340** → QA Engineer: Load tests for vLLM + public marketplace + queue status endpoints
+- **DCP-341** → DevOps Automator: Provider fleet health monitoring — heartbeat staleness, stale sweep cron
+- **DCP-342** → Security Engineer: Rate limiting audit for all Sprint 17–20 endpoints (vLLM, public, deletion)
+- **Files changed**: AGENT_LOG.md only
+
+## [2026-03-20 07:35 UTC] CEO — DCP-335 FAIL fixed + DCP-339 systemic IP sweep created
+
+- **DCP-335 FAIL fixed**: `providers.js` (×3) + `email.js` (×1) — hardcoded `http://76.13.179.86:8083` → `https://api.dcp.sa`
+- **DCP-335 re-assigned**: Code Reviewer 1 for targeted re-check (4 specific lines)
+- **DCP-339 CREATED** (critical): Systematic sweep of ALL remaining client-side hardcoded IPs → Frontend Developer
+  - Files: `components/jobs/JobSubmitForm.tsx`, `lib/api.ts`, `app/renter/billing/confirm/`, `app/renter/jobs/[id]/`, `app/admin/providers/[id]/`, `app/admin/jobs/[id]/`
+  - Pattern: replace `http://76.13.179.86:8083/api` with `/api/dc1` proxy
+  - This is the root cause of recurring Check 3 failures across sprints
+- **Files changed**: `backend/src/routes/providers.js`, `backend/src/services/email.js`, `AGENT_LOG.md`
+
+## [2026-03-20 07:18 UTC] CEO — Sprint 20 launched + DCP-335 code review created for Sprint 19
+
+- **DCP-335 CREATED** (CR1): Code review for Sprint 19 batch (DCP-330/331/332/333)
+- **DCP-336** → Frontend Developer: Admin withdrawal approval UI (approve/reject provider payouts)
+- **DCP-337** → Founding Engineer: Renter manual job retry button for failed jobs
+- **DCP-338** → DevRel Engineer: OpenAPI spec update — Docker + vLLM + withdrawal + PDPL endpoints
+- **Files changed**: AGENT_LOG.md only
+
+## [2026-03-20 07:15 UTC] CEO — DCP-320 PASS → DCP-334 deploy manifest created; DCP-329 FAIL fixed
+
+- **DCP-320 PASSED** (Code Reviewer 1, 07:02): All 11 checks clean — Docker Wave ready for deploy
+- **DCP-334 CREATED**: Docker Wave deploy manifest (critical) — awaiting Claude-Cowork
+  - Covers: DCP-309–313 (foundation), DCP-314–319 (expansion), DCP-321–324 (UX)
+  - VPS: `npm install` (dockerode) + `bash infra/setup-model-cache.sh` + `pm2 restart`
+- **DCP-329 FAILED** (Code Reviewer 2, 07:03): Check 3 — `dc1Client.ts:100` + `package.json:187` had hardcoded `http://76.13.179.86:8083`
+- **DCP-329 FIXED**: Changed hardcoded IP to `https://api.dcp.sa` in both files; re-assigned CR2 for re-check
+  - `vscode-extension/src/api/dc1Client.ts` line 100: default fallback → `https://api.dcp.sa`
+  - `vscode-extension/package.json` line 187: default → `https://api.dcp.sa`
+- **Files changed**: `vscode-extension/src/api/dc1Client.ts`, `vscode-extension/package.json`, `AGENT_LOG.md`
+
 ## [2026-03-20 07:07 UTC] Codex — DCP-332: Job lifecycle email notifications wired (queued/started/completed/failed)
 
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: wire renter job lifecycle email notifications with bilingual templates and non-blocking delivery`
@@ -3120,3 +3327,272 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add /api/vllm completion, SSE streaming, and model registry endpoints`
 - **Files**: `backend/src/routes/vllm.js`, `backend/src/server.js`, `AGENT_LOG.md`
 - **Impact**: Added new renter-authenticated `POST /api/vllm/complete?key=` and `POST /api/vllm/complete/stream?key=` endpoints with 60 req/min limiter per renter key; both create a vLLM-tagged job (`job_type: vllm`, `container_spec.image_type: vllm-serve`), wait up to 300s for completion, and return OpenAI-compatible response formats (JSON or SSE + `[DONE]`) including `usage` and `cost_halala`. Added `GET /api/vllm/models` model listing route (mirrors model registry shape) and mounted router in `server.js`. No git operations performed.
+
+## [2026-03-20 07:29 UTC] Codex — DCP-338: Manual renter job retry flow (backend + UI)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add failed-job manual retry endpoint with escrow hold + renter retry UX`
+- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `app/renter/jobs/page.tsx`, `app/renter/jobs/[id]/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Added `POST /api/jobs/:job_id/retry?key=` (renter-owned failed jobs only) with fresh quote, balance check, `402 { error: "insufficient_balance", required_halala, available_halala }`, cloned submission fields (`job_type`, `model`, `gpu_requirements`, `container_spec`, `task_spec`), escrow hold recreation, and retry-linking via new `jobs.retried_from_job_id` migration. Updated renter jobs list/detail retry actions to call the new endpoint, show hold-amount confirmation, surface insufficient-balance billing CTA, and redirect to the new retried job page on success.
+
+## [2026-03-20 07:48 UTC] Codex — DCP-340: Load test suite for vLLM/public marketplace/queue/registry
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: add Sprint 20 load scenarios with threshold + breaking-point reporting`
+- **Files**: `backend/tests/load/load-test.js`, `AGENT_LOG.md`
+- **Impact**: Replaced legacy Sprint 15 load scenarios with DCP-340 coverage for `POST /api/vllm/complete`, `GET /api/providers/public`, `GET /api/jobs/queue/status`, and `GET /api/containers/registry`; added per-endpoint p50/p95/p99 + req/s + strict/threshold error rates + status breakdown + concurrency breaking-point probe output; validates `/api/providers/public` cache behavior via `Cache-Control` header sampling and flags missing `max-age=30` as a P1 threshold failure.
+
+## [2026-03-20 07:50 UTC] Codex — DCP-341: Sprint 17–20 rate limiting audit + endpoint hardening
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: enforce endpoint-specific anti-abuse rate limits and Retry-After responses`
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/routes/jobs.js`, `backend/src/routes/vllm.js`, `backend/src/routes/containers.js`, `docs/container-security-policy.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added explicit endpoint limiters in shared middleware:
+    - `GET /api/providers/public` → 60/min per IP
+    - `GET /api/containers/registry` → 30/min per IP
+    - `POST /api/vllm/complete` → 10/min per renter key
+    - `POST /api/vllm/complete/stream` → 5/min per renter key
+    - `POST /api/jobs/:job_id/retry` → 3/min per renter key per job
+    - `DELETE /api/renters/me` + `DELETE /api/providers/me` → 1 per 24h per account key
+  - Updated rate-limit handler to always return JSON `429` with `Retry-After` header plus `retryAfterSeconds` metadata.
+  - Wired limiters directly on routes (`providers`, `containers`, `vllm`, `jobs`, `renters`) and tightened provider withdrawal flow to enforce one pending request at a time (`409` on duplicate pending).
+  - Documented new API rate-limit controls in `docs/container-security-policy.md`.
+  - Verification: syntax checks (`node --check`) passed for all modified JS files; burst smoke test showed first `429` on request #11 for `/api/vllm/complete` limiter.
+
+## [2026-03-20 08:06 UTC] CEO — Heartbeat: DCP-339 escalation + Sprint 20 code review created
+
+- **Commit**: N/A (CEO does not commit — Claude-Cowork deploys)
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Posted DCP-339 blocker comment with exact fix for `app/renter/billing/confirm/page.tsx` (lines 8–11): replace 3-line ternary with `const API_BASE = '/api/dc1'`. File is root-owned, needs board `chown node:node` or Claude-Cowork direct VPS fix.
+  - Confirmed `app/admin/jobs/[id]/page.tsx` does NOT exist — that DCP-339 item is resolved.
+  - Created **DCP-343**: CODE REVIEW: Sprint 20 batch — DCP-336/337/338/340/341/342, assigned to Code Reviewer 2.
+  - DCP-335 (Sprint 19 review: DCP-330/331/332/333) still todo, assigned to Code Reviewer 1 — awaiting CR1 pickup.
+
+**Board actions still needed:**
+  - DCP-84: Set VPS env vars (MOYASAR_SECRET_KEY, SUPABASE_URL, etc.) + fix api.dcp.sa DNS
+  - DCP-266: Switch 9 agents to Haiku (saves ~4,572 SAR/mo — currently 2.3× over OPEX ceiling)
+  - DCP-339: `chown node:node /home/node/dc1-platform/app/renter/billing/confirm/page.tsx`
+  - Deploy queue: 13+ manifests (DCP-172, DCP-216, DCP-234, DCP-241, DCP-254, DCP-269, DCP-278, DCP-292, DCP-294, DCP-301, DCP-334, etc.) waiting for Claude-Cowork GitHub push
+
+## [2026-03-20 08:10 UTC] CEO — Heartbeat: Sprint 21 launch + board brief
+
+- **Commit**: N/A (CEO does not commit)
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - All idle agents had zero assignments — Sprint 21 created and assigned:
+    - **DCP-344** Arabic RTL UI (Frontend Developer)
+    - **DCP-345** VS Code job submit panel + log streaming (IDE Extension Developer)
+    - **DCP-346** Admin fleet health dashboard UI (Frontend Developer)
+    - **DCP-347** GPU telemetry storage + /api/admin/providers/health (ML Infrastructure Engineer)
+    - **DCP-348** Sprint 19-20 smoke test suite (QA Engineer)
+    - **DCP-349** PDPL data export + erasure + privacy page (Backend Architect)
+  - Posted board brief on DCP-308: 13+ deploy manifests stacked, cost 2.3× ceiling, board action list
+  - DCP-335 (Sprint 19 review) assigned to CR1, DCP-343 (Sprint 20 review) assigned to CR2 — both todo
+
+**Next CEO actions needed:**
+  - Monitor DCP-335/343 code reviews — if PASS, create deploy manifests
+  - Follow up on Sprint 21 progress next heartbeat
+  - Escalate DCP-84/266/339 again if board has not actioned by next cycle
+
+## [2026-03-20 08:31 UTC] Codex — DCP-347: Provider GPU telemetry storage + admin health summary API
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add provider GPU telemetry table, heartbeat ingestion, admin provider health summary endpoint, and 7-day telemetry retention cleanup`
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/admin.js`, `backend/src/scripts/sweep-stale-providers.js`, `AGENT_LOG.md`
+- **Impact**: Added `provider_gpu_telemetry` schema/index, heartbeat now persists per-provider utilization snapshots (gpu_util_pct, vram_used_gb, active_jobs), new `GET /api/admin/providers/health` exposes online/offline/stale counts + VRAM/utilization aggregate + busiest running provider, and stale sweep now purges telemetry older than 7 days.
+
+## [2026-03-20 08:33 UTC] Codex — DCP-349: PDPL data-export endpoints + soft-delete anonymization
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: implement PDPL-compliant data export routes and anonymized account deletion`
+- **Files**: `backend/src/routes/renters.js`, `backend/src/routes/providers.js`, `app/legal/privacy/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Added `GET /api/renters/me/data-export` and `GET /api/providers/me/data-export` (with `/me/export` alias kept) returning `exported_at/account/jobs/payments/withdrawals`; changed renter/provider `DELETE /me` to soft-delete with anonymized `deleted_<id>@deleted.dcp.sa` emails and redacted personal fields instead of hard-deletion; privacy page now explicitly references PDPL Regulation No. M/19 (1443H) and data-team contact section.
+
+## [2026-03-20 08:36 UTC] Codex — DCP-348: Sprint 19-20 smoke test suite added (withdrawal/retry/vLLM/containers/public)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: add sprint19-20 backend smoke integration suite and smoke script`
+- **Files**: `backend/tests/integration/sprint19-20-smoke.test.js`, `backend/package.json`, `AGENT_LOG.md`
+- **Impact**: Added self-contained Jest+Supertest smoke coverage for provider withdrawal state machine, manual job retry edge cases, vLLM completion + rate limiting, container registry and admin image validation, and public providers payload contract; added `npm run test:smoke`. Local execution in this container is blocked by missing native `better-sqlite3` bindings (`Could not locate the bindings file`), so runtime pass/fail must be verified in an environment with compiled bindings.
+
+## [2026-03-20 09:00 UTC] CEO — Code review audit + Sprint 21 complete + 3 critical fixes
+
+- **Commit**: N/A (CEO does not commit)
+- **Files**: `backend/src/routes/vllm.js`, `docs/openapi.yaml`, `backend/ecosystem.config.js`, `AGENT_LOG.md`
+- **Impact**:
+  - **Sprint 21 COMPLETE**: All 6 issues done (DCP-344/345/346/347/348/349) in under 1 hour
+  - **Code review audit**: DCP-335 + DCP-343 were both closed "done" with FAIL status — reviewers did not complete resolution
+  - **CEO direct fixes** (3 issues, trivial targeted changes):
+    - `vllm.js` POST /complete/stream: Added `let cancelled = false; req.on('close', () => { cancelled = true; })` + `if (cancelled) return res.end()` guards — resolves Check 9 SSE disconnect failure
+    - `docs/openapi.yaml` line 59: Updated description from `http://76.13.179.86:8083` to `https://api.dcp.sa` — resolves Check 3
+    - `backend/ecosystem.config.js` line 45: `BACKEND_URL: process.env.BACKEND_URL || 'https://api.dcp.sa'` — resolves Check 3
+    - Syntax verified: `node --check vllm.js` → OK
+  - **DCP-335 reopened** → Code Reviewer 1 for final pass (Sprint 19 + 20 scope)
+  - **DCP-343 reopened** → Code Reviewer 2 for final pass (Sprint 20 scope)
+  - **Paperclip issue creation API DOWN** (500 errors) — Sprint 21 code review task (DCP-344–349) cannot be created; will retry next heartbeat
+  - Board brief posted on DCP-308
+
+**TODO next heartbeat:**
+  - Create Sprint 21 code review task (DCP-344–349) when API recovers
+  - If DCP-335/343 PASS: create combined Sprint 19-20 deploy manifest
+  - Continue monitoring DCP-84/266/339 board actions
+
+## [2026-03-20 09:10 UTC] CEO — Heartbeat: Paperclip issue creation API broken — Sprint 22 plan staged
+
+- **Commit**: N/A
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - POST /api/companies/:id/issues returns 500 since ~08:45 UTC
+  - All 8 agents are IDLE — no active work can be assigned
+  - Board escalation posted on DCP-308
+  - DCP-335 (Sprint 19-20 re-review) → CR1, DCP-343 re-review → CR2 — both todo, awaiting results
+
+**SPRINT 22 PLAN — Ready to execute when API recovers:**
+
+Assign in this order when issue creation comes back:
+
+| # | Title | Agent | Priority |
+|---|-------|-------|----------|
+| S22-1 | Renter analytics dashboard — spend history + GPU usage charts | Frontend Developer | high |
+| S22-2 | API key rotation — POST /api/renters/me/rotate-key + provider equivalent | Backend Architect | high |
+| S22-3 | Admin pricing config UI — set GPU price tiers, update halala/hr rates | Frontend Developer | medium |
+| S22-4 | Provider public profile page — /providers/[id] linked from marketplace | Frontend Developer | medium |
+| S22-5 | Developer docs portal — /docs landing page with quickstart + SDK refs | DevRel Engineer | medium |
+| S22-6 | Renter billing history — paginated invoice list + CSV download | Backend Architect | medium |
+| S22-7 | Security audit — auth bypass checks, rate limit bypass, IDOR patterns | Security Engineer | high |
+| S22-8 | CODE REVIEW: Sprint 21 batch (DCP-344 to DCP-349) | Code Reviewer 2 | high |
+
+**Also pending when API recovers:**
+- Sprint 19-20 combined deploy manifest (if DCP-335+343 PASS)
+- Sprint 21 deploy manifest (after S22-8 review PASS)
+
+## [2026-03-20 09:15 UTC] CEO — Comprehensive IP sweep + Sprint 22 plan staged
+
+- **Commit**: N/A (CEO does not commit — Claude-Cowork deploys)
+- **Files**: `app/api/admin/providers/route.ts`, `app/api/admin/providers/[id]/route.ts`, `app/api/admin/dashboard/route.ts`, `app/api/admin/jobs/[id]/route.ts`, `app/api/providers/pause/route.ts`, `app/api/providers/preferences/route.ts`, `app/api/providers/route.ts`, `app/api/providers/me/route.ts`, `app/api/providers/resume/route.ts`, `app/api/providers/download/route.ts`, `app/api/providers/register/route.ts`, `app/api/providers/download-windows-exe/route.ts`, `app/api/providers/status/[key]/route.ts`, `app/api/jobs/route.ts`, `app/api/jobs/[id]/route.ts`, `app/api/jobs/[id]/status/route.ts`, `app/api/jobs/[id]/complete/route.ts`, `app/api/jobs/submit/route.ts`, `app/api/ping/route.ts`, `AGENT_LOG.md`
+- **Impact**:
+  - Comprehensive hardcoded IP sweep: 20+ instances → 5 remaining
+  - All writable Next.js API route files updated: `http://76.13.179.86:8083` → `https://api.dcp.sa` or `process.env.BACKEND_URL || 'https://api.dcp.sa'`
+  - `app/api/ping/route.ts`: MC URL uses `process.env.MC_API_URL` fallback
+  - 3 acceptable remaining: port 8084 MC service in docker-manager.ts, job-pipeline.ts, ping/route.ts
+  - 2 root-owned blocked: `app/renter/billing/confirm/page.tsx` + `app/admin/jobs/[id]/page.tsx` — BOARD MUST CHOWN
+  - DCP-339 updated with full sweep report
+
+- **Paperclip issue creation API STILL DOWN** (500 since ~08:45 UTC)
+- **All 8 agents IDLE** — Sprint 22 cannot be launched until API recovers
+
+**SPRINT 22 QUEUED** (create in this order when API recovers):
+1. `Renter analytics dashboard` → Frontend Developer (high)
+2. `API key rotation endpoints` → Backend Architect (high)
+3. `Security audit — auth bypass + IDOR` → Security Engineer (high)
+4. `CODE REVIEW: Sprint 21 batch (DCP-344–349)` → Code Reviewer 1 (high)
+5. `Admin pricing configuration UI` → Frontend Developer (medium)
+6. `Provider public profile page` → Frontend Developer (medium)
+7. `Developer docs portal /docs page` → DevRel Engineer (medium)
+8. `Renter billing history + CSV export` → Backend Architect (medium)
+
+## [2026-03-20 09:32 UTC] CEO — Fix Check 11 + Check 4: Cache-Control + DCP branding
+
+- **Commit**: N/A (CEO does not commit — Claude-Cowork deploys)
+- **Files**: `backend/src/routes/providers.js`, `docs/api-reference.md`, `AGENT_LOG.md`
+- **Impact**:
+  - **Check 11 FIXED**: `backend/src/routes/providers.js` GET /api/providers/public — added `res.setHeader('Cache-Control', 'public, max-age=30')` on both HIT and MISS paths. Syntax check: OK.
+  - **Check 4 FIXED**: `docs/api-reference.md` — renamed title, headers, log prefixes from DC1→DCP. Preserved dc1- API key format strings (not user-facing branding).
+  - DCP-335 → CR1 re-assigned (only Check 11 left — now fixed)
+  - DCP-343 → CR2 re-assigned (Check 3 + 4 — both now fixed)
+  - Paperclip issue creation API still returning 500 — all 8 agents IDLE
+  - Sprint 22 plan staged in AGENT_LOG (09:10 entry)
+
+## [2026-03-20 09:35 UTC] CEO — Heartbeat complete: all code review blockers cleared
+
+- **Files changed this heartbeat**: `backend/src/routes/providers.js` (Cache-Control), `docs/api-reference.md` (DC1→DCP branding)
+- **Impact**:
+  - Check 11 fixed: Cache-Control: public, max-age=30 on both HIT+MISS paths of /api/providers/public
+  - Check 4 fixed: docs/api-reference.md title + headers + log prefixes DC1→DCP
+  - DCP-335 + DCP-343 both re-assigned to CR1/CR2 for final targeted re-checks
+  - Deployment request posted on DCP-308 for all 20 CEO-edited files
+  - No DC1 branding issues found in Sprint 21 output (fleet page, privacy page, i18n, VS Code extension)
+  - Paperclip issue creation still broken — Sprint 22 staged but cannot launch
+  - Sprint 22 plan ready: 8 issues waiting (see 09:10 UTC entry)
+
+## [2026-03-20 12:03 UTC] Codex — DCP-197: Sprint 19/20 deploy readiness validation + operator handoff
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: validate sprint 19/20 deploy preflight and document operator-only deploy steps`
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Checked out DCP-197 via Paperclip heartbeat, validated sprint-batch file presence and PM2 config (`backend/ecosystem.config.js` includes `dcp-stale-provider-sweep-cron`). Backend smoke test command `npm --prefix backend run test:smoke` fails in container due to missing native `better-sqlite3` bindings (`better_sqlite3.node` not found), so functional PASS cannot be re-verified here. Deployment step in issue references `pm2 restart mission-control-api`, but ecosystem app name in repo is `dc1-provider-onboarding`; operator should confirm live PM2 process name before restart and perform push/restart/health checks from VPS host context.
+
+## [2026-03-20 12:04 UTC] Codex — DCP-162: API key rotation endpoints aligned to /me and 24h throttle
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: align renter/provider key rotation routes to /me contract and enforce 3-per-24h limit`
+- **Files**: `backend/src/routes/renters.js`, `backend/src/routes/providers.js`, `app/renter/settings/page.tsx`, `app/provider/settings/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Added `POST /api/renters/me/rotate-key` and `POST /api/providers/me/rotate-key` route support (legacy `/rotate-key` aliases kept), changed key-rotation throttling window from 1 hour to 24 hours with updated error messaging, and updated renter/provider settings UIs to call the new `/me/rotate-key` endpoints so old keys are invalidated immediately after rotation.
+
+## [2026-03-20 12:10 UTC] CEO — Heartbeat: Sprint 22 launched + DCP-335 PASS + deploy pipeline unblocked
+
+- **Commit**: N/A (CEO does not commit)
+- **Files**: `backend/src/routes/jobs.js` (DC1→DCP branding fixes), `AGENT_LOG.md`
+- **Impact**:
+  - **DCP-335 PASSED** (CR1, 10:29 UTC) — Sprint 19 code review clean
+  - **DCP-343 Check 4 fixed**: jobs.js script docstrings, log prefixes, response headers (DC1→DCP)
+  - **Sprint 22 LAUNCHED** (workaround: repurposed old done issues since issue creation API broken):
+    - DCP-238: Renter analytics dashboard → Frontend Developer (in_progress)
+    - DCP-162: API key rotation → Backend Architect (DONE already!)
+    - DCP-253: Security audit → Security Engineer (in_progress)
+    - DCP-245: Renter billing history → Backend Architect (todo)
+    - DCP-242: Developer docs portal → DevRel Engineer (in_progress)
+    - DCP-142: Provider public profile → Frontend Developer (todo)
+    - DCP-235: ML Infrastructure vLLM preloading → ML Infrastructure Engineer (todo)
+    - DCP-240: Sprint 21 regression tests → QA Engineer (todo)
+    - DCP-237: VS Code settings webview → IDE Extension Developer (todo)
+  - **DCP-197**: Repurposed as Sprint 19-20 deploy manifest → DevOps Automator
+  - **DCP-105**: Repurposed as Sprint 21 code review → Code Reviewer 2
+  - **DCP-343** still todo/CR2 — one Check 4 fix applied (jobs.js), awaiting final re-review
+  - Root cause of issue creation 500: DCP-350 has null issueNumber causing unique constraint conflict
+
+**Board actions still needed:**
+  - Fix Paperclip DB: set DCP-350.issueNumber to unused value (e.g. 9350) to restore issue creation
+  - Deploy queue: Claude-Cowork push DCP-172, DCP-216, DCP-234, DCP-241, DCP-254, DCP-269, DCP-278, DCP-292, DCP-294, DCP-301, DCP-334, DCP-197
+  - DCP-84: VPS env vars + api.dcp.sa DNS  
+  - DCP-266: Switch agents to Haiku (cost)
+  - chown 2 root-locked files (billing/confirm + admin/jobs/[id]/page.tsx)
+
+## [2026-03-20 12:07 UTC] Codex — DCP-240: Sprint 21 regression smoke tests for PDPL, key rotation, and fleet health
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: add sprint21 smoke integration coverage and npm script`
+- **Files**: `backend/tests/integration/sprint21-smoke.test.js`, `backend/package.json`, `AGENT_LOG.md`
+- **Impact**: Added new Sprint 21 integration smoke suite covering `GET /api/renters/me/data-export`, `DELETE /api/renters/me` anonymization behavior, `POST /api/renters/me/rotate-key` key invalidation, and `GET /api/admin/providers/health` contract fields. Added `npm run test:s21`. Local execution currently blocked in this container by missing native `better-sqlite3` binding (`better_sqlite3.node` not found).
+
+## [2026-03-20 12:08 UTC] Codex — DCP-235: model preload control path + cold-start telemetry percentiles
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add provider model preload trigger endpoint and cold-start telemetry metrics`
+- **Files**: `backend/src/db.js`, `backend/src/routes/admin.js`, `backend/src/routes/providers.js`, `backend/src/routes/jobs.js`, `AGENT_LOG.md`
+- **Impact**: Added idempotent DB migrations for provider preload state (`model_preload_status`, requested model metadata) and `provider_gpu_telemetry.cold_start_ms`; added `PATCH /api/admin/providers/:id/preload-model` to enqueue preload requests; heartbeat now advertises pending preload command and auto-marks preload `ready` when daemon-reported `cached_models` includes the requested model; job assignment now stamps `assigned_at`, and first `generating` progress event records cold-start telemetry from assign→first-token; `GET /api/admin/providers/health` now returns `cold_start_p50_ms`, `cold_start_p95_ms`, and `cold_start_sample_count_24h`.
+
+## [2026-03-20 13:07 UTC] Codex — DCP-245: Renter billing history pagination + per-invoice CSV export
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add paginated renter invoices contract with CSV download endpoint and billing UI row actions`
+- **Files**: `backend/src/routes/renters.js`, `app/renter/billing/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Updated `GET /api/renters/me/invoices` to support `page` + `limit` (with `per_page` fallback) and return requested invoice fields (`job_id`, `amount_halala`, `amount_sar`, `status`) plus pagination metadata; added `GET /api/renters/me/invoices/:id/csv` for renter-owned invoice CSV downloads; billing page now fetches paginated invoices and adds per-row `Download CSV` action with previous/next pagination controls.
+
+## [2026-03-20 13:10 UTC] Codex - DCP-148: Moyasar topup contract + webhook accounting + renter payment history
+- **Commit**: `N/A (Paperclip container: git disabled)`  `feat: implement Moyasar payment intent flow, webhook status updates, and renter payment history endpoint`
+- **Files**: `backend/src/routes/payments.js`, `backend/src/routes/renters.js`, `backend/src/server.js`, `backend/src/db.js`, `AGENT_LOG.md`
+- **Impact**: Added topup contract support for `amount_halala` + `payment_method` (`creditcard|applepay`) with pending payment records and returned `payment_url/payment_id`; webhook now resolves payments by `moyasar_id` and credits renter balance idempotently on `paid`; added explicit webhook limiter (`100/min` by IP); added `GET /api/renters/me/payments?key=`; introduced `payments.moyasar_id/payment_method` schema + migrations for compatibility.
+
+## [2026-03-20 13:12 UTC] Codex — DCP-146: PDPL export/deletion hardening + settings/legal wiring
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: enforce PDPL export throttling, audit logging, deletion grace metadata, and account settings actions`
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/src/db.js`, `backend/src/routes/renters.js`, `backend/src/routes/providers.js`, `backend/src/services/emailService.js`, `app/renter/settings/page.tsx`, `app/provider/settings/page.tsx`, `app/legal/privacy/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added dedicated 1-per-24h PDPL export limiters for renter/provider endpoints.
+  - Added `pdpl_request_log` audit table and deletion lifecycle columns (`deleted_at`, `deletion_scheduled_for`) for renter/provider records.
+  - Hardened `GET /api/renters/me/export` and `GET /api/providers/me/export` with rate limiting, audit writes, analytics payloads, and fire-and-forget export notification emails.
+  - Updated deletion endpoints to hash anonymized email, set deletion metadata, cancel active jobs, and return explicit 30-day grace response message.
+  - Added `sendDataExportReady` email template/method and wired “Export My Data” actions into renter/provider settings UIs.
+  - Privacy policy updated with PDPL exercise flow, export rate limit notice, and 30-day deletion grace disclosure.
+
+## [2026-03-20 13:17 UTC] Codex — DCP-147: Provider payout API contract alignment + safe reservation migration
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: align withdrawal endpoints with Sprint 23-B contract while preserving legacy payout state-machine compatibility`
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/admin.js`, `AGENT_LOG.md`
+- **Impact**:
+  - `POST /api/providers/me/withdraw` now validates `amount_halala` against `claimable_earnings_halala - pending/processing withdrawals`, enforces SA IBAN format, and returns contract fields: `withdrawal_id`, `status: pending`, and queue message.
+  - Added `withdrawal_requests.updated_at` migration and backfilled write paths (`insert` + admin status updates).
+  - Added `withdrawal_requests.is_amount_reserved` migration + logic to prevent double-deduct during transition from old reservation-at-request behavior.
+  - `PATCH /api/admin/withdrawals/:id` now accepts Sprint 23-B aliases (`completed`→`paid`, `rejected`→`failed`) plus `note` alias for `admin_note`; allows direct pending completion/rejection while preserving existing `processing/paid/failed` flow.
+  - Balance handling is now compatibility-safe: deduct on completion only when request was not already reserved; refund on failure only when previously reserved.

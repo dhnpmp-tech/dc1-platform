@@ -18,7 +18,7 @@ const FROM_ADDRESS = 'DC1 Platform <noreply@dcp.sa>';
 // ── Template builders ──────────────────────────────────────────────────────
 
 function buildProviderEmail(name, apiKey) {
-  const daemonUrl = `${process.env.BACKEND_URL || 'http://76.13.179.86:8083'}/api/providers/download/daemon`;
+  const daemonUrl = `${process.env.BACKEND_URL || 'https://api.dcp.sa'}/api/providers/download/daemon`;
   const dashboardUrl = `${process.env.FRONTEND_URL || 'https://dcp.sa'}/provider`;
 
   return {

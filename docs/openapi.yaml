@@ -1,7 +1,7 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: DCP Platform API
-  version: 4.0.0
+  version: 5.0.0
   description: |
     DCP is Saudi Arabia's first decentralized GPU compute marketplace.
     Providers register NVIDIA GPUs, install the Python daemon, and earn SAR.
@@ -56,15 +56,15 @@ info:
       description: Frontend base URL injected into payment callback links. Defaults to https://dcp.sa.
       required: false
     BACKEND_URL:
-      description: Backend URL injected into installer scripts. Defaults to http://76.13.179.86:8083.
+      description: Backend URL injected into installer scripts. Defaults to https://api.dcp.sa.
       required: false
     CORS_ORIGINS:
       description: Comma-separated extra origins to allow in addition to the hardcoded allowlist.
       required: false
 
 servers:
-  - url: http://76.13.179.86:8083
-    description: Production VPS API
+  - url: https://api.dcp.sa
+    description: Production API
   - url: http://localhost:8083
     description: Local development
 
@@ -81,6 +81,10 @@ tags:
     description: Platform administration — providers, renters, jobs, finance, security
   - name: Templates
     description: Docker compute templates — available job types and approved image whitelist
+  - name: Containers
+    description: Container registry — approved images, custom image requests, security scans
+  - name: vLLM
+    description: Managed vLLM inference — synchronous and streaming completions
   - name: System
     description: Health checks and API info
 
@@ -90,12 +94,12 @@ components:
       type: apiKey
       in: query
       name: key
-      description: Provider API key. Prefix `dc1-provider-`. Also accepted as `x-provider-key` header.
+      description: Provider API key. Prefix `dcp-provider-`. Also accepted as `x-provider-key` header.
     RenterApiKey:
       type: apiKey
       in: query
       name: key
-      description: Renter API key. Prefix `dc1-renter-`. Also accepted as `x-renter-key` header.
+      description: Renter API key. Prefix `dcp-renter-`. Also accepted as `x-renter-key` header.
     AdminToken:
       type: apiKey
       in: header
@@ -343,7 +347,7 @@ paths:
                     type: integer
                   api_key:
                     type: string
-                    example: dc1-provider-a1b2c3d4e5f6...
+                    example: dcp-provider-a1b2c3d4e5f6...
                   installer_url:
                     type: string
                   message:
@@ -494,7 +498,7 @@ paths:
               properties:
                 api_key:
                   type: string
-                  example: dc1-provider-a1b2c3d4e5f6...
+                  example: dcp-provider-a1b2c3d4e5f6...
                 gpu_status:
                   type: object
                   description: GPU telemetry snapshot from nvidia-smi
@@ -1098,7 +1102,7 @@ paths:
                     type: integer
                   api_key:
                     type: string
-                    example: dc1-renter-a1b2c3d4e5f6...
+                    example: dcp-renter-a1b2c3d4e5f6...
                   message:
                     type: string
         '409':
@@ -1510,6 +1514,7 @@ paths:
     get:
       tags: [Jobs]
       summary: Get job execution logs
+      description: Returns stored log entries. Use `?attempt=N` to retrieve logs from a specific execution attempt (see `/api/jobs/{id}/history`).
       security:
         - RenterApiKey: []
         - ProviderApiKey: []
@@ -1520,6 +1525,13 @@ paths:
           required: true
           schema:
             type: string
+        - in: query
+          name: attempt
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Attempt number. Omit for latest attempt.
       responses:
         '200':
           description: Log entries
@@ -1532,6 +1544,9 @@ paths:
                     type: array
                     items:
                       type: object
+                  attempt:
+                    type: integer
+                    description: Attempt number these logs belong to
     post:
       tags: [Jobs]
       summary: Daemon appends log entries for a job
@@ -2627,7 +2642,7 @@ paths:
                     example: ok
                   service:
                     type: string
-                    example: dc1-platform-api
+                    example: dcp-platform-api
                   mode:
                     type: string
                     example: headless
@@ -2751,7 +2766,7 @@ paths:
                 api_key:
                   type: string
                   description: Provider API key
-                  example: dc1-provider-abcdef1234567890
+                  example: dcp-provider-abcdef1234567890
                 amount_sar:
                   type: number
                   format: float
@@ -3330,3 +3345,1061 @@ paths:
             text/html:
               schema:
                 type: string
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Container Registry (DCP-315/319)
+  # ──────────────────────────────────────────────────────────────────────────────
+
+  /api/containers/registry:
+    get:
+      tags: [Containers]
+      summary: List approved Docker images
+      description: |
+        Returns all images approved for use in DCP jobs. Each entry includes
+        the image tag, description, associated job type, and Trivy scan status.
+        No authentication required — public endpoint.
+      responses:
+        '200':
+          description: Approved image registry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        image:
+                          type: string
+                          example: dc1/llm-worker:latest
+                        description:
+                          type: string
+                        job_type:
+                          type: string
+                          example: llm_inference
+                        scan_status:
+                          type: string
+                          enum: [pending, clean, flagged, failed]
+                        scan_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        approved_at:
+                          type: string
+                          format: date-time
+                  total:
+                    type: integer
+
+  /api/admin/containers/approve-image:
+    post:
+      tags: [Containers, Admin]
+      summary: Approve a custom Docker image
+      description: |
+        Adds a Docker image to the approved registry. Optionally triggers a
+        Trivy security scan before final approval. Once approved, the image
+        becomes available for `custom_container` jobs.
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  example: myorg/custom-worker:v1.2
+                  description: Fully-qualified Docker image reference
+                description:
+                  type: string
+                  description: Human-readable description of the image
+                job_type:
+                  type: string
+                  description: Job type this image is intended for
+                scan_first:
+                  type: boolean
+                  default: true
+                  description: Run Trivy scan before approval. If scan finds CRITICAL vulnerabilities, approval is blocked.
+      responses:
+        '201':
+          description: Image approved (or queued for scan)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  image:
+                    type: string
+                  status:
+                    type: string
+                    enum: [approved, scan_pending]
+                  message:
+                    type: string
+        '400':
+          description: Missing image field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Image already in registry
+
+  /api/admin/containers/scan-image:
+    post:
+      tags: [Containers, Admin]
+      summary: Trigger a Trivy security scan on an image
+      description: |
+        Queues a Trivy vulnerability scan for the specified image. Results are
+        stored and accessible via `/api/admin/containers/security-status`.
+        Scan runs asynchronously — poll the security-status endpoint for results.
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  example: dc1/llm-worker:latest
+      responses:
+        '202':
+          description: Scan queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  image:
+                    type: string
+                  scan_id:
+                    type: string
+                  message:
+                    type: string
+                    example: Trivy scan queued. Check /api/admin/containers/security-status for results.
+        '400':
+          description: Missing image field
+
+  /api/admin/containers/security-status:
+    get:
+      tags: [Containers, Admin]
+      summary: Container security scan dashboard
+      description: |
+        Returns scan results for all registry images. Highlights images with
+        CRITICAL or HIGH severity CVEs. Use this to audit the registry before
+        approving new images.
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, clean, flagged, failed]
+          description: Filter by scan status
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum: [CRITICAL, HIGH, MEDIUM, LOW]
+          description: Return only images with findings at or above this severity
+      responses:
+        '200':
+          description: Security scan summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      total_images:
+                        type: integer
+                      clean:
+                        type: integer
+                      flagged:
+                        type: integer
+                      pending:
+                        type: integer
+                  images:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        image:
+                          type: string
+                        scan_status:
+                          type: string
+                        scanned_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        critical_cves:
+                          type: integer
+                        high_cves:
+                          type: integer
+                        findings_summary:
+                          type: string
+                          nullable: true
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Job Execution — History, Streaming Logs, Queue Status, Retry, Pause/Resume
+  # (DCP-314, DCP-316, DCP-317, Sprint 20)
+  # ──────────────────────────────────────────────────────────────────────────────
+
+  /api/jobs/{job_id}/history:
+    get:
+      tags: [Jobs]
+      summary: Job execution attempt history
+      description: |
+        Returns a log of all execution attempts for a job. Each entry records
+        the attempt number, start/end times, exit status, and error message.
+        Useful for debugging retry scenarios.
+      security:
+        - RenterApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+          description: Job UUID or numeric ID
+      responses:
+        '200':
+          description: Execution attempt history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  attempts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        attempt:
+                          type: integer
+                          description: Attempt number (1-based)
+                        provider_id:
+                          type: integer
+                        started_at:
+                          type: string
+                          format: date-time
+                        ended_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        status:
+                          type: string
+                          enum: [running, completed, failed, timeout]
+                        error:
+                          type: string
+                          nullable: true
+                        duration_seconds:
+                          type: number
+                          nullable: true
+        '404':
+          description: Job not found
+
+  /api/jobs/{job_id}/logs/stream:
+    get:
+      tags: [Jobs]
+      summary: Stream job execution logs (SSE)
+      description: |
+        Opens a Server-Sent Events stream for live job log output. Each event
+        contains a single log line. The stream closes when the job reaches a
+        terminal state (`completed`, `failed`, `cancelled`).
+
+        **Client usage:**
+        ```javascript
+        const source = new EventSource(
+          `https://api.dcp.sa/api/jobs/${jobId}/logs/stream`,
+          { headers: { 'x-renter-key': apiKey } }
+        );
+        source.onmessage = (e) => console.log(e.data);
+        ```
+      security:
+        - RenterApiKey: []
+        - ProviderApiKey: []
+        - AdminToken: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE stream of log lines
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Each event: `data: <log line>\n\n`
+                  Terminal event: `data: [DONE]\n\n`
+        '404':
+          description: Job not found
+
+  /api/jobs/queue/status:
+    get:
+      tags: [Jobs]
+      summary: Job queue depth by compute type
+      description: |
+        Returns the current number of queued and running jobs broken down by
+        `job_type`. Use this to estimate wait times before submitting a job.
+        No authentication required — public endpoint.
+      responses:
+        '200':
+          description: Queue depth per job type
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queue:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        job_type:
+                          type: string
+                          example: llm_inference
+                        queued:
+                          type: integer
+                          description: Jobs waiting for a provider
+                        running:
+                          type: integer
+                          description: Jobs currently executing
+                        avg_wait_seconds:
+                          type: number
+                          nullable: true
+                          description: Rolling average queue wait time
+                  total_queued:
+                    type: integer
+                  total_running:
+                    type: integer
+                  updated_at:
+                    type: string
+                    format: date-time
+
+  /api/jobs/{job_id}/retry:
+    post:
+      tags: [Jobs]
+      summary: Retry a failed job
+      description: |
+        Re-queues a `failed` job for execution. The renter's balance is checked
+        against the original estimated cost — a new hold is placed. The job
+        retains its original `job_id` but increments its attempt counter (visible
+        in `/api/jobs/{id}/history`).
+
+        Only jobs in `failed` status can be retried. Max 3 retry attempts.
+      security:
+        - RenterApiKey: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job re-queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  job_id:
+                    type: string
+                  attempt:
+                    type: integer
+                    description: New attempt number
+                  status:
+                    type: string
+                    enum: [pending, queued]
+                  cost_halala:
+                    type: integer
+                  new_balance_halala:
+                    type: integer
+        '400':
+          description: Job is not in failed status, or max retry attempts reached
+        '402':
+          description: Insufficient balance for retry
+        '404':
+          description: Job not found
+
+  /api/jobs/{job_id}/pause:
+    post:
+      tags: [Jobs]
+      summary: Pause a running job (checkpoint container)
+      description: |
+        Sends a pause signal to the provider daemon, which uses `docker checkpoint`
+        to snapshot the container state to disk. The job transitions to `paused`.
+        Resume with `POST /api/jobs/{id}/resume`.
+
+        Only supported for jobs using checkpoint-compatible images.
+      security:
+        - RenterApiKey: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pause signal sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    example: pausing
+                  message:
+                    type: string
+        '400':
+          description: Job is not in running status or image does not support checkpointing
+        '404':
+          description: Job not found
+
+  /api/jobs/{job_id}/resume:
+    post:
+      tags: [Jobs]
+      summary: Resume a paused job (restore from checkpoint)
+      description: |
+        Sends a resume signal to the provider daemon, which restores the container
+        from its checkpoint and continues execution. The job transitions back to
+        `running`.
+      security:
+        - RenterApiKey: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resume signal sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    example: resuming
+                  message:
+                    type: string
+        '400':
+          description: Job is not in paused status
+        '404':
+          description: Job not found
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # vLLM Managed Inference (DCP-333)
+  # ──────────────────────────────────────────────────────────────────────────────
+
+  /api/vllm/models:
+    get:
+      tags: [vLLM]
+      summary: List available vLLM models
+      description: |
+        Returns the list of LLM models available for managed inference via
+        `/api/vllm/complete`. These models are pre-loaded on DCP inference
+        nodes and do not require a separate job submission.
+
+        No authentication required.
+      responses:
+        '200':
+          description: Available model list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: mistralai/Mistral-7B-Instruct-v0.2
+                        object:
+                          type: string
+                          example: model
+                        context_length:
+                          type: integer
+                          example: 32768
+                        max_tokens:
+                          type: integer
+                          example: 4096
+                        vram_required_gb:
+                          type: number
+                          example: 14
+                        available:
+                          type: boolean
+                          description: True if a provider is currently serving this model
+
+  /api/vllm/complete:
+    post:
+      tags: [vLLM]
+      summary: Synchronous LLM completion
+      description: |
+        Submits a prompt to a managed vLLM inference endpoint and returns the
+        full response synchronously. Internally submits an `llm_inference` job
+        and waits for completion (max 120s timeout).
+
+        For streaming output, use `POST /api/vllm/complete/stream`.
+      security:
+        - RenterApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model, prompt]
+              properties:
+                model:
+                  type: string
+                  example: mistralai/Mistral-7B-Instruct-v0.2
+                  description: Model ID from `/api/vllm/models`
+                prompt:
+                  type: string
+                  example: Explain quantum computing in simple terms.
+                max_tokens:
+                  type: integer
+                  default: 512
+                  minimum: 1
+                  maximum: 4096
+                temperature:
+                  type: number
+                  default: 0.7
+                  minimum: 0
+                  maximum: 2
+                top_p:
+                  type: number
+                  default: 1
+                  minimum: 0
+                  maximum: 1
+                stop:
+                  type: array
+                  items:
+                    type: string
+                  description: Stop sequences
+                provider_id:
+                  type: integer
+                  nullable: true
+                  description: Pin to a specific provider. Omit to auto-select.
+      responses:
+        '200':
+          description: Completion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Completion ID (same as job_id)
+                  model:
+                    type: string
+                  choices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index:
+                          type: integer
+                        text:
+                          type: string
+                        finish_reason:
+                          type: string
+                          enum: [stop, length, timeout]
+                  usage:
+                    type: object
+                    properties:
+                      prompt_tokens:
+                        type: integer
+                      completion_tokens:
+                        type: integer
+                      total_tokens:
+                        type: integer
+                  cost_halala:
+                    type: integer
+                  latency_ms:
+                    type: integer
+        '402':
+          description: Insufficient balance
+        '503':
+          description: No providers available for this model
+
+  /api/vllm/complete/stream:
+    post:
+      tags: [vLLM]
+      summary: Streaming LLM completion (SSE)
+      description: |
+        Submits a prompt and streams the response token-by-token as Server-Sent
+        Events. Each event carries a partial `text` delta. The final event
+        carries `finish_reason` and billing metadata.
+
+        **Client usage:**
+        ```javascript
+        const resp = await fetch('https://api.dcp.sa/api/vllm/complete/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-renter-key': apiKey
+          },
+          body: JSON.stringify({ model: 'mistralai/Mistral-7B-Instruct-v0.2', prompt: 'Hello!' })
+        });
+        const reader = resp.body.getReader();
+        // read SSE frames...
+        ```
+      security:
+        - RenterApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model, prompt]
+              properties:
+                model:
+                  type: string
+                  example: mistralai/Mistral-7B-Instruct-v0.2
+                prompt:
+                  type: string
+                max_tokens:
+                  type: integer
+                  default: 512
+                temperature:
+                  type: number
+                  default: 0.7
+                stop:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: SSE token stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Token delta events: `data: {"text": "...", "index": 0}\n\n`
+                  Final event: `data: {"finish_reason": "stop", "usage": {...}, "cost_halala": N}\n\n`
+                  Terminator: `data: [DONE]\n\n`
+        '402':
+          description: Insufficient balance
+        '503':
+          description: No providers available
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Provider — GPU Profile, Withdrawals, Public Marketplace (DCP-322/332)
+  # ──────────────────────────────────────────────────────────────────────────────
+
+  /api/providers/me/gpu-profile:
+    patch:
+      tags: [Providers]
+      summary: Update provider GPU capabilities
+      description: |
+        Allows a provider to update their GPU profile metadata. Useful after
+        hardware upgrades or configuration changes. The daemon also updates
+        this automatically on each heartbeat, but this endpoint lets providers
+        correct stale data manually.
+      security:
+        - ProviderApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gpu_model:
+                  type: string
+                  example: NVIDIA RTX 4090
+                vram_gb:
+                  type: number
+                  example: 24
+                gpu_count:
+                  type: integer
+                  example: 2
+                compute_capability:
+                  type: string
+                  example: "8.9"
+                cuda_version:
+                  type: string
+                  example: "12.2"
+                driver_version:
+                  type: string
+                  example: "535.54.03"
+                location:
+                  type: string
+                  example: SA
+      responses:
+        '200':
+          description: GPU profile updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  provider_id:
+                    type: integer
+                  updated_fields:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          description: Invalid API key
+
+  /api/providers/me/withdraw:
+    post:
+      tags: [Providers]
+      summary: Request an earnings payout (provider self-service)
+      description: |
+        Alias for `POST /api/providers/withdraw`. Submits a withdrawal request
+        for a portion of the provider's claimable earnings. Minimum 10 SAR.
+        Request is processed within 1–3 business days.
+      security:
+        - ProviderApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_sar]
+              properties:
+                amount_sar:
+                  type: number
+                  minimum: 10
+                  example: 100.00
+                payout_method:
+                  type: string
+                  enum: [bank_transfer, stc_pay, crypto]
+                  default: bank_transfer
+                payout_details:
+                  type: object
+                  description: IBAN, phone number, or wallet address depending on method
+                  example:
+                    iban: SA4420000001234567891234
+                    account_name: Ahmed Al-Rashidi
+      responses:
+        '201':
+          description: Withdrawal request created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  withdrawal_id:
+                    type: string
+                  amount_sar:
+                    type: number
+                  status:
+                    type: string
+                    example: pending
+                  message:
+                    type: string
+        '402':
+          description: Insufficient available earnings
+
+  /api/providers/me/withdrawals:
+    get:
+      tags: [Providers]
+      summary: Provider withdrawal history (self-service)
+      description: |
+        Returns the authenticated provider's withdrawal request history.
+        Alias for `GET /api/providers/withdrawal-history`.
+      security:
+        - ProviderApiKey: []
+      parameters:
+        - in: query
+          name: key
+          schema:
+            type: string
+          description: Provider API key (alternative to x-provider-key header)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Withdrawal history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider_id:
+                    type: integer
+                  withdrawals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        withdrawal_id:
+                          type: string
+                        amount_sar:
+                          type: number
+                        payout_method:
+                          type: string
+                        status:
+                          type: string
+                          enum: [pending, approved, rejected, completed]
+                        requested_at:
+                          type: string
+                          format: date-time
+                        processed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+
+  /api/providers/public:
+    get:
+      tags: [Providers]
+      summary: Public GPU marketplace — live providers
+      description: |
+        Returns online, unpaused GPU providers with specs and indicative pricing.
+        No authentication required. Used by the public-facing marketplace page
+        at `dcp.sa/marketplace`.
+
+        Equivalent to `GET /api/providers/marketplace` — prefer this URL in new code.
+      responses:
+        '200':
+          description: Online providers for the public marketplace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        gpu_model:
+                          type: string
+                          example: NVIDIA RTX 4090
+                        vram_gb:
+                          type: number
+                          example: 24
+                        gpu_count:
+                          type: integer
+                          example: 1
+                        location:
+                          type: string
+                          example: SA
+                        price_per_min_halala:
+                          type: integer
+                          example: 15
+                        uptime_pct:
+                          type: number
+                          example: 98.5
+                        jobs_completed:
+                          type: integer
+                        is_live:
+                          type: boolean
+                          description: Heartbeat received within last 120 seconds
+                        cached_models:
+                          type: array
+                          items:
+                            type: string
+                  total:
+                    type: integer
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # PDPL Compliance — Data Export & Account Deletion (DCP-328)
+  # ──────────────────────────────────────────────────────────────────────────────
+
+  /api/renters/me/export:
+    get:
+      tags: [Renters]
+      summary: Export all personal data (PDPL data portability)
+      description: |
+        Returns a JSON document containing all personal data held for the
+        authenticated renter — profile, payment history, job history, and
+        account metadata. Required under Saudi Arabia's Personal Data
+        Protection Law (PDPL).
+
+        The response is a downloadable JSON file.
+      security:
+        - RenterApiKey: []
+      responses:
+        '200':
+          description: Personal data export
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exported_at:
+                    type: string
+                    format: date-time
+                  renter:
+                    $ref: '#/components/schemas/Renter'
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+                  payments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  data_retention_policy:
+                    type: string
+                    example: Data is retained for 7 years per Saudi financial regulations.
+
+  /api/renters/me:
+    delete:
+      tags: [Renters]
+      summary: Delete renter account (PDPL right to erasure)
+      description: |
+        Permanently deletes the authenticated renter's account and associated
+        personal data. Required under Saudi Arabia's Personal Data Protection
+        Law (PDPL).
+
+        **Preconditions:**
+        - Account balance must be zero (withdraw or transfer first)
+        - No jobs may be in `running` or `queued` status
+
+        This action is **irreversible**. The API key is immediately invalidated.
+      security:
+        - RenterApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm:
+                  type: string
+                  enum: ["DELETE_MY_ACCOUNT"]
+                  description: Must be the literal string `DELETE_MY_ACCOUNT`
+                reason:
+                  type: string
+                  description: Optional deletion reason (retained anonymously for regulatory reporting)
+      responses:
+        '200':
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Account permanently deleted. All personal data erased.
+                  deleted_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Confirmation string missing or incorrect
+        '409':
+          description: Account has active jobs or non-zero balance. Resolve before deletion.
+
+  /api/providers/me:
+    delete:
+      tags: [Providers]
+      summary: Delete provider account (PDPL right to erasure)
+      description: |
+        Permanently deletes the authenticated provider's account and personal
+        data. Required under Saudi Arabia's Personal Data Protection Law (PDPL).
+
+        **Preconditions:**
+        - No jobs may be in `running` status (daemon must be stopped)
+        - No pending withdrawal requests
+
+        Earnings history is anonymised (provider ID replaced with `[deleted]`)
+        rather than erased to preserve billing audit trail required by law.
+        This action is **irreversible**.
+      security:
+        - ProviderApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm:
+                  type: string
+                  enum: ["DELETE_MY_ACCOUNT"]
+                  description: Must be the literal string `DELETE_MY_ACCOUNT`
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Provider account permanently deleted. Earnings history anonymised.
+                  deleted_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Confirmation string missing or incorrect
+        '409':
+          description: Active jobs running or pending withdrawals exist

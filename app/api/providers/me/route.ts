@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND =
   process.env.BACKEND_URL ||
-  (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:8083' : 'http://76.13.179.86:8083');
+  (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:8083' : 'https://api.dcp.sa');
 
 export async function GET(req: NextRequest) {
   const key = req.nextUrl.searchParams.get('key');

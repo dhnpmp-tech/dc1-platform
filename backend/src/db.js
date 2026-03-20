@@ -43,6 +43,14 @@ db.exec(`
     rejected_reason TEXT,
     api_key TEXT,
     notes TEXT,
+    container_restart_count INTEGER DEFAULT 0,
+    model_cache_disk_mb INTEGER DEFAULT 0,
+    model_cache_disk_total_mb INTEGER DEFAULT 0,
+    model_cache_disk_used_pct REAL DEFAULT 0,
+    model_preload_status TEXT DEFAULT 'none',
+    model_preload_model TEXT,
+    model_preload_requested_at TEXT,
+    model_preload_updated_at TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
@@ -69,6 +77,7 @@ db.exec(`
     notes TEXT,
     submitted_at TEXT,
     started_at TEXT,
+    first_token_at TEXT,
     completed_at TEXT,
     updated_at TEXT,
     created_at TEXT,
@@ -490,6 +499,8 @@ const migrations = [
   // Ocean-style structured resource advertisement — DCP-27
   'ALTER TABLE providers ADD COLUMN resource_spec TEXT',            // JSON: {resources:[{id,total,type,...}]}
   // SAR payment integration — DCP-31
+  'ALTER TABLE payments ADD COLUMN moyasar_id TEXT',
+  'ALTER TABLE payments ADD COLUMN payment_method TEXT DEFAULT \'creditcard\'',
   'ALTER TABLE payments ADD COLUMN refunded_at TEXT',               // when refund processed
   'ALTER TABLE payments ADD COLUMN refund_amount_halala INTEGER',   // partial refund support
   // Escrow-based earnings tracking — DCP-32 (integer halala, avoids SAR float drift)
@@ -507,16 +518,37 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN supported_compute_types TEXT',
   'ALTER TABLE providers ADD COLUMN gpu_profile_source TEXT DEFAULT \'manual\'',
   'ALTER TABLE providers ADD COLUMN gpu_profile_updated_at TEXT',
+  'ALTER TABLE providers ADD COLUMN container_restart_count INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN model_cache_disk_mb INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN model_cache_disk_total_mb INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN model_cache_disk_used_pct REAL DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN model_preload_status TEXT DEFAULT \'none\'',
+  'ALTER TABLE providers ADD COLUMN model_preload_model TEXT',
+  'ALTER TABLE providers ADD COLUMN model_preload_requested_at TEXT',
+  'ALTER TABLE providers ADD COLUMN model_preload_updated_at TEXT',
   // Optional renter callback endpoint for job lifecycle webhooks
   'ALTER TABLE renters ADD COLUMN webhook_url TEXT',
   'ALTER TABLE renters ADD COLUMN rotated_at TEXT',
+  // PDPL deletion lifecycle tracking
+  'ALTER TABLE renters ADD COLUMN deleted_at TEXT',
+  'ALTER TABLE renters ADD COLUMN deletion_scheduled_for TEXT',
+  'ALTER TABLE providers ADD COLUMN deleted_at TEXT',
+  'ALTER TABLE providers ADD COLUMN deletion_scheduled_for TEXT',
   // Job completion callback delivery tracking
   'ALTER TABLE jobs ADD COLUMN webhook_notified_at TEXT',
   'ALTER TABLE jobs ADD COLUMN webhook_delivery_status TEXT',
   'ALTER TABLE jobs ADD COLUMN webhook_delivery_attempts INTEGER DEFAULT 0',
   'ALTER TABLE jobs ADD COLUMN completion_email_sent_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN retried_from_job_id INTEGER',
+  'ALTER TABLE jobs ADD COLUMN first_token_at TEXT',
   'ALTER TABLE job_executions ADD COLUMN gpu_seconds_used REAL DEFAULT 0',
   'ALTER TABLE job_executions ADD COLUMN cost_halala INTEGER DEFAULT 0',
+  'ALTER TABLE heartbeat_log ADD COLUMN container_restart_count INTEGER DEFAULT 0',
+  'ALTER TABLE heartbeat_log ADD COLUMN model_cache_used_mb INTEGER DEFAULT 0',
+  'ALTER TABLE heartbeat_log ADD COLUMN model_cache_total_mb INTEGER DEFAULT 0',
+  'ALTER TABLE heartbeat_log ADD COLUMN model_cache_used_pct REAL DEFAULT 0',
+  'ALTER TABLE withdrawal_requests ADD COLUMN updated_at TEXT',
+  'ALTER TABLE withdrawal_requests ADD COLUMN is_amount_reserved INTEGER DEFAULT 1',
 ];
 
 migrations.forEach(sql => {
@@ -620,6 +652,20 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_rate_limit_log_action_actor_time ON admin_rate_limit_log(action_key, actor_fingerprint, created_at DESC)`);
 
+// ─── PDPL REQUEST AUDIT TABLE ───
+// Records immutable export/deletion requests for compliance evidence.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pdpl_request_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_type TEXT NOT NULL CHECK(account_type IN ('provider', 'renter')),
+    account_id INTEGER NOT NULL,
+    request_type TEXT NOT NULL CHECK(request_type IN ('export', 'delete')),
+    requested_at TEXT NOT NULL,
+    metadata_json TEXT
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_pdpl_request_log_account_time ON pdpl_request_log(account_type, account_id, requested_at DESC)`);
+
 // ─── RENTER QUOTA TABLE ───
 // Per-renter submission/spend controls enforced at job submission.
 db.exec(`
@@ -659,12 +705,14 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_quota_log_job_id ON quota_log(job_id, cr
 db.exec(`
   CREATE TABLE IF NOT EXISTS payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    payment_id TEXT NOT NULL UNIQUE,        -- Moyasar payment ID
+    payment_id TEXT NOT NULL UNIQUE,        -- Internal/external payment identifier
+    moyasar_id TEXT UNIQUE,                 -- Canonical Moyasar payment ID
     renter_id INTEGER NOT NULL,
     amount_sar REAL NOT NULL,
     amount_halala INTEGER NOT NULL,
     status TEXT DEFAULT 'initiated',        -- initiated|paid|failed|refunded
     source_type TEXT DEFAULT 'creditcard',  -- creditcard|mada|applepay
+    payment_method TEXT DEFAULT 'creditcard',
     description TEXT,
     callback_url TEXT,
     checkout_url TEXT,                      -- Moyasar hosted checkout URL
@@ -678,6 +726,7 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_renter_id ON payments(renter_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_payment_id ON payments(payment_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_moyasar_id ON payments(moyasar_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status, created_at DESC)`);
 
 // ─── WITHDRAWALS TABLE ───
@@ -701,11 +750,13 @@ db.exec(`
     id TEXT PRIMARY KEY,
     provider_id INTEGER NOT NULL,
     amount_halala INTEGER NOT NULL,
+    is_amount_reserved INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','paid','failed')),
     iban TEXT NOT NULL,
     admin_note TEXT,
     created_at TEXT NOT NULL,
     processed_at TEXT,
+    updated_at TEXT,
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
@@ -748,9 +799,35 @@ db.exec(`
     os_info TEXT,
     gpu_metrics_json TEXT,
     gpu_count INTEGER DEFAULT 1,
+    container_restart_count INTEGER DEFAULT 0,
+    model_cache_used_mb INTEGER DEFAULT 0,
+    model_cache_total_mb INTEGER DEFAULT 0,
+    model_cache_used_pct REAL DEFAULT 0,
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
+
+// ─── PROVIDER GPU TELEMETRY TABLE ───
+// Time-series heartbeat snapshots used for fleet-level utilization analytics.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_gpu_telemetry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    gpu_name TEXT,
+    gpu_vram_gb INTEGER,
+    gpu_util_pct REAL,
+    vram_used_gb REAL,
+    cold_start_ms INTEGER,
+    active_jobs INTEGER DEFAULT 0,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_provider_time ON provider_gpu_telemetry(provider_id, recorded_at)`);
+
+try {
+  db.prepare('ALTER TABLE provider_gpu_telemetry ADD COLUMN cold_start_ms INTEGER').run();
+} catch (e) {}
 
 // ─── ESCROW HOLDS TABLE ─── (DCP-32: off-chain escrow for GPU job billing)
 // Tracks pre-paid funds through the job lifecycle:

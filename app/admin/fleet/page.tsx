@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
+import StatusBadge from '../../components/ui/StatusBadge'
 
 const API_BASE = '/api/dc1'
 
@@ -29,11 +30,33 @@ const navItems = [
   { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
 ]
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatHeartbeat(iso: string | null): string {
+  if (!iso) return 'Never'
+  const ageSec = (Date.now() - new Date(iso).getTime()) / 1000
+  if (ageSec < 60) return `${Math.round(ageSec)}s ago`
+  if (ageSec < 3600) return `${Math.round(ageSec / 60)}m ago`
+  return `${Math.round(ageSec / 3600)}h ago`
+}
+
+function providerStatus(lastHeartbeat: string | null): 'online' | 'warning' | 'offline' {
+  if (!lastHeartbeat) return 'offline'
+  const ageSec = (Date.now() - new Date(lastHeartbeat).getTime()) / 1000
+  if (ageSec < 120) return 'online'
+  if (ageSec < 300) return 'warning'
+  return 'offline'
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 export default function FleetHealthPage() {
   const router = useRouter()
   const [data, setData] = useState<any>(null)
   const [health, setHealth] = useState<any>(null)
+  const [fleetSummary, setFleetSummary] = useState<any>(null)
+  const [providers, setProviders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [sweeping, setSweeping] = useState(false)
+  const [sweepResult, setSweepResult] = useState<string | null>(null)
   const [timePeriod, setTimePeriod] = useState(24)
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
@@ -46,47 +69,62 @@ export default function FleetHealthPage() {
     { label: '30d', hours: 720 },
   ]
 
-  useEffect(() => {
+  const fetchFleetHealth = useCallback(async () => {
     if (!token) { router.push('/login'); return }
-    fetchFleetHealth()
-    const interval = setInterval(fetchFleetHealth, 60000)
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (token) fetchFleetHealth()
-  }, [timePeriod])
-
-  const fetchFleetHealth = async () => {
     try {
-      const [daemonRes, healthRes] = await Promise.allSettled([
-        fetch(`${API_BASE}/admin/daemon-health?hours=${timePeriod}`, {
-          headers: { 'x-admin-token': token! }
-        }),
-        fetch(`${API_BASE}/admin/health`, {
-          headers: { 'x-admin-token': token! }
-        }),
+      const [daemonRes, healthRes, fleetRes, providersRes] = await Promise.allSettled([
+        fetch(`${API_BASE}/admin/daemon-health?hours=${timePeriod}`, { headers: { 'x-admin-token': token } }),
+        fetch(`${API_BASE}/admin/health`, { headers: { 'x-admin-token': token } }),
+        fetch(`${API_BASE}/admin/providers/health`, { headers: { 'x-admin-token': token } }),
+        fetch(`${API_BASE}/admin/providers?limit=200`, { headers: { 'x-admin-token': token } }),
       ])
 
       if (daemonRes.status === 'fulfilled') {
         const res = daemonRes.value
         if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return }
-        if (res.ok) {
-          const json = await res.json()
-          setData(json)
-        }
+        if (res.ok) setData(await res.json())
       }
-
-      if (healthRes.status === 'fulfilled' && healthRes.value.ok) {
-        const healthJson = await healthRes.value.json()
-        setHealth(healthJson)
+      if (healthRes.status === 'fulfilled' && healthRes.value.ok) setHealth(await healthRes.value.json())
+      if (fleetRes.status === 'fulfilled' && fleetRes.value.ok) setFleetSummary(await fleetRes.value.json())
+      if (providersRes.status === 'fulfilled' && providersRes.value.ok) {
+        const json = await providersRes.value.json()
+        setProviders(json.providers || [])
       }
     } catch (err) {
       console.error('Failed to fetch fleet health:', err)
     } finally {
       setLoading(false)
     }
+  }, [token, timePeriod, router])
+
+  const handleSweep = async () => {
+    if (!token) return
+    setSweeping(true)
+    setSweepResult(null)
+    try {
+      const res = await fetch(`${API_BASE}/admin/providers/sweep-stale`, {
+        method: 'POST',
+        headers: { 'x-admin-token': token },
+      })
+      const json = await res.json()
+      if (res.ok) {
+        setSweepResult(`Swept: ${json.providers_marked_offline} offline, ${json.jobs_requeued} jobs requeued`)
+        fetchFleetHealth()
+      } else {
+        setSweepResult(json.error || 'Sweep failed')
+      }
+    } catch {
+      setSweepResult('Network error')
+    } finally {
+      setSweeping(false)
+    }
   }
+
+  useEffect(() => {
+    fetchFleetHealth()
+    const interval = setInterval(fetchFleetHealth, 30000)
+    return () => clearInterval(interval)
+  }, [fetchFleetHealth])
 
   const getSeverityColor = (severity: string) => {
     if (severity === 'critical' || severity === 'error') return 'text-red-400 bg-red-900/20'
@@ -115,6 +153,87 @@ export default function FleetHealthPage() {
         <p className="text-dc1-text-secondary">
           {data ? `${data.period_hours}h period — Generated ${new Date(data.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Loading...'}
         </p>
+      </div>
+
+      {/* Fleet Summary StatCards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          label="Online Providers"
+          value={fleetSummary?.online_count ?? '—'}
+          accent="success"
+          icon={<CpuIcon />}
+        />
+        <StatCard
+          label="Stale Providers"
+          value={fleetSummary?.stale_count ?? '—'}
+          accent="amber"
+          icon={<ServerIcon />}
+        />
+        <StatCard
+          label="Offline Providers"
+          value={fleetSummary?.offline_count ?? '—'}
+          accent="error"
+          icon={<ServerIcon />}
+        />
+        <StatCard
+          label="Total GPU VRAM"
+          value={fleetSummary ? `${fleetSummary.total_vram_gb} GB` : '—'}
+          accent="info"
+          icon={<CpuIcon />}
+        />
+      </div>
+
+      {/* Provider Table */}
+      <div className="card mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-dc1-text-primary">Provider Fleet</h2>
+          <div className="flex items-center gap-3">
+            {sweepResult && (
+              <span className="text-xs text-dc1-text-secondary">{sweepResult}</span>
+            )}
+            <button
+              onClick={handleSweep}
+              disabled={sweeping}
+              className="px-4 py-2 bg-dc1-amber text-black text-sm font-semibold rounded hover:bg-dc1-amber/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {sweeping ? 'Sweeping…' : 'Sweep Stale'}
+            </button>
+          </div>
+        </div>
+        {providers.length === 0 ? (
+          <p className="text-dc1-text-secondary text-sm">No providers registered.</p>
+        ) : (
+          <div className="table-container">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>GPU Model</th>
+                  <th>VRAM</th>
+                  <th>Last Heartbeat</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providers.map((p: any) => {
+                  const st = providerStatus(p.last_heartbeat)
+                  const badgeStatus = st === 'online' ? 'online' : st === 'warning' ? 'warning' : 'offline'
+                  const vramGb = p.vram_gb || (p.gpu_vram_mib ? (p.gpu_vram_mib / 1024).toFixed(1) : null)
+                  return (
+                    <tr key={p.id}>
+                      <td className="text-sm">{p.email || '—'}</td>
+                      <td className="text-sm font-medium text-dc1-text-primary">{p.gpu_model || p.gpu_name_detected || '—'}</td>
+                      <td className="text-sm text-dc1-text-secondary">{vramGb ? `${vramGb} GB` : '—'}</td>
+                      <td className="text-xs text-dc1-text-secondary">{formatHeartbeat(p.last_heartbeat)}</td>
+                      <td><StatusBadge status={badgeStatus} size="sm" /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-xs text-dc1-text-muted mt-3">Auto-refreshes every 30s</p>
       </div>
 
       {/* Time Period Selector */}

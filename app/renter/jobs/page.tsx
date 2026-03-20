@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -58,21 +59,11 @@ const GearIcon = () => (
   </svg>
 )
 
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-  { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
-  { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
-]
-
 interface RetryState {
   job: Job | null
   loading: boolean
   error: string
-  successId: number | null
+  requiredHalala: number | null
 }
 
 interface SaveTplState {
@@ -84,13 +75,24 @@ interface SaveTplState {
 
 export default function RenterJobsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [renterName, setRenterName] = useState('Renter')
   const [totalSpent, setTotalSpent] = useState(0)
-  const [retry, setRetry] = useState<RetryState>({ job: null, loading: false, error: '', successId: null })
+  const [retry, setRetry] = useState<RetryState>({ job: null, loading: false, error: '', requiredHalala: null })
   const [exportingCsv, setExportingCsv] = useState(false)
   const [saveTpl, setSaveTpl] = useState<SaveTplState>({ job: null, name: '', saving: false, saved: false })
+
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
+  ]
 
   const fetchJobs = async (apiKey: string) => {
     try {
@@ -122,19 +124,8 @@ export default function RenterJobsPage() {
     return () => clearInterval(interval)
   }, [router])
 
-  const openRetryModal = async (job: Job) => {
-    // If params not loaded yet, fetch from job detail endpoint
-    if (!job.params) {
-      const apiKey = localStorage.getItem('dc1_renter_key') || ''
-      try {
-        const res = await fetch(`${API_BASE}/jobs/${job.id}`, { headers: { 'x-renter-key': apiKey } })
-        if (res.ok) {
-          const data = await res.json()
-          job = { ...job, params: data.job?.params ?? null }
-        }
-      } catch { /* ignore, proceed with what we have */ }
-    }
-    setRetry({ job, loading: false, error: '', successId: null })
+  const openRetryModal = (job: Job) => {
+    setRetry({ job, loading: false, error: '', requiredHalala: Number(job.actual_cost_halala || 0) })
   }
 
   const confirmRetry = async () => {
@@ -144,24 +135,19 @@ export default function RenterJobsPage() {
 
     setRetry(r => ({ ...r, loading: true, error: '' }))
 
-    let parsedParams: Record<string, unknown> = {}
     try {
-      if (job.params) parsedParams = JSON.parse(job.params)
-    } catch { /* empty params ok */ }
-
-    const payload = {
-      job_type: job.job_type,
-      ...parsedParams,
-    }
-
-    try {
-      const res = await fetch(`${API_BASE}/jobs/submit`, {
+      const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(job.id))}/retry?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
-        body: JSON.stringify(payload),
+        headers: { 'x-renter-key': apiKey },
       })
       if (res.status === 402) {
-        setRetry(r => ({ ...r, loading: false, error: 'insufficient_balance' }))
+        const err = await res.json().catch(() => ({}))
+        setRetry(r => ({
+          ...r,
+          loading: false,
+          error: 'insufficient_balance',
+          requiredHalala: Number(err.required_halala || r.requiredHalala || 0),
+        }))
         return
       }
       if (!res.ok) {
@@ -170,9 +156,12 @@ export default function RenterJobsPage() {
         return
       }
       const data = await res.json()
-      const newId = data.job_id || data.id
-      setRetry({ job: null, loading: false, error: '', successId: newId })
-      // Refresh job list
+      const newId = data.job?.id || data.id || null
+      setRetry({ job: null, loading: false, error: '', requiredHalala: null })
+      if (newId) {
+        router.push(`/renter/jobs/${newId}`)
+        return
+      }
       fetchJobs(apiKey)
     } catch {
       setRetry(r => ({ ...r, loading: false, error: 'Network error. Please try again.' }))
@@ -247,16 +236,16 @@ export default function RenterJobsPage() {
 
   const completedJobs = jobs.filter(j => j.status === 'completed').length
   const failedJobs = jobs.filter(j => j.status === 'failed').length
-  const hasFailedJobs = failedJobs > 0
+  const retryHoldSar = ((retry.requiredHalala || 0) / 100).toFixed(2)
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
       <div className="space-y-8">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">My Jobs</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">{t('nav.jobs')}</h1>
             <p className="text-dc1-text-secondary text-sm mt-1">
-              {jobs.length} job{jobs.length !== 1 ? 's' : ''} total — auto-refreshes every 30s
+              {jobs.length} {jobs.length !== 1 ? t('dashboard.jobs_run') : t('dashboard.jobs_run')} — auto-refreshes every 30s
             </p>
           </div>
           <button
@@ -272,43 +261,27 @@ export default function RenterJobsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             )}
-            Export CSV
+            {t('renter.export_csv')}
           </button>
         </div>
-
-        {/* Re-submit success toast */}
-        {retry.successId && (
-          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
-            <span className="text-status-success text-sm font-medium">
-              Job re-submitted: #{retry.successId}
-            </span>
-            <button
-              onClick={() => setRetry(r => ({ ...r, successId: null }))}
-              className="text-dc1-text-muted hover:text-dc1-text-primary text-lg leading-none"
-              aria-label="Dismiss"
-            >
-              &times;
-            </button>
-          </div>
-        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Total Jobs</p>
+            <p className="text-sm text-dc1-text-secondary">{t('dashboard.jobs_run')}</p>
             <p className="text-2xl font-bold text-dc1-text-primary">{jobs.length}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Completed</p>
+            <p className="text-sm text-dc1-text-secondary">{t('table.completed')}</p>
             <p className="text-2xl font-bold text-status-success">{completedJobs}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Failed</p>
+            <p className="text-sm text-dc1-text-secondary">{t('table.status')}</p>
             <p className="text-2xl font-bold text-status-error">{failedJobs}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Total Spent</p>
-            <p className="text-2xl font-bold text-dc1-amber">{totalSpent.toFixed(2)} SAR</p>
+            <p className="text-sm text-dc1-text-secondary">{t('dashboard.total_spent')}</p>
+            <p className="text-2xl font-bold text-dc1-amber">{totalSpent.toFixed(2)} {t('common.sar')}</p>
           </div>
         </div>
 
@@ -317,13 +290,13 @@ export default function RenterJobsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Job ID</th>
-                <th>Type</th>
-                <th>Submitted</th>
-                <th>Completed</th>
-                <th>Status</th>
-                <th>Cost</th>
-                <th className="sr-only">Actions</th>
+                <th>{t('table.job_id')}</th>
+                <th>{t('table.type')}</th>
+                <th>{t('billing.submitted')}</th>
+                <th>{t('table.completed')}</th>
+                <th>{t('table.status')}</th>
+                <th>{t('table.cost')}</th>
+                <th className="sr-only">{t('table.action')}</th>
               </tr>
             </thead>
             <tbody>
@@ -376,10 +349,13 @@ export default function RenterJobsPage() {
                           {j.status === 'failed' && (
                             <button
                               onClick={() => openRetryModal(j)}
-                              className="text-xs font-semibold text-dc1-amber border border-dc1-amber/40 hover:bg-dc1-amber/10 rounded px-2 py-1 min-h-[32px] transition-colors"
+                              className="text-dc1-amber border border-dc1-amber/40 hover:bg-dc1-amber/10 rounded p-1.5 min-h-[32px] min-w-[32px] transition-colors inline-flex items-center justify-center"
                               aria-label={`Retry job ${j.job_id || j.id}`}
+                              title="Retry Job"
                             >
-                              Retry
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M5.64 18.36A9 9 0 103.5 12" />
+                              </svg>
                             </button>
                           )}
                           <button
@@ -398,9 +374,8 @@ export default function RenterJobsPage() {
               ) : (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-dc1-text-secondary">
-                    No jobs yet. Head to the{' '}
-                    <a href="/renter/playground" className="text-dc1-amber hover:underline">GPU Playground</a>{' '}
-                    to run your first job!
+                    {t('common.no_jobs_yet')}.{' '}
+                    <a href="/renter/playground" className="text-dc1-amber hover:underline">{t('renter.open_playground')}</a>
                   </td>
                 </tr>
               )}
@@ -419,10 +394,10 @@ export default function RenterJobsPage() {
         >
           <div className="card w-full max-w-md p-6 space-y-5">
             <h2 id="retry-modal-title" className="text-lg font-bold text-dc1-text-primary">
-              Re-submit Job?
+              {t('renter.retry_job')}
             </h2>
             <p className="text-dc1-text-secondary text-sm">
-              Re-submit this job? It will use the same model and parameters and deduct balance again.
+              {t('renter.retry_confirm').replace('{amount}', retryHoldSar)}
             </p>
             <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
               <span className="text-dc1-text-muted">Type: </span>{(retry.job.job_type || '').replace(/_/g, ' ')}
@@ -444,11 +419,11 @@ export default function RenterJobsPage() {
 
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setRetry({ job: null, loading: false, error: '', successId: null })}
+                onClick={() => setRetry({ job: null, loading: false, error: '', requiredHalala: null })}
                 disabled={retry.loading}
                 className="btn btn-secondary min-h-[44px] px-4"
               >
-                Cancel
+                {t('common.retry')}
               </button>
               <button
                 onClick={confirmRetry}
@@ -458,7 +433,7 @@ export default function RenterJobsPage() {
                 {retry.loading && (
                   <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
                 )}
-                {retry.loading ? 'Submitting…' : 'Re-submit Job'}
+                {retry.loading ? t('common.loading') : t('renter.retry_job')}
               </button>
             </div>
           </div>
@@ -474,8 +449,8 @@ export default function RenterJobsPage() {
           aria-labelledby="save-tpl-modal-title"
         >
           <div className="card w-full max-w-sm p-6 space-y-4">
-            <h2 id="save-tpl-modal-title" className="text-lg font-bold text-dc1-text-primary">Save as Template</h2>
-            <p className="text-dc1-text-secondary text-sm">Name this job configuration to reuse it later from the Playground.</p>
+            <h2 id="save-tpl-modal-title" className="text-lg font-bold text-dc1-text-primary">{t('renter.save_template')}</h2>
+            <p className="text-dc1-text-secondary text-sm">{t('renter.template_name')}</p>
             <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
               <span className="text-dc1-text-muted">Type: </span>{(saveTpl.job.job_type || '').replace(/_/g, ' ')}
             </div>
@@ -495,7 +470,7 @@ export default function RenterJobsPage() {
                 disabled={saveTpl.saving}
                 className="btn btn-secondary min-h-[44px] px-4"
               >
-                Cancel
+                {t('common.retry')}
               </button>
               <button
                 onClick={confirmSaveTemplate}
@@ -503,7 +478,7 @@ export default function RenterJobsPage() {
                 className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2"
               >
                 {saveTpl.saving && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />}
-                {saveTpl.saving ? 'Saving…' : 'Save Template'}
+                {saveTpl.saving ? t('common.loading') : t('renter.save_template')}
               </button>
             </div>
           </div>
@@ -514,7 +489,7 @@ export default function RenterJobsPage() {
       {saveTpl.saved && (
         <div className="fixed bottom-6 right-6 z-50 bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 flex items-center gap-2 text-status-success text-sm font-medium shadow-lg">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-          Template saved!
+          {t('renter.retry_success')}
         </div>
       )}
     </DashboardLayout>

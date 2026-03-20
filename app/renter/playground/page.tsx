@@ -399,17 +399,26 @@ function GpuPlayground() {
   }, []);
 
   useEffect(() => {
+    if (!renterKey) {
+      setQueueWait(null);
+      return;
+    }
+
     const computeType = IMAGE_TYPE_TO_COMPUTE[imageType];
-    fetch(`${API_BASE}/jobs/queue/status`)
+    fetch(`${API_BASE}/jobs/queue/status`, {
+      headers: { 'x-renter-key': renterKey },
+    })
       .then(r => r.ok ? r.json() : null)
       .then(d => {
-        if (!d?.queue) { setQueueWait(null); return; }
-        const bucket = (d.queue as Array<{ compute_type: string; vram_bucket: string | number; count: number }>)
-          .find(b => b.compute_type === computeType && Number(b.vram_bucket) <= vramRequiredMb);
-        setQueueWait(bucket ? bucket.count : 0);
+        const source = Array.isArray(d?.queue) ? d.queue : d?.buckets;
+        if (!Array.isArray(source)) { setQueueWait(null); return; }
+        const bucket = (source as Array<{ compute_type: string; vram_bucket?: string | number; vram_required_mb?: string | number; count?: number; depth?: number }>)
+          .find((b) => b.compute_type === computeType
+            && Number(b.vram_bucket ?? b.vram_required_mb ?? 0) <= vramRequiredMb);
+        setQueueWait(bucket ? Number(bucket.count ?? bucket.depth ?? 0) : 0);
       })
       .catch(() => setQueueWait(null));
-  }, [imageType, vramRequiredMb]);
+  }, [imageType, renterKey, vramRequiredMb]);
 
   // ── Submit job ───────────────────────────────────────────────────
   async function submitJob() {

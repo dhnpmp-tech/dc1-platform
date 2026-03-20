@@ -4,7 +4,8 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../db');
 const { COST_RATES } = require('./jobs');
-const { sendWelcomeEmail } = require('../services/emailService');
+const { sendWelcomeEmail, sendDataExportReady } = require('../services/emailService');
+const { renterAccountDeletionLimiter, renterDataExportLimiter } = require('../middleware/rateLimiter');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -65,7 +66,7 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
   return num;
 }
 
-const ROTATION_WINDOW_MS = 60 * 60 * 1000;
+const ROTATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_ROTATIONS_PER_WINDOW = 3;
 
 function isRotationRateLimited(accountType, accountId) {
@@ -88,6 +89,17 @@ function recordRotationEvent(accountType, accountId, rotatedAt) {
     accountId,
     rotatedAt
   );
+}
+
+function csvField(value) {
+  const stringValue = value == null ? '' : String(value);
+  return `"${stringValue.replace(/"/g, '""')}"`;
+}
+
+function hashedDeletedEmail(rawEmail, accountId) {
+  const normalized = normalizeEmail(rawEmail) || `deleted-renter-${accountId}@dcp.sa`;
+  const digest = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 32);
+  return `deleted_${digest}@deleted.dcp.sa`;
 }
 
 // POST /api/renters/register
@@ -166,6 +178,38 @@ router.get('/me', (req, res) => {
   }
 });
 
+// GET /api/renters/me/payments?key=API_KEY
+router.get('/me/payments', (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const payments = db.all(
+      `SELECT payment_id, moyasar_id, amount_halala, status, created_at
+       FROM payments
+       WHERE renter_id = ?
+       ORDER BY created_at DESC`,
+      renter.id
+    );
+
+    res.json({
+      payments: payments.map((payment) => ({
+        id: payment.payment_id,
+        amount_halala: payment.amount_halala,
+        status: payment.status,
+        created_at: payment.created_at,
+        moyasar_id: payment.moyasar_id || null,
+      })),
+    });
+  } catch (error) {
+    console.error('Renter payment history error:', error);
+    res.status(500).json({ error: 'Failed to fetch renter payment history' });
+  }
+});
+
 // PATCH /api/renters/settings — update renter settings
 router.patch('/settings', (req, res) => {
   try {
@@ -206,7 +250,7 @@ router.patch('/settings', (req, res) => {
   }
 });
 
-// GET /api/renters/me/invoices?key=API_KEY&page=1&per_page=20
+// GET /api/renters/me/invoices?key=API_KEY&page=1&limit=20
 router.get('/me/invoices', (req, res) => {
   try {
     const { key } = req.query;
@@ -216,10 +260,14 @@ router.get('/me/invoices', (req, res) => {
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
 
     const pageRaw = Number.parseInt(req.query.page, 10);
+    const limitRaw = Number.parseInt(req.query.limit, 10);
     const perPageRaw = Number.parseInt(req.query.per_page, 10);
     const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
-    const per_page = Number.isFinite(perPageRaw) && perPageRaw > 0 ? Math.min(perPageRaw, 100) : 20;
-    const offset = (page - 1) * per_page;
+    const limitCandidate = Number.isFinite(limitRaw) && limitRaw > 0
+      ? limitRaw
+      : (Number.isFinite(perPageRaw) && perPageRaw > 0 ? perPageRaw : 20);
+    const limit = Math.min(limitCandidate, 100);
+    const offset = (page - 1) * limit;
 
     const totalRow = db.get(
       `SELECT COUNT(*) as total
@@ -242,6 +290,7 @@ router.get('/me/invoices', (req, res) => {
 
     const rows = db.all(
       `SELECT j.id, j.job_id, j.job_type, j.status, j.created_at,
+              COALESCE(j.completed_at, j.submitted_at, j.created_at) AS invoice_at,
               j.duration_minutes, j.actual_duration_minutes,
               j.cost_halala, j.actual_cost_halala, j.dc1_fee_halala,
               p.name as provider_name, p.gpu_model
@@ -250,7 +299,7 @@ router.get('/me/invoices', (req, res) => {
        WHERE j.renter_id = ?
        ORDER BY COALESCE(j.completed_at, j.submitted_at, j.created_at) DESC
        LIMIT ? OFFSET ?`,
-      renter.id, per_page, offset
+      renter.id, limit, offset
     );
 
     const invoices = rows.map((row) => {
@@ -263,30 +312,109 @@ router.get('/me/invoices', (req, res) => {
       return {
         id: row.id,
         job_id: row.job_id,
+        amount_halala: totalHalala,
+        amount_sar: Number((totalHalala / 100).toFixed(2)),
         provider_name: row.provider_name || null,
         gpu_model: row.gpu_model || null,
         job_type: row.job_type,
         duration_minutes: durationMinutes,
+        fee_halala: feeHalala,
+        fee_sar: Number((feeHalala / 100).toFixed(2)),
         price_sar: Number((totalHalala / 100).toFixed(2)),
-        fee_sar: Number((feeHalala / 100).toFixed(3)),
         total_sar: Number((totalHalala / 100).toFixed(2)),
         status: row.status,
-        created_at: row.created_at
+        created_at: row.created_at,
+        invoice_at: row.invoice_at
       };
     });
 
     res.json({
       invoices,
+      total_spent_halala: Number(totalSpentRow.total_spent_halala || 0),
       total_spent_sar: Number(((totalSpentRow.total_spent_halala || 0) / 100).toFixed(2)),
       pagination: {
         page,
-        per_page,
+        limit,
+        per_page: limit,
         total: totalRow.total || 0
       }
     });
   } catch (error) {
     console.error('Renter invoices error:', error);
     res.status(500).json({ error: 'Failed to fetch renter invoices' });
+  }
+});
+
+// GET /api/renters/me/invoices/:id/csv?key=API_KEY
+router.get('/me/invoices/:id/csv', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
+
+    const invoiceId = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(invoiceId) || invoiceId <= 0) {
+      return res.status(400).json({ error: 'Invalid invoice id' });
+    }
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const row = db.get(
+      `SELECT j.id, j.job_id, j.job_type, j.status,
+              COALESCE(j.completed_at, j.submitted_at, j.created_at) AS invoice_at,
+              j.duration_minutes, j.actual_duration_minutes,
+              j.cost_halala, j.actual_cost_halala, j.dc1_fee_halala,
+              p.name AS provider_name, p.gpu_model
+       FROM jobs j
+       LEFT JOIN providers p ON p.id = j.provider_id
+       WHERE j.id = ? AND j.renter_id = ?`,
+      invoiceId,
+      renter.id
+    );
+    if (!row) return res.status(404).json({ error: 'Invoice not found' });
+
+    const durationMinutes = row.actual_duration_minutes || row.duration_minutes || 0;
+    const ratePerMinute = COST_RATES[row.job_type] || COST_RATES.default || 10;
+    const fallbackCostHalala = Math.max(0, Math.round(durationMinutes * ratePerMinute));
+    const amountHalala = row.actual_cost_halala ?? row.cost_halala ?? fallbackCostHalala;
+    const feeHalala = row.dc1_fee_halala ?? Math.round(amountHalala * 0.25);
+
+    const headers = [
+      'invoice_id',
+      'job_id',
+      'status',
+      'job_type',
+      'provider_name',
+      'gpu_model',
+      'duration_minutes',
+      'amount_halala',
+      'amount_sar',
+      'fee_halala',
+      'fee_sar',
+      'invoice_at',
+    ];
+    const values = [
+      row.id,
+      row.job_id,
+      row.status,
+      row.job_type,
+      row.provider_name || '',
+      row.gpu_model || '',
+      durationMinutes,
+      amountHalala,
+      (amountHalala / 100).toFixed(2),
+      feeHalala,
+      (feeHalala / 100).toFixed(2),
+      row.invoice_at || '',
+    ];
+    const csv = `${headers.join(',')}\n${values.map(csvField).join(',')}\n`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${row.id}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Renter invoice CSV error:', error);
+    res.status(500).json({ error: 'Failed to generate invoice CSV' });
   }
 });
 
@@ -451,8 +579,9 @@ router.post('/login-email', loginEmailLimiter, (req, res) => {
   }
 });
 
-// POST /api/renters/rotate-key — Rotate API key (renter self-service)
-router.post('/rotate-key', (req, res) => {
+// POST /api/renters/me/rotate-key — Rotate API key (renter self-service)
+// Backwards-compatible alias retained: /api/renters/rotate-key
+router.post(['/me/rotate-key', '/rotate-key'], (req, res) => {
   try {
     const key = req.headers['x-renter-key'] || req.query.key;
     if (!key) return res.status(400).json({ error: 'Current API key required (x-renter-key header or key query)' });
@@ -461,7 +590,7 @@ router.post('/rotate-key', (req, res) => {
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
 
     if (isRotationRateLimited('renter', renter.id)) {
-      return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per hour' });
+      return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per 24 hours' });
     }
 
     const newKey = `dc1-renter-${crypto.randomUUID()}`;
@@ -488,10 +617,9 @@ router.post('/rotate-key', (req, res) => {
   }
 });
 
-// GET /api/renters/me/export — PDPL right to access/export
-// Returns account data, job metadata, and billing history.
-// Explicitly excludes job stdout/stderr and verbose execution logs.
-router.get('/me/export', (req, res) => {
+// GET /api/renters/me/data-export — PDPL right to access/export
+// Alias kept for backwards compatibility: /api/renters/me/export
+router.get(['/me/data-export', '/me/export'], renterDataExportLimiter, (req, res) => {
   try {
     const key = req.headers['x-renter-key'] || req.query.key;
     if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
@@ -523,31 +651,71 @@ router.get('/me/export', (req, res) => {
       renter.id
     );
 
-    const creditGrants = db.all(
-      `SELECT amount_halala, reason, granted_by, created_at
-       FROM credit_grants
-       WHERE renter_id = ?
-       ORDER BY created_at DESC`,
-      renter.id
+    const analytics = {
+      status_counts: db.all(
+        `SELECT status, COUNT(*) AS count
+         FROM jobs
+         WHERE renter_id = ?
+         GROUP BY status
+         ORDER BY count DESC`,
+        renter.id
+      ),
+      daily_spend_last_30d: db.all(
+        `SELECT DATE(COALESCE(completed_at, submitted_at, created_at)) AS day,
+                COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0) AS total_halala,
+                COUNT(*) AS job_count
+         FROM jobs
+         WHERE renter_id = ?
+           AND DATE(COALESCE(completed_at, submitted_at, created_at)) >= DATE('now', '-30 day')
+         GROUP BY DATE(COALESCE(completed_at, submitted_at, created_at))
+         ORDER BY day DESC`,
+        renter.id
+      ),
+      top_gpus: db.all(
+        `SELECT COALESCE(p.gpu_model, 'Unknown GPU') AS gpu_model, COUNT(*) AS job_count
+         FROM jobs j
+         LEFT JOIN providers p ON p.id = j.provider_id
+         WHERE j.renter_id = ?
+         GROUP BY COALESCE(p.gpu_model, 'Unknown GPU')
+         ORDER BY job_count DESC
+         LIMIT 10`,
+        renter.id
+      ),
+    };
+
+    const nowIso = new Date().toISOString();
+    runStatement(
+      `INSERT INTO pdpl_request_log (account_type, account_id, request_type, requested_at, metadata_json)
+       VALUES ('renter', ?, 'export', ?, ?)`,
+      renter.id,
+      nowIso,
+      JSON.stringify({ mode: 'direct_json', endpoint: '/api/renters/me/export' })
     );
 
-    const jobCharges = db.all(
-      `SELECT job_id, status, cost_halala, actual_cost_halala, submitted_at, completed_at
-       FROM jobs
-       WHERE renter_id = ? AND status IN ('completed', 'failed', 'cancelled')
-       ORDER BY COALESCE(completed_at, submitted_at, created_at) DESC`,
-      renter.id
-    );
+    sendDataExportReady(renter.email, {
+      accountType: 'renter',
+      requestedAt: nowIso,
+      deliveryMode: 'direct',
+    }).catch((e) => console.error('[renters.export] data export email failed:', e.message));
 
     return res.json({
-      account: renter,
-      jobs,
-      billing_history: {
-        payments,
-        credit_grants: creditGrants,
-        job_charges: jobCharges,
+      exported_at: nowIso,
+      account: {
+        id: renter.id,
+        name: renter.name,
+        email: renter.email,
+        organization: renter.organization,
+        status: renter.status,
+        created_at: renter.created_at,
+        updated_at: renter.updated_at || null,
+        balance_halala: renter.balance_halala,
+        total_spent_halala: renter.total_spent_halala,
+        total_jobs: renter.total_jobs,
       },
-      exported_at: new Date().toISOString(),
+      jobs,
+      payments,
+      withdrawals: [],
+      analytics,
     });
   } catch (error) {
     console.error('Renter export error:', error);
@@ -556,23 +724,38 @@ router.get('/me/export', (req, res) => {
 });
 
 // DELETE /api/renters/me — PDPL right to erasure
-// Anonymizes renter-linked jobs and permanently deletes the renter account.
+// Soft-deletes and anonymizes renter account (audit trail preserved).
 // Auth: x-renter-key header or key query param.
-router.delete('/me', (req, res) => {
+router.delete('/me', renterAccountDeletionLimiter, (req, res) => {
   try {
     const key = req.headers['x-renter-key'] || req.query.key;
     if (!key) return res.status(400).json({ error: 'API key required (x-renter-key header or key query)' });
 
-    const renter = db.get('SELECT id, status FROM renters WHERE api_key = ?', key);
+    const renter = db.get('SELECT id, status, email FROM renters WHERE api_key = ?', key);
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
     if (renter.status === 'deleted') return res.status(410).json({ error: 'Account already deleted' });
 
     const now = new Date().toISOString();
+    const deletionScheduledFor = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString();
+    const anonymizedEmail = hashedDeletedEmail(renter.email, renter.id);
+    const tombstoneApiKey = `deleted-renter-${renter.id}-${crypto.randomUUID()}`;
 
-    // Remove direct renter references and strip model/system prompt material.
+    const cancelledJobs = runStatement(
+      `UPDATE jobs SET
+         status = 'cancelled',
+         error = COALESCE(error, 'Cancelled: renter account deleted by PDPL request'),
+         completed_at = COALESCE(completed_at, ?),
+         updated_at = ?
+       WHERE renter_id = ?
+         AND status IN ('queued', 'pending', 'running', 'paused')`,
+      now,
+      now,
+      renter.id
+    );
+
+    // Keep operational/audit records but remove renter-auth linkage.
     runStatement(
       `UPDATE jobs SET
-         renter_id = NULL,
          model = NULL,
          task_spec = NULL,
          updated_at = ?
@@ -588,18 +771,45 @@ router.delete('/me', (req, res) => {
       key
     );
 
-    // Remove direct renter-owned rows.
+    // Remove user-generated templates/prompts and mutable quota rows.
     runStatement('DELETE FROM job_templates WHERE renter_id = ?', renter.id);
     runStatement('DELETE FROM renter_quota WHERE renter_id = ?', renter.id);
     runStatement('DELETE FROM quota_log WHERE renter_id = ?', renter.id);
-    runStatement('DELETE FROM credit_grants WHERE renter_id = ?', renter.id);
-    runStatement('DELETE FROM payments WHERE renter_id = ?', renter.id);
-    runStatement('DELETE FROM api_key_rotations WHERE account_type = ? AND account_id = ?', 'renter', renter.id);
 
-    const deleted = runStatement('DELETE FROM renters WHERE id = ?', renter.id);
-    if (!deleted.changes) return res.status(500).json({ error: 'Account deletion failed' });
+    const updated = runStatement(
+      `UPDATE renters SET
+         name = '[deleted]',
+         email = ?,
+         organization = NULL,
+         webhook_url = NULL,
+         status = 'deleted',
+         deleted_at = ?,
+         deletion_scheduled_for = ?,
+         api_key = ?,
+         updated_at = ?
+       WHERE id = ?`,
+      anonymizedEmail,
+      now,
+      deletionScheduledFor,
+      tombstoneApiKey,
+      now,
+      renter.id
+    );
+    if (!updated.changes) return res.status(500).json({ error: 'Account deletion failed' });
 
-    return res.json({ deleted: true, deleted_at: now });
+    runStatement(
+      `INSERT INTO pdpl_request_log (account_type, account_id, request_type, requested_at, metadata_json)
+       VALUES ('renter', ?, 'delete', ?, ?)`,
+      renter.id,
+      now,
+      JSON.stringify({ cancelled_jobs: cancelledJobs.changes || 0, deletion_scheduled_for: deletionScheduledFor })
+    );
+
+    return res.status(200).json({
+      cancelled_jobs: cancelledJobs.changes || 0,
+      deletion_scheduled_for: deletionScheduledFor,
+      message: 'Account scheduled for deletion in 30 days. Contact support to cancel.',
+    });
   } catch (error) {
     console.error('Renter delete error:', error);
     return res.status(500).json({ error: 'Account deletion failed' });
@@ -753,6 +963,76 @@ router.delete('/me/templates/:id', (req, res) => {
   } catch (error) {
     console.error('Template delete error:', error);
     res.status(500).json({ error: 'Failed to delete template' });
+  }
+});
+
+// GET /api/renters/me/analytics?key=API_KEY&period=30d
+router.get('/me/analytics', (req, res) => {
+  try {
+    const { key, period = '30d' } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    // Daily spend for the period
+    const dailySpend = db.all(
+      `SELECT date(submitted_at) AS day,
+              COALESCE(SUM(cost_halala), 0) AS total_halala,
+              COUNT(*) AS job_count
+       FROM jobs
+       WHERE renter_id = ? AND submitted_at >= ?
+       GROUP BY date(submitted_at)
+       ORDER BY day ASC`,
+      renter.id, cutoff
+    );
+
+    // Job counts by status (all time)
+    const statusCounts = db.all(
+      `SELECT status, COUNT(*) AS count
+       FROM jobs
+       WHERE renter_id = ?
+       GROUP BY status`,
+      renter.id
+    );
+
+    // Average job duration (completed jobs only)
+    const durationRow = db.get(
+      `SELECT ROUND(AVG(duration_minutes), 1) AS avg_duration,
+              COUNT(*) AS completed_count
+       FROM jobs
+       WHERE renter_id = ? AND status = 'completed' AND duration_minutes IS NOT NULL`,
+      renter.id
+    );
+
+    // Top GPU models used
+    const topGpus = db.all(
+      `SELECT p.gpu_model,
+              COUNT(j.id) AS job_count,
+              COALESCE(SUM(j.cost_halala), 0) AS total_halala
+       FROM jobs j
+       JOIN providers p ON j.provider_id = p.id
+       WHERE j.renter_id = ? AND p.gpu_model IS NOT NULL
+       GROUP BY p.gpu_model
+       ORDER BY job_count DESC
+       LIMIT 5`,
+      renter.id
+    );
+
+    res.json({
+      period: `${days}d`,
+      daily_spend: dailySpend,
+      status_counts: statusCounts,
+      avg_duration_minutes: durationRow?.avg_duration ?? null,
+      completed_job_count: durationRow?.completed_count ?? 0,
+      top_gpus: topGpus,
+    });
+  } catch (error) {
+    console.error('Renter analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
   }
 });
 

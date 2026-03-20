@@ -8,6 +8,8 @@
     "dev": "node src/server.js",
     "test": "jest --runInBand",
     "test:integration": "jest tests/integration/ --runInBand",
+    "test:smoke": "jest tests/integration/sprint19-20-smoke.test.js",
+    "test:s21": "jest tests/integration/sprint21-smoke.test.js",
     "test:e2e": "jest tests/integration/ --forceExit --testTimeout=30000",
     "test:load": "node tests/load/load-test.js"
   },

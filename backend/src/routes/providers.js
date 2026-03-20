@@ -7,12 +7,18 @@ const router = express.Router();
 
 // Database (use existing connection)
 const db = require('../db');
+const {
+    publicProvidersLimiter,
+    providerAccountDeletionLimiter,
+    providerDataExportLimiter,
+} = require('../middleware/rateLimiter');
 const { sendAlert } = require('../services/notifications');
 const {
     sendWelcomeEmail,
     sendJobStarted,
     sendJobCompleted,
     sendJobFailed,
+    sendDataExportReady,
 } = require('../services/emailService');
 const { getBenchmarkResult } = require('../services/benchmarkRunner');
 const {
@@ -129,7 +135,7 @@ function fireAndForgetJobEmail(event, job, details = {}) {
     }
 }
 
-const ROTATION_WINDOW_MS = 60 * 60 * 1000;
+const ROTATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_ROTATIONS_PER_WINDOW = 3;
 
 function isRotationRateLimited(accountType, accountId) {
@@ -152,6 +158,13 @@ function recordRotationEvent(accountType, accountId, rotatedAt) {
         accountId,
         rotatedAt
     );
+}
+
+function hashedDeletedEmail(rawEmail, accountId) {
+    const fallback = `deleted-provider-${accountId}@dcp.sa`;
+    const normalized = normalizeEmail(rawEmail) || fallback;
+    const digest = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 32);
+    return `deleted_${digest}@deleted.dcp.sa`;
 }
 const benchmarkLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -467,7 +480,18 @@ function computeReputationScore(providerId) {
 // ============================================================================
 router.post('/heartbeat', (req, res) => {
     try {
-        const { api_key, gpu_status, gpu_info, uptime, provider_ip, provider_hostname, cached_models, resource_spec } = req.body;
+        const {
+            api_key,
+            gpu_status,
+            gpu_info,
+            uptime,
+            provider_ip,
+            provider_hostname,
+            cached_models,
+            resource_spec,
+            container_restart_count,
+            model_cache,
+        } = req.body;
         const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
         if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
         if (gpu_status != null && !isPlainObject(gpu_status)) {
@@ -495,10 +519,33 @@ router.post('/heartbeat', (req, res) => {
         const osInfo = normalizeString(gs.os_info, { maxLen: 200 });
         const providerIp = normalizeString(provider_ip, { maxLen: 64, trim: true });
         const providerHostname = normalizeString(provider_hostname, { maxLen: 255, trim: true });
+        const reportedContainerRestarts =
+            toFiniteInt(container_restart_count, { min: 0, max: 1000000 }) ??
+            toFiniteInt(gs.container_restart_count, { min: 0, max: 1000000 }) ??
+            0;
+        const modelCacheObj = isPlainObject(model_cache) ? model_cache : {};
+        const modelCacheUsedMb =
+            toFiniteInt(modelCacheObj.used_mb, { min: 0, max: 1024 * 1024 * 10 }) ??
+            toFiniteInt(modelCacheObj.cache_mb, { min: 0, max: 1024 * 1024 * 10 }) ??
+            0;
+        const modelCacheTotalMb =
+            toFiniteInt(modelCacheObj.total_mb, { min: 0, max: 1024 * 1024 * 10 }) ??
+            toFiniteInt(modelCacheObj.capacity_mb, { min: 0, max: 1024 * 1024 * 10 }) ??
+            0;
+        const modelCacheUsedPctRaw =
+            toFiniteNumber(modelCacheObj.used_pct, { min: 0, max: 100 }) ??
+            toFiniteNumber(modelCacheObj.pct_used, { min: 0, max: 100 }) ??
+            (modelCacheTotalMb > 0 ? (modelCacheUsedMb / modelCacheTotalMb) * 100 : null);
+        const modelCacheUsedPct = modelCacheUsedPctRaw != null ? Number(modelCacheUsedPctRaw.toFixed(2)) : 0;
         const now = new Date().toISOString();
 
         // Verify API key (sync — better-sqlite3)
-        const p = db.get('SELECT id, approval_status FROM providers WHERE api_key = ?', cleanApiKey);
+        const p = db.get(
+            `SELECT id, approval_status, model_preload_status, model_preload_model
+             FROM providers
+             WHERE api_key = ?`,
+            cleanApiKey
+        );
         if (!p) return res.status(401).json({ error: 'Invalid API key' });
         if (p.approval_status !== 'approved') {
             return res.status(403).json({ error: 'Provider is not approved yet' });
@@ -518,8 +565,10 @@ router.post('/heartbeat', (req, res) => {
             })
             : null;
 
+        const providerRuntimeStatus = reportedContainerRestarts > 10 ? 'degraded' : 'online';
+
         runStatement(`UPDATE providers SET
-          gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = 'online',
+          gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = ?,
           gpu_name_detected = COALESCE(?, gpu_name_detected),
           gpu_vram_mib = COALESCE(?, gpu_vram_mib),
           gpu_driver = COALESCE(?, gpu_driver),
@@ -529,10 +578,14 @@ router.post('/heartbeat', (req, res) => {
           gpu_model = COALESCE(?, gpu_model),
           gpu_info_json = COALESCE(?, gpu_info_json),
           cached_models = COALESCE(?, cached_models),
+          container_restart_count = ?,
+          model_cache_disk_mb = ?,
+          model_cache_disk_total_mb = ?,
+          model_cache_disk_used_pct = ?,
           gpu_profile_source = 'daemon',
           gpu_profile_updated_at = ?
           WHERE id = ?`,
-          JSON.stringify(gpu_status || {}), providerIp || null, providerHostname || null, now,
+          JSON.stringify(gpu_status || {}), providerIp || null, providerHostname || null, now, providerRuntimeStatus,
           resolvedGpuName, resolvedGpuVramMib, resolvedGpuDriver,
           gpuInfoVramMb != null ? gpuInfoVramMb : null,
           resolvedTotalVramMb,
@@ -540,21 +593,80 @@ router.post('/heartbeat', (req, res) => {
           resolvedGpuName,
           gpuInfoJson,
           Array.isArray(cached_models) ? JSON.stringify(cached_models) : null,
+          reportedContainerRestarts,
+          modelCacheUsedMb,
+          modelCacheTotalMb,
+          modelCacheUsedPct,
           now,
           p.id
+        );
+
+        const normalizedCachedModels = Array.isArray(cached_models)
+            ? cached_models
+                .map((model) => normalizeString(model, { maxLen: 200 }))
+                .filter(Boolean)
+            : [];
+        const preloadModel = normalizeString(p.model_preload_model, { maxLen: 200 });
+        const preloadModelFound = preloadModel
+            ? normalizedCachedModels.some((entry) => entry.toLowerCase() === preloadModel.toLowerCase())
+            : false;
+        const currentPreloadStatus = normalizeString(p.model_preload_status, { maxLen: 20 }) || 'none';
+        let effectivePreloadStatus = currentPreloadStatus;
+        if (preloadModel && currentPreloadStatus === 'downloading' && preloadModelFound) {
+            runStatement(
+                `UPDATE providers
+                 SET model_preload_status = 'ready',
+                     model_preload_updated_at = ?,
+                     updated_at = ?
+                 WHERE id = ?`,
+                now,
+                now,
+                p.id
+            );
+            effectivePreloadStatus = 'ready';
+        }
+
+        const gpuVramGb = resolvedTotalVramMb != null
+            ? Math.max(0, Math.round(resolvedTotalVramMb / 1024))
+            : null;
+        const vramUsedGb = (resolvedGpuVramMib != null && gpuFreeVram != null)
+            ? Number(Math.max(0, (resolvedGpuVramMib - gpuFreeVram) / 1024).toFixed(2))
+            : null;
+        db.prepare(
+            `INSERT INTO provider_gpu_telemetry (
+                provider_id, gpu_name, gpu_vram_gb, gpu_util_pct, vram_used_gb, active_jobs
+             )
+             VALUES (
+                ?, ?, ?, ?, ?,
+                (SELECT COUNT(*)
+                 FROM jobs
+                 WHERE provider_id = ?
+                   AND status = 'running')
+             )`
+        ).run(
+            p.id,
+            resolvedGpuName || null,
+            gpuVramGb,
+            gpuUtil,
+            vramUsedGb,
+            p.id
         );
 
         const allGpus = Array.isArray(gs.all_gpus) ? gs.all_gpus.slice(0, 32) : null;
         const gpuCount = toFiniteInt(gs.gpu_count, { min: 1, max: 64 }) || (allGpus ? allGpus.length : 1);
         const computeCap = gs.compute_capability || null;
         const cudaVersion = gpuInfoCuda || gs.cuda_version || null;
-        runStatement(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info, gpu_metrics_json, gpu_count)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        runStatement(`INSERT INTO heartbeat_log (provider_id, received_at, provider_ip, provider_hostname, gpu_util_pct, gpu_temp_c, gpu_power_w, gpu_vram_free_mib, gpu_vram_total_mib, daemon_version, python_version, os_info, gpu_metrics_json, gpu_count, container_restart_count, model_cache_used_mb, model_cache_total_mb, model_cache_used_pct)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           p.id, now, providerIp || null, providerHostname || null,
           gpuUtil, gpuTemp, gpuPower, gpuFreeVram, resolvedGpuVramMib,
           daemonVersion, pythonVersion, osInfo,
           allGpus ? JSON.stringify(allGpus) : null,
-          gpuCount
+          gpuCount,
+          reportedContainerRestarts,
+          modelCacheUsedMb,
+          modelCacheTotalMb,
+          modelCacheUsedPct
         );
 
         // Update GPU spec fields on provider record when new data arrives
@@ -607,6 +719,9 @@ router.post('/heartbeat', (req, res) => {
             latest_version: LATEST_DAEMON_VERSION,
             update_available: needsUpdate,
             min_version: MIN_DAEMON_VERSION,
+            preload_model: preloadModel && effectivePreloadStatus === 'downloading'
+                ? { model_name: preloadModel, status: 'downloading' }
+                : null,
         });
         
     } catch (error) {
@@ -758,7 +873,7 @@ router.get('/setup-windows', async (req, res) => {
         // Replace all template placeholders with provider-specific values
         script = script.replace(/\{\{API_KEY\}\}/g, key);
         script = script.replace(/INJECTED_API_KEY/g, key); // legacy fallback
-        script = script.replace(/\{\{API_URL\}\}/g, process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083');
+        script = script.replace(/\{\{API_URL\}\}/g, process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa');
         script = script.replace(/\{\{RUN_MODE\}\}/g, provider.run_mode || 'always-on');
         script = script.replace(/\{\{SCHEDULED_START\}\}/g, provider.scheduled_start || '23:00');
         script = script.replace(/\{\{SCHEDULED_END\}\}/g, provider.scheduled_end || '07:00');
@@ -1447,6 +1562,7 @@ function buildNextPendingJob(providerId) {
         const updateResult = runStatement(
             `UPDATE jobs
              SET provider_id = ?,
+                 assigned_at = COALESCE(assigned_at, ?),
                  picked_up_at = ?,
                  status = 'running',
                  started_at = COALESCE(started_at, ?),
@@ -1455,7 +1571,7 @@ function buildNextPendingJob(providerId) {
                AND status IN ('pending', 'queued')
                AND picked_up_at IS NULL
                AND (provider_id = ? OR provider_id IS NULL)`,
-            providerId, now, now, now, candidate.id, providerId
+            providerId, now, now, now, now, candidate.id, providerId
         );
         if ((updateResult?.changes || 0) !== 1) {
             continue;
@@ -1880,7 +1996,7 @@ router.get('/download/daemon', (req, res) => {
 
         // Full download: inject API key, URL, and HMAC secret for task_spec signature verification
         // Supports both placeholder styles: {{API_KEY}} (v3.2.0+) and INJECT_KEY_HERE (legacy)
-        const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
+        const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa';
         const hmacSecret = process.env.DC1_HMAC_SECRET || '';
         let injected = script
             .replace('API_KEY = "{{API_KEY}}"', `API_KEY = "${key}"`)
@@ -1918,7 +2034,7 @@ router.get('/download/setup', (req, res) => {
             return res.status(404).json({ error: `Setup script ${templateFile} not found` });
         }
 
-        const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'http://76.13.179.86:8083';
+        const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa';
         let script = fs.readFileSync(templatePath, 'utf-8');
         script = script.replace(/INJECT_KEY_HERE/g, key);
         script = script.replace(/INJECT_URL_HERE/g, apiUrl);
@@ -2048,39 +2164,47 @@ router.post('/me/withdraw', (req, res) => {
         }
 
         const claimable = toFiniteInt(provider.claimable_earnings_halala, { min: 0 }) || 0;
-        if (amount_halala > claimable) {
+        const pending = db.get(
+            `SELECT COALESCE(SUM(amount_halala), 0) AS pending_halala
+             FROM withdrawal_requests
+             WHERE provider_id = ?
+               AND status IN ('pending', 'processing')`,
+            provider.id
+        ) || { pending_halala: 0 };
+        const pending_halala = toFiniteInt(pending.pending_halala, { min: 0 }) || 0;
+        const available_halala = Math.max(0, claimable - pending_halala);
+
+        if (amount_halala > available_halala) {
             return res.status(400).json({
                 error: 'Requested amount exceeds claimable earnings',
-                claimable_earnings_halala: claimable
+                claimable_earnings_halala: claimable,
+                pending_withdrawals_halala: pending_halala,
+                available_to_withdraw_halala: available_halala,
             });
         }
 
         const now = new Date().toISOString();
         const requestId = `wreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-        const createRequestTx = db.transaction(() => {
-            db.prepare(
-                `INSERT INTO withdrawal_requests
-                 (id, provider_id, amount_halala, status, iban, created_at)
-                 VALUES (?, ?, ?, 'pending', ?, ?)`
-            ).run(requestId, provider.id, amount_halala, iban, now);
-
-            db.prepare(
-                `UPDATE providers
-                 SET claimable_earnings_halala = claimable_earnings_halala - ?, updated_at = ?
-                 WHERE id = ?`
-            ).run(amount_halala, now, provider.id);
-        });
-        createRequestTx();
+        db.prepare(
+            `INSERT INTO withdrawal_requests
+             (id, provider_id, amount_halala, is_amount_reserved, status, iban, created_at, updated_at)
+             VALUES (?, ?, ?, 0, 'pending', ?, ?, ?)`
+        ).run(requestId, provider.id, amount_halala, iban, now, now);
 
         const withdrawal_request = db.get(
-            `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at
+            `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at, updated_at
              FROM withdrawal_requests
              WHERE id = ?`,
             requestId
         );
 
-        return res.status(201).json({ withdrawal_request });
+        return res.status(201).json({
+            withdrawal_id: requestId,
+            status: 'pending',
+            message: 'Withdrawal queued for review. Expect 1-3 business days.',
+            withdrawal_request,
+        });
     } catch (error) {
         console.error('Create provider withdrawal request error:', error);
         return res.status(500).json({ error: 'Failed to create withdrawal request' });
@@ -2099,7 +2223,7 @@ router.get('/me/withdrawals', (req, res) => {
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         const withdrawals = db.all(
-            `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at
+            `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at, updated_at
              FROM withdrawal_requests
              WHERE provider_id = ?
              ORDER BY created_at DESC
@@ -2646,9 +2770,10 @@ router.get('/models', (req, res) => {
 });
 
 // ============================================================================
-// POST /api/providers/rotate-key — Rotate API key (provider self-service)
+// POST /api/providers/me/rotate-key — Rotate API key (provider self-service)
+// Backwards-compatible alias retained: /api/providers/rotate-key
 // ============================================================================
-router.post('/rotate-key', (req, res) => {
+router.post(['/me/rotate-key', '/rotate-key'], (req, res) => {
     try {
         const key = req.headers['x-provider-key'] || req.query.key;
         if (!key) return res.status(400).json({ error: 'Current API key required (x-provider-key header or key query)' });
@@ -2657,7 +2782,7 @@ router.post('/rotate-key', (req, res) => {
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         if (isRotationRateLimited('provider', provider.id)) {
-            return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per hour' });
+            return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per 24 hours' });
         }
 
         const newKey = `dc1-provider-${crypto.randomUUID()}`;
@@ -2926,11 +3051,12 @@ let _publicCache = null;
 let _publicCacheAt = 0;
 const PUBLIC_CACHE_TTL_MS = 30 * 1000;
 
-router.get('/public', (req, res) => {
+router.get('/public', publicProvidersLimiter, (req, res) => {
     try {
         const now = Date.now();
         if (_publicCache && (now - _publicCacheAt) < PUBLIC_CACHE_TTL_MS) {
             res.setHeader('X-Cache', 'HIT');
+            res.setHeader('Cache-Control', 'public, max-age=30');
             return res.json(_publicCache);
         }
 
@@ -2970,6 +3096,7 @@ router.get('/public', (req, res) => {
             const costPerHourSar = parseFloat(((costPerSecHalala * 3600) / 100).toFixed(2));
 
             return {
+                id: p.id,
                 gpu_model: p.gpu_name_detected || p.gpu_model || 'Unknown GPU',
                 vram_mb: vramMb,
                 gpu_count: Number(p.gpu_count || 1),
@@ -2983,6 +3110,7 @@ router.get('/public', (req, res) => {
         _publicCache = payload;
         _publicCacheAt = now;
         res.setHeader('X-Cache', 'MISS');
+        res.setHeader('Cache-Control', 'public, max-age=30');
         res.json(payload);
     } catch (error) {
         console.error('Public providers error:', error);
@@ -3123,20 +3251,151 @@ router.get('/:id/gpu-metrics', (req, res) => {
 });
 
 // ============================================================================
-// DELETE /api/providers/me — PDPL right to erasure
-// Anonymizes provider-linked jobs, cancels in-progress jobs, and deletes account.
-// Auth: x-provider-key header or key query param.
+// GET /api/providers/me/data-export — PDPL right to access/export
+// Alias kept for backwards compatibility: /api/providers/me/export
 // ============================================================================
-router.delete('/me', (req, res) => {
+router.get(['/me/data-export', '/me/export'], providerDataExportLimiter, (req, res) => {
     try {
         const key = req.headers['x-provider-key'] || req.query.key;
         if (!key) return res.status(400).json({ error: 'API key required (x-provider-key header or key query)' });
 
-        const provider = db.get('SELECT id, status FROM providers WHERE api_key = ?', key);
+        const provider = db.get(
+            `SELECT id, name, email, gpu_model, os, status, approval_status, created_at, updated_at,
+                    total_jobs, total_earnings, claimable_earnings_halala
+             FROM providers
+             WHERE api_key = ?`,
+            key
+        );
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const jobs = db.all(
+            `SELECT id, job_id, job_type, status, renter_id, model,
+                    cost_halala, actual_cost_halala, duration_minutes, actual_duration_minutes,
+                    submitted_at, started_at, completed_at, created_at, updated_at, error
+             FROM jobs
+             WHERE provider_id = ?
+             ORDER BY COALESCE(completed_at, submitted_at, created_at) DESC`,
+            provider.id
+        );
+
+        const payments = db.all(
+            `SELECT id, job_id, amount_halala, status, created_at, resolved_at
+             FROM escrow_holds
+             WHERE provider_id = ? AND status = 'released_provider'
+             ORDER BY COALESCE(resolved_at, created_at) DESC`,
+            provider.id
+        );
+
+        const withdrawalsLegacy = db.all(
+            `SELECT withdrawal_id AS request_id, amount_sar, status, requested_at AS created_at, processed_at, notes
+             FROM withdrawals
+             WHERE provider_id = ?
+             ORDER BY requested_at DESC`,
+            provider.id
+        );
+
+        const withdrawals = db.all(
+            `SELECT id AS request_id, amount_halala, status, created_at, processed_at, admin_note
+             FROM withdrawal_requests
+             WHERE provider_id = ?
+             ORDER BY created_at DESC`,
+            provider.id
+        );
+
+        const analytics = {
+            status_counts: db.all(
+                `SELECT status, COUNT(*) AS count
+                 FROM jobs
+                 WHERE provider_id = ?
+                 GROUP BY status
+                 ORDER BY count DESC`,
+                provider.id
+            ),
+            daily_earnings_last_30d: db.all(
+                `SELECT DATE(COALESCE(completed_at, submitted_at, created_at)) AS day,
+                        COALESCE(SUM(COALESCE(provider_earned_halala, 0)), 0) AS provider_earned_halala,
+                        COUNT(*) AS job_count
+                 FROM jobs
+                 WHERE provider_id = ?
+                   AND DATE(COALESCE(completed_at, submitted_at, created_at)) >= DATE('now', '-30 day')
+                 GROUP BY DATE(COALESCE(completed_at, submitted_at, created_at))
+                 ORDER BY day DESC`,
+                provider.id
+            ),
+            heartbeat_summary: db.get(
+                `SELECT COUNT(*) AS samples,
+                        MAX(received_at) AS last_heartbeat_at,
+                        COALESCE(AVG(gpu_util_pct), 0) AS avg_gpu_util_pct,
+                        COALESCE(AVG(gpu_temp_c), 0) AS avg_gpu_temp_c
+                 FROM heartbeat_log
+                 WHERE provider_id = ?`,
+                provider.id
+            ) || { samples: 0, last_heartbeat_at: null, avg_gpu_util_pct: 0, avg_gpu_temp_c: 0 },
+        };
+
+        const nowIso = new Date().toISOString();
+        runStatement(
+            `INSERT INTO pdpl_request_log (account_type, account_id, request_type, requested_at, metadata_json)
+             VALUES ('provider', ?, 'export', ?, ?)`,
+            provider.id,
+            nowIso,
+            JSON.stringify({ mode: 'direct_json', endpoint: '/api/providers/me/export' })
+        );
+
+        sendDataExportReady(provider.email, {
+            accountType: 'provider',
+            requestedAt: nowIso,
+            deliveryMode: 'direct',
+        }).catch((e) => console.error('[providers.export] data export email failed:', e.message));
+
+        return res.json({
+            exported_at: nowIso,
+            account: {
+                id: provider.id,
+                name: provider.name,
+                email: provider.email,
+                gpu_model: provider.gpu_model,
+                os: provider.os,
+                status: provider.status,
+                approval_status: provider.approval_status,
+                created_at: provider.created_at,
+                updated_at: provider.updated_at || null,
+                total_jobs: Number(provider.total_jobs || 0),
+                total_earnings_halala: Math.max(0, Math.round(Number(provider.total_earnings || 0) * 100)),
+                claimable_earnings_halala: Number(provider.claimable_earnings_halala || 0),
+            },
+            jobs,
+            payments,
+            withdrawals: [
+                ...withdrawals.map((entry) => ({ ...entry, source: 'withdrawal_requests' })),
+                ...withdrawalsLegacy.map((entry) => ({ ...entry, source: 'withdrawals' })),
+            ],
+            analytics,
+        });
+    } catch (error) {
+        console.error('Provider export error:', error);
+        return res.status(500).json({ error: 'Failed to export provider data' });
+    }
+});
+
+// ============================================================================
+// DELETE /api/providers/me — PDPL right to erasure
+// Soft-deletes and anonymizes provider account (audit trail preserved).
+// Auth: x-provider-key header or key query param.
+// ============================================================================
+router.delete('/me', providerAccountDeletionLimiter, (req, res) => {
+    try {
+        const key = req.headers['x-provider-key'] || req.query.key;
+        if (!key) return res.status(400).json({ error: 'API key required (x-provider-key header or key query)' });
+
+        const provider = db.get('SELECT id, status, email FROM providers WHERE api_key = ?', key);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
         if (provider.status === 'deleted') return res.status(410).json({ error: 'Account already deleted' });
 
         const now = new Date().toISOString();
+        const deletionScheduledFor = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString();
+        const anonymizedEmail = hashedDeletedEmail(provider.email, provider.id);
+        const tombstoneApiKey = `deleted-provider-${provider.id}-${crypto.randomUUID()}`;
 
         const cancelledJobs = runStatement(
             `UPDATE jobs SET
@@ -3145,41 +3404,53 @@ router.delete('/me', (req, res) => {
                completed_at = COALESCE(completed_at, ?),
                updated_at = ?
              WHERE provider_id = ?
-               AND status IN ('queued', 'pending', 'running', 'paused')`,
+              AND status IN ('queued', 'pending', 'running', 'paused')`,
             now,
             now,
             provider.id
         );
+
+        // Keep provider-linked audit records; only redact bank payout details.
+        runStatement('UPDATE withdrawals SET payout_details = NULL, notes = ? WHERE provider_id = ?', 'Redacted per PDPL deletion request', provider.id);
+        runStatement('UPDATE withdrawal_requests SET iban = ?, admin_note = ? WHERE provider_id = ?', 'SA0000000000000000000000', 'Redacted per PDPL deletion request', provider.id);
+        runStatement('DELETE FROM serve_sessions WHERE provider_id = ?', provider.id);
+
+        const updated = runStatement(
+            `UPDATE providers SET
+               name = '[deleted]',
+               email = ?,
+               organization = NULL,
+               ip_address = NULL,
+               location = NULL,
+               notes = NULL,
+               status = 'deleted',
+               approval_status = 'deleted',
+               deleted_at = ?,
+               deletion_scheduled_for = ?,
+               api_key = ?,
+               updated_at = ?
+             WHERE id = ?`,
+            anonymizedEmail,
+            now,
+            deletionScheduledFor,
+            tombstoneApiKey,
+            now,
+            provider.id
+        );
+        if (!updated.changes) return res.status(500).json({ error: 'Account deletion failed' });
 
         runStatement(
-            `UPDATE jobs SET
-               provider_id = NULL,
-               updated_at = ?
-             WHERE provider_id = ?
-               AND status IN ('completed', 'failed', 'cancelled')`,
+            `INSERT INTO pdpl_request_log (account_type, account_id, request_type, requested_at, metadata_json)
+             VALUES ('provider', ?, 'delete', ?, ?)`,
+            provider.id,
             now,
-            provider.id
+            JSON.stringify({ cancelled_jobs: cancelledJobs.changes || 0, deletion_scheduled_for: deletionScheduledFor })
         );
 
-        runStatement('DELETE FROM serve_sessions WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM escrow_holds WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM withdrawals WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM withdrawal_requests WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM heartbeat_log WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM daemon_events WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM benchmark_runs WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM bottleneck_events WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM verification_runs WHERE provider_id = ?', provider.id);
-        runStatement('DELETE FROM recovery_events WHERE provider_id = ? OR from_provider_id = ? OR to_provider_id = ?', provider.id, provider.id, provider.id);
-        runStatement('DELETE FROM api_key_rotations WHERE account_type = ? AND account_id = ?', 'provider', provider.id);
-
-        const deleted = runStatement('DELETE FROM providers WHERE id = ?', provider.id);
-        if (!deleted.changes) return res.status(500).json({ error: 'Account deletion failed' });
-
         return res.json({
-            deleted: true,
             cancelled_jobs: cancelledJobs.changes || 0,
-            deleted_at: now,
+            deletion_scheduled_for: deletionScheduledFor,
+            message: 'Account scheduled for deletion in 30 days. Contact support to cancel.',
         });
     } catch (error) {
         console.error('Provider delete error:', error);

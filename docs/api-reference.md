@@ -1,6 +1,6 @@
-# DC1 API Reference
+# DCP API Reference
 
-**Base URL:** `http://76.13.179.86:8083`
+**Base URL:** `https://api.dcp.sa`
 **Content-Type:** `application/json` for all POST/PATCH requests
 **Currency:** All amounts are in **halala** (1 SAR = 100 halala) unless the field name ends in `_sar`
 
@@ -12,8 +12,8 @@ Three auth schemes are used depending on caller role:
 
 | Role | Header | Query param | Example |
 |------|--------|-------------|---------|
-| Renter | `x-renter-key: dc1-renter-...` | `?key=dc1-renter-...` | Job submission, balance |
-| Provider | `x-provider-key: dc1-...` | `?key=dc1-...` | Daemon heartbeat, earnings |
+| Renter | `x-renter-key: dcp-renter-...` | `?key=dcp-renter-...` | Job submission, balance |
+| Provider | `x-provider-key: dcp-...` | `?key=dcp-...` | Daemon heartbeat, earnings |
 | Admin | `x-admin-token: <token>` | — | Platform administration |
 
 Most read endpoints for renters accept `?key=` as a query param. All write endpoints (job submit, topup) require the `x-renter-key` header.
@@ -65,7 +65,7 @@ Create a new renter account.
 {
   "success": true,
   "renter_id": 7,
-  "api_key": "dc1-renter-a1b2c3d4e5f6...",
+  "api_key": "dcp-renter-a1b2c3d4e5f6...",
   "message": "Welcome ...! Save your API key — it won't be shown again."
 }
 ```
@@ -83,7 +83,7 @@ Create a new renter account.
 
 Fetch renter profile and recent jobs.
 
-**Auth:** `?key=dc1-renter-...` or `x-renter-key` header
+**Auth:** `?key=dcp-renter-...` or `x-renter-key` header
 
 **Response 200:**
 
@@ -454,10 +454,10 @@ Stream execution logs from the provider daemon.
 {
   "job_id": "job-1710843200000-x7k2p",
   "logs": [
-    "[dc1] Loading model: mistralai/Mistral-7B-Instruct-v0.2",
-    "[dc1] Model loaded in 8.3s on cuda",
-    "[dc1-phase] generating",
-    "[dc1] Generated 215 tokens in 9.7s"
+    "[dcp] Loading model: mistralai/Mistral-7B-Instruct-v0.2",
+    "[dcp] Model loaded in 8.3s on cuda",
+    "[dcp-phase] generating",
+    "[dcp] Generated 215 tokens in 9.7s"
   ]
 }
 ```
@@ -515,7 +515,7 @@ List your job history with optional filters.
 
 ## Provider Endpoints
 
-> These endpoints are primarily used by the **DC1 daemon** running on provider machines. See the [Provider Guide](./provider-guide.md) for the full setup flow.
+> These endpoints are primarily used by the **DCP daemon** running on provider machines. See the [Provider Guide](./provider-guide.md) for the full setup flow.
 
 ### POST /api/providers/register
 
@@ -540,7 +540,7 @@ Register a new GPU provider.
 ```json
 {
   "success": true,
-  "api_key": "dc1-...",
+  "api_key": "dcp-...",
   "provider_id": 3,
   "message": "Provider registered. Install the daemon and start heartbeating."
 }
@@ -580,7 +580,7 @@ Daemon heartbeat — keeps the provider online and reports GPU metrics.
 
 Provider dashboard data.
 
-**Auth:** `?key=dc1-...` or `x-provider-key` header
+**Auth:** `?key=dcp-...` or `x-provider-key` header
 
 **Response 200:** Returns provider profile, recent jobs, and earnings summary.
 
@@ -607,7 +607,7 @@ Earnings and withdrawal balance.
 
 ## Webhook Events
 
-DC1 sends POST requests to your configured webhook URL when key job events occur.
+DCP sends POST requests to your configured webhook URL when key job events occur.
 
 > Webhook URL configuration is in your account settings (coming in Phase 4).
 
@@ -638,7 +638,7 @@ DC1 sends POST requests to your configured webhook URL when key job events occur
 }
 ```
 
-All webhook payloads are signed with HMAC-SHA256. Verify the `X-DC1-Signature` header:
+All webhook payloads are signed with HMAC-SHA256. Verify the `X-DCP-Signature` header:
 
 ```python
 import hmac, hashlib
@@ -646,6 +646,505 @@ import hmac, hashlib
 def verify_webhook(payload_bytes, signature_header, secret):
     expected = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature_header)
+```
+
+---
+
+## Provider Endpoints (continued)
+
+### PATCH /api/providers/me/gpu-profile
+
+Update GPU capabilities manually (e.g. after hardware upgrade).
+
+**Auth:** `x-provider-key` header
+
+**Request body** (all fields optional):
+
+```json
+{
+  "gpu_model": "NVIDIA RTX 4090",
+  "vram_gb": 24,
+  "gpu_count": 2,
+  "compute_capability": "8.9",
+  "cuda_version": "12.2",
+  "driver_version": "535.54.03",
+  "location": "SA"
+}
+```
+
+**Response 200:**
+
+```json
+{ "success": true, "provider_id": 3, "updated_fields": ["vram_gb", "gpu_count"] }
+```
+
+---
+
+### POST /api/providers/me/withdraw
+
+Request a payout. Alias for `POST /api/providers/withdraw`.
+
+**Auth:** `x-provider-key` header
+
+**Request body:**
+
+```json
+{
+  "amount_sar": 100.00,
+  "payout_method": "bank_transfer",
+  "payout_details": { "iban": "SA4420000001234567891234", "account_name": "Ahmed Al-Rashidi" }
+}
+```
+
+Minimum 10 SAR. Processing takes 1–3 business days.
+
+**Response 201:**
+
+```json
+{
+  "success": true,
+  "withdrawal_id": "wd-1710843600000-ab3f",
+  "amount_sar": 100.00,
+  "status": "pending",
+  "message": "Withdrawal request submitted. Processing takes 1-3 business days."
+}
+```
+
+**Errors:**
+
+| Code | Reason |
+|------|--------|
+| 402 | Insufficient available earnings |
+
+---
+
+### GET /api/providers/me/withdrawals
+
+Provider withdrawal history.
+
+**Auth:** `x-provider-key` header or `?key=`
+
+**Response 200:** Same as `GET /api/providers/withdrawal-history`.
+
+---
+
+### GET /api/providers/public
+
+Public GPU marketplace. No auth required.
+
+**Response 200:**
+
+```json
+{
+  "providers": [
+    {
+      "id": 3,
+      "gpu_model": "NVIDIA RTX 4090",
+      "vram_gb": 24,
+      "gpu_count": 1,
+      "location": "SA",
+      "price_per_min_halala": 15,
+      "uptime_pct": 98.5,
+      "jobs_completed": 318,
+      "is_live": true,
+      "cached_models": ["mistralai/Mistral-7B-Instruct-v0.2"]
+    }
+  ],
+  "total": 4
+}
+```
+
+---
+
+## Job Endpoints (continued)
+
+### GET /api/jobs/:job_id/history
+
+Execution attempt history for a job.
+
+**Auth:** `x-renter-key` or `x-admin-token`
+
+**Response 200:**
+
+```json
+{
+  "job_id": "job-1710843200000-x7k2p",
+  "attempts": [
+    {
+      "attempt": 1,
+      "provider_id": 3,
+      "started_at": "2026-03-19T11:00:05.000Z",
+      "ended_at": "2026-03-19T11:01:30.000Z",
+      "status": "failed",
+      "error": "CUDA out of memory",
+      "duration_seconds": 85
+    },
+    {
+      "attempt": 2,
+      "provider_id": 5,
+      "started_at": "2026-03-19T11:02:00.000Z",
+      "ended_at": "2026-03-19T11:04:45.000Z",
+      "status": "completed",
+      "error": null,
+      "duration_seconds": 165
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/jobs/:job_id/logs?attempt=N
+
+Retrieve logs for a specific execution attempt. The `attempt` parameter is optional — omit for the latest attempt.
+
+**Auth:** `x-renter-key`, `x-provider-key`, or `x-admin-token`
+
+**Response 200:**
+
+```json
+{
+  "job_id": "job-1710843200000-x7k2p",
+  "attempt": 2,
+  "logs": [
+    { "ts": "2026-03-19T11:02:00.100Z", "line": "[dcp] Loading model..." },
+    { "ts": "2026-03-19T11:04:44.000Z", "line": "[dcp] Generated 215 tokens in 9.7s" }
+  ]
+}
+```
+
+---
+
+### GET /api/jobs/:job_id/logs/stream
+
+Stream live logs as Server-Sent Events. Closes when the job reaches a terminal state.
+
+**Auth:** `x-renter-key`, `x-provider-key`, or `x-admin-token`
+
+**Response:** `Content-Type: text/event-stream`
+
+```
+data: [dcp] Loading model: mistralai/Mistral-7B-Instruct-v0.2
+
+data: [dcp] Model loaded in 8.3s on cuda
+
+data: [DONE]
+```
+
+---
+
+### GET /api/jobs/queue/status
+
+Queue depth by compute type. No auth required.
+
+**Response 200:**
+
+```json
+{
+  "queue": [
+    { "job_type": "llm_inference", "queued": 2, "running": 3, "avg_wait_seconds": 45 },
+    { "job_type": "image_generation", "queued": 0, "running": 1, "avg_wait_seconds": null }
+  ],
+  "total_queued": 2,
+  "total_running": 4,
+  "updated_at": "2026-03-19T11:05:00.000Z"
+}
+```
+
+---
+
+### POST /api/jobs/:job_id/retry
+
+Retry a `failed` job. Max 3 attempts.
+
+**Auth:** `x-renter-key` header
+
+**Response 200:**
+
+```json
+{
+  "success": true,
+  "job_id": "job-1710843200000-x7k2p",
+  "attempt": 2,
+  "status": "queued",
+  "cost_halala": 75,
+  "new_balance_halala": 4925
+}
+```
+
+**Errors:**
+
+| Code | Reason |
+|------|--------|
+| 400 | Job is not failed, or max retries reached |
+| 402 | Insufficient balance |
+
+---
+
+### POST /api/jobs/:job_id/pause
+
+Checkpoint a running job. The daemon uses `docker checkpoint`.
+
+**Auth:** `x-renter-key` header
+
+**Response 200:**
+
+```json
+{ "success": true, "job_id": "...", "status": "pausing", "message": "Checkpoint initiated." }
+```
+
+---
+
+### POST /api/jobs/:job_id/resume
+
+Restore a paused job from its checkpoint.
+
+**Auth:** `x-renter-key` header
+
+**Response 200:**
+
+```json
+{ "success": true, "job_id": "...", "status": "resuming", "message": "Container resumed." }
+```
+
+---
+
+## vLLM Inference Endpoints
+
+DCP managed inference — no need to submit a separate job. The platform handles
+provider selection and billing automatically.
+
+### GET /api/vllm/models
+
+List models available for managed inference. No auth required.
+
+**Response 200:**
+
+```json
+{
+  "models": [
+    {
+      "id": "mistralai/Mistral-7B-Instruct-v0.2",
+      "object": "model",
+      "context_length": 32768,
+      "max_tokens": 4096,
+      "vram_required_gb": 14,
+      "available": true
+    }
+  ]
+}
+```
+
+---
+
+### POST /api/vllm/complete
+
+Synchronous LLM completion. Waits for the full response (max 120s).
+
+**Auth:** `x-renter-key` header
+
+**Request body:**
+
+```json
+{
+  "model": "mistralai/Mistral-7B-Instruct-v0.2",
+  "prompt": "Explain quantum computing in simple terms.",
+  "max_tokens": 512,
+  "temperature": 0.7
+}
+```
+
+**Response 200:**
+
+```json
+{
+  "id": "job-1710843200000-x7k2p",
+  "model": "mistralai/Mistral-7B-Instruct-v0.2",
+  "choices": [
+    { "index": 0, "text": "Quantum computing uses qubits...", "finish_reason": "stop" }
+  ],
+  "usage": { "prompt_tokens": 12, "completion_tokens": 215, "total_tokens": 227 },
+  "cost_halala": 45,
+  "latency_ms": 9700
+}
+```
+
+---
+
+### POST /api/vllm/complete/stream
+
+Streaming LLM completion via SSE.
+
+**Auth:** `x-renter-key` header
+
+**Request body:** Same as `POST /api/vllm/complete`.
+
+**Response:** `Content-Type: text/event-stream`
+
+```
+data: {"text": "Quantum ", "index": 0}
+
+data: {"text": "computing ", "index": 0}
+
+data: {"finish_reason": "stop", "usage": {"total_tokens": 227}, "cost_halala": 45}
+
+data: [DONE]
+```
+
+---
+
+## Container Registry Endpoints
+
+### GET /api/containers/registry
+
+List approved Docker images. No auth required.
+
+**Response 200:**
+
+```json
+{
+  "images": [
+    {
+      "id": 1,
+      "image": "dc1/llm-worker:latest",
+      "description": "LLM inference worker (vLLM)",
+      "job_type": "llm_inference",
+      "scan_status": "clean",
+      "scan_at": "2026-03-01T00:00:00.000Z",
+      "approved_at": "2026-03-01T00:00:00.000Z"
+    }
+  ],
+  "total": 6
+}
+```
+
+---
+
+### POST /api/admin/containers/approve-image
+
+Approve a custom Docker image for use in DCP jobs.
+
+**Auth:** `x-admin-token` header
+
+**Request body:**
+
+```json
+{
+  "image": "myorg/custom-worker:v1.2",
+  "description": "Custom ML training worker",
+  "job_type": "training",
+  "scan_first": true
+}
+```
+
+**Response 201:**
+
+```json
+{ "success": true, "image": "myorg/custom-worker:v1.2", "status": "scan_pending", "message": "Trivy scan queued before final approval." }
+```
+
+---
+
+### POST /api/admin/containers/scan-image
+
+Trigger a Trivy vulnerability scan on an image.
+
+**Auth:** `x-admin-token` header
+
+**Request body:** `{ "image": "dc1/llm-worker:latest" }`
+
+**Response 202:**
+
+```json
+{ "success": true, "image": "dc1/llm-worker:latest", "scan_id": "scan-abc123", "message": "Scan queued." }
+```
+
+---
+
+### GET /api/admin/containers/security-status
+
+Container security dashboard — CVE findings for all registry images.
+
+**Auth:** `x-admin-token` header
+
+**Query params:** `?status=flagged`, `?severity=CRITICAL`
+
+**Response 200:**
+
+```json
+{
+  "summary": { "total_images": 6, "clean": 5, "flagged": 1, "pending": 0 },
+  "images": [
+    { "image": "dc1/llm-worker:latest", "scan_status": "clean", "critical_cves": 0, "high_cves": 0 },
+    { "image": "myorg/old-worker:v0.1", "scan_status": "flagged", "critical_cves": 2, "high_cves": 4, "findings_summary": "CVE-2024-1234 (libssl)" }
+  ]
+}
+```
+
+---
+
+## PDPL Compliance Endpoints
+
+Saudi Arabia's Personal Data Protection Law (PDPL) requires DCP to provide
+data portability and account deletion for all users.
+
+### GET /api/renters/me/export
+
+Export all personal data as a JSON file.
+
+**Auth:** `x-renter-key` header
+
+**Response 200:** JSON document containing `renter` profile, full `jobs` array, full `payments` array, and `data_retention_policy`.
+
+---
+
+### DELETE /api/renters/me
+
+Permanently delete a renter account. Irreversible.
+
+**Auth:** `x-renter-key` header
+
+**Preconditions:** Zero balance, no active jobs.
+
+**Request body:**
+
+```json
+{ "confirm": "DELETE_MY_ACCOUNT", "reason": "No longer using the service" }
+```
+
+**Response 200:**
+
+```json
+{ "success": true, "message": "Account permanently deleted. All personal data erased.", "deleted_at": "2026-03-19T11:00:00.000Z" }
+```
+
+**Errors:**
+
+| Code | Reason |
+|------|--------|
+| 400 | Confirmation string wrong or missing |
+| 409 | Active jobs or non-zero balance |
+
+---
+
+### DELETE /api/providers/me
+
+Permanently delete a provider account. Earnings history is anonymised (not erased) for regulatory audit compliance.
+
+**Auth:** `x-provider-key` header
+
+**Preconditions:** No active jobs, no pending withdrawals.
+
+**Request body:**
+
+```json
+{ "confirm": "DELETE_MY_ACCOUNT" }
+```
+
+**Response 200:**
+
+```json
+{ "success": true, "message": "Provider account permanently deleted. Earnings history anonymised.", "deleted_at": "2026-03-19T11:00:00.000Z" }
 ```
 
 ---

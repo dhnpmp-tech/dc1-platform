@@ -279,6 +279,9 @@ const translations: Record<Language, Record<string, string>> = {
     'renter.gpu_count': 'GPU Count',
     'renter.compute_type': 'Compute Type',
     'renter.queue_wait_estimate': 'Estimated Queue Wait',
+    'renter.retry_job': 'Retry Job',
+    'renter.retry_confirm': 'Retry this job? {amount} SAR will be held from your balance.',
+    'renter.retry_success': 'Job retried successfully.',
 
     // Admin dashboard
     'admin.dashboard': 'Admin Dashboard',
@@ -1050,6 +1053,9 @@ const translations: Record<Language, Record<string, string>> = {
     'renter.gpu_count': 'عدد وحدات GPU',
     'renter.compute_type': 'نوع الحوسبة',
     'renter.queue_wait_estimate': 'وقت الانتظار المتوقع',
+    'renter.retry_job': 'إعادة تشغيل المهمة',
+    'renter.retry_confirm': 'إعادة تشغيل هذه المهمة؟ سيتم حجز {amount} ريال من رصيدك.',
+    'renter.retry_success': 'تمت إعادة تشغيل المهمة بنجاح.',
 
     // Admin dashboard
     'admin.dashboard': 'لوحة تحكم الإدارة',

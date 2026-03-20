@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const paymentsRouter = require('./routes/payments');
 const { startJobSweep, getSweepMetrics } = require('./services/jobSweep');
 const {
@@ -15,6 +15,18 @@ const {
 
 const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
+const TRUST_PROXY_HOPS = Number.parseInt(process.env.TRUST_PROXY_HOPS || '0', 10);
+
+// Harden proxy trust to explicit hop count. This prevents accidental
+// trust-all configurations that let attackers spoof X-Forwarded-For.
+app.set(
+  'trust proxy',
+  Number.isFinite(TRUST_PROXY_HOPS) && TRUST_PROXY_HOPS > 0 ? TRUST_PROXY_HOPS : false
+);
+
+function ipRateKey(req) {
+  return ipKeyGenerator(req.ip || req.socket?.remoteAddress || '0.0.0.0');
+}
 
 function getLatestDaemonVersion() {
   const configured = (process.env.DAEMON_VERSION || '').trim();
@@ -101,6 +113,7 @@ app.use('/api/renters/register', registerLimiter);
 const heartbeatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 4,
+  keyGenerator: (req) => ipRateKey(req),
   message: { error: 'Heartbeat rate limit exceeded. Normal interval is 30s.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -120,6 +133,7 @@ app.use('/api/admin', adminLimiter);
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
+  keyGenerator: (req) => ipRateKey(req),
   message: { error: 'Too many login attempts. Try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -134,6 +148,7 @@ app.use('/api/admin/login', loginLimiter);
 const topupLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
+  keyGenerator: (req) => ipRateKey(req),
   message: { error: 'Too many top-up requests. Slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -144,6 +159,7 @@ app.use('/api/renters/topup', topupLimiter);
 const paymentLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
+  keyGenerator: (req) => ipRateKey(req),
   message: { error: 'Too many payment requests. Slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -151,10 +167,22 @@ const paymentLimiter = rateLimit({
 app.use('/api/payments/topup', paymentLimiter);
 app.use('/api/payments/topup-sandbox', paymentLimiter);
 
+// Moyasar webhook: 100 per IP per minute
+const paymentWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  keyGenerator: (req) => ipRateKey(req),
+  message: { error: 'Webhook rate limit exceeded.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/payments/webhook', paymentWebhookLimiter);
+
 // General API: 300 per IP per minute
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 300,
+  keyGenerator: (req) => ipRateKey(req),
   message: { error: 'Rate limit exceeded.' },
   standardHeaders: true,
   legacyHeaders: false,

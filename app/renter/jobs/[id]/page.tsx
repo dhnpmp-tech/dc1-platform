@@ -6,10 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import StatusBadge from '../../../components/ui/StatusBadge'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 interface JobDetail {
   id: number
@@ -418,7 +415,7 @@ interface RetryState {
   open: boolean
   loading: boolean
   error: string
-  successId: number | string | null
+  requiredHalala: number | null
 }
 
 type TabId = 'overview' | 'logs' | 'history'
@@ -433,7 +430,7 @@ export default function RenterJobDetailPage() {
   const [renterName, setRenterName] = useState('Renter')
   const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState('')
-  const [retry, setRetry] = useState<RetryState>({ open: false, loading: false, error: '', successId: null })
+  const [retry, setRetry] = useState<RetryState>({ open: false, loading: false, error: '', requiredHalala: null })
   const [activeTab, setActiveTab] = useState<TabId>('overview')
 
   useEffect(() => {
@@ -493,21 +490,19 @@ export default function RenterJobDetailPage() {
     if (!job) return
     setRetry(r => ({ ...r, loading: true, error: '' }))
 
-    let parsedParams: Record<string, unknown> = {}
     try {
-      if (job.params) parsedParams = JSON.parse(job.params)
-    } catch { /* empty params ok */ }
-
-    const payload = { job_type: job.job_type, ...parsedParams }
-
-    try {
-      const res = await fetch(`${API_BASE}/jobs/submit`, {
+      const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(job.id))}/retry?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
-        body: JSON.stringify(payload),
+        headers: { 'x-renter-key': apiKey },
       })
       if (res.status === 402) {
-        setRetry(r => ({ ...r, loading: false, error: 'insufficient_balance' }))
+        const err = await res.json().catch(() => ({}))
+        setRetry(r => ({
+          ...r,
+          loading: false,
+          error: 'insufficient_balance',
+          requiredHalala: Number(err.required_halala || r.requiredHalala || 0),
+        }))
         return
       }
       if (!res.ok) {
@@ -516,8 +511,11 @@ export default function RenterJobDetailPage() {
         return
       }
       const data = await res.json()
-      const newId = data.job_id || data.id
-      setRetry({ open: false, loading: false, error: '', successId: newId })
+      const newId = data.job?.id || data.id || null
+      setRetry({ open: false, loading: false, error: '', requiredHalala: null })
+      if (newId) {
+        router.push(`/renter/jobs/${newId}`)
+      }
     } catch {
       setRetry(r => ({ ...r, loading: false, error: 'Network error. Please try again.' }))
     }
@@ -573,23 +571,6 @@ export default function RenterJobDetailPage() {
         {/* Back link */}
         <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">&larr; Back to Jobs</Link>
 
-        {/* Re-submit success banner */}
-        {retry.successId && (
-          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
-            <span className="text-status-success text-sm font-medium">
-              Job re-submitted: #{retry.successId} —{' '}
-              <Link href={`/renter/jobs/${retry.successId}`} className="underline">View new job</Link>
-            </span>
-            <button
-              onClick={() => setRetry(r => ({ ...r, successId: null }))}
-              className="text-dc1-text-muted hover:text-dc1-text-primary text-lg leading-none"
-              aria-label="Dismiss"
-            >
-              &times;
-            </button>
-          </div>
-        )}
-
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -600,11 +581,11 @@ export default function RenterJobDetailPage() {
             <StatusBadge status={job.status as any} />
             {job.status === 'failed' && (
               <button
-                onClick={() => setRetry(r => ({ ...r, open: true, error: '' }))}
+                onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
                 className="btn btn-primary text-sm min-h-[44px] px-4"
                 aria-label="Retry this job"
               >
-                Retry
+                Retry Job
               </button>
             )}
           </div>
@@ -771,10 +752,10 @@ export default function RenterJobDetailPage() {
         >
           <div className="card w-full max-w-md p-6 space-y-5">
             <h2 id="retry-modal-title" className="text-lg font-bold text-dc1-text-primary">
-              Re-submit Job?
+              Retry Job?
             </h2>
             <p className="text-dc1-text-secondary text-sm">
-              Re-submit this job? It will use the same model and parameters and deduct balance again.
+              Retry this job? {((retry.requiredHalala || 0) / 100).toFixed(2)} SAR will be held from your balance.
             </p>
             <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
               <span className="text-dc1-text-muted">Type: </span>{(job.job_type || '').replace(/_/g, ' ')}
@@ -810,7 +791,7 @@ export default function RenterJobDetailPage() {
                 {retry.loading && (
                   <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
                 )}
-                {retry.loading ? 'Submitting…' : 'Re-submit Job'}
+                {retry.loading ? 'Retrying…' : 'Retry Job'}
               </button>
             </div>
           </div>

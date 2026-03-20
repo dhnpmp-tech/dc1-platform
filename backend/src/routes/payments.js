@@ -33,6 +33,12 @@ function toFiniteNumber(value, { min = null, max = null } = {}) {
   return num;
 }
 
+function toFiniteInt(value, { min = null, max = null } = {}) {
+  const num = toFiniteNumber(value, { min, max });
+  if (num == null || !Number.isInteger(num)) return null;
+  return num;
+}
+
 function normalizeCallbackUrl(value) {
   if (value == null || value === '') return null;
   if (typeof value !== 'string') return null;
@@ -99,6 +105,7 @@ function moyasarRequest(method, path, body) {
 
 function verifyMoyasarWebhook(rawBody, signatureHeader) {
   if (!MOYASAR_WEBHOOK_SECRET || !signatureHeader) return false;
+  const signature = String(signatureHeader).trim().toLowerCase();
   const expected = crypto
     .createHmac('sha256', MOYASAR_WEBHOOK_SECRET)
     .update(rawBody)
@@ -106,7 +113,7 @@ function verifyMoyasarWebhook(rawBody, signatureHeader) {
   try {
     return crypto.timingSafeEqual(
       Buffer.from(expected, 'hex'),
-      Buffer.from(signatureHeader, 'hex')
+      Buffer.from(signature, 'hex')
     );
   } catch {
     return false;
@@ -121,35 +128,40 @@ function getRenter(req) {
   return db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
 }
 
-// ─── POST /api/payments/topup ──────────────────────────────────────────────────
-// Initiate a SAR top-up via Moyasar. Returns a hosted checkout URL.
-// Body: { amount_sar: number, source_type?: "creditcard"|"mada"|"applepay", callback_url?: string }
-router.post('/topup', (req, res) => {
+function requireRenter(req, res, next) {
   const renter = getRenter(req);
   if (!renter) {
     return res.status(401).json({ error: 'API key required (x-renter-key header or key query)' });
   }
+  req.renter = renter;
+  return next();
+}
 
-  const { amount_sar, source_type = 'creditcard', callback_url } = req.body;
-  const amountSar = toFiniteNumber(amount_sar, { min: 0.01, max: 10000 });
-
-  if (amountSar == null) {
-    return res.status(400).json({ error: 'amount_sar must be a positive number' });
-  }
-  if (amountSar < 1) {
-    return res.status(400).json({ error: 'Minimum top-up is 1 SAR' });
-  }
-  if (amountSar > 10000) {
-    return res.status(400).json({ error: 'Maximum top-up is 10,000 SAR per transaction' });
-  }
-
-  const ALLOWED_SOURCES = ['creditcard', 'mada', 'applepay'];
-  const sourceType = String(source_type || '').trim().toLowerCase();
-  if (!ALLOWED_SOURCES.includes(sourceType)) {
-    return res.status(400).json({ error: `source_type must be one of: ${ALLOWED_SOURCES.join(', ')}` });
+// ─── POST /api/payments/topup ──────────────────────────────────────────────────
+// Initiate a SAR top-up via Moyasar. Returns a hosted checkout URL.
+// Body: { amount_halala: number, payment_method: "creditcard"|"applepay" }
+router.post('/topup', requireRenter, (req, res) => {
+  const renter = req.renter;
+  const { amount_halala, payment_method, amount_sar, source_type, callback_url } = req.body || {};
+  const methodRaw = payment_method || source_type || 'creditcard';
+  const paymentMethod = String(methodRaw).trim().toLowerCase();
+  const allowedMethods = ['creditcard', 'applepay'];
+  if (!allowedMethods.includes(paymentMethod)) {
+    return res.status(400).json({ error: 'payment_method must be one of: creditcard, applepay' });
   }
 
-  const amountHalala = Math.round(amountSar * 100);
+  let amountHalala = toFiniteInt(amount_halala, { min: 100, max: 1000000 });
+  if (amountHalala == null) {
+    const legacyAmountSar = toFiniteNumber(amount_sar, { min: 1, max: 10000 });
+    if (legacyAmountSar != null) {
+      amountHalala = Math.round(legacyAmountSar * 100);
+    }
+  }
+  if (amountHalala == null) {
+    return res.status(400).json({ error: 'amount_halala must be an integer between 100 and 1000000' });
+  }
+
+  const amountSar = Number((amountHalala / 100).toFixed(2));
   const callbackUrl = normalizeCallbackUrl(callback_url) || `${FRONTEND_URL}/renter/billing?payment=callback`;
   if (callback_url != null && !normalizeCallbackUrl(callback_url)) {
     return res.status(400).json({ error: 'callback_url must be a valid http(s) URL' });
@@ -161,7 +173,7 @@ router.post('/topup', (req, res) => {
     currency: 'SAR',
     description,
     callback_url: callbackUrl,
-    source: { type: sourceType },
+    source: { type: paymentMethod },
     metadata: {
       renter_id: renter.id,
       renter_email: renter.email,
@@ -170,29 +182,25 @@ router.post('/topup', (req, res) => {
 
   moyasarRequest('POST', '/payments', moyasarBody)
     .then(payment => {
-      const paymentId = payment.id;
-      const checkoutUrl = payment.source?.transaction_url || payment.source?.checkout_url || null;
+      const internalPaymentId = `pay_${crypto.randomBytes(12).toString('hex')}`;
+      const moyasarId = payment.id;
+      const paymentUrl = payment.source?.transaction_url || payment.source?.checkout_url || null;
       const now = new Date().toISOString();
 
-      // Store payment record (status=initiated until webhook confirms)
+      // Store payment record (status=pending until webhook confirms)
       runStatement(
         `INSERT INTO payments
-           (payment_id, renter_id, amount_sar, amount_halala, status, source_type,
+           (payment_id, moyasar_id, renter_id, amount_sar, amount_halala, status, source_type, payment_method,
             description, callback_url, checkout_url, gateway_response, created_at)
-         VALUES (?, ?, ?, ?, 'initiated', ?, ?, ?, ?, ?, ?)`,
-        paymentId, renter.id, amountSar, amountHalala, sourceType,
-        description, callbackUrl, checkoutUrl,
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+        internalPaymentId, moyasarId, renter.id, amountSar, amountHalala, paymentMethod, paymentMethod,
+        description, callbackUrl, paymentUrl,
         JSON.stringify(payment), now
       );
 
       res.json({
-        success: true,
-        payment_id: paymentId,
-        amount_sar: amountSar,
-        amount_halala: amountHalala,
-        status: payment.status,
-        checkout_url: checkoutUrl,
-        message: `Redirect renter to checkout_url to complete payment.`,
+        payment_url: paymentUrl,
+        payment_id: internalPaymentId,
       });
     })
     .catch(err => {
@@ -238,10 +246,10 @@ router.post('/topup-sandbox', (req, res) => {
 
   runStatement(
     `INSERT INTO payments
-       (payment_id, renter_id, amount_sar, amount_halala, status, source_type,
+       (payment_id, moyasar_id, renter_id, amount_sar, amount_halala, status, source_type, payment_method,
         description, created_at, confirmed_at)
-     VALUES (?, ?, ?, ?, 'paid', 'sandbox', ?, ?, ?)`,
-    paymentId, renter.id, amountSar, amountHalala,
+     VALUES (?, ?, ?, ?, ?, 'paid', 'sandbox', 'creditcard', ?, ?, ?)`,
+    paymentId, paymentId, renter.id, amountSar, amountHalala,
     'Sandbox top-up (dev mode)', now, now
   );
 
@@ -294,7 +302,11 @@ router.post('/webhook', (req, res) => {
   const now = new Date().toISOString();
 
   // Look up stored payment record
-  const payment = db.get('SELECT * FROM payments WHERE payment_id = ?', paymentId);
+  const payment = db.get(
+    'SELECT * FROM payments WHERE moyasar_id = ? OR payment_id = ?',
+    paymentId,
+    paymentId
+  );
 
   if (!payment) {
     // Unknown payment — return 200 to prevent Moyasar retries for stale events
@@ -308,25 +320,29 @@ router.post('/webhook', (req, res) => {
   }
 
   if (status === 'paid') {
-    // Credit renter balance
+    // Credit renter balance once (idempotent by previous status guard)
+    if (payment.status !== 'paid') {
+      runStatement(
+        `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
+        payment.amount_halala, now, payment.renter_id
+      );
+    }
     runStatement(
-      `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
-      payment.amount_halala, now, payment.renter_id
+      `UPDATE payments
+       SET status = 'paid', confirmed_at = ?, gateway_response = ?
+       WHERE payment_id = ?`,
+      now, JSON.stringify(event), payment.payment_id
     );
-    runStatement(
-      `UPDATE payments SET status = 'paid', confirmed_at = ?, gateway_response = ? WHERE payment_id = ?`,
-      now, JSON.stringify(event), paymentId
-    );
-    console.log(`[payments/webhook] Payment ${paymentId} paid — credited ${payment.amount_halala} halala to renter ${payment.renter_id}`);
+    console.log(`[payments/webhook] Payment ${payment.payment_id} paid — credited ${payment.amount_halala} halala to renter ${payment.renter_id}`);
     return res.json({ received: true, action: 'balance_credited', amount_halala: payment.amount_halala });
   }
 
   if (status === 'failed') {
     runStatement(
       `UPDATE payments SET status = 'failed', gateway_response = ? WHERE payment_id = ?`,
-      JSON.stringify(event), paymentId
+      JSON.stringify(event), payment.payment_id
     );
-    console.log(`[payments/webhook] Payment ${paymentId} failed`);
+    console.log(`[payments/webhook] Payment ${payment.payment_id} failed`);
     return res.json({ received: true, action: 'marked_failed' });
   }
 
@@ -342,16 +358,16 @@ router.post('/webhook', (req, res) => {
     }
     runStatement(
       `UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ?, gateway_response = ? WHERE payment_id = ?`,
-      now, refundAmount, JSON.stringify(event), paymentId
+      now, refundAmount, JSON.stringify(event), payment.payment_id
     );
-    console.log(`[payments/webhook] Payment ${paymentId} refunded — ${refundAmount} halala`);
+    console.log(`[payments/webhook] Payment ${payment.payment_id} refunded — ${refundAmount} halala`);
     return res.json({ received: true, action: 'refund_processed' });
   }
 
   // For any other status (e.g. 'initiated'), just update the gateway response
   runStatement(
     `UPDATE payments SET status = ?, gateway_response = ? WHERE payment_id = ?`,
-    status, JSON.stringify(event), paymentId
+    status, JSON.stringify(event), payment.payment_id
   );
   res.json({ received: true, action: 'status_updated', new_status: status });
 });
@@ -367,8 +383,8 @@ router.get('/verify/:paymentId', (req, res) => {
 
   const { paymentId } = req.params;
   const localPayment = db.get(
-    'SELECT * FROM payments WHERE payment_id = ? AND renter_id = ?',
-    paymentId, renter.id
+    'SELECT * FROM payments WHERE renter_id = ? AND (payment_id = ? OR moyasar_id = ?)',
+    renter.id, paymentId, paymentId
   );
   if (!localPayment) {
     return res.status(404).json({ error: 'Payment not found' });
@@ -396,7 +412,8 @@ router.get('/verify/:paymentId', (req, res) => {
     });
   }
 
-  moyasarRequest('GET', `/payments/${paymentId}`, null)
+  const externalPaymentId = localPayment.moyasar_id || localPayment.payment_id;
+  moyasarRequest('GET', `/payments/${externalPaymentId}`, null)
     .then(payment => {
       const now = new Date().toISOString();
 
@@ -408,13 +425,14 @@ router.get('/verify/:paymentId', (req, res) => {
         );
         runStatement(
           `UPDATE payments SET status = 'paid', confirmed_at = ?, gateway_response = ? WHERE payment_id = ?`,
-          now, JSON.stringify(payment), paymentId
+          now, JSON.stringify(payment), localPayment.payment_id
         );
-        console.log(`[payments/verify] Late sync: payment ${paymentId} paid — credited ${localPayment.amount_halala} halala`);
+        console.log(`[payments/verify] Late sync: payment ${localPayment.payment_id} paid — credited ${localPayment.amount_halala} halala`);
       }
 
       res.json({
-        payment_id: payment.id,
+        payment_id: localPayment.payment_id,
+        moyasar_id: payment.id,
         status: payment.status,
         amount_sar: payment.amount / 100,
         amount_halala: payment.amount,
@@ -427,6 +445,7 @@ router.get('/verify/:paymentId', (req, res) => {
       // Fallback to local record
       res.json({
         payment_id: localPayment.payment_id,
+        moyasar_id: localPayment.moyasar_id || null,
         status: localPayment.status,
         amount_sar: localPayment.amount_sar,
         amount_halala: localPayment.amount_halala,
@@ -447,7 +466,7 @@ router.get('/history', (req, res) => {
   const offset = Math.max(parseInt(req.query.offset) || 0, 0);
 
   const payments = db.all(
-    `SELECT payment_id, amount_sar, amount_halala, status, source_type,
+    `SELECT payment_id, moyasar_id, amount_sar, amount_halala, status, source_type, payment_method,
             description, created_at, confirmed_at, refunded_at, refund_amount_halala
      FROM payments WHERE renter_id = ?
      ORDER BY created_at DESC LIMIT ? OFFSET ?`,

@@ -4,11 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-// Use same proxy as renter dashboard on HTTPS (Vercel) so all renter API calls work
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api';
+const API_BASE = '/api/dc1';
 
 const JOB_TYPES = [
   { value: 'llm-inference', label: 'LLM Inference', rate: 15 },

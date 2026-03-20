@@ -59,6 +59,85 @@
   }
 }
 
+/* ── RTL / Arabic layout overrides ──────────────────────────────────────── */
+[dir="rtl"] body,
+[dir="rtl"] {
+  font-family: 'IBM Plex Sans Arabic', 'Tajawal', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Sidebar: flip from left to right in RTL */
+[dir="rtl"] .sidebar {
+  right: 0;
+  left: auto;
+  border-right: none;
+  border-left: 1px solid var(--dc1-border, rgba(255,255,255,0.08));
+}
+
+/* Surface text alignment */
+[dir="rtl"] .dc1-surface-l1,
+[dir="rtl"] .dc1-surface-l2,
+[dir="rtl"] .dc1-surface-l3 {
+  text-align: right;
+}
+
+/* Card content alignment */
+[dir="rtl"] .card {
+  text-align: right;
+}
+
+/* Table cells */
+[dir="rtl"] th,
+[dir="rtl"] td {
+  text-align: right;
+}
+
+/* Table: flip first/last cell padding for RTL */
+[dir="rtl"] th:first-child,
+[dir="rtl"] td:first-child {
+  padding-right: 1.25rem;
+  padding-left: 0.75rem;
+}
+
+[dir="rtl"] th:last-child,
+[dir="rtl"] td:last-child {
+  padding-left: 1.25rem;
+  padding-right: 0.75rem;
+}
+
+/* Form labels */
+[dir="rtl"] label {
+  text-align: right;
+}
+
+/* Flex gap helpers: reverse row in RTL for icon+text pairs */
+[dir="rtl"] .rtl-reverse {
+  flex-direction: row-reverse;
+}
+
+/* Icon margin flip */
+[dir="rtl"] .icon-start {
+  margin-right: 0;
+  margin-left: 0.5rem;
+}
+
+/* Stat card value alignment */
+[dir="rtl"] .stat-card-value,
+[dir="rtl"] .stat-card-label {
+  text-align: right;
+}
+
+/* Dashboard main padding: account for RTL sidebar on right */
+[dir="rtl"] main {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+/* Scroll direction */
+[dir="rtl"] .overflow-x-auto,
+[dir="rtl"] .overflow-y-auto {
+  direction: rtl;
+}
+
 @layer components {
   /* Button base styles */
   .btn {

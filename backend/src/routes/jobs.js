@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
+const { retryJobLimiter } = require('../middleware/rateLimiter');
 const { validateAndNormalizeImageRef, isApprovedImageRef } = require('../lib/container-registry');
 const { getChainEscrow } = require('../services/escrow-chain');
 const {
@@ -36,6 +37,7 @@ if (!process.env.DC1_HMAC_SECRET) {
 const HMAC_SECRET = process.env.DC1_HMAC_SECRET || crypto.randomBytes(32).toString('hex');
 const JOB_COLUMNS = new Set((db.all("PRAGMA table_info('jobs')") || []).map((row) => row.name));
 const HAS_RETRY_REASON = JOB_COLUMNS.has('retry_reason');
+const HAS_RETRIED_FROM_JOB_ID = JOB_COLUMNS.has('retried_from_job_id');
 const DEFAULT_JOB_PRIORITY = 5;
 const MIN_JOB_PRIORITY = 0;
 const MAX_JOB_PRIORITY = 10;
@@ -132,6 +134,39 @@ function parseContainerSpec(containerSpecRaw) {
     }
   }
   return isPlainObject(containerSpecRaw) ? containerSpecRaw : null;
+}
+
+function recordColdStartTelemetry({ providerId, job, firstTokenAt }) {
+  const assignedAnchor = job?.assigned_at || job?.picked_up_at || job?.started_at || job?.submitted_at;
+  if (!assignedAnchor || !firstTokenAt) return null;
+
+  const assignedMs = Date.parse(assignedAnchor);
+  const firstTokenMs = Date.parse(firstTokenAt);
+  if (!Number.isFinite(assignedMs) || !Number.isFinite(firstTokenMs)) return null;
+  if (firstTokenMs < assignedMs) return null;
+
+  const coldStartMs = Math.max(0, Math.round(firstTokenMs - assignedMs));
+  const provider = db.get(
+    `SELECT gpu_model, gpu_name_detected, vram_mb, gpu_vram_mb, gpu_vram_mib
+     FROM providers
+     WHERE id = ?`,
+    providerId
+  );
+  const gpuName = provider?.gpu_name_detected || provider?.gpu_model || null;
+  const vramMb = Number(provider?.vram_mb || provider?.gpu_vram_mb || provider?.gpu_vram_mib || 0);
+  const gpuVramGb = Number.isFinite(vramMb) && vramMb > 0 ? Math.max(0, Math.round(vramMb / 1024)) : null;
+
+  db.prepare(
+    `INSERT INTO provider_gpu_telemetry (
+       provider_id, gpu_name, gpu_vram_gb, gpu_util_pct, vram_used_gb, cold_start_ms, active_jobs
+     )
+     VALUES (
+       ?, ?, ?, NULL, NULL, ?,
+       (SELECT COUNT(*) FROM jobs WHERE provider_id = ? AND status = 'running')
+     )`
+  ).run(providerId, gpuName, gpuVramGb, coldStartMs, providerId);
+
+  return coldStartMs;
 }
 
 function fireAndForgetJobEmail(event, job, details = {}) {
@@ -436,7 +471,7 @@ function appendJobLogs(job, lines) {
 
 // Renter auth middleware — validates renter API key from header or query
 function requireRenter(req, res, next) {
-  const key = req.headers['x-renter-key'] || req.query.renter_key;
+  const key = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
   if (!key) {
     return res.status(401).json({ error: 'Renter API key required (x-renter-key header or renter_key query)' });
   }
@@ -576,16 +611,16 @@ function generateImageGenScript(params) {
 
   return `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""DC1 Image Generation - auto-generated task script"""
+"""DCP Image Generation - auto-generated task script"""
 import torch, base64, io, json, sys, time
 
 t0 = time.time()
-print("[dc1] Loading model: ${model}", flush=True)
+print("[dcp] Loading model: ${model}", flush=True)
 
 try:
     from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
 except ImportError:
-    print("[dc1] Installing diffusers...", flush=True)
+    print("[dcp] Installing diffusers...", flush=True)
     import subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "diffusers", "transformers", "accelerate", "safetensors", "-q"])
     from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
@@ -609,7 +644,7 @@ if device == "cuda":
     except:
         pass
 
-print(f"[dc1] Model loaded in {time.time()-t0:.1f}s on {device}", flush=True)
+print(f"[dcp] Model loaded in {time.time()-t0:.1f}s on {device}", flush=True)
 
 generator = None
 seed_used = ${seed}
@@ -620,7 +655,7 @@ else:
     seed_used = random.randint(0, 2**32-1)
     generator = torch.Generator(device=device).manual_seed(seed_used)
 
-print(f"[dc1] Generating ${width}x${height} image, ${steps} steps, seed={seed_used}...", flush=True)
+print(f"[dcp] Generating ${width}x${height} image, ${steps} steps, seed={seed_used}...", flush=True)
 t1 = time.time()
 
 with torch.no_grad():
@@ -636,7 +671,7 @@ with torch.no_grad():
 
 image = result.images[0]
 gen_time = time.time() - t1
-print(f"[dc1] Generated in {gen_time:.1f}s", flush=True)
+print(f"[dcp] Generated in {gen_time:.1f}s", flush=True)
 
 # Encode as base64 PNG
 buf = io.BytesIO()
@@ -677,30 +712,30 @@ function generateLlmInferenceScript(params) {
 
   return `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""DC1 LLM Inference v4 - chat templates + phase markers for progress tracking"""
+"""DCP LLM Inference v4 - chat templates + phase markers for progress tracking"""
 import torch, json, sys, time
 
 t0 = time.time()
-print("[dc1-phase] installing_deps", flush=True)
+print("[dcp-phase] installing_deps", flush=True)
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32
 
-print("[dc1-phase] downloading_model", flush=True)
-print("[dc1] Downloading/loading model: ${model}", flush=True)
+print("[dcp-phase] downloading_model", flush=True)
+print("[dcp] Downloading/loading model: ${model}", flush=True)
 tokenizer = AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-print("[dc1-phase] loading_model", flush=True)
+print("[dcp-phase] loading_model", flush=True)
 model = AutoModelForCausalLM.from_pretrained(
     '${model}', torch_dtype=dtype,
     device_map="auto" if device == "cuda" else None,
     trust_remote_code=True
 )
-print(f"[dc1] Model loaded in {time.time()-t0:.1f}s on {device}", flush=True)
+print(f"[dcp] Model loaded in {time.time()-t0:.1f}s on {device}", flush=True)
 
 user_prompt = '${prompt}'
 
@@ -717,13 +752,13 @@ except Exception:
     else:
         formatted = f"User: {user_prompt}\\nAssistant:"
 ` : `formatted = f"Question: {user_prompt}\\nAnswer:"`}
-print(f"[dc1] Prompt formatted ({len(formatted)} chars)", flush=True)
+print(f"[dcp] Prompt formatted ({len(formatted)} chars)", flush=True)
 
 inputs = tokenizer(formatted, return_tensors="pt").to(device)
 input_len = inputs["input_ids"].shape[1]
 
-print("[dc1-phase] generating", flush=True)
-print(f"[dc1] Generating up to ${maxTokens} tokens...", flush=True)
+print("[dcp-phase] generating", flush=True)
+print(f"[dcp] Generating up to ${maxTokens} tokens...", flush=True)
 t1 = time.time()
 with torch.no_grad():
     out = model.generate(**inputs, max_new_tokens=${maxTokens},
@@ -735,7 +770,7 @@ gen_ids = out[0][input_len:]
 response = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
 gen_time = time.time() - t1
 n_tokens = len(gen_ids)
-print(f"[dc1] Generated {n_tokens} tokens in {gen_time:.1f}s", flush=True)
+print(f"[dcp] Generated {n_tokens} tokens in {gen_time:.1f}s", flush=True)
 
 output = {
     "type": "text", "prompt": user_prompt, "response": response,
@@ -1170,6 +1205,203 @@ router.post('/submit', requireRenter, (req, res) => {
   }
 });
 
+// POST /api/jobs/:job_id/retry?key=RENTER_KEY
+// Clones a failed renter-owned job into a fresh submission and re-holds escrow.
+router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
+  try {
+    const sourceJob = db.get(
+      `SELECT * FROM jobs
+       WHERE (id = ? OR job_id = ?) AND renter_id = ?
+       LIMIT 1`,
+      req.params.job_id,
+      req.params.job_id,
+      req.renter.id
+    );
+    if (!sourceJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    if (sourceJob.status !== 'failed') {
+      return res.status(400).json({
+        error: 'Only failed jobs can be retried',
+        current_status: sourceJob.status,
+      });
+    }
+
+    const parsedDuration = toFiniteNumber(sourceJob.duration_minutes, { min: 0.01, max: 1440 });
+    const durationMinutes = parsedDuration != null ? parsedDuration : 1;
+    const quotedCostHalala = calculateCostHalala(sourceJob.job_type, durationMinutes);
+
+    const renter = db.get(
+      'SELECT id, balance_halala FROM renters WHERE id = ? AND status = ?',
+      req.renter.id,
+      'active'
+    );
+    if (!renter) {
+      return res.status(403).json({ error: 'Invalid or inactive renter API key' });
+    }
+    if (renter.balance_halala < quotedCostHalala) {
+      return res.status(402).json({
+        error: 'insufficient_balance',
+        required_halala: quotedCostHalala,
+        available_halala: renter.balance_halala,
+      });
+    }
+
+    let normalizedContainerValue = null;
+    if (sourceJob.container_spec) {
+      try {
+        const parsedContainerSpec = JSON.parse(sourceJob.container_spec);
+        const normalizedContainer = normalizeContainerSpec(parsedContainerSpec);
+        if (normalizedContainer.error) {
+          return res.status(400).json({ error: normalizedContainer.error });
+        }
+        normalizedContainerValue = normalizedContainer.value;
+      } catch (_) {
+        return res.status(400).json({ error: 'Original job has invalid container_spec and cannot be retried' });
+      }
+    } else {
+      return res.status(400).json({ error: 'Original job is missing container_spec and cannot be retried' });
+    }
+
+    const now = new Date().toISOString();
+    const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    const priority = parsePriority(sourceJob.priority);
+    const timeout = toFiniteInt(sourceJob.max_duration_seconds, { min: 60, max: 3600 }) || 1800;
+    const requestedProviderId = toFiniteInt(sourceJob.provider_id, { min: 1 });
+    let provider_id = requestedProviderId;
+    let provider = null;
+    let busyJob = null;
+    let routedMatchFound = false;
+
+    if (requestedProviderId != null) {
+      provider = db.get('SELECT * FROM providers WHERE id = ?', requestedProviderId);
+      if (provider) {
+        const heartbeatAgeSecs = provider.last_heartbeat
+          ? (Date.now() - new Date(provider.last_heartbeat).getTime()) / 1000
+          : Infinity;
+        busyJob = db.get(
+          `SELECT id FROM jobs
+           WHERE provider_id = ? AND status IN ('running', 'pending')`,
+          provider.id
+        );
+        if (heartbeatAgeSecs <= 600) {
+          routedMatchFound = true;
+        }
+      } else {
+        provider_id = null;
+      }
+    }
+    const isQueued = !routedMatchFound || !!busyJob;
+    const timeoutAt = isQueued
+      ? null
+      : new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
+
+    const taskSpecStr = sourceJob.task_spec
+      ? (typeof sourceJob.task_spec === 'string' ? sourceJob.task_spec : JSON.stringify(sourceJob.task_spec))
+      : null;
+    const taskSpecHmac = taskSpecStr ? signTaskSpec(taskSpecStr) : null;
+    const containerSpecJson = JSON.stringify(normalizedContainerValue);
+    const workspaceVolumeName = `dcp-job-${job_id}`;
+    const checkpointEnabled = normalizedContainerValue.enable_checkpoint === true ? 1 : 0;
+    const renterKey = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
+    const escrowExpiresAt = new Date(Date.now() + (timeout + 1800) * 1000).toISOString();
+
+    const createRetryJobTx = db._db.transaction(() => {
+      runStatement(
+        `UPDATE renters
+         SET balance_halala = balance_halala - ?
+         WHERE id = ?`,
+        quotedCostHalala,
+        renter.id
+      );
+
+      const insertSql = HAS_RETRIED_FROM_JOB_ID
+        ? `INSERT INTO jobs (
+             job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
+             cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds,
+             timeout_at, notes, created_at, priority, workspace_volume_name, checkpoint_enabled, retried_from_job_id
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        : `INSERT INTO jobs (
+             job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
+             cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds,
+             timeout_at, notes, created_at, priority, workspace_volume_name, checkpoint_enabled
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+      const insertParams = [
+        job_id,
+        provider_id,
+        renter.id,
+        sourceJob.job_type,
+        sourceJob.model || null,
+        isQueued ? 'queued' : 'pending',
+        now,
+        durationMinutes,
+        quotedCostHalala,
+        sourceJob.gpu_requirements || null,
+        containerSpecJson,
+        taskSpecStr,
+        taskSpecHmac,
+        timeout,
+        timeoutAt,
+        sourceJob.notes || null,
+        now,
+        priority,
+        workspaceVolumeName,
+        checkpointEnabled,
+      ];
+      if (HAS_RETRIED_FROM_JOB_ID) {
+        insertParams.push(sourceJob.id);
+      }
+      const insertResult = runStatement(insertSql, insertParams);
+
+      if (provider_id != null) {
+        runStatement(
+          `INSERT INTO escrow_holds (id, renter_api_key, provider_id, job_id, amount_halala, status, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, 'held', ?, ?)`,
+          `esc-${job_id}`,
+          renterKey,
+          provider_id,
+          job_id,
+          quotedCostHalala,
+          now,
+          escrowExpiresAt
+        );
+      }
+
+      return insertResult.lastInsertRowid;
+    });
+
+    const newJobId = createRetryJobTx();
+    const newJob = db.get('SELECT * FROM jobs WHERE id = ?', newJobId);
+    if (!newJob) {
+      return res.status(500).json({ error: 'Retry job creation failed' });
+    }
+
+    res.status(201).json({
+      success: true,
+      job: {
+        id: newJob.id,
+        job_id: newJob.job_id,
+        status: newJob.status,
+        job_type: newJob.job_type,
+        model: newJob.model,
+        cost_halala: newJob.cost_halala,
+        provider_id: newJob.provider_id,
+        retried_from_job_id: HAS_RETRIED_FROM_JOB_ID ? newJob.retried_from_job_id : sourceJob.id,
+      },
+    });
+
+    fireAndForgetJobEmail('queued', newJob, {
+      quoted_cost_halala: Number(quotedCostHalala || 0),
+      queue_position: isQueued ? getQueuePosition(newJob) : null,
+      estimated_duration_minutes: Number(durationMinutes || 0),
+    });
+  } catch (error) {
+    console.error('Job retry error:', error);
+    res.status(500).json({ error: 'Failed to retry job' });
+  }
+});
+
 // GET /api/jobs/assigned?key=API_KEY
 // Daemon polls this to check if it has a running job with a task to execute
 function fetchAndAssignNextJob(providerId) {
@@ -1521,11 +1753,27 @@ router.get('/queue/:provider_id(\\d+)', (req, res) => {
 // Queue depth grouped by compute_type + vram_required_mb.
 router.get('/queue/status', (req, res) => {
   try {
+    const actor = getAuthenticatedActor(req);
+    if (!actor) {
+      return res.status(401).json({ error: 'Provider, renter, or admin credentials required' });
+    }
+
+    const whereParts = [`status = 'queued'`];
+    const params = [];
+    if (actor.type === 'provider') {
+      whereParts.push('provider_id = ?');
+      params.push(actor.id);
+    } else if (actor.type === 'renter') {
+      whereParts.push('renter_id = ?');
+      params.push(actor.id);
+    }
+
     const queued = db.all(
       `SELECT container_spec
        FROM jobs
-       WHERE status = 'queued'
-       ORDER BY COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC, created_at ASC`
+       WHERE ${whereParts.join(' AND ')}
+       ORDER BY COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC, created_at ASC`,
+      ...params
     );
 
     const grouped = new Map();
@@ -1555,6 +1803,12 @@ router.get('/queue/status', (req, res) => {
     return res.json({
       queued_total: queued.length,
       buckets,
+      // Backwards-compatible alias for older clients.
+      queue: buckets.map((bucket) => ({
+        compute_type: bucket.compute_type,
+        vram_bucket: bucket.vram_required_mb,
+        count: bucket.depth,
+      })),
     });
   } catch (error) {
     console.error('Queue status error:', error);
@@ -2043,8 +2297,25 @@ router.post('/:job_id/progress', (req, res) => {
     } else {
       runStatement('UPDATE jobs SET progress_phase = ?, progress_updated_at = ? WHERE id = ?', phaseText, now, job.id);
     }
+
+    let coldStartMs = null;
+    if (phaseText === 'generating') {
+      const markFirstToken = runStatement(
+        'UPDATE jobs SET first_token_at = ? WHERE id = ? AND first_token_at IS NULL',
+        now,
+        job.id
+      );
+      if ((markFirstToken?.changes || 0) === 1) {
+        coldStartMs = recordColdStartTelemetry({
+          providerId: provider.id,
+          job,
+          firstTokenAt: now,
+        });
+      }
+    }
+
     console.log(`[progress] Job ${job.job_id}: phase=${phaseText}${newStatus ? ` status→${newStatus}` : ''}`);
-    res.json({ success: true, phase: phaseText });
+    res.json({ success: true, phase: phaseText, cold_start_ms: coldStartMs });
   } catch (error) {
     console.error('Job progress error:', error);
     res.status(500).json({ error: 'Failed to update progress' });
@@ -2474,10 +2745,10 @@ router.get('/:job_id/output', (req, res) => {
       const imgBuf = Buffer.from(structured.data, 'base64');
       res.set('Content-Type', `image/${structured.format || 'png'}`);
       res.set('Content-Length', imgBuf.length);
-      res.set('X-DC1-Prompt', structured.prompt?.substring(0, 200));
-      res.set('X-DC1-Seed', String(structured.seed || ''));
-      res.set('X-DC1-GenTime', String(structured.gen_time_s || ''));
-      res.set('X-DC1-ImageBytes', String(actualBytes));
+      res.set('X-DCP-Prompt', structured.prompt?.substring(0, 200));
+      res.set('X-DCP-Seed', String(structured.seed || ''));
+      res.set('X-DCP-GenTime', String(structured.gen_time_s || ''));
+      res.set('X-DCP-ImageBytes', String(actualBytes));
       return res.send(imgBuf);
     }
 
@@ -2547,14 +2818,14 @@ router.get('/:job_id/output/:format', (req, res) => {
     if (normalizedFormat === 'png') {
       // Serve raw PNG directly — no conversion needed
       res.set('Content-Type', 'image/png');
-      res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
+      res.set('Content-Disposition', `attachment; filename="dcp-${job.job_id}.png"`);
       res.set('Content-Length', imgBuf.length);
       return res.send(imgBuf);
     }
 
     // Optional image conversion dependency removed: return original PNG when non-PNG requested.
     res.set('Content-Type', 'image/png');
-    res.set('Content-Disposition', `attachment; filename="dc1-${job.job_id}.png"`);
+    res.set('Content-Disposition', `attachment; filename="dcp-${job.job_id}.png"`);
     res.set('Content-Length', imgBuf.length);
     res.send(imgBuf);
   } catch (error) {
@@ -2618,9 +2889,13 @@ function enforceJobTimeouts() {
 // ============================================================================
 router.post('/test', (req, res) => {
   try {
-    const adminToken = req.headers['x-admin-token'];
+    const adminToken = req.headers['x-admin-token']
+      || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     const expectedToken = process.env.DC1_ADMIN_TOKEN;
-    if (expectedToken && adminToken !== expectedToken) {
+    if (!expectedToken) {
+      return res.status(503).json({ error: 'Admin token not configured' });
+    }
+    if (adminToken !== expectedToken) {
       return res.status(403).json({ error: 'Admin token required' });
     }
 

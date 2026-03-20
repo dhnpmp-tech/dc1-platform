@@ -433,6 +433,54 @@ function buildWithdrawalApprovedTemplate({ amountSar }) {
   };
 }
 
+function buildDataExportReadyTemplate({ accountType, requestedAt, deliveryMode }) {
+  const safeAccountType = accountType === 'provider' ? 'provider' : 'renter';
+  const requestedLabel = requestedAt || new Date().toISOString();
+  const isDirect = deliveryMode === 'direct';
+  const frontend = getFrontendUrl();
+  const settingsUrl = `${frontend}/${safeAccountType}/settings`;
+  const deliveryText = isDirect
+    ? 'Your export was delivered directly in the API response.'
+    : 'Your export is ready for download from your account settings.';
+  const deliveryTextAr = isDirect
+    ? 'تم تسليم التصدير مباشرة في استجابة واجهة API.'
+    : 'تصدير بياناتك جاهز للتنزيل من صفحة الإعدادات.';
+
+  return {
+    subject: 'DCP data export request received | تم استلام طلب تصدير البيانات',
+    text: [
+      `We received your PDPL data export request (${safeAccountType}).`,
+      `Requested at: ${requestedLabel}`,
+      deliveryText,
+      `Settings: ${settingsUrl}`,
+      '',
+      `تم استلام طلب تصدير البيانات وفق PDPL (${safeAccountType}).`,
+      `وقت الطلب: ${requestedLabel}`,
+      deliveryTextAr,
+      `الإعدادات: ${settingsUrl}`,
+    ].join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#111;line-height:1.6">
+        <h2>PDPL Data Export Request</h2>
+        <p>We received your data export request for your <strong>${escapeHtml(safeAccountType)}</strong> account.</p>
+        <ul>
+          <li><strong>Requested at:</strong> ${escapeHtml(requestedLabel)}</li>
+          <li><strong>Status:</strong> ${escapeHtml(deliveryText)}</li>
+        </ul>
+        <p><a href="${settingsUrl}">Open account settings</a></p>
+        <hr />
+        <h2>طلب تصدير البيانات (PDPL)</h2>
+        <p>تم استلام طلب تصدير البيانات لحساب <strong>${escapeHtml(safeAccountType)}</strong>.</p>
+        <ul>
+          <li><strong>وقت الطلب:</strong> ${escapeHtml(requestedLabel)}</li>
+          <li><strong>الحالة:</strong> ${escapeHtml(deliveryTextAr)}</li>
+        </ul>
+        <p><a href="${settingsUrl}">فتح إعدادات الحساب</a></p>
+      </div>
+    `,
+  };
+}
+
 async function sendWelcomeEmail(to, name, apiKey, role) {
   if (!to || !name || !apiKey) {
     return { ok: false, reason: 'invalid_arguments' };
@@ -541,6 +589,23 @@ async function sendJobFailed(to, data = {}) {
   });
 }
 
+async function sendDataExportReady(to, data = {}) {
+  if (!to) {
+    return { ok: false, reason: 'invalid_arguments' };
+  }
+  const template = buildDataExportReadyTemplate({
+    accountType: data.accountType,
+    requestedAt: data.requestedAt,
+    deliveryMode: data.deliveryMode,
+  });
+  return sendEmail({
+    to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  });
+}
+
 // Backward compatibility for existing callers
 async function sendJobCompleteEmail(to, jobId, costSar, model, details = {}) {
   return sendJobCompleted(to, {
@@ -560,4 +625,5 @@ module.exports = {
   sendJobFailed,
   sendJobCompleteEmail,
   sendWithdrawalApprovedEmail,
+  sendDataExportReady,
 };

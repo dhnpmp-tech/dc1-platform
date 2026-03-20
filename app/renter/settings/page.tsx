@@ -87,6 +87,9 @@ export default function RenterSettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deletingAccount, setDeletingAccount] = useState(false)
+  const [exportingData, setExportingData] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
+  const [exportError, setExportError] = useState('')
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
@@ -126,7 +129,7 @@ export default function RenterSettingsPage() {
     setRotating(true)
     setRotateError('')
     try {
-      const res = await fetch(`${API_BASE}/renters/rotate-key?key=${encodeURIComponent(apiKey)}`, {
+      const res = await fetch(`${API_BASE}/renters/me/rotate-key?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -172,6 +175,27 @@ export default function RenterSettingsPage() {
     } catch (err: any) {
       setDeleteError(err?.message || 'Failed to delete account')
       setDeletingAccount(false)
+    }
+  }
+
+  const handleExportData = async () => {
+    setExportingData(true)
+    setExportMessage('')
+    setExportError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/renters/me/export?key=${encodeURIComponent(apiKey)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to export data')
+
+      const exportedAt = data?.exported_at
+        ? new Date(data.exported_at).toLocaleString()
+        : 'now'
+      setExportMessage(`Data export generated successfully at ${exportedAt}.`)
+    } catch (err: any) {
+      setExportError(err?.message || 'Failed to export data')
+    } finally {
+      setExportingData(false)
     }
   }
 
@@ -403,6 +427,21 @@ export default function RenterSettingsPage() {
         {/* Danger Zone */}
         <div className="card p-6 border-status-error/20 space-y-4">
           <h2 className="text-lg font-semibold text-status-error">Account Actions</h2>
+          <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-dc1-text-primary">Export My Data</h3>
+            <p className="text-xs text-dc1-text-secondary">
+              Request a PDPL export of your account profile, jobs, payments, and analytics (limited to 1 request per 24 hours).
+            </p>
+            {exportMessage && <p className="text-xs text-status-success">{exportMessage}</p>}
+            {exportError && <p className="text-xs text-status-error">{exportError}</p>}
+            <button
+              onClick={handleExportData}
+              disabled={exportingData}
+              className="px-4 py-2 rounded-lg border border-dc1-amber/40 text-dc1-amber text-sm font-medium hover:bg-dc1-amber/10 transition disabled:opacity-50"
+            >
+              {exportingData ? 'Exporting...' : 'Export My Data'}
+            </button>
+          </div>
           <div className="rounded-lg border border-status-error/30 bg-status-error/5 p-4 space-y-3">
             <h3 className="text-sm font-semibold text-status-error">Delete Account</h3>
             <p className="text-xs text-dc1-text-secondary">

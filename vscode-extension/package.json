@@ -84,8 +84,18 @@
       },
       {
         "command": "dc1.submitJob",
-        "title": "DCP: Submit GPU Job",
+        "title": "DCP: Run AI Inference",
         "icon": "$(play)"
+      },
+      {
+        "command": "dc1.submitContainerJob",
+        "title": "DCP: Submit Container Job (Advanced)",
+        "icon": "$(play)"
+      },
+      {
+        "command": "dc1.watchJobLogs",
+        "title": "DCP: Watch Job Logs",
+        "icon": "$(output)"
       },
       {
         "command": "dc1.refreshGPUs",
@@ -131,6 +141,16 @@
         "command": "dc1.stopLogStream",
         "title": "DCP: Stop Log Stream",
         "icon": "$(stop)"
+      },
+      {
+        "command": "dc1.showSettings",
+        "title": "DCP: Settings",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "dc1.modelStatus",
+        "title": "DCP: Model Cache Status",
+        "icon": "$(database)"
       }
     ],
     "menus": {
@@ -184,8 +204,13 @@
       "properties": {
         "dc1.apiBase": {
           "type": "string",
-          "default": "http://76.13.179.86:8083",
-          "description": "DCP API base URL. Update to https://api.dcp.sa when HTTPS is live."
+          "default": "https://api.dcp.sa",
+          "description": "DCP API base URL."
+        },
+        "dc1.renterApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your DCP renter API key (from dcp.sa/renter/register). Alternatively, use the 'DCP: Set Renter API Key' command to store it securely in VS Code's secret storage."
         },
         "dc1.pollIntervalSeconds": {
           "type": "number",

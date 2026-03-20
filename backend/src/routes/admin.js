@@ -253,6 +253,37 @@ function consumeAdminRateLimit(actionKey, actorFingerprint) {
   return true;
 }
 
+function toIsoOrNull(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function heartbeatAgeSeconds(lastHeartbeat, nowMs = Date.now()) {
+  const iso = toIsoOrNull(lastHeartbeat);
+  if (!iso) return null;
+  const age = Math.floor((nowMs - new Date(iso).getTime()) / 1000);
+  return Number.isFinite(age) && age >= 0 ? age : null;
+}
+
+function resolveFleetStatus(lastHeartbeat, restartCount = 0, nowMs = Date.now()) {
+  const ageSeconds = heartbeatAgeSeconds(lastHeartbeat, nowMs);
+  if (ageSeconds == null || ageSeconds > 15 * 60) return { status: 'offline', ageSeconds };
+  if ((Number(restartCount) || 0) > 10) return { status: 'degraded', ageSeconds };
+  if (ageSeconds >= 5 * 60) return { status: 'degraded', ageSeconds };
+  return { status: 'online', ageSeconds };
+}
+
+function percentileFromSorted(values, percentile) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const p = Math.min(Math.max(Number(percentile) || 0, 0), 100);
+  const idx = Math.ceil((p / 100) * values.length) - 1;
+  const boundedIdx = Math.min(Math.max(idx, 0), values.length - 1);
+  const selected = Number(values[boundedIdx]);
+  return Number.isFinite(selected) ? selected : null;
+}
+
 function grantRenterCredit({ renterId, amountHalala, reason, grantedBy = 'admin', now = new Date().toISOString() }) {
   const normalizedReason = normalizeString(reason, { maxLen: 300 });
   if (!normalizedReason) {
@@ -701,6 +732,156 @@ router.get('/providers', (req, res) => {
   } catch (error) {
     console.error('Admin providers error:', error);
     res.status(500).json({ error: 'Failed to fetch providers' });
+  }
+});
+
+// === GET /api/admin/providers/health - Fleet summary from latest telemetry ===
+router.get('/providers/health', (req, res) => {
+  try {
+    const nowMs = Date.now();
+    const providers = db.all(
+      `SELECT id, email, last_heartbeat, vram_gb, vram_mb, gpu_vram_mb, gpu_vram_mib
+       FROM providers`
+    );
+
+    let onlineCount = 0;
+    let staleCount = 0;
+    let offlineCount = 0;
+    let totalVramGb = 0;
+
+    for (const provider of providers) {
+      const ageSeconds = heartbeatAgeSeconds(provider.last_heartbeat, nowMs);
+      if (ageSeconds == null || ageSeconds > 15 * 60) offlineCount += 1;
+      else if (ageSeconds > 5 * 60) staleCount += 1;
+      else onlineCount += 1;
+
+      const vramGb = Number(
+        provider.vram_gb
+        || (provider.vram_mb ? provider.vram_mb / 1024 : 0)
+        || (provider.gpu_vram_mb ? provider.gpu_vram_mb / 1024 : 0)
+        || (provider.gpu_vram_mib ? provider.gpu_vram_mib / 1024 : 0)
+      );
+      totalVramGb += Number.isFinite(vramGb) ? vramGb : 0;
+    }
+
+    const telemetryAvg = db.get(
+      `WITH latest AS (
+         SELECT t.provider_id, t.gpu_util_pct
+         FROM provider_gpu_telemetry t
+         INNER JOIN (
+           SELECT provider_id, MAX(recorded_at) AS max_recorded_at
+           FROM provider_gpu_telemetry
+           GROUP BY provider_id
+         ) m
+           ON m.provider_id = t.provider_id
+          AND m.max_recorded_at = t.recorded_at
+       )
+       SELECT AVG(gpu_util_pct) AS avg_gpu_util_pct
+       FROM latest
+       WHERE gpu_util_pct IS NOT NULL`
+    );
+
+    const coldStartRows = db.all(
+      `SELECT cold_start_ms
+       FROM provider_gpu_telemetry
+       WHERE cold_start_ms IS NOT NULL
+         AND cold_start_ms > 0
+         AND recorded_at >= datetime('now', '-24 hours')
+       ORDER BY cold_start_ms ASC`
+    );
+    const coldStartValues = coldStartRows
+      .map((row) => Number(row?.cold_start_ms))
+      .filter((value) => Number.isFinite(value) && value >= 0);
+    const coldStartP50Ms = percentileFromSorted(coldStartValues, 50);
+    const coldStartP95Ms = percentileFromSorted(coldStartValues, 95);
+
+    const busiestProvider = db.get(
+      `SELECT p.email, COUNT(*) AS active_jobs
+       FROM jobs j
+       INNER JOIN providers p ON p.id = j.provider_id
+       WHERE j.status = 'running'
+       GROUP BY j.provider_id
+       ORDER BY active_jobs DESC, p.id ASC
+       LIMIT 1`
+    );
+
+    return res.json({
+      online_count: onlineCount,
+      offline_count: offlineCount,
+      stale_count: staleCount,
+      total_vram_gb: Number(totalVramGb.toFixed(2)),
+      avg_gpu_util_pct: Number(((telemetryAvg?.avg_gpu_util_pct || 0)).toFixed(2)),
+      cold_start_p50_ms: coldStartP50Ms != null ? Math.round(coldStartP50Ms) : null,
+      cold_start_p95_ms: coldStartP95Ms != null ? Math.round(coldStartP95Ms) : null,
+      cold_start_sample_count_24h: coldStartValues.length,
+      busiest_provider: busiestProvider
+        ? {
+            email: busiestProvider.email || null,
+            active_jobs: Number(busiestProvider.active_jobs || 0),
+          }
+        : null,
+      generated_at: new Date(nowMs).toISOString(),
+    });
+  } catch (error) {
+    console.error('Admin providers health error:', error);
+    return res.status(500).json({ error: 'Failed to fetch provider health' });
+  }
+});
+
+// === POST /api/admin/providers/sweep-stale - On-demand stale provider sweep ===
+router.post('/providers/sweep-stale', (req, res) => {
+  try {
+    const nowMs = Date.now();
+    const staleProviders = db.all(
+      `SELECT id, name, last_heartbeat FROM providers
+       WHERE last_heartbeat IS NULL OR datetime(last_heartbeat) <= datetime('now', '-15 minutes')`
+    );
+
+    if (staleProviders.length === 0) {
+      return res.json({ providers_marked_offline: 0, jobs_requeued: 0, message: 'No stale providers found' });
+    }
+
+    const providerColumns = new Set(db.all(`PRAGMA table_info(providers)`).map(r => r.name));
+    const jobColumns = new Set(db.all(`PRAGMA table_info(jobs)`).map(r => r.name));
+
+    const providerSet = ["status = 'offline'"];
+    if (providerColumns.has('current_job_id')) providerSet.push('current_job_id = NULL');
+    if (providerColumns.has('updated_at')) providerSet.push("updated_at = datetime('now')");
+
+    const jobSet = ["status = 'queued'", 'provider_id = NULL'];
+    const jobParams = [];
+    if (jobColumns.has('error')) { jobSet.push('error = ?'); jobParams.push('Provider marked offline by manual sweep'); }
+    if (jobColumns.has('last_error')) { jobSet.push('last_error = ?'); jobParams.push('Provider marked offline by manual sweep'); }
+    if (jobColumns.has('retry_count')) jobSet.push('retry_count = COALESCE(retry_count, 0) + 1');
+    if (jobColumns.has('picked_up_at')) jobSet.push('picked_up_at = NULL');
+    if (jobColumns.has('assigned_at')) jobSet.push('assigned_at = NULL');
+    if (jobColumns.has('started_at')) jobSet.push('started_at = NULL');
+    if (jobColumns.has('updated_at')) { jobSet.push('updated_at = ?'); jobParams.push(new Date().toISOString()); }
+
+    const markOfflineStmt = db.prepare(`UPDATE providers SET ${providerSet.join(', ')} WHERE id = ?`);
+    const requeueStmt = db.prepare(
+      `UPDATE jobs SET ${jobSet.join(', ')} WHERE provider_id = ? AND status IN ('running', 'pending', 'assigned', 'pulling')`
+    );
+
+    const tx = db.transaction(() => {
+      let providersMarkedOffline = 0;
+      let jobsRequeued = 0;
+      for (const p of staleProviders) {
+        providersMarkedOffline += (markOfflineStmt.run(p.id).changes || 0);
+        jobsRequeued += (requeueStmt.run(...jobParams, p.id).changes || 0);
+      }
+      return { providersMarkedOffline, jobsRequeued };
+    });
+
+    const result = tx();
+    return res.json({
+      providers_marked_offline: result.providersMarkedOffline,
+      jobs_requeued: result.jobsRequeued,
+      swept_at: new Date(nowMs).toISOString(),
+    });
+  } catch (error) {
+    console.error('Admin sweep-stale error:', error);
+    return res.status(500).json({ error: 'Sweep failed' });
   }
 });
 
@@ -1391,6 +1572,63 @@ router.get('/renters/:id', (req, res) => {
 });
 
 // ============================================================================
+// PATCH /api/admin/providers/:id/preload-model - Trigger daemon model preloading
+// ============================================================================
+router.patch('/providers/:id/preload-model', (req, res) => {
+  try {
+    const providerId = toFiniteInt(req.params.id, { min: 1 });
+    if (providerId == null) return res.status(400).json({ error: 'Invalid provider id' });
+
+    const modelName = normalizeString(req.body?.model_name, { maxLen: 200 });
+    if (!modelName) {
+      return res.status(400).json({ error: 'model_name is required' });
+    }
+
+    const provider = db.get(
+      `SELECT id, email, model_preload_status, model_preload_model
+       FROM providers
+       WHERE id = ?`,
+      providerId
+    );
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE providers
+       SET model_preload_status = 'downloading',
+           model_preload_model = ?,
+           model_preload_requested_at = ?,
+           model_preload_updated_at = ?,
+           updated_at = ?
+       WHERE id = ?`
+    ).run(modelName, now, now, now, providerId);
+
+    try {
+      db.prepare(
+        'INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)'
+      ).run(
+        'provider_model_preload_requested',
+        'provider',
+        providerId,
+        `Requested preload model "${modelName}" for provider ${provider.email || providerId}`,
+        now
+      );
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      provider_id: providerId,
+      model_name: modelName,
+      model_preload_status: 'downloading',
+      requested_at: now,
+    });
+  } catch (error) {
+    console.error('Provider preload-model error:', error);
+    return res.status(500).json({ error: 'Failed to request provider model preload' });
+  }
+});
+
+// ============================================================================
 // PATCH /api/admin/providers/:id/approve - Approve provider
 // ============================================================================
 router.patch('/providers/:id/approve', (req, res) => {
@@ -2005,40 +2243,46 @@ router.post('/renters/:id/rotate-key', (req, res) => {
 });
 
 // ============================================================================
-// GET /api/admin/withdrawals - List all withdrawal requests
+// GET /api/admin/withdrawals - List withdrawal_requests with provider info
 // ============================================================================
 router.get('/withdrawals', (req, res) => {
   try {
     const statusFilter = req.query.status || '';
     const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const offset = (page - 1) * limit;
 
     let where = '1=1';
     const params = [];
-    if (statusFilter) { where += ' AND w.status = ?'; params.push(statusFilter); }
+    if (statusFilter) { where += ' AND wr.status = ?'; params.push(statusFilter); }
 
-    const countRow = db.get(`SELECT COUNT(*) as total FROM withdrawals w WHERE ${where}`, ...params);
+    const countRow = db.get(`SELECT COUNT(*) as total FROM withdrawal_requests wr WHERE ${where}`, ...params);
     const total = countRow?.total || 0;
 
     const withdrawals = db.all(`
-      SELECT w.*, p.name as provider_name, p.email as provider_email,
-             p.total_earnings as provider_total_earnings
-      FROM withdrawals w
-      LEFT JOIN providers p ON w.provider_id = p.id
+      SELECT wr.id, wr.provider_id, wr.amount_halala, wr.status, wr.iban,
+             wr.admin_note, wr.created_at, wr.processed_at,
+             p.name as provider_name, p.email as provider_email,
+             p.gpu_model as provider_gpu_model
+      FROM withdrawal_requests wr
+      LEFT JOIN providers p ON wr.provider_id = p.id
       WHERE ${where}
-      ORDER BY CASE WHEN w.status = 'pending' THEN 0 ELSE 1 END, w.requested_at DESC
+      ORDER BY CASE WHEN wr.status = 'pending' THEN 0 ELSE 1 END, wr.created_at DESC
       LIMIT ? OFFSET ?
     `, ...params, limit, offset);
 
+    const thisMonthStart = new Date();
+    thisMonthStart.setDate(1);
+    thisMonthStart.setHours(0, 0, 0, 0);
+    const monthStart = thisMonthStart.toISOString();
+
     const summary = db.get(`
       SELECT COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-             COALESCE(SUM(CASE WHEN status = 'pending' THEN amount_sar ELSE 0 END), 0) as pending_total,
-             COALESCE(SUM(CASE WHEN status = 'approved' THEN amount_sar ELSE 0 END), 0) as approved_total,
-             COALESCE(SUM(CASE WHEN status = 'completed' THEN amount_sar ELSE 0 END), 0) as paid_total,
-             COALESCE(SUM(CASE WHEN status = 'rejected' THEN amount_sar ELSE 0 END), 0) as rejected_total
-      FROM withdrawals
-    `) || {};
+             COALESCE(SUM(CASE WHEN status = 'pending' THEN amount_halala ELSE 0 END), 0) as pending_total_halala,
+             COALESCE(SUM(CASE WHEN status = 'paid' AND processed_at >= ? THEN amount_halala ELSE 0 END), 0) as paid_this_month_halala,
+             COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_count
+      FROM withdrawal_requests
+    `, monthStart) || {};
 
     res.json({
       withdrawals,
@@ -2060,14 +2304,18 @@ router.patch('/withdrawals/:id', (req, res) => {
     const withdrawalId = normalizeString(req.params.id, { maxLen: 120, trim: true });
     if (!withdrawalId) return res.status(400).json({ error: 'Withdrawal id is required' });
 
-    const nextStatus = normalizeString(req.body?.status, { maxLen: 20 })?.toLowerCase();
-    if (!nextStatus || !['processing', 'paid', 'failed'].includes(nextStatus)) {
-      return res.status(400).json({ error: 'status must be one of: processing, paid, failed' });
+    const requestedStatus = normalizeString(req.body?.status, { maxLen: 20 })?.toLowerCase();
+    const normalizedStatus = {
+      completed: 'paid',
+      rejected: 'failed',
+    }[requestedStatus] || requestedStatus;
+    if (!normalizedStatus || !['processing', 'paid', 'failed'].includes(normalizedStatus)) {
+      return res.status(400).json({ error: 'status must be one of: processing, paid, failed, completed, rejected' });
     }
 
-    const adminNote = normalizeString(req.body?.admin_note, { maxLen: 500 });
+    const adminNote = normalizeString(req.body?.admin_note ?? req.body?.note, { maxLen: 500 });
     const existing = db.get(
-      `SELECT id, provider_id, amount_halala, status
+      `SELECT id, provider_id, amount_halala, status, is_amount_reserved
        FROM withdrawal_requests
        WHERE id = ?`,
       withdrawalId
@@ -2075,21 +2323,36 @@ router.patch('/withdrawals/:id', (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Withdrawal request not found' });
 
     const allowedTransitions = {
-      pending: ['processing'],
+      pending: ['processing', 'paid', 'failed'],
       processing: ['paid', 'failed'],
       paid: [],
       failed: [],
     };
     const allowed = allowedTransitions[existing.status] || [];
-    if (!allowed.includes(nextStatus)) {
+    if (!allowed.includes(normalizedStatus)) {
       return res.status(400).json({
-        error: `Invalid status transition from ${existing.status} to ${nextStatus}`
+        error: `Invalid status transition from ${existing.status} to ${normalizedStatus}`
       });
     }
 
     const now = new Date().toISOString();
     const transitionTx = db.transaction(() => {
-      if (nextStatus === 'failed') {
+      if (normalizedStatus === 'paid' && !Number(existing.is_amount_reserved)) {
+        const provider = db.get(
+          'SELECT claimable_earnings_halala FROM providers WHERE id = ?',
+          existing.provider_id
+        );
+        const claimable = Number(provider?.claimable_earnings_halala || 0);
+        if (claimable < existing.amount_halala) {
+          throw new Error('Insufficient claimable earnings to complete withdrawal');
+        }
+        db.prepare(
+          `UPDATE providers
+           SET claimable_earnings_halala = claimable_earnings_halala - ?,
+               updated_at = ?
+           WHERE id = ?`
+        ).run(existing.amount_halala, now, existing.provider_id);
+      } else if (normalizedStatus === 'failed' && Number(existing.is_amount_reserved)) {
         db.prepare(
           `UPDATE providers
            SET claimable_earnings_halala = claimable_earnings_halala + ?,
@@ -2102,18 +2365,32 @@ router.patch('/withdrawals/:id', (req, res) => {
         `UPDATE withdrawal_requests
          SET status = ?,
              admin_note = COALESCE(?, admin_note),
-             processed_at = CASE WHEN ? IN ('paid', 'failed') THEN ? ELSE processed_at END
+             processed_at = CASE WHEN ? IN ('paid', 'failed') THEN ? ELSE processed_at END,
+             is_amount_reserved = CASE
+               WHEN ? = 'paid' THEN 1
+               WHEN ? = 'failed' THEN 0
+               ELSE is_amount_reserved
+             END,
+             updated_at = ?
          WHERE id = ?`
-      ).run(nextStatus, adminNote, nextStatus, now, withdrawalId);
+      ).run(normalizedStatus, adminNote, normalizedStatus, now, normalizedStatus, normalizedStatus, now, withdrawalId);
     });
     transitionTx();
 
     const withdrawal_request = db.get(
-      `SELECT id, provider_id, amount_halala, status, iban, admin_note, created_at, processed_at
-       FROM withdrawal_requests
-       WHERE id = ?`,
+      `SELECT wr.id, wr.provider_id, wr.amount_halala, wr.status, wr.iban,
+              wr.admin_note, wr.created_at, wr.processed_at, wr.updated_at,
+              p.email as provider_email
+       FROM withdrawal_requests wr
+       LEFT JOIN providers p ON wr.provider_id = p.id
+       WHERE wr.id = ?`,
       withdrawalId
     );
+
+    if (withdrawal_request?.provider_email && normalizedStatus === 'processing') {
+      sendWithdrawalApprovedEmail(withdrawal_request.provider_email, withdrawal_request.amount_halala / 100)
+        .catch((e) => console.error('[admin.withdrawals.patch] email failed:', e.message));
+    }
 
     return res.json({ withdrawal_request });
   } catch (error) {
@@ -2402,6 +2679,167 @@ router.get('/finance/transactions', (req, res) => {
   } catch (error) {
     console.error('Finance transactions error:', error);
     res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// ── Provider Fleet Monitoring ────────────────────────────────────────────────
+router.get('/fleet/health', (req, res) => {
+  try {
+    const nowMs = Date.now();
+    const since24h = new Date(nowMs - (24 * 60 * 60 * 1000)).toISOString();
+
+    const rows = db.all(
+      `SELECT p.id, p.email, p.gpu_model, p.vram_mb, p.gpu_vram_mb, p.gpu_vram_mib,
+              p.gpu_count, p.gpu_count_reported, p.last_heartbeat, p.status,
+              p.model_cache_disk_mb, p.model_cache_disk_total_mb, p.model_cache_disk_used_pct,
+              COALESCE(jr.jobs_running, 0) AS jobs_running,
+              COALESCE(jf.jobs_failed_24h, 0) AS jobs_failed_24h,
+              COALESCE(hr.container_restart_count_24h, 0) AS container_restart_count_24h
+       FROM providers p
+       LEFT JOIN (
+         SELECT provider_id, COUNT(*) AS jobs_running
+         FROM jobs
+         WHERE status = 'running'
+         GROUP BY provider_id
+       ) jr ON jr.provider_id = p.id
+       LEFT JOIN (
+         SELECT provider_id, COUNT(*) AS jobs_failed_24h
+         FROM jobs
+         WHERE status = 'failed' AND completed_at >= ?
+         GROUP BY provider_id
+       ) jf ON jf.provider_id = p.id
+       LEFT JOIN (
+         SELECT provider_id, MAX(COALESCE(container_restart_count, 0)) AS container_restart_count_24h
+         FROM heartbeat_log
+         WHERE received_at >= ?
+         GROUP BY provider_id
+       ) hr ON hr.provider_id = p.id
+       ORDER BY p.last_heartbeat DESC, p.id DESC`,
+      since24h,
+      since24h
+    );
+
+    const providers = rows.map((row) => {
+      const fleet = resolveFleetStatus(row.last_heartbeat, row.container_restart_count_24h, nowMs);
+      return {
+        id: row.id,
+        email: row.email || null,
+        gpu_model: row.gpu_model || null,
+        vram_mb: Number(row.vram_mb || row.gpu_vram_mb || row.gpu_vram_mib || 0),
+        gpu_count: Number(row.gpu_count_reported || row.gpu_count || 1),
+        last_heartbeat: toIsoOrNull(row.last_heartbeat),
+        heartbeat_age_seconds: fleet.ageSeconds,
+        status: fleet.status,
+        jobs_running: Number(row.jobs_running || 0),
+        jobs_failed_24h: Number(row.jobs_failed_24h || 0),
+        container_restart_count_24h: Number(row.container_restart_count_24h || 0),
+        model_cache_disk_mb: Number(row.model_cache_disk_mb || 0),
+      };
+    });
+
+    const online = providers.filter((p) => p.status === 'online').length;
+    const degraded = providers.filter((p) => p.status === 'degraded').length;
+    const offline = providers.filter((p) => p.status === 'offline').length;
+
+    res.json({
+      total_providers: providers.length,
+      online,
+      offline,
+      degraded,
+      providers,
+      generated_at: new Date(nowMs).toISOString(),
+    });
+  } catch (error) {
+    console.error('Fleet health error:', error);
+    res.status(500).json({ error: 'Failed to fetch fleet health' });
+  }
+});
+
+router.get('/fleet/alerts', (req, res) => {
+  try {
+    const nowMs = Date.now();
+    const since1h = new Date(nowMs - (60 * 60 * 1000)).toISOString();
+
+    const rows = db.all(
+      `SELECT p.id, p.email, p.gpu_model, p.last_heartbeat, p.container_restart_count,
+              p.model_cache_disk_mb, p.model_cache_disk_total_mb, p.model_cache_disk_used_pct,
+              COALESCE(ja.jobs_in_progress, 0) AS jobs_in_progress,
+              COALESCE(hr.restarts_last_hour, 0) AS restarts_last_hour,
+              COALESCE(de.restart_events_last_hour, 0) AS restart_events_last_hour
+       FROM providers p
+       LEFT JOIN (
+         SELECT provider_id, COUNT(*) AS jobs_in_progress
+         FROM jobs
+         WHERE status IN ('running', 'pending', 'queued', 'assigned', 'pulling')
+         GROUP BY provider_id
+       ) ja ON ja.provider_id = p.id
+       LEFT JOIN (
+         SELECT provider_id, MAX(COALESCE(container_restart_count, 0)) AS restarts_last_hour
+         FROM heartbeat_log
+         WHERE received_at >= ?
+         GROUP BY provider_id
+       ) hr ON hr.provider_id = p.id
+       LEFT JOIN (
+         SELECT provider_id, COUNT(*) AS restart_events_last_hour
+         FROM daemon_events
+         WHERE event_timestamp >= ?
+           AND event_type IN ('watchdog_restart', 'container_restart')
+         GROUP BY provider_id
+       ) de ON de.provider_id = p.id`,
+      since1h,
+      since1h
+    );
+
+    const alerts = [];
+    for (const row of rows) {
+      const fleet = resolveFleetStatus(row.last_heartbeat, row.container_restart_count, nowMs);
+      const age = fleet.ageSeconds;
+      const jobsInProgress = Number(row.jobs_in_progress || 0);
+      const restartSignal = Math.max(
+        Number(row.restarts_last_hour || 0),
+        Number(row.restart_events_last_hour || 0),
+        Number(row.container_restart_count || 0)
+      );
+      const totalDiskMb = Number(row.model_cache_disk_total_mb || 0);
+      const usedDiskMb = Number(row.model_cache_disk_mb || 0);
+      const usedPct = Number(row.model_cache_disk_used_pct || (totalDiskMb > 0 ? ((usedDiskMb / totalDiskMb) * 100) : 0));
+
+      const reasons = [];
+      if ((age == null || age > 60 * 60) && jobsInProgress > 0) {
+        reasons.push('offline_over_1h_with_jobs_in_progress');
+      }
+      if (restartSignal > 5) {
+        reasons.push('high_container_restart_count_last_hour');
+      }
+      if (totalDiskMb > 0 && usedPct > 90) {
+        reasons.push('model_cache_disk_usage_above_90_percent');
+      }
+      if (reasons.length === 0) continue;
+
+      alerts.push({
+        provider_id: row.id,
+        email: row.email || null,
+        gpu_model: row.gpu_model || null,
+        last_heartbeat: toIsoOrNull(row.last_heartbeat),
+        heartbeat_age_seconds: age,
+        status: fleet.status,
+        jobs_in_progress: jobsInProgress,
+        restart_count_last_hour: restartSignal,
+        model_cache_disk_mb: usedDiskMb,
+        model_cache_disk_total_mb: totalDiskMb,
+        model_cache_disk_used_pct: Number(usedPct.toFixed(2)),
+        reasons,
+      });
+    }
+
+    res.json({
+      total_alerts: alerts.length,
+      alerts,
+      generated_at: new Date(nowMs).toISOString(),
+    });
+  } catch (error) {
+    console.error('Fleet alerts error:', error);
+    res.status(500).json({ error: 'Failed to fetch fleet alerts' });
   }
 });
 

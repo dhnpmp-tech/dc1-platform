@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 
-const BACKEND = process.env.BACKEND_URL || 'http://76.13.179.86:8083';
+const BACKEND = process.env.BACKEND_URL || 'https://api.dcp.sa';
 
 /** Proxy to backend Windows .exe installer (no API key — user enters key during install). */
 export async function GET() {

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
-import { useLanguage } from '@/app/lib/i18n'
+import { useLanguage } from '../lib/i18n'
 
 const API_BASE = '/api/dc1'
 

@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { createRateLimiter } = require('../middleware/rateLimiter');
+const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 const db = require('../db');
 
 const router = express.Router();
@@ -60,17 +60,6 @@ function requireRenter(req, res, next) {
   req.renterKey = key;
   return next();
 }
-
-const vllmLimiter = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 60,
-  keyGenerator: (req) => {
-    const key = getRenterKey(req);
-    return key ? `vllm:${key}` : `ip:${req.ip || 'unknown'}`;
-  },
-});
-
-router.use(vllmLimiter);
 
 function parseComputeTypes(raw) {
   if (!raw) return new Set(['inference', 'training', 'rendering']);
@@ -598,7 +587,7 @@ router.get('/models', (req, res) => {
 });
 
 // POST /api/vllm/complete?key=
-router.post('/complete', requireRenter, async (req, res) => {
+router.post('/complete', vllmCompleteLimiter, requireRenter, async (req, res) => {
   try {
     const result = await submitAndAwait(req);
     if (result.error) {
@@ -612,7 +601,10 @@ router.post('/complete', requireRenter, async (req, res) => {
 });
 
 // POST /api/vllm/complete/stream?key=
-router.post('/complete/stream', requireRenter, async (req, res) => {
+router.post('/complete/stream', vllmStreamLimiter, requireRenter, async (req, res) => {
+  let cancelled = false;
+  req.on('close', () => { cancelled = true; });
+
   try {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -621,6 +613,7 @@ router.post('/complete/stream', requireRenter, async (req, res) => {
     if (res.flushHeaders) res.flushHeaders();
 
     const result = await submitAndAwait(req);
+    if (cancelled) return res.end();
     if (result.error) {
       res.write(`data: ${JSON.stringify({ error: result.error.body })}\n\n`);
       res.write('data: [DONE]\n\n');
@@ -631,6 +624,7 @@ router.post('/complete/stream', requireRenter, async (req, res) => {
     const completionId = result.payload.id || `chatcmpl-${crypto.randomBytes(8).toString('hex')}`;
 
     for (const part of chunks) {
+      if (cancelled) return res.end();
       const payload = {
         id: completionId,
         object: 'chat.completion.chunk',

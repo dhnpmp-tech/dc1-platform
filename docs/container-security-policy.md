@@ -99,6 +99,14 @@ These controls are required to prevent runaway workloads and host instability.
 - Run `infra/security/scan-template-images.sh` on every template image build.
 - Treat `image_scans` records as required audit evidence for approvals.
 - Rate-limit image approval and scan APIs to prevent abuse.
+- Enforce endpoint-specific anti-abuse throttles across new public and high-cost APIs:
+  - `GET /api/providers/public`: 60 requests/minute per IP
+  - `GET /api/containers/registry`: 30 requests/minute per IP
+  - `POST /api/vllm/complete`: 10 requests/minute per renter key
+  - `POST /api/vllm/complete/stream`: 5 requests/minute per renter key
+  - `POST /api/jobs/:job_id/retry`: 3 retries/minute per renter key per job
+  - `DELETE /api/renters/me` and `DELETE /api/providers/me`: 1 request per 24 hours per account key
+- All rate-limit rejections MUST return `429` with `Retry-After` header and JSON error body.
 - Audit and alert on rejected launch attempts.
 - Do not allow ad-hoc image names from user payloads without policy review.
 

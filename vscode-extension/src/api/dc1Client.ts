@@ -95,16 +95,51 @@ export const JOB_TYPES = [
   { value: 'custom_container', label: 'Custom Container' },
 ];
 
+export interface VllmModel {
+  model_id: string;
+  display_name: string;
+  family: string | null;
+  vram_gb: number;
+  quantization: string | null;
+  context_window: number;
+  use_cases: string[];
+  min_gpu_vram_gb: number;
+  providers_online: number;
+  avg_price_sar_per_min: number;
+  status: 'available' | 'no_providers';
+}
+
+export interface VllmCompleteRequest {
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  max_tokens?: number;
+  temperature?: number;
+}
+
+export interface VllmCompleteResponse {
+  id: string;
+  object: string;
+  model: string;
+  choices: Array<{
+    index: number;
+    message: { role: string; content: string };
+    finish_reason: string;
+  }>;
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  cost_halala: number;
+}
+
 export class DC1Client {
   private get apiBase(): string {
-    return vscode.workspace.getConfiguration('dc1').get('apiBase', 'http://76.13.179.86:8083');
+    return vscode.workspace.getConfiguration('dc1').get('apiBase', 'https://api.dcp.sa');
   }
 
   private request<T>(
     method: string,
     path: string,
     headers: Record<string, string> = {},
-    body?: unknown
+    body?: unknown,
+    timeoutMs = 15_000
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       const url = new URL(this.apiBase + path);
@@ -143,9 +178,9 @@ export class DC1Client {
       });
 
       req.on('error', reject);
-      req.setTimeout(15000, () => {
+      req.setTimeout(timeoutMs, () => {
         req.destroy();
-        reject(new Error('Request timed out after 15s'));
+        reject(new Error(`Request timed out after ${timeoutMs / 1000}s`));
       });
 
       if (body) {
@@ -299,6 +334,26 @@ export class DC1Client {
   /** GET /api/containers/registry — public, no auth required */
   async getContainerRegistry(): Promise<{ images: string[]; total: number }> {
     return this.request('GET', '/api/containers/registry');
+  }
+
+  /** GET /api/vllm/models — list available vLLM models from model registry */
+  async getVllmModels(): Promise<{ object: string; data: VllmModel[] }> {
+    return this.request('GET', '/api/vllm/models');
+  }
+
+  /**
+   * POST /api/vllm/complete — synchronous LLM inference.
+   * Long-running (waits for job completion on server, up to 300s).
+   * Uses 120s client-side timeout.
+   */
+  async vllmComplete(apiKey: string, payload: VllmCompleteRequest): Promise<VllmCompleteResponse> {
+    return this.request(
+      'POST',
+      `/api/vllm/complete?key=${encodeURIComponent(apiKey)}`,
+      {},
+      payload,
+      120_000
+    );
   }
 }
 

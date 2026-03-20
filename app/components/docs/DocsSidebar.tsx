@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import type { DocTreeNode } from '@/app/lib/docs'
+import type { DocTreeNode } from '../lib/docs'
 import DocsLanguageToggle from './DocsLanguageToggle'
 
 interface SearchDoc {

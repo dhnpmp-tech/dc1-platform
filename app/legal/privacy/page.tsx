@@ -6,7 +6,7 @@ export default function PrivacyPolicyLegalPage() {
       <h2>English</h2>
       <p>
         DCP processes personal data to operate a GPU compute marketplace in Saudi Arabia in line with the
-        Personal Data Protection Law (PDPL).
+        Personal Data Protection Law (PDPL), Regulation No. M/19, 1443H.
       </p>
 
       <h3>What we collect</h3>
@@ -36,17 +36,19 @@ export default function PrivacyPolicyLegalPage() {
         <li>Right of access/export of your data</li>
         <li>Right to correction of inaccurate data</li>
         <li>Right to deletion of your account data, subject to legal obligations</li>
+        <li>How to exercise rights: use the "Export My Data" and "Delete Account" actions in account settings</li>
+        <li>Export requests are rate-limited to one request per 24 hours per account</li>
+        <li>Deletion requests are soft-processed with a 30-day grace period before final purge workflows</li>
       </ul>
 
-      <p>
-        Privacy contact: <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a>
-      </p>
+      <h3>Contact DCP data team</h3>
+      <p>DCP Data Team: <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a></p>
 
       <h2 dir="rtl">العربية</h2>
       <div dir="rtl">
         <p>
           تقوم منصة DCP بمعالجة البيانات الشخصية لتشغيل سوق حوسبة GPU داخل المملكة العربية السعودية وفقاً
-          لنظام حماية البيانات الشخصية (PDPL).
+          لنظام حماية البيانات الشخصية (PDPL) بموجب اللائحة رقم م/19 لعام 1443هـ.
         </p>
 
         <h3>ما البيانات التي نجمعها</h3>
@@ -76,11 +78,13 @@ export default function PrivacyPolicyLegalPage() {
           <li>حق الوصول إلى بياناتك وتصديرها</li>
           <li>حق تصحيح البيانات غير الدقيقة</li>
           <li>حق طلب حذف بيانات الحساب بما لا يتعارض مع الالتزامات النظامية</li>
+          <li>يمكن ممارسة الحقوق عبر خيارات "تصدير البيانات" و"حذف الحساب" في صفحة الإعدادات</li>
+          <li>طلبات التصدير محددة بمرة واحدة كل 24 ساعة لكل حساب</li>
+          <li>طلبات الحذف تتم بفترة سماح 30 يوماً قبل مسارات الحذف النهائية</li>
         </ul>
 
-        <p>
-          للتواصل بشأن الخصوصية: <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a>
-        </p>
+        <h3>التواصل مع فريق بيانات DCP</h3>
+        <p>فريق بيانات DCP: <a href="mailto:privacy@dcp.sa">privacy@dcp.sa</a></p>
       </div>
     </LegalPage>
   )
