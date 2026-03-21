@@ -319,7 +319,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
       console.warn('[payments/webhook] Invalid HMAC signature — rejected');
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
-  }
 
   let event;
   try {
