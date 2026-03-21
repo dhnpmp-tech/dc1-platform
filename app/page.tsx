@@ -422,22 +422,22 @@ export default function HomePage() {
             {[0, 1].map((copy) => (
               <div key={copy} className="flex items-center gap-14 sm:gap-20 px-7 sm:px-10 shrink-0">
                 {[
-                  { src: '/logos/meta.png', alt: 'Meta', filter: true },
-                  { src: '/logos/falcon-white.svg', alt: 'Falcon LLM', filter: false },
-                  { src: '/logos/mistral.png', alt: 'Mistral AI', filter: true },
-                  { src: '/logos/inception-full.png', alt: 'Inception', filter: false },
-                  { src: '/logos/qwen.png', alt: 'Qwen', filter: true },
-                  { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM', filter: true },
-                  { src: '/logos/tii.png', alt: 'TII', filter: true },
-                  { src: '/logos/stability.png', alt: 'Stability AI', filter: true },
-                  { src: '/logos/microsoft.png', alt: 'Microsoft', filter: true },
-                  { src: '/logos/huggingface.png', alt: 'Hugging Face', filter: true },
-                ].map((logo: { src: string; alt: string; filter: boolean }, i: number) => (
+                  { src: '/logos/meta-text.png', alt: 'Meta' },
+                  { src: '/logos/falcon-purple.svg', alt: 'Falcon LLM' },
+                  { src: '/logos/mistral-text.png', alt: 'Mistral AI' },
+                  { src: '/logos/inception-full.png', alt: 'Inception' },
+                  { src: '/logos/qwen-text.png', alt: 'Qwen' },
+                  { src: '/logos/tii-text.png', alt: 'TII' },
+                  { src: '/logos/stability-text.png', alt: 'Stability AI' },
+                  { src: '/logos/microsoft-text.png', alt: 'Microsoft' },
+                  { src: '/logos/huggingface-text.png', alt: 'Hugging Face' },
+                  { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM' },
+                ].map((logo, i) => (
                   <img
                     key={`${copy}-${i}`}
                     src={logo.src}
                     alt={logo.alt}
-                    className={`h-8 sm:h-10 w-auto object-contain ${logo.filter ? 'brightness-0 invert' : ''} opacity-60 hover:opacity-100 transition-opacity duration-300 shrink-0`}
+                    className="h-7 sm:h-9 w-auto object-contain brightness-0 invert opacity-50 hover:opacity-90 transition-opacity duration-300 shrink-0"
                   />
                 ))}
               </div>
