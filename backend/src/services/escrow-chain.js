@@ -1,12 +1,39 @@
 'use strict';
 
-// Graceful fallback when ethers is not installed
-let ethers, EscrowABI;
+const fs = require('fs');
+const path = require('path');
+
+// Graceful fallback when ethers is not installed in backend package.
+let ethers;
+let EscrowABI;
 try {
   ethers = require('ethers');
-  EscrowABI = require('../../contracts/abis/Escrow.json');
 } catch (e) {
-  console.warn('[escrow-chain] ethers not installed — on-chain escrow disabled');
+  try {
+    ethers = require('../../../contracts/node_modules/ethers');
+    console.warn('[escrow-chain] using ethers from contracts/node_modules');
+  } catch (_) {
+    console.warn('[escrow-chain] ethers not installed — on-chain escrow disabled');
+  }
+}
+
+const ESCROW_ABI_PATH = path.resolve(__dirname, '../../../contracts/abis/Escrow.json');
+const ERC20_ABI = [
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)',
+];
+const BASE_SEPOLIA_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+
+function loadEscrowAbi() {
+  if (!fs.existsSync(ESCROW_ABI_PATH)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(ESCROW_ABI_PATH, 'utf8'));
+  } catch (err) {
+    console.error('[escrow-chain] Failed to parse Escrow ABI JSON:', err.message);
+    return null;
+  }
 }
 
 /**
@@ -26,7 +53,7 @@ let _instance = null;
 
 class ChainEscrowService {
   constructor() {
-    this.enabled = !!(process.env.ESCROW_CONTRACT_ADDRESS && process.env.ESCROW_ORACLE_PRIVATE_KEY);
+    this.enabled = !!(ethers && process.env.ESCROW_CONTRACT_ADDRESS && process.env.ESCROW_ORACLE_PRIVATE_KEY);
 
     if (!this.enabled) {
       if (process.env.ESCROW_CONTRACT_ADDRESS && !process.env.ESCROW_ORACLE_PRIVATE_KEY) {
@@ -35,18 +62,32 @@ class ChainEscrowService {
       return;
     }
 
+    EscrowABI = loadEscrowAbi();
+    if (!EscrowABI?.abi) {
+      console.warn(`[escrow-chain] missing or invalid ABI at ${ESCROW_ABI_PATH} — on-chain escrow disabled`);
+      this.enabled = false;
+      return;
+    }
+
     const rpcUrl = process.env.BASE_RPC_URL || 'https://sepolia.base.org';
+    const txPrivateKey = process.env.ESCROW_TX_PRIVATE_KEY || process.env.ESCROW_ORACLE_PRIVATE_KEY;
+    const usdcAddress = process.env.ESCROW_USDC_ADDRESS || EscrowABI.usdcAddress || BASE_SEPOLIA_USDC;
+
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
-    this.wallet = new ethers.Wallet(process.env.ESCROW_ORACLE_PRIVATE_KEY, this.provider);
+    this.txWallet = new ethers.Wallet(txPrivateKey, this.provider);
+    this.oracleWallet = new ethers.Wallet(process.env.ESCROW_ORACLE_PRIVATE_KEY);
     this.contract = new ethers.Contract(
       process.env.ESCROW_CONTRACT_ADDRESS,
       EscrowABI.abi,
-      this.wallet
+      this.txWallet
     );
+    this.usdc = new ethers.Contract(usdcAddress, ERC20_ABI, this.txWallet);
+    this.settlementProviderAddress = process.env.ESCROW_SETTLEMENT_PROVIDER_ADDRESS || this.txWallet.address;
+    this.usdcAddress = usdcAddress;
 
     console.log(
       `[escrow-chain] Enabled — contract=${process.env.ESCROW_CONTRACT_ADDRESS} ` +
-      `oracle=${this.wallet.address} rpc=${rpcUrl}`
+      `tx=${this.txWallet.address} oracle=${this.oracleWallet.address} usdc=${usdcAddress} rpc=${rpcUrl}`
     );
   }
 
@@ -65,11 +106,20 @@ class ChainEscrowService {
    * Build oracle proof for claimLock.
    * The contract verifies: ECDSA.recover(toEthSignedMessageHash(keccak256(abi.encode(jobId32))), proof) == oracle
    */
-  async _buildProof(jobId32) {
-    const msgHash = ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [jobId32])
+  async _buildProof(jobId32, providerAddress, amount) {
+    const packedHash = ethers.solidityPackedKeccak256(
+      ['bytes32', 'address', 'uint256'],
+      [jobId32, providerAddress, amount]
     );
-    return this.wallet.signMessage(ethers.getBytes(msgHash));
+    return this.oracleWallet.signMessage(ethers.getBytes(packedHash));
+  }
+
+  async _ensureAllowance(amount) {
+    const allowance = await this.usdc.allowance(this.txWallet.address, this.contract.target);
+    if (allowance >= amount) return;
+    const tx = await this.usdc.approve(this.contract.target, ethers.MaxUint256);
+    await tx.wait();
+    console.log('[escrow-chain] approved USDC allowance for Escrow contract');
   }
 
   /**
@@ -85,16 +135,17 @@ class ChainEscrowService {
     if (!this.enabled) return null;
     try {
       const jobId32 = this._toBytes32(jobId);
-      // Use oracle address as fallback provider address on testnet when provider has no EVM wallet
+      // Use configured settlement provider when provider has no EVM wallet.
       const toAddress = (providerAddress && ethers.isAddress(providerAddress))
         ? providerAddress
-        : this.wallet.address;
+        : this.settlementProviderAddress;
       const amount = BigInt(amountHalala);
       const expiry = BigInt(Math.floor(expiryMs / 1000));
 
+      await this._ensureAllowance(amount);
       const tx = await this.contract.depositAndLock(jobId32, toAddress, amount, expiry);
       const receipt = await tx.wait();
-      console.log(`[escrow-chain] depositAndLock jobId=${jobId} tx=${receipt.hash}`);
+      console.log(`[escrow-chain] depositAndLock jobId=${jobId} provider=${toAddress} tx=${receipt.hash}`);
       return receipt;
     } catch (err) {
       console.error(`[escrow-chain] depositAndLock failed jobId=${jobId}:`, err.message);
@@ -113,7 +164,19 @@ class ChainEscrowService {
     if (!this.enabled) return null;
     try {
       const jobId32 = this._toBytes32(jobId);
-      const proof = await this._buildProof(jobId32);
+      const rec = await this.contract.getEscrow(jobId32);
+      if (Number(rec.status) !== 1) {
+        return null;
+      }
+
+      if (rec.provider.toLowerCase() !== this.txWallet.address.toLowerCase()) {
+        console.warn(
+          `[escrow-chain] claimLock skipped jobId=${jobId} — provider ${rec.provider} does not match signer ${this.txWallet.address}`
+        );
+        return null;
+      }
+
+      const proof = await this._buildProof(jobId32, rec.provider, rec.amount);
       const tx = await this.contract.claimLock(jobId32, proof);
       const receipt = await tx.wait();
       console.log(`[escrow-chain] claimLock jobId=${jobId} tx=${receipt.hash}`);
@@ -134,6 +197,20 @@ class ChainEscrowService {
     if (!this.enabled) return null;
     try {
       const jobId32 = this._toBytes32(jobId);
+      const rec = await this.contract.getEscrow(jobId32);
+      if (Number(rec.status) !== 1) {
+        return null;
+      }
+      if (rec.renter.toLowerCase() !== this.txWallet.address.toLowerCase()) {
+        console.warn(
+          `[escrow-chain] cancelExpiredLock skipped jobId=${jobId} — renter ${rec.renter} does not match signer ${this.txWallet.address}`
+        );
+        return null;
+      }
+      const now = Math.floor(Date.now() / 1000);
+      if (BigInt(rec.expiry) > BigInt(now)) {
+        return null;
+      }
       const tx = await this.contract.cancelExpiredLock(jobId32);
       const receipt = await tx.wait();
       console.log(`[escrow-chain] cancelExpiredLock jobId=${jobId} tx=${receipt.hash}`);
@@ -181,14 +258,20 @@ class ChainEscrowService {
         enabled: true,
         contractAddress: process.env.ESCROW_CONTRACT_ADDRESS,
         network: `${network.name} (chainId: ${Number(network.chainId)})`,
-        oracleAddress: this.wallet.address
+        txAddress: this.txWallet.address,
+        oracleAddress: this.oracleWallet.address,
+        usdcAddress: this.usdcAddress,
+        settlementProviderAddress: this.settlementProviderAddress
       };
     } catch (err) {
       return {
         enabled: true,
         contractAddress: process.env.ESCROW_CONTRACT_ADDRESS,
         network: 'base-sepolia',
-        oracleAddress: this.wallet.address,
+        txAddress: this.txWallet.address,
+        oracleAddress: this.oracleWallet.address,
+        usdcAddress: this.usdcAddress,
+        settlementProviderAddress: this.settlementProviderAddress,
         error: err.message
       };
     }

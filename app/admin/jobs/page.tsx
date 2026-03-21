@@ -6,6 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 import StatCard from '../../components/ui/StatCard'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -19,19 +20,8 @@ const ContainerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 2
 const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
 
-const navItems = [
-  { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-  { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-  { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-  { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-  { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-  { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-  { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-  { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-  { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-]
-
 export default function JobsPage() {
+  const { t } = useLanguage()
   const router = useRouter()
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -98,7 +88,7 @@ export default function JobsPage() {
   }
 
   const formatTime = (iso: string) => {
-    if (!iso) return 'Never'
+    if (!iso) return t('admin.jobs.never')
     return new Date(iso).toLocaleDateString() + ' ' + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
@@ -111,20 +101,36 @@ export default function JobsPage() {
     return status !== 'completed' && status !== 'cancelled'
   }
 
+  const statusLabel = (status: string) => t(`admin.jobs.status.${status}`)
+
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+  ]
+
   const stats = [
-    { label: 'Total Jobs', value: String(data?.stats?.total || 0), accent: 'default' as const },
-    { label: 'Completed', value: String(data?.stats?.completed || 0), accent: 'success' as const },
-    { label: 'Failed', value: String(data?.stats?.failed || 0), accent: 'error' as const },
-    { label: 'Active', value: String(data?.stats?.active || 0), accent: 'info' as const },
-    { label: 'Total Revenue', value: `${((data?.stats?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`, accent: 'amber' as const },
+    { label: t('admin.jobs.total_jobs'), value: String(data?.stats?.total || 0), accent: 'default' as const },
+    { label: t('admin.jobs.completed'), value: String(data?.stats?.completed || 0), accent: 'success' as const },
+    { label: t('admin.jobs.failed'), value: String(data?.stats?.failed || 0), accent: 'error' as const },
+    { label: t('admin.jobs.active'), value: String(data?.stats?.active || 0), accent: 'info' as const },
+    { label: t('admin.jobs.total_revenue'), value: `${((data?.stats?.total_revenue_halala || 0) / 100).toFixed(2)} SAR`, accent: 'amber' as const },
   ]
 
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Job Control Center</h1>
+        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('admin.jobs.title')}</h1>
         <p className="text-dc1-text-secondary">
-          {data ? `${data.stats?.total || data.jobs?.length || 0} total jobs` : 'Loading...'}
+          {data
+            ? t('admin.jobs.total_jobs_count').replace('{count}', String(data.stats?.total || data.jobs?.length || 0))
+            : t('common.loading')}
         </p>
       </div>
 
@@ -142,13 +148,13 @@ export default function JobsPage() {
         <div className="flex flex-col sm:flex-row gap-4">
           <input
             type="text"
-            placeholder="Search by provider, renter, or job ID..."
+            placeholder={t('admin.jobs.search_placeholder')}
             className="input flex-1"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
           <div className="flex gap-2">
-            {['all', 'pending', 'assigned', 'running', 'completed', 'failed', 'cancelled'].map(f => (
+            {['all', 'pending', 'assigned', 'running', 'completed', 'failed', 'cancelled'].map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -158,7 +164,7 @@ export default function JobsPage() {
                     : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
                 }`}
               >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
+                {t(`admin.jobs.filter.${f}`)}
               </button>
             ))}
           </div>
@@ -166,21 +172,21 @@ export default function JobsPage() {
       </div>
 
       {loading ? (
-        <div className="text-dc1-text-secondary">Loading jobs...</div>
+        <div className="text-dc1-text-secondary">{t('admin.jobs.loading')}</div>
       ) : (
         <div className="card">
           <div className="table-container">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Job ID</th>
-                  <th>Type</th>
-                  <th>Provider</th>
-                  <th>Renter</th>
-                  <th>Status</th>
-                  <th>Cost (SAR)</th>
-                  <th>Created</th>
-                  <th>Actions</th>
+                  <th>{t('table.job_id')}</th>
+                  <th>{t('table.type')}</th>
+                  <th>{t('table.provider')}</th>
+                  <th>{t('admin.jobs.renter')}</th>
+                  <th>{t('table.status')}</th>
+                  <th>{t('admin.jobs.cost_sar')}</th>
+                  <th>{t('admin.jobs.created')}</th>
+                  <th>{t('admin.jobs.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -191,7 +197,7 @@ export default function JobsPage() {
                     <td className="text-sm">{j.provider_name || '—'}</td>
                     <td className="text-sm">{j.renter_name || '—'}</td>
                     <td>
-                      <StatusBadge status={getStatusBadgeType(j.status)} label={j.status.charAt(0).toUpperCase() + j.status.slice(1)} />
+                      <StatusBadge status={getStatusBadgeType(j.status)} label={statusLabel(j.status)} />
                     </td>
                     <td className="text-sm">{j.cost_halala ? `${(j.cost_halala / 100).toFixed(2)}` : '—'}</td>
                     <td className="text-xs text-dc1-text-secondary">{formatTime(j.created_at)}</td>
@@ -201,7 +207,7 @@ export default function JobsPage() {
                           href={`/admin/jobs/detail?id=${encodeURIComponent(j.job_id || j.id)}`}
                           className="text-xs px-2 py-1 rounded bg-dc1-amber/20 text-dc1-amber hover:bg-dc1-amber/30"
                         >
-                          View
+                          {t('admin.jobs.view')}
                         </Link>
                         {canCancel(j.status) ? (
                           <button
@@ -209,7 +215,7 @@ export default function JobsPage() {
                             disabled={actionLoading === j.job_id}
                             className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50"
                           >
-                            {actionLoading === j.job_id ? '...' : 'Cancel'}
+                            {actionLoading === j.job_id ? '...' : t('admin.jobs.cancel')}
                           </button>
                         ) : (
                           <span className="text-xs text-dc1-text-muted">—</span>
@@ -219,7 +225,7 @@ export default function JobsPage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="text-dc1-text-muted text-sm text-center">No jobs found</td></tr>
+                  <tr><td colSpan={8} className="text-dc1-text-muted text-sm text-center">{t('admin.jobs.no_jobs')}</td></tr>
                 )}
               </tbody>
             </table>

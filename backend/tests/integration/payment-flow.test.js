@@ -11,7 +11,7 @@
  *   7. Rate limiting enforcement on payment endpoints
  *
  * Runner: Jest + Supertest, in-memory SQLite.
- * No MOYASAR_SECRET_KEY is set so tests use sandbox mode + webhook without sig check.
+ * No live gateway key is required; webhook tests configure MOYASAR_WEBHOOK_SECRET explicitly.
  */
 
 'use strict';
@@ -112,6 +112,10 @@ function webhookBody(paymentId, status, amountHalala = 1000) {
   }));
 }
 
+function webhookSignature(secret, bodyBuffer) {
+  return crypto.createHmac('sha256', secret).update(bodyBuffer).digest('hex');
+}
+
 beforeAll(() => { app = createApp(); });
 beforeEach(() => cleanDb());
 afterAll(() => cleanDb());
@@ -186,6 +190,26 @@ describe('POST /api/payments/topup — validation', () => {
     expect(res.status).toBe(503);
     expect(res.body.sandbox_hint).toContain('/api/payments/topup-sandbox');
   });
+
+  it('omits sandbox hint in production mode when gateway secret is missing', async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      const freshApp = createApp();
+      const { key } = await seedRenter();
+
+      const res = await request(freshApp).post('/api/payments/topup')
+        .set('x-renter-key', key)
+        .send({ amount_sar: 10, source_type: 'creditcard' });
+
+      expect(res.status).toBe(503);
+      expect(res.body.action_required).toMatch(/MOYASAR_WEBHOOK_SECRET/i);
+      expect(res.body.sandbox_hint).toBeUndefined();
+    } finally {
+      if (prevNodeEnv == null) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+    }
+  });
 });
 
 // =============================================================================
@@ -196,6 +220,25 @@ describe('POST /api/payments/topup-sandbox', () => {
   it('returns 401 without renter key', async () => {
     const res = await request(app).post('/api/payments/topup-sandbox').send({ amount_sar: 10 });
     expect(res.status).toBe(401);
+  });
+
+  it('returns 403 in production mode even when gateway secret is missing', async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      const freshApp = createApp();
+      const { key } = await seedRenter(0);
+
+      const res = await request(freshApp).post('/api/payments/topup-sandbox')
+        .set('x-renter-key', key)
+        .send({ amount_sar: 10 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/disabled in production/i);
+    } finally {
+      if (prevNodeEnv == null) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+    }
   });
 
   it('credits renter balance and returns payment_id on success', async () => {
@@ -256,106 +299,27 @@ describe('POST /api/payments/topup-sandbox', () => {
 // =============================================================================
 
 describe('POST /api/payments/webhook — event processing', () => {
-  it('credits renter balance when paid event received (no HMAC configured)', async () => {
-    const { key, id: renterId } = await seedRenter(0);
-    const paymentId = insertPayment(renterId, { amount_sar: 20, amount_halala: 2000, status: 'initiated' });
-
-    const res = await request(app)
-      .post('/api/payments/webhook')
-      .set('Content-Type', 'application/json')
-      .send(webhookBody(paymentId, 'paid', 2000));
-
-    expect(res.status).toBe(200);
-    expect(res.body.action).toBe('balance_credited');
-    expect(res.body.amount_halala).toBe(2000);
-
-    const renter = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId);
-    expect(renter.balance_halala).toBe(2000);
-
-    const payment = db.get('SELECT status FROM payments WHERE payment_id = ?', paymentId);
-    expect(payment.status).toBe('paid');
+  afterEach(() => {
+    delete process.env.MOYASAR_WEBHOOK_SECRET;
   });
 
-  it('marks payment failed on failed event', async () => {
+  it('returns 503 when webhook secret is not configured', async () => {
     const { id: renterId } = await seedRenter(0);
     const paymentId = insertPayment(renterId, { amount_halala: 1000, status: 'initiated' });
 
     const res = await request(app)
       .post('/api/payments/webhook')
       .set('Content-Type', 'application/json')
-      .send(webhookBody(paymentId, 'failed'));
-
-    expect(res.status).toBe(200);
-    expect(res.body.action).toBe('marked_failed');
-
-    const payment = db.get('SELECT status FROM payments WHERE payment_id = ?', paymentId);
-    expect(payment.status).toBe('failed');
-
-    // Balance should NOT be affected
-    const renter = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId);
-    expect(renter.balance_halala).toBe(0);
-  });
-
-  it('deducts balance and marks refunded on refunded event (previously paid)', async () => {
-    const { id: renterId } = await seedRenter(5000); // renter has 5000 halala
-    const paymentId = insertPayment(renterId, { amount_halala: 1000, status: 'paid' });
-
-    const res = await request(app)
-      .post('/api/payments/webhook')
-      .set('Content-Type', 'application/json')
-      .send(Buffer.from(JSON.stringify({
-        id: paymentId, status: 'refunded', amount: 1000, amount_refunded: 1000,
-      })));
-
-    expect(res.status).toBe(200);
-    expect(res.body.action).toBe('refund_processed');
-
-    const renter = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId);
-    expect(renter.balance_halala).toBe(4000); // 5000 - 1000
-
-    const payment = db.get('SELECT status, refund_amount_halala FROM payments WHERE payment_id = ?', paymentId);
-    expect(payment.status).toBe('refunded');
-    expect(payment.refund_amount_halala).toBe(1000);
-  });
-
-  it('returns idempotent response when same status sent twice', async () => {
-    const { id: renterId } = await seedRenter(0);
-    const paymentId = insertPayment(renterId, { amount_halala: 1000, status: 'initiated' });
-
-    // First webhook — processes it
-    await request(app)
-      .post('/api/payments/webhook')
-      .set('Content-Type', 'application/json')
       .send(webhookBody(paymentId, 'paid'));
 
-    // Second webhook with same status — should be idempotent
-    const res = await request(app)
-      .post('/api/payments/webhook')
-      .set('Content-Type', 'application/json')
-      .send(webhookBody(paymentId, 'paid'));
-
-    expect(res.status).toBe(200);
-    expect(res.body.action).toBe('already_processed');
-  });
-
-  it('acknowledges (200) for unknown payment_id without error', async () => {
-    const res = await request(app)
-      .post('/api/payments/webhook')
-      .set('Content-Type', 'application/json')
-      .send(webhookBody('unknown-pay-xyz', 'paid'));
-
-    expect(res.status).toBe(200);
-    expect(res.body.action).toBe('ignored_unknown');
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/secret/i);
   });
 
   it('rejects webhook with invalid HMAC signature when secret is configured', async () => {
-    // Temporarily set a webhook secret
     process.env.MOYASAR_WEBHOOK_SECRET = 'test-webhook-secret-abc123';
-
     const { id: renterId } = await seedRenter(0);
     const paymentId = insertPayment(renterId);
-
-    // Re-create app so the new env var is picked up
     const freshApp = createApp();
 
     const res = await request(freshApp)
@@ -366,31 +330,142 @@ describe('POST /api/payments/webhook — event processing', () => {
 
     expect(res.status).toBe(401);
     expect(res.body.error).toMatch(/signature/i);
-
-    delete process.env.MOYASAR_WEBHOOK_SECRET;
   });
 
-  it('accepts valid HMAC signature when secret is configured', async () => {
+  it('credits renter balance when paid event has valid HMAC', async () => {
     const webhookSecret = 'test-webhook-secret-xyz';
     process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
-
     const { id: renterId } = await seedRenter(0);
-    const paymentId = insertPayment(renterId, { amount_halala: 500, status: 'initiated' });
-
+    const paymentId = insertPayment(renterId, { amount_sar: 20, amount_halala: 2000, status: 'initiated' });
     const freshApp = createApp();
-    const body = webhookBody(paymentId, 'paid', 500);
-    const sig = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
+    const body = webhookBody(paymentId, 'paid', 2000);
 
     const res = await request(freshApp)
       .post('/api/payments/webhook')
       .set('Content-Type', 'application/json')
-      .set('x-moyasar-signature', sig)
+      .set('x-moyasar-signature', webhookSignature(webhookSecret, body))
       .send(body);
 
     expect(res.status).toBe(200);
     expect(res.body.action).toBe('balance_credited');
+    expect(res.body.amount_halala).toBe(2000);
 
-    delete process.env.MOYASAR_WEBHOOK_SECRET;
+    const renter = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId);
+    expect(renter.balance_halala).toBe(2000);
+  });
+
+  it('marks payment failed on failed event with valid HMAC', async () => {
+    const webhookSecret = 'test-webhook-secret-failed';
+    process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
+    const { id: renterId } = await seedRenter(0);
+    const paymentId = insertPayment(renterId, { amount_halala: 1000, status: 'initiated' });
+    const freshApp = createApp();
+    const body = webhookBody(paymentId, 'failed');
+
+    const res = await request(freshApp)
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-moyasar-signature', webhookSignature(webhookSecret, body))
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe('marked_failed');
+  });
+
+  it('deducts balance and marks refunded on refunded event (previously paid)', async () => {
+    const webhookSecret = 'test-webhook-secret-refund';
+    process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
+    const { id: renterId } = await seedRenter(5000);
+    const paymentId = insertPayment(renterId, { amount_halala: 1000, status: 'paid' });
+    const freshApp = createApp();
+    const body = Buffer.from(JSON.stringify({
+      id: paymentId, status: 'refunded', amount: 1000, amount_refunded: 1000,
+    }));
+
+    const res = await request(freshApp)
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-moyasar-signature', webhookSignature(webhookSecret, body))
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe('refund_processed');
+    expect(db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId).balance_halala).toBe(4000);
+  });
+
+  it('returns idempotent response when same status sent twice', async () => {
+    const webhookSecret = 'test-webhook-secret-idempotent';
+    process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
+    const { id: renterId } = await seedRenter(0);
+    const paymentId = insertPayment(renterId, { amount_halala: 1000, status: 'initiated' });
+    const freshApp = createApp();
+    const body = webhookBody(paymentId, 'paid');
+    const signature = webhookSignature(webhookSecret, body);
+
+    await request(freshApp)
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-moyasar-signature', signature)
+      .send(body);
+
+    const second = await request(freshApp)
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-moyasar-signature', signature)
+      .send(body);
+
+    expect(second.status).toBe(200);
+    expect(second.body.action).toBe('already_processed');
+  });
+
+  it('acknowledges unknown payment_id as ignored with valid HMAC', async () => {
+    const webhookSecret = 'test-webhook-secret-unknown';
+    process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
+    const freshApp = createApp();
+    const body = webhookBody('unknown-pay-xyz', 'paid');
+
+    const res = await request(freshApp)
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-moyasar-signature', webhookSignature(webhookSecret, body))
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe('ignored_unknown');
+  });
+
+  it('returns 400 when webhook payload has unsupported status', async () => {
+    const webhookSecret = 'test-webhook-secret-unsupported';
+    process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
+    const { id: renterId } = await seedRenter(0);
+    const paymentId = insertPayment(renterId, { amount_halala: 1000, status: 'initiated' });
+    const freshApp = createApp();
+    const body = Buffer.from(JSON.stringify({ id: paymentId, status: 'captured', amount: 1000, currency: 'SAR' }));
+
+    const res = await request(freshApp)
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-moyasar-signature', webhookSignature(webhookSecret, body))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/unsupported payment status/i);
+  });
+
+  it('returns 400 when webhook payload is missing payment id', async () => {
+    const webhookSecret = 'test-webhook-secret-missing-id';
+    process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
+    const freshApp = createApp();
+    const body = Buffer.from(JSON.stringify({ status: 'paid', amount: 1000, currency: 'SAR' }));
+
+    const res = await request(freshApp)
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-moyasar-signature', webhookSignature(webhookSecret, body))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/missing payment id/i);
   });
 });
 

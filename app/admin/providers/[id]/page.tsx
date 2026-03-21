@@ -6,6 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import { useLanguage } from '../../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -18,18 +19,8 @@ const CpuIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" 
 const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
 
-const navItems = [
-  { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-  { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-  { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-  { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-  { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-  { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-  { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-  { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-]
-
 export default function ProviderDetailPage() {
+  const { t } = useLanguage()
   const router = useRouter()
   const params = useParams()
   const id = params.id
@@ -37,6 +28,17 @@ export default function ProviderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'overview' | 'jobs' | 'heartbeats' | 'recovery'>('overview')
   const [actionLoading, setActionLoading] = useState(false)
+
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+  ]
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -67,12 +69,12 @@ export default function ProviderDetailPage() {
   }
 
   const formatTime = (iso: string) => {
-    if (!iso) return 'Never'
+    if (!iso) return t('admin.provider_detail.never')
     return new Date(iso).toLocaleDateString() + ' ' + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  if (loading) return <DashboardLayout navItems={navItems} role="admin" userName="Admin"><div className="text-dc1-text-secondary">Loading...</div></DashboardLayout>
-  if (!data) return <DashboardLayout navItems={navItems} role="admin" userName="Admin"><div className="text-red-400">Provider not found</div></DashboardLayout>
+  if (loading) return <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}><div className="text-dc1-text-secondary">{t('common.loading')}</div></DashboardLayout>
+  if (!data) return <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}><div className="text-red-400">{t('admin.provider_detail.not_found')}</div></DashboardLayout>
 
   const p = data.provider
   const uptime = data.uptime || {}
@@ -82,26 +84,26 @@ export default function ProviderDetailPage() {
   const disconnects = data.disconnects || []
 
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <Link href="/admin/providers" className="text-dc1-text-secondary text-sm hover:text-dc1-amber mb-2 inline-block">&larr; Back to Providers</Link>
+          <Link href="/admin/providers" className="text-dc1-text-secondary text-sm hover:text-dc1-amber mb-2 inline-block">&larr; {t('admin.provider_detail.back_to_providers')}</Link>
           <h1 className="text-3xl font-bold text-dc1-text-primary">{p.name}</h1>
-          <p className="text-dc1-text-secondary">{p.email} &middot; {p.gpu_model || p.gpu_name_detected || 'No GPU'}</p>
+          <p className="text-dc1-text-secondary">{p.email} &middot; {p.gpu_model || p.gpu_name_detected || t('admin.provider_detail.no_gpu')}</p>
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={p.status === 'suspended' ? 'warning' : p.is_online ? 'online' : 'offline'}
-            label={p.status === 'suspended' ? 'Suspended' : p.is_online ? 'Online' : 'Offline'} />
+            label={p.status === 'suspended' ? t('admin.provider_detail.status_suspended') : p.is_online ? t('admin.provider_detail.status_online') : t('admin.provider_detail.status_offline')} />
           {p.status === 'suspended' ? (
             <button onClick={() => handleAction('unsuspend')} disabled={actionLoading}
               className="px-3 py-1.5 rounded text-sm bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50">
-              {actionLoading ? '...' : 'Reactivate'}
+              {actionLoading ? '...' : t('admin.provider_detail.reactivate')}
             </button>
           ) : (
             <button onClick={() => handleAction('suspend')} disabled={actionLoading}
               className="px-3 py-1.5 rounded text-sm bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50">
-              {actionLoading ? '...' : 'Suspend'}
+              {actionLoading ? '...' : t('admin.provider_detail.suspend')}
             </button>
           )}
         </div>
@@ -109,30 +111,30 @@ export default function ProviderDetailPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Uptime 24h" value={`${uptime.hours_24 ?? '—'}%`} accent="success" />
-        <StatCard label="Uptime 7d" value={`${uptime.days_7 ?? '—'}%`} accent="info" />
-        <StatCard label="Total Jobs" value={String(p.total_jobs || 0)} accent="default" />
-        <StatCard label="Earnings" value={`${((p.total_earnings || 0) / 100).toFixed(2)} SAR`} accent="amber" />
+        <StatCard label={t('admin.provider_detail.uptime_24h')} value={`${uptime.hours_24 ?? '—'}%`} accent="success" />
+        <StatCard label={t('admin.provider_detail.uptime_7d')} value={`${uptime.days_7 ?? '—'}%`} accent="info" />
+        <StatCard label={t('admin.provider_detail.total_jobs')} value={String(p.total_jobs || 0)} accent="default" />
+        <StatCard label={t('admin.provider_detail.earnings')} value={`${((p.total_earnings || 0) / 100).toFixed(2)} ${t('common.sar')}`} accent="amber" />
       </div>
 
       {/* GPU Metrics */}
       <div className="card mb-6">
-        <h2 className="section-heading mb-4">GPU Metrics (24h)</h2>
+        <h2 className="section-heading mb-4">{t('admin.provider_detail.gpu_metrics_24h')}</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-dc1-surface-l2 rounded-lg p-3">
-            <p className="text-xs text-dc1-text-muted">Avg Utilization</p>
+            <p className="text-xs text-dc1-text-muted">{t('admin.provider_detail.avg_utilization')}</p>
             <p className="text-xl font-bold text-dc1-text-primary">{metrics.avg_util ? `${Math.round(metrics.avg_util)}%` : '—'}</p>
           </div>
           <div className="bg-dc1-surface-l2 rounded-lg p-3">
-            <p className="text-xs text-dc1-text-muted">Avg Temperature</p>
+            <p className="text-xs text-dc1-text-muted">{t('admin.provider_detail.avg_temperature')}</p>
             <p className="text-xl font-bold text-dc1-text-primary">{metrics.avg_temp ? `${Math.round(metrics.avg_temp)}°C` : '—'}</p>
           </div>
           <div className="bg-dc1-surface-l2 rounded-lg p-3">
-            <p className="text-xs text-dc1-text-muted">Max Temperature</p>
+            <p className="text-xs text-dc1-text-muted">{t('admin.provider_detail.max_temperature')}</p>
             <p className="text-xl font-bold text-dc1-text-primary">{metrics.max_temp ? `${Math.round(metrics.max_temp)}°C` : '—'}</p>
           </div>
           <div className="bg-dc1-surface-l2 rounded-lg p-3">
-            <p className="text-xs text-dc1-text-muted">Avg Power</p>
+            <p className="text-xs text-dc1-text-muted">{t('admin.provider_detail.avg_power')}</p>
             <p className="text-xl font-bold text-dc1-text-primary">{metrics.avg_power ? `${Math.round(metrics.avg_power)}W` : '—'}</p>
           </div>
         </div>
@@ -140,27 +142,27 @@ export default function ProviderDetailPage() {
 
       {/* Info */}
       <div className="card mb-6">
-        <h2 className="section-heading mb-4">Account Details</h2>
+        <h2 className="section-heading mb-4">{t('admin.provider_detail.account_details')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">ID</span><span className="text-dc1-text-primary">{p.id}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">OS</span><span className="text-dc1-text-primary">{p.os || '—'}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">GPU VRAM</span><span className="text-dc1-text-primary">{p.gpu_vram_mib ? `${Math.round(p.gpu_vram_mib / 1024)} GB` : p.vram_gb ? `${p.vram_gb} GB` : '—'}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">Driver</span><span className="text-dc1-text-primary">{p.gpu_driver || '—'}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">IP</span><span className="text-dc1-text-primary font-mono">{p.provider_ip || '—'}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">Hostname</span><span className="text-dc1-text-primary">{p.provider_hostname || '—'}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">Run Mode</span><span className="text-dc1-text-primary">{p.run_mode || '—'}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">Registered</span><span className="text-dc1-text-primary">{formatTime(p.created_at)}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">Last Heartbeat</span><span className="text-dc1-text-primary">{p.minutes_since_heartbeat !== null ? `${p.minutes_since_heartbeat}m ago` : 'Never'}</span></div>
-          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">Heartbeats 24h</span><span className="text-dc1-text-primary">{uptime.heartbeats_24h ?? '—'}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.id')}</span><span className="text-dc1-text-primary">{p.id}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.os')}</span><span className="text-dc1-text-primary">{p.os || '—'}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.gpu_vram')}</span><span className="text-dc1-text-primary">{p.gpu_vram_mib ? `${Math.round(p.gpu_vram_mib / 1024)} GB` : p.vram_gb ? `${p.vram_gb} GB` : '—'}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.driver')}</span><span className="text-dc1-text-primary">{p.gpu_driver || '—'}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.ip')}</span><span className="text-dc1-text-primary font-mono">{p.provider_ip || '—'}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.hostname')}</span><span className="text-dc1-text-primary">{p.provider_hostname || '—'}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.run_mode')}</span><span className="text-dc1-text-primary">{p.run_mode || '—'}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.registered')}</span><span className="text-dc1-text-primary">{formatTime(p.created_at)}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.last_heartbeat')}</span><span className="text-dc1-text-primary">{p.minutes_since_heartbeat !== null ? `${p.minutes_since_heartbeat}${t('admin.provider_detail.minutes_ago')}` : t('admin.provider_detail.never')}</span></div>
+          <div className="flex justify-between py-1 border-b border-dc1-border/30"><span className="text-dc1-text-muted">{t('admin.provider_detail.heartbeats_24h')}</span><span className="text-dc1-text-primary">{uptime.heartbeats_24h ?? '—'}</span></div>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-4">
-        {(['overview', 'jobs', 'heartbeats', 'recovery'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${tab === t ? 'bg-dc1-amber text-black' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'}`}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+        {(['overview', 'jobs', 'heartbeats', 'recovery'] as const).map((tabKey) => (
+          <button key={tabKey} onClick={() => setTab(tabKey)}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${tab === tabKey ? 'bg-dc1-amber text-black' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'}`}>
+            {t(`admin.provider_detail.tab.${tabKey}`)}
           </button>
         ))}
       </div>
@@ -168,21 +170,21 @@ export default function ProviderDetailPage() {
       {/* Tab content */}
       {tab === 'jobs' && (
         <div className="card">
-          <h2 className="section-heading mb-4">Recent Jobs ({jobs.length})</h2>
+          <h2 className="section-heading mb-4">{t('admin.provider_detail.recent_jobs')} ({jobs.length})</h2>
           <div className="table-container">
             <table className="table">
-              <thead><tr><th>Job ID</th><th>Type</th><th>Status</th><th>Cost</th><th>Created</th></tr></thead>
+              <thead><tr><th>{t('admin.provider_detail.job_id')}</th><th>{t('admin.provider_detail.type')}</th><th>{t('admin.provider_detail.status')}</th><th>{t('admin.provider_detail.cost')}</th><th>{t('admin.provider_detail.created')}</th></tr></thead>
               <tbody>
                 {jobs.map((j: any) => (
                   <tr key={j.id}>
                     <td className="font-mono text-sm">{(j.job_id || j.id).toString().slice(0, 12)}</td>
                     <td className="text-sm">{j.job_type || '—'}</td>
                     <td><span className={`text-xs px-2 py-0.5 rounded ${j.status === 'completed' ? 'bg-green-600/20 text-green-400' : j.status === 'failed' ? 'bg-red-600/20 text-red-400' : 'bg-blue-600/20 text-blue-400'}`}>{j.status}</span></td>
-                    <td className="text-sm">{j.cost_halala ? `${(j.cost_halala / 100).toFixed(2)} SAR` : '—'}</td>
+                    <td className="text-sm">{j.cost_halala ? `${(j.cost_halala / 100).toFixed(2)} ${t('common.sar')}` : '—'}</td>
                     <td className="text-xs text-dc1-text-secondary">{formatTime(j.created_at)}</td>
                   </tr>
                 ))}
-                {jobs.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">No jobs</td></tr>}
+                {jobs.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">{t('admin.provider_detail.no_jobs')}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -191,10 +193,10 @@ export default function ProviderDetailPage() {
 
       {tab === 'heartbeats' && (
         <div className="card">
-          <h2 className="section-heading mb-4">Recent Heartbeats ({heartbeats.length})</h2>
+          <h2 className="section-heading mb-4">{t('admin.provider_detail.recent_heartbeats')} ({heartbeats.length})</h2>
           <div className="table-container">
             <table className="table">
-              <thead><tr><th>Time</th><th>GPU Util</th><th>Temp</th><th>Power</th><th>VRAM Used</th></tr></thead>
+              <thead><tr><th>{t('admin.provider_detail.time')}</th><th>{t('admin.provider_detail.gpu_util')}</th><th>{t('admin.provider_detail.temp')}</th><th>{t('admin.provider_detail.power')}</th><th>{t('admin.provider_detail.vram_used')}</th></tr></thead>
               <tbody>
                 {heartbeats.map((h: any, i: number) => (
                   <tr key={i}>
@@ -205,7 +207,7 @@ export default function ProviderDetailPage() {
                     <td className="text-sm">{h.gpu_mem_used_mib != null ? `${Math.round(h.gpu_mem_used_mib)} MiB` : '—'}</td>
                   </tr>
                 ))}
-                {heartbeats.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">No heartbeats</td></tr>}
+                {heartbeats.length === 0 && <tr><td colSpan={5} className="text-dc1-text-muted text-sm">{t('admin.provider_detail.no_heartbeats')}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -214,10 +216,10 @@ export default function ProviderDetailPage() {
 
       {tab === 'recovery' && (
         <div className="card">
-          <h2 className="section-heading mb-4">Recovery Events ({disconnects.length})</h2>
+          <h2 className="section-heading mb-4">{t('admin.provider_detail.recovery_events')} ({disconnects.length})</h2>
           <div className="table-container">
             <table className="table">
-              <thead><tr><th>Time</th><th>State</th><th>Details</th></tr></thead>
+              <thead><tr><th>{t('admin.provider_detail.time')}</th><th>{t('admin.provider_detail.state')}</th><th>{t('admin.provider_detail.details')}</th></tr></thead>
               <tbody>
                 {disconnects.map((d: any, i: number) => (
                   <tr key={i}>
@@ -226,7 +228,7 @@ export default function ProviderDetailPage() {
                     <td className="text-sm text-dc1-text-secondary">{d.details || '—'}</td>
                   </tr>
                 ))}
-                {disconnects.length === 0 && <tr><td colSpan={3} className="text-dc1-text-muted text-sm">No recovery events</td></tr>}
+                {disconnects.length === 0 && <tr><td colSpan={3} className="text-dc1-text-muted text-sm">{t('admin.provider_detail.no_recovery_events')}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -235,11 +237,11 @@ export default function ProviderDetailPage() {
 
       {tab === 'overview' && (
         <div className="card">
-          <h2 className="section-heading mb-4">Provider Summary</h2>
+          <h2 className="section-heading mb-4">{t('admin.provider_detail.summary')}</h2>
           <p className="text-dc1-text-secondary text-sm">
-            {p.name} has been registered since {formatTime(p.created_at)}, running {p.gpu_model || 'unknown GPU'} on {p.os || 'unknown OS'}.
-            {uptime.hours_24 != null && ` 24h uptime: ${uptime.hours_24}%.`}
-            {p.total_jobs ? ` Completed ${p.total_jobs} jobs earning ${((p.total_earnings || 0) / 100).toFixed(2)} SAR.` : ' No jobs completed yet.'}
+            {`${p.name} ${t('admin.provider_detail.summary_registered')} ${formatTime(p.created_at)}, ${t('admin.provider_detail.summary_running')} ${p.gpu_model || t('admin.provider_detail.unknown_gpu')} ${t('admin.provider_detail.summary_on')} ${p.os || t('admin.provider_detail.unknown_os')}.`}
+            {uptime.hours_24 != null && ` ${t('admin.provider_detail.summary_uptime_24h')}: ${uptime.hours_24}%.`}
+            {p.total_jobs ? ` ${t('admin.provider_detail.summary_completed_jobs').replace('{count}', String(p.total_jobs)).replace('{earnings}', ((p.total_earnings || 0) / 100).toFixed(2))} ${t('common.sar')}.` : ` ${t('admin.provider_detail.summary_no_jobs')}`}
           </p>
         </div>
       )}

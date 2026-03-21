@@ -1,5 +1,16 @@
 # DCP GPU Compute — Changelog
 
+## [0.4.1] — 2026-03-21
+
+### Fixed
+- `dc1.watchJobLogs` now falls back to periodic `GET /api/jobs/:id/output` polling when SSE log streaming is unavailable at stream start.
+- API client response parsing is more resilient for empty-body and non-JSON error responses, improving user-facing error messages instead of generic parse failures.
+- vLLM submit panel now shows explicit model-load errors and includes a `Reload Models` action to recover quickly during demos without reloading the extension host.
+
+### Docs
+- Updated extension README for current DCP branding, commands, default API base, and supported API surface.
+- Added a demo runbook (`DEMO-SCRIPT.md`) with expected outputs for partner walkthroughs.
+
 ## [0.3.0] — 2026-03-20
 
 ### Added

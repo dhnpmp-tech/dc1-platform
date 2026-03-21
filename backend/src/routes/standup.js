@@ -161,10 +161,11 @@ router.post('/run', async (req, res) => {
     // Auth check
     const authHeader = req.headers.authorization;
     const mcToken = process.env.MC_TOKEN;
-    if (mcToken) {
-      if (!authHeader || authHeader !== `Bearer ${mcToken}`) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+    if (!mcToken) {
+      return res.status(503).json({ error: 'MC_TOKEN not configured' });
+    }
+    if (!authHeader || authHeader !== `Bearer ${mcToken}`) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const data = generateStandupData();

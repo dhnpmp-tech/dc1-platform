@@ -3596,3 +3596,365 @@ Assign in this order when issue creation comes back:
   - Added `withdrawal_requests.is_amount_reserved` migration + logic to prevent double-deduct during transition from old reservation-at-request behavior.
   - `PATCH /api/admin/withdrawals/:id` now accepts Sprint 23-B aliases (`completed`→`paid`, `rejected`→`failed`) plus `note` alias for `admin_note`; allows direct pending completion/rejection while preserving existing `processing/paid/failed` flow.
   - Balance handling is now compatibility-safe: deduct on completion only when request was not already reserved; refund on failure only when previously reserved.
+
+## [2026-03-21 13:43 UTC] Codex — DCP-425: AGENT_LOG.md write access validated and unblock notice issued
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: validate AGENT_LOG.md runtime writeability and unblock dependent frontend lane`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Verified `AGENT_LOG.md` is writable by runtime user `node` in this workspace (`mode 666`), despite root ownership.
+  - Attempted ownership/permission normalization (`chown`/`chmod`) but container mount policy returned `Operation not permitted`.
+  - Added this entry successfully as positive write proof and provided `ls -l` evidence in issue handoff; DCP-422 can resume/close from frontend lane.
+
+## [2026-03-21 13:58 UTC] Codex — DCP-429: AGENT_LOG write access verified in active engineering workspaces
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: validate AGENT_LOG.md writeability and resume blocked i18n lanes`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Verified active Paperclip workspaces from `PAPERCLIP_WORKSPACES_JSON` (2 workspace records) both resolve to `/home/node/dc1-platform`.
+  - Confirmed `AGENT_LOG.md` permissions are currently `-rw-rw-rw- root root` and writable by runtime user `node` in active workspace (`write_check=PASS`, `append_open=PASS`).
+  - Posted explicit resume notes to DCP-403 and DCP-408 with permission evidence so blocked i18n lanes can continue.
+
+## [2026-03-21 14:02 UTC] Codex — DCP-428: i18n sweep follow-up for support/legal static surfaces
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: add t() coverage for support page UI and legal-page chrome, with localization policy notes for legal/docs content`
+- **Files**: `app/lib/i18n.tsx`, `app/components/layout/LegalPage.tsx`, `app/support/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added EN+AR translation keys and `t()` usage for all support page labels/content, FAQ, form states, and category options while preserving API payload category values.
+  - Localized shared legal page chrome (`Sign In`, `Last updated`) through `useLanguage()` so all legal routes inherit translated framing text.
+  - Audited docs/support/legal static routes; docs routes are already bilingual or mixed bilingual content, while legal body copy remains English-first pending legal-reviewed Arabic canonical text.
+  - Validation note: `next lint` is blocked by interactive ESLint bootstrap in this container; `npx tsc --noEmit --incremental false` fails on pre-existing unrelated errors in `app/admin/containers/page.tsx`.
+
+## [2026-03-21 14:06 UTC] Codex — DCP-427: i18n sweep follow-up (provider+renter residual pages, partial)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: wire remaining provider/renter pages to i18n t() keys and add EN/AR dictionary coverage`
+- **Files**: `app/provider/dashboard/page.tsx`, `app/provider/download/page.tsx`, `app/provider/gpu/page.tsx`, `app/provider/jobs/page.tsx`, `app/provider/jobs/[id]/page.tsx`, `app/renter/analytics/page.tsx`, `app/renter/gpu-comparison/page.tsx`, `app/renter/jobs/[id]/page.tsx`, `app/renter/marketplace/providers/[id]/page.tsx`, `app/renter/templates/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added `useLanguage()` + `t()` wiring to key provider/renter residual pages and replaced core user-facing headings/buttons/nav labels with translation keys.
+  - Added EN/AR translation entries for all newly introduced keys in `app/lib/i18n.tsx`.
+  - Verified app compiles successfully via `next build`.
+  - Residual risk: `app/renter/playground/page.tsx` still contains hardcoded UI strings and needs a dedicated full-file i18n pass to close DCP-427 completely.
+
+## [2026-03-21 14:15 UTC] Codex — DCP-427: complete i18n coverage for renter playground residual page
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: localize renter playground UI with t() keys and add EN/AR dictionary entries`
+- **Files**: `app/renter/playground/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Completed the explicit residual-risk file from prior DCP-427 entry: `app/renter/playground/page.tsx` now uses `useLanguage()` + `t()` across auth, nav/header, job modes, form labels/placeholders, queue/progress states, history/result views, execution proof labels, template modal, and error boundary copy.
+  - Added full EN/AR `playground.*` dictionary coverage in `app/lib/i18n.tsx` for all new keys referenced by the page.
+  - Verified no missing `playground.*` keys referenced by the page after the refactor (scripted key-presence check passed).
+  - Validation note: `npx eslint app/renter/playground/page.tsx app/lib/i18n.tsx` is not runnable in this repo via flat-config ESLint auto-install path (`eslint.config.*` not found), so lint pass must be verified through the project’s existing CI/lint workflow.
+
+## [2026-03-21 14:49 UTC] Codex — DCP-84: Security env-key validation + blocker escalation for payment/auth launch gate
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: process security heartbeat, validate auth/payment env keys, and escalate external blocker`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran heartbeat flow (`inbox-lite` empty → backlog scan → self-checkout of DCP-84 per non-CEO proactive rule).
+  - Verified backend env contracts from code: `DC1_HMAC_SECRET`, `DC1_ADMIN_TOKEN`, `MOYASAR_SECRET_KEY`, `MOYASAR_WEBHOOK_SECRET`, `RESEND_API_KEY`.
+  - Updated DCP-84 to `blocked` with security handoff comment: partial board progress confirmed, payment pipeline remains blocked until Moyasar keys are issued and loaded into PM2 env.
+
+## [2026-03-21 15:05 UTC] Codex — DCP-408: i18n sweep resumed with admin fleet key coverage remediation
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: complete admin fleet translation dictionary coverage and remove remaining hardcoded fallbacks`
+- **Files**: `app/admin/fleet/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - `app/admin/fleet/page.tsx`: localized remaining user-facing fallback strings in heartbeat formatting/status cards (`Never`, `{count}s/m/h ago`, `unknown`, `N/A`) and routed them through `t()` keys.
+  - `app/lib/i18n.tsx`: added full EN+AR `admin.fleet.*` key set required by fleet page (title, summary labels, sweep messaging, table headers, system-status badges, severity/status labels, relative-time labels).
+  - Validation: scripted key coverage check confirms all `t('...')` keys referenced by `app/admin/fleet/page.tsx` now exist in dictionary.
+  - DCP-408 remains open for remaining route groups; this heartbeat removes one high-traffic admin page from residual i18n risk.
+
+## [2026-03-21 15:07 UTC] Codex — DCP-438: Launch-critical review lane completed (FAIL)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `review: fail launch-critical sweep on branding check`
+- **Files**: `AGENT_LOG.md` (reviewed targets included `app/renter/templates/page.tsx` and launch-lane backend/frontend files)
+- **Impact**:
+  - Completed 11-point checklist sweep for launch-lane files and posted structured review comment on DCP-438.
+  - **Blocking finding**: Check 9 branding failure at `app/renter/templates/page.tsx:145` (`"DC1 marketplace"` in user-facing template seed text; must be `DCP`).
+  - DCP-438 marked `done` with `REVIEW: FAIL` so implementation lane can patch branding and request re-review.
+
+## [2026-03-21 15:07 UTC] Codex — DCP-408: follow-up fix for i18n key dedup + type-check verification
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: remove duplicate admin.fleet translation keys and restore clean TypeScript compile`
+- **Files**: `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Removed duplicate `admin.fleet.*` key block entries (EN+AR) that caused TS1117 duplicate-object-key errors.
+  - Added `admin.fleet.severity.error` in EN+AR to preserve full severity mapping after dedup.
+  - Validation: `npx tsc --noEmit --incremental false` now exits successfully.
+
+## [2026-03-21 15:07 UTC] Codex — DCP-434: Security hardening pass (findings + launch gate)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `security review: auth/admin token handling, payment webhook paths, and secret leakage scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Critical findings identified on launch-critical surfaces:
+    - `backend/src/routes/payments.js` allows `/api/payments/topup-sandbox` in production whenever `MOYASAR_SECRET_KEY` is unset (direct wallet credit path).
+    - `backend/.env` contains hardcoded secrets (`DC1_HMAC_SECRET`, `DC1_ADMIN_TOKEN`) and must be rotated + removed from repo-mounted file.
+  - High finding identified:
+    - `backend/src/routes/standup.js` has fail-open auth on `POST /api/standup/run` when `MC_TOKEN` is unset.
+  - Medium finding identified:
+    - `backend/src/routes/payments.js` accepts arbitrary callback URLs (including non-allowlisted origins).
+  - Could not apply direct code fixes in this heartbeat because target files are root-owned (`-rw-r--r-- root:root`) in container; requires Claude-Cowork/board operator to `chown node` or apply patch externally.
+
+## [2026-03-21 15:09 UTC] Codex — DCP-431: launch-gate backend test refresh + health/status verification harness (route-hardening blocked by file ownership)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: refresh payment webhook integration coverage and add launch status endpoint checks`
+- **Files**: `backend/tests/integration/payment-flow.test.js`, `backend/tests/integration/launch-health-status.test.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Refreshed webhook integration tests to enforce signed-webhook behavior (503 when secret missing, 401 on invalid signature, signed paid/failed/refunded/idempotency/unknown-payment coverage).
+  - Added `launch-health-status.test.js` to verify launch checklist service endpoints used by `/status` page: `/api/health`, `/api/providers/available`, `/api/sync/status`, `/api/fallback/status`.
+  - **Blocked for hardening code edits**: `backend/src/routes/payments.js` and `backend/src/server.js` are root-owned (`-rw-r--r-- root root`), so sandbox/live route hardening could not be applied from this container. Owner action needed: `chown node:node` (or grant write) on those files, then apply pending hardening patch.
+  - Runtime verification blocked in container: Jest cannot execute due `better-sqlite3` ABI mismatch (`NODE_MODULE_VERSION 127` vs required `137`).
+
+## [2026-03-21 15:20 UTC] Codex — DCP-408: Admin i18n audit sweep (finance/withdrawals/renters)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: localize remaining admin finance, withdrawals, and renters management pages via i18n t() keys`
+- **Files**: `app/admin/finance/page.tsx`, `app/admin/withdrawals/page.tsx`, `app/admin/renters/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Converted hardcoded user-facing strings to `t()` across three high-traffic admin pages: nav labels, headings, cards, table headers, action buttons, empty/loading/error states, and modal copy.
+  - Added missing translation dictionary entries for `admin.renters.*` in both English and Arabic.
+  - Verified translation key coverage for edited files (no missing keys) and ran TypeScript check successfully with `npx tsc --noEmit --incremental false`.
+  - Residual risk from audit scope: several non-core/detail pages still contain hardcoded strings and should be handled in follow-up sweep (`app/admin/jobs/[id]/page.tsx`, `app/admin/providers/[id]/page.tsx`, `app/admin/renters/[id]/page.tsx`, `app/admin/settings/page.tsx`, plus selected public/legal/docs pages).
+
+## [2026-03-21 15:27 UTC] Codex — DCP-440: CID-based P2P discovery scaffold + migration/demo notes
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add CID-indexed DHT discovery scaffold with optional P2P modules and runnable migration demo`
+- **Files**: `p2p/dcp-discovery-scaffold.js`, `p2p/demo-cid-discovery.js`, `p2p/README.md`, `p2p/package.json`, `AGENT_LOG.md`
+- **Impact**:
+  - Added `dcp-discovery-scaffold.js` with Ocean-style DHT namespace (`/dcp/nodes/1.0.0/kad/1.0.0/*`), CID-addressed environment records, provider->CID index records, and helper APIs for announce/resolve by peer and CID.
+  - Added optional (lazy-loaded) hooks for mDNS, WebSocket transport, Circuit Relay v2, and GossipSub so the scaffold runs now without forcing package installation.
+  - Added runnable `npm run demo:cid` flow demonstrating provider announce + renter resolve via peer ID and CID in a local two-node network.
+  - Extended `p2p/README.md` with DCP-440 deliverables: backend integration path, tonight-demo checklist, and post-demo remaining work for production cutover.
+  - Validation: `node --check p2p/dcp-discovery-scaffold.js`, `node --check p2p/demo-cid-discovery.js`, and `npm run demo:cid` all pass (DHT timeout warnings in tiny local mesh are handled as expected).
+
+## [2026-03-21 15:22 UTC] Codex — DCP-433: GPU job lifecycle smoke harness for demo readiness
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: add runnable GPU lifecycle smoke harness and demo reliability runbook`
+- **Files**: `scripts/gpu-job-lifecycle-smoke.mjs`, `docs/gpu-job-lifecycle-smoke.md`, `package.json`, `AGENT_LOG.md`
+- **Impact**:
+  - Added a runnable Node smoke harness that executes demo-critical API lifecycle checks: provider+renter auth preflight, provider heartbeat, renter job submit, provider poll claim, provider log ingestion, provider result settlement, renter log readback, and renter output artifact retrieval.
+  - Added explicit pass/fail checkpoints with non-zero exit on any lifecycle break, plus summary output that maps checks to partner-demo reliability gates.
+  - Added root npm shortcut `npm run smoke:gpu-job` for repeatable execution during launch rehearsals.
+
+## [2026-03-21 15:22 UTC] Codex — DCP-436: 19:00 UTC post-downgrade cost-control report
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: publish board-ready cost-control report after DCP-266 model downgrades`
+- **Files**: `docs/reports/2026-03-21-1900-cost-control-report.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Delivered requested before/after monthly burn estimate: **10,313 -> 5,707 SAR/mo** (savings **4,606 SAR/mo**, -44.7%).
+  - Quantified residual overrun against legacy 2,956 SAR ceiling: **+2,751 SAR/mo** post-downgrade.
+  - Provided top 3 immediate savings actions with sourced values (CR pooling, 4-agent suspension, CEO heartbeat cap) totaling **~794 SAR/mo**; projected run-rate after actions **~4,913 SAR/mo**.
+  - Included explicit source mapping to `docs/cost-reports/2026-Q2-projections-v2.md` and `docs/cost-reports/2026-03-march.md` for board verification.
+
+## [2026-03-21 15:23 UTC] Codex — DCP-432: Deploy preflight automation + launch runbook hardening
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: tighten deploy verification coverage and add operator launch-window runbook`
+- **Files**: `infra/scripts/verify-deploy.sh`, `docs/ops/launch-window-deploy-runbook.md`, `docs/README.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Updated `infra/scripts/verify-deploy.sh` to validate real PM2 service names from ecosystem (`dc1-provider-onboarding`, `dcp-vps-health-cron`, `dcp-job-volume-cleanup-cron`, `dcp-stale-provider-sweep-cron`) instead of legacy names.
+  - Added PM2 runtime env sanity checks for launch-critical vars (`DC1_ADMIN_TOKEN`, `DC1_HMAC_SECRET`, `FRONTEND_URL`, `BACKEND_URL`) and fail-fast on placeholder/empty values.
+  - Added HTTPS/public API health preflight via candidate endpoints (`https://api.dcp.sa/health`, fallback `https://api.dcp.sa/api/health`) plus local API health, frontend reachability, SQLite check, and fatal log signature scan scoped to `dc1-provider-onboarding`.
+  - Added operator-focused runbook `docs/ops/launch-window-deploy-runbook.md` with explicit deploy sequence, rollback sequence, and clear blocker split (`board-required` vs `agent-fixable`) for tonight launch window handoff.
+  - Updated `docs/README.md` to include the new runbook and reflect expanded `verify-deploy.sh` coverage.
+
+## [2026-03-21 15:24 UTC] Codex — DCP-437: Launch-gate QA checklist execution evidence
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: execute launch-gate checklist QA pass/fail matrix and evidence capture`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran launch-gate QA checks against DCP-308 checklist items that are closeable tonight and captured command evidence.
+  - Verified dependency issue status via Paperclip API: all deploy manifests (DCP-172/216/234/241/254/269/278/292/294/301) and DCP-266/DCP-85 are `done`; DCP-84 remains `blocked`.
+  - Reproduced failing checks with exact outputs: `verify-deploy.sh` fails due missing `pm2` in runtime; `npm run test:load` fails because backend is not reachable at `127.0.0.1:8083`; `/api/dc1/providers/available` returns HTTP 500 (blocks status-page green state).
+  - Smoke-tested launch path by registering renter and submitting a job (HTTP 201, queued with `provider_id: null`); SSE logs stream produced no events in 8s while job remained queued, so "logs stream + email fires" cannot be closed yet.
+## [2026-03-21 15:24 UTC] Codex — DCP-435: IDE extension demo polish + reliability pass
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: improve extension log-stream resilience, API error clarity, and demo readiness docs`
+- **Files**: `vscode-extension/src/extension.ts`, `vscode-extension/src/api/dc1Client.ts`, `vscode-extension/src/panels/VllmSubmitPanel.ts`, `vscode-extension/README.md`, `vscode-extension/CHANGELOG.md`, `vscode-extension/DEMO-SCRIPT.md`, `AGENT_LOG.md`
+- **Impact**:
+  - `dc1.watchJobLogs` now degrades gracefully: if SSE log stream fails before first data event, it automatically falls back to job-output polling at `dc1.pollIntervalSeconds`, preserving demo continuity.
+  - API client request parsing now handles empty-body responses and non-JSON error bodies without surfacing generic JSON parse failures.
+  - vLLM inference panel now surfaces explicit model-load errors and adds a `Reload Models` action for quick recovery during live demos.
+  - Extension docs were refreshed to current DCP branding/API defaults and a partner-facing demo runbook with expected outputs was added (`vscode-extension/DEMO-SCRIPT.md`).
+  - Validation: `npm run compile` in `vscode-extension` passed.
+
+## [2026-03-21 15:26 UTC] Codex — DCP-441: Escrow/on-chain launch readiness pack (testnet-executable)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: harden Base Sepolia escrow-chain integration and add executable launch checklist`
+- **Files**: `backend/src/services/escrow-chain.js`, `contracts/scripts/deploy.js`, `contracts/README.md`, `contracts/BASE_SEPOLIA_LAUNCH_CHECKLIST.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Fixed escrow-chain runtime blockers: correct ABI path resolution (`contracts/abis/Escrow.json`), robust ethers fallback loading, contract-compatible oracle proof payload (`jobId32 + provider + amount`), and automatic USDC allowance approval before `depositAndLock`.
+  - Added signer-role separation (`ESCROW_TX_PRIVATE_KEY` optional) while preserving default behavior; added settlement-provider fallback handling and defensive skip logic for invalid claim/cancel contexts.
+  - Updated deploy artifact export to include `usdcAddress` and `oracleAddress` for backend wiring consistency.
+  - Added operator runbook `contracts/BASE_SEPOLIA_LAUNCH_CHECKLIST.md` with exact command order and clearly separated required vs optional secrets for tonight/tomorrow launch window.
+  - Validation complete: `node --check backend/src/services/escrow-chain.js`, `cd contracts && npm run compile`, `cd contracts && npm test` (19 passing).
+
+## [2026-03-21 15:27 UTC] Codex — DCP-308: launch-gate branding blocker removed in renter templates
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: replace lingering DC1 branding string in renter template seed data`
+- **Files**: `app/renter/templates/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Patched launch-review blocker string in template presets (`"DC1 marketplace"` → `"DCP marketplace"`) at `app/renter/templates/page.tsx:145`.
+  - Aligns renter template UI/demo seed text with DCP branding and unblocks DCP-438 re-review path.
+  - Remaining DCP-308 checklist items are board/operator dependencies (deploy batches, VPS env, DNS/HTTPS, SDK publish, launch comms).
+
+## [2026-03-21 15:30 UTC] Codex — DCP-257: Deploy queue board briefing refreshed for launch-gate sequence
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: replace stale 7-batch deploy briefing with current launch-gate deploy order and blocker ownership`
+- **Files**: `docs/reports/2026-03-21-deploy-queue-briefing.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added a new board-facing deploy briefing with the current 11-manifest launch order (`DCP-172` through `DCP-308`) to supersede the older Sprint 7-13 framing.
+  - Linked operator execution path to existing hardened runbook (`docs/ops/launch-window-deploy-runbook.md`) and QA smoke checklist (`docs/qa/post-deploy-checklist.md`).
+  - Explicitly split blockers into board-required (DCP-84, VPS operator-only actions, PM2 host drift) vs agent-fixable (script/runbook/smoke doc improvements).
+  - Added close recommendation to keep operational closure tied to DCP-308 verification evidence instead of legacy queue messaging.
+
+## [2026-03-21 15:31 UTC] Codex — DCP-443 complete + DCP-426 i18n slice (admin jobs detail)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: close renter-template branding blocker and continue admin i18n residual conversion`
+- **Files**: `app/renter/templates/page.tsx` (validated), `app/admin/jobs/detail/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Closed DCP-443 hotfix lane by verifying `app/renter/templates/page.tsx:145` is corrected to `"DCP marketplace"` and no `"DC1 marketplace"` residuals remain in `app/renter/templates` scope.
+  - Continued DCP-426 with a new conversion slice: `app/admin/jobs/detail/page.tsx` now uses `useLanguage()` + `t()` for nav labels, lifecycle labels, actions/confirmations, stat labels, parameter labels, and log viewer copy.
+  - Added EN+AR dictionary entries for `admin.job_detail_fallback.*` in `app/lib/i18n.tsx`.
+  - Validation: `npx tsc --noEmit --incremental false` passes after this slice.
+  - Remaining DCP-426 residual routes: `app/admin/providers/[id]/page.tsx`, `app/admin/renters/[id]/page.tsx`, `app/admin/settings/page.tsx`.
+## [2026-03-21 15:31 UTC] Codex — DCP-442: hotfix `/api/providers/available` 500 via SQL compatibility + fallback query
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: harden providers available query against sqlite compatibility/schema drift`
+- **Files**: `backend/src/routes/providers.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Patched `GET /api/providers/available` to avoid `NULLS LAST` syntax dependency by using portable sort expressions: `(col IS NULL) ASC, col DESC`.
+  - Added guarded fallback query path for `/providers/available` that excludes stricter columns/filters if the primary query throws (e.g., partially migrated schema), preventing status-page hard failure and preserving 200 JSON contract.
+  - Endpoint response contract remains stable (`{ providers, total, online_count, degraded_count, timestamp }`) so `app/status/page.tsx` can recover to green once backend is restarted with this patch.
+
+## [2026-03-21 15:31 UTC] Codex — Paperclip heartbeat processed (no assigned IDE extension work)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox/context check and no-op exit`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory heartbeat sequence start (`GET /api/agents/me/inbox-lite`) and confirmed empty inbox.
+  - Checked agent context (`PAPERCLIP_TASK_ID`, wake reason, approvals) and found no directed task or mention handoff.
+  - Queried company issue list for `todo/backlog`; no assignable IDE-extension issues were available for this agent.
+
+## [2026-03-21 15:37 UTC] Codex — Paperclip heartbeat processed (idle)
+
+- **Commit**: N/A (Paperclip container: git disabled) — chore: heartbeat inbox/backlog scan with no assignable IDE-extension issue
+- **Files**: AGENT_LOG.md
+- **Impact**:
+  - Checked /api/agents/me/inbox-lite first; result was empty.
+  - Reviewed latest AGENT_LOG tail for cross-agent conflict awareness.
+  - Scanned company issues for todo/backlog tasks relevant to IDE extension role; none assignable in this run.
+
+## [2026-03-21 15:40 UTC] Codex — DCP-426 i18n slice: admin provider detail route localized
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: localize admin provider detail route and add EN/AR dictionary coverage`
+- **Files**: `app/admin/providers/[id]/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - `app/admin/providers/[id]/page.tsx`: added `useLanguage()` + `t()` wiring for nav labels, provider status/actions, stat cards, GPU metric labels, account-detail labels, tab labels, table headers/empty states, and overview summary copy.
+  - `app/lib/i18n.tsx`: added EN+AR key block `admin.provider_detail.*` used by the provider detail page.
+  - Validation: `npx tsc --noEmit --incremental false` passes.
+  - DCP-426 residual routes now narrowed to `app/admin/renters/[id]/page.tsx` and `app/admin/settings/page.tsx` (plus previously noted partial cleanup in containers/fleet).
+
+## [2026-03-21 15:42 UTC] Codex — Paperclip heartbeat check (no actionable issue)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat triage and queue check`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory heartbeat inbox check (`GET /api/agents/me/inbox-lite`) — returned empty list.
+  - Queried assigned issues for this agent (`status=todo,in_progress,blocked`) — none assigned.
+  - Queried unassigned backlog/todo pool (`status=todo,backlog`) — no available issues to self-assign.
+  - No code changes made in this heartbeat; waiting for new assignment or mention-triggered wake context.
+
+## [2026-03-21 15:48 UTC] Codex — Paperclip heartbeat processed (idle, no assignable ML-infra issue)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox + backlog scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran required heartbeat start: `GET /api/agents/me/inbox-lite` (empty).
+  - Re-read latest cross-agent activity from `AGENT_LOG.md` to avoid overlap/conflicts.
+  - Scanned `todo/backlog` issue pool via company-scoped endpoint; no unassigned issues available to self-assign.
+  - No source-code changes in this heartbeat.
+
+## [2026-03-21 15:54 UTC] Codex — Paperclip heartbeat processed (idle, briefing refreshed)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat triage + context refresh`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory inbox check (`GET /api/agents/me/inbox-lite`) — empty.
+  - Scanned company `todo/backlog` pool and agent-assigned issue list — no actionable ML-infra issue available.
+  - Refreshed technical context from `DC1-AGENT-BRIEFING.md` (note: `DCP-AGENT-BRIEFING.md` path appears stale/missing in workspace).
+  - No source code changes made this heartbeat.
+
+## [2026-03-21 15:58 UTC] Codex — Paperclip heartbeat triage (DCP-308 remains blocked)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox triage with blocked-task dedup`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory heartbeat start with `GET /api/agents/me/inbox-lite`; only assigned issue is `DCP-308` (`blocked`).
+  - Refreshed cross-agent context from `AGENT_LOG.md` and issue context/comments for `DCP-308`; no new upstream context since the latest blocked update.
+  - No code changes applied in this heartbeat; waiting on board/operator-owned launch-gate actions before further execution.
+
+## [2026-03-21 16:00 UTC] Codex — Paperclip heartbeat processed (idle, no assignable issue)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox/assignment scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed required inbox check (`GET /api/agents/me/inbox-lite`) — empty.
+  - Re-read latest `AGENT_LOG.md` entries for conflict awareness.
+  - Queried both assigned issues (`todo/in_progress/blocked`) and unassigned `todo/backlog`; no actionable issue found for this agent.
+  - No code modifications in this heartbeat.
+
+## [2026-03-21 16:04 UTC] Codex — Paperclip heartbeat triage (blocked dedup, no new context)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat no-op on blocked launch-gate issue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory heartbeat inbox check (`GET /api/agents/me/inbox-lite`) and confirmed only assigned issue is `DCP-308` (`blocked`).
+  - Re-read latest cross-agent updates in `AGENT_LOG.md` and refreshed `DC1-AGENT-BRIEFING.md` context (workspace does not contain `DCP-AGENT-BRIEFING.md`).
+  - Checked latest `DCP-308` comment thread; no new upstream context since 15:27 UTC blocked update, so no duplicate issue comment posted.
+  - No source-code modifications in this heartbeat.
+
+## [2026-03-21 16:06 UTC] Codex — Paperclip heartbeat processed (idle; backlog items assigned elsewhere)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox + assignment audit`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory inbox check (`GET /api/agents/me/inbox-lite`) — empty.
+  - Queried agent-assigned issues (`todo/in_progress/blocked`) — none assigned to this agent.
+  - Queried `todo/backlog` pool — 2 items exist but both are already assigned (no unassigned tasks to self-assign).
+  - No source-code changes in this heartbeat.
+
+## [2026-03-21 16:08 UTC] Codex — Paperclip review heartbeat processed (idle; backlog endpoint error)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: review heartbeat inbox/backlog triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory first-step inbox check (`GET /api/agents/me/inbox-lite`) — empty.
+  - Attempted non-CEO proactive backlog scan (`GET /api/issues?...`) and company-scoped fallback (`GET /api/companies/{companyId}/issues?...`); both unavailable (`missing companyId` on global route, `500 Internal server error` on company route).
+  - No review task was available to checkout; no code changes made this heartbeat.
+
+## [2026-03-21 16:08 UTC] Codex — DCP-434: launch-critical security hardening fixes applied
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: close payment sandbox prod bypass, enforce standup fail-closed auth, tighten payment callback/webhook validation`
+- **Files**: `backend/src/routes/payments.js`, `backend/src/routes/standup.js`, `backend/.env`, `AGENT_LOG.md`
+- **Impact**:
+  - `backend/src/routes/payments.js`:
+    - Disabled `/api/payments/topup-sandbox` in production regardless of gateway key state.
+    - Hardened `callback_url` handling in production to require HTTPS + allowlisted origin (`FRONTEND_URL` + optional `PAYMENT_CALLBACK_ORIGINS`).
+    - Added strict webhook signature format validation (`^[a-f0-9]{64}$`) before `timingSafeEqual`.
+  - `backend/src/routes/standup.js`:
+    - `POST /api/standup/run` now fails closed with `503` when `MC_TOKEN` is unset (no unauthenticated fallback).
+  - `backend/.env`:
+    - Removed embedded concrete token/secret values and replaced with explicit local-dev placeholders (runtime env injection required).
+  - Validation: `node --check backend/src/routes/payments.js` and `node --check backend/src/routes/standup.js` both pass.
+
+## [2026-03-21 16:10 UTC] Codex — Paperclip heartbeat triage (DCP-308 still blocked)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: repeated blocked heartbeat with dedup handling`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Per heartbeat procedure, executed inbox check first (`GET /api/agents/me/inbox-lite`); only assignment remains `DCP-308` (`blocked`).
+  - Refreshed recent cross-agent activity from `AGENT_LOG.md` and checked the latest `DCP-308` comment cursor.
+  - Since no new comments/context were added after the 15:27 UTC blocker note, skipped duplicate issue comment/update.
+  - No code changes made in this cycle.
+## [2026-03-21 16:10 UTC] Codex — DCP-431: payment/webhook hardening + launch-gate integration test refresh
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: enforce payment mode split and strict webhook payload validation; test: refresh launch-gate payment/status checks`
+- **Files**: `backend/src/routes/payments.js`, `backend/tests/integration/payment-flow.test.js`, `backend/tests/integration/launch-health-status.test.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Hardened payment gateway fallback response: `POST /api/payments/topup` now includes `action_required` and only emits `sandbox_hint` when sandbox mode is truly allowed (non-production with no live gateway secret).
+  - Tightened webhook validation (`POST /api/payments/webhook`): rejects missing `event.id`, unsupported status values, and non-SAR currency payloads with clear 400 errors.
+  - Added/updated integration tests for launch-gate coverage:
+    - production-mode split checks for `/api/payments/topup` and `/api/payments/topup-sandbox`
+    - webhook negative-path checks (unsupported status, missing payment id)
+    - `/api/providers/available` launch-status contract assertions (`total`, `online_count`, `degraded_count`, `timestamp`).
+  - Validation run limitations: full Jest integration execution in this container is blocked by `better-sqlite3` native binary ABI mismatch (`NODE_MODULE_VERSION 127` vs runtime `137`); static syntax checks passed for all touched files.

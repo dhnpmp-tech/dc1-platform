@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -83,6 +84,7 @@ const GearIcon = () => (
 )
 
 export default function AdminSettingsPage() {
+  const { t } = useLanguage()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [token, setToken] = useState('')
@@ -150,7 +152,7 @@ export default function AdminSettingsPage() {
       setTeamMembers([
         {
           id: `owner-${Date.now()}`,
-          name: 'Admin User',
+          name: t('admin.settings.default_admin_name'),
           email: 'ops@dcp.sa',
           role: 'owner',
           status: 'active',
@@ -170,16 +172,16 @@ export default function AdminSettingsPage() {
   }, [router])
 
   const navItems = [
-    { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-    { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-    { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-    { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-    { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-    { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-    { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-    { label: 'Fleet', href: '/admin/fleet', icon: <CpuIcon /> },
-    { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-    { label: 'Settings', href: '/admin/settings', icon: <GearIcon /> },
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+    { label: t('nav.settings'), href: '/admin/settings', icon: <GearIcon /> },
   ]
 
   const toFingerprint = (publicKey: string): string => {
@@ -193,11 +195,11 @@ export default function AdminSettingsPage() {
     const label = newSshLabel.trim()
     const publicKey = newSshPublicKey.trim()
     if (!label || !publicKey) {
-      setSshError('Label and public key are required.')
+      setSshError(t('admin.settings.ssh_required'))
       return
     }
     if (!publicKey.startsWith('ssh-')) {
-      setSshError('SSH key must start with ssh-rsa, ssh-ed25519, or similar.')
+      setSshError(t('admin.settings.ssh_invalid_prefix'))
       return
     }
 
@@ -225,7 +227,7 @@ export default function AdminSettingsPage() {
 
   const handleSaveNotifications = () => {
     localStorage.setItem('dc1_admin_notif', JSON.stringify(notificationPrefs))
-    setNotificationMessage('Notification preferences saved.')
+    setNotificationMessage(t('admin.settings.notifications_saved'))
     setTimeout(() => setNotificationMessage(''), 2500)
   }
 
@@ -234,7 +236,7 @@ export default function AdminSettingsPage() {
     const name = inviteName.trim()
     const email = inviteEmail.trim()
     if (!name || !email) {
-      setTeamMessage('Name and email are required.')
+      setTeamMessage(t('admin.settings.team_required'))
       return
     }
 
@@ -254,7 +256,7 @@ export default function AdminSettingsPage() {
     setInviteName('')
     setInviteEmail('')
     setInviteRole('member')
-    setTeamMessage('Invitation staged. Backend invite endpoint pending.')
+    setTeamMessage(t('admin.settings.invite_staged'))
   }
 
   const handleRemoveMember = (id: string) => {
@@ -265,7 +267,7 @@ export default function AdminSettingsPage() {
 
   if (loading) {
     return (
-      <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+      <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full" />
         </div>
@@ -274,86 +276,86 @@ export default function AdminSettingsPage() {
   }
 
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
       <div className="space-y-8 max-w-4xl">
         <div>
-          <h1 className="text-3xl font-bold text-dc1-text-primary">Admin Settings</h1>
-          <p className="text-dc1-text-secondary text-sm mt-1">Manage control-plane account, security keys, and team operations.</p>
+          <h1 className="text-3xl font-bold text-dc1-text-primary">{t('admin.settings.title')}</h1>
+          <p className="text-dc1-text-secondary text-sm mt-1">{t('admin.settings.subtitle')}</p>
         </div>
 
         <div className="card p-6 space-y-4">
-          <h2 className="section-heading">Account Information</h2>
+          <h2 className="section-heading">{t('admin.settings.account_info')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Name</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">Admin User</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.settings.name')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('admin.settings.default_admin_name')}</p>
             </div>
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Email</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.settings.email')}</p>
               <p className="text-sm text-dc1-text-primary mt-1">ops@dcp.sa</p>
             </div>
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Role</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">Platform Admin</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.settings.role')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('admin.settings.platform_admin')}</p>
             </div>
           </div>
           <p className="text-xs text-dc1-text-muted">
-            Avatar/logo upload UI is queued for backend object-storage endpoint. Current admin identity is organization-scoped.
+            {t('admin.settings.avatar_note')}
           </p>
         </div>
 
         <div className="card p-6 space-y-4">
-          <h2 className="section-heading">Billing and Payout Controls</h2>
+          <h2 className="section-heading">{t('admin.settings.billing_controls')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Top-up processor</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">Moyasar (SAR)</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.settings.topup_processor')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('admin.settings.topup_processor_value')}</p>
             </div>
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Provider payout window</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">Daily reconciliation</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.settings.payout_window')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('admin.settings.payout_window_value')}</p>
             </div>
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Invoice retention</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">7 years (PDPL)</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.settings.invoice_retention')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('admin.settings.invoice_retention_value')}</p>
             </div>
           </div>
         </div>
 
         <div className="card p-6 space-y-4">
-          <h2 className="section-heading">API Keys</h2>
+          <h2 className="section-heading">{t('admin.settings.api_keys')}</h2>
           <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary space-y-1">
             <div className="flex justify-between gap-3">
-              <span>Primary token</span>
-              <span className="text-dc1-text-primary">Loaded from secure local session</span>
+              <span>{t('admin.settings.primary_token')}</span>
+              <span className="text-dc1-text-primary">{t('admin.settings.primary_token_value')}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span>Last used</span>
-              <span className="text-dc1-text-primary">Current admin browser session</span>
+              <span>{t('admin.settings.last_used')}</span>
+              <span className="text-dc1-text-primary">{t('admin.settings.last_used_value')}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span>Token preview</span>
-              <span className="text-dc1-text-primary font-mono">{token ? `${token.slice(0, 8)}...${token.slice(-4)}` : 'not loaded'}</span>
+              <span>{t('admin.settings.token_preview')}</span>
+              <span className="text-dc1-text-primary font-mono">{token ? `${token.slice(0, 8)}...${token.slice(-4)}` : t('admin.settings.not_loaded')}</span>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setApiMessage('Create additional admin keys is pending backend endpoint.')}
+              onClick={() => setApiMessage(t('admin.settings.api_create_pending'))}
               className="btn btn-outline text-xs px-3"
             >
-              Create Key
+              {t('admin.settings.create_key')}
             </button>
             <button
-              onClick={() => setApiMessage('Rotate admin key requires board-issued token rollout. Pending backend endpoint.')}
+              onClick={() => setApiMessage(t('admin.settings.api_rotate_pending'))}
               className="btn btn-outline text-xs px-3"
             >
-              Rotate Key
+              {t('admin.settings.rotate_key')}
             </button>
             <button
-              onClick={() => setApiMessage('Revoke admin key is pending backend endpoint.')}
+              onClick={() => setApiMessage(t('admin.settings.api_revoke_pending'))}
               className="btn btn-outline text-xs px-3"
             >
-              Revoke Key
+              {t('admin.settings.revoke_key')}
             </button>
           </div>
           {apiMessage && <p className="text-xs text-dc1-text-muted">{apiMessage}</p>}
@@ -361,34 +363,34 @@ export default function AdminSettingsPage() {
 
         <div className="card p-6 space-y-4">
           <div>
-            <h2 className="section-heading">SSH Keys</h2>
-            <p className="text-dc1-text-muted text-sm mt-1">Manage SSH keys used for infrastructure access and automation.</p>
+            <h2 className="section-heading">{t('admin.settings.ssh_keys')}</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">{t('admin.settings.ssh_keys_subtitle')}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <input
               type="text"
               value={newSshLabel}
               onChange={(e) => setNewSshLabel(e.target.value)}
-              placeholder="Label (ops-laptop)"
+              placeholder={t('admin.settings.ssh_label_placeholder')}
               className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
             />
             <input
               type="text"
               value={newSshPublicKey}
               onChange={(e) => setNewSshPublicKey(e.target.value)}
-              placeholder="ssh-ed25519 AAAAC3Nz..."
+              placeholder={t('admin.settings.ssh_key_placeholder')}
               className="sm:col-span-2 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
             />
           </div>
           {sshError && <p className="text-xs text-status-error">{sshError}</p>}
           <div className="flex justify-end">
             <button onClick={handleAddSshKey} className="btn btn-primary text-sm min-h-[44px]">
-              Add SSH Key
+              {t('admin.settings.add_ssh_key')}
             </button>
           </div>
           <div className="space-y-2">
             {sshKeys.length === 0 ? (
-              <p className="text-xs text-dc1-text-muted">No SSH keys added yet.</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.settings.no_ssh_keys')}</p>
             ) : (
               sshKeys.map((key) => (
                 <div key={key.id} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
@@ -397,14 +399,14 @@ export default function AdminSettingsPage() {
                       <p className="text-sm text-dc1-text-primary font-medium">{key.label}</p>
                       <p className="text-xs text-dc1-text-muted">{key.fingerprint}</p>
                       <p className="text-xs text-dc1-text-muted mt-1">
-                        Added {new Date(key.createdAt).toLocaleDateString()}
+                        {`${t('admin.settings.added')} ${new Date(key.createdAt).toLocaleDateString()}`}
                       </p>
                     </div>
                     <button
                       onClick={() => handleRemoveSshKey(key.id)}
                       className="px-3 py-1.5 rounded border border-status-error/30 text-status-error text-xs hover:bg-status-error/10"
                     >
-                      Remove
+                      {t('admin.settings.remove')}
                     </button>
                   </div>
                 </div>
@@ -415,14 +417,14 @@ export default function AdminSettingsPage() {
 
         <div className="card p-6 space-y-5">
           <div>
-            <h2 className="section-heading">Notifications</h2>
-            <p className="text-dc1-text-muted text-sm mt-1">Set escalation channels and alert thresholds for operations.</p>
+            <h2 className="section-heading">{t('admin.settings.notifications')}</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">{t('admin.settings.notifications_subtitle')}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
-              { key: 'email', label: 'Email' },
-              { key: 'telegram', label: 'Telegram' },
-              { key: 'webhook', label: 'Webhook' },
+              { key: 'email', label: t('admin.settings.channel_email') },
+              { key: 'telegram', label: t('admin.settings.channel_telegram') },
+              { key: 'webhook', label: t('admin.settings.channel_webhook') },
             ].map((channel) => (
               <label
                 key={channel.key}
@@ -442,7 +444,7 @@ export default function AdminSettingsPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-dc1-text-muted block mb-1">Failed jobs alert threshold</label>
+              <label className="text-xs text-dc1-text-muted block mb-1">{t('admin.settings.failed_jobs_threshold')}</label>
               <input
                 type="number"
                 min={1}
@@ -457,7 +459,7 @@ export default function AdminSettingsPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-dc1-text-muted block mb-1">Stale provider threshold (minutes)</label>
+              <label className="text-xs text-dc1-text-muted block mb-1">{t('admin.settings.stale_provider_threshold')}</label>
               <input
                 type="number"
                 min={1}
@@ -475,29 +477,29 @@ export default function AdminSettingsPage() {
           {notificationMessage && <p className="text-xs text-status-success">{notificationMessage}</p>}
           <div className="flex justify-end">
             <button onClick={handleSaveNotifications} className="btn btn-primary text-sm min-h-[44px]">
-              Save Notifications
+              {t('admin.settings.save_notifications')}
             </button>
           </div>
         </div>
 
         <div className="card p-6 space-y-4">
           <div>
-            <h2 className="section-heading">Team Settings</h2>
-            <p className="text-dc1-text-muted text-sm mt-1">Invite and manage admin users and scoped roles.</p>
+            <h2 className="section-heading">{t('admin.settings.team_settings')}</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">{t('admin.settings.team_settings_subtitle')}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <input
               type="text"
               value={inviteName}
               onChange={(e) => setInviteName(e.target.value)}
-              placeholder="Name"
+              placeholder={t('admin.settings.name')}
               className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
             />
             <input
               type="email"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="admin@company.com"
+              placeholder={t('admin.settings.email_placeholder')}
               className="sm:col-span-2 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
             />
             <select
@@ -505,14 +507,14 @@ export default function AdminSettingsPage() {
               onChange={(e) => setInviteRole(e.target.value as TeamMemberItem['role'])}
               className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
             >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-              <option value="owner">Owner</option>
+              <option value="member">{t('admin.settings.role_member')}</option>
+              <option value="admin">{t('admin.settings.role_admin')}</option>
+              <option value="owner">{t('admin.settings.role_owner')}</option>
             </select>
           </div>
           <div className="flex justify-end">
             <button onClick={handleInviteMember} className="btn btn-primary text-sm min-h-[44px]">
-              Invite Admin
+              {t('admin.settings.invite_admin')}
             </button>
           </div>
           {teamMessage && <p className="text-xs text-dc1-text-muted">{teamMessage}</p>}
@@ -523,7 +525,7 @@ export default function AdminSettingsPage() {
                   <p className="text-sm text-dc1-text-primary font-medium">{member.name}</p>
                   <p className="text-xs text-dc1-text-muted">{member.email}</p>
                   <p className="text-xs text-dc1-text-muted mt-1">
-                    {member.role} • {member.status}
+                    {`${t(`admin.settings.role_${member.role}`)} • ${t(`admin.settings.status_${member.status}`)}`}
                   </p>
                 </div>
                 {member.role !== 'owner' && (
@@ -531,7 +533,7 @@ export default function AdminSettingsPage() {
                     onClick={() => handleRemoveMember(member.id)}
                     className="px-3 py-1.5 rounded border border-status-error/30 text-status-error text-xs hover:bg-status-error/10"
                   >
-                    Remove
+                    {t('admin.settings.remove')}
                   </button>
                 )}
               </div>

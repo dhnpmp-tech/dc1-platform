@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import StatCard from '../../../components/ui/StatCard'
+import { useLanguage } from '../../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -18,18 +19,6 @@ const CpuIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" 
 const ContainerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>)
 const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
-
-const navItems = [
-  { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-  { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-  { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-  { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-  { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-  { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-  { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-  { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-  { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-]
 
 function statusToBadge(status: string): 'online' | 'offline' | 'active' | 'inactive' | 'pending' | 'running' | 'completed' | 'failed' | 'paused' | 'warning' {
   switch (status) {
@@ -78,6 +67,7 @@ function parseJsonlLogs(raw: unknown) {
 }
 
 export default function AdminJobDetailFallbackPage() {
+  const { t } = useLanguage()
   const router = useRouter()
   const [jobId, setJobId] = useState('')
   const [queryReady, setQueryReady] = useState(false)
@@ -88,6 +78,18 @@ export default function AdminJobDetailFallbackPage() {
   const [refreshTick, setRefreshTick] = useState(0)
   const [cancelLoading, setCancelLoading] = useState(false)
   const [requeueLoading, setRequeueLoading] = useState(false)
+
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+  ]
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -106,7 +108,7 @@ export default function AdminJobDetailFallbackPage() {
       return
     }
     if (!jobId) {
-      setError('Missing job id')
+      setError(t('admin.job_detail_fallback.missing_job_id'))
       setLoading(false)
       return
     }
@@ -127,20 +129,20 @@ export default function AdminJobDetailFallbackPage() {
         return
       }
       if (!res.ok) {
-        setError(body?.error || 'Failed to load job')
+        setError(body?.error || t('admin.job_detail_fallback.load_failed'))
         return
       }
       setJob(body.job || null)
       setProvider(body.provider || null)
     } catch (_e) {
-      setError('Failed to load job')
+      setError(t('admin.job_detail_fallback.load_failed'))
     } finally {
       setLoading(false)
     }
   }
 
   const handleCancel = async () => {
-    if (!job?.id || !confirm('Cancel this running job?')) return
+    if (!job?.id || !confirm(t('admin.job_detail_fallback.confirm_cancel'))) return
     setCancelLoading(true)
     try {
       const res = await fetch(`${API_BASE}/admin/jobs/${encodeURIComponent(job.id)}/cancel`, {
@@ -149,19 +151,19 @@ export default function AdminJobDetailFallbackPage() {
       })
       const body = await res.json()
       if (!res.ok) {
-        setError(body?.error || 'Failed to cancel job')
+        setError(body?.error || t('admin.job_detail_fallback.cancel_failed'))
       } else {
         setRefreshTick((prev) => prev + 1)
       }
     } catch (_e) {
-      setError('Failed to cancel job')
+      setError(t('admin.job_detail_fallback.cancel_failed'))
     } finally {
       setCancelLoading(false)
     }
   }
 
   const handleRequeue = async () => {
-    if (!job?.id || !confirm('Re-queue this failed job?')) return
+    if (!job?.id || !confirm(t('admin.job_detail_fallback.confirm_requeue'))) return
     setRequeueLoading(true)
     try {
       const res = await fetch(`${API_BASE}/admin/jobs/${encodeURIComponent(job.id)}/requeue`, {
@@ -170,12 +172,12 @@ export default function AdminJobDetailFallbackPage() {
       })
       const body = await res.json()
       if (!res.ok) {
-        setError(body?.error || 'Failed to re-queue job')
+        setError(body?.error || t('admin.job_detail_fallback.requeue_failed'))
       } else {
         setRefreshTick((prev) => prev + 1)
       }
     } catch (_e) {
-      setError('Failed to re-queue job')
+      setError(t('admin.job_detail_fallback.requeue_failed'))
     } finally {
       setRequeueLoading(false)
     }
@@ -191,12 +193,12 @@ export default function AdminJobDetailFallbackPage() {
   const timeline = useMemo(() => {
     if (!job) return []
     return [
-      { key: 'submitted', label: 'Submitted', at: job.submitted_at || job.created_at || null, done: Boolean(job.submitted_at || job.created_at) },
-      { key: 'assigned', label: 'Assigned', at: job.assigned_at || job.picked_up_at || job.started_at || null, done: Boolean(job.assigned_at || job.picked_up_at || job.started_at) },
-      { key: 'running', label: 'Running', at: job.started_at || null, done: ['running', 'completed', 'failed', 'cancelled'].includes(job.status) || Boolean(job.started_at) },
-      { key: 'finished', label: job.status === 'failed' ? 'Failed' : 'Completed', at: job.completed_at || null, done: ['completed', 'failed', 'cancelled'].includes(job.status) },
+      { key: 'submitted', label: t('admin.job_detail_fallback.submitted'), at: job.submitted_at || job.created_at || null, done: Boolean(job.submitted_at || job.created_at) },
+      { key: 'assigned', label: t('admin.job_detail_fallback.assigned'), at: job.assigned_at || job.picked_up_at || job.started_at || null, done: Boolean(job.assigned_at || job.picked_up_at || job.started_at) },
+      { key: 'running', label: t('admin.job_detail_fallback.running'), at: job.started_at || null, done: ['running', 'completed', 'failed', 'cancelled'].includes(job.status) || Boolean(job.started_at) },
+      { key: 'finished', label: job.status === 'failed' ? t('admin.job_detail_fallback.failed') : t('admin.job_detail_fallback.completed'), at: job.completed_at || null, done: ['completed', 'failed', 'cancelled'].includes(job.status) },
     ]
-  }, [job])
+  }, [job, t])
 
   const logEntries = parseJsonlLogs(job?.logs_jsonl)
   const canCancel = job?.status === 'running' || job?.status === 'assigned'
@@ -206,15 +208,15 @@ export default function AdminJobDetailFallbackPage() {
     <DashboardLayout navItems={navItems} role="admin" userName="Admin">
       <div className="mb-6">
         <Link href="/admin/jobs" className="text-sm text-dc1-text-secondary hover:text-dc1-amber">
-          &larr; Back to Jobs
+          &larr; {t('admin.job_detail_fallback.back_to_jobs')}
         </Link>
       </div>
 
-      {loading && <div className="text-dc1-text-secondary">Loading job detail...</div>}
+      {loading && <div className="text-dc1-text-secondary">{t('admin.job_detail_fallback.loading')}</div>}
 
       {!loading && (error || !job) && (
         <div className="card">
-          <p className="text-red-400">{error || 'Job not found'}</p>
+          <p className="text-red-400">{error || t('admin.job_detail_fallback.not_found')}</p>
         </div>
       )}
 
@@ -224,7 +226,7 @@ export default function AdminJobDetailFallbackPage() {
             <div>
               <h1 className="mb-2 text-2xl sm:text-3xl font-bold text-dc1-text-primary font-mono">{job.job_id || `Job #${job.id}`}</h1>
               <p className="text-dc1-text-secondary">
-                Renter: {job.renter_id || '—'} · Provider: {provider?.name || job.provider_id || '—'} · GPU: {provider?.gpu_name_detected || provider?.gpu_model || 'Unknown'}
+                {t('admin.job_detail_fallback.renter')}: {job.renter_id || '—'} · {t('admin.job_detail_fallback.provider')}: {provider?.name || job.provider_id || '—'} · {t('admin.job_detail_fallback.gpu')}: {provider?.gpu_name_detected || provider?.gpu_model || t('admin.job_detail_fallback.unknown')}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -235,7 +237,7 @@ export default function AdminJobDetailFallbackPage() {
                   disabled={cancelLoading}
                   className="rounded bg-red-600/20 px-3 py-1.5 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
                 >
-                  {cancelLoading ? 'Cancelling...' : 'Cancel'}
+                  {cancelLoading ? t('admin.job_detail_fallback.cancelling') : t('admin.job_detail_fallback.cancel')}
                 </button>
               )}
               {canRequeue && (
@@ -244,21 +246,21 @@ export default function AdminJobDetailFallbackPage() {
                   disabled={requeueLoading}
                   className="rounded bg-dc1-amber/20 px-3 py-1.5 text-sm text-dc1-amber hover:bg-dc1-amber/30 disabled:opacity-50"
                 >
-                  {requeueLoading ? 'Re-queuing...' : 'Re-queue'}
+                  {requeueLoading ? t('admin.job_detail_fallback.requeueing') : t('admin.job_detail_fallback.requeue')}
                 </button>
               )}
             </div>
           </div>
 
           <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <StatCard label="Total Cost" value={`${(totalHalala / 100).toFixed(2)} SAR`} accent="amber" />
-            <StatCard label="DCP Fee (25%)" value={`${(dcpFeeHalala / 100).toFixed(2)} SAR`} accent="info" />
-            <StatCard label="Provider Earned (75%)" value={`${(providerHalala / 100).toFixed(2)} SAR`} accent="success" />
+            <StatCard label={t('admin.job_detail_fallback.total_cost')} value={`${(totalHalala / 100).toFixed(2)} ${t('common.sar')}`} accent="amber" />
+            <StatCard label={t('admin.job_detail_fallback.dcp_fee')} value={`${(dcpFeeHalala / 100).toFixed(2)} ${t('common.sar')}`} accent="info" />
+            <StatCard label={t('admin.job_detail_fallback.provider_earned')} value={`${(providerHalala / 100).toFixed(2)} ${t('common.sar')}`} accent="success" />
           </div>
 
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="card">
-              <h2 className="mb-3 text-lg font-semibold text-dc1-text-primary">Lifecycle Timeline</h2>
+              <h2 className="mb-3 text-lg font-semibold text-dc1-text-primary">{t('admin.job_detail_fallback.lifecycle_timeline')}</h2>
               <div className="space-y-3">
                 {timeline.map((step) => (
                   <div key={step.key} className="flex items-start gap-3">
@@ -273,24 +275,24 @@ export default function AdminJobDetailFallbackPage() {
             </div>
 
             <div className="card">
-              <h2 className="mb-3 text-lg font-semibold text-dc1-text-primary">Job Parameters</h2>
+              <h2 className="mb-3 text-lg font-semibold text-dc1-text-primary">{t('admin.job_detail_fallback.job_parameters')}</h2>
               <div className="grid grid-cols-1 gap-3 text-sm">
-                <div><span className="text-dc1-text-muted">Model</span><div className="text-dc1-text-primary">{job.model || '—'}</div></div>
-                <div><span className="text-dc1-text-muted">Max Tokens</span><div className="text-dc1-text-primary">{maxTokensValue}</div></div>
-                <div><span className="text-dc1-text-muted">Prompt Preview</span><div className="text-dc1-text-primary break-words">{promptPreview}</div></div>
+                <div><span className="text-dc1-text-muted">{t('admin.job_detail_fallback.model')}</span><div className="text-dc1-text-primary">{job.model || '—'}</div></div>
+                <div><span className="text-dc1-text-muted">{t('admin.job_detail_fallback.max_tokens')}</span><div className="text-dc1-text-primary">{maxTokensValue}</div></div>
+                <div><span className="text-dc1-text-muted">{t('admin.job_detail_fallback.prompt_preview')}</span><div className="text-dc1-text-primary break-words">{promptPreview}</div></div>
               </div>
             </div>
           </div>
 
           <div className="card">
-            <h2 className="mb-3 text-lg font-semibold text-dc1-text-primary">Log Viewer</h2>
+            <h2 className="mb-3 text-lg font-semibold text-dc1-text-primary">{t('admin.job_detail_fallback.log_viewer')}</h2>
             {logEntries.length === 0 ? (
-              <p className="text-sm text-dc1-text-secondary">No logs available for this job.</p>
+              <p className="text-sm text-dc1-text-secondary">{t('admin.job_detail_fallback.no_logs')}</p>
             ) : (
               <div className="max-h-96 overflow-y-auto rounded bg-dc1-dark p-3">
                 {logEntries.map((entry, idx) => {
                   const line = typeof entry.line === 'string' ? entry.line : JSON.stringify(entry)
-                  const level = typeof entry.level === 'string' ? entry.level.toUpperCase() : 'INFO'
+                  const level = typeof entry.level === 'string' ? entry.level.toUpperCase() : t('admin.job_detail_fallback.info')
                   return (
                     <div key={idx} className="mb-1 font-mono text-xs text-dc1-text-secondary">
                       <span className="text-dc1-amber">[{level}]</span> {line}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -44,7 +45,7 @@ function halalToSar(halala: number): string {
 }
 
 function maskIban(iban: string): string {
-  if (!iban) return '—'
+  if (!iban) return '-'
   if (iban.length <= 8) return iban
   const head = iban.slice(0, 4)
   const tail = iban.slice(-4)
@@ -60,11 +61,11 @@ function isWithinLast30Days(dateIso: string | null): boolean {
   return Date.now() - dateMs <= thirtyDaysMs
 }
 
-function statusLabel(status: WdStatus): string {
-  if (status === 'paid') return 'Completed'
-  if (status === 'failed') return 'Rejected'
-  if (status === 'processing') return 'Processing'
-  return 'Pending'
+function statusLabel(status: WdStatus, t: (key: string) => string): string {
+  if (status === 'paid') return t('admin.withdrawals.status.completed')
+  if (status === 'failed') return t('admin.withdrawals.status.rejected')
+  if (status === 'processing') return t('admin.withdrawals.status.processing')
+  return t('admin.withdrawals.status.pending')
 }
 
 function statusBadge(status: WdStatus): 'pending' | 'active' | 'completed' | 'failed' {
@@ -76,6 +77,7 @@ function statusBadge(status: WdStatus): 'pending' | 'active' | 'completed' | 'fa
 
 export default function WithdrawalsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [token, setToken] = useState<string | null>(null)
   const [summary, setSummary] = useState<Summary>({})
   const [pendingWithdrawals, setPendingWithdrawals] = useState<WithdrawalRequest[]>([])
@@ -120,7 +122,7 @@ export default function WithdrawalsPage() {
       }
 
       if (!pendingRes.ok || !paidRes.ok || !failedRes.ok) {
-        setErrorMsg('Failed to load withdrawals')
+        setErrorMsg(t('admin.withdrawals.failed_load'))
         return
       }
 
@@ -147,11 +149,11 @@ export default function WithdrawalsPage() {
       setHistoryWithdrawals(history)
     } catch (error) {
       console.error(error)
-      setErrorMsg('Network error while loading withdrawals')
+      setErrorMsg(t('admin.withdrawals.network_load_error'))
     } finally {
       setLoading(false)
     }
-  }, [router, token])
+  }, [router, token, t])
 
   useEffect(() => {
     fetchWithdrawals()
@@ -183,7 +185,7 @@ export default function WithdrawalsPage() {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
-        setErrorMsg(errorBody.error || 'Failed to update withdrawal')
+        setErrorMsg(errorBody.error || t('admin.withdrawals.failed_update'))
         return
       }
 
@@ -192,46 +194,46 @@ export default function WithdrawalsPage() {
       await fetchWithdrawals()
     } catch (error) {
       console.error(error)
-      setErrorMsg('Network error while updating withdrawal')
+      setErrorMsg(t('admin.withdrawals.network_update_error'))
     } finally {
       setActionLoading(null)
     }
-  }, [fetchWithdrawals, router, token])
+  }, [fetchWithdrawals, router, token, t])
 
   const pendingCount = summary.pending_count || 0
   const pendingTotalHalala = summary.pending_total_halala || 0
   const paidThisMonthHalala = summary.paid_this_month_halala || 0
 
   const navItems = useMemo(() => [
-    { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-    { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-    { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-    { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-    { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-    { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon />, badge: pendingCount > 0 },
-    { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-    { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-    { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-  ], [pendingCount])
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon />, badge: pendingCount > 0 },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+  ], [pendingCount, t])
 
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
       <div className="space-y-8">
         <div>
-          <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Withdrawals</h1>
-          <p className="text-dc1-text-secondary">Review pending provider withdrawals and approve payouts.</p>
+          <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('admin.withdrawals.title')}</h1>
+          <p className="text-dc1-text-secondary">{t('admin.withdrawals.subtitle')}</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <StatCard
-            label="Total Pending"
-            value={`${pendingCount} · ${halalToSar(pendingTotalHalala)} SAR`}
+            label={t('admin.withdrawals.total_pending')}
+            value={`${pendingCount} · ${halalToSar(pendingTotalHalala)} ${t('common.sar')}`}
             accent="amber"
             icon={<WalletIcon />}
           />
           <StatCard
-            label="Completed This Month"
-            value={`${halalToSar(paidThisMonthHalala)} SAR`}
+            label={t('admin.withdrawals.completed_this_month')}
+            value={`${halalToSar(paidThisMonthHalala)} ${t('common.sar')}`}
             accent="success"
           />
         </div>
@@ -244,30 +246,30 @@ export default function WithdrawalsPage() {
 
         <div className="card">
           <div className="px-6 pt-6 pb-2">
-            <h2 className="text-lg font-semibold text-dc1-text-primary">Pending Withdrawals</h2>
+            <h2 className="text-lg font-semibold text-dc1-text-primary">{t('admin.withdrawals.pending_withdrawals')}</h2>
           </div>
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="px-6 pb-6 text-dc1-text-secondary">Loading...</div>
+              <div className="px-6 pb-6 text-dc1-text-secondary">{t('common.loading')}</div>
             ) : (
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Provider Email</th>
-                    <th>IBAN</th>
-                    <th>Amount (SAR)</th>
-                    <th>Requested</th>
-                    <th>Actions</th>
+                    <th>{t('admin.withdrawals.provider_email')}</th>
+                    <th>{t('admin.withdrawals.iban')}</th>
+                    <th>{t('admin.withdrawals.amount_sar')}</th>
+                    <th>{t('admin.withdrawals.requested')}</th>
+                    <th>{t('admin.jobs.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pendingWithdrawals.map((withdrawal) => (
                     <tr key={withdrawal.id}>
-                      <td className="text-sm text-dc1-text-primary">{withdrawal.provider_email || '—'}</td>
+                      <td className="text-sm text-dc1-text-primary">{withdrawal.provider_email || t('admin.withdrawals.na')}</td>
                       <td className="font-mono text-xs text-dc1-text-secondary">{maskIban(withdrawal.iban)}</td>
                       <td className="font-semibold text-dc1-text-primary">{halalToSar(withdrawal.amount_halala)}</td>
                       <td className="text-xs text-dc1-text-secondary">
-                        {withdrawal.created_at ? new Date(withdrawal.created_at).toLocaleString() : '—'}
+                        {withdrawal.created_at ? new Date(withdrawal.created_at).toLocaleString() : t('admin.withdrawals.na')}
                       </td>
                       <td>
                         <div className="flex gap-2">
@@ -276,7 +278,7 @@ export default function WithdrawalsPage() {
                             disabled={actionLoading === withdrawal.id}
                             className="text-xs px-2.5 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 font-medium"
                           >
-                            {actionLoading === withdrawal.id ? '...' : 'Approve'}
+                            {actionLoading === withdrawal.id ? '...' : t('admin.withdrawals.approve')}
                           </button>
                           <button
                             onClick={() => {
@@ -286,7 +288,7 @@ export default function WithdrawalsPage() {
                             disabled={actionLoading === withdrawal.id}
                             className="text-xs px-2.5 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50 font-medium"
                           >
-                            Reject
+                            {t('admin.withdrawals.reject')}
                           </button>
                         </div>
                       </td>
@@ -295,7 +297,7 @@ export default function WithdrawalsPage() {
                   {pendingWithdrawals.length === 0 && (
                     <tr>
                       <td colSpan={5} className="text-center text-dc1-text-muted py-10">
-                        No pending withdrawals
+                        {t('admin.withdrawals.no_pending')}
                       </td>
                     </tr>
                   )}
@@ -307,40 +309,40 @@ export default function WithdrawalsPage() {
 
         <div className="card">
           <div className="px-6 pt-6 pb-2">
-            <h2 className="text-lg font-semibold text-dc1-text-primary">Completed & Rejected (Last 30 Days)</h2>
+            <h2 className="text-lg font-semibold text-dc1-text-primary">{t('admin.withdrawals.completed_rejected_30d')}</h2>
           </div>
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="px-6 pb-6 text-dc1-text-secondary">Loading...</div>
+              <div className="px-6 pb-6 text-dc1-text-secondary">{t('common.loading')}</div>
             ) : (
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Provider Email</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Date</th>
-                    <th>Admin Note</th>
+                    <th>{t('admin.withdrawals.provider_email')}</th>
+                    <th>{t('admin.withdrawals.amount')}</th>
+                    <th>{t('table.status')}</th>
+                    <th>{t('admin.withdrawals.date')}</th>
+                    <th>{t('admin.withdrawals.admin_note')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {historyWithdrawals.map((withdrawal) => (
                     <tr key={withdrawal.id}>
-                      <td className="text-sm text-dc1-text-primary">{withdrawal.provider_email || '—'}</td>
-                      <td className="font-semibold text-dc1-text-primary">{halalToSar(withdrawal.amount_halala)} SAR</td>
+                      <td className="text-sm text-dc1-text-primary">{withdrawal.provider_email || t('admin.withdrawals.na')}</td>
+                      <td className="font-semibold text-dc1-text-primary">{halalToSar(withdrawal.amount_halala)} {t('common.sar')}</td>
                       <td>
-                        <StatusBadge status={statusBadge(withdrawal.status)} label={statusLabel(withdrawal.status)} />
+                        <StatusBadge status={statusBadge(withdrawal.status)} label={statusLabel(withdrawal.status, t)} />
                       </td>
                       <td className="text-xs text-dc1-text-secondary">
-                        {withdrawal.processed_at ? new Date(withdrawal.processed_at).toLocaleString() : '—'}
+                        {withdrawal.processed_at ? new Date(withdrawal.processed_at).toLocaleString() : t('admin.withdrawals.na')}
                       </td>
-                      <td className="text-xs text-dc1-text-muted max-w-xs truncate">{withdrawal.admin_note || '—'}</td>
+                      <td className="text-xs text-dc1-text-muted max-w-xs truncate">{withdrawal.admin_note || t('admin.withdrawals.na')}</td>
                     </tr>
                   ))}
                   {historyWithdrawals.length === 0 && (
                     <tr>
                       <td colSpan={5} className="text-center text-dc1-text-muted py-10">
-                        No completed or rejected withdrawals in the last 30 days
+                        {t('admin.withdrawals.no_history_30d')}
                       </td>
                     </tr>
                   )}
@@ -354,17 +356,17 @@ export default function WithdrawalsPage() {
       {rejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-dc1-surface-l1 border border-dc1-border rounded-xl p-6 w-full max-w-md shadow-xl">
-            <h2 className="text-lg font-bold text-dc1-text-primary mb-1">Reject Withdrawal</h2>
+            <h2 className="text-lg font-bold text-dc1-text-primary mb-1">{t('admin.withdrawals.reject_modal_title')}</h2>
             <p className="text-sm text-dc1-text-secondary mb-4">
-              Enter a reason for rejecting this withdrawal request.
+              {t('admin.withdrawals.reject_modal_subtitle')}
             </p>
 
             <label className="block text-sm font-medium text-dc1-text-primary mb-2">
-              Reason <span className="text-red-400">*</span>
+              {t('admin.withdrawals.reason')} <span className="text-red-400">*</span>
             </label>
             <textarea
               rows={3}
-              placeholder="Reason for rejection"
+              placeholder={t('admin.withdrawals.reason_placeholder')}
               value={rejectReason}
               onChange={(event) => setRejectReason(event.target.value)}
               className="input w-full text-sm resize-none mb-4"
@@ -379,12 +381,12 @@ export default function WithdrawalsPage() {
                 }}
                 className="px-4 py-2 text-sm rounded bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary border border-dc1-border"
               >
-                Cancel
+                {t('admin.jobs.cancel')}
               </button>
               <button
                 onClick={() => {
                   if (!rejectReason.trim()) {
-                    setErrorMsg('Rejection reason is required')
+                    setErrorMsg(t('admin.withdrawals.reason_required'))
                     return
                   }
                   handlePatch(rejectModal.id, 'rejected', rejectReason.trim())
@@ -392,7 +394,7 @@ export default function WithdrawalsPage() {
                 disabled={actionLoading === rejectModal.id}
                 className="px-4 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 font-medium"
               >
-                {actionLoading === rejectModal.id ? 'Rejecting...' : 'Confirm Rejection'}
+                {actionLoading === rejectModal.id ? t('admin.withdrawals.rejecting') : t('admin.withdrawals.confirm_rejection')}
               </button>
             </div>
           </div>

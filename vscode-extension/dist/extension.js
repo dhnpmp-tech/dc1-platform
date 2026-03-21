@@ -58,9 +58,9 @@ exports.JOB_TYPES = [
 ];
 class DC1Client {
     get apiBase() {
-        return vscode.workspace.getConfiguration('dc1').get('apiBase', 'http://76.13.179.86:8083');
+        return vscode.workspace.getConfiguration('dc1').get('apiBase', 'https://api.dcp.sa');
     }
-    request(method, path, headers = {}, body) {
+    request(method, path, headers = {}, body, timeoutMs = 15000) {
         return new Promise((resolve, reject) => {
             const url = new URL(this.apiBase + path);
             const isHttps = url.protocol === 'https:';
@@ -72,7 +72,7 @@ class DC1Client {
                 method,
                 headers: {
                     'Content-Type': 'application/json',
-                    'User-Agent': 'DCP-VSCode-Extension/0.3.0',
+                    'User-Agent': 'DCP-VSCode-Extension/0.4.0',
                     ...headers,
                 },
                 // Allow self-signed certs on the dev VPS
@@ -82,24 +82,37 @@ class DC1Client {
                 let data = '';
                 res.on('data', (chunk) => (data += chunk));
                 res.on('end', () => {
+                    const body = data.trim();
+                    const statusCode = res.statusCode ?? 0;
+                    if (!body) {
+                        if (statusCode >= 400) {
+                            reject(new Error(`HTTP ${statusCode}`));
+                            return;
+                        }
+                        resolve({});
+                        return;
+                    }
                     try {
-                        const parsed = JSON.parse(data);
-                        if (res.statusCode && res.statusCode >= 400) {
-                            reject(new Error(parsed.error || parsed.message || `HTTP ${res.statusCode}`));
+                        const parsed = JSON.parse(body);
+                        if (statusCode >= 400) {
+                            reject(new Error(parsed.error || parsed.message || `HTTP ${statusCode}`));
+                            return;
                         }
-                        else {
-                            resolve(parsed);
-                        }
+                        resolve(parsed);
                     }
                     catch {
-                        reject(new Error(`Failed to parse response: ${data.slice(0, 200)}`));
+                        if (statusCode >= 400) {
+                            reject(new Error(`HTTP ${statusCode}: ${body.slice(0, 200)}`));
+                            return;
+                        }
+                        reject(new Error(`Failed to parse response: ${body.slice(0, 200)}`));
                     }
                 });
             });
             req.on('error', reject);
-            req.setTimeout(15000, () => {
+            req.setTimeout(timeoutMs, () => {
                 req.destroy();
-                reject(new Error('Request timed out after 15s'));
+                reject(new Error(`Request timed out after ${timeoutMs / 1000}s`));
             });
             if (body) {
                 req.write(JSON.stringify(body));
@@ -158,7 +171,7 @@ class DC1Client {
                 'Accept': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'x-renter-key': apiKey,
-                'User-Agent': 'DCP-VSCode-Extension/0.3.0',
+                'User-Agent': 'DCP-VSCode-Extension/0.4.0',
             },
             ...(isHttps ? { rejectUnauthorized: false } : {}),
         };
@@ -228,6 +241,22 @@ class DC1Client {
     /** GET /api/jobs/:id — single job status */
     async getJob(apiKey, jobId) {
         return this.request('GET', `/api/jobs/${jobId}`, { 'x-renter-key': apiKey });
+    }
+    /** GET /api/containers/registry — public, no auth required */
+    async getContainerRegistry() {
+        return this.request('GET', '/api/containers/registry');
+    }
+    /** GET /api/vllm/models — list available vLLM models from model registry */
+    async getVllmModels() {
+        return this.request('GET', '/api/vllm/models');
+    }
+    /**
+     * POST /api/vllm/complete — synchronous LLM inference.
+     * Long-running (waits for job completion on server, up to 300s).
+     * Uses 120s client-side timeout.
+     */
+    async vllmComplete(apiKey, payload) {
+        return this.request('POST', `/api/vllm/complete?key=${encodeURIComponent(apiKey)}`, {}, payload, 120000);
     }
 }
 exports.DC1Client = DC1Client;
@@ -465,7 +494,10 @@ const ProviderStatusTreeProvider_1 = __webpack_require__(/*! ./providers/Provide
 const JobsTreeProvider_2 = __webpack_require__(/*! ./providers/JobsTreeProvider */ "./src/providers/JobsTreeProvider.ts");
 const GPUTreeProvider_2 = __webpack_require__(/*! ./providers/GPUTreeProvider */ "./src/providers/GPUTreeProvider.ts");
 const JobSubmitPanel_1 = __webpack_require__(/*! ./panels/JobSubmitPanel */ "./src/panels/JobSubmitPanel.ts");
+const VllmSubmitPanel_1 = __webpack_require__(/*! ./panels/VllmSubmitPanel */ "./src/panels/VllmSubmitPanel.ts");
 const WalletPanel_1 = __webpack_require__(/*! ./panels/WalletPanel */ "./src/panels/WalletPanel.ts");
+const SettingsPanel_1 = __webpack_require__(/*! ./panels/SettingsPanel */ "./src/panels/SettingsPanel.ts");
+const ModelStatusPanel_1 = __webpack_require__(/*! ./panels/ModelStatusPanel */ "./src/panels/ModelStatusPanel.ts");
 function activate(context) {
     // ── Auth ──────────────────────────────────────────────────────────
     const auth = new AuthManager_1.AuthManager(context.secrets);
@@ -488,16 +520,16 @@ function activate(context) {
     // ── Provider status bar ───────────────────────────────────────────
     const providerStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
     providerStatusBar.command = 'dc1.setProviderKey';
-    providerStatusBar.tooltip = 'DC1 Provider — click to configure API key';
+    providerStatusBar.tooltip = 'DCP Provider — click to configure API key';
     context.subscriptions.push(providerStatusBar);
     function updateProviderStatusBar() {
         if (auth.isProviderAuthenticated) {
-            providerStatusBar.text = '$(server) DC1 Provider ✅';
-            providerStatusBar.tooltip = 'DC1 Provider connected — click to change key';
+            providerStatusBar.text = '$(server) DCP Provider ✅';
+            providerStatusBar.tooltip = 'DCP Provider connected — click to change key';
         }
         else {
-            providerStatusBar.text = '$(server) DC1 Provider ❌';
-            providerStatusBar.tooltip = 'DC1 Provider — not configured. Click to set API key.';
+            providerStatusBar.text = '$(server) DCP Provider ❌';
+            providerStatusBar.tooltip = 'DCP Provider — not configured. Click to set API key.';
         }
         providerStatusBar.show();
     }
@@ -514,19 +546,27 @@ function activate(context) {
     async function updateStatusBar() {
         const key = auth.apiKey;
         if (!key) {
-            statusBarItem.text = 'DCP: — SAR';
+            statusBarItem.text = '$(circuit-board) DCP: Ready';
+            statusBarItem.tooltip = 'DCP Compute — click to view billing';
             statusBarItem.show();
             return;
         }
         try {
             const info = await dc1Client_1.dc1.getRenterInfo(key);
             const sar = (info.balance_halala / 100).toFixed(2);
-            statusBarItem.text = `DCP: ${sar} SAR`;
-            statusBarItem.tooltip = `DCP Wallet: ${sar} SAR — click to view billing`;
+            const jobs = await dc1Client_1.dc1.getMyJobs(key);
+            const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'pending' || j.status === 'queued');
+            if (activeJobs.length > 0) {
+                statusBarItem.text = `$(loading~spin) DCP: ${activeJobs.length} job${activeJobs.length > 1 ? 's' : ''} running`;
+            }
+            else {
+                statusBarItem.text = `$(circuit-board) DCP: Ready`;
+            }
+            statusBarItem.tooltip = `DCP Wallet: ${sar} SAR — ${info.total_jobs} total jobs — click to view billing`;
             statusBarItem.show();
         }
         catch {
-            statusBarItem.text = 'DCP: — SAR';
+            statusBarItem.text = '$(circuit-board) DCP: Ready';
             statusBarItem.show();
         }
     }
@@ -544,11 +584,57 @@ function activate(context) {
     const jobChannels = new Map();
     function getOrCreateJobChannel(jobId) {
         if (!jobChannels.has(jobId)) {
-            const ch = vscode.window.createOutputChannel(`DCP Job #${jobId}`);
+            const ch = vscode.window.createOutputChannel(`DCP Job Logs - ${jobId}`);
             context.subscriptions.push(ch);
             jobChannels.set(jobId, ch);
         }
         return jobChannels.get(jobId);
+    }
+    // ── Log streaming state ───────────────────────────────────────────
+    let activeStreamDispose = null;
+    let activeStreamJobId = null;
+    const logStreamStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    logStreamStatusBar.command = 'dc1.stopLogStream';
+    logStreamStatusBar.tooltip = 'DCP: Log stream active — click to stop';
+    context.subscriptions.push(logStreamStatusBar);
+    function startLogStream(key, jobId) {
+        // Stop any existing stream first
+        if (activeStreamDispose) {
+            activeStreamDispose();
+            activeStreamDispose = null;
+            activeStreamJobId = null;
+        }
+        const ch = getOrCreateJobChannel(jobId);
+        ch.show(true);
+        ch.appendLine(`${'─'.repeat(60)}`);
+        ch.appendLine(`DCP: Streaming logs for job #${jobId}`);
+        ch.appendLine(`${'─'.repeat(60)}`);
+        logStreamStatusBar.text = `$(loading~spin) DCP: Streaming #${jobId}`;
+        logStreamStatusBar.show();
+        activeStreamJobId = jobId;
+        activeStreamDispose = dc1Client_1.dc1.streamJobLogs(key, jobId, (line) => ch.appendLine(line), () => {
+            // Stream ended
+            dc1Client_1.dc1.getJobOutput(key, jobId).then((output) => {
+                const icon = output.status === 'completed' ? '✅' : '❌';
+                ch.appendLine(`\n${icon} Job ${output.status}.`);
+                if (output.result) {
+                    ch.appendLine(output.result);
+                }
+            }).catch(() => {
+                ch.appendLine('Could not fetch final output.');
+            });
+            logStreamStatusBar.text = `$(check) DCP: Job #${jobId} complete`;
+            setTimeout(() => logStreamStatusBar.hide(), 5000);
+            activeStreamDispose = null;
+            activeStreamJobId = null;
+            jobsProvider.refresh();
+            updateStatusBar();
+        }, (err) => {
+            ch.appendLine(`Stream error: ${err.message}`);
+            logStreamStatusBar.hide();
+            activeStreamDispose = null;
+            activeStreamJobId = null;
+        });
     }
     // ── Commands ──────────────────────────────────────────────────────
     // dc1.setProviderKey — set/update provider API key
@@ -559,13 +645,13 @@ function activate(context) {
     }));
     // dc1.clearProviderKey
     context.subscriptions.push(vscode.commands.registerCommand('dc1.clearProviderKey', async () => {
-        const confirm = await vscode.window.showWarningMessage('Clear DC1 Provider API key?', { modal: true }, 'Clear');
+        const confirm = await vscode.window.showWarningMessage('Clear DCP Provider API key?', { modal: true }, 'Clear');
         if (confirm !== 'Clear') {
             return;
         }
         await auth.clearProviderKey();
         updateProviderStatusBar();
-        vscode.window.showInformationMessage('DC1: Provider API key cleared.');
+        vscode.window.showInformationMessage('DCP: Provider API key cleared.');
     }));
     // dc1.refreshProviderStatus
     context.subscriptions.push(vscode.commands.registerCommand('dc1.refreshProviderStatus', () => {
@@ -586,14 +672,39 @@ function activate(context) {
         jobsProvider.refresh();
         updateStatusBar();
     }));
-    // dc1.submitJob — open job submit panel with all available GPUs
+    // dc1.submitJob — open vLLM inference panel (model selector → POST /api/vllm/complete)
     context.subscriptions.push(vscode.commands.registerCommand('dc1.submitJob', async () => {
+        // Check for API key — show guidance if missing
+        const settingsKey = vscode.workspace.getConfiguration('dc1').get('renterApiKey', '').trim();
+        if (!settingsKey && !auth.isAuthenticated) {
+            const action = await vscode.window.showWarningMessage('DCP: Set your renter API key to submit inference jobs.', 'Set Key in Settings', 'Set Key via Command');
+            if (action === 'Set Key in Settings') {
+                vscode.commands.executeCommand('workbench.action.openSettings', 'dc1.renterApiKey');
+                return;
+            }
+            else if (action === 'Set Key via Command') {
+                await auth.promptAndSave();
+            }
+            else {
+                return;
+            }
+        }
+        VllmSubmitPanel_1.VllmSubmitPanel.show(context.extensionUri, auth);
+    }));
+    // dc1.submitContainerJob — open container-based job submit panel (advanced)
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.submitContainerJob', async () => {
         const key = await auth.ensureKey();
         if (!key) {
             return;
         }
         const providers = gpuProvider.getProviders();
-        JobSubmitPanel_1.JobSubmitPanel.show(context.extensionUri, auth, providers);
+        let registryImages = [];
+        try {
+            const reg = await dc1Client_1.dc1.getContainerRegistry();
+            registryImages = reg.images;
+        }
+        catch { /* use empty fallback */ }
+        JobSubmitPanel_1.JobSubmitPanel.show(context.extensionUri, auth, providers, undefined, registryImages);
     }));
     // dc1.submitJobOnProvider — pre-select a GPU from tree context menu
     context.subscriptions.push(vscode.commands.registerCommand('dc1.submitJobOnProvider', async (providerOrNode) => {
@@ -603,7 +714,13 @@ function activate(context) {
         }
         const provider = providerOrNode instanceof GPUTreeProvider_2.GPUNode ? providerOrNode.provider : providerOrNode;
         const providers = gpuProvider.getProviders();
-        JobSubmitPanel_1.JobSubmitPanel.show(context.extensionUri, auth, providers, provider);
+        let registryImages = [];
+        try {
+            const reg = await dc1Client_1.dc1.getContainerRegistry();
+            registryImages = reg.images;
+        }
+        catch { /* use empty fallback */ }
+        JobSubmitPanel_1.JobSubmitPanel.show(context.extensionUri, auth, providers, provider, registryImages);
     }));
     // dc1.openBillingPage — open DCP billing page in browser
     context.subscriptions.push(vscode.commands.registerCommand('dc1.openBillingPage', () => {
@@ -724,11 +841,139 @@ function activate(context) {
         }
         try {
             await dc1Client_1.dc1.cancelJob(key, job.job_id);
-            vscode.window.showInformationMessage(`DC1: Job ${job.job_id} cancelled.`);
+            vscode.window.showInformationMessage(`DCP: Job ${job.job_id} cancelled.`);
             jobsProvider.refresh();
         }
         catch (err) {
-            vscode.window.showErrorMessage(`DC1: Cancel failed — ${err instanceof Error ? err.message : String(err)}`);
+            vscode.window.showErrorMessage(`DCP: Cancel failed — ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }));
+    // dc1.streamLogs — start live log stream for a job id
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.streamLogs', async (jobIdArg) => {
+        const key = await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        let jobId = jobIdArg;
+        if (!jobId) {
+            jobId = await vscode.window.showInputBox({
+                prompt: 'Enter Job ID to stream logs for',
+                placeHolder: 'e.g. abc123',
+            });
+        }
+        if (!jobId) {
+            return;
+        }
+        startLogStream(key, jobId.trim());
+    }));
+    // dc1.watchJobLogs — stream logs for a job ID to a named output channel
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.watchJobLogs', async (jobIdArg) => {
+        const key = auth.apiKey
+            || vscode.workspace.getConfiguration('dc1').get('renterApiKey', '').trim()
+            || await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        let jobId = jobIdArg;
+        if (!jobId) {
+            jobId = await vscode.window.showInputBox({
+                title: 'DCP: Watch Job Logs',
+                prompt: 'Enter the Job ID to stream logs for',
+                placeHolder: 'e.g. job-1234567890-abc123',
+                ignoreFocusOut: true,
+            });
+        }
+        if (!jobId) {
+            return;
+        }
+        const id = jobId.trim();
+        const ch = vscode.window.createOutputChannel(`DCP Job ${id}`);
+        context.subscriptions.push(ch);
+        ch.show(true);
+        ch.appendLine(`${'─'.repeat(60)}`);
+        ch.appendLine(`DCP: Streaming logs for job ${id}`);
+        ch.appendLine(`${'─'.repeat(60)}`);
+        let receivedStreamData = false;
+        let pollTimer;
+        const stopPolling = () => {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = undefined;
+            }
+        };
+        const startPollingFallback = () => {
+            const intervalMs = vscode.workspace.getConfiguration('dc1').get('pollIntervalSeconds', 10) * 1000;
+            ch.appendLine(`Falling back to status polling every ${intervalMs / 1000}s...`);
+            pollTimer = setInterval(async () => {
+                try {
+                    const output = await dc1Client_1.dc1.getJobOutput(key, id);
+                    if (output.progress_phase) {
+                        ch.appendLine(`Phase: ${output.progress_phase}`);
+                    }
+                    if (output.status === 'completed' || output.status === 'failed' || output.status === 'cancelled') {
+                        stopPolling();
+                        if (output.result) {
+                            ch.appendLine('\n--- RESULT ---');
+                            ch.appendLine(output.result);
+                        }
+                        const icon = output.status === 'completed' ? '✅' : '❌';
+                        ch.appendLine(`\n${icon} Job ${output.status}.`);
+                        jobsProvider.refresh();
+                        updateStatusBar();
+                    }
+                }
+                catch (pollErr) {
+                    stopPolling();
+                    const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+                    ch.appendLine(`Polling stopped: ${msg}`);
+                }
+            }, intervalMs);
+        };
+        const dispose = dc1Client_1.dc1.streamJobLogs(key, id, (line) => {
+            receivedStreamData = true;
+            ch.appendLine(line);
+        }, () => {
+            stopPolling();
+            ch.appendLine('\n--- Stream closed ---');
+            dc1Client_1.dc1.getJobOutput(key, id).then((output) => {
+                const icon = output.status === 'completed' ? '✅' : '❌';
+                ch.appendLine(`${icon} Job ${output.status}.`);
+                if (output.result) {
+                    ch.appendLine(output.result);
+                }
+            }).catch(() => {
+                ch.appendLine('Could not fetch final output.');
+            });
+            jobsProvider.refresh();
+            updateStatusBar();
+        }, (err) => {
+            if (!receivedStreamData) {
+                ch.appendLine(`Stream unavailable: ${err.message}`);
+                startPollingFallback();
+                return;
+            }
+            ch.appendLine(`Stream error: ${err.message}`);
+        });
+        context.subscriptions.push({
+            dispose: () => {
+                stopPolling();
+                dispose();
+            }
+        });
+    }));
+    // dc1.stopLogStream — stop the active log stream
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.stopLogStream', () => {
+        if (!activeStreamDispose) {
+            vscode.window.showInformationMessage('DCP: No active log stream.');
+            return;
+        }
+        activeStreamDispose();
+        activeStreamDispose = null;
+        const stoppedId = activeStreamJobId;
+        activeStreamJobId = null;
+        logStreamStatusBar.hide();
+        if (stoppedId) {
+            vscode.window.showInformationMessage(`DCP: Stopped log stream for job #${stoppedId}.`);
         }
     }));
     // dc1.openWallet
@@ -738,6 +983,14 @@ function activate(context) {
             return;
         }
         WalletPanel_1.WalletPanel.show(context.extensionUri, auth);
+    }));
+    // dc1.showSettings — settings webview (apiBase + renterApiKey)
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.showSettings', () => {
+        SettingsPanel_1.SettingsPanel.show(context.extensionUri);
+    }));
+    // dc1.modelStatus — model cache status table
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.modelStatus', () => {
+        ModelStatusPanel_1.ModelStatusPanel.show(context.extensionUri);
     }));
     context.subscriptions.push(auth);
     updateStatusBar();
@@ -793,21 +1046,36 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.JobSubmitPanel = void 0;
 const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
 const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+// Friendly container type definitions shown in the panel
+const CONTAINER_TYPES = [
+    { value: 'pytorch-cuda', label: 'PyTorch + CUDA', computeType: 'inference' },
+    { value: 'vllm-serve', label: 'vLLM Serve (LLM inference)', computeType: 'inference' },
+    { value: 'training', label: 'Training (fine-tuning)', computeType: 'training' },
+    { value: 'rendering', label: 'Rendering (ComfyUI)', computeType: 'rendering' },
+];
+const VRAM_OPTIONS = [
+    { mb: 4096, label: '4 GB' },
+    { mb: 8192, label: '8 GB' },
+    { mb: 16384, label: '16 GB' },
+    { mb: 24576, label: '24 GB' },
+    { mb: 40960, label: '40 GB' },
+];
 class JobSubmitPanel {
-    static show(extensionUri, auth, providers, preselectedProvider) {
+    static show(extensionUri, auth, providers, preselectedProvider, registryImages = []) {
         if (JobSubmitPanel._current) {
             JobSubmitPanel._current._panel.reveal(vscode.ViewColumn.Beside);
             JobSubmitPanel._current.updateProviders(providers, preselectedProvider);
             return;
         }
-        new JobSubmitPanel(extensionUri, auth, providers, preselectedProvider);
+        new JobSubmitPanel(extensionUri, auth, providers, preselectedProvider, registryImages);
     }
-    constructor(extensionUri, auth, providers, preselected) {
+    constructor(extensionUri, auth, providers, preselected, registryImages = []) {
         this.auth = auth;
         this.providers = providers;
         this.preselected = preselected;
+        this.registryImages = registryImages;
         this._disposables = [];
-        this._panel = vscode.window.createWebviewPanel('dc1JobSubmit', 'DC1 — Submit GPU Job', vscode.ViewColumn.Beside, {
+        this._panel = vscode.window.createWebviewPanel('dc1JobSubmit', 'DCP — Submit GPU Job', vscode.ViewColumn.Beside, {
             enableScripts: true,
             localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
             retainContextWhenHidden: true,
@@ -815,12 +1083,12 @@ class JobSubmitPanel {
         JobSubmitPanel._current = this;
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
         this._panel.webview.onDidReceiveMessage((msg) => this.handleMessage(msg), null, this._disposables);
-        this._panel.webview.html = this.buildHtml(providers, preselected);
+        this._panel.webview.html = this.buildHtml(providers, preselected, registryImages);
     }
     updateProviders(providers, preselected) {
         this.providers = providers;
         this.preselected = preselected;
-        this._panel.webview.html = this.buildHtml(providers, preselected);
+        this._panel.webview.html = this.buildHtml(providers, preselected, this.registryImages);
     }
     async handleMessage(msg) {
         if (msg.type === 'cancel') {
@@ -843,8 +1111,11 @@ class JobSubmitPanel {
                     costSar: (result.cost_halala / 100).toFixed(2),
                     status: result.status,
                 });
-                vscode.window.showInformationMessage(`DC1: Job submitted! ID: ${result.job_id} | Cost: ${(result.cost_halala / 100).toFixed(2)} SAR`, 'View Jobs').then((action) => {
-                    if (action === 'View Jobs') {
+                vscode.window.showInformationMessage(`DCP: Job submitted! ID: ${result.job_id} | Cost: ${(result.cost_halala / 100).toFixed(2)} SAR`, 'Stream Logs', 'View Jobs').then((action) => {
+                    if (action === 'Stream Logs') {
+                        vscode.commands.executeCommand('dc1.streamLogs', result.job_id);
+                    }
+                    else if (action === 'View Jobs') {
                         vscode.commands.executeCommand('dc1.refreshJobs');
                     }
                 });
@@ -855,11 +1126,18 @@ class JobSubmitPanel {
             }
         }
     }
-    buildHtml(providers, preselected) {
+    buildHtml(providers, preselected, registryImages = []) {
         const providersJson = JSON.stringify(providers);
         const jobTypesJson = JSON.stringify(dc1Client_1.JOB_TYPES);
         const preselectedId = preselected?.id ?? '';
         const nonce = getNonce();
+        // Build container type list: start with static types, add any extra from registry
+        const registryExtras = registryImages
+            .filter(img => !CONTAINER_TYPES.some(ct => img.includes(ct.value)))
+            .map(img => ({ value: img, label: img, computeType: 'inference' }));
+        const allContainerTypes = [...CONTAINER_TYPES, ...registryExtras];
+        const containerTypesJson = JSON.stringify(allContainerTypes);
+        const vramOptionsJson = JSON.stringify(VRAM_OPTIONS);
         return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -867,7 +1145,7 @@ class JobSubmitPanel {
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DC1 — Submit GPU Job</title>
+  <title>DCP — Submit GPU Job</title>
   <style>
     :root {
       --amber: #F5A524;
@@ -976,11 +1254,25 @@ class JobSubmitPanel {
                      letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; }
     #noProviders { color: var(--muted); font-size: 12px; padding: 12px;
                    border: 1px dashed var(--border); border-radius: 6px; text-align: center; }
+    .toggle-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .toggle-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+    .toggle-btn.selected { border-color: var(--amber); color: var(--amber); background: #1e1a10; }
+    .toggle-btn:hover { border-color: #444458; }
+    .container-spec-row { display: flex; gap: 12px; flex-direction: column; }
   </style>
 </head>
 <body>
   <h1>⚡ Submit GPU Job</h1>
-  <div class="subtitle">DC1 Compute — Saudi Arabia's GPU Marketplace</div>
+  <div class="subtitle">DCP Compute — Saudi Arabia's GPU Marketplace</div>
 
   <div class="form-group">
     <div class="section-title">1 · Select Provider GPU</div>
@@ -1004,15 +1296,33 @@ class JobSubmitPanel {
            placeholder="e.g. meta-llama/Llama-3.1-8B-Instruct">
   </div>
 
+  <div class="form-group">
+    <div class="section-title">3 · Container Spec</div>
+    <div class="container-spec-row">
+      <div>
+        <label>Container Type</label>
+        <select id="containerTypeSelect"></select>
+      </div>
+      <div>
+        <label>VRAM Required</label>
+        <div class="toggle-row" id="vramToggle"></div>
+      </div>
+      <div>
+        <label>GPU Count</label>
+        <div class="toggle-row" id="gpuCountToggle">
+          <button class="toggle-btn selected" data-count="1">1×</button>
+          <button class="toggle-btn" data-count="2">2×</button>
+          <button class="toggle-btn" data-count="4">4×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="row">
     <div class="form-group">
       <label>Duration (minutes)</label>
       <input type="number" id="durationInput" value="10" min="1" max="1440">
       <div class="cost-preview" id="costPreview">Estimated cost: calculating…</div>
-    </div>
-    <div class="form-group">
-      <label>Min VRAM (GB)</label>
-      <input type="number" id="vramInput" value="" min="1" max="80" placeholder="Any">
     </div>
     <div class="form-group">
       <label>Priority</label>
@@ -1032,6 +1342,8 @@ class JobSubmitPanel {
     const PROVIDERS = ${providersJson};
     const JOB_TYPES = ${jobTypesJson};
     const PRESELECTED_ID = '${preselectedId}';
+    const CONTAINER_TYPES = ${containerTypesJson};
+    const VRAM_OPTIONS = ${vramOptionsJson};
 
     // Cost rates from backend (halala/minute)
     const COST_RATES = {
@@ -1048,6 +1360,46 @@ class JobSubmitPanel {
 
     let selectedProviderId = PRESELECTED_ID || (PROVIDERS[0]?.id ?? '');
     let selectedJobType = 'llm_inference';
+    let selectedContainerType = CONTAINER_TYPES[0]?.value ?? 'pytorch-cuda';
+    let selectedVramMb = VRAM_OPTIONS[1]?.mb ?? 8192; // default 8 GB
+    let selectedGpuCount = 1;
+
+    // Populate container type dropdown
+    const ctSelect = document.getElementById('containerTypeSelect');
+    CONTAINER_TYPES.forEach(ct => {
+      const opt = document.createElement('option');
+      opt.value = ct.value;
+      opt.textContent = ct.label;
+      if (ct.value === selectedContainerType) { opt.selected = true; }
+      ctSelect.appendChild(opt);
+    });
+    ctSelect.addEventListener('change', () => {
+      selectedContainerType = ctSelect.value;
+    });
+
+    // Populate VRAM toggle buttons
+    const vramToggle = document.getElementById('vramToggle');
+    VRAM_OPTIONS.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'toggle-btn' + (opt.mb === selectedVramMb ? ' selected' : '');
+      btn.textContent = opt.label;
+      btn.dataset.mb = String(opt.mb);
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#vramToggle .toggle-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedVramMb = opt.mb;
+      });
+      vramToggle.appendChild(btn);
+    });
+
+    // GPU count toggle
+    document.querySelectorAll('#gpuCountToggle .toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#gpuCountToggle .toggle-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedGpuCount = parseInt(btn.dataset.count);
+      });
+    });
 
     // Render providers
     const list = document.getElementById('providerList');
@@ -1118,7 +1470,6 @@ class JobSubmitPanel {
 
     document.getElementById('submitBtn').addEventListener('click', () => {
       const duration = parseInt(document.getElementById('durationInput').value);
-      const vram = parseInt(document.getElementById('vramInput').value) || undefined;
       const priority = parseInt(document.getElementById('priorityInput').value);
       const prompt = document.getElementById('promptInput').value.trim();
       const model = document.getElementById('modelInput').value.trim();
@@ -1128,12 +1479,20 @@ class JobSubmitPanel {
         return;
       }
 
+      const ctDef = CONTAINER_TYPES.find(ct => ct.value === selectedContainerType);
+      const containerSpec = {
+        image_type: selectedContainerType,
+        vram_required_mb: selectedVramMb,
+        gpu_count: selectedGpuCount,
+        compute_type: ctDef?.computeType ?? 'inference',
+      };
+
       const payload = {
         provider_id: selectedProviderId,
         job_type: selectedJobType,
         duration_minutes: duration,
+        container_spec: containerSpec,
         priority,
-        ...(vram ? { gpu_requirements: { min_vram_gb: vram } } : {}),
         ...(prompt || model ? { params: {
           ...(prompt ? { prompt } : {}),
           ...(model ? { model } : {})
@@ -1193,6 +1552,1021 @@ function getNonce() {
         text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+}
+
+
+/***/ }),
+
+/***/ "./src/panels/ModelStatusPanel.ts":
+/*!****************************************!*\
+  !*** ./src/panels/ModelStatusPanel.ts ***!
+  \****************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ModelStatusPanel = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+class ModelStatusPanel {
+    static show(extensionUri) {
+        if (ModelStatusPanel._current) {
+            ModelStatusPanel._current._panel.reveal(vscode.ViewColumn.Beside);
+            ModelStatusPanel._current.reload();
+            return;
+        }
+        new ModelStatusPanel(extensionUri);
+    }
+    constructor(extensionUri) {
+        this._disposables = [];
+        this._panel = vscode.window.createWebviewPanel('dcpModelStatus', 'DCP — Model Cache Status', vscode.ViewColumn.Beside, {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
+            retainContextWhenHidden: true,
+        });
+        ModelStatusPanel._current = this;
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        this._panel.webview.onDidReceiveMessage((msg) => {
+            if (msg.type === 'refresh') {
+                this.reload();
+            }
+        }, null, this._disposables);
+        this._panel.webview.html = this.buildHtml([], true);
+        this.reload();
+    }
+    async reload() {
+        try {
+            const resp = await dc1Client_1.dc1.getVllmModels();
+            this._panel.webview.html = this.buildHtml(resp.data || [], false);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            this._panel.webview.html = this.buildHtml([], false, msg);
+        }
+    }
+    buildTableHtml(models) {
+        if (models.length === 0) {
+            return '<div class="empty-state">No models available. Check your API connection.</div>';
+        }
+        const available = models.filter(m => m.status === 'available').length;
+        const totalProviders = models.reduce((sum, m) => sum + m.providers_online, 0);
+        const statsHtml = `
+      <div class="summary-row">
+        <div class="stat-card">
+          <div class="stat-label">Total Models</div>
+          <div class="stat-value amber">${models.length}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Available</div>
+          <div class="stat-value">${available}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Providers Online</div>
+          <div class="stat-value">${totalProviders}</div>
+        </div>
+      </div>`;
+        const rowsHtml = models.map((m) => {
+            const statusBadge = m.status === 'available'
+                ? '<span class="badge badge-green">● Available</span>'
+                : '<span class="badge badge-red">● Offline</span>';
+            // Estimate cold start based on VRAM footprint (heuristic)
+            let coldStartLabel;
+            let coldStartClass;
+            if (m.status !== 'available') {
+                coldStartLabel = 'N/A';
+                coldStartClass = '';
+            }
+            else if (m.vram_gb <= 8) {
+                coldStartLabel = '~20s';
+                coldStartClass = 'cold-fast';
+            }
+            else if (m.vram_gb <= 16) {
+                coldStartLabel = '~45s';
+                coldStartClass = 'cold-medium';
+            }
+            else if (m.vram_gb <= 40) {
+                coldStartLabel = '~90s';
+                coldStartClass = 'cold-medium';
+            }
+            else {
+                coldStartLabel = '~3min';
+                coldStartClass = 'cold-slow';
+            }
+            const quant = m.quantization
+                ? ` <span class="badge badge-yellow">${esc(m.quantization)}</span>`
+                : '';
+            return `<tr>
+        <td>
+          <div class="model-name">${esc(m.display_name)}${quant}</div>
+          <div class="model-id">${esc(m.model_id)}</div>
+        </td>
+        <td>${statusBadge}</td>
+        <td>${m.providers_online}</td>
+        <td>${m.min_gpu_vram_gb} GB</td>
+        <td>${Number(m.context_window).toLocaleString()}</td>
+        <td class="${coldStartClass}">${coldStartLabel}</td>
+        <td>${m.avg_price_sar_per_min} SAR/min</td>
+      </tr>`;
+        }).join('');
+        return statsHtml + `
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Providers</th>
+            <th>Min VRAM</th>
+            <th>Context</th>
+            <th>Est. Cold Start</th>
+            <th>Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>`;
+    }
+    buildHtml(models, loading, errorMsg) {
+        const nonce = getNonce();
+        const fetchedAt = new Date().toLocaleTimeString();
+        const tableHtml = (!loading && !errorMsg) ? this.buildTableHtml(models) : '';
+        return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCP — Model Cache Status</title>
+  <style>
+    :root {
+      --amber: #F5A524;
+      --void: #07070E;
+      --surface: #111118;
+      --surface2: #1a1a24;
+      --text: #e8e8f0;
+      --muted: #888898;
+      --border: #2a2a3a;
+      --error: #ff4a4a;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--vscode-font-family, 'Inter', sans-serif);
+      font-size: 13px;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+    h1 { color: var(--amber); font-size: 17px; font-weight: 700; }
+    .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .refresh-btn {
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 14px; color: var(--muted);
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: border-color 0.15s;
+      white-space: nowrap;
+    }
+    .refresh-btn:hover { border-color: var(--amber); color: var(--text); }
+    .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .summary-row { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+    .stat-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 16px; flex: 1; min-width: 130px;
+    }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; }
+    .stat-value { font-size: 22px; font-weight: 700; color: var(--text); margin-top: 2px; }
+    .stat-value.amber { color: var(--amber); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left; padding: 8px 10px;
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--muted); font-weight: 700;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody tr:last-child { border-bottom: none; }
+    td { padding: 10px 10px; font-size: 12px; vertical-align: middle; }
+    .model-name { font-weight: 600; color: var(--text); }
+    .model-id { font-size: 11px; color: var(--muted); margin-top: 1px; font-family: monospace; }
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .badge-green { background: #0d2d18; color: var(--success); border: 1px solid #103d18; }
+    .badge-yellow { background: #2d1f00; color: var(--amber); border: 1px solid #3d2a00; }
+    .badge-red { background: #1f0a0a; color: #ff8080; border: 1px solid #3d1010; }
+    .cold-fast { color: var(--success); font-weight: 600; }
+    .cold-medium { color: var(--amber); font-weight: 600; }
+    .cold-slow { color: #ff8080; font-weight: 600; }
+    .loading { text-align: center; padding: 40px; color: var(--muted); }
+    .error-box {
+      background: #1f0a0a; border: 1px solid #3d1010; border-radius: 6px;
+      padding: 12px 16px; color: #ff8080; font-size: 12px; margin-top: 10px;
+    }
+    .empty-state {
+      text-align: center; padding: 40px; color: var(--muted);
+      border: 1px dashed var(--border); border-radius: 8px;
+    }
+    .fetched-at { font-size: 11px; color: var(--muted); margin-top: 14px; text-align: right; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>📦 Model Cache Status</h1>
+      <div class="subtitle">Available vLLM models on the DCP GPU network</div>
+    </div>
+    <button class="refresh-btn" id="refreshBtn" ${loading ? 'disabled' : ''}>↻ Refresh</button>
+  </div>
+
+  ${loading ? '<div class="loading">Loading model registry…</div>' : ''}
+  ${errorMsg ? `<div class="error-box">⚠ Failed to load models: ${esc(errorMsg)}</div>` : ''}
+
+  ${tableHtml}
+
+  ${!loading ? `<div class="fetched-at">Updated at ${fetchedAt}</div>` : ''}
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      document.getElementById('refreshBtn').disabled = true;
+      document.getElementById('refreshBtn').textContent = '↻ Refreshing…';
+      vscode.postMessage({ type: 'refresh' });
+    });
+  </script>
+</body>
+</html>`;
+    }
+    dispose() {
+        ModelStatusPanel._current = undefined;
+        this._panel.dispose();
+        this._disposables.forEach((d) => d.dispose());
+        this._disposables = [];
+    }
+}
+exports.ModelStatusPanel = ModelStatusPanel;
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+}
+function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+
+/***/ }),
+
+/***/ "./src/panels/SettingsPanel.ts":
+/*!*************************************!*\
+  !*** ./src/panels/SettingsPanel.ts ***!
+  \*************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.SettingsPanel = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+class SettingsPanel {
+    static show(extensionUri) {
+        if (SettingsPanel._current) {
+            SettingsPanel._current._panel.reveal(vscode.ViewColumn.Beside);
+            return;
+        }
+        new SettingsPanel(extensionUri);
+    }
+    constructor(extensionUri) {
+        this._disposables = [];
+        this._panel = vscode.window.createWebviewPanel('dcpSettings', 'DCP — Settings', vscode.ViewColumn.Beside, {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
+            retainContextWhenHidden: true,
+        });
+        SettingsPanel._current = this;
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        this._panel.webview.onDidReceiveMessage((msg) => this.handleMessage(msg), null, this._disposables);
+        this._panel.webview.html = this.buildHtml();
+    }
+    async handleMessage(msg) {
+        if (msg.type === 'save') {
+            const config = vscode.workspace.getConfiguration('dc1');
+            const apiBase = msg.apiBase.trim() || 'https://api.dcp.sa';
+            const renterApiKey = msg.renterApiKey.trim();
+            await config.update('apiBase', apiBase, vscode.ConfigurationTarget.Global);
+            if (renterApiKey && !renterApiKey.includes('*')) {
+                await config.update('renterApiKey', renterApiKey, vscode.ConfigurationTarget.Global);
+            }
+            this._panel.webview.postMessage({ type: 'saved' });
+            vscode.window.showInformationMessage('DCP: Settings saved.');
+        }
+        if (msg.type === 'openSecrets') {
+            // Trigger the key prompt to store in VS Code secret storage instead
+            vscode.commands.executeCommand('dc1.setup');
+        }
+    }
+    buildHtml() {
+        const config = vscode.workspace.getConfiguration('dc1');
+        const apiBase = config.get('apiBase', 'https://api.dcp.sa');
+        const rawKey = config.get('renterApiKey', '');
+        const maskedKey = rawKey.length > 0
+            ? rawKey.slice(0, 4) + '•'.repeat(Math.max(0, rawKey.length - 8)) + rawKey.slice(-4)
+            : '';
+        const nonce = getNonce();
+        return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCP — Settings</title>
+  <style>
+    :root {
+      --amber: #F5A524;
+      --void: #07070E;
+      --surface: #111118;
+      --surface2: #1a1a24;
+      --text: #e8e8f0;
+      --muted: #888898;
+      --border: #2a2a3a;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--vscode-font-family, 'Inter', sans-serif);
+      font-size: 13px;
+      padding: 24px;
+      line-height: 1.6;
+    }
+    h1 { color: var(--amber); font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 12px; margin-bottom: 24px; }
+    .section {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--muted); margin-bottom: 14px;
+    }
+    .form-group { margin-bottom: 14px; }
+    .form-group:last-child { margin-bottom: 0; }
+    label {
+      display: block; color: var(--muted); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; font-weight: 600;
+    }
+    input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: var(--amber); }
+    .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+    .btn-primary {
+      background: var(--amber); color: var(--void); border: none;
+      border-radius: 6px; padding: 9px 20px; font-size: 13px;
+      font-weight: 700; cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-secondary {
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      border-radius: 6px; padding: 9px 20px; font-size: 13px;
+      font-weight: 600; cursor: pointer; transition: border-color 0.15s;
+    }
+    .btn-secondary:hover { border-color: var(--amber); color: var(--text); }
+    .actions { display: flex; gap: 10px; margin-top: 16px; }
+    .alert { padding: 10px 14px; border-radius: 6px; margin-top: 14px; font-size: 12px; }
+    .alert-success { background: #0a1f10; border: 1px solid #103d18; color: #60e890; }
+    .secret-notice {
+      background: #1a1400; border: 1px solid #3d2a00; border-radius: 6px;
+      padding: 10px 14px; font-size: 12px; color: var(--amber); margin-top: 10px;
+    }
+    .key-row { display: flex; gap: 8px; align-items: flex-start; }
+    .key-row input { flex: 1; }
+    .eye-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; cursor: pointer; color: var(--muted);
+      font-size: 13px; transition: border-color 0.15s; flex-shrink: 0; margin-top: 0;
+    }
+    .eye-btn:hover { border-color: var(--amber); color: var(--text); }
+  </style>
+</head>
+<body>
+  <h1>⚙ DCP Settings</h1>
+  <div class="subtitle">Configure your DCP API connection and authentication.</div>
+
+  <div class="section">
+    <div class="section-title">API Connection</div>
+    <div class="form-group">
+      <label>API Base URL</label>
+      <input type="url" id="apiBaseInput" value="${escapeAttr(apiBase)}" placeholder="https://api.dcp.sa">
+      <div class="hint">Default: https://api.dcp.sa — change only if using a self-hosted instance.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Renter API Key</div>
+    <div class="form-group">
+      <label>API Key (stored in VS Code settings)</label>
+      <div class="key-row">
+        <input type="password" id="renterKeyInput" value="${escapeAttr(rawKey)}" placeholder="dcp_renter_…">
+        <button class="eye-btn" id="toggleVisibility" title="Toggle visibility">👁</button>
+      </div>
+      <div class="hint">
+        ${rawKey ? `Current key: <code>${maskedKey}</code> — enter a new value to replace.` : 'No key set. Enter your key from dcp.sa/renter/register.'}
+      </div>
+    </div>
+    <div class="secret-notice">
+      🔒 For stronger security, use <strong>DCP: Set Renter API Key</strong> (command palette)
+      to store your key in VS Code's encrypted secret storage instead.
+      <br><br>
+      <button class="btn-secondary" id="useSecretsBtn" style="margin-top:6px">Open Secure Key Prompt</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="saveBtn">Save Settings</button>
+  </div>
+
+  <div id="alertBox"></div>
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const apiBase = document.getElementById('apiBaseInput').value.trim();
+      const renterApiKey = document.getElementById('renterKeyInput').value.trim();
+      document.getElementById('saveBtn').disabled = true;
+      document.getElementById('saveBtn').textContent = 'Saving…';
+      vscode.postMessage({ type: 'save', apiBase, renterApiKey });
+    });
+
+    document.getElementById('useSecretsBtn').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openSecrets' });
+    });
+
+    document.getElementById('toggleVisibility').addEventListener('click', () => {
+      const input = document.getElementById('renterKeyInput');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+
+    window.addEventListener('message', e => {
+      const msg = e.data;
+      if (msg.type === 'saved') {
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = false;
+        btn.textContent = 'Save Settings';
+        document.getElementById('alertBox').innerHTML =
+          '<div class="alert alert-success">✓ Settings saved successfully.</div>';
+        setTimeout(() => { document.getElementById('alertBox').innerHTML = ''; }, 3000);
+      }
+    });
+  </script>
+</body>
+</html>`;
+    }
+    dispose() {
+        SettingsPanel._current = undefined;
+        this._panel.dispose();
+        this._disposables.forEach((d) => d.dispose());
+        this._disposables = [];
+    }
+}
+exports.SettingsPanel = SettingsPanel;
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+}
+function escapeAttr(s) {
+    return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+
+/***/ }),
+
+/***/ "./src/panels/VllmSubmitPanel.ts":
+/*!***************************************!*\
+  !*** ./src/panels/VllmSubmitPanel.ts ***!
+  \***************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.VllmSubmitPanel = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+class VllmSubmitPanel {
+    static show(extensionUri, auth) {
+        if (VllmSubmitPanel._current) {
+            VllmSubmitPanel._current._panel.reveal(vscode.ViewColumn.Beside);
+            return;
+        }
+        new VllmSubmitPanel(extensionUri, auth);
+    }
+    constructor(extensionUri, auth) {
+        this.auth = auth;
+        this._disposables = [];
+        this._models = [];
+        this._loadError = null;
+        this._panel = vscode.window.createWebviewPanel('dcpVllmSubmit', 'DCP — AI Inference', vscode.ViewColumn.Beside, {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
+            retainContextWhenHidden: true,
+        });
+        VllmSubmitPanel._current = this;
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        this._panel.webview.onDidReceiveMessage((msg) => this.handleMessage(msg), null, this._disposables);
+        // Show loading state while fetching models
+        this._panel.webview.html = this.buildHtml([], true, null);
+        this.loadModels();
+    }
+    async loadModels() {
+        try {
+            const resp = await dc1Client_1.dc1.getVllmModels();
+            this._models = resp.data || [];
+            this._loadError = null;
+        }
+        catch (err) {
+            this._models = [];
+            this._loadError = err instanceof Error ? err.message : 'Could not load models from API';
+        }
+        this._panel.webview.html = this.buildHtml(this._models, false, this._loadError);
+    }
+    async handleMessage(msg) {
+        if (msg.type === 'cancel') {
+            this._panel.dispose();
+            return;
+        }
+        if (msg.type === 'reloadModels') {
+            this._panel.webview.html = this.buildHtml(this._models, true, null);
+            await this.loadModels();
+            return;
+        }
+        if (msg.type === 'submit') {
+            // Get API key: check settings first, then secrets
+            let key = vscode.workspace.getConfiguration('dc1').get('renterApiKey', '').trim();
+            if (!key) {
+                key = (await this.auth.ensureKey()) ?? '';
+            }
+            if (!key) {
+                vscode.window.showErrorMessage('DCP: Set your renter API key in Settings → Extensions → DCP Compute → Renter API Key');
+                return;
+            }
+            this._panel.webview.postMessage({ type: 'submitting' });
+            const payload = {
+                model: msg.model,
+                messages: [{ role: 'user', content: msg.prompt }],
+                max_tokens: msg.maxTokens,
+                temperature: msg.temperature,
+            };
+            try {
+                const result = await dc1Client_1.dc1.vllmComplete(key, payload);
+                const text = result.choices[0]?.message?.content ?? '';
+                const jobId = result.id.replace('chatcmpl-', '');
+                const costSar = (result.cost_halala / 100).toFixed(4);
+                this._panel.webview.postMessage({
+                    type: 'success',
+                    text,
+                    jobId: result.id,
+                    model: result.model,
+                    costSar,
+                    usage: result.usage,
+                });
+                vscode.window.showInformationMessage(`DCP: Inference complete — ${result.usage.total_tokens} tokens — ${costSar} SAR`, 'Watch Logs').then((action) => {
+                    if (action === 'Watch Logs') {
+                        vscode.commands.executeCommand('dc1.watchJobLogs', jobId);
+                    }
+                });
+            }
+            catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                this._panel.webview.postMessage({ type: 'error', message: errMsg });
+            }
+        }
+    }
+    buildHtml(models, loading, loadError) {
+        const nonce = getNonce();
+        const modelsJson = JSON.stringify(models);
+        return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCP — AI Inference</title>
+  <style>
+    :root {
+      --amber: #F5A524;
+      --void: #07070E;
+      --surface: #111118;
+      --surface2: #1a1a24;
+      --text: #e8e8f0;
+      --muted: #888898;
+      --border: #2a2a3a;
+      --error: #ff4a4a;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--vscode-font-family, 'Inter', sans-serif);
+      font-size: 13px;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 { color: var(--amber); font-size: 17px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+    .form-group { margin-bottom: 14px; }
+    label {
+      display: block; color: var(--muted); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; font-weight: 600;
+    }
+    select, input, textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--amber); }
+    textarea { resize: vertical; min-height: 100px; font-family: var(--vscode-editor-font-family, monospace); }
+    .row { display: flex; gap: 12px; }
+    .row .form-group { flex: 1; }
+    .model-meta {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      display: none;
+    }
+    .model-meta.visible { display: block; }
+    .model-meta span { color: var(--text); }
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .badge-green { background: #0d2d18; color: var(--success); border: 1px solid #103d18; }
+    .badge-yellow { background: #2d1f00; color: var(--amber); border: 1px solid #3d2a00; }
+    .badge-red { background: #1f0a0a; color: #ff8080; border: 1px solid #3d1010; }
+    .btn-primary {
+      background: var(--amber); color: var(--void); border: none;
+      border-radius: 6px; padding: 10px 24px; font-size: 14px;
+      font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px; transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .alert { padding: 10px 14px; border-radius: 6px; margin-top: 14px; font-size: 12px; }
+    .alert-error { background: #1f0a0a; border: 1px solid #3d1010; color: #ff8080; }
+    .alert-success { background: #0a1f10; border: 1px solid #103d18; color: #60e890; }
+    #resultBox {
+      display: none; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px; margin-top: 16px;
+    }
+    #resultBox.visible { display: block; }
+    .result-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    }
+    .result-title { font-weight: 700; font-size: 13px; color: var(--amber); }
+    .result-meta { font-size: 11px; color: var(--muted); }
+    .result-text {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px; line-height: 1.7; white-space: pre-wrap; color: var(--text);
+      max-height: 300px; overflow-y: auto; padding: 8px 0;
+    }
+    .result-footer {
+      display: flex; gap: 8px; align-items: center; margin-top: 10px;
+      padding-top: 10px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted);
+    }
+    .loading { color: var(--muted); text-align: center; padding: 30px; font-size: 13px; }
+    .no-models { color: var(--muted); text-align: center; padding: 16px;
+                  border: 1px dashed var(--border); border-radius: 6px; font-size: 12px; }
+    .key-notice {
+      background: #2d1f00; border: 1px solid #3d2a00; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 16px; font-size: 12px; color: var(--amber);
+    }
+    .toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-secondary:hover { border-color: var(--amber); color: var(--amber); }
+  </style>
+</head>
+<body>
+  <h1>⚡ DCP AI Inference</h1>
+  <div class="subtitle">Run LLM inference on DCP GPU network — Saudi Arabia's compute marketplace</div>
+
+  <div class="key-notice" id="keyNotice" style="display:none">
+    ⚠️ No renter API key set. Add it in Settings → Extensions → DCP Compute → Renter API Key,
+    or run <strong>DCP: Set Renter API Key</strong> from the command palette.
+  </div>
+
+  <div class="toolbar">
+    <button class="btn-secondary" id="reloadBtn">Reload Models</button>
+  </div>
+
+  ${loading ? '<div class="loading">Loading available models…</div>' : ''}
+  ${!loading && loadError ? `<div class="alert alert-error">Model list unavailable: ${escapeForHtml(loadError)}</div>` : ''}
+
+  <div id="mainForm" style="display:${loading ? 'none' : 'block'}">
+    <div class="form-group">
+      <label>Model</label>
+      ${models.length === 0
+            ? '<div class="no-models">No models available. Check your API connection.</div>'
+            : `<select id="modelSelect">
+            ${models.map(m => `<option value="${m.model_id}" data-vram="${m.min_gpu_vram_gb}" data-price="${m.avg_price_sar_per_min}" data-providers="${m.providers_online}" data-ctx="${m.context_window}" data-status="${m.status}">${m.display_name}${m.quantization ? ' (' + m.quantization + ')' : ''}</option>`).join('')}
+          </select>
+          <div class="model-meta visible" id="modelMeta"></div>`}
+    </div>
+
+    <div class="form-group">
+      <label>Prompt</label>
+      <textarea id="promptInput" placeholder="Enter your prompt…" rows="5"></textarea>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label>Max tokens</label>
+        <input type="number" id="maxTokensInput" value="512" min="1" max="8192">
+      </div>
+      <div class="form-group">
+        <label>Temperature</label>
+        <input type="number" id="tempInput" value="0.7" min="0" max="2" step="0.1">
+      </div>
+    </div>
+
+    <button class="btn-primary" id="submitBtn" ${models.length === 0 ? 'disabled' : ''}>
+      Run Inference
+    </button>
+    <div id="alertBox"></div>
+
+    <div id="resultBox">
+      <div class="result-header">
+        <span class="result-title">Response</span>
+        <span class="result-meta" id="resultMeta"></span>
+      </div>
+      <div class="result-text" id="resultText"></div>
+      <div class="result-footer">
+        <span id="jobIdBadge"></span>
+        <span id="tokensBadge"></span>
+        <span id="costBadge"></span>
+      </div>
+    </div>
+  </div>
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const MODELS = ${modelsJson};
+
+    function updateModelMeta() {
+      const sel = document.getElementById('modelSelect');
+      const meta = document.getElementById('modelMeta');
+      if (!sel || !meta) return;
+      const opt = sel.options[sel.selectedIndex];
+      if (!opt) return;
+      const providers = opt.dataset.providers;
+      const vram = opt.dataset.vram;
+      const price = opt.dataset.price;
+      const ctx = opt.dataset.ctx;
+      const status = opt.dataset.status;
+      const statusBadge = status === 'available'
+        ? '<span class="badge badge-green">● Available</span>'
+        : '<span class="badge badge-red">● No Providers</span>';
+      meta.innerHTML =
+        statusBadge + '&nbsp;&nbsp;' +
+        '<span>' + providers + ' provider' + (providers !== '1' ? 's' : '') + ' online</span>' +
+        ' &nbsp;·&nbsp; Min VRAM: <span>' + vram + ' GB</span>' +
+        ' &nbsp;·&nbsp; Context: <span>' + Number(ctx).toLocaleString() + ' tokens</span>' +
+        ' &nbsp;·&nbsp; ~<span>' + price + ' SAR/min</span>';
+    }
+
+    const modelSel = document.getElementById('modelSelect');
+    const reloadBtn = document.getElementById('reloadBtn');
+    if (reloadBtn) {
+      reloadBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'reloadModels' });
+      });
+    }
+    if (modelSel) {
+      modelSel.addEventListener('change', updateModelMeta);
+      updateModelMeta();
+    }
+
+    document.getElementById('submitBtn')?.addEventListener('click', () => {
+      const model = document.getElementById('modelSelect')?.value;
+      const prompt = document.getElementById('promptInput').value.trim();
+      const maxTokens = parseInt(document.getElementById('maxTokensInput').value) || 512;
+      const temperature = parseFloat(document.getElementById('tempInput').value) ?? 0.7;
+
+      if (!model) { showAlert('Select a model.', 'error'); return; }
+      if (!prompt) { showAlert('Enter a prompt.', 'error'); return; }
+
+      vscode.postMessage({ type: 'submit', model, prompt, maxTokens, temperature });
+    });
+
+    function showAlert(msg, type) {
+      document.getElementById('alertBox').innerHTML =
+        '<div class="alert alert-' + type + '">' + escapeHtml(msg) + '</div>';
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    window.addEventListener('message', e => {
+      const msg = e.data;
+      const btn = document.getElementById('submitBtn');
+      if (msg.type === 'submitting') {
+        btn.disabled = true;
+        btn.textContent = 'Running inference…';
+        document.getElementById('alertBox').innerHTML = '';
+        document.getElementById('resultBox').classList.remove('visible');
+      } else if (msg.type === 'success') {
+        btn.disabled = false;
+        btn.textContent = 'Run Inference';
+        document.getElementById('alertBox').innerHTML = '';
+        // Show result
+        document.getElementById('resultText').textContent = msg.text;
+        document.getElementById('resultMeta').textContent = msg.model;
+        document.getElementById('jobIdBadge').innerHTML =
+          '<span class="badge badge-green">✓ Completed</span> ' + msg.jobId;
+        document.getElementById('tokensBadge').textContent =
+          msg.usage.total_tokens + ' tokens';
+        document.getElementById('costBadge').textContent = msg.costSar + ' SAR';
+        document.getElementById('resultBox').classList.add('visible');
+      } else if (msg.type === 'error') {
+        btn.disabled = false;
+        btn.textContent = 'Run Inference';
+        showAlert('❌ ' + msg.message, 'error');
+      } else if (msg.type === 'modelsLoaded') {
+        // handled server-side by rebuilding HTML
+      }
+    });
+  </script>
+</body>
+</html>`;
+    }
+    dispose() {
+        VllmSubmitPanel._current = undefined;
+        this._panel.dispose();
+        this._disposables.forEach((d) => d.dispose());
+        this._disposables = [];
+    }
+}
+exports.VllmSubmitPanel = VllmSubmitPanel;
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+}
+function escapeForHtml(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 

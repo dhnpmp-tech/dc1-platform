@@ -2868,35 +2868,71 @@ router.get('/available', (req, res) => {
         // Graduated status (online/degraded/offline) is computed in JS from heartbeat age,
         // so we do NOT filter by status column here — the DB status column is only updated
         // when a heartbeat arrives (→ 'online'), not when the provider goes silent.
-        const providers = db.all(
-            `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
-                    gpu_vram_mb, gpu_info_json,
-                    gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
-                    status, location, run_mode, reliability_score, reputation_score,
-                    cached_models, last_heartbeat, uptime_percent, total_jobs, is_paused, created_at,
-                    COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
-                    COALESCE(js.completed_jobs, 0) AS completed_jobs,
-                    COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                    COALESCE(js.total_jobs, 0) AS total_jobs_all
-             FROM providers p
-             LEFT JOIN (
-                SELECT provider_id, COUNT(*) AS heartbeats_7d
-                FROM heartbeat_log
-                WHERE datetime(received_at) >= datetime('now', '-7 days')
-                GROUP BY provider_id
-             ) hb ON hb.provider_id = p.id
-             LEFT JOIN (
-                SELECT provider_id,
-                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
-                       SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
-                       COUNT(*) AS total_jobs
-                FROM jobs
-                GROUP BY provider_id
-             ) js ON js.provider_id = p.id
-             WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
-               AND COALESCE(p.approval_status, 'pending') = 'approved'
-             ORDER BY p.reputation_score DESC NULLS LAST, p.gpu_vram_mib DESC NULLS LAST`
-        );
+        let providers = [];
+        try {
+            providers = db.all(
+                `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
+                        gpu_vram_mb, gpu_info_json,
+                        gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
+                        status, location, run_mode, reliability_score, reputation_score,
+                        cached_models, last_heartbeat, uptime_percent, total_jobs, is_paused, created_at,
+                        COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
+                        COALESCE(js.completed_jobs, 0) AS completed_jobs,
+                        COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
+                        COALESCE(js.total_jobs, 0) AS total_jobs_all
+                 FROM providers p
+                 LEFT JOIN (
+                    SELECT provider_id, COUNT(*) AS heartbeats_7d
+                    FROM heartbeat_log
+                    WHERE datetime(received_at) >= datetime('now', '-7 days')
+                    GROUP BY provider_id
+                 ) hb ON hb.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
+                           SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
+                           COUNT(*) AS total_jobs
+                    FROM jobs
+                    GROUP BY provider_id
+                 ) js ON js.provider_id = p.id
+                 WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
+                   AND COALESCE(p.approval_status, 'pending') = 'approved'
+                 ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
+                          (p.gpu_vram_mib IS NULL) ASC, p.gpu_vram_mib DESC`
+            );
+        } catch (primaryQueryError) {
+            console.warn('Available providers primary query failed, using legacy fallback:', primaryQueryError?.message || primaryQueryError);
+            // Fallback for older SQLite syntax/runtime or partially-migrated provider schemas.
+            providers = db.all(
+                `SELECT p.id, p.name, p.gpu_model, p.status, p.location, p.run_mode,
+                        p.last_heartbeat, p.total_jobs, p.created_at,
+                        p.gpu_name_detected, p.gpu_vram_mib, p.gpu_driver,
+                        p.gpu_vram_mb, p.gpu_compute_capability, p.gpu_cuda_version,
+                        p.gpu_count_reported, p.gpu_spec_json, p.gpu_info_json,
+                        p.reliability_score, p.reputation_score, p.cached_models,
+                        COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
+                        COALESCE(js.completed_jobs, 0) AS completed_jobs,
+                        COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
+                        COALESCE(js.total_jobs, 0) AS total_jobs_all
+                 FROM providers p
+                 LEFT JOIN (
+                    SELECT provider_id, COUNT(*) AS heartbeats_7d
+                    FROM heartbeat_log
+                    WHERE datetime(received_at) >= datetime('now', '-7 days')
+                    GROUP BY provider_id
+                 ) hb ON hb.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
+                           SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
+                           COUNT(*) AS total_jobs
+                    FROM jobs
+                    GROUP BY provider_id
+                 ) js ON js.provider_id = p.id
+                 WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
+                 ORDER BY p.id DESC`
+            );
+        }
 
         const now = Date.now();
         const mapped = providers.reduce((acc, p) => {

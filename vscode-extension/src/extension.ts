@@ -476,11 +476,51 @@ export function activate(context: vscode.ExtensionContext): void {
       ch.appendLine(`DCP: Streaming logs for job ${id}`);
       ch.appendLine(`${'─'.repeat(60)}`);
 
+      let receivedStreamData = false;
+      let pollTimer: NodeJS.Timeout | undefined;
+      const stopPolling = (): void => {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = undefined;
+        }
+      };
+      const startPollingFallback = (): void => {
+        const intervalMs = vscode.workspace.getConfiguration('dc1').get('pollIntervalSeconds', 10) * 1000;
+        ch.appendLine(`Falling back to status polling every ${intervalMs / 1000}s...`);
+        pollTimer = setInterval(async () => {
+          try {
+            const output = await dc1.getJobOutput(key, id);
+            if (output.progress_phase) {
+              ch.appendLine(`Phase: ${output.progress_phase}`);
+            }
+            if (output.status === 'completed' || output.status === 'failed' || output.status === 'cancelled') {
+              stopPolling();
+              if (output.result) {
+                ch.appendLine('\n--- RESULT ---');
+                ch.appendLine(output.result);
+              }
+              const icon = output.status === 'completed' ? '✅' : '❌';
+              ch.appendLine(`\n${icon} Job ${output.status}.`);
+              jobsProvider.refresh();
+              updateStatusBar();
+            }
+          } catch (pollErr) {
+            stopPolling();
+            const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+            ch.appendLine(`Polling stopped: ${msg}`);
+          }
+        }, intervalMs);
+      };
+
       const dispose = dc1.streamJobLogs(
         key,
         id,
-        (line) => ch.appendLine(line),
+        (line) => {
+          receivedStreamData = true;
+          ch.appendLine(line);
+        },
         () => {
+          stopPolling();
           ch.appendLine('\n--- Stream closed ---');
           dc1.getJobOutput(key, id).then((output) => {
             const icon = output.status === 'completed' ? '✅' : '❌';
@@ -493,11 +533,21 @@ export function activate(context: vscode.ExtensionContext): void {
           updateStatusBar();
         },
         (err) => {
+          if (!receivedStreamData) {
+            ch.appendLine(`Stream unavailable: ${err.message}`);
+            startPollingFallback();
+            return;
+          }
           ch.appendLine(`Stream error: ${err.message}`);
         }
       );
 
-      context.subscriptions.push({ dispose });
+      context.subscriptions.push({
+        dispose: () => {
+          stopPolling();
+          dispose();
+        }
+      });
     })
   );
 

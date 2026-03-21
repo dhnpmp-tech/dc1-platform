@@ -5,6 +5,7 @@ import { AuthManager } from '../auth/AuthManager';
 type WebviewMessage =
   | { type: 'ready' }
   | { type: 'submit'; model: string; prompt: string; maxTokens: number; temperature: number }
+  | { type: 'reloadModels' }
   | { type: 'cancel' };
 
 export class VllmSubmitPanel {
@@ -12,6 +13,7 @@ export class VllmSubmitPanel {
   private readonly _panel: vscode.WebviewPanel;
   private _disposables: vscode.Disposable[] = [];
   private _models: VllmModel[] = [];
+  private _loadError: string | null = null;
 
   static show(extensionUri: vscode.Uri, auth: AuthManager): void {
     if (VllmSubmitPanel._current) {
@@ -45,7 +47,7 @@ export class VllmSubmitPanel {
     );
 
     // Show loading state while fetching models
-    this._panel.webview.html = this.buildHtml([], true);
+    this._panel.webview.html = this.buildHtml([], true, null);
     this.loadModels();
   }
 
@@ -53,15 +55,23 @@ export class VllmSubmitPanel {
     try {
       const resp = await dc1.getVllmModels();
       this._models = resp.data || [];
-    } catch {
+      this._loadError = null;
+    } catch (err) {
       this._models = [];
+      this._loadError = err instanceof Error ? err.message : 'Could not load models from API';
     }
-    this._panel.webview.html = this.buildHtml(this._models, false);
+    this._panel.webview.html = this.buildHtml(this._models, false, this._loadError);
   }
 
   private async handleMessage(msg: WebviewMessage): Promise<void> {
     if (msg.type === 'cancel') {
       this._panel.dispose();
+      return;
+    }
+
+    if (msg.type === 'reloadModels') {
+      this._panel.webview.html = this.buildHtml(this._models, true, null);
+      await this.loadModels();
       return;
     }
 
@@ -116,7 +126,7 @@ export class VllmSubmitPanel {
     }
   }
 
-  private buildHtml(models: VllmModel[], loading: boolean): string {
+  private buildHtml(models: VllmModel[], loading: boolean, loadError: string | null): string {
     const nonce = getNonce();
     const modelsJson = JSON.stringify(models);
 
@@ -228,6 +238,17 @@ export class VllmSubmitPanel {
       background: #2d1f00; border: 1px solid #3d2a00; border-radius: 6px;
       padding: 10px 12px; margin-bottom: 16px; font-size: 12px; color: var(--amber);
     }
+    .toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-secondary:hover { border-color: var(--amber); color: var(--amber); }
   </style>
 </head>
 <body>
@@ -239,7 +260,12 @@ export class VllmSubmitPanel {
     or run <strong>DCP: Set Renter API Key</strong> from the command palette.
   </div>
 
+  <div class="toolbar">
+    <button class="btn-secondary" id="reloadBtn">Reload Models</button>
+  </div>
+
   ${loading ? '<div class="loading">Loading available models…</div>' : ''}
+  ${!loading && loadError ? `<div class="alert alert-error">Model list unavailable: ${escapeForHtml(loadError)}</div>` : ''}
 
   <div id="mainForm" style="display:${loading ? 'none' : 'block'}">
     <div class="form-group">
@@ -315,6 +341,12 @@ export class VllmSubmitPanel {
     }
 
     const modelSel = document.getElementById('modelSelect');
+    const reloadBtn = document.getElementById('reloadBtn');
+    if (reloadBtn) {
+      reloadBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'reloadModels' });
+      });
+    }
     if (modelSel) {
       modelSel.addEventListener('change', updateModelMeta);
       updateModelMeta();
@@ -390,4 +422,13 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+function escapeForHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

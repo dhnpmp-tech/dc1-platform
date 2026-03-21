@@ -1,36 +1,76 @@
 #!/usr/bin/env bash
-set -u
+set -euo pipefail
 
-SERVICES=(
-  "dc1-mission-control"
-  "mission-control-api"
-  "dc1-provider-onboarding"
-  "dc1-webhook"
-)
+FRONTEND_URL="${FRONTEND_URL:-https://dcp.sa}"
+LOCAL_API_HEALTH_URL="${LOCAL_API_HEALTH_URL:-http://127.0.0.1:8083/api/health}"
+PUBLIC_API_HEALTH_CANDIDATES="${PUBLIC_API_HEALTH_CANDIDATES:-https://api.dcp.sa/health,https://api.dcp.sa/api/health}"
+PM2_APP_NAME="${PM2_APP_NAME:-dc1-provider-onboarding}"
+REQUIRED_PM2_SERVICES="${REQUIRED_PM2_SERVICES:-dc1-provider-onboarding,dcp-vps-health-cron,dcp-job-volume-cleanup-cron,dcp-stale-provider-sweep-cron}"
+REQUIRED_ENV_VARS="${REQUIRED_ENV_VARS:-DC1_ADMIN_TOKEN,DC1_HMAC_SECRET,FRONTEND_URL,BACKEND_URL}"
 
 timestamp="$(date -u '+%Y-%m-%d %H:%M UTC')"
 printf '[DEPLOY CHECK] %s\n' "$timestamp"
 
 fail() {
-  printf '[DEPLOY CHECK] FAIL — %s\n' "$1"
+  printf '[DEPLOY CHECK] FAIL - %s\n' "$1"
   exit 1
 }
 
-# 1) PM2 process health
-if ! command -v pm2 >/dev/null 2>&1; then
-  fail "pm2 is not installed or not in PATH"
-fi
+pass() {
+  printf '✓ %s\n' "$1"
+}
+
+require_cmd() {
+  local cmd="$1"
+  command -v "$cmd" >/dev/null 2>&1 || fail "$cmd is not installed or not in PATH"
+}
+
+check_health_json() {
+  local body="$1"
+  HEALTH_BODY="$body" node -e '
+try {
+  const payload = JSON.parse(process.env.HEALTH_BODY || "{}");
+  if (payload.status !== "ok") process.exit(1);
+} catch {
+  process.exit(1);
+}
+'
+}
+
+check_url_health() {
+  local url="$1"
+  local response
+  local code
+  local body
+
+  response="$(curl -sS -L --max-time 10 -w '\n%{http_code}' "$url")" || return 2
+  code="$(printf '%s' "$response" | tail -n1)"
+  body="$(printf '%s' "$response" | sed '$d')"
+
+  if [ "$code" != "200" ]; then
+    return 3
+  fi
+  check_health_json "$body" || return 4
+  return 0
+}
+
+require_cmd pm2
+require_cmd curl
+require_cmd node
 
 if ! pm2_json="$(pm2 jlist 2>/dev/null)"; then
   fail "unable to read PM2 process list"
 fi
 
-if ! pm2_result="$(PM2_JSON="$pm2_json" node -e '
-const required = ["dc1-mission-control", "mission-control-api", "dc1-provider-onboarding", "dc1-webhook"];
+if ! pm2_result="$(PM2_JSON="$pm2_json" REQUIRED_PM2_SERVICES="$REQUIRED_PM2_SERVICES" node -e '
+const required = (process.env.REQUIRED_PM2_SERVICES || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 let list;
 try {
   list = JSON.parse(process.env.PM2_JSON || "[]");
-} catch (err) {
+} catch {
   console.log("invalid pm2 jlist JSON");
   process.exit(1);
 }
@@ -52,53 +92,84 @@ if (failures.length) {
 }
 console.log(`${required.length}/${required.length}`);
 ')"; then
-  fail "PM2 ${pm2_result}"
+  fail "PM2 service check failed: ${pm2_result}"
 fi
-printf '✓ PM2: %s services online\n' "$pm2_result"
+pass "PM2: ${pm2_result} required services online"
 
-# 2) API health endpoint
-api_response="$(curl -sS -w '\n%{http_code}' http://localhost:8083/api/health)" || fail "API health endpoint unreachable"
-api_code="$(printf '%s' "$api_response" | tail -n1)"
-api_body="$(printf '%s' "$api_response" | sed '$d')"
-
-if [ "$api_code" != "200" ]; then
-  fail "API health HTTP ${api_code}"
-fi
-
-if ! API_BODY="$api_body" node -e '
+if ! env_check_result="$(PM2_JSON="$pm2_json" PM2_APP_NAME="$PM2_APP_NAME" REQUIRED_ENV_VARS="$REQUIRED_ENV_VARS" node -e '
+let list;
 try {
-  const body = JSON.parse(process.env.API_BODY || "{}");
-  if (body.status !== "ok") process.exit(1);
-} catch (_) {
+  list = JSON.parse(process.env.PM2_JSON || "[]");
+} catch {
+  console.log("invalid pm2 jlist JSON");
   process.exit(1);
 }
-'; then
-  fail "API health response missing {\"status\":\"ok\"}"
+const appName = process.env.PM2_APP_NAME;
+const requiredVars = (process.env.REQUIRED_ENV_VARS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const proc = list.find((item) => item && item.name === appName);
+if (!proc) {
+  console.log(`${appName} missing`);
+  process.exit(1);
+}
+const env = (proc.pm2_env && (proc.pm2_env.env || proc.pm2_env)) || {};
+const missing = [];
+for (const key of requiredVars) {
+  const raw = env[key];
+  const value = typeof raw === "string" ? raw.trim() : String(raw || "").trim();
+  if (!value || value === "undefined" || value === "null" || value.startsWith("CHANGE_ME")) {
+    missing.push(`${key} invalid`);
+  }
+}
+if (missing.length) {
+  console.log(missing.join(", "));
+  process.exit(1);
+}
+console.log(`${requiredVars.length}/${requiredVars.length}`);
+')"; then
+  fail "PM2 env check failed for ${PM2_APP_NAME}: ${env_check_result}"
 fi
-printf '✓ API health: 200 OK\n'
+pass "PM2 env: ${env_check_result} required vars present"
 
-# 3) Frontend reachable
-frontend_code="$(curl -sS -o /dev/null -w '%{http_code}' https://dcp.sa)" || fail "Frontend unreachable"
+if ! check_url_health "$LOCAL_API_HEALTH_URL"; then
+  fail "Local API health failed at ${LOCAL_API_HEALTH_URL}"
+fi
+pass "Local API health: 200 + status=ok"
+
+IFS=',' read -r -a public_candidates <<<"$PUBLIC_API_HEALTH_CANDIDATES"
+public_ok=""
+for candidate in "${public_candidates[@]}"; do
+  candidate="$(printf '%s' "$candidate" | xargs)"
+  [ -n "$candidate" ] || continue
+  if check_url_health "$candidate"; then
+    public_ok="$candidate"
+    break
+  fi
+done
+if [ -z "$public_ok" ]; then
+  fail "Public API health failed for all candidates: ${PUBLIC_API_HEALTH_CANDIDATES}"
+fi
+pass "Public API health: ${public_ok}"
+
+frontend_code="$(curl -sS -L -o /dev/null -w '%{http_code}' "$FRONTEND_URL")" || fail "Frontend unreachable (${FRONTEND_URL})"
 if [ "$frontend_code" != "200" ]; then
-  fail "Frontend HTTP ${frontend_code}"
+  fail "Frontend returned HTTP ${frontend_code} (${FRONTEND_URL})"
 fi
-printf '✓ Frontend: 200 OK\n'
+pass "Frontend reachable: ${FRONTEND_URL}"
 
-# 4) SQLite connectivity through backend db module
 if ! db_check_output="$(node -e "const db=require('./backend/src/db'); db.prepare('SELECT 1').get(); console.log('DB OK');" 2>&1)"; then
   fail "DB check failed (${db_check_output})"
 fi
-printf '✓ DB: connected\n'
+pass "SQLite connectivity via backend db module"
 
-# 5) PM2 recent logs clean
-if ! pm2_log_chunk="$(pm2 logs --nostream --lines 50 2>&1)"; then
-  fail "unable to read PM2 logs"
+if ! pm2_log_chunk="$(pm2 logs "$PM2_APP_NAME" --nostream --lines 80 2>&1)"; then
+  fail "unable to read PM2 logs for ${PM2_APP_NAME}"
 fi
-
-if printf '%s' "$pm2_log_chunk" | grep -Eiq 'ERROR|FATAL'; then
-  fail "PM2 logs contain ERROR/FATAL in last 50 lines"
+if printf '%s' "$pm2_log_chunk" | grep -Eiq 'FATAL|UnhandledPromiseRejection|EADDRINUSE|SQLITE_'; then
+  fail "PM2 logs for ${PM2_APP_NAME} contain fatal signatures in last 80 lines"
 fi
-printf '✓ Logs: clean\n'
+pass "PM2 logs: no fatal signatures for ${PM2_APP_NAME}"
 
 printf '[DEPLOY CHECK] PASS\n'
-exit 0

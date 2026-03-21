@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -18,20 +19,9 @@ const ContainerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 2
 const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
 
-const navItems = [
-  { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-  { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-  { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-  { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-  { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-  { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-  { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-  { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-  { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-]
-
 export default function RentersPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -47,6 +37,18 @@ export default function RentersPage() {
   const [bulkCreditModal, setBulkCreditModal] = useState(false)
   const [bulkCreditAmount, setBulkCreditAmount] = useState('')
   const [bulkCreditReason, setBulkCreditReason] = useState('')
+
+  const navItems = useMemo(() => ([
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+  ]), [t])
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -98,16 +100,16 @@ export default function RentersPage() {
       })
       const json = await res.json()
       if (!res.ok) {
-        throw new Error(json?.error || 'Failed to grant credits')
+        throw new Error(json?.error || t('admin.renters.failed_grant_credits'))
       }
       setCreditModal(null)
       setCreditAmount('')
       setCreditReason('')
-      setCreditToast(`Credits granted successfully to ${creditModal.name}.`)
+      setCreditToast(`${t('admin.renters.credits_granted_to')} ${creditModal.name}.`)
       await fetchRenters()
     } catch (err: any) {
       console.error(err)
-      setCreditToast(err?.message || 'Failed to grant credits.')
+      setCreditToast(err?.message || t('admin.renters.failed_grant_credits'))
     }
     finally { setCreditLoading(false) }
   }
@@ -172,11 +174,11 @@ export default function RentersPage() {
   })
 
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Renter Management</h1>
+        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('admin.renters.title')}</h1>
         <p className="text-dc1-text-secondary">
-          {data ? `${data.total} total — ${data.active} active, ${data.suspended} suspended` : 'Loading...'}
+          {data ? `${data.total} ${t('marketplace.total')} — ${data.active} ${t('admin.renters.active')}, ${data.suspended} ${t('admin.renters.suspended')}` : t('common.loading')}
         </p>
         {creditToast && (
           <div className="mt-3 rounded-md border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-300">
@@ -190,7 +192,7 @@ export default function RentersPage() {
         <div className="flex flex-col sm:flex-row gap-4">
           <input
             type="text"
-            placeholder="Search by name or email..."
+            placeholder={t('admin.renters.search_placeholder')}
             className="input flex-1"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -206,7 +208,7 @@ export default function RentersPage() {
                     : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
                 }`}
               >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
+                {f === 'all' ? t('admin.jobs.filter.all') : f === 'active' ? t('admin.renters.active') : t('admin.renters.suspended')}
               </button>
             ))}
           </div>
@@ -216,30 +218,30 @@ export default function RentersPage() {
       {/* Bulk Actions Bar */}
       {selected.size > 0 && (
         <div className="card mb-4 flex items-center justify-between">
-          <span className="text-sm text-dc1-text-primary font-medium">{selected.size} selected</span>
+          <span className="text-sm text-dc1-text-primary font-medium">{selected.size} {t('admin.renters.selected')}</span>
           <div className="flex gap-2">
             <button onClick={() => handleBulkAction('credit')} disabled={bulkLoading}
               className="text-xs px-3 py-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 disabled:opacity-50 font-medium">
-              Bulk Credit
+              {t('admin.renters.bulk_credit')}
             </button>
             <button onClick={() => handleBulkAction('suspend')} disabled={bulkLoading}
               className="text-xs px-3 py-1.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50 font-medium">
-              {bulkLoading ? 'Processing...' : 'Bulk Suspend'}
+              {bulkLoading ? t('admin.renters.processing') : t('admin.renters.bulk_suspend')}
             </button>
             <button onClick={() => handleBulkAction('unsuspend')} disabled={bulkLoading}
               className="text-xs px-3 py-1.5 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 font-medium">
-              {bulkLoading ? 'Processing...' : 'Bulk Reactivate'}
+              {bulkLoading ? t('admin.renters.processing') : t('admin.renters.bulk_reactivate')}
             </button>
             <button onClick={() => setSelected(new Set())}
               className="text-xs px-3 py-1.5 rounded bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary font-medium">
-              Clear
+              {t('admin.renters.clear')}
             </button>
           </div>
         </div>
       )}
 
       {loading ? (
-        <div className="text-dc1-text-secondary">Loading renters...</div>
+        <div className="text-dc1-text-secondary">{t('admin.renters.loading')}</div>
       ) : (
         <div className="card">
           <div className="table-container">
@@ -250,13 +252,13 @@ export default function RentersPage() {
                     <input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length}
                       onChange={toggleAll} className="rounded border-dc1-border" />
                   </th>
-                  <th>Renter</th>
-                  <th>Organization</th>
-                  <th>Balance</th>
-                  <th>Jobs</th>
-                  <th>Spent</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th>{t('admin.renters.renter')}</th>
+                  <th>{t('admin.renters.organization')}</th>
+                  <th>{t('admin.renters.balance')}</th>
+                  <th>{t('admin.renters.jobs')}</th>
+                  <th>{t('admin.renters.spent')}</th>
+                  <th>{t('table.status')}</th>
+                  <th>{t('admin.jobs.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -272,20 +274,20 @@ export default function RentersPage() {
                       </Link>
                       <div className="text-xs text-dc1-text-muted">{r.email}</div>
                     </td>
-                    <td className="text-sm">{r.organization || '—'}</td>
-                    <td className="text-sm text-dc1-amber">{r.balance_halala !== null && r.balance_halala !== undefined ? `${(r.balance_halala / 100).toFixed(2)} SAR` : '—'}</td>
+                    <td className="text-sm">{r.organization || t('admin.renters.na')}</td>
+                    <td className="text-sm text-dc1-amber">{r.balance_halala !== null && r.balance_halala !== undefined ? `${(r.balance_halala / 100).toFixed(2)} ${t('common.sar')}` : '—'}</td>
                     <td className="text-sm">{r.total_jobs || 0}</td>
-                    <td className="text-sm">{r.total_spent_halala != null && r.total_spent_halala !== undefined ? `${(r.total_spent_halala / 100).toFixed(2)} SAR` : '—'}</td>
+                    <td className="text-sm">{r.total_spent_halala != null && r.total_spent_halala !== undefined ? `${(r.total_spent_halala / 100).toFixed(2)} ${t('common.sar')}` : t('admin.renters.na')}</td>
                     <td>
                       <StatusBadge status={r.status === 'suspended' ? 'warning' : 'online'}
-                        label={r.status === 'suspended' ? 'Suspended' : 'Active'} />
+                        label={r.status === 'suspended' ? t('admin.renters.suspended') : t('admin.renters.active')} />
                     </td>
                     <td className="space-x-2 flex">
                       <button
                         onClick={() => setCreditModal({ id: r.id, name: r.name })}
                         className="text-xs px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
                       >
-                        Grant Credits
+                        {t('admin.renters.grant_credits')}
                       </button>
                       {r.status === 'suspended' ? (
                         <button
@@ -293,7 +295,7 @@ export default function RentersPage() {
                           disabled={actionLoading === r.id}
                           className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50"
                         >
-                          {actionLoading === r.id ? '...' : 'Reactivate'}
+                          {actionLoading === r.id ? '...' : t('admin.renters.reactivate')}
                         </button>
                       ) : (
                         <button
@@ -301,14 +303,14 @@ export default function RentersPage() {
                           disabled={actionLoading === r.id}
                           className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50"
                         >
-                          {actionLoading === r.id ? '...' : 'Suspend'}
+                          {actionLoading === r.id ? '...' : t('admin.renters.suspend')}
                         </button>
                       )}
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="text-dc1-text-muted text-sm text-center">No renters found</td></tr>
+                  <tr><td colSpan={8} className="text-dc1-text-muted text-sm text-center">{t('admin.renters.no_renters')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -320,10 +322,10 @@ export default function RentersPage() {
       {creditModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-dc1-surface-l1 rounded-lg p-6 w-96 shadow-lg">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">Grant Credits: {creditModal.name}</h2>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">{t('admin.renters.grant_credits')}: {creditModal.name}</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">Amount (SAR)</label>
+                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">{t('admin.renters.amount_sar')}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -334,10 +336,10 @@ export default function RentersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">Reason</label>
+                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">{t('admin.renters.reason')}</label>
                 <input
                   type="text"
-                  placeholder="e.g., Promotion, Refund, Dispute..."
+                  placeholder={t('admin.renters.reason_placeholder')}
                   className="input w-full"
                   value={creditReason}
                   onChange={e => setCreditReason(e.target.value)}
@@ -348,14 +350,14 @@ export default function RentersPage() {
                   onClick={() => setCreditModal(null)}
                   className="px-4 py-2 rounded text-sm font-medium bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary"
                 >
-                  Cancel
+                  {t('admin.jobs.cancel')}
                 </button>
                 <button
                   onClick={handleCredit}
                   disabled={creditLoading || !creditAmount || !creditReason}
                   className="px-4 py-2 rounded text-sm font-medium bg-dc1-amber text-black hover:bg-yellow-500 disabled:opacity-50"
                 >
-                  {creditLoading ? 'Processing...' : 'Confirm Grant'}
+                  {creditLoading ? t('admin.renters.processing') : t('admin.renters.confirm_grant')}
                 </button>
               </div>
             </div>
@@ -366,27 +368,27 @@ export default function RentersPage() {
       {bulkCreditModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-dc1-surface-l1 rounded-lg p-6 w-96 shadow-lg">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">Bulk Credit: {selected.size} Renters</h2>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">{t('admin.renters.bulk_credit')}: {selected.size} {t('admin.renters.renters')}</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">Amount per account (SAR)</label>
+                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">{t('admin.renters.amount_per_account_sar')}</label>
                 <input type="number" step="0.01" placeholder="0.00" className="input w-full"
                   value={bulkCreditAmount} onChange={e => setBulkCreditAmount(e.target.value)} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">Reason</label>
-                <input type="text" placeholder="e.g., Promotion, Bonus..." className="input w-full"
+                <label className="block text-sm font-medium text-dc1-text-secondary mb-2">{t('admin.renters.reason')}</label>
+                <input type="text" placeholder={t('admin.renters.bulk_reason_placeholder')} className="input w-full"
                   value={bulkCreditReason} onChange={e => setBulkCreditReason(e.target.value)} />
               </div>
-              <p className="text-xs text-dc1-text-muted">Total: {bulkCreditAmount ? `${(parseFloat(bulkCreditAmount) * selected.size).toFixed(2)} SAR across ${selected.size} accounts` : '—'}</p>
+              <p className="text-xs text-dc1-text-muted">{t('admin.renters.total')}: {bulkCreditAmount ? `${(parseFloat(bulkCreditAmount) * selected.size).toFixed(2)} ${t('common.sar')} ${t('admin.renters.across')} ${selected.size} ${t('admin.renters.accounts')}` : t('admin.renters.na')}</p>
               <div className="flex gap-2 justify-end">
                 <button onClick={() => { setBulkCreditModal(false); setBulkCreditAmount(''); setBulkCreditReason('') }}
                   className="px-4 py-2 rounded text-sm font-medium bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary">
-                  Cancel
+                  {t('admin.jobs.cancel')}
                 </button>
                 <button onClick={handleBulkCredit} disabled={bulkLoading || !bulkCreditAmount || !bulkCreditReason}
                   className="px-4 py-2 rounded text-sm font-medium bg-dc1-amber text-black hover:bg-yellow-500 disabled:opacity-50">
-                  {bulkLoading ? 'Processing...' : 'Confirm Bulk Credit'}
+                  {bulkLoading ? t('admin.renters.processing') : t('admin.renters.confirm_bulk_credit')}
                 </button>
               </div>
             </div>

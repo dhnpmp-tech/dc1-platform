@@ -89,6 +89,8 @@ npm run test:gas
 
 ## Deploying to Base Sepolia
 
+For an operator-friendly runbook, use `contracts/BASE_SEPOLIA_LAUNCH_CHECKLIST.md`.
+
 1. **Copy and fill env vars**
 
    ```bash
@@ -108,7 +110,7 @@ npm run test:gas
    npm run deploy:sepolia
    ```
 
-   The script writes `abis/Escrow.json` with the deployed address and ABI.
+   The script writes `abis/Escrow.json` with deployed metadata (`address`, `usdcAddress`, `oracleAddress`, `chainId`, `abi`).
 
 4. **Verify on Basescan** (optional)
 
@@ -128,15 +130,23 @@ Get testnet ETH from the [Base Sepolia faucet](https://www.coinbase.com/faucets/
 
 ## Backend Integration Plan
 
-The Express.js backend will integrate via `backend/src/services/escrow.js` (tracked in a follow-up issue). Key steps:
+The Express.js backend already contains an opt-in chain bridge at `backend/src/services/escrow-chain.js`.
+When `ESCROW_CONTRACT_ADDRESS` and `ESCROW_ORACLE_PRIVATE_KEY` are set, job routes call the contract in fire-and-forget mode.
 
-1. Load `contracts/abis/Escrow.json` (address + ABI) at startup
-2. Expose a **DC1 oracle wallet** (env var `ORACLE_PRIVATE_KEY`) for signing proofs
-3. Add backend endpoints:
-   - `POST /api/jobs/:id/escrow-lock` — renter initiates on-chain lock (returns tx data for frontend to sign + broadcast)
-   - `POST /api/jobs/:id/escrow-claim` — DC1 signs proof; provider broadcasts `claimLock`
-   - `GET /api/jobs/:id/escrow-status` — reads on-chain state via `getEscrow`
-4. Wire into job lifecycle in `backend/src/routes/jobs.js`: status transitions trigger escrow state checks
+Recommended backend envs:
+
+- `ESCROW_CONTRACT_ADDRESS` (required)
+- `ESCROW_ORACLE_PRIVATE_KEY` (required, signs completion proof)
+- `ESCROW_TX_PRIVATE_KEY` (optional, tx sender; defaults to oracle key)
+- `ESCROW_SETTLEMENT_PROVIDER_ADDRESS` (optional fallback provider wallet when provider has no EVM wallet)
+- `ESCROW_USDC_ADDRESS` (optional; defaults to Base Sepolia USDC)
+- `BASE_RPC_URL` (optional; defaults to `https://sepolia.base.org`)
+
+Current launch workflow:
+
+1. Backend sender wallet funds and approves USDC, then calls `depositAndLock`.
+2. On success completion paths, backend signs proof and calls `claimLock`.
+3. On failure/timeout paths, backend attempts `cancelExpiredLock` once expiry is reached.
 
 The current off-chain SQL escrow (DCP-32) remains the default. The on-chain path is opt-in for renters who want trustless settlement.
 

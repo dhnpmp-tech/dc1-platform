@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
+import { useLanguage } from '../../lib/i18n'
 
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -45,17 +46,6 @@ const TemplatesIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm12 0a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
   </svg>
 )
-
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-  { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
-  { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-  { label: 'Templates', href: '/renter/templates', icon: <TemplatesIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
-]
 
 type Category = 'all' | 'inference' | 'generation' | 'training' | 'embedding'
 
@@ -152,7 +142,7 @@ const TEMPLATES: JobTemplate[] = [
     rateHalalaPerMin: 15,
     model: 'sentence-transformers/all-MiniLM-L6-v2',
     params: {
-      texts: '["Hello world", "GPU computing is powerful", "DC1 marketplace"]',
+      texts: '["Hello world", "GPU computing is powerful", "DCP marketplace"]',
       batch_size: 32,
     },
     tags: ['Embeddings', 'NLP', 'RAG'],
@@ -241,9 +231,20 @@ function buildPlaygroundQuery(template: JobTemplate): string {
 }
 
 export default function TemplatesPage() {
+  const { t } = useLanguage()
   const [activeCategory, setActiveCategory] = useState<Category>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.templates'), href: '/renter/templates', icon: <TemplatesIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
+  ]
 
   const filtered = TEMPLATES.filter(
     (t) => activeCategory === 'all' || t.category === activeCategory
@@ -266,9 +267,9 @@ export default function TemplatesPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-dc1-text-primary mb-1">Job Templates</h1>
+          <h1 className="text-3xl font-bold text-dc1-text-primary mb-1">{t('templates.title')}</h1>
           <p className="text-dc1-text-secondary text-sm">
-            Pre-built configurations to launch compute jobs in seconds
+            {t('templates.subtitle')}
           </p>
         </div>
 

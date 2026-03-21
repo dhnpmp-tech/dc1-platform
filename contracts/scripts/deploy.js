@@ -39,7 +39,7 @@ async function main() {
   const usdcAddress = process.env.USDC_ADDRESS || BASE_SEPOLIA_USDC;
   const oracleAddress = process.env.ORACLE_ADDRESS || deployer.address;
 
-  console.log("\nUSVC address :", usdcAddress);
+  console.log("\nUSDC address :", usdcAddress);
   console.log("Oracle address:", oracleAddress);
 
   if (!process.env.ORACLE_ADDRESS) {
@@ -67,6 +67,8 @@ async function main() {
 
   const output = {
     address: contractAddress,
+    usdcAddress,
+    oracleAddress,
     network: network.name,
     chainId: Number(network.chainId),
     deployedAt: new Date().toISOString(),

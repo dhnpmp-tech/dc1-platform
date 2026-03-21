@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -16,18 +17,6 @@ const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 2
 const ShieldIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>)
 const CpuIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>)
 const ContainerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>)
-
-const navItems = [
-  { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-  { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-  { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-  { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-  { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-  { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-  { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-  { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-  { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ApprovedImage {
@@ -68,17 +57,6 @@ function getScanStatus(img: ApprovedImage): ScanStatus {
   return 'CLEAN'
 }
 
-function ScanBadge({ status }: { status: ScanStatus }) {
-  const map: Record<ScanStatus, { label: string; cls: string }> = {
-    CLEAN: { label: 'CLEAN', cls: 'bg-green-900/50 text-green-300 border border-green-700' },
-    CRITICAL: { label: 'CRITICAL CVEs', cls: 'bg-red-900/50 text-red-300 border border-red-700' },
-    PENDING: { label: 'PENDING', cls: 'bg-amber-900/50 text-amber-300 border border-amber-700' },
-    NOT_SCANNED: { label: 'NOT SCANNED', cls: 'bg-gray-800 text-gray-400 border border-gray-600' },
-  }
-  const { label, cls } = map[status]
-  return <span className={`inline-flex px-2 py-0.5 rounded text-xs font-mono font-semibold ${cls}`}>{label}</span>
-}
-
 const IMAGE_TYPES = [
   'pytorch-cuda',
   'vllm-serve',
@@ -90,6 +68,7 @@ const IMAGE_TYPES = [
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ContainersPage() {
+  const { t } = useLanguage()
   const router = useRouter()
   const [adminKey, setAdminKey] = useState<string | null>(null)
   const [tab, setTab] = useState<'registry' | 'security'>('registry')
@@ -133,7 +112,7 @@ export default function ContainersPage() {
       const data: SecurityStatus = await res.json()
       setSecurityStatus(data)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load container registry')
+      setError(e instanceof Error ? e.message : t('admin.containers.error_load'))
     } finally {
       setLoading(false)
     }
@@ -157,16 +136,16 @@ export default function ContainersPage() {
       })
       const data = await res.json()
       if (res.ok) {
-        setApproveResult({ ok: true, message: `Image approved and added to registry.` })
+        setApproveResult({ ok: true, message: t('admin.containers.approve_success') })
         setFormImageRef('')
         fetchSecurityStatus(adminKey)
       } else if (res.status === 400 && data.critical_count > 0) {
-        setApproveResult({ ok: false, message: data.error || 'Image rejected: CRITICAL vulnerabilities found.', cves: data.critical_count })
+        setApproveResult({ ok: false, message: data.error || t('admin.containers.approve_rejected_critical'), cves: data.critical_count })
       } else {
-        setApproveResult({ ok: false, message: data.error || 'Approval failed.' })
+        setApproveResult({ ok: false, message: data.error || t('admin.containers.approve_failed') })
       }
     } catch {
-      setApproveResult({ ok: false, message: 'Network error. Please try again.' })
+      setApproveResult({ ok: false, message: t('admin.containers.network_retry') })
     } finally {
       setApproving(false)
     }
@@ -184,13 +163,13 @@ export default function ContainersPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setRowAction(prev => ({ ...prev, [img.id]: { loading: false, error: data.error || 'Scan failed' } }))
+        setRowAction(prev => ({ ...prev, [img.id]: { loading: false, error: data.error || t('admin.containers.scan_failed') } }))
       } else {
         setRowAction(prev => ({ ...prev, [img.id]: { loading: false } }))
         fetchSecurityStatus(adminKey)
       }
     } catch {
-      setRowAction(prev => ({ ...prev, [img.id]: { loading: false, error: 'Network error' } }))
+      setRowAction(prev => ({ ...prev, [img.id]: { loading: false, error: t('admin.containers.network_error') } }))
     }
   }
 
@@ -214,7 +193,9 @@ export default function ContainersPage() {
         failCount++
       }
     }
-    setRescanAllResult(`Re-scan complete: ${successCount} succeeded, ${failCount} failed.`)
+    setRescanAllResult(t('admin.containers.rescan_all_result')
+      .replace('{success}', String(successCount))
+      .replace('{failed}', String(failCount)))
     setRescanningAll(false)
     fetchSecurityStatus(adminKey)
   }
@@ -230,26 +211,49 @@ export default function ContainersPage() {
     return d.slice(0, 12) + '…'
   }
 
+  function ScanBadge({ status }: { status: ScanStatus }) {
+    const map: Record<ScanStatus, { label: string; cls: string }> = {
+      CLEAN: { label: t('admin.containers.scan_status.clean'), cls: 'bg-green-900/50 text-green-300 border border-green-700' },
+      CRITICAL: { label: t('admin.containers.scan_status.critical'), cls: 'bg-red-900/50 text-red-300 border border-red-700' },
+      PENDING: { label: t('admin.containers.scan_status.pending'), cls: 'bg-amber-900/50 text-amber-300 border border-amber-700' },
+      NOT_SCANNED: { label: t('admin.containers.scan_status.not_scanned'), cls: 'bg-gray-800 text-gray-400 border border-gray-600' },
+    }
+    const { label, cls } = map[status]
+    return <span className={`inline-flex px-2 py-0.5 rounded text-xs font-mono font-semibold ${cls}`}>{label}</span>
+  }
+
   // ── Warn if any approved image has high CVEs ───────────────────────────────
   const hasCriticalImages = securityStatus?.approved_images.some(img =>
     img.critical_count != null && img.critical_count > 0
   )
 
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+  ]
+
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-dc1-text-primary">Container Registry</h1>
-            <p className="text-dc1-text-secondary mt-1 text-sm">Manage approved Docker images and security scan results</p>
+            <h1 className="text-3xl font-bold text-dc1-text-primary">{t('admin.containers.title')}</h1>
+            <p className="text-dc1-text-secondary mt-1 text-sm">{t('admin.containers.subtitle')}</p>
           </div>
           <button
             onClick={() => adminKey && fetchSecurityStatus(adminKey)}
             className="btn-secondary text-sm px-4 py-2"
             disabled={loading}
           >
-            {loading ? 'Refreshing…' : 'Refresh'}
+            {loading ? t('admin.containers.refreshing') : t('common.retry')}
           </button>
         </div>
 
@@ -260,7 +264,7 @@ export default function ContainersPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <span className="text-red-300 text-sm font-medium">
-              One or more approved images have CRITICAL CVEs. Review and revoke immediately.
+              {t('admin.containers.critical_banner')}
             </span>
           </div>
         )}
@@ -268,17 +272,17 @@ export default function ContainersPage() {
         {/* Tabs */}
         <div className="border-b border-dc1-surface-l3">
           <div className="flex gap-1">
-            {(['registry', 'security'] as const).map(t => (
+            {(['registry', 'security'] as const).map(tabKey => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
+                key={tabKey}
+                onClick={() => setTab(tabKey)}
                 className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  tab === t
+                  tab === tabKey
                     ? 'border-dc1-amber text-dc1-amber'
                     : 'border-transparent text-dc1-text-secondary hover:text-dc1-text-primary'
                 }`}
               >
-                {t === 'registry' ? 'Registry' : 'Security Status'}
+                {tabKey === 'registry' ? t('admin.containers.tab_registry') : t('admin.containers.tab_security')}
               </button>
             ))}
           </div>
@@ -294,18 +298,18 @@ export default function ContainersPage() {
           <div className="space-y-6">
             {/* Approve new image form */}
             <div className="dc1-card p-5">
-              <h2 className="text-lg font-semibold text-dc1-text-primary mb-4">Approve New Image</h2>
+              <h2 className="text-lg font-semibold text-dc1-text-primary mb-4">{t('admin.containers.approve_title')}</h2>
               <form onSubmit={handleApprove} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-dc1-text-secondary mb-1">
-                      Image Reference
+                      {t('admin.containers.image_reference')}
                     </label>
                     <input
                       type="text"
                       value={formImageRef}
                       onChange={e => setFormImageRef(e.target.value)}
-                      placeholder="e.g. docker.io/user/img:tag@sha256:abc123…"
+                      placeholder={t('admin.containers.image_reference_placeholder')}
                       className="w-full bg-dc1-surface-l2 border border-dc1-surface-l3 rounded-lg px-3 py-2 text-sm text-dc1-text-primary placeholder-dc1-text-secondary focus:outline-none focus:border-dc1-amber font-mono"
                       required
                       disabled={approving}
@@ -314,7 +318,7 @@ export default function ContainersPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-dc1-text-secondary mb-1">
-                      Image Type
+                      {t('admin.containers.image_type')}
                     </label>
                     <select
                       value={formImageType}
@@ -335,11 +339,11 @@ export default function ContainersPage() {
                     disabled={approving || !formImageRef.trim()}
                     className="btn-primary px-5 py-2 text-sm disabled:opacity-50"
                   >
-                    {approving ? 'Scanning & Approving…' : 'Approve Image'}
+                    {approving ? t('admin.containers.approving') : t('admin.containers.approve_button')}
                   </button>
                   {approving && (
                     <span className="text-xs text-dc1-text-secondary animate-pulse">
-                      Running Trivy scan — this may take 30–60s…
+                      {t('admin.containers.approving_hint')}
                     </span>
                   )}
                 </div>
@@ -353,7 +357,7 @@ export default function ContainersPage() {
                   }`}>
                     {approveResult.message}
                     {!approveResult.ok && approveResult.cves != null && (
-                      <span className="ms-2 font-mono font-bold">{approveResult.cves} critical CVE{approveResult.cves !== 1 ? 's' : ''}</span>
+                      <span className="ms-2 font-mono font-bold">{`${approveResult.cves} ${t('admin.containers.critical_cves_count')}`}</span>
                     )}
                   </div>
                 )}
@@ -363,32 +367,32 @@ export default function ContainersPage() {
             {/* Approved images table */}
             <div className="dc1-card overflow-hidden">
               <div className="px-5 py-4 border-b border-dc1-surface-l3 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-dc1-text-primary">Approved Images</h2>
+                <h2 className="text-lg font-semibold text-dc1-text-primary">{t('admin.containers.approved_images')}</h2>
                 <span className="text-xs text-dc1-text-secondary">
-                  {securityStatus?.approved_images.length ?? 0} images
+                  {`${securityStatus?.approved_images.length ?? 0} ${t('admin.containers.images')}`}
                 </span>
               </div>
 
               {loading ? (
-                <div className="px-5 py-10 text-center text-dc1-text-secondary text-sm">Loading registry…</div>
+                <div className="px-5 py-10 text-center text-dc1-text-secondary text-sm">{t('admin.containers.loading_registry')}</div>
               ) : !securityStatus?.approved_images.length ? (
                 <div className="px-5 py-10 text-center text-dc1-text-secondary">
                   <ContainerIcon />
-                  <p className="mt-3 text-sm">No approved images yet.</p>
-                  <p className="text-xs mt-1">Use the form above to approve a custom Docker image.</p>
+                  <p className="mt-3 text-sm">{t('admin.containers.no_images')}</p>
+                  <p className="text-xs mt-1">{t('admin.containers.no_images_hint')}</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-dc1-surface-l3 text-dc1-text-secondary text-xs uppercase">
-                        <th className="px-4 py-3 text-start font-medium">Image</th>
-                        <th className="px-4 py-3 text-start font-medium">Type</th>
-                        <th className="px-4 py-3 text-start font-medium">Registry</th>
-                        <th className="px-4 py-3 text-start font-medium">SHA256</th>
-                        <th className="px-4 py-3 text-start font-medium">Approved</th>
-                        <th className="px-4 py-3 text-start font-medium">Scan Status</th>
-                        <th className="px-4 py-3 text-end font-medium">Actions</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.image')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.type')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.registry')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.sha256')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.approved')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.scan_status')}</th>
+                        <th className="px-4 py-3 text-end font-medium">{t('admin.containers.table.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -420,7 +424,7 @@ export default function ContainersPage() {
                             <td className="px-4 py-3">
                               <ScanBadge status={status} />
                               {status === 'CRITICAL' && img.critical_count != null && (
-                                <span className="ms-2 text-xs text-red-400">{img.critical_count} CVE{img.critical_count !== 1 ? 's' : ''}</span>
+                                <span className="ms-2 text-xs text-red-400">{`${img.critical_count} ${t('admin.containers.cves')}`}</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-end">
@@ -433,7 +437,7 @@ export default function ContainersPage() {
                                   disabled={action?.loading}
                                   className="text-xs px-3 py-1 rounded bg-dc1-surface-l3 text-dc1-text-primary hover:bg-dc1-amber hover:text-dc1-void transition-colors disabled:opacity-50"
                                 >
-                                  {action?.loading ? 'Scanning…' : 'Re-scan'}
+                                  {action?.loading ? t('admin.containers.scanning') : t('admin.containers.rescan')}
                                 </button>
                               </div>
                             </td>
@@ -455,23 +459,23 @@ export default function ContainersPage() {
             {securityStatus && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="dc1-card p-4 text-center">
-                  <p className="text-dc1-text-secondary text-xs mb-1">Approved Images</p>
+                  <p className="text-dc1-text-secondary text-xs mb-1">{t('admin.containers.approved_images')}</p>
                   <p className="text-2xl font-bold text-dc1-text-primary">{securityStatus.approved_images.length}</p>
                 </div>
                 <div className="dc1-card p-4 text-center">
-                  <p className="text-dc1-text-secondary text-xs mb-1">Clean</p>
+                  <p className="text-dc1-text-secondary text-xs mb-1">{t('admin.containers.clean')}</p>
                   <p className="text-2xl font-bold text-green-400">
                     {securityStatus.approved_images.filter(i => getScanStatus(i) === 'CLEAN').length}
                   </p>
                 </div>
                 <div className="dc1-card p-4 text-center">
-                  <p className="text-dc1-text-secondary text-xs mb-1">Critical CVEs</p>
+                  <p className="text-dc1-text-secondary text-xs mb-1">{t('admin.containers.critical_cves')}</p>
                   <p className="text-2xl font-bold text-red-400">
                     {securityStatus.approved_images.filter(i => getScanStatus(i) === 'CRITICAL').length}
                   </p>
                 </div>
                 <div className="dc1-card p-4 text-center">
-                  <p className="text-dc1-text-secondary text-xs mb-1">Unscanned</p>
+                  <p className="text-dc1-text-secondary text-xs mb-1">{t('admin.containers.unscanned')}</p>
                   <p className="text-2xl font-bold text-gray-400">
                     {securityStatus.approved_images.filter(i => getScanStatus(i) === 'NOT_SCANNED').length}
                   </p>
@@ -483,9 +487,9 @@ export default function ContainersPage() {
             <div className="dc1-card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-dc1-text-primary">Re-scan All Images</h2>
+                  <h2 className="text-lg font-semibold text-dc1-text-primary">{t('admin.containers.rescan_all_title')}</h2>
                   <p className="text-xs text-dc1-text-secondary mt-0.5">
-                    Trigger Trivy scans for every approved image. Rate-limited.
+                    {t('admin.containers.rescan_all_hint')}
                   </p>
                 </div>
                 <button
@@ -493,7 +497,7 @@ export default function ContainersPage() {
                   disabled={rescanningAll || !securityStatus?.approved_images.length}
                   className="btn-secondary px-4 py-2 text-sm disabled:opacity-50"
                 >
-                  {rescanningAll ? 'Scanning all…' : 'Re-scan All Templates'}
+                  {rescanningAll ? t('admin.containers.scanning_all') : t('admin.containers.rescan_all')}
                 </button>
               </div>
               {rescanAllResult && (
@@ -504,22 +508,22 @@ export default function ContainersPage() {
             {/* Per-image security table */}
             <div className="dc1-card overflow-hidden">
               <div className="px-5 py-4 border-b border-dc1-surface-l3">
-                <h2 className="text-lg font-semibold text-dc1-text-primary">Image Scan Status</h2>
+                <h2 className="text-lg font-semibold text-dc1-text-primary">{t('admin.containers.image_scan_status')}</h2>
               </div>
               {loading ? (
-                <div className="px-5 py-10 text-center text-dc1-text-secondary text-sm">Loading…</div>
+                <div className="px-5 py-10 text-center text-dc1-text-secondary text-sm">{t('common.loading')}</div>
               ) : !securityStatus?.approved_images.length ? (
-                <div className="px-5 py-10 text-center text-dc1-text-secondary text-sm">No approved images.</div>
+                <div className="px-5 py-10 text-center text-dc1-text-secondary text-sm">{t('admin.containers.no_images')}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-dc1-surface-l3 text-dc1-text-secondary text-xs uppercase">
-                        <th className="px-4 py-3 text-start font-medium">Image</th>
-                        <th className="px-4 py-3 text-start font-medium">Last Scan</th>
-                        <th className="px-4 py-3 text-start font-medium">Critical</th>
-                        <th className="px-4 py-3 text-start font-medium">Status</th>
-                        <th className="px-4 py-3 text-start font-medium">Last Validated</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.image')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.last_scan')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.critical')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.status')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.last_validated')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -557,17 +561,17 @@ export default function ContainersPage() {
             {securityStatus && securityStatus.recent_scans.length > 0 && (
               <div className="dc1-card overflow-hidden">
                 <div className="px-5 py-4 border-b border-dc1-surface-l3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-dc1-text-primary">Recent Scan Log</h2>
-                  <span className="text-xs text-dc1-text-secondary">{securityStatus.recent_scans.length} records</span>
+                  <h2 className="text-lg font-semibold text-dc1-text-primary">{t('admin.containers.recent_scan_log')}</h2>
+                  <span className="text-xs text-dc1-text-secondary">{`${securityStatus.recent_scans.length} ${t('admin.containers.records')}`}</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-dc1-surface-l3 text-dc1-text-secondary text-xs uppercase">
-                        <th className="px-4 py-3 text-start font-medium">Image</th>
-                        <th className="px-4 py-3 text-start font-medium">Scanned At</th>
-                        <th className="px-4 py-3 text-start font-medium">Critical CVEs</th>
-                        <th className="px-4 py-3 text-start font-medium">Approved</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.image')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.scanned_at')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.critical_cves')}</th>
+                        <th className="px-4 py-3 text-start font-medium">{t('admin.containers.table.approved')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -587,8 +591,8 @@ export default function ContainersPage() {
                           </td>
                           <td className="px-4 py-3">
                             {scan.approved
-                              ? <span className="text-xs text-green-400">Yes</span>
-                              : <span className="text-xs text-dc1-text-secondary">No</span>
+                              ? <span className="text-xs text-green-400">{t('common.yes')}</span>
+                              : <span className="text-xs text-dc1-text-secondary">{t('common.no')}</span>
                             }
                           </td>
                         </tr>

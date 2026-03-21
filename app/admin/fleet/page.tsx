@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -18,25 +19,13 @@ const ContainerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 2
 const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
 
-const navItems = [
-  { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-  { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-  { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-  { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-  { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-  { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-  { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-  { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-  { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-]
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatHeartbeat(iso: string | null): string {
-  if (!iso) return 'Never'
+function formatHeartbeat(iso: string | null, t: (key: string) => string): string {
+  if (!iso) return t('admin.fleet.never')
   const ageSec = (Date.now() - new Date(iso).getTime()) / 1000
-  if (ageSec < 60) return `${Math.round(ageSec)}s ago`
-  if (ageSec < 3600) return `${Math.round(ageSec / 60)}m ago`
-  return `${Math.round(ageSec / 3600)}h ago`
+  if (ageSec < 60) return t('admin.fleet.seconds_ago').replace('{count}', String(Math.round(ageSec)))
+  if (ageSec < 3600) return t('admin.fleet.minutes_ago').replace('{count}', String(Math.round(ageSec / 60)))
+  return t('admin.fleet.hours_ago').replace('{count}', String(Math.round(ageSec / 3600)))
 }
 
 function providerStatus(lastHeartbeat: string | null): 'online' | 'warning' | 'offline' {
@@ -49,6 +38,7 @@ function providerStatus(lastHeartbeat: string | null): 'online' | 'warning' | 'o
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function FleetHealthPage() {
+  const { t } = useLanguage()
   const router = useRouter()
   const [data, setData] = useState<any>(null)
   const [health, setHealth] = useState<any>(null)
@@ -108,13 +98,17 @@ export default function FleetHealthPage() {
       })
       const json = await res.json()
       if (res.ok) {
-        setSweepResult(`Swept: ${json.providers_marked_offline} offline, ${json.jobs_requeued} jobs requeued`)
+        setSweepResult(
+          t('admin.fleet.sweep_result')
+            .replace('{offline}', String(json.providers_marked_offline))
+            .replace('{jobs}', String(json.jobs_requeued))
+        )
         fetchFleetHealth()
       } else {
-        setSweepResult(json.error || 'Sweep failed')
+        setSweepResult(json.error || t('admin.fleet.sweep_failed'))
       }
     } catch {
-      setSweepResult('Network error')
+      setSweepResult(t('admin.fleet.network_error'))
     } finally {
       setSweeping(false)
     }
@@ -146,37 +140,53 @@ export default function FleetHealthPage() {
   const providersOnline = summary.providers_online ?? health?.checks?.providers?.online ?? 0
   const providersTotal = summary.providers_total ?? health?.checks?.providers?.total ?? 0
 
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+  ]
+
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('common.admin')}>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Fleet Health & Daemon Management</h1>
+        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('admin.fleet.title')}</h1>
         <p className="text-dc1-text-secondary">
-          {data ? `${data.period_hours}h period — Generated ${new Date(data.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Loading...'}
+          {data
+            ? t('admin.fleet.period_generated')
+              .replace('{hours}', String(data.period_hours))
+              .replace('{time}', new Date(data.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+            : t('common.loading')}
         </p>
       </div>
 
       {/* Fleet Summary StatCards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard
-          label="Online Providers"
+          label={t('admin.fleet.online_providers')}
           value={fleetSummary?.online_count ?? '—'}
           accent="success"
           icon={<CpuIcon />}
         />
         <StatCard
-          label="Stale Providers"
+          label={t('admin.fleet.stale_providers')}
           value={fleetSummary?.stale_count ?? '—'}
           accent="amber"
           icon={<ServerIcon />}
         />
         <StatCard
-          label="Offline Providers"
+          label={t('admin.fleet.offline_providers')}
           value={fleetSummary?.offline_count ?? '—'}
           accent="error"
           icon={<ServerIcon />}
         />
         <StatCard
-          label="Total GPU VRAM"
+          label={t('admin.fleet.total_gpu_vram')}
           value={fleetSummary ? `${fleetSummary.total_vram_gb} GB` : '—'}
           accent="info"
           icon={<CpuIcon />}
@@ -186,7 +196,7 @@ export default function FleetHealthPage() {
       {/* Provider Table */}
       <div className="card mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-dc1-text-primary">Provider Fleet</h2>
+          <h2 className="text-xl font-bold text-dc1-text-primary">{t('admin.fleet.provider_fleet')}</h2>
           <div className="flex items-center gap-3">
             {sweepResult && (
               <span className="text-xs text-dc1-text-secondary">{sweepResult}</span>
@@ -196,22 +206,22 @@ export default function FleetHealthPage() {
               disabled={sweeping}
               className="px-4 py-2 bg-dc1-amber text-black text-sm font-semibold rounded hover:bg-dc1-amber/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {sweeping ? 'Sweeping…' : 'Sweep Stale'}
+              {sweeping ? t('admin.fleet.sweeping') : t('admin.fleet.sweep_stale')}
             </button>
           </div>
         </div>
         {providers.length === 0 ? (
-          <p className="text-dc1-text-secondary text-sm">No providers registered.</p>
+          <p className="text-dc1-text-secondary text-sm">{t('admin.fleet.no_providers')}</p>
         ) : (
           <div className="table-container">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Email</th>
-                  <th>GPU Model</th>
-                  <th>VRAM</th>
-                  <th>Last Heartbeat</th>
-                  <th>Status</th>
+                  <th>{t('table.email')}</th>
+                  <th>{t('table.gpu_model')}</th>
+                  <th>{t('table.vram')}</th>
+                  <th>{t('admin.fleet.last_heartbeat')}</th>
+                  <th>{t('table.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,7 +234,7 @@ export default function FleetHealthPage() {
                       <td className="text-sm">{p.email || '—'}</td>
                       <td className="text-sm font-medium text-dc1-text-primary">{p.gpu_model || p.gpu_name_detected || '—'}</td>
                       <td className="text-sm text-dc1-text-secondary">{vramGb ? `${vramGb} GB` : '—'}</td>
-                      <td className="text-xs text-dc1-text-secondary">{formatHeartbeat(p.last_heartbeat)}</td>
+                      <td className="text-xs text-dc1-text-secondary">{formatHeartbeat(p.last_heartbeat, t)}</td>
                       <td><StatusBadge status={badgeStatus} size="sm" /></td>
                     </tr>
                   )
@@ -233,7 +243,7 @@ export default function FleetHealthPage() {
             </table>
           </div>
         )}
-        <p className="text-xs text-dc1-text-muted mt-3">Auto-refreshes every 30s</p>
+        <p className="text-xs text-dc1-text-muted mt-3">{t('admin.fleet.autorefresh')}</p>
       </div>
 
       {/* Time Period Selector */}
@@ -271,45 +281,45 @@ export default function FleetHealthPage() {
               }`}></div>
               <div>
                 <h3 className="text-lg font-bold text-dc1-text-primary">
-                  System Status: {health.status.charAt(0).toUpperCase() + health.status.slice(1)}
+                  {t('admin.fleet.system_status')}: {t(`admin.fleet.health_status.${health.status}`)}
                 </h3>
                 <p className="text-xs text-dc1-text-secondary">{new Date(health.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
               </div>
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            <div className="bg-dc1-surface-l2 rounded p-3">
-              <div className="text-xs text-dc1-text-secondary mb-1">Database</div>
+              <div className="bg-dc1-surface-l2 rounded p-3">
+              <div className="text-xs text-dc1-text-secondary mb-1">{t('admin.fleet.database')}</div>
               <div className={`text-sm font-bold ${health.checks?.database === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
-                {health.checks?.database || 'unknown'}
+                {health.checks?.database || t('admin.fleet.unknown')}
               </div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
-              <div className="text-xs text-dc1-text-secondary mb-1">Providers Online</div>
+              <div className="text-xs text-dc1-text-secondary mb-1">{t('admin.fleet.providers_online')}</div>
               <div className="text-sm font-bold text-dc1-amber">{health.checks?.providers?.online ?? 0} / {health.checks?.providers?.total ?? 0}</div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
-              <div className="text-xs text-dc1-text-secondary mb-1">Active Jobs</div>
+              <div className="text-xs text-dc1-text-secondary mb-1">{t('admin.fleet.active_jobs')}</div>
               <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.jobs?.active ?? 0}</div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
-              <div className="text-xs text-dc1-text-secondary mb-1">Stuck Jobs</div>
+              <div className="text-xs text-dc1-text-secondary mb-1">{t('admin.fleet.stuck_jobs')}</div>
               <div className={`text-sm font-bold ${(health.checks?.jobs?.stuck ?? 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
                 {health.checks?.jobs?.stuck ?? 0}
               </div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
-              <div className="text-xs text-dc1-text-secondary mb-1">Failed (1h)</div>
+              <div className="text-xs text-dc1-text-secondary mb-1">{t('admin.fleet.failed_1h')}</div>
               <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.errors?.failed_last_hour ?? 0}</div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
-              <div className="text-xs text-dc1-text-secondary mb-1">Critical Events</div>
+              <div className="text-xs text-dc1-text-secondary mb-1">{t('admin.fleet.critical_events')}</div>
               <div className={`text-sm font-bold ${(health.checks?.errors?.critical_events ?? 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
                 {health.checks?.errors?.critical_events ?? 0}
               </div>
             </div>
             <div className="bg-dc1-surface-l2 rounded p-3">
-              <div className="text-xs text-dc1-text-secondary mb-1">Pending Withdrawals</div>
+              <div className="text-xs text-dc1-text-secondary mb-1">{t('admin.fleet.pending_withdrawals')}</div>
               <div className="text-sm font-bold text-dc1-text-primary">{health.checks?.withdrawals?.pending ?? 0}</div>
             </div>
           </div>
@@ -317,33 +327,33 @@ export default function FleetHealthPage() {
       )}
 
       {loading ? (
-        <div className="text-dc1-text-secondary">Loading fleet health data...</div>
+        <div className="text-dc1-text-secondary">{t('admin.fleet.loading')}</div>
       ) : (
         <>
           {/* Stat Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <StatCard label="Total Events" value={String(summary.total_events || 0)} accent="default" />
-            <StatCard label="Total Crashes" value={String(summary.total_crashes || 0)} accent="error" />
-            <StatCard label="Job Success Rate" value={summary.job_success_rate || 'N/A'} accent="success" />
-            <StatCard label="Providers Online" value={`${providersOnline} / ${providersTotal}`} accent="amber" />
+            <StatCard label={t('admin.fleet.total_events')} value={String(summary.total_events || 0)} accent="default" />
+            <StatCard label={t('admin.fleet.total_crashes')} value={String(summary.total_crashes || 0)} accent="error" />
+            <StatCard label={t('admin.fleet.job_success_rate')} value={summary.job_success_rate || t('admin.fleet.na')} accent="success" />
+            <StatCard label={t('admin.fleet.providers_online')} value={`${providersOnline} / ${providersTotal}`} accent="amber" />
           </div>
 
           {/* Version Distribution */}
           <div className="card mb-8">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">Version Distribution</h2>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">{t('admin.fleet.version_distribution')}</h2>
             {versions.length === 0 ? (
-              <p className="text-dc1-text-secondary">No version data available</p>
+              <p className="text-dc1-text-secondary">{t('admin.fleet.no_version_data')}</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {versions.map((v: any, idx: number) => (
                   <div key={idx} className="bg-dc1-surface-l2 rounded-lg p-4">
-                    <div className="text-dc1-text-secondary text-sm mb-1">Daemon Version</div>
+                    <div className="text-dc1-text-secondary text-sm mb-1">{t('admin.fleet.daemon_version')}</div>
                     <div className="text-lg font-bold text-dc1-text-primary mb-3">{v.daemon_version}</div>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-bold text-dc1-amber">{v.provider_count}</span>
-                      <span className="text-dc1-text-secondary text-sm">providers</span>
+                      <span className="text-dc1-text-secondary text-sm">{t('admin.fleet.providers')}</span>
                     </div>
-                    <div className="text-xs text-dc1-text-muted mt-2">Last seen: {formatTime(v.last_seen)}</div>
+                    <div className="text-xs text-dc1-text-muted mt-2">{t('admin.fleet.last_seen')}: {formatTime(v.last_seen)}</div>
                   </div>
                 ))}
               </div>
@@ -352,18 +362,18 @@ export default function FleetHealthPage() {
 
           {/* Crash Summary */}
           <div className="card mb-8">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">Crash Summary</h2>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">{t('admin.fleet.crash_summary')}</h2>
             {crashes.length === 0 ? (
-              <p className="text-dc1-text-secondary">No crashes in this period</p>
+              <p className="text-dc1-text-secondary">{t('admin.fleet.no_crashes')}</p>
             ) : (
               <div className="table-container">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Provider ID</th>
-                      <th>Crash Count</th>
-                      <th>Last Crash</th>
-                      <th>Versions Seen</th>
+                      <th>{t('admin.fleet.provider_id')}</th>
+                      <th>{t('admin.fleet.crash_count')}</th>
+                      <th>{t('admin.fleet.last_crash')}</th>
+                      <th>{t('admin.fleet.versions_seen')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -389,19 +399,19 @@ export default function FleetHealthPage() {
 
           {/* Recent Events */}
           <div className="card">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">Recent Events</h2>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-4">{t('admin.fleet.recent_events')}</h2>
             {recentEvents.length === 0 ? (
-              <p className="text-dc1-text-secondary">No recent events</p>
+              <p className="text-dc1-text-secondary">{t('admin.fleet.no_recent_events')}</p>
             ) : (
               <div className="table-container">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Timestamp</th>
-                      <th>Provider</th>
-                      <th>Event Type</th>
-                      <th>Severity</th>
-                      <th>Details</th>
+                      <th>{t('admin.security.timestamp')}</th>
+                      <th>{t('table.provider')}</th>
+                      <th>{t('admin.security.event_type')}</th>
+                      <th>{t('admin.security.severity')}</th>
+                      <th>{t('admin.security.details')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -412,7 +422,7 @@ export default function FleetHealthPage() {
                         <td className="text-sm">{e.event_type}</td>
                         <td>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${getSeverityColor(e.severity)}`}>
-                            {e.severity.charAt(0).toUpperCase() + e.severity.slice(1)}
+                            {t(`admin.fleet.severity.${e.severity}`)}
                           </span>
                         </td>
                         <td className="text-sm text-dc1-text-secondary truncate max-w-xs">{e.details || '—'}</td>

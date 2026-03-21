@@ -20,6 +20,25 @@ const MOYASAR_BASE = 'https://api.moyasar.com/v1';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dcp.sa';
 const getMoyasarSecret = () => process.env.MOYASAR_SECRET_KEY || '';
 const getMoyasarWebhookSecret = () => process.env.MOYASAR_WEBHOOK_SECRET || '';
+const WEBHOOK_STATUSES = new Set(['initiated', 'paid', 'failed', 'refunded']);
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const ALLOWED_CALLBACK_ORIGINS = new Set(
+  [
+    FRONTEND_URL,
+    ...(process.env.PAYMENT_CALLBACK_ORIGINS || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  ]
+    .map((entry) => {
+      try {
+        return new URL(entry).origin;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+);
 
 if (process.env.NODE_ENV === 'production' && !getMoyasarWebhookSecret()) {
   console.warn('[payments] MOYASAR_WEBHOOK_SECRET is not set; /api/payments/webhook will return 503 until configured');
@@ -49,6 +68,8 @@ function normalizeCallbackUrl(value) {
     return null;
   }
   if (!['https:', 'http:'].includes(parsed.protocol)) return null;
+  if (IS_PRODUCTION && parsed.protocol !== 'https:') return null;
+  if (IS_PRODUCTION && !ALLOWED_CALLBACK_ORIGINS.has(parsed.origin)) return null;
   return parsed.toString();
 }
 
@@ -107,6 +128,7 @@ function moyasarRequest(method, path, body) {
 function verifyMoyasarWebhook(rawBody, signatureHeader, webhookSecret) {
   if (!webhookSecret || !signatureHeader) return false;
   const signature = String(signatureHeader).trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(signature)) return false;
   const expected = crypto
     .createHmac('sha256', webhookSecret)
     .update(rawBody)
@@ -172,9 +194,14 @@ router.post('/topup', requireRenter, (req, res) => {
   }
 
   const amountSar = Number((amountHalala / 100).toFixed(2));
-  const callbackUrl = normalizeCallbackUrl(callback_url) || `${FRONTEND_URL}/renter/billing?payment=callback`;
-  if (callback_url != null && !normalizeCallbackUrl(callback_url)) {
-    return res.status(400).json({ error: 'callback_url must be a valid http(s) URL' });
+  const normalizedCallbackUrl = normalizeCallbackUrl(callback_url);
+  const callbackUrl = normalizedCallbackUrl || `${FRONTEND_URL}/renter/billing?payment=callback`;
+  if (callback_url != null && !normalizedCallbackUrl) {
+    return res.status(400).json({
+      error: IS_PRODUCTION
+        ? 'callback_url must be an https URL on an allowlisted origin'
+        : 'callback_url must be a valid http(s) URL',
+    });
   }
   const description = `DCP balance top-up — ${renter.name} (${renter.email})`;
 
@@ -216,9 +243,11 @@ router.post('/topup', requireRenter, (req, res) => {
     .catch(err => {
       console.error('[payments] Moyasar topup error:', err.message, err.moyasarError);
       if (err.message === 'MOYASAR_SECRET_KEY not configured') {
+        const sandboxAllowed = !IS_PRODUCTION && !getMoyasarSecret();
         return res.status(503).json({
           error: 'Payment gateway not configured. Set MOYASAR_SECRET_KEY.',
-          sandbox_hint: 'Use POST /api/payments/topup-sandbox for dev/test.',
+          action_required: 'Configure MOYASAR_SECRET_KEY and MOYASAR_WEBHOOK_SECRET.',
+          ...(sandboxAllowed ? { sandbox_hint: 'Use POST /api/payments/topup-sandbox for dev/test.' } : {}),
         });
       }
       const statusCode = err.statusCode === 422 ? 422 : 502;
@@ -233,6 +262,12 @@ router.post('/topup', requireRenter, (req, res) => {
 // Dev-only sandbox top-up: directly credits balance without Moyasar (when key not set).
 // Disabled in production (requires MOYASAR_SECRET_KEY to be absent).
 router.post('/topup-sandbox', (req, res) => {
+  if (IS_PRODUCTION) {
+    return res.status(403).json({
+      error: 'Sandbox top-up is disabled in production.',
+    });
+  }
+
   if (getMoyasarSecret()) {
     return res.status(403).json({
       error: 'Sandbox top-up disabled when MOYASAR_SECRET_KEY is configured. Use /api/payments/topup.',
@@ -330,8 +365,17 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
     return res.status(400).json({ error: 'Invalid JSON body' });
   }
 
-  const paymentId = event.id;
-  const status = event.status; // 'paid' | 'failed' | 'refunded' | 'initiated'
+  const paymentId = typeof event?.id === 'string' ? event.id.trim() : '';
+  const status = typeof event?.status === 'string' ? event.status.trim().toLowerCase() : ''; // 'paid' | 'failed' | 'refunded' | 'initiated'
+  if (!paymentId) {
+    return res.status(400).json({ error: 'Webhook payload missing payment id' });
+  }
+  if (!WEBHOOK_STATUSES.has(status)) {
+    return res.status(400).json({ error: 'Unsupported payment status in webhook payload' });
+  }
+  if (event?.currency && String(event.currency).toUpperCase() !== 'SAR') {
+    return res.status(400).json({ error: 'Unsupported currency in webhook payload' });
+  }
   const now = new Date().toISOString();
 
   // Look up stored payment record
@@ -397,7 +441,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
     return res.json({ received: true, action: 'refund_processed' });
   }
 
-  // For any other status (e.g. 'initiated'), just update the gateway response
+  // For non-terminal status (e.g. 'initiated'), sync status but do not mutate balance.
   runStatement(
     `UPDATE payments SET status = ?, gateway_response = ? WHERE payment_id = ?`,
     status, JSON.stringify(event), payment.payment_id

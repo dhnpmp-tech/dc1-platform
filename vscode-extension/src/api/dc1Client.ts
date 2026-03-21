@@ -164,15 +164,31 @@ export class DC1Client {
         let data = '';
         res.on('data', (chunk) => (data += chunk));
         res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (res.statusCode && res.statusCode >= 400) {
-              reject(new Error(parsed.error || parsed.message || `HTTP ${res.statusCode}`));
-            } else {
-              resolve(parsed as T);
+          const body = data.trim();
+          const statusCode = res.statusCode ?? 0;
+
+          if (!body) {
+            if (statusCode >= 400) {
+              reject(new Error(`HTTP ${statusCode}`));
+              return;
             }
+            resolve({} as T);
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(body);
+            if (statusCode >= 400) {
+              reject(new Error(parsed.error || parsed.message || `HTTP ${statusCode}`));
+              return;
+            }
+            resolve(parsed as T);
           } catch {
-            reject(new Error(`Failed to parse response: ${data.slice(0, 200)}`));
+            if (statusCode >= 400) {
+              reject(new Error(`HTTP ${statusCode}: ${body.slice(0, 200)}`));
+              return;
+            }
+            reject(new Error(`Failed to parse response: ${body.slice(0, 200)}`));
           }
         });
       });
