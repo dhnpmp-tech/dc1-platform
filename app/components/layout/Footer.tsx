@@ -15,7 +15,7 @@ export default function Footer() {
               />
             </div>
             <p className="text-sm text-dc1-text-secondary leading-relaxed">
-              Power, Digitalized. The transparent, reliable GPU compute marketplace.
+              Decentralized Compute Platform. Borderless infrastructure connecting global GPU supply with AI engineering demand.
             </p>
           </div>
 
