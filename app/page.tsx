@@ -338,14 +338,6 @@ Invoke-WebRequest \`
           </div>
         </div>
       </section>
-
-      {/* Provider Earnings Calculator */}
-      <section className="bg-dc1-surface-l1 border-y border-dc1-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-4">
-              <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              {t('{/* What You Can Run */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
