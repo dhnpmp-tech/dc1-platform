@@ -59,7 +59,7 @@ The full OpenAPI 3.0 spec is at [`docs/openapi.yaml`](./openapi.yaml).
 | `GET /api/docs` | Raw OpenAPI 3.0 YAML (application/yaml) |
 | `GET /api/docs/ui` | Swagger UI — interactive browser |
 
-In production: `http://76.13.179.86:8083/api/docs/ui`
+In production: `https://dcp.sa/api/dc1/docs/ui`
 
 ## Quick Start
 
@@ -67,36 +67,36 @@ In production: `http://76.13.179.86:8083/api/docs/ui`
 
 ```bash
 # 1. Register
-curl -X POST http://76.13.179.86:8083/api/providers/register \
+curl -X POST https://dcp.sa/api/dc1/providers/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Ahmed","email":"ahmed@example.sa","gpu_model":"RTX 3090","os":"Linux"}'
 
 # 2. Install daemon (Linux)
-curl "http://76.13.179.86:8083/api/providers/setup?key=dc1-provider-YOUR_KEY" | bash
+curl "https://dcp.sa/api/dc1/providers/setup?key=dc1-provider-YOUR_KEY" | bash
 
 # 3. Check dashboard
-curl "http://76.13.179.86:8083/api/providers/me?key=dc1-provider-YOUR_KEY"
+curl "https://dcp.sa/api/dc1/providers/me?key=dc1-provider-YOUR_KEY"
 ```
 
 ### Renter
 
 ```bash
 # 1. Register
-curl -X POST http://76.13.179.86:8083/api/renters/register \
+curl -X POST https://dcp.sa/api/dc1/renters/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Fatima","email":"fatima@example.sa"}'
 
 # 2. Top up balance (sandbox — dev only)
-curl -X POST http://76.13.179.86:8083/api/payments/topup-sandbox \
+curl -X POST https://dcp.sa/api/dc1/payments/topup-sandbox \
   -H "Content-Type: application/json" \
   -H "x-renter-key: dc1-renter-YOUR_KEY" \
   -d '{"amount_sar": 50}'
 
 # 3. Browse available GPUs
-curl http://76.13.179.86:8083/api/renters/available-providers
+curl https://dcp.sa/api/dc1/renters/available-providers
 
 # 4. Submit a job
-curl -X POST http://76.13.179.86:8083/api/jobs/submit \
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   -H "Content-Type: application/json" \
   -H "x-renter-key: dc1-renter-YOUR_KEY" \
   -d '{
@@ -111,7 +111,7 @@ curl -X POST http://76.13.179.86:8083/api/jobs/submit \
   }'
 
 # 5. Poll for result
-curl "http://76.13.179.86:8083/api/jobs/JOB_ID/output" \
+curl "https://dcp.sa/api/dc1/jobs/JOB_ID/output" \
   -H "x-renter-key: dc1-renter-YOUR_KEY"
 ```
 

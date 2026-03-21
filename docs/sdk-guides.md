@@ -25,7 +25,7 @@ pip install requests  # only dependency for direct API calls
 ```python
 import requests
 
-DC1_BASE = "http://76.13.179.86:8083"
+DC1_BASE = "https://api.dcp.sa"
 RENTER_KEY = "dc1-renter-YOUR_KEY_HERE"
 
 headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
@@ -91,7 +91,7 @@ if status_resp["status"] == "completed":
 ```python
 import base64, requests
 
-DC1_BASE = "http://76.13.179.86:8083"
+DC1_BASE = "https://api.dcp.sa"
 RENTER_KEY = "dc1-renter-YOUR_KEY_HERE"
 headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
 
@@ -138,7 +138,7 @@ Use `vllm_serve` to start an OpenAI-compatible inference server on a provider GP
 ```python
 import requests, time, openai
 
-DC1_BASE = "http://76.13.179.86:8083"
+DC1_BASE = "https://api.dcp.sa"
 RENTER_KEY = "dc1-renter-YOUR_KEY_HERE"
 headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
 
@@ -195,7 +195,7 @@ Until npm publication, use `node-fetch` or the native `fetch` API directly.
 ### Quickstart (Node.js / TypeScript)
 
 ```typescript
-const DC1_BASE = "http://76.13.179.86:8083";
+const DC1_BASE = "https://api.dcp.sa";
 const RENTER_KEY = "dc1-renter-YOUR_KEY_HERE";
 
 const headers = {
@@ -259,7 +259,7 @@ main().catch(console.error);
 ```javascript
 const { writeFileSync } = require("fs");
 
-const DC1_BASE = "http://76.13.179.86:8083";
+const DC1_BASE = "https://api.dcp.sa";
 const RENTER_KEY = "dc1-renter-YOUR_KEY_HERE";
 const headers = { "x-renter-key": RENTER_KEY, "Content-Type": "application/json" };
 
@@ -314,7 +314,7 @@ import { DC1RenterClient } from "dc1-renter-sdk";
 
 const dc1 = new DC1RenterClient({
   apiKey: "dc1-renter-YOUR_KEY_HERE",
-  baseUrl: "http://76.13.179.86:8083",  // optional, defaults to production
+  baseUrl: "https://api.dcp.sa",  // optional, defaults to production
 });
 
 // Submit and wait for completion in one call
@@ -341,7 +341,7 @@ console.log(`Cost: ${result.actualCostSar} SAR`);
 # process_batch.py — run inference on a list of prompts
 import requests, time
 
-DC1_BASE = "http://76.13.179.86:8083"
+DC1_BASE = "https://api.dcp.sa"
 RENTER_KEY = "dc1-renter-YOUR_KEY"
 headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
 
@@ -386,7 +386,7 @@ for r in results:
 # Run arbitrary Python on a GPU — useful for training, fine-tuning, or custom workloads
 import requests, time
 
-DC1_BASE = "http://76.13.179.86:8083"
+DC1_BASE = "https://api.dcp.sa"
 RENTER_KEY = "dc1-renter-YOUR_KEY"
 headers = {"x-renter-key": RENTER_KEY, "Content-Type": "application/json"}
 

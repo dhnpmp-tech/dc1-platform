@@ -2,7 +2,7 @@
 
 DC1 هو أول سوق لحوسبة GPU اللامركزية في المملكة العربية السعودية. يُرسل المستأجرون مهام الحوسبة (استدلال نماذج اللغة، توليد الصور، التدريب) لتُنفَّذ على أجهزة مزودي GPU. تُحتسب الرسوم بالريال السعودي.
 
-**الرابط الأساسي للـ API:** `http://76.13.179.86:8083`
+**الرابط الأساسي للـ API:** `https://api.dcp.sa`
 **العملة:** جميع المبالغ بالهللة (1 ريال = 100 هللة) ما لم ينتهي اسم الحقل بـ `_sar`
 
 ---
@@ -10,7 +10,7 @@ DC1 هو أول سوق لحوسبة GPU اللامركزية في المملكة
 ## الخطوة 1 — إنشاء حساب مستأجر
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/renters/register \
+curl -X POST https://dcp.sa/api/dc1/renters/register \
   -H "Content-Type: application/json" \
   -d '{
     "name": "اسمك هنا",
@@ -39,7 +39,7 @@ curl -X POST http://76.13.179.86:8083/api/renters/register \
 تبدأ الحسابات الجديدة برصيد 10 ريال (1000 هللة) مجاناً. لإضافة المزيد:
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/renters/topup \
+curl -X POST https://dcp.sa/api/dc1/renters/topup \
   -H "x-renter-key: dc1-renter-مفتاحك-هنا" \
   -H "Content-Type: application/json" \
   -d '{"amount_sar": 50}'
@@ -63,7 +63,7 @@ curl -X POST http://76.13.179.86:8083/api/renters/topup \
 ## الخطوة 3 — اختر GPU متاح
 
 ```bash
-curl http://76.13.179.86:8083/api/renters/available-providers
+curl https://dcp.sa/api/dc1/renters/available-providers
 ```
 
 **الاستجابة:**
@@ -97,7 +97,7 @@ curl http://76.13.179.86:8083/api/renters/available-providers
 ### مثال: استدلال نموذج لغوي (LLM)
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/jobs/submit \
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   -H "x-renter-key: dc1-renter-مفتاحك-هنا" \
   -H "Content-Type: application/json" \
   -d '{
@@ -116,7 +116,7 @@ curl -X POST http://76.13.179.86:8083/api/jobs/submit \
 ### مثال: توليد صورة
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/jobs/submit \
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   -H "x-renter-key: dc1-renter-مفتاحك-هنا" \
   -H "Content-Type: application/json" \
   -d '{
@@ -156,7 +156,7 @@ curl -X POST http://76.13.179.86:8083/api/jobs/submit \
 ## الخطوة 5 — تتبع حالة المهمة
 
 ```bash
-curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p" \
+curl "https://dcp.sa/api/dc1/jobs/job-1710843200000-x7k2p" \
   -H "x-renter-key: dc1-renter-مفتاحك-هنا"
 ```
 
@@ -176,7 +176,7 @@ curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p" \
 ## الخطوة 6 — استرجع النتيجة
 
 ```bash
-curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p/output" \
+curl "https://dcp.sa/api/dc1/jobs/job-1710843200000-x7k2p/output" \
   -H "x-renter-key: dc1-renter-مفتاحك-هنا"
 ```
 
@@ -206,11 +206,11 @@ curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p/output" \
 
 ```bash
 # تحقق من رصيدك
-curl "http://76.13.179.86:8083/api/renters/balance" \
+curl "https://dcp.sa/api/dc1/renters/balance" \
   -H "x-renter-key: dc1-renter-مفتاحك"
 
 # قائمة مهامك الأخيرة
-curl "http://76.13.179.86:8083/api/renters/me?key=dc1-renter-مفتاحك"
+curl "https://dcp.sa/api/dc1/renters/me?key=dc1-renter-مفتاحك"
 ```
 
 ## أسعار الحوسبة

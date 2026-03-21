@@ -22,7 +22,7 @@ The platform selects the image automatically from your `job_type` field. You can
 Specify `min_vram_gb` in your job submission to ensure the job is routed to a provider with enough GPU memory:
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/jobs/submit \
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   -H "x-renter-key: YOUR_RENTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -59,7 +59,7 @@ Poll for streaming output while a job is running:
 JOB_ID="JOB-abc123"
 
 # Fetch current output (call repeatedly to tail logs)
-curl "http://76.13.179.86:8083/api/jobs/$JOB_ID/output" \
+curl "https://dcp.sa/api/dc1/jobs/$JOB_ID/output" \
   -H "x-renter-key: YOUR_RENTER_KEY"
 ```
 
@@ -82,7 +82,7 @@ Poll every 5–10 seconds while `status` is `running`. The container auto-cleans
 Fetch a paginated list of all your past jobs:
 
 ```bash
-curl "http://76.13.179.86:8083/api/renters/me?key=YOUR_RENTER_KEY"
+curl "https://dcp.sa/api/dc1/renters/me?key=YOUR_RENTER_KEY"
 ```
 
 The `jobs` array in the response includes every job with `status`, `cost_halala`, `provider_id`, and timestamps.
@@ -90,7 +90,7 @@ The `jobs` array in the response includes every job with `status`, `cost_halala`
 To fetch a single job record:
 
 ```bash
-curl "http://76.13.179.86:8083/api/jobs/$JOB_ID/output" \
+curl "https://dcp.sa/api/dc1/jobs/$JOB_ID/output" \
   -H "x-renter-key: YOUR_RENTER_KEY"
 ```
 
@@ -138,7 +138,7 @@ Jobs are billed by the minute from container start to container exit:
 Billing is deducted from your renter balance in halala (100 halala = 1 SAR). Top up your balance before submitting long-running jobs:
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/renters/topup \
+curl -X POST https://dcp.sa/api/dc1/renters/topup \
   -H "x-renter-key: YOUR_RENTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{"amount_sar": 100}'

@@ -5,10 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 
-const API_BASE =
-  typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? '/api/dc1'
-    : 'http://76.13.179.86:8083/api'
+const API_BASE = '/api/dc1'
 
 const navItems = [
   { label: 'Dashboard', href: '/renter', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg> },

@@ -433,7 +433,7 @@ Fetch the result of a completed job.
   "status": "running",
   "result": {
     "type": "endpoint",
-    "endpoint_url": "http://76.13.179.86:8899/v1",
+    "endpoint_url": "https://api.dcp.sa/v1",
     "model": "mistralai/Mistral-7B-Instruct-v0.2",
     "openai_compatible": true
   }

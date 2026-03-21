@@ -2,7 +2,7 @@
 
 DC1 is Saudi Arabia's first decentralized GPU compute marketplace. Renters submit jobs (LLM inference, image generation, training) that run on providers' NVIDIA hardware. You pay in SAR; providers earn 75%, DC1 takes 25%.
 
-**Base URL:** `http://76.13.179.86:8083` (production VPS)
+**Base URL:** `https://api.dcp.sa` (production VPS)
 **Currency:** All amounts are in **halala** (1 SAR = 100 halala) unless the field name ends in `_sar`.
 
 ---
@@ -10,7 +10,7 @@ DC1 is Saudi Arabia's first decentralized GPU compute marketplace. Renters submi
 ## Step 1 — Create a renter account
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/renters/register \
+curl -X POST https://dcp.sa/api/dc1/renters/register \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Your Name",
@@ -39,7 +39,7 @@ curl -X POST http://76.13.179.86:8083/api/renters/register \
 New accounts start with 10 SAR (1,000 halala) free credit. To add more:
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/renters/topup \
+curl -X POST https://dcp.sa/api/dc1/renters/topup \
   -H "x-renter-key: dc1-renter-YOUR_KEY_HERE" \
   -H "Content-Type: application/json" \
   -d '{"amount_sar": 50}'
@@ -63,7 +63,7 @@ curl -X POST http://76.13.179.86:8083/api/renters/topup \
 ## Step 3 — Find an available GPU
 
 ```bash
-curl http://76.13.179.86:8083/api/renters/available-providers
+curl https://dcp.sa/api/dc1/renters/available-providers
 ```
 
 **Response:**
@@ -99,7 +99,7 @@ Pick a job type and send the request with your renter key in the `x-renter-key` 
 ### LLM Inference example
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/jobs/submit \
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   -H "x-renter-key: dc1-renter-YOUR_KEY_HERE" \
   -H "Content-Type: application/json" \
   -d '{
@@ -118,7 +118,7 @@ curl -X POST http://76.13.179.86:8083/api/jobs/submit \
 ### Image Generation example
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/jobs/submit \
+curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   -H "x-renter-key: dc1-renter-YOUR_KEY_HERE" \
   -H "Content-Type: application/json" \
   -d '{
@@ -158,7 +158,7 @@ The `cost_halala` is deducted from your balance upfront. If the job finishes soo
 ## Step 5 — Poll job status
 
 ```bash
-curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p" \
+curl "https://dcp.sa/api/dc1/jobs/job-1710843200000-x7k2p" \
   -H "x-renter-key: dc1-renter-YOUR_KEY_HERE"
 ```
 
@@ -178,7 +178,7 @@ curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p" \
 ## Step 6 — Fetch the result
 
 ```bash
-curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p/output" \
+curl "https://dcp.sa/api/dc1/jobs/job-1710843200000-x7k2p/output" \
   -H "x-renter-key: dc1-renter-YOUR_KEY_HERE"
 ```
 
@@ -209,11 +209,11 @@ curl "http://76.13.179.86:8083/api/jobs/job-1710843200000-x7k2p/output" \
 
 ```bash
 # Check your balance anytime
-curl "http://76.13.179.86:8083/api/renters/balance" \
+curl "https://dcp.sa/api/dc1/renters/balance" \
   -H "x-renter-key: dc1-renter-YOUR_KEY"
 
 # List your recent jobs
-curl "http://76.13.179.86:8083/api/renters/me?key=dc1-renter-YOUR_KEY"
+curl "https://dcp.sa/api/dc1/renters/me?key=dc1-renter-YOUR_KEY"
 ```
 
 ## Cost rates

@@ -11,7 +11,7 @@ from .exceptions import DC1APIError
 from .models import Earnings, ProviderJob, ProviderProfile
 
 _PRIMARY_BASE_URL = "https://api.dcp.sa"
-_FALLBACK_BASE_URL = "http://76.13.179.86:8083"
+_FALLBACK_BASE_URL = "https://dcp.sa/api/dc1"
 
 
 class DC1ProviderClient:

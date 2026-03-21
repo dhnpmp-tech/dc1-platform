@@ -22,7 +22,7 @@ GPUs with more VRAM (16–80 GB) attract higher-value jobs (Llama-3 8B, SDXL, tr
 ## Step 1 — Register
 
 ```bash
-curl -X POST http://76.13.179.86:8083/api/providers/register \
+curl -X POST https://api.dcp.sa/api/providers/register \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My GPU Node",
@@ -56,14 +56,14 @@ The DC1 daemon (`dc1_daemon.py v3.4.0`) runs on your machine, polls for jobs, ex
 
 ```bash
 # One-line installer
-curl -fsSL http://76.13.179.86:8083/api/providers/install-script/linux | bash
+curl -fsSL https://api.dcp.sa/api/providers/install-script/linux | bash
 ```
 
 Or manual install:
 
 ```bash
 # Download daemon
-curl -o dc1_daemon.py http://76.13.179.86:8083/api/providers/daemon-download
+curl -o dc1_daemon.py https://api.dcp.sa/api/providers/daemon-download
 
 # Install Python dependencies
 pip3 install requests psutil GPUtil docker
@@ -92,7 +92,7 @@ Requires=docker.service
 
 [Service]
 Environment=DC1_API_KEY=dc1-YOUR_KEY_HERE
-Environment=DC1_API_URL=http://76.13.179.86:8083
+Environment=DC1_API_URL=https://api.dcp.sa
 ExecStart=/usr/bin/python3 /opt/dc1/dc1_daemon.py
 Restart=always
 RestartSec=10
@@ -155,7 +155,7 @@ The daemon runs a loop every 30 seconds:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DC1_API_KEY` | — | **Required.** Your provider API key |
-| `DC1_API_URL` | `http://76.13.179.86:8083` | DC1 backend URL |
+| `DC1_API_URL` | `https://api.dcp.sa` | DC1 backend URL |
 | `DC1_RUN_MODE` | `docker` | `docker` or `local` (for testing) |
 | `DC1_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
@@ -190,14 +190,14 @@ Providers with multiple GPUs or enterprise-class cards (A100, H100) can earn sig
 
 ```bash
 # Check your provider status
-curl "http://76.13.179.86:8083/api/providers/me?key=dc1-YOUR_KEY"
+curl "https://api.dcp.sa/api/providers/me?key=dc1-YOUR_KEY"
 
 # Check earnings
-curl "http://76.13.179.86:8083/api/providers/earnings" \
+curl "https://api.dcp.sa/api/providers/earnings" \
   -H "x-provider-key: dc1-YOUR_KEY"
 
 # List your jobs
-curl "http://76.13.179.86:8083/api/providers/YOUR_KEY/jobs"
+curl "https://api.dcp.sa/api/providers/YOUR_KEY/jobs"
 ```
 
 ---
@@ -219,7 +219,7 @@ Keep your daemon running continuously and ensure your GPU has adequate cooling a
 
 **Daemon shows "offline" after starting:**
 - Check your API key is correct: `DC1_API_KEY=dc1-...`
-- Verify network connectivity: `curl http://76.13.179.86:8083/api/providers/me?key=YOUR_KEY`
+- Verify network connectivity: `curl https://api.dcp.sa/api/providers/me?key=YOUR_KEY`
 - Firewall may be blocking outbound to port 8083
 
 **Job fails with "CUDA out of memory":**
