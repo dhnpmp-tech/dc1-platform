@@ -1,36 +1,72 @@
 ---
 title: Renter Guide
-description: Discover providers, run jobs, and manage billing as a compute renter.
+description: Renter onboarding in under 5 minutes: account, balance, provider selection, and first job output.
 order: 6
 ---
 
-## Start here
+## 5-minute renter onboarding
 
-1. Register at `/renter/register`
-2. Save your API key
-3. Add funds from `/renter/billing`
-4. Pick a GPU from `/renter/marketplace`
+1. Register at `/renter/register` and copy your `dcp-renter-...` key.
+2. Top up wallet from `/renter/billing`.
+3. Pick a live provider from `/renter/marketplace`.
+4. Submit your first workload from `/renter/playground` or API.
+5. Track status and retrieve output.
 
-## Submit through playground
+## API-first quick flow
 
-- Open `/renter/playground`
-- Choose a provider and model
-- Run LLM or image generation jobs
-
-## Submit through API
+### 1) Validate renter key
 
 ```bash
-curl -X POST https://dcp.sa/api/dc1/jobs/submit \
+curl -s "https://dcp.sa/api/dc1/renters/me?key=<RENTER_KEY>"
+```
+
+### 2) Browse available GPUs
+
+```bash
+curl -s "https://dcp.sa/api/dc1/renters/available-providers"
+```
+
+### 3) Submit first job
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
   -H "Content-Type: application/json" \
-  -H "x-renter-key: dc1-renter-xxxx" \
+  -H "x-renter-key: <RENTER_KEY>" \
   -d '{
-    "provider_id": 26,
+    "provider_id": 42,
     "job_type": "llm-inference",
-    "params": {"prompt": "Hello from DC1"}
+    "duration_minutes": 3,
+    "container_spec": { "image_type": "vllm-serve" },
+    "params": {
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "prompt": "Explain Saudi GPU marketplaces in 3 bullets"
+    }
   }'
 ```
 
-## Track spend
+### 4) Poll output
 
-- `/renter` dashboard for balance and recent jobs
-- `/renter/analytics` for spend trends
+```bash
+curl -s "https://dcp.sa/api/dc1/jobs/<JOB_ID>/output?key=<RENTER_KEY>"
+```
+
+## Billing behavior
+
+- DCP uses halala internally (`100 halala = 1 SAR`).
+- Estimated cost is held at submit time.
+- Final settlement is based on actual runtime.
+- Unused held balance is released back after settlement.
+
+## Status model
+
+Typical progression:
+
+`pending -> queued -> running -> completed`  
+(or terminal `failed` / `cancelled`)
+
+## Related docs
+
+- [Quickstart](/docs/quickstart)
+- [Provider Guide](/docs/provider-guide)
+- [Architecture Overview](/docs/architecture-overview)
+- [API Reference](/docs/api-reference)

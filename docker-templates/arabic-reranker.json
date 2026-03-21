@@ -1,0 +1,44 @@
+{
+  "id": "arabic-reranker",
+  "name": "Arabic Reranker API",
+  "description": "Semantic reranking service for Arabic search and RAG quality uplift.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Reranker Model (Hugging Face)", "default": "BAAI/bge-reranker-v2-m3", "required": true },
+    { "key": "TOP_K", "label": "Top K", "default": "10", "required": false },
+    { "key": "MAX_SEQ_LEN", "label": "Max Sequence Length", "default": "1024", "required": false }
+  ],
+  "params": {
+    "model": "BAAI/bge-reranker-v2-m3",
+    "mode": "reranker",
+    "top_k": 10,
+    "max_seq_len": 1024
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "warm",
+    "behavior": "Warm policy is recommended for reranking to keep latency stable under retrieval bursts."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "vllm_serve",
+      "duration_minutes": 60,
+      "params": {
+        "model": "BAAI/bge-reranker-v2-m3",
+        "mode": "reranker"
+      }
+    },
+    "output": {
+      "type": "endpoint",
+      "model": "BAAI/bge-reranker-v2-m3",
+      "status": "running",
+      "protocol": "http-json"
+    }
+  },
+  "min_vram_gb": 8,
+  "estimated_price_sar_per_hour": 11.0,
+  "tags": ["llm", "reranker", "rag", "arabic"],
+  "sort_order": 6,
+  "difficulty": "easy"
+}

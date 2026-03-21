@@ -1,8 +1,10 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 
 const LOG_ROOT = process.env.JOB_LOG_ROOT || '/opt/dcp/job-logs';
+const FALLBACK_LOG_ROOT = path.join(process.cwd(), 'data', 'job-logs');
 const GZIP_AFTER_MS = 24 * 60 * 60 * 1000;
 let lastGzipSweepAt = 0;
 
@@ -11,9 +13,13 @@ function sanitizeSegment(value) {
 }
 
 function getAttemptLogPath(jobId, attemptNumber) {
+  return getAttemptLogPathInRoot(LOG_ROOT, jobId, attemptNumber);
+}
+
+function getAttemptLogPathInRoot(root, jobId, attemptNumber) {
   const safeJobId = sanitizeSegment(jobId);
   const safeAttempt = Number.isInteger(Number(attemptNumber)) ? Number(attemptNumber) : 1;
-  return path.join(LOG_ROOT, safeJobId, `${safeAttempt}.log`);
+  return path.join(root, safeJobId, `${safeAttempt}.log`);
 }
 
 function ensureLogDir(filePath) {
@@ -21,10 +27,21 @@ function ensureLogDir(filePath) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+function resolveWritableLogPath(jobId, attemptNumber) {
+  const preferred = getAttemptLogPathInRoot(LOG_ROOT, jobId, attemptNumber);
+  try {
+    ensureLogDir(preferred);
+    return preferred;
+  } catch (_) {
+    const fallback = getAttemptLogPathInRoot(FALLBACK_LOG_ROOT, jobId, attemptNumber);
+    ensureLogDir(fallback);
+    return fallback;
+  }
+}
+
 function appendAttemptLogLines(jobId, attemptNumber, lines) {
   if (!Array.isArray(lines) || lines.length === 0) return null;
-  const filePath = getAttemptLogPath(jobId, attemptNumber);
-  ensureLogDir(filePath);
+  const filePath = resolveWritableLogPath(jobId, attemptNumber);
   const now = new Date().toISOString();
   const payload = lines
     .map((row) => {
@@ -40,18 +57,23 @@ function appendAttemptLogLines(jobId, attemptNumber, lines) {
 
 function appendAttemptRawText(jobId, attemptNumber, text) {
   if (!text) return null;
-  const filePath = getAttemptLogPath(jobId, attemptNumber);
-  ensureLogDir(filePath);
+  const filePath = resolveWritableLogPath(jobId, attemptNumber);
   fs.appendFileSync(filePath, String(text), 'utf8');
   maybeGzipOldLogs();
   return filePath;
 }
 
 function resolveAttemptLogPath(jobId, attemptNumber) {
-  const plain = getAttemptLogPath(jobId, attemptNumber);
-  const gz = `${plain}.gz`;
-  if (fs.existsSync(plain)) return { path: plain, gzipped: false };
-  if (fs.existsSync(gz)) return { path: gz, gzipped: true };
+  const candidates = [
+    getAttemptLogPathInRoot(LOG_ROOT, jobId, attemptNumber),
+    getAttemptLogPathInRoot(FALLBACK_LOG_ROOT, jobId, attemptNumber),
+    getAttemptLogPathInRoot(path.join(os.tmpdir(), 'dcp-job-logs'), jobId, attemptNumber),
+  ];
+  for (const plain of candidates) {
+    const gz = `${plain}.gz`;
+    if (fs.existsSync(plain)) return { path: plain, gzipped: false };
+    if (fs.existsSync(gz)) return { path: gz, gzipped: true };
+  }
   return null;
 }
 

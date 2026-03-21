@@ -265,13 +265,15 @@ describe('Sprint 19-20 smoke: vLLM completion', () => {
        WHERE id = ?`
     ).run(now, JSON.stringify(['inference']), 24576, 24576, now, provider.id);
 
+    // Attach handlers immediately so the Supertest request starts now (not only when awaited later).
     const responsePromise = request(app)
       .post(`/api/vllm/complete?key=${renter.apiKey}`)
       .send({
         model: 'mistralai/Mistral-7B-Instruct-v0.2',
         messages: [{ role: 'user', content: 'Say hello from smoke test.' }],
         max_tokens: 32,
-      });
+      })
+      .then((response) => response);
 
     const pendingJob = await waitFor(() => db.prepare(
       `SELECT id, job_id

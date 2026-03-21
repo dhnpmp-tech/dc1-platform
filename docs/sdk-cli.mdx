@@ -1,0 +1,55 @@
+---
+title: SDK CLI
+description: Shell-first quickstart for renter workflows, job submission, and status verification.
+order: 5
+---
+
+## Set environment variables
+
+```bash
+export DCP_RENTER_KEY="dcp-renter-xxxx"
+export API_BASE="https://dcp.sa/api/dc1"
+```
+
+## Check account access
+
+```bash
+curl "$API_BASE/renters/me?key=$DCP_RENTER_KEY"
+```
+
+Expected: renter profile JSON with email and balance fields.
+
+## Submit a sample job
+
+```bash
+curl -X POST "$API_BASE/jobs/submit" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: $DCP_RENTER_KEY" \
+  -d '{
+    "provider_id": 42,
+    "job_type": "llm-inference",
+    "duration_minutes": 5,
+    "params": {
+      "model": "meta-llama/Llama-3-8B",
+      "prompt": "Return the phrase: DCP CLI smoke test"
+    }
+  }'
+```
+
+Expected: response contains `job.job_id` and `status` as `pending`.
+
+## Poll job status
+
+```bash
+curl "$API_BASE/jobs/<job_id>" -H "x-renter-key: $DCP_RENTER_KEY"
+```
+
+Status lifecycle: `pending` → `queued` → `running` → `done`.
+
+## Fetch output
+
+```bash
+curl "$API_BASE/jobs/<job_id>/output?key=$DCP_RENTER_KEY"
+```
+
+Expected: output payload with `response` and billing summary.

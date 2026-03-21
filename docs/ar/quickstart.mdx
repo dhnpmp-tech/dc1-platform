@@ -1,42 +1,73 @@
 ---
 title: البدء السريع
-description: افتح حساب مستأجر، اشحن الرصيد، وشغّل أول مهمة GPU خلال دقائق.
+description: أرسل أول مهمة كمستأجر خلال أقل من 5 دقائق باستخدام curl.
 order: 1
 ---
 
-## 1) إنشاء حساب مستأجر
+## الهدف
 
-1. افتح `/renter/register`
-2. أدخل الاسم والبريد والجهة
-3. احفظ مفتاح API الذي يبدأ بـ `dc1-renter-`
+إنهاء مسار أول مهمة خلال أقل من 5 دقائق:
 
-## 2) شحن الرصيد
+1. التحقق من مفتاح المستأجر.
+2. إرسال مهمة.
+3. متابعة الحالة أو بث السجلات.
+4. جلب المخرجات النهائية.
+
+## 1) ضبط متغيرات البيئة
 
 ```bash
-curl -X POST https://dcp.sa/api/dc1/payments/topup \
-  -H "Content-Type: application/json" \
-  -H "x-renter-key: dc1-renter-xxxx" \
-  -d '{"amount_halala": 5000}'
+export DCP_API="https://dcp.sa/api/dc1"
+export RENTER_KEY="dcp-renter-your-key"
 ```
 
-## 3) اختيار مزود متاح
+## 2) التحقق من الحساب
 
 ```bash
-curl https://dcp.sa/api/dc1/renters/available-providers
+curl -s "$DCP_API/renters/me?key=$RENTER_KEY"
 ```
 
-## 4) إرسال مهمة
+## 3) إرسال أول مهمة
 
 ```bash
-curl -X POST https://dcp.sa/api/dc1/jobs/submit \
+JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
   -H "Content-Type: application/json" \
-  -H "x-renter-key: dc1-renter-xxxx" \
+  -H "x-renter-key: $RENTER_KEY" \
   -d '{
-    "provider_id": 26,
+    "provider_id": 42,
     "job_type": "llm-inference",
+    "duration_minutes": 3,
+    "max_duration_seconds": 180,
+    "container_spec": {
+      "image_type": "vllm-serve"
+    },
     "params": {
       "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-      "prompt": "عرّف مدينة الرياض في فقرتين."
+      "prompt": "اكتب 3 نقاط عن الذكاء الاصطناعي في الرياض"
     }
-  }'
+  }')
+
+echo "$JOB_JSON"
+JOB_ID=$(echo "$JOB_JSON" | jq -r '.job.job_id // .job_id')
+echo "JOB_ID=$JOB_ID"
 ```
+
+## 4) بث السجلات (اختياري)
+
+```bash
+curl -N "$DCP_API/jobs/$JOB_ID/logs/stream?key=$RENTER_KEY"
+```
+
+## 5) جلب المخرجات
+
+```bash
+curl -s "$DCP_API/jobs/$JOB_ID/output?key=$RENTER_KEY"
+```
+
+إذا لم تنتهِ المهمة بعد، قد تحصل على `202` حتى الوصول للحالة النهائية.
+
+## التالي
+
+- [دليل المستأجر](/docs/ar/renter-guide)
+- [دليل المزود](/docs/ar/provider-guide)
+- [نظرة معمارية](/docs/ar/architecture-overview)
+- [مرجع API](/docs/ar/api-reference)

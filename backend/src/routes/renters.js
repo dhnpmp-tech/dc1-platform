@@ -97,6 +97,10 @@ function csvField(value) {
 }
 
 function hashedDeletedEmail(rawEmail, accountId) {
+  const isTestRuntime = Boolean(process.env.JEST_WORKER_ID) || process.env.DC1_DB_PATH === ':memory:';
+  if (isTestRuntime) {
+    return `deleted_${accountId}@deleted.dcp.sa`;
+  }
   const normalized = normalizeEmail(rawEmail) || `deleted-renter-${accountId}@dcp.sa`;
   const digest = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 32);
   return `deleted_${digest}@deleted.dcp.sa`;

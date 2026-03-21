@@ -1,6 +1,6 @@
 ---
 title: JavaScript SDK
-description: تشغيل دورة حياة المهام من تطبيقات Node.js.
+description: مسار كامل في Node.js: مصادقة، إرسال مهمة، بث سجلات، وجلب النتيجة.
 order: 3
 ---
 
@@ -10,19 +10,60 @@ order: 3
 npm install dc1-renter-sdk
 ```
 
-## مثال سريع
+## مثال كامل
 
 ```ts
 import { DC1RenterClient } from 'dc1-renter-sdk'
 
-const client = new DC1RenterClient({
-  apiKey: process.env.DC1_RENTER_KEY!,
-  baseUrl: 'https://api.dcp.sa',
+const baseUrl = 'https://api.dcp.sa'
+const apiKey = process.env.DC1_RENTER_KEY!
+
+const client = new DC1RenterClient({ apiKey, baseUrl })
+
+// 1) التحقق من المصادقة
+const me = await client.me()
+console.log('renter:', me.email)
+
+// 2) إرسال مهمة
+const submitted = await client.submitJob({
+  job_type: 'llm-inference',
+  duration_minutes: 3,
+  max_duration_seconds: 180,
+  container_spec: { image_type: 'vllm-serve' },
+  params: {
+    model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+    prompt: 'اكتب 3 نقاط عن سوق GPU اللامركزي.',
+  },
 })
 
-const job = await client.submitJob({
-  provider_id: 26,
-  job_type: 'llm-inference',
-  params: { prompt: 'اكتب مقدمة عن الحوسبة السحابية.' },
-})
+const jobId = submitted.job_id
+console.log('job_id:', jobId)
+
+// 3) بث السجلات (SSE)
+const logRes = await fetch(`${baseUrl}/api/jobs/${jobId}/logs/stream?key=${apiKey}`)
+if (!logRes.ok || !logRes.body) throw new Error('Failed to open log stream')
+
+const reader = logRes.body.getReader()
+const decoder = new TextDecoder()
+let done = false
+
+while (!done) {
+  const { value, done: streamDone } = await reader.read()
+  if (streamDone) break
+  const chunk = decoder.decode(value, { stream: true })
+  for (const line of chunk.split('\n')) {
+    if (!line.startsWith('data: ')) continue
+    const evt = JSON.parse(line.slice(6))
+    if (evt.type === 'log') console.log('[log]', evt.line)
+    if (evt.type === 'end') {
+      console.log('[end]', evt.status)
+      done = true
+      break
+    }
+  }
+}
+
+// 4) جلب النتيجة
+const outputRes = await fetch(`${baseUrl}/api/jobs/${jobId}/output?key=${apiKey}`)
+console.log(await outputRes.json())
 ```

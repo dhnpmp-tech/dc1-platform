@@ -70,6 +70,28 @@ interface ModelRegistryEntry {
   status: 'available' | 'no_providers'
 }
 
+interface ModelCardFeedEntry {
+  model_id: string
+  summary?: {
+    en?: string
+    ar?: string
+  }
+  metrics?: {
+    vram_required_gb?: number | null
+    latency_ms?: {
+      p50?: number | null
+      p95?: number | null
+      p99?: number | null
+    }
+    arabic_quality?: {
+      arabic_mmlu_score?: number | null
+      arabicaqa_score?: number | null
+    }
+    cost_per_1k_tokens_sar?: number | null
+    cold_start_ms?: number | null
+  }
+}
+
 // ── Constants ──────────────────────────────────────────────────────
 const GPU_MODEL_OPTIONS = ['RTX 3090', 'RTX 4090', 'A100', 'H100', 'Other']
 const REGION_OPTIONS = ['All Regions', 'KSA', 'UAE', 'Other']
@@ -144,6 +166,55 @@ function reputationTierLabel(tier: Provider['reputation_tier'], t: (key: string)
   if (tier === 'top') return t('marketplace.reputation_top')
   if (tier === 'reliable') return t('marketplace.reputation_reliable')
   return t('marketplace.reputation_new')
+}
+
+function normalizeTag(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_/]+/g, '-')
+}
+
+function splitModelUseCases(useCases: string[]): { taskTypes: string[]; languages: string[] } {
+  const languageSet = new Set<string>()
+  const taskSet = new Set<string>()
+
+  for (const raw of useCases || []) {
+    const tag = normalizeTag(raw)
+    if (!tag) continue
+    if (tag.includes('arabic')) {
+      languageSet.add('arabic')
+      continue
+    }
+    if (tag.includes('english')) {
+      languageSet.add('english')
+      continue
+    }
+    if (tag.includes('multilingual')) {
+      languageSet.add('multilingual')
+      continue
+    }
+    taskSet.add(tag)
+  }
+
+  if (languageSet.size === 0) {
+    languageSet.add('multilingual')
+  }
+
+  return { taskTypes: [...taskSet], languages: [...languageSet] }
+}
+
+function prettyTag(value: string): string {
+  return value
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function formatMilliseconds(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  if (value < 1000) return `${Math.round(value)} ms`
+  return `${(value / 1000).toFixed(1)} s`
 }
 
 // ── Icons ──────────────────────────────────────────────────────────
@@ -480,8 +551,26 @@ function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => stri
   )
 }
 
-function ModelCard({ model, t }: { model: ModelRegistryEntry; t: (key: string) => string }) {
-  const hasArabicSupport = model.use_cases.some(useCase => useCase.toLowerCase() === 'arabic')
+function ModelCard({
+  model,
+  benchmark,
+  compared,
+  onToggleCompare,
+  t,
+}: {
+  model: ModelRegistryEntry
+  benchmark: ModelCardFeedEntry | undefined
+  compared: boolean
+  onToggleCompare: (modelId: string) => void
+  t: (key: string) => string
+}) {
+  const meta = splitModelUseCases(model.use_cases)
+  const hasArabicSupport = meta.languages.includes('arabic')
+  const coldStartMs = benchmark?.metrics?.cold_start_ms ?? null
+  const latencyP95 = benchmark?.metrics?.latency_ms?.p95 ?? null
+  const mmlu = benchmark?.metrics?.arabic_quality?.arabic_mmlu_score ?? null
+  const aqa = benchmark?.metrics?.arabic_quality?.arabicaqa_score ?? null
+  const benchmarkSummary = benchmark?.summary?.en
 
   return (
     <article className="card hover:border-dc1-amber/30 transition-colors flex flex-col">
@@ -493,16 +582,23 @@ function ModelCard({ model, t }: { model: ModelRegistryEntry; t: (key: string) =
         <StatusBadge status={model.status === 'available' ? 'online' : 'offline'} size="sm" pulse={model.status === 'available'} />
       </div>
 
-      {hasArabicSupport && (
-        <span className="mt-3 inline-flex w-fit text-xs px-2 py-1 rounded border border-dc1-amber/30 bg-dc1-amber/10 text-dc1-amber font-medium">
-          {t('marketplace.arabic_support')}
-        </span>
-      )}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {hasArabicSupport && (
+          <span className="inline-flex w-fit text-xs px-2 py-1 rounded border border-dc1-amber/30 bg-dc1-amber/10 text-dc1-amber font-medium">
+            {t('marketplace.arabic_support')}
+          </span>
+        )}
+        {meta.languages.map((language) => (
+          <span key={language} className="inline-flex w-fit text-xs px-2 py-1 rounded border border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary">
+            {prettyTag(language)}
+          </span>
+        ))}
+      </div>
 
       <dl className="mt-4 space-y-1.5 text-sm text-dc1-text-secondary flex-1">
         <div className="flex justify-between">
-          <dt>VRAM</dt>
-          <dd className="text-dc1-text-primary font-medium">{model.vram_gb} GB</dd>
+          <dt>Min VRAM</dt>
+          <dd className="text-dc1-text-primary font-medium">{model.min_gpu_vram_gb} GB</dd>
         </div>
         <div className="flex justify-between">
           <dt>Quantization</dt>
@@ -522,7 +618,32 @@ function ModelCard({ model, t }: { model: ModelRegistryEntry; t: (key: string) =
           <dt>Avg price</dt>
           <dd className="text-dc1-amber font-semibold">{model.avg_price_sar_per_min.toFixed(2)} SAR/min</dd>
         </div>
+        <div className="flex justify-between">
+          <dt>Cold start</dt>
+          <dd className="text-dc1-text-primary font-medium">{formatMilliseconds(coldStartMs)}</dd>
+        </div>
       </dl>
+
+      <div className="mt-3 rounded-md border border-dc1-border bg-dc1-surface-l2 p-3 text-xs">
+        <p className="text-dc1-text-primary font-semibold mb-2">Benchmark Snapshot</p>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-dc1-text-secondary">
+          <span>P95 latency</span>
+          <span className="text-dc1-text-primary text-right">{formatMilliseconds(latencyP95)}</span>
+          <span>Arabic MMLU</span>
+          <span className="text-dc1-text-primary text-right">{mmlu == null ? '—' : `${mmlu}%`}</span>
+          <span>ArabicQA</span>
+          <span className="text-dc1-text-primary text-right">{aqa == null ? '—' : `${aqa}%`}</span>
+          <span>Cost / 1K tokens</span>
+          <span className="text-dc1-text-primary text-right">
+            {benchmark?.metrics?.cost_per_1k_tokens_sar == null ? '—' : `${benchmark.metrics.cost_per_1k_tokens_sar.toFixed(2)} SAR`}
+          </span>
+        </div>
+        {benchmarkSummary && (
+          <p className="mt-2 text-dc1-text-muted leading-relaxed">
+            {benchmarkSummary}
+          </p>
+        )}
+      </div>
 
       <div className="mt-3 mb-4 flex flex-wrap gap-1">
         {model.use_cases.map(useCase => (
@@ -532,13 +653,33 @@ function ModelCard({ model, t }: { model: ModelRegistryEntry; t: (key: string) =
         ))}
       </div>
 
+      <button
+        type="button"
+        onClick={() => onToggleCompare(model.model_id)}
+        className={`w-full text-sm rounded-md py-2 border transition-colors mb-2 ${
+          compared
+            ? 'border-dc1-amber/40 bg-dc1-amber/10 text-dc1-amber'
+            : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
+        }`}
+      >
+        {compared ? 'Remove from compare' : 'Add to compare'}
+      </button>
+
       {model.providers_online > 0 ? (
-        <Link
-          href={`/renter/playground?model=${encodeURIComponent(model.model_id)}`}
-          className="btn btn-primary w-full text-center text-sm mt-auto"
-        >
-          Use in Playground
-        </Link>
+        <div className="mt-auto grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Link
+            href={`/renter/playground?model=${encodeURIComponent(model.model_id)}`}
+            className="btn text-center text-sm bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3 border border-dc1-border"
+          >
+            Use in Playground
+          </Link>
+          <Link
+            href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve`}
+            className="btn btn-primary text-center text-sm"
+          >
+            One-click Deploy
+          </Link>
+        </div>
       ) : (
         <div className="mt-auto rounded-md border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-muted">
           {t('marketplace.no_providers_for_model')}
@@ -554,6 +695,7 @@ export default function MarketplacePage() {
   const [activeTab, setActiveTab] = useState<MarketplaceTab>('gpus')
   const [providers, setProviders] = useState<Provider[]>([])
   const [models, setModels] = useState<ModelRegistryEntry[]>([])
+  const [modelCards, setModelCards] = useState<Record<string, ModelCardFeedEntry>>({})
   const [loading, setLoading] = useState(true)
   const [modelsLoading, setModelsLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -566,6 +708,12 @@ export default function MarketplacePage() {
     gpuModels: [],
     region: 'All Regions',
   })
+  const [modelSearch, setModelSearch] = useState('')
+  const [modelTaskFilter, setModelTaskFilter] = useState('all')
+  const [modelLanguageFilter, setModelLanguageFilter] = useState('all')
+  const [modelMaxVram, setModelMaxVram] = useState(80)
+  const [modelMaxPrice, setModelMaxPrice] = useState(10)
+  const [compareModelIds, setCompareModelIds] = useState<string[]>([])
   const countdownRef = useRef<number>(POLL_INTERVAL_MS / 1000)
   const [countdown, setCountdown] = useState(POLL_INTERVAL_MS / 1000)
 
@@ -586,10 +734,23 @@ export default function MarketplacePage() {
 
   const fetchModels = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/models`)
-      if (res.ok) {
-        const data = await res.json()
+      const [modelsRes, cardsRes] = await Promise.all([
+        fetch(`${API_BASE}/models`),
+        fetch(`${API_BASE}/models/cards`),
+      ])
+
+      if (modelsRes.ok) {
+        const data = await modelsRes.json()
         setModels(Array.isArray(data) ? data : [])
+      }
+
+      if (cardsRes.ok) {
+        const cardsPayload = await cardsRes.json()
+        const nextCards: Record<string, ModelCardFeedEntry> = {}
+        for (const card of Array.isArray(cardsPayload?.cards) ? cardsPayload.cards : []) {
+          if (card?.model_id) nextCards[card.model_id] = card
+        }
+        setModelCards(nextCards)
       }
     } catch (err) {
       console.error('Failed to load model registry:', err)
@@ -663,6 +824,33 @@ export default function MarketplacePage() {
 
   const onlineCount = providers.filter(p => p.is_live).length
 
+  const taskTypeOptions = Array.from(new Set(models.flatMap(model => splitModelUseCases(model.use_cases).taskTypes))).sort((a, b) => a.localeCompare(b))
+  const languageOptions = Array.from(new Set(models.flatMap(model => splitModelUseCases(model.use_cases).languages))).sort((a, b) => a.localeCompare(b))
+
+  const filteredModels = models.filter((model) => {
+    const query = modelSearch.trim().toLowerCase()
+    const meta = splitModelUseCases(model.use_cases)
+    const modelText = `${model.display_name} ${model.model_id} ${model.family}`.toLowerCase()
+    const queryOk = !query || modelText.includes(query)
+    const taskOk = modelTaskFilter === 'all' || meta.taskTypes.includes(modelTaskFilter)
+    const languageOk = modelLanguageFilter === 'all' || meta.languages.includes(modelLanguageFilter)
+    const vramOk = model.min_gpu_vram_gb <= modelMaxVram
+    const priceOk = model.avg_price_sar_per_min <= modelMaxPrice
+    return queryOk && taskOk && languageOk && vramOk && priceOk
+  })
+
+  const comparedModels = compareModelIds
+    .map((modelId) => filteredModels.find((m) => m.model_id === modelId) || models.find((m) => m.model_id === modelId))
+    .filter((model): model is ModelRegistryEntry => Boolean(model))
+
+  function toggleCompareModel(modelId: string) {
+    setCompareModelIds((prev) => {
+      if (prev.includes(modelId)) return prev.filter((id) => id !== modelId)
+      if (prev.length >= 4) return prev
+      return [...prev, modelId]
+    })
+  }
+
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
       <div className="space-y-5">
@@ -679,9 +867,9 @@ export default function MarketplacePage() {
                 </span>
               ) : (
                 <span className="text-sm text-dc1-text-secondary">
-                  <span className="text-status-success font-semibold">{models.filter(m => m.status === 'available').length}</span> available
+                  <span className="text-status-success font-semibold">{filteredModels.filter(m => m.status === 'available').length}</span> available
                   {' · '}
-                  <span className="text-dc1-text-muted">{models.length} models</span>
+                  <span className="text-dc1-text-muted">{filteredModels.length}/{models.length} models</span>
                 </span>
               )}
               {lastUpdated && (
@@ -742,6 +930,15 @@ export default function MarketplacePage() {
                 </select>
               </>
             )}
+            {activeTab === 'models' && compareModelIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setCompareModelIds([])}
+                className="px-3 py-1.5 rounded-lg text-sm border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary transition-colors"
+              >
+                Clear compare ({compareModelIds.length})
+              </button>
+            )}
           </div>
         </div>
 
@@ -768,6 +965,153 @@ export default function MarketplacePage() {
 
           {/* GPU cards / model cards */}
           <div className="flex-1 min-w-0">
+            {activeTab === 'models' && (
+              <div className="card mb-4">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+                  <div className="lg:col-span-2">
+                    <label className="block text-xs font-medium text-dc1-text-secondary mb-1.5">Search model</label>
+                    <input
+                      type="text"
+                      value={modelSearch}
+                      onChange={(e) => setModelSearch(e.target.value)}
+                      placeholder="Search by model id, family, or display name"
+                      className="input w-full text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-dc1-text-secondary mb-1.5">Task type</label>
+                    <select
+                      value={modelTaskFilter}
+                      onChange={(e) => setModelTaskFilter(e.target.value)}
+                      className="input w-full text-sm"
+                    >
+                      <option value="all">All tasks</option>
+                      {taskTypeOptions.map((taskType) => (
+                        <option key={taskType} value={taskType}>{prettyTag(taskType)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-dc1-text-secondary mb-1.5">Language</label>
+                    <select
+                      value={modelLanguageFilter}
+                      onChange={(e) => setModelLanguageFilter(e.target.value)}
+                      className="input w-full text-sm"
+                    >
+                      <option value="all">All languages</option>
+                      {languageOptions.map((language) => (
+                        <option key={language} value={language}>{prettyTag(language)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-dc1-text-secondary mb-1.5">
+                      Max VRAM requirement
+                    </label>
+                    <div className="input text-sm flex items-center justify-between gap-3">
+                      <span>{modelMaxVram} GB</span>
+                      <input
+                        type="range"
+                        min={4}
+                        max={80}
+                        step={4}
+                        value={modelMaxVram}
+                        onChange={(e) => setModelMaxVram(Number(e.target.value))}
+                        className="w-28 accent-dc1-amber"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3 items-center">
+                  <div className="lg:col-span-2">
+                    <label className="block text-xs font-medium text-dc1-text-secondary mb-1.5">
+                      Max price
+                    </label>
+                    <div className="input text-sm flex items-center justify-between gap-3">
+                      <span>{modelMaxPrice.toFixed(2)} SAR/min</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={20}
+                        step={0.25}
+                        value={modelMaxPrice}
+                        onChange={(e) => setModelMaxPrice(Number(e.target.value))}
+                        className="w-48 accent-dc1-amber"
+                      />
+                    </div>
+                  </div>
+                  <div className="text-xs text-dc1-text-muted">
+                    {filteredModels.length} matching model{filteredModels.length === 1 ? '' : 's'}
+                    {' · '}
+                    {comparedModels.length} selected for side-by-side compare
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'models' && comparedModels.length >= 2 && (
+              <div className="card mb-4 overflow-x-auto">
+                <h3 className="text-sm font-semibold text-dc1-text-primary mb-3">Model Comparison</h3>
+                <table className="w-full text-sm min-w-[760px]">
+                  <thead>
+                    <tr className="border-b border-dc1-border">
+                      <th className="text-left py-2 pr-3 text-dc1-text-muted">Metric</th>
+                      {comparedModels.map((model) => (
+                        <th key={model.model_id} className="text-left py-2 px-3 text-dc1-text-primary font-semibold">
+                          {model.display_name}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dc1-border">
+                    {[
+                      { label: 'Task types', value: (model: ModelRegistryEntry) => splitModelUseCases(model.use_cases).taskTypes.map(prettyTag).join(', ') || 'General' },
+                      { label: 'Languages', value: (model: ModelRegistryEntry) => splitModelUseCases(model.use_cases).languages.map(prettyTag).join(', ') },
+                      { label: 'Min VRAM', value: (model: ModelRegistryEntry) => `${model.min_gpu_vram_gb} GB` },
+                      { label: 'Avg price', value: (model: ModelRegistryEntry) => `${model.avg_price_sar_per_min.toFixed(2)} SAR/min` },
+                      { label: 'Providers online', value: (model: ModelRegistryEntry) => String(model.providers_online) },
+                      { label: 'P95 latency', value: (model: ModelRegistryEntry) => formatMilliseconds(modelCards[model.model_id]?.metrics?.latency_ms?.p95 ?? null) },
+                      { label: 'Cold start', value: (model: ModelRegistryEntry) => formatMilliseconds(modelCards[model.model_id]?.metrics?.cold_start_ms ?? null) },
+                      { label: 'Arabic MMLU', value: (model: ModelRegistryEntry) => {
+                        const score = modelCards[model.model_id]?.metrics?.arabic_quality?.arabic_mmlu_score
+                        return score == null ? '—' : `${score}%`
+                      } },
+                    ].map((row) => (
+                      <tr key={row.label}>
+                        <td className="py-2 pr-3 text-dc1-text-muted">{row.label}</td>
+                        {comparedModels.map((model) => (
+                          <td key={model.model_id} className="py-2 px-3 text-dc1-text-primary">
+                            {row.value(model)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className="py-2 pr-3 text-dc1-text-muted">Actions</td>
+                      {comparedModels.map((model) => (
+                        <td key={model.model_id} className="py-2 px-3">
+                          <div className="flex gap-2">
+                            <Link
+                              href={`/renter/playground?model=${encodeURIComponent(model.model_id)}`}
+                              className="px-2.5 py-1 text-xs rounded border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary"
+                            >
+                              Playground
+                            </Link>
+                            <Link
+                              href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve`}
+                              className="px-2.5 py-1 text-xs rounded bg-dc1-amber text-dc1-void font-medium"
+                            >
+                              Deploy
+                            </Link>
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {activeTab === 'gpus' && loading ? (
               <div className="flex items-center justify-center py-20">
                 <div
@@ -807,10 +1151,22 @@ export default function MarketplacePage() {
               <div className="card text-center py-12">
                 <p className="text-dc1-text-secondary mb-2">{t('marketplace.no_providers_for_model')}</p>
               </div>
+            ) : filteredModels.length === 0 ? (
+              <div className="card text-center py-12">
+                <p className="text-dc1-text-secondary mb-2">No models match your catalog filters.</p>
+                <p className="text-sm text-dc1-text-muted">Broaden task type, language, VRAM, or price limits.</p>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {models.map(model => (
-                  <ModelCard key={model.model_id} model={model} t={t} />
+                {filteredModels.map(model => (
+                  <ModelCard
+                    key={model.model_id}
+                    model={model}
+                    benchmark={modelCards[model.model_id]}
+                    compared={compareModelIds.includes(model.model_id)}
+                    onToggleCompare={toggleCompareModel}
+                    t={t}
+                  />
                 ))}
               </div>
             )}

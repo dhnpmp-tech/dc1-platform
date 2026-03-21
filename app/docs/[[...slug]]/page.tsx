@@ -19,6 +19,69 @@ interface DocsPageProps {
 }
 
 export default function DocsPage({ params }: DocsPageProps) {
+  if (!params.slug || params.slug.length === 0) {
+    return (
+      <div className="min-h-screen bg-dc1-void">
+        <Header />
+
+        <main className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+          <section className="rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-8 sm:p-10">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber">Docs Portal</p>
+            <h1 className="mt-3 text-3xl font-bold text-dc1-text-primary sm:text-4xl">DCP Developer Documentation</h1>
+            <p className="mt-4 max-w-3xl text-dc1-text-secondary">
+              API-first onboarding for providers and renters. Start your first job in under 5 minutes, then scale with SDKs and OpenAPI.
+            </p>
+            <p className="mt-2 max-w-3xl text-dc1-text-secondary">
+              بوابة توثيق ثنائية اللغة (عربي/إنجليزي) لإعداد المزودين والمستأجرين بسرعة مع مرجع API كامل.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link href="/docs/quickstart" className="btn btn-primary btn-sm">Start in English</Link>
+              <Link href="/docs/ar/quickstart" className="btn btn-secondary btn-sm">ابدأ بالعربية</Link>
+            </div>
+          </section>
+
+          <section className="mt-10">
+            <h2 className="mb-5 text-xl font-semibold text-dc1-text-primary">Documentation Map</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Link href="/docs/quickstart" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+                <h3 className="text-base font-semibold text-dc1-text-primary">Quickstart</h3>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Run your first renter job in under 5 minutes.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">البدء السريع لتشغيل أول مهمة خلال 5 دقائق.</p>
+              </Link>
+              <Link href="/docs/provider-guide" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+                <h3 className="text-base font-semibold text-dc1-text-primary">Provider Onboarding</h3>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Install daemon, verify heartbeat, and start earning.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">دليل إعداد المزود: التثبيت، heartbeat، والأرباح.</p>
+              </Link>
+              <Link href="/docs/renter-guide" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+                <h3 className="text-base font-semibold text-dc1-text-primary">Renter Onboarding</h3>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Registration, balance, job submit, and output retrieval.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">إعداد المستأجر من التسجيل حتى استلام المخرجات.</p>
+              </Link>
+              <Link href="/docs/api-reference" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+                <h3 className="text-base font-semibold text-dc1-text-primary">API Reference</h3>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Auth model, endpoint map, and error contract.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">مرجع API: المصادقة، النقاط الأساسية، وتنسيق الأخطاء.</p>
+              </Link>
+              <Link href="/docs/architecture-overview" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+                <h3 className="text-base font-semibold text-dc1-text-primary">Architecture Overview</h3>
+                <p className="mt-1 text-sm text-dc1-text-secondary">System map for Next.js, Express, daemon, and sync.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">نظرة شاملة على بنية النظام ومسار البيانات.</p>
+              </Link>
+              <Link href="/docs/openapi.yaml" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+                <h3 className="text-base font-semibold text-dc1-text-primary">OpenAPI Spec</h3>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Machine-readable contract for SDKs and tooling.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">مواصفة آلية للـ SDK والأدوات.</p>
+              </Link>
+            </div>
+          </section>
+        </main>
+
+        <Footer />
+      </div>
+    )
+  }
+
   const normalizedSlug = normalizeDocSlug(params.slug)
   const doc = getDocBySlug(normalizedSlug)
 

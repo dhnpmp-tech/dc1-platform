@@ -1,23 +1,71 @@
 ---
 title: دليل المزود
-description: تثبيت الـ daemon وتشغيل وحدة GPU لاستقبال المهام.
+description: إعداد المزود خلال أقل من 5 دقائق: تسجيل، تثبيت daemon، التحقق من heartbeat، وبدء الربح.
 order: 5
 ---
 
-## خطوات المزود
+## إعداد المزود خلال 5 دقائق
 
-1. التسجيل في `/provider/register`
-2. تنزيل السكربت أو المثبت
-3. تشغيل `dc1_daemon.py` بشكل مستمر
-4. متابعة الأرباح والسحب من لوحة المزود
+1. سجّل كمزوّد من `/provider/register`.
+2. انسخ مفتاح API بصيغة `dcp-provider-...`.
+3. ثبّت daemon حسب نظام التشغيل.
+4. تأكد أن الحالة أصبحت `online`.
+5. أبقِ الجهاز متاحًا لاستقبال المهام.
 
-## التثبيت على لينكس
+## المتطلبات الأساسية
+
+- بطاقة NVIDIA (حد أدنى 8GB VRAM، ويفضّل 16GB+)
+- تعريفات محدثة (`nvidia-smi` يعمل)
+- Python 3.8+
+- Docker + NVIDIA Container Toolkit (مستحسن)
+- اتصال إنترنت مستقر
+
+## تثبيت daemon (Linux/macOS)
 
 ```bash
 curl -sL "https://dcp.sa/api/dc1/providers/download/setup?key=<PROVIDER_KEY>&os=linux" | bash
 ```
 
-## الحصة المالية
+## تثبيت daemon (Windows PowerShell)
 
-- حصة المزود: 75%
-- حصة DC1: 25%
+```powershell
+irm "https://dcp.sa/api/dc1/providers/download/setup?key=<PROVIDER_KEY>&os=windows" | iex
+```
+
+## التحقق من حالة المزود
+
+```bash
+curl -s "https://dcp.sa/api/dc1/providers/me?key=<PROVIDER_KEY>"
+```
+
+المتوقع:
+
+- `provider.status` تساوي `online`
+- `provider.last_heartbeat` يتحدث كل 30 ثانية
+- `provider.total_jobs` يزيد بعد المهام المكتملة
+
+## دورة حياة daemon
+
+- heartbeat كل 30 ثانية عبر `POST /api/providers/heartbeat`
+- استطلاع المهام عبر نقطة طابور المزود
+- إرسال النتائج عبر `POST /api/providers/job-result`
+
+## الأرباح والتسوية
+
+- توزيع الإيراد: `75%` للمزود و`25%` للمنصة
+- العملة: ريال سعودي (والوحدة الدقيقة: هللة)
+- استخدم `GET /api/dc1/providers/earnings?key=...` لمعرفة الرصيد المتاح والإجمالي
+
+## فحص الأعطال السريع
+
+1. تأكد أن `nvidia-smi` يعرض البطاقة.
+2. تأكد من صحة المفتاح (`dcp-provider-...`).
+3. تأكد أن daemon يصل إلى `https://dcp.sa/api/dc1`.
+4. تأكد أن الجدار الناري يسمح بالاتصال الخارجي HTTPS.
+
+## وثائق مرتبطة
+
+- [البدء السريع](/docs/ar/quickstart)
+- [دليل المستأجر](/docs/ar/renter-guide)
+- [نظرة معمارية](/docs/ar/architecture-overview)
+- [مرجع API](/docs/ar/api-reference)

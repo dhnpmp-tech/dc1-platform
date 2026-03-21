@@ -165,7 +165,7 @@ afterAll(() => {
 
 describe('DCP-324 Docker wave integration suite', () => {
   describe('container_spec validation (DCP-311)', () => {
-    it('rejects submit without container_spec', async () => {
+    it('accepts legacy non-container submit without container_spec', async () => {
       const { renterKey } = await registerRenter({ balance_halala: 20_000 });
       const res = await request(app)
         .post('/api/jobs/submit')
@@ -176,8 +176,12 @@ describe('DCP-324 Docker wave integration suite', () => {
           params: { prompt: 'hello' },
         });
 
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/container_spec is required/i);
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.job.container_spec).toEqual(expect.objectContaining({
+        image_type: 'llm',
+        compute_type: 'inference',
+      }));
     });
 
     it('rejects submit with invalid image_type', async () => {

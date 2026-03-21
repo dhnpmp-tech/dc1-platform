@@ -15,6 +15,28 @@
     "max_tokens": 512,
     "temperature": 0.7
   },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "hot",
+    "behavior": "Hot cache keeps tokenizer + weight shards pinned for low-latency serving restarts."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "vllm_serve",
+      "duration_minutes": 60,
+      "params": {
+        "model": "mistralai/Mistral-7B-Instruct-v0.2",
+        "max_model_len": 8192,
+        "dtype": "float16"
+      }
+    },
+    "output": {
+      "type": "endpoint",
+      "model": "mistralai/Mistral-7B-Instruct-v0.2",
+      "status": "running",
+      "openai_base_url": "http://127.0.0.1:8000/v1"
+    }
+  },
   "min_vram_gb": 16,
   "estimated_price_sar_per_hour": 9.0,
   "tags": ["llm", "inference", "api", "openai-compatible"],

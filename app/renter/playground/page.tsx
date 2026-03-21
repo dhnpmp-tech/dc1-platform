@@ -186,6 +186,7 @@ function GpuPlayground() {
   const searchParams = useSearchParams();
   const preselectedProvider = searchParams.get('provider');
   const preselectedModel = searchParams.get('model');
+  const preselectedMode = searchParams.get('mode');
 
   // Auth
   const [renterKey, setRenterKey] = useState('');
@@ -264,12 +265,21 @@ function GpuPlayground() {
   useEffect(() => {
     if (!preselectedModel) return;
     const selectedModel = preselectedModel;
-    const supported = LLM_MODELS.some(model => model.id === selectedModel);
+    const supportedLlm = LLM_MODELS.some(model => model.id === selectedModel);
+    const supportedVllm = VLLM_MODELS.some(model => model.id === selectedModel);
+    const wantsVllm = preselectedMode === 'vllm_serve';
+    if (wantsVllm && supportedVllm) {
+      setJobType('vllm_serve');
+      setVllmModel(selectedModel);
+      setLlmModel(selectedModel);
+      return;
+    }
+    const supported = supportedLlm || supportedVllm;
     if (!supported) return;
     setJobType('llm_inference');
     setLlmModel(selectedModel);
     setVllmModel(selectedModel);
-  }, [preselectedModel]);
+  }, [preselectedModel, preselectedMode]);
 
   // ── Auth ──────────────────────────────────────────────────────────
   useEffect(() => {

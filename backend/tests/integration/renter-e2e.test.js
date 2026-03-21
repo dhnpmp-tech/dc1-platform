@@ -170,6 +170,7 @@ describe('Renter E2E integration (register → job → log stream → webhook)',
       const heartbeat = await bringOnline(request, app, provider.apiKey);
       expect(heartbeat.status).toBe(200);
       expect(heartbeat.body).toEqual(expect.objectContaining({ success: true }));
+      db.prepare("UPDATE providers SET approval_status = 'approved' WHERE id = ?").run(provider.providerId);
 
       const renter = await registerRenter(request, app, {
         name: 'E2E Renter',

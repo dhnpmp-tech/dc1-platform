@@ -48,12 +48,12 @@ function computeStatus(lastHeartbeat, now) {
  * @returns {{ provider: object, effective_price_halala: number }|null}
  *   Returns null when no provider is available (caller should respond 503).
  */
-function findBestProvider({ job_type, min_vram_gb = 0, globalRateHalala = 10 }) {
+function findBestProvider({ job_type, min_vram_gb = 0, globalRateHalala = 10, pricing_class = 'standard' }) {
   // Pull all active providers that have ever sent a heartbeat
   const candidates = db.all(
     `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, vram_gb,
             last_heartbeat, uptime_percent, reputation_score, price_per_min_halala,
-            status, is_paused
+            model_preload_status, status, is_paused
      FROM providers
      WHERE is_paused = 0 AND last_heartbeat IS NOT NULL`
   );
@@ -85,6 +85,7 @@ function findBestProvider({ job_type, min_vram_gb = 0, globalRateHalala = 10 }) 
         effective_price,
         vram_gb_resolved: providerVramGb,
         uptime_percent: p.uptime_percent || 0,
+        preload_ready: String(p.model_preload_status || '').toLowerCase() === 'ready',
       };
     })
     .filter(Boolean);
@@ -97,6 +98,10 @@ function findBestProvider({ job_type, min_vram_gb = 0, globalRateHalala = 10 }) 
     if (a.live_status !== b.live_status) {
       return a.live_status === 'online' ? -1 : 1;
     }
+    // Priority class favors already pre-warmed providers to minimize cold starts.
+    if (String(pricing_class).toLowerCase() === 'priority' && a.preload_ready !== b.preload_ready) {
+      return a.preload_ready ? -1 : 1;
+    }
     // Higher uptime first
     const uptimeDiff = b.uptime_percent - a.uptime_percent;
     if (uptimeDiff !== 0) return uptimeDiff;
@@ -106,7 +111,7 @@ function findBestProvider({ job_type, min_vram_gb = 0, globalRateHalala = 10 }) 
 
   const winner = qualified[0];
   console.log(
-    `[jobRouter] job_type=${job_type} min_vram=${min_vram_gb}GB → ` +
+    `[jobRouter] job_type=${job_type} pricing_class=${pricing_class} min_vram=${min_vram_gb}GB → ` +
     `provider #${winner.id} (${winner.name}) status=${winner.live_status} ` +
     `uptime=${winner.uptime_percent}% price=${winner.effective_price}h/min ` +
     `vram=${winner.vram_gb_resolved.toFixed(1)}GB`

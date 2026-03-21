@@ -19,6 +19,30 @@ interface RenterInfo {
   created_at: string
 }
 
+interface SshKeyItem {
+  id: string
+  label: string
+  publicKey: string
+  fingerprint: string
+  createdAt: string
+}
+
+interface TeamMemberItem {
+  id: string
+  name: string
+  email: string
+  role: 'owner' | 'admin' | 'member'
+  status: 'active' | 'pending'
+}
+
+interface NotificationPrefs {
+  email: boolean
+  telegram: boolean
+  webhook: boolean
+  lowBalanceThresholdSar: number
+  dailySpendAlertSar: number
+}
+
 // Nav icons
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -90,6 +114,24 @@ export default function RenterSettingsPage() {
   const [exportingData, setExportingData] = useState(false)
   const [exportMessage, setExportMessage] = useState('')
   const [exportError, setExportError] = useState('')
+  const [sshKeys, setSshKeys] = useState<SshKeyItem[]>([])
+  const [newSshLabel, setNewSshLabel] = useState('')
+  const [newSshPublicKey, setNewSshPublicKey] = useState('')
+  const [sshError, setSshError] = useState('')
+  const [teamMembers, setTeamMembers] = useState<TeamMemberItem[]>([])
+  const [inviteName, setInviteName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<TeamMemberItem['role']>('member')
+  const [teamMessage, setTeamMessage] = useState('')
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({
+    email: true,
+    telegram: false,
+    webhook: false,
+    lowBalanceThresholdSar: 25,
+    dailySpendAlertSar: 120,
+  })
+  const [notificationMessage, setNotificationMessage] = useState('')
+  const [apiLifecycleMessage, setApiLifecycleMessage] = useState('')
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
@@ -118,6 +160,52 @@ export default function RenterSettingsPage() {
     }
     fetchData()
   }, [router])
+
+  useEffect(() => {
+    if (!apiKey) return
+    const sshStorageKey = `dc1_renter_ssh_keys_${apiKey.slice(0, 12)}`
+    const teamStorageKey = `dc1_renter_team_${apiKey.slice(0, 12)}`
+    const notifStorageKey = `dc1_renter_notif_${apiKey.slice(0, 12)}`
+    const rawSsh = localStorage.getItem(sshStorageKey)
+    const rawTeam = localStorage.getItem(teamStorageKey)
+    const rawNotif = localStorage.getItem(notifStorageKey)
+
+    if (rawSsh) {
+      try {
+        setSshKeys(JSON.parse(rawSsh) as SshKeyItem[])
+      } catch {
+        setSshKeys([])
+      }
+    }
+
+    if (rawTeam) {
+      try {
+        setTeamMembers(JSON.parse(rawTeam) as TeamMemberItem[])
+      } catch {
+        setTeamMembers([])
+      }
+    }
+
+    if (!rawTeam) {
+      setTeamMembers([
+        {
+          id: `member-${Date.now()}`,
+          name: renter?.name || 'Workspace Owner',
+          email: renter?.email || 'owner@dcp.sa',
+          role: 'owner',
+          status: 'active',
+        },
+      ])
+    }
+
+    if (rawNotif) {
+      try {
+        setNotificationPrefs(JSON.parse(rawNotif) as NotificationPrefs)
+      } catch {
+        // keep defaults
+      }
+    }
+  }, [apiKey, renter?.email, renter?.name])
 
   const copyApiKey = () => {
     navigator.clipboard.writeText(apiKey)
@@ -231,6 +319,89 @@ export default function RenterSettingsPage() {
     }
   }
 
+  const toFingerprint = (publicKey: string): string => {
+    const normalized = publicKey.trim().replace(/\s+/g, ' ')
+    const tail = normalized.slice(-32).padStart(32, '0')
+    return `SHA256:${tail.slice(0, 8)}:${tail.slice(8, 16)}:${tail.slice(16, 24)}:${tail.slice(24, 32)}`
+  }
+
+  const handleAddSshKey = () => {
+    setSshError('')
+    const label = newSshLabel.trim()
+    const publicKey = newSshPublicKey.trim()
+    if (!label || !publicKey) {
+      setSshError('Label and public key are required.')
+      return
+    }
+    if (!publicKey.startsWith('ssh-')) {
+      setSshError('SSH key must start with ssh-rsa, ssh-ed25519, or similar.')
+      return
+    }
+
+    const next: SshKeyItem[] = [
+      {
+        id: `ssh-${Date.now()}`,
+        label,
+        publicKey,
+        fingerprint: toFingerprint(publicKey),
+        createdAt: new Date().toISOString(),
+      },
+      ...sshKeys,
+    ]
+    setSshKeys(next)
+    localStorage.setItem(`dc1_renter_ssh_keys_${apiKey.slice(0, 12)}`, JSON.stringify(next))
+    setNewSshLabel('')
+    setNewSshPublicKey('')
+  }
+
+  const handleRemoveSshKey = (id: string) => {
+    const next = sshKeys.filter((key) => key.id !== id)
+    setSshKeys(next)
+    localStorage.setItem(`dc1_renter_ssh_keys_${apiKey.slice(0, 12)}`, JSON.stringify(next))
+  }
+
+  const handleSaveNotifications = () => {
+    localStorage.setItem(
+      `dc1_renter_notif_${apiKey.slice(0, 12)}`,
+      JSON.stringify(notificationPrefs),
+    )
+    setNotificationMessage('Notification preferences saved.')
+    setTimeout(() => setNotificationMessage(''), 2500)
+  }
+
+  const handleInviteMember = () => {
+    setTeamMessage('')
+    const email = inviteEmail.trim()
+    const name = inviteName.trim()
+    if (!name || !email) {
+      setTeamMessage('Name and email are required.')
+      return
+    }
+
+    const next: TeamMemberItem[] = [
+      ...teamMembers,
+      {
+        id: `invite-${Date.now()}`,
+        name,
+        email,
+        role: inviteRole,
+        status: 'pending',
+      },
+    ]
+    setTeamMembers(next)
+    localStorage.setItem(`dc1_renter_team_${apiKey.slice(0, 12)}`, JSON.stringify(next))
+    setInviteName('')
+    setInviteEmail('')
+    setInviteRole('member')
+    setTeamMessage('Invitation staged. Backend invite endpoint pending.')
+  }
+
+  const handleRemoveMember = (id: string) => {
+    const next = teamMembers.filter((member) => member.id !== id)
+    setTeamMembers(next)
+    localStorage.setItem(`dc1_renter_team_${apiKey.slice(0, 12)}`, JSON.stringify(next))
+  }
+
   if (loading) {
     return (
       <DashboardLayout navItems={navItems} role="renter" userName="Renter">
@@ -335,6 +506,74 @@ export default function RenterSettingsPage() {
           </div>
         </div>
 
+        {/* Notification Settings */}
+        <div className="card p-6 space-y-5">
+          <div>
+            <h2 className="section-heading">Notifications</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">Configure alert channels and spend thresholds.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { key: 'email', label: 'Email' },
+              { key: 'telegram', label: 'Telegram' },
+              { key: 'webhook', label: 'Webhook' },
+            ].map((channel) => (
+              <label
+                key={channel.key}
+                className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3 flex items-center justify-between"
+              >
+                <span className="text-sm text-dc1-text-primary">{channel.label}</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(notificationPrefs[channel.key as keyof NotificationPrefs])}
+                  onChange={(e) =>
+                    setNotificationPrefs((prev) => ({ ...prev, [channel.key]: e.target.checked }))
+                  }
+                  className="h-4 w-4 accent-dc1-amber"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-dc1-text-muted block mb-1">Low balance threshold (SAR)</label>
+              <input
+                type="number"
+                min={1}
+                value={notificationPrefs.lowBalanceThresholdSar}
+                onChange={(e) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    lowBalanceThresholdSar: Number(e.target.value || 1),
+                  }))
+                }
+                className="w-full px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-dc1-text-muted block mb-1">Daily spend alert (SAR)</label>
+              <input
+                type="number"
+                min={1}
+                value={notificationPrefs.dailySpendAlertSar}
+                onChange={(e) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    dailySpendAlertSar: Number(e.target.value || 1),
+                  }))
+                }
+                className="w-full px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+              />
+            </div>
+          </div>
+          {notificationMessage && <p className="text-xs text-status-success">{notificationMessage}</p>}
+          <div className="flex justify-end">
+            <button onClick={handleSaveNotifications} className="btn btn-primary text-sm min-h-[44px]">
+              Save Notifications
+            </button>
+          </div>
+        </div>
+
         {/* API Key Management */}
         <div className="card p-6 space-y-4">
           <h2 className="section-heading">API Key</h2>
@@ -391,6 +630,35 @@ export default function RenterSettingsPage() {
 
           {/* Rotate Key */}
           <div className="border-t border-dc1-border pt-4">
+            <div className="mb-4 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary">
+              <div className="flex justify-between gap-3">
+                <span>Last used</span>
+                <span className="text-dc1-text-primary">Active in current browser session</span>
+              </div>
+              <div className="flex justify-between gap-3 mt-1">
+                <span>Scope</span>
+                <span className="text-dc1-text-primary">Renter API + Playground access</span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setApiLifecycleMessage('Create additional key is pending backend support.')}
+                className="btn btn-outline text-xs px-3"
+              >
+                Create Additional Key
+              </button>
+              <button
+                type="button"
+                onClick={() => setApiLifecycleMessage('Revoke old keys is pending backend support. Use rotate as secure fallback.')}
+                className="btn btn-outline text-xs px-3"
+              >
+                Revoke Legacy Keys
+              </button>
+            </div>
+            {apiLifecycleMessage && (
+              <p className="text-xs text-dc1-text-muted">{apiLifecycleMessage}</p>
+            )}
             {!rotateConfirm ? (
               <button
                 onClick={() => setRotateConfirm(true)}
@@ -421,6 +689,121 @@ export default function RenterSettingsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* SSH Keys */}
+        <div className="card p-6 space-y-4">
+          <div>
+            <h2 className="section-heading">SSH Keys</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">Use SSH keys for secure template sync and authenticated repository access.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <input
+              type="text"
+              value={newSshLabel}
+              onChange={(e) => setNewSshLabel(e.target.value)}
+              placeholder="Label (MacBook Pro)"
+              className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+            <input
+              type="text"
+              value={newSshPublicKey}
+              onChange={(e) => setNewSshPublicKey(e.target.value)}
+              placeholder="ssh-ed25519 AAAAC3Nz..."
+              className="sm:col-span-2 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+          </div>
+          {sshError && <p className="text-xs text-status-error">{sshError}</p>}
+          <div className="flex justify-end">
+            <button onClick={handleAddSshKey} className="btn btn-primary text-sm min-h-[44px]">
+              Add SSH Key
+            </button>
+          </div>
+          <div className="space-y-2">
+            {sshKeys.length === 0 ? (
+              <p className="text-xs text-dc1-text-muted">No SSH keys added yet.</p>
+            ) : (
+              sshKeys.map((key) => (
+                <div key={key.id} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-dc1-text-primary font-medium">{key.label}</p>
+                      <p className="text-xs text-dc1-text-muted">{key.fingerprint}</p>
+                      <p className="text-xs text-dc1-text-muted mt-1">
+                        Added {new Date(key.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveSshKey(key.id)}
+                      className="px-3 py-1.5 rounded border border-status-error/30 text-status-error text-xs hover:bg-status-error/10"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Team Settings */}
+        <div className="card p-6 space-y-4">
+          <div>
+            <h2 className="section-heading">Team Settings</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">Invite teammates and assign owner/admin/member roles.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <input
+              type="text"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              placeholder="Name"
+              className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="teammate@company.com"
+              className="sm:col-span-2 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+            <select
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value as TeamMemberItem['role'])}
+              className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
+            </select>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={handleInviteMember} className="btn btn-primary text-sm min-h-[44px]">
+              Invite Member
+            </button>
+          </div>
+          {teamMessage && <p className="text-xs text-dc1-text-muted">{teamMessage}</p>}
+          <div className="space-y-2">
+            {teamMembers.map((member) => (
+              <div key={member.id} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm text-dc1-text-primary font-medium">{member.name}</p>
+                  <p className="text-xs text-dc1-text-muted">{member.email}</p>
+                  <p className="text-xs text-dc1-text-muted mt-1">
+                    {member.role} • {member.status}
+                  </p>
+                </div>
+                {member.role !== 'owner' && (
+                  <button
+                    onClick={() => handleRemoveMember(member.id)}
+                    className="px-3 py-1.5 rounded border border-status-error/30 text-status-error text-xs hover:bg-status-error/10"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 

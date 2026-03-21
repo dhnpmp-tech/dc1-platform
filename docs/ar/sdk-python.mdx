@@ -1,22 +1,70 @@
 ---
 title: Python SDK
-description: إدارة تسجيل المزود، الإعلان عن الموارد، ومتابعة الأرباح.
+description: مسار كامل في Python: مصادقة، إرسال مهمة، بث السجلات، وجلب النتيجة.
 order: 4
 ---
 
 ## التثبيت
 
 ```bash
-pip install dc1_provider
+pip install dc1_provider requests
 ```
 
-## مثال
+## مثال كامل
 
 ```python
-from dc1_provider import DC1ProviderClient
+import json
+import requests
 
-client = DC1ProviderClient(api_key="dc1-provider-xxxx")
-spec = client.build_resource_spec()
-client.announce(spec)
-print(client.get_earnings())
+BASE_URL = "https://api.dcp.sa"
+RENTER_KEY = "dc1-renter-your-key"
+
+headers = {
+    "Content-Type": "application/json",
+    "x-renter-key": RENTER_KEY,
+}
+
+# 1) التحقق من المصادقة
+me = requests.get(f"{BASE_URL}/api/renters/me", params={"key": RENTER_KEY}, timeout=15)
+me.raise_for_status()
+print("renter:", me.json().get("email"))
+
+# 2) إرسال مهمة
+payload = {
+    "job_type": "llm-inference",
+    "duration_minutes": 3,
+    "max_duration_seconds": 180,
+    "container_spec": {"image_type": "vllm-serve"},
+    "params": {
+        "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "prompt": "اكتب 3 نقاط عن الحوسبة بالـ GPU في السعودية.",
+    },
+}
+
+submit = requests.post(f"{BASE_URL}/api/jobs/submit", headers=headers, json=payload, timeout=30)
+submit.raise_for_status()
+job_id = submit.json()["job_id"]
+print("job_id:", job_id)
+
+# 3) بث السجلات (SSE)
+with requests.get(
+    f"{BASE_URL}/api/jobs/{job_id}/logs/stream",
+    params={"key": RENTER_KEY},
+    stream=True,
+    timeout=120,
+) as resp:
+    resp.raise_for_status()
+    for raw in resp.iter_lines(decode_unicode=True):
+        if not raw or not raw.startswith("data: "):
+            continue
+        evt = json.loads(raw[6:])
+        if evt.get("type") == "log":
+            print("[log]", evt.get("line"))
+        if evt.get("type") == "end":
+            print("[end]", evt.get("status"))
+            break
+
+# 4) جلب النتيجة
+out = requests.get(f"{BASE_URL}/api/jobs/{job_id}/output", params={"key": RENTER_KEY}, timeout=30)
+print(out.status_code, out.json())
 ```

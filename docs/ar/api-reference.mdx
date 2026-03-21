@@ -1,32 +1,102 @@
 ---
 title: مرجع API
-description: نقاط REST، أسلوب المصادقة، وتنسيق الأخطاء.
+description: نموذج المصادقة، خريطة النقاط الأساسية، وتنسيق الأخطاء لتكاملات DCP.
 order: 2
 ---
 
-## العنوان الأساسي
+## العناوين الأساسية
 
-- عبر البروكسي: `https://dcp.sa/api/dc1`
-- مباشرة: `http://76.13.179.86:8083/api`
+- بروكسي الويب: `https://dcp.sa/api/dc1`
+- API المباشر (للعمليات/التحقق): `https://api.dcp.sa/api`
 
-## المصادقة
+## نموذج المصادقة
 
-- المزود: `?key=` أو `x-provider-key`
-- المستأجر: `?key=` أو `x-renter-key`
-- المدير: `x-admin-token`
+- **المزود**: ترويسة `x-provider-key` أو `?key=`
+- **المستأجر**: ترويسة `x-renter-key` أو `?key=`
+- **المدير**: ترويسة `x-admin-token`
 
-## تنسيق الخطأ
+أمثلة المفاتيح:
+
+- `dcp-provider-...`
+- `dcp-renter-...`
+
+## تنسيق الأخطاء
+
+كل الأخطاء تعود بصيغة JSON:
 
 ```json
 { "error": "descriptive message" }
 ```
 
-## نقاط مهمة
+## نقاط المزود
 
 ```text
 POST /providers/register
+GET  /providers/me?key=
 POST /providers/heartbeat
-POST /jobs/submit
-GET  /jobs/:id/output
-GET  /admin/dashboard
+POST /providers/pause
+POST /providers/resume
+GET  /providers/download/daemon?key=
+GET  /providers/download/setup?key=&os=windows|linux|mac
+GET  /providers/earnings?key=
 ```
+
+## نقاط المستأجر
+
+```text
+POST /renters/register
+GET  /renters/me?key=
+GET  /renters/available-providers
+GET  /renters/me/invoices?key=&page=&limit=
+GET  /renters/me/invoices/export.csv?key=
+POST /payments/topup
+GET  /payments/history
+```
+
+## نقاط المهام
+
+```text
+POST /jobs/submit
+GET  /jobs/:id
+GET  /jobs/:id/output
+GET  /jobs/:id/logs
+GET  /jobs/:id/logs/stream
+GET  /jobs/queue/status
+POST /jobs/:id/retry
+POST /jobs/:id/pause
+POST /jobs/:id/resume
+```
+
+## نقاط الإدارة
+
+```text
+GET  /admin/dashboard
+GET  /admin/providers
+GET  /admin/providers/:id
+GET  /admin/daemon-health
+GET  /admin/withdrawals
+PATCH /admin/withdrawals/:id
+```
+
+## قالب أول مهمة
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: <RENTER_KEY>" \
+  -d '{
+    "provider_id": 42,
+    "job_type": "llm-inference",
+    "duration_minutes": 3,
+    "container_spec": { "image_type": "vllm-serve" },
+    "params": {
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "prompt": "لخص منصة DCP في ثلاث نقاط"
+    }
+  }'
+```
+
+## مصدر OpenAPI
+
+- صفحة مرجعية: [صفحة API](/docs/api)
+- ملف آلي: `/docs/openapi.yaml`

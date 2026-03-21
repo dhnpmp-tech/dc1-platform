@@ -1,0 +1,48 @@
+{
+  "id": "pytorch-multi-gpu",
+  "name": "PyTorch Multi GPU",
+  "description": "Multi-GPU PyTorch template for distributed workloads with NCCL-friendly defaults and device topology reporting.",
+  "image": "dc1/general-worker:latest",
+  "job_type": "custom_container",
+  "env_vars": [
+    { "key": "DOCKER_IMAGE", "label": "Docker Image", "default": "nvcr.io/nvidia/pytorch:24.01-py3", "required": true },
+    { "key": "MODEL_CACHE_DIR", "label": "Model Cache Dir", "default": "/opt/dcp/model-cache", "required": false },
+    { "key": "CACHE_POLICY", "label": "Cache Policy", "default": "hot", "required": false },
+    { "key": "GPU_COUNT", "label": "Requested GPU Count", "default": "2", "required": false },
+    { "key": "GLOBAL_BATCH_SIZE", "label": "Global Batch Size", "default": "128", "required": false }
+  ],
+  "params": {
+    "image_override": "nvcr.io/nvidia/pytorch:24.01-py3",
+    "script": "import json, torch\n\ndevice_count = torch.cuda.device_count()\ndevice = 'cuda' if device_count > 0 else 'cpu'\nif device_count > 1:\n    model = torch.nn.DataParallel(torch.nn.Linear(4096, 4096).to('cuda'))\n    x = torch.randn(64, 4096, device='cuda')\n    y = model(x)\n    throughput = float(y.numel())\nelse:\n    layer = torch.nn.Linear(4096, 4096).to(device)\n    x = torch.randn(64, 4096, device=device)\n    y = layer(x)\n    throughput = float(y.numel())\n\nprint('DC1_RESULT_JSON:' + json.dumps({\n  'template': 'pytorch-multi-gpu',\n  'device': device,\n  'gpu_count': int(device_count),\n  'throughput_units': throughput,\n  'status': 'completed'\n}))\n"
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "hot",
+    "behavior": "Hot cache pins frequently-used model shards to minimize cross-GPU cold starts."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "custom_container",
+      "duration_minutes": 30,
+      "gpu_requirements": { "min_vram_gb": 24 },
+      "container_spec": { "gpu_count": 2 },
+      "params": {
+        "image_override": "nvcr.io/nvidia/pytorch:24.01-py3",
+        "script": "import json, torch\n\nn = torch.cuda.device_count()\ndevice = 'cuda' if n > 0 else 'cpu'\nmodel = torch.nn.Linear(256, 256).to(device)\nif n > 1:\n    model = torch.nn.DataParallel(model)\nx = torch.randn(32, 256, device=device)\ny = model(x)\nprint('DC1_RESULT_JSON:' + json.dumps({'template':'pytorch-multi-gpu','device':device,'gpu_count':int(n),'throughput_units':int(y.numel()),'status':'completed'}))\n"
+      }
+    },
+    "output": {
+      "template": "pytorch-multi-gpu",
+      "device": "cuda",
+      "gpu_count": 2,
+      "throughput_units": 1048576,
+      "status": "completed"
+    }
+  },
+  "min_vram_gb": 24,
+  "estimated_price_sar_per_hour": 18.0,
+  "tags": ["pytorch", "multi-gpu", "distributed", "training", "deploy-template"],
+  "sort_order": 8,
+  "icon": "⚡",
+  "difficulty": "advanced"
+}

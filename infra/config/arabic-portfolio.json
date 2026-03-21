@@ -1,0 +1,113 @@
+{
+  "version": "2026-03-20",
+  "tiers": {
+    "tier_a": [
+      {
+        "id": "allam-7b-instruct",
+        "repo": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+        "prewarm_class": "hot",
+        "container_profile": "vllm",
+        "min_vram_gb": 24,
+        "launch_priority": 1,
+        "benchmark_profile": "full",
+        "target_p95_ms": 1300,
+        "target_cold_start_ms": 9500
+      },
+      {
+        "id": "falcon-h1-arabic-7b",
+        "repo": "tiiuae/Falcon-H1-7B-Instruct",
+        "prewarm_class": "hot",
+        "container_profile": "vllm",
+        "min_vram_gb": 24,
+        "launch_priority": 2,
+        "benchmark_profile": "full",
+        "target_p95_ms": 1200,
+        "target_cold_start_ms": 9000
+      },
+      {
+        "id": "qwen2-7b-instruct",
+        "repo": "Qwen/Qwen2-7B-Instruct",
+        "prewarm_class": "hot",
+        "container_profile": "vllm",
+        "min_vram_gb": 16,
+        "launch_priority": 3,
+        "benchmark_profile": "standard",
+        "target_p95_ms": 950,
+        "target_cold_start_ms": 8000
+      },
+      {
+        "id": "llama-3-8b-instruct",
+        "repo": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "prewarm_class": "hot",
+        "container_profile": "vllm",
+        "min_vram_gb": 16,
+        "launch_priority": 4,
+        "benchmark_profile": "standard",
+        "target_p95_ms": 1100,
+        "target_cold_start_ms": 9000
+      }
+    ],
+    "tier_b": [
+      {
+        "id": "jais-13b-chat",
+        "repo": "inceptionai/jais-13b-chat",
+        "prewarm_class": "warm",
+        "container_profile": "vllm",
+        "min_vram_gb": 24,
+        "launch_priority": 10,
+        "benchmark_profile": "standard",
+        "target_p95_ms": 1400,
+        "target_cold_start_ms": 12000
+      },
+      {
+        "id": "bge-m3-embedding",
+        "repo": "BAAI/bge-m3",
+        "prewarm_class": "warm",
+        "container_profile": "embedding",
+        "min_vram_gb": 8,
+        "launch_priority": 11,
+        "benchmark_profile": "quick",
+        "target_p95_ms": 450,
+        "target_cold_start_ms": 5000
+      },
+      {
+        "id": "reranker-v2-m3",
+        "repo": "BAAI/bge-reranker-v2-m3",
+        "prewarm_class": "warm",
+        "container_profile": "embedding",
+        "min_vram_gb": 8,
+        "launch_priority": 12,
+        "benchmark_profile": "quick",
+        "target_p95_ms": 520,
+        "target_cold_start_ms": 5500
+      },
+      {
+        "id": "sdxl-base-1.0",
+        "repo": "stabilityai/stable-diffusion-xl-base-1.0",
+        "prewarm_class": "warm",
+        "container_profile": "diffusion",
+        "min_vram_gb": 16,
+        "launch_priority": 13,
+        "benchmark_profile": "full",
+        "target_p95_ms": 2200,
+        "target_cold_start_ms": 14000
+      }
+    ],
+    "tier_c": [
+      {
+        "id": "qwen2-72b-instruct",
+        "repo": "Qwen/Qwen2-72B-Instruct",
+        "prewarm_class": "cold",
+        "container_profile": "vllm",
+        "min_vram_gb": 80
+      },
+      {
+        "id": "llama-3-70b-instruct",
+        "repo": "meta-llama/Meta-Llama-3-70B-Instruct",
+        "prewarm_class": "cold",
+        "container_profile": "vllm",
+        "min_vram_gb": 80
+      }
+    ]
+  }
+}

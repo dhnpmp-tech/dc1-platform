@@ -13,6 +13,19 @@ const {
 const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../services/notifications');
 const { sendWithdrawalApprovedEmail } = require('../services/emailService');
 const { resolveAttemptLogPath } = require('../services/job-execution-logs');
+const {
+  listPolicies: listControlPlanePolicies,
+  updatePolicy: updateControlPlanePolicy,
+  getRecentSignals: getControlPlaneSignals,
+  calculateControlPlaneSignals,
+  listTopDemandModels,
+  runDemandDrivenPrewarm,
+  runControlPlaneCycle,
+  listCapacityPolicies: listControlPlaneCapacityPolicies,
+  updateCapacityPolicy: updateControlPlaneCapacityPolicy,
+  PRICING_CLASS_ORDER,
+  CAPACITY_CLASS_ORDER,
+} = require('../services/controlPlane');
 const DB_PATH = process.env.DC1_DB_PATH || path.join(__dirname, '..', '..', 'data', 'providers.db');
 const IMAGE_REGISTRY_ALLOWLIST = Array.from(new Set(
   [
@@ -75,6 +88,18 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
   const num = toFiniteNumber(value, { min, max });
   if (num == null || !Number.isInteger(num)) return null;
   return num;
+}
+
+function parseBooleanLike(value, defaultValue = false) {
+  if (value == null) return defaultValue;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off', ''].includes(normalized)) return false;
+  }
+  return defaultValue;
 }
 
 function normalizeIdArray(value, { maxItems = 500 } = {}) {
@@ -825,6 +850,182 @@ router.get('/providers/health', (req, res) => {
   } catch (error) {
     console.error('Admin providers health error:', error);
     return res.status(500).json({ error: 'Failed to fetch provider health' });
+  }
+});
+
+// === CONTROL PLANE: serverless readiness policies/signals/prewarm ===
+router.get('/control-plane/policies', (req, res) => {
+  try {
+    const policies = listControlPlanePolicies();
+    return res.json({
+      generated_at: new Date().toISOString(),
+      count: policies.length,
+      policies,
+    });
+  } catch (error) {
+    console.error('Control plane policies list error:', error);
+    return res.status(500).json({ error: 'Failed to list control plane policies' });
+  }
+});
+
+router.patch('/control-plane/policies/:pricingClass', (req, res) => {
+  try {
+    const pricingClass = normalizeString(req.params.pricingClass, { maxLen: 32 }) || '';
+    if (!PRICING_CLASS_ORDER.includes(pricingClass)) {
+      return res.status(400).json({ error: `pricingClass must be one of: ${PRICING_CLASS_ORDER.join(', ')}` });
+    }
+    const next = updateControlPlanePolicy(pricingClass, req.body || {});
+    return res.json({
+      success: true,
+      policy: next,
+      message: `Updated ${next.pricing_class} control plane policy`,
+    });
+  } catch (error) {
+    console.error('Control plane policy update error:', error);
+    return res.status(500).json({ error: 'Failed to update control plane policy' });
+  }
+});
+
+router.get('/control-plane/capacity/policies', (req, res) => {
+  try {
+    const policies = listControlPlaneCapacityPolicies();
+    return res.json({
+      generated_at: new Date().toISOString(),
+      capacity_classes: CAPACITY_CLASS_ORDER,
+      count: policies.length,
+      policies,
+    });
+  } catch (error) {
+    console.error('Control plane capacity policies list error:', error);
+    return res.status(500).json({ error: 'Failed to list control plane capacity policies' });
+  }
+});
+
+router.patch('/control-plane/capacity/policies/:capacityClass', (req, res) => {
+  try {
+    const capacityClass = normalizeString(req.params.capacityClass, { maxLen: 32 }) || '';
+    if (!CAPACITY_CLASS_ORDER.includes(capacityClass)) {
+      return res.status(400).json({ error: `capacityClass must be one of: ${CAPACITY_CLASS_ORDER.join(', ')}` });
+    }
+    const next = updateControlPlaneCapacityPolicy(capacityClass, req.body || {});
+    return res.json({
+      success: true,
+      policy: next,
+      message: `Updated ${next.capacity_class} control plane capacity policy`,
+    });
+  } catch (error) {
+    console.error('Control plane capacity policy update error:', error);
+    return res.status(500).json({ error: 'Failed to update control plane capacity policy' });
+  }
+});
+
+router.get('/control-plane/signals', (req, res) => {
+  try {
+    const limit = toFiniteInt(req.query.limit, { min: 1, max: 500 }) || 100;
+    const recompute = parseBooleanLike(req.query.recompute, false);
+    const persist = parseBooleanLike(req.query.persist, false);
+
+    if (recompute) {
+      const snapshot = calculateControlPlaneSignals({ actor: { type: 'admin', id: null }, persist });
+      return res.json({
+        mode: persist ? 'recompute_and_persist' : 'recompute_preview',
+        snapshot,
+      });
+    }
+
+    const rows = getControlPlaneSignals(limit);
+    return res.json({
+      mode: 'historical',
+      count: rows.length,
+      signals: rows,
+    });
+  } catch (error) {
+    console.error('Control plane signals error:', error);
+    return res.status(500).json({ error: 'Failed to fetch control plane signals' });
+  }
+});
+
+router.post('/control-plane/signals/snapshot', (req, res) => {
+  try {
+    const persist = parseBooleanLike(req.body?.persist, true);
+    const maxBuckets = toFiniteInt(req.body?.max_buckets, { min: 1, max: 500 }) || 500;
+    const snapshot = calculateControlPlaneSignals({
+      actor: { type: 'admin', id: null },
+      persist,
+      maxBuckets,
+    });
+    return res.json({
+      success: true,
+      persisted: persist,
+      ...snapshot,
+    });
+  } catch (error) {
+    console.error('Control plane signal snapshot error:', error);
+    return res.status(500).json({ error: 'Failed to generate control plane signal snapshot' });
+  }
+});
+
+router.post('/control-plane/prewarm/run', (req, res) => {
+  try {
+    const topModelsLimit = toFiniteInt(req.body?.top_models_limit, { min: 1, max: 50 }) || 10;
+    const lookbackDays = toFiniteInt(req.body?.lookback_days, { min: 1, max: 30 }) || 7;
+    const targetWarmProvidersPerModel = toFiniteInt(req.body?.target_warm_providers_per_model, { min: 1, max: 20 }) || 2;
+    const result = runDemandDrivenPrewarm({
+      topModelsLimit,
+      lookbackDays,
+      targetWarmProvidersPerModel,
+    });
+
+    return res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error('Control plane prewarm run error:', error);
+    return res.status(500).json({ error: 'Failed to run control plane prewarm cycle' });
+  }
+});
+
+router.get('/control-plane/prewarm/top-models', (req, res) => {
+  try {
+    const limit = toFiniteInt(req.query.limit, { min: 1, max: 50 }) || 10;
+    const lookbackDays = toFiniteInt(req.query.lookback_days, { min: 1, max: 30 }) || 7;
+    const models = listTopDemandModels(limit, lookbackDays);
+    return res.json({
+      generated_at: new Date().toISOString(),
+      lookback_days: lookbackDays,
+      count: models.length,
+      models,
+    });
+  } catch (error) {
+    console.error('Control plane top-models error:', error);
+    return res.status(500).json({ error: 'Failed to fetch demand-driven models' });
+  }
+});
+
+router.post('/control-plane/run-cycle', (req, res) => {
+  try {
+    const persistSignals = parseBooleanLike(req.body?.persist_signals, true);
+    const runPrewarm = parseBooleanLike(req.body?.run_prewarm, true);
+    const prewarmTopModels = toFiniteInt(req.body?.prewarm_top_models, { min: 1, max: 50 }) || 10;
+    const prewarmLookbackDays = toFiniteInt(req.body?.prewarm_lookback_days, { min: 1, max: 30 }) || 7;
+    const prewarmTargetWarmProvidersPerModel = toFiniteInt(req.body?.prewarm_target_warm_providers_per_model, { min: 1, max: 20 }) || 2;
+
+    const cycle = runControlPlaneCycle({
+      persistSignals,
+      runPrewarm,
+      prewarmTopModels,
+      prewarmLookbackDays,
+      prewarmTargetWarmProvidersPerModel,
+    });
+
+    return res.json({
+      success: true,
+      ...cycle,
+    });
+  } catch (error) {
+    console.error('Control plane run-cycle error:', error);
+    return res.status(500).json({ error: 'Failed to run control plane cycle' });
   }
 });
 
@@ -2336,7 +2537,8 @@ router.patch('/withdrawals/:id', (req, res) => {
     }
 
     const now = new Date().toISOString();
-    const transitionTx = db.transaction(() => {
+    const txSource = typeof db.transaction === 'function' ? db : db._db;
+    const transitionTx = txSource.transaction(() => {
       if (normalizedStatus === 'paid' && !Number(existing.is_amount_reserved)) {
         const provider = db.get(
           'SELECT claimable_earnings_halala FROM providers WHERE id = ?',
@@ -2388,8 +2590,13 @@ router.patch('/withdrawals/:id', (req, res) => {
     );
 
     if (withdrawal_request?.provider_email && normalizedStatus === 'processing') {
-      sendWithdrawalApprovedEmail(withdrawal_request.provider_email, withdrawal_request.amount_halala / 100)
-        .catch((e) => console.error('[admin.withdrawals.patch] email failed:', e.message));
+      const maybePromise = sendWithdrawalApprovedEmail(
+        withdrawal_request.provider_email,
+        withdrawal_request.amount_halala / 100
+      );
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.catch((e) => console.error('[admin.withdrawals.patch] email failed:', e.message));
+      }
     }
 
     return res.json({ withdrawal_request });
@@ -2425,8 +2632,10 @@ router.post('/withdrawals/:id/approve', (req, res) => {
     res.json({ success: true, withdrawal_id: w.withdrawal_id, new_status: 'approved', amount_sar: w.amount_sar });
 
     if (provider?.email) {
-      sendWithdrawalApprovedEmail(provider.email, Number(w.amount_sar || 0))
-        .catch((e) => console.error('[admin.withdrawals.approve] email failed:', e.message));
+      const maybePromise = sendWithdrawalApprovedEmail(provider.email, Number(w.amount_sar || 0));
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.catch((e) => console.error('[admin.withdrawals.approve] email failed:', e.message));
+      }
     }
   } catch (error) {
     console.error('Approve withdrawal error:', error);

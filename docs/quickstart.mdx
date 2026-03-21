@@ -1,59 +1,73 @@
 ---
 title: Quickstart
-description: Register, top up, and run your first GPU job in under 10 minutes.
+description: Submit your first renter job in under 5 minutes using curl.
 order: 1
 ---
 
-## 1. Create a renter account
+## Goal
 
-1. Open `/renter/register`
-2. Submit your name, email, and organization
-3. Save the generated `dc1-renter-...` API key
+Complete a first-job flow in under 5 minutes:
 
-## 2. Add balance
+1. Validate your renter key.
+2. Submit a workload.
+3. Poll status or stream logs.
+4. Fetch final output.
 
-Use the Billing page or API:
+## 1) Set environment variables
 
 ```bash
-curl -X POST https://dcp.sa/api/dc1/payments/topup \
-  -H "Content-Type: application/json" \
-  -H "x-renter-key: dc1-renter-xxxx" \
-  -d '{"amount_halala": 5000}'
+export DCP_API="https://dcp.sa/api/dc1"
+export RENTER_KEY="dcp-renter-your-key"
 ```
 
-## 3. Find an available provider
+## 2) Validate account access
 
 ```bash
-curl https://dcp.sa/api/dc1/renters/available-providers
+curl -s "$DCP_API/renters/me?key=$RENTER_KEY"
 ```
 
-Pick a provider with enough VRAM for your model.
-
-## 4. Submit a job
+## 3) Submit first job
 
 ```bash
-curl -X POST https://dcp.sa/api/dc1/jobs/submit \
+JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
   -H "Content-Type: application/json" \
-  -H "x-renter-key: dc1-renter-xxxx" \
+  -H "x-renter-key: $RENTER_KEY" \
   -d '{
-    "provider_id": 26,
+    "provider_id": 42,
     "job_type": "llm-inference",
-    "max_duration_seconds": 300,
+    "duration_minutes": 3,
+    "max_duration_seconds": 180,
+    "container_spec": {
+      "image_type": "vllm-serve"
+    },
     "params": {
       "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-      "prompt": "Write a short intro about Riyadh."
+      "prompt": "Write 3 bullets about AI in Riyadh"
     }
-  }'
+  }')
+
+echo "$JOB_JSON"
+JOB_ID=$(echo "$JOB_JSON" | jq -r '.job.job_id // .job_id')
+echo "JOB_ID=$JOB_ID"
 ```
 
-## 5. Poll output
+## 4) Check logs (optional)
 
 ```bash
-curl https://dcp.sa/api/dc1/jobs/<job_id>/output?key=dc1-renter-xxxx
+curl -N "$DCP_API/jobs/$JOB_ID/logs/stream?key=$RENTER_KEY"
 ```
+
+## 5) Poll output
+
+```bash
+curl -s "$DCP_API/jobs/$JOB_ID/output?key=$RENTER_KEY"
+```
+
+If not finished yet, you may receive `202` until terminal state.
 
 ## Next
 
-- Review limits and auth headers in [API Reference](/docs/api-reference)
-- Use [SDK JavaScript](/docs/sdk-js) for typed app integration
-- Use [Provider Guide](/docs/provider-guide) to onboard compute suppliers
+- [Renter Guide](/docs/renter-guide)
+- [Provider Guide](/docs/provider-guide)
+- [Architecture Overview](/docs/architecture-overview)
+- [API Reference](/docs/api-reference)

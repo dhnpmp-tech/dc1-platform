@@ -6,6 +6,8 @@ const path = require('path');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const paymentsRouter = require('./routes/payments');
 const { startJobSweep, getSweepMetrics } = require('./services/jobSweep');
+const { runControlPlaneCycle } = require('./services/controlPlane');
+const { sendAlert } = require('./services/notifications');
 const {
   registerLimiter,
   jobSubmitLimiter,
@@ -255,6 +257,86 @@ const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);
 const sweepIntervalMs = Number.isFinite(sweepIntervalMsRaw) && sweepIntervalMsRaw > 0 ? sweepIntervalMsRaw : 30000;
 startJobSweep(db, sweepIntervalMs);
+
+const controlPlaneIntervalMsRaw = Number.parseInt(process.env.CONTROL_PLANE_INTERVAL_MS || '60000', 10);
+const controlPlaneIntervalMs = Number.isFinite(controlPlaneIntervalMsRaw) && controlPlaneIntervalMsRaw > 0
+  ? controlPlaneIntervalMsRaw
+  : 60000;
+const controlPlanePrewarmTopModels = Number.parseInt(process.env.CONTROL_PLANE_PREWARM_TOP_MODELS || '10', 10);
+const controlPlanePrewarmLookbackDays = Number.parseInt(process.env.CONTROL_PLANE_PREWARM_LOOKBACK_DAYS || '7', 10);
+const controlPlanePrewarmTargetWarm = Number.parseInt(process.env.CONTROL_PLANE_PREWARM_TARGET_WARM || '2', 10);
+const controlPlaneAlertCooldownMs = Number.parseInt(process.env.CONTROL_PLANE_ALERT_COOLDOWN_MS || '900000', 10);
+const controlPlanePrewarmScheduleUtc = String(process.env.CONTROL_PLANE_PREWARM_SCHEDULE_UTC || '').trim();
+const controlPlaneLastAlertAt = {
+  cycle_failed: 0,
+  slo_breached: 0,
+};
+
+function parseUtcMinute(value) {
+  const match = String(value || '').trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function isWithinPrewarmWindow(now = new Date()) {
+  if (!controlPlanePrewarmScheduleUtc) return true;
+  const [startRaw, endRaw] = controlPlanePrewarmScheduleUtc.split('-');
+  const startMinute = parseUtcMinute(startRaw);
+  const endMinute = parseUtcMinute(endRaw);
+  if (startMinute == null || endMinute == null) return true;
+
+  const nowMinute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  if (startMinute <= endMinute) {
+    return nowMinute >= startMinute && nowMinute < endMinute;
+  }
+  return nowMinute >= startMinute || nowMinute < endMinute;
+}
+
+async function maybeSendControlPlaneAlert(type, details) {
+  const now = Date.now();
+  const lastAt = controlPlaneLastAlertAt[type] || 0;
+  if (now - lastAt < controlPlaneAlertCooldownMs) return;
+  controlPlaneLastAlertAt[type] = now;
+  try {
+    await sendAlert('health_degraded', details);
+  } catch (_) {}
+}
+
+async function runServerlessControlPlaneCycle() {
+  try {
+    const runPrewarm = isWithinPrewarmWindow();
+    const result = runControlPlaneCycle({
+      persistSignals: true,
+      runPrewarm,
+      prewarmTopModels: controlPlanePrewarmTopModels,
+      prewarmLookbackDays: controlPlanePrewarmLookbackDays,
+      prewarmTargetWarmProvidersPerModel: controlPlanePrewarmTargetWarm,
+    });
+
+    const signalCount = Number(result?.signals?.signal_count || 0);
+    const requestedPreloads = Number(result?.prewarm?.requested_actions || 0);
+    const coldStartP50 = result?.signals?.cold_start_p50_ms;
+    const coldStartP95 = result?.signals?.cold_start_p95_ms;
+    const queueBreaches = Number(result?.signals?.queue_slo_breaches || 0);
+    const coldBreaches = Number(result?.signals?.cold_start_slo_breaches || 0);
+    const utilBreaches = Number(result?.signals?.utilization_slo_breaches || 0);
+    console.log(
+      `[control-plane] cycle ok signals=${signalCount} prewarm_enabled=${runPrewarm ? 1 : 0} prewarm_requests=${requestedPreloads} cold_start_p50_ms=${coldStartP50 == null ? 'n/a' : coldStartP50} cold_start_p95_ms=${coldStartP95 == null ? 'n/a' : coldStartP95}`
+    );
+
+    if (queueBreaches > 0 || coldBreaches > 0 || utilBreaches > 0) {
+      const details = `control-plane SLO breach: queue=${queueBreaches}, cold_start=${coldBreaches}, gpu_util=${utilBreaches}, prewarm_enabled=${runPrewarm ? 1 : 0}`;
+      await maybeSendControlPlaneAlert('slo_breached', details);
+    }
+  } catch (error) {
+    console.error('[control-plane] cycle failed:', error?.message || error);
+    await maybeSendControlPlaneAlert('cycle_failed', `control-plane cycle failed: ${error?.message || error}`);
+  }
+}
+
+runServerlessControlPlaneCycle();
+setInterval(runServerlessControlPlaneCycle, controlPlaneIntervalMs);
+console.log(`[control-plane] Serverless readiness cycle started (every ${controlPlaneIntervalMs}ms)`);
 
 // Health check
 app.get('/api/health', (req, res) => {

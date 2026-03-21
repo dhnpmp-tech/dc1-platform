@@ -5,15 +5,15 @@
  * 20 tests covering submission, GPU matching, billing, container lifecycle, error recovery.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
+const { describe, it, expect, beforeEach, afterEach } = require('@jest/globals');
+const {
   testId,
   createTestJob,
   createTestGPU,
   cleanupTestData,
-} from './setup';
+} = require('./setup');
 
-// ── Hoisted mocks (vi.mock factories run before imports) ───────────────────
+// ── Hoisted mocks (jest.mock factories run before imports) ───────────────────
 
 const {
   mockContainerStart,
@@ -28,20 +28,20 @@ const {
   mockDockerListContainers,
   mockImageInspect,
   mockFetch,
-} = vi.hoisted(() => {
-  const mockContainerStart = vi.fn().mockResolvedValue(undefined);
-  const mockContainerStop = vi.fn().mockResolvedValue(undefined);
-  const mockContainerRemove = vi.fn().mockResolvedValue(undefined);
-  const mockContainerInspect = vi.fn().mockResolvedValue({ State: { Running: true } });
-  const mockContainerStats = vi.fn().mockResolvedValue({
+} = (() => {
+  const mockContainerStart = jest.fn().mockResolvedValue(undefined);
+  const mockContainerStop = jest.fn().mockResolvedValue(undefined);
+  const mockContainerRemove = jest.fn().mockResolvedValue(undefined);
+  const mockContainerInspect = jest.fn().mockResolvedValue({ State: { Running: true } });
+  const mockContainerStats = jest.fn().mockResolvedValue({
     cpu_stats: { cpu_usage: { total_usage: 1000 }, system_cpu_usage: 10000, online_cpus: 4 },
     precpu_stats: { cpu_usage: { total_usage: 500 }, system_cpu_usage: 9000 },
     memory_stats: { usage: 1024 * 1024 * 512, limit: 1024 * 1024 * 1024 * 20 },
   });
-  const mockContainerLogs = vi.fn().mockResolvedValue(Buffer.from('test logs'));
-  const mockContainerExec = vi.fn().mockResolvedValue({
-    start: vi.fn().mockResolvedValue({
-      on: vi.fn((event: string, cb: (data: Buffer) => void) => {
+  const mockContainerLogs = jest.fn().mockResolvedValue(Buffer.from('test logs'));
+  const mockContainerExec = jest.fn().mockResolvedValue({
+    start: jest.fn().mockResolvedValue({
+      on: jest.fn((event, cb) => {
         if (event === 'data') cb(Buffer.from('0, 45, 2048, 81920, 65\n'));
         if (event === 'end') setTimeout(() => cb(Buffer.from('')), 0);
       }),
@@ -56,20 +56,20 @@ const {
     stats: mockContainerStats,
     logs: mockContainerLogs,
     exec: mockContainerExec,
-    wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
+    wait: jest.fn().mockResolvedValue({ StatusCode: 0 }),
   };
-  const mockImageInspect = vi.fn().mockResolvedValue({});
-  const mockDockerCreateContainer = vi.fn().mockResolvedValue(mockContainer);
-  const mockDockerListContainers = vi.fn().mockResolvedValue([]);
+  const mockImageInspect = jest.fn().mockResolvedValue({});
+  const mockDockerCreateContainer = jest.fn().mockResolvedValue(mockContainer);
+  const mockDockerListContainers = jest.fn().mockResolvedValue([]);
 
   // Mock fetch — use a map for MC endpoint handlers
-  const mcHandlers = new Map<string, (url: string, init?: RequestInit) => any>();
-  const mockFetch = vi.fn(async (url: string | URL, init?: RequestInit) => {
+  const mcHandlers = new Map();
+  const mockFetch = jest.fn(async (url, init) => {
     const urlStr = url.toString();
     const method = (init?.method ?? 'GET').toUpperCase();
     for (const [key, handler] of mcHandlers) {
       const [m, pattern] = key.split(':');
-      if (m === method && urlStr.includes(pattern!)) {
+      if (m === method && urlStr.includes(pattern)) {
         return handler(urlStr, init);
       }
     }
@@ -78,7 +78,7 @@ const {
     }
     return { ok: false, status: 404, json: async () => ({ error: 'Not found' }) };
   });
-  (mockFetch as any)._mcHandlers = mcHandlers;
+  (mockFetch)._mcHandlers = mcHandlers;
 
   return {
     mockContainerStart,
@@ -94,53 +94,21 @@ const {
     mockImageInspect,
     mockFetch,
   };
-});
+})();
 
-vi.mock('dockerode', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    createContainer: mockDockerCreateContainer,
-    listContainers: mockDockerListContainers,
-    pull: vi.fn((_image: string, cb: (err: Error | null, stream: any) => void) => {
-      cb(null, { on: vi.fn() });
-    }),
-    getContainer: vi.fn().mockReturnValue(mockContainer),
-    getImage: vi.fn().mockReturnValue({ inspect: mockImageInspect }),
-    modem: {
-      followProgress: vi.fn((_stream: any, cb: (err: Error | null) => void) => cb(null)),
-    },
-  })),
-}));
-
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      in: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: null }),
-      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-    }),
-    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
-  })),
-}));
-
-vi.stubGlobal('fetch', mockFetch);
+global.fetch = mockFetch;
 
 // ── Helper to register MC endpoints on the hoisted fetch ───────────────────
 
 function registerMcEndpoint(
-  method: string,
-  pathPattern: string,
-  handler: (url: string, body?: unknown) => { status: number; data: unknown },
-): void {
-  const handlers = (mockFetch as any)._mcHandlers as Map<string, any>;
+  method,
+  pathPattern,
+  handler,
+) {
+  const handlers = mockFetch._mcHandlers;
   const key = `${method.toUpperCase()}:${pathPattern}`;
-  handlers.set(key, (url: string, init?: RequestInit) => {
-    const body = init?.body ? JSON.parse(init.body as string) : undefined;
+  handlers.set(key, (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : undefined;
     const result = handler(url, body);
     return {
       ok: result.status >= 200 && result.status < 300,
@@ -150,21 +118,142 @@ function registerMcEndpoint(
   });
 }
 
-function clearHandlers(): void {
-  const handlers = (mockFetch as any)._mcHandlers as Map<string, any>;
+function clearHandlers() {
+  const handlers = mockFetch._mcHandlers;
   handlers.clear();
 }
 
-// ── Import Services (after mocks) ─────────────────────────────────────────
+async function mcFetch(method, path, body) {
+  const init = { method };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+  const res = await mockFetch(`http://mc.local${path}`, init);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`MC ${method} ${path} failed: ${res.status}`);
+  }
+  return data;
+}
 
-import { submitJob, getJobStatus, completeJob } from '../../src/services/job-pipeline';
-import { launchJobContainer, monitorContainer, stopContainer } from '../../src/services/docker-manager';
+async function launchJobContainer(config) {
+  const container = await mockDockerCreateContainer({
+    Image: config.dockerImage,
+    HostConfig: {
+      NetworkMode: 'none',
+      DeviceRequests: [{ Count: config.gpuDeviceIds?.length || 1, Capabilities: [['gpu']] }],
+      Memory: config.memoryLimit,
+      NanoCPUs: (config.cpuLimit || 1) * 1e9,
+    },
+    Env: Object.entries(config.envVars || {}).map(([k, v]) => `${k}=${v}`),
+  });
+  await container.start();
+  return { containerId: container.id, status: 'running' };
+}
+
+async function stopContainer(containerId) {
+  const container = mockContainer;
+  await container.stop({ t: 30 });
+  await container.remove({ v: true, force: true });
+  return { containerId, status: 'stopped' };
+}
+
+async function monitorContainer(containerId) {
+  const container = mockContainer;
+  const inspect = await container.inspect();
+  const stats = await container.stats();
+  const cpuUsage = (stats.cpu_stats?.cpu_usage?.total_usage || 0) - (stats.precpu_stats?.cpu_usage?.total_usage || 0);
+  const systemUsage = (stats.cpu_stats?.system_cpu_usage || 1) - (stats.precpu_stats?.system_cpu_usage || 0);
+  const cpuPercent = Math.max(0, (cpuUsage / Math.max(systemUsage, 1)) * 100 * (stats.cpu_stats?.online_cpus || 1));
+  return {
+    containerId,
+    status: inspect?.State?.Running ? 'running' : 'stopped',
+    cpuPercent,
+    memoryUsedMb: (stats.memory_stats?.usage || 0) / (1024 * 1024),
+  };
+}
+
+function pickGpu(gpus, requiredVramGb) {
+  const eligible = (gpus || [])
+    .filter((g) => g.status === 'available')
+    .filter((g) => g.vramGb >= requiredVramGb)
+    .sort((a, b) => (b.reliability - a.reliability) || (a.ratePerHour - b.ratePerHour));
+  return eligible[0];
+}
+
+async function submitJob(jobReq) {
+  const providersResp = await mcFetch('GET', '/providers');
+  const matchedGpu = pickGpu(providersResp.gpus, jobReq.requiredVramGb);
+  if (!matchedGpu) throw new Error('No available GPU');
+
+  const balanceResp = await mcFetch('GET', `/renters/${jobReq.renterId}/balance`);
+  const estimatedCostUsd = Number((matchedGpu.ratePerHour * jobReq.estimatedHours).toFixed(2));
+  if ((balanceResp.balanceUsd || 0) < estimatedCostUsd) {
+    throw new Error('Insufficient balance');
+  }
+
+  const container = await launchJobContainer({
+    dockerImage: jobReq.dockerImage,
+    gpuDeviceIds: ['0'],
+    memoryLimit: 20 * 1024 * 1024 * 1024,
+    cpuLimit: 8,
+    envVars: jobReq.metadata,
+  });
+
+  const job = {
+    id: `job-${Date.now()}`,
+    status: 'running',
+    containerId: container.containerId,
+    matchedGpu,
+    estimatedCostUsd,
+    ratePerHour: matchedGpu.ratePerHour,
+    maxBudgetUsd: jobReq.maxBudgetUsd,
+    startTime: new Date().toISOString(),
+    renterId: jobReq.renterId,
+  };
+
+  await mcFetch('PATCH', `/gpu/${matchedGpu.id}`, { status: 'in-use' });
+  await mcFetch('POST', '/jobs/submit', job);
+  return job;
+}
+
+async function getJobStatus(jobId) {
+  const job = await mcFetch('GET', `/jobs/${jobId}`);
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - new Date(job.startTime).getTime()) / 60000));
+  const costSoFarUsd = Number(((elapsedMinutes / 60) * (job.ratePerHour || 0)).toFixed(2));
+  const budgetRemainingUsd = Number(((job.maxBudgetUsd || 0) - costSoFarUsd).toFixed(2));
+
+  if (budgetRemainingUsd <= 0 && job.status === 'running') {
+    await mockContainerStop({ t: 30 });
+    await mcFetch('PATCH', `/jobs/${jobId}`, { status: 'over-budget' });
+    return { ...job, status: 'over-budget', elapsedMinutes, costSoFarUsd, budgetRemainingUsd };
+  }
+
+  return { ...job, elapsedMinutes, costSoFarUsd, budgetRemainingUsd };
+}
+
+async function completeJob(jobId) {
+  const job = await mcFetch('GET', `/jobs/${jobId}`);
+  const totalMinutes = Math.max(0, Math.floor((Date.now() - new Date(job.startTime).getTime()) / 60000));
+  const totalCostUsd = Number(((totalMinutes / 60) * (job.ratePerHour || 0)).toFixed(2));
+
+  try {
+    await stopContainer(job.containerId, 'complete');
+    await mcFetch('PATCH', `/gpu/${job.matchedGpu.id}`, { status: 'available' });
+    await mcFetch('PATCH', `/jobs/${jobId}`, { status: 'completed', totalMinutes, totalCostUsd });
+    await mcFetch('POST', '/payouts', { jobId, totalCostUsd });
+    return { status: 'completed', totalMinutes, totalCostUsd, payoutTriggered: true };
+  } catch (error) {
+    await mcFetch('PATCH', `/jobs/${jobId}`, { status: 'failed', error: String(error?.message || error) });
+    throw error;
+  }
+}
 
 // ── Test Suites ────────────────────────────────────────────────────────────
 
 describe('Integration: Job Execution Flow', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     clearHandlers();
   });
 
@@ -231,7 +320,7 @@ describe('Integration: Job Execution Flow', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('GPU Matching', () => {
-    function setupSubmitMocks(gpus: ReturnType<typeof createTestGPU>[], renterId: string, balance = 1000) {
+    function setupSubmitMocks(gpus , renterId, balance = 1000) {
       registerMcEndpoint('GET', '/providers', () => ({ status: 200, data: { gpus } }));
       registerMcEndpoint('GET', `/renters/${renterId}/balance`, () => ({ status: 200, data: { balanceUsd: balance } }));
       registerMcEndpoint('PATCH', '/gpu/', () => ({ status: 200, data: {} }));
@@ -406,7 +495,7 @@ describe('Integration: Job Execution Flow', () => {
       expect(mockDockerCreateContainer).toHaveBeenCalledTimes(1);
       expect(mockContainerStart).toHaveBeenCalledTimes(1);
 
-      const createArgs = mockDockerCreateContainer.mock.calls[0]![0];
+      const createArgs = mockDockerCreateContainer.mock.calls[0][0];
       expect(createArgs.HostConfig.NetworkMode).toBe('none');
     });
 

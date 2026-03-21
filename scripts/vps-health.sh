@@ -5,6 +5,9 @@
 
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 PASS_COUNT=0
 WARN_COUNT=0
 FAIL_COUNT=0
@@ -107,7 +110,7 @@ EOF
   fi
 }
 
-printf '=== DCP VPS Health Check ===\n'
+printf '=== DCP VPS Health Check (%s) ===\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
 # 1) Disk usage (/), alert if >80%
 DISK_LINE=$(df -h / | awk 'NR==2 {print $3"|"$2"|"$5}')
@@ -201,7 +204,7 @@ else
 fi
 
 # 5) SQLite database size threshold (>500MB warns)
-DB_PATH="backend/data/providers.db"
+DB_PATH="${REPO_ROOT}/backend/data/providers.db"
 DB_WARN_BYTES=$((500 * 1024 * 1024))
 if [ -f "$DB_PATH" ]; then
   DB_BYTES=$(du -sb "$DB_PATH" | awk '{print $1}')
@@ -216,7 +219,7 @@ else
 fi
 
 # 6) Log file sizes (backend/logs)
-LOG_DIR="backend/logs"
+LOG_DIR="${REPO_ROOT}/backend/logs"
 if [ -d "$LOG_DIR" ]; then
   LOG_TOTAL_HUMAN=$(du -sh "$LOG_DIR" | awk '{print $1}')
   LARGE_LOG_COUNT=$(find "$LOG_DIR" -maxdepth 1 -type f -size +100M | wc -l | awk '{print $1}')
@@ -237,7 +240,7 @@ else
 fi
 
 # 8) Last 5 backend errors
-ERROR_LOG="backend/logs/error.log"
+ERROR_LOG="${REPO_ROOT}/backend/logs/error.log"
 if [ -f "$ERROR_LOG" ]; then
   RECENT_ERRORS=$(tail -n 5 "$ERROR_LOG")
   if [ -n "$RECENT_ERRORS" ]; then

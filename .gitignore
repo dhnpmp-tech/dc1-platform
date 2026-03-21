@@ -45,3 +45,4 @@ Thumbs.db
 __pycache__/
 backend/node_modules/
 backend/data/
+backend/logs/

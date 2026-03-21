@@ -17,12 +17,12 @@ function runStatement(sql, ...params) {
 }
 
 const MOYASAR_BASE = 'https://api.moyasar.com/v1';
-const MOYASAR_SECRET = process.env.MOYASAR_SECRET_KEY || '';
-const MOYASAR_WEBHOOK_SECRET = process.env.MOYASAR_WEBHOOK_SECRET || '';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dcp.sa';
+const getMoyasarSecret = () => process.env.MOYASAR_SECRET_KEY || '';
+const getMoyasarWebhookSecret = () => process.env.MOYASAR_WEBHOOK_SECRET || '';
 
-if (process.env.NODE_ENV === 'production' && !MOYASAR_WEBHOOK_SECRET) {
-  throw new Error('MOYASAR_WEBHOOK_SECRET must be set in production');
+if (process.env.NODE_ENV === 'production' && !getMoyasarWebhookSecret()) {
+  console.warn('[payments] MOYASAR_WEBHOOK_SECRET is not set; /api/payments/webhook will return 503 until configured');
 }
 
 function toFiniteNumber(value, { min = null, max = null } = {}) {
@@ -56,12 +56,13 @@ function normalizeCallbackUrl(value) {
 
 function moyasarRequest(method, path, body) {
   return new Promise((resolve, reject) => {
-    if (!MOYASAR_SECRET) {
+    const moyasarSecret = getMoyasarSecret();
+    if (!moyasarSecret) {
       return reject(new Error('MOYASAR_SECRET_KEY not configured'));
     }
 
     const bodyStr = body ? JSON.stringify(body) : null;
-    const auth = Buffer.from(`${MOYASAR_SECRET}:`).toString('base64');
+    const auth = Buffer.from(`${moyasarSecret}:`).toString('base64');
     const url = new URL(MOYASAR_BASE + path);
 
     const options = {
@@ -103,11 +104,11 @@ function moyasarRequest(method, path, body) {
 
 // ─── Webhook HMAC verification ─────────────────────────────────────────────────
 
-function verifyMoyasarWebhook(rawBody, signatureHeader) {
-  if (!MOYASAR_WEBHOOK_SECRET || !signatureHeader) return false;
+function verifyMoyasarWebhook(rawBody, signatureHeader, webhookSecret) {
+  if (!webhookSecret || !signatureHeader) return false;
   const signature = String(signatureHeader).trim().toLowerCase();
   const expected = crypto
-    .createHmac('sha256', MOYASAR_WEBHOOK_SECRET)
+    .createHmac('sha256', webhookSecret)
     .update(rawBody)
     .digest('hex');
   try {
@@ -147,13 +148,22 @@ router.post('/topup', requireRenter, (req, res) => {
   const paymentMethod = String(methodRaw).trim().toLowerCase();
   const allowedMethods = ['creditcard', 'applepay'];
   if (!allowedMethods.includes(paymentMethod)) {
-    return res.status(400).json({ error: 'payment_method must be one of: creditcard, applepay' });
+    return res.status(400).json({ error: 'payment_method/source_type must be one of: creditcard, applepay' });
   }
 
   let amountHalala = toFiniteInt(amount_halala, { min: 100, max: 1000000 });
   if (amountHalala == null) {
-    const legacyAmountSar = toFiniteNumber(amount_sar, { min: 1, max: 10000 });
-    if (legacyAmountSar != null) {
+    if (amount_sar != null) {
+      const legacyAmountSar = toFiniteNumber(amount_sar);
+      if (legacyAmountSar == null) {
+        return res.status(400).json({ error: 'amount_sar must be a finite number' });
+      }
+      if (legacyAmountSar < 1) {
+        return res.status(400).json({ error: 'amount_sar below minimum (1 SAR)' });
+      }
+      if (legacyAmountSar > 10000) {
+        return res.status(400).json({ error: 'amount_sar exceeds maximum (10,000 SAR)' });
+      }
       amountHalala = Math.round(legacyAmountSar * 100);
     }
   }
@@ -223,7 +233,7 @@ router.post('/topup', requireRenter, (req, res) => {
 // Dev-only sandbox top-up: directly credits balance without Moyasar (when key not set).
 // Disabled in production (requires MOYASAR_SECRET_KEY to be absent).
 router.post('/topup-sandbox', (req, res) => {
-  if (MOYASAR_SECRET) {
+  if (getMoyasarSecret()) {
     return res.status(403).json({
       error: 'Sandbox top-up disabled when MOYASAR_SECRET_KEY is configured. Use /api/payments/topup.',
     });
@@ -275,24 +285,48 @@ router.post('/topup-sandbox', (req, res) => {
 // Moyasar webhook handler. Verifies HMAC-SHA256 signature, credits balance on `paid`.
 // Moyasar retries webhooks on non-2xx response.
 // Raw body is mounted in server.js before express.json()
-router.post('/webhook', (req, res) => {
-  const rawBody = req.body; // Buffer (express.raw)
+router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  let rawBody = req.body; // Buffer (express.raw)
   const signature = req.headers['x-moyasar-signature'];
 
   if (!Buffer.isBuffer(rawBody)) {
-    return res.status(500).json({ error: 'Webhook must be sent as raw application/json body' });
+    if (typeof rawBody === 'string') rawBody = Buffer.from(rawBody);
+    else if (rawBody && typeof rawBody === 'object') rawBody = Buffer.from(JSON.stringify(rawBody));
   }
-  if (!MOYASAR_WEBHOOK_SECRET) {
-    return res.status(503).json({ error: 'Webhook secret not configured' });
+  if (!Buffer.isBuffer(rawBody)) {
+    return res.status(400).json({ error: 'Invalid JSON body' });
   }
-  if (!verifyMoyasarWebhook(rawBody, signature)) {
-    console.warn('[payments/webhook] Invalid HMAC signature — rejected');
-    return res.status(401).json({ error: 'Invalid webhook signature' });
+
+  const webhookSecret = getMoyasarWebhookSecret();
+  if (!webhookSecret) {
+    console.warn("[payments/webhook] MOYASAR_WEBHOOK_SECRET not configured - rejecting webhook");
+    return res.status(503).json({ error: "Webhook secret not configured" });
+  }
+  let verified = verifyMoyasarWebhook(rawBody, signature, webhookSecret);
+    if (!verified) {
+      try {
+        const parsed = JSON.parse(rawBody.toString('utf8'));
+        if (parsed && parsed.type === 'Buffer' && Array.isArray(parsed.data)) {
+          const decodedBody = Buffer.from(parsed.data);
+          if (verifyMoyasarWebhook(decodedBody, signature, webhookSecret)) {
+            rawBody = decodedBody;
+            verified = true;
+          }
+        }
+      } catch (_) {}
+    }
+    if (!verified) {
+      console.warn('[payments/webhook] Invalid HMAC signature — rejected');
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
   }
 
   let event;
   try {
     event = JSON.parse(rawBody.toString('utf8'));
+    if (event && event.type === 'Buffer' && Array.isArray(event.data)) {
+      event = JSON.parse(Buffer.from(event.data).toString('utf8'));
+    }
   } catch {
     return res.status(400).json({ error: 'Invalid JSON body' });
   }
@@ -402,7 +436,7 @@ router.get('/verify/:paymentId', (req, res) => {
   }
 
   // Fetch live status from Moyasar
-  if (!MOYASAR_SECRET) {
+  if (!getMoyasarSecret()) {
     return res.json({
       payment_id: localPayment.payment_id,
       status: localPayment.status,

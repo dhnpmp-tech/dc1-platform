@@ -183,10 +183,11 @@ describe('Rate limiting — per API key policy (DCP-270)', () => {
       .send({});
 
     expect(blocked.status).toBe(429);
-    expect(blocked.body).toEqual({
+    expect(blocked.body).toMatchObject({
       error: 'Rate limit exceeded',
       retryAfterMs: 60000,
     });
+    expect(typeof blocked.body.retryAfterSeconds).toBe('number');
 
     const differentKey = await request(app)
       .post('/api/jobs/submit')

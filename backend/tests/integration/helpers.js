@@ -7,14 +7,30 @@ const db = require('../../src/db');
 // Do not drop/recreate tables here — that would lose migration-added columns.
 
 function cleanDb() {
-  // Delete in dependency order: child tables before parent tables
-  try { db.run('DELETE FROM benchmark_runs'); }  catch (_) {}
-  try { db.run('DELETE FROM recovery_events'); } catch (_) {}
-  try { db.run('DELETE FROM escrow_holds'); }    catch (_) {}
-  try { db.run('DELETE FROM heartbeat_log'); }   catch (_) {}
-  try { db.run('DELETE FROM jobs'); }            catch (_) {}
-  try { db.run('DELETE FROM renters'); }         catch (_) {}
-  try { db.run('DELETE FROM providers'); }       catch (_) {}
+  // Make cleanup resilient to schema drift and FK relationships across suites.
+  try { db.run('PRAGMA foreign_keys = OFF'); } catch (_) {}
+  const tables = [
+    'benchmark_runs',
+    'recovery_events',
+    'job_lifecycle_events',
+    'job_logs',
+    'job_executions',
+    'escrow_holds',
+    'heartbeat_log',
+    'withdrawal_requests',
+    'approved_container_images',
+    'image_scans',
+    'allowed_images',
+    'quota_log',
+    'renter_quota',
+    'jobs',
+    'renters',
+    'providers',
+  ];
+  for (const table of tables) {
+    try { db.run(`DELETE FROM ${table}`); } catch (_) {}
+  }
+  try { db.run('PRAGMA foreign_keys = ON'); } catch (_) {}
 }
 
 /** Register a provider via API and return { body, apiKey, providerId } */

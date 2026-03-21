@@ -1,23 +1,28 @@
 ---
 title: API Reference
-description: REST endpoints, auth headers, and error contract used across DC1.
+description: Auth model, core endpoint map, and error contract for DCP provider/renter/admin integrations.
 order: 2
 ---
 
-## Base URL
+## Base URLs
 
-- Proxy: `https://dcp.sa/api/dc1`
-- Direct API: `http://76.13.179.86:8083/api`
+- Public proxy: `https://dcp.sa/api/dc1`
+- Direct API (ops/debug): `https://api.dcp.sa/api`
 
-## Authentication
+## Authentication model
 
-- Provider: `?key=` query or `x-provider-key`
-- Renter: `?key=` query or `x-renter-key`
-- Admin: `x-admin-token`
+- **Provider**: `x-provider-key` header or `?key=` query
+- **Renter**: `x-renter-key` header or `?key=` query
+- **Admin**: `x-admin-token` header
 
-## Error format
+Key examples:
 
-All failures return:
+- `dcp-provider-...`
+- `dcp-renter-...`
+
+## Error contract
+
+All failures return JSON:
 
 ```json
 { "error": "descriptive message" }
@@ -33,6 +38,7 @@ POST /providers/pause
 POST /providers/resume
 GET  /providers/download/daemon?key=
 GET  /providers/download/setup?key=&os=windows|linux|mac
+GET  /providers/earnings?key=
 ```
 
 ## Renter endpoints
@@ -41,6 +47,8 @@ GET  /providers/download/setup?key=&os=windows|linux|mac
 POST /renters/register
 GET  /renters/me?key=
 GET  /renters/available-providers
+GET  /renters/me/invoices?key=&page=&limit=
+GET  /renters/me/invoices/export.csv?key=
 POST /payments/topup
 GET  /payments/history
 ```
@@ -51,29 +59,44 @@ GET  /payments/history
 POST /jobs/submit
 GET  /jobs/:id
 GET  /jobs/:id/output
-POST /jobs/:id/cancel
-POST /jobs/:id/fail
+GET  /jobs/:id/logs
+GET  /jobs/:id/logs/stream
+GET  /jobs/queue/status
+POST /jobs/:id/retry
+POST /jobs/:id/pause
+POST /jobs/:id/resume
 ```
 
 ## Admin endpoints
 
 ```text
-GET /admin/dashboard
-GET /admin/providers
-GET /admin/jobs/:id
-GET /admin/daemon-health
+GET  /admin/dashboard
+GET  /admin/providers
+GET  /admin/providers/:id
+GET  /admin/daemon-health
+GET  /admin/withdrawals
+PATCH /admin/withdrawals/:id
 ```
 
-## Example: register provider
+## First-job request template
 
 ```bash
-curl -X POST https://dcp.sa/api/dc1/providers/register \
+curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
   -H "Content-Type: application/json" \
+  -H "x-renter-key: <RENTER_KEY>" \
   -d '{
-    "name": "Riyadh GPU Node",
-    "email": "ops@example.com",
-    "gpu_model": "RTX 4090",
-    "os": "linux",
-    "phone": "+966500000000"
+    "provider_id": 42,
+    "job_type": "llm-inference",
+    "duration_minutes": 3,
+    "container_spec": { "image_type": "vllm-serve" },
+    "params": {
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "prompt": "Summarize DCP in three bullets"
+    }
   }'
 ```
+
+## OpenAPI source
+
+- Human-readable: [API docs page](/docs/api)
+- Machine-readable: `/docs/openapi.yaml`

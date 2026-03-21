@@ -35,16 +35,41 @@ function findActiveJobsOnProvider(providerId) {
  * Find the best available backup provider with enough VRAM, excluding a specific provider
  */
 function findBackupProvider(requiredVram, excludeProviderId) {
+  const cutoff = new Date(Date.now() - 90 * 1000).toISOString();
   return db.get(
     `SELECT * FROM providers
      WHERE status = 'online'
+       AND last_heartbeat >= ?
        AND id != ?
        AND gpu_vram_mib >= ?
      ORDER BY gpu_vram_mib ASC
      LIMIT 1`,
+    cutoff,
     excludeProviderId,
     requiredVram
   );
+}
+
+function resolveRequiredVramMib(job) {
+  if (!job) return 0;
+  const fromLegacy = Number(job.vram_required || 0);
+  if (Number.isFinite(fromLegacy) && fromLegacy > 0) return fromLegacy;
+
+  if (job.gpu_requirements) {
+    try {
+      const parsed = typeof job.gpu_requirements === 'string'
+        ? JSON.parse(job.gpu_requirements)
+        : job.gpu_requirements;
+      const minVramGb = Number(parsed?.min_vram_gb || 0);
+      if (Number.isFinite(minVramGb) && minVramGb > 0) {
+        return Math.round(minVramGb * 1024);
+      }
+    } catch (_) {
+      // ignore malformed serialized requirements and fall back to zero
+    }
+  }
+
+  return 0;
 }
 
 /**
@@ -97,7 +122,8 @@ function runRecoveryCycle() {
       const jobs = findActiveJobsOnProvider(provider.id);
 
       for (const job of jobs) {
-        const backup = findBackupProvider(job.vram_required || 0, provider.id);
+        const requiredVramMib = resolveRequiredVramMib(job);
+        const backup = findBackupProvider(requiredVramMib, provider.id);
         const result = migrateJob(job.job_id, provider.id, backup ? backup.id : null);
         console.log(`[recovery] Job ${job.job_id}: ${result.status}`);
       }

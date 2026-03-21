@@ -1,0 +1,55 @@
+---
+title: CLI SDK
+description: دليل سريع عبر سطر الأوامر لإرسال المهام ومتابعة حالتها والتحقق من النتائج.
+order: 5
+---
+
+## إعداد متغيرات البيئة
+
+```bash
+export DCP_RENTER_KEY="dcp-renter-xxxx"
+export API_BASE="https://dcp.sa/api/dc1"
+```
+
+## التحقق من الوصول للحساب
+
+```bash
+curl "$API_BASE/renters/me?key=$DCP_RENTER_KEY"
+```
+
+المتوقع: استجابة JSON تحتوي البريد والرصيد.
+
+## إرسال مهمة تجريبية
+
+```bash
+curl -X POST "$API_BASE/jobs/submit" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: $DCP_RENTER_KEY" \
+  -d '{
+    "provider_id": 42,
+    "job_type": "llm-inference",
+    "duration_minutes": 5,
+    "params": {
+      "model": "meta-llama/Llama-3-8B",
+      "prompt": "أعد عبارة: اختبار DCP عبر CLI"
+    }
+  }'
+```
+
+المتوقع: وجود `job.job_id` و `status` بقيمة `pending`.
+
+## مراقبة الحالة
+
+```bash
+curl "$API_BASE/jobs/<job_id>" -H "x-renter-key: $DCP_RENTER_KEY"
+```
+
+تسلسل الحالة: `pending` → `queued` → `running` → `done`.
+
+## جلب المخرجات
+
+```bash
+curl "$API_BASE/jobs/<job_id>/output?key=$DCP_RENTER_KEY"
+```
+
+المتوقع: مخرجات المهمة مع ملخص الفوترة.

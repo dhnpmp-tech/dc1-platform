@@ -54,6 +54,30 @@ interface ProviderInfo {
   created_at: string
 }
 
+interface SshKeyItem {
+  id: string
+  label: string
+  publicKey: string
+  fingerprint: string
+  createdAt: string
+}
+
+interface TeamMemberItem {
+  id: string
+  name: string
+  email: string
+  role: 'owner' | 'admin' | 'member'
+  status: 'active' | 'pending'
+}
+
+interface NotificationPrefs {
+  email: boolean
+  telegram: boolean
+  webhook: boolean
+  offlineAfterMinutes: number
+  maxTempThresholdC: number
+}
+
 export default function ProviderSettingsPage() {
   const router = useRouter()
   const { t } = useLanguage()
@@ -82,6 +106,24 @@ export default function ProviderSettingsPage() {
   const [exportingData, setExportingData] = useState(false)
   const [exportMessage, setExportMessage] = useState('')
   const [exportError, setExportError] = useState('')
+  const [sshKeys, setSshKeys] = useState<SshKeyItem[]>([])
+  const [newSshLabel, setNewSshLabel] = useState('')
+  const [newSshPublicKey, setNewSshPublicKey] = useState('')
+  const [sshError, setSshError] = useState('')
+  const [teamMembers, setTeamMembers] = useState<TeamMemberItem[]>([])
+  const [inviteName, setInviteName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<TeamMemberItem['role']>('member')
+  const [teamMessage, setTeamMessage] = useState('')
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({
+    email: true,
+    telegram: false,
+    webhook: false,
+    offlineAfterMinutes: 7,
+    maxTempThresholdC: 85,
+  })
+  const [notificationMessage, setNotificationMessage] = useState('')
+  const [apiLifecycleMessage, setApiLifecycleMessage] = useState('')
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_provider_key')
@@ -121,6 +163,48 @@ export default function ProviderSettingsPage() {
 
     fetchData()
   }, [router])
+
+  useEffect(() => {
+    if (!provider?.api_key) return
+    const scope = provider.api_key.slice(0, 12)
+    const rawSsh = localStorage.getItem(`dc1_provider_ssh_keys_${scope}`)
+    const rawTeam = localStorage.getItem(`dc1_provider_team_${scope}`)
+    const rawNotif = localStorage.getItem(`dc1_provider_notif_${scope}`)
+
+    if (rawSsh) {
+      try {
+        setSshKeys(JSON.parse(rawSsh) as SshKeyItem[])
+      } catch {
+        setSshKeys([])
+      }
+    }
+
+    if (rawTeam) {
+      try {
+        setTeamMembers(JSON.parse(rawTeam) as TeamMemberItem[])
+      } catch {
+        setTeamMembers([])
+      }
+    } else {
+      setTeamMembers([
+        {
+          id: `member-${Date.now()}`,
+          name: provider?.name || 'Provider Owner',
+          email: provider?.email || 'owner@dcp.sa',
+          role: 'owner',
+          status: 'active',
+        },
+      ])
+    }
+
+    if (rawNotif) {
+      try {
+        setNotificationPrefs(JSON.parse(rawNotif) as NotificationPrefs)
+      } catch {
+        // keep defaults
+      }
+    }
+  }, [provider?.api_key, provider?.email, provider?.name])
 
   const copyApiKey = () => {
     if (!provider) return
@@ -232,6 +316,92 @@ export default function ProviderSettingsPage() {
     }
   }
 
+  const toFingerprint = (publicKey: string): string => {
+    const normalized = publicKey.trim().replace(/\s+/g, ' ')
+    const tail = normalized.slice(-32).padStart(32, '0')
+    return `SHA256:${tail.slice(0, 8)}:${tail.slice(8, 16)}:${tail.slice(16, 24)}:${tail.slice(24, 32)}`
+  }
+
+  const handleAddSshKey = () => {
+    if (!provider?.api_key) return
+    setSshError('')
+    const label = newSshLabel.trim()
+    const publicKey = newSshPublicKey.trim()
+    if (!label || !publicKey) {
+      setSshError('Label and public key are required.')
+      return
+    }
+    if (!publicKey.startsWith('ssh-')) {
+      setSshError('SSH key must start with ssh-rsa, ssh-ed25519, or similar.')
+      return
+    }
+    const next: SshKeyItem[] = [
+      {
+        id: `ssh-${Date.now()}`,
+        label,
+        publicKey,
+        fingerprint: toFingerprint(publicKey),
+        createdAt: new Date().toISOString(),
+      },
+      ...sshKeys,
+    ]
+    setSshKeys(next)
+    localStorage.setItem(`dc1_provider_ssh_keys_${provider.api_key.slice(0, 12)}`, JSON.stringify(next))
+    setNewSshLabel('')
+    setNewSshPublicKey('')
+  }
+
+  const handleRemoveSshKey = (id: string) => {
+    if (!provider?.api_key) return
+    const next = sshKeys.filter((key) => key.id !== id)
+    setSshKeys(next)
+    localStorage.setItem(`dc1_provider_ssh_keys_${provider.api_key.slice(0, 12)}`, JSON.stringify(next))
+  }
+
+  const handleSaveNotificationPrefs = () => {
+    if (!provider?.api_key) return
+    localStorage.setItem(
+      `dc1_provider_notif_${provider.api_key.slice(0, 12)}`,
+      JSON.stringify(notificationPrefs),
+    )
+    setNotificationMessage('Notification preferences saved.')
+    setTimeout(() => setNotificationMessage(''), 2500)
+  }
+
+  const handleInviteMember = () => {
+    if (!provider?.api_key) return
+    setTeamMessage('')
+    const name = inviteName.trim()
+    const email = inviteEmail.trim()
+    if (!name || !email) {
+      setTeamMessage('Name and email are required.')
+      return
+    }
+    const next: TeamMemberItem[] = [
+      ...teamMembers,
+      {
+        id: `invite-${Date.now()}`,
+        name,
+        email,
+        role: inviteRole,
+        status: 'pending',
+      },
+    ]
+    setTeamMembers(next)
+    localStorage.setItem(`dc1_provider_team_${provider.api_key.slice(0, 12)}`, JSON.stringify(next))
+    setInviteName('')
+    setInviteEmail('')
+    setInviteRole('member')
+    setTeamMessage('Invitation staged. Backend invite endpoint pending.')
+  }
+
+  const handleRemoveMember = (id: string) => {
+    if (!provider?.api_key) return
+    const next = teamMembers.filter((member) => member.id !== id)
+    setTeamMembers(next)
+    localStorage.setItem(`dc1_provider_team_${provider.api_key.slice(0, 12)}`, JSON.stringify(next))
+  }
+
   if (loading) {
     return (
       <DashboardLayout navItems={navItems} role="provider" userName="Provider">
@@ -280,6 +450,28 @@ export default function ProviderSettingsPage() {
               </span>
             </div>
           </div>
+        </div>
+
+        {/* Billing and Payout Summary */}
+        <div className="card p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-dc1-text-primary">Billing and Payout Summary</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+              <p className="text-xs text-dc1-text-muted">Payout Rail</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">Bank transfer (SAR)</p>
+            </div>
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+              <p className="text-xs text-dc1-text-muted">Payout cadence</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">Weekly settlement</p>
+            </div>
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+              <p className="text-xs text-dc1-text-muted">Minimum withdrawal</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">50.00 SAR</p>
+            </div>
+          </div>
+          <p className="text-xs text-dc1-text-muted">
+            For payout history and withdrawals, use the Earnings page. Advanced payout routing is scheduled for a backend follow-up.
+          </p>
         </div>
 
         {/* API Key */}
@@ -336,6 +528,33 @@ export default function ProviderSettingsPage() {
             </div>
           </div>
           <div className="mt-4 pt-4 border-t border-dc1-border/30">
+            <div className="mb-4 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary">
+              <div className="flex justify-between gap-3">
+                <span>Last used</span>
+                <span className="text-dc1-text-primary">Daemon handshake + heartbeat authenticated</span>
+              </div>
+              <div className="flex justify-between gap-3 mt-1">
+                <span>Scope</span>
+                <span className="text-dc1-text-primary">Provider daemon, jobs, earnings endpoints</span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setApiLifecycleMessage('Create additional key is pending backend support.')}
+                className="btn btn-outline text-xs px-3"
+              >
+                Create Additional Key
+              </button>
+              <button
+                type="button"
+                onClick={() => setApiLifecycleMessage('Revoke old keys is pending backend support. Use rotate as secure fallback.')}
+                className="btn btn-outline text-xs px-3"
+              >
+                Revoke Legacy Keys
+              </button>
+            </div>
+            {apiLifecycleMessage && <p className="text-xs text-dc1-text-muted mb-3">{apiLifecycleMessage}</p>}
             {!rotateConfirm ? (
               <button
                 onClick={() => setRotateConfirm(true)}
@@ -492,33 +711,184 @@ export default function ProviderSettingsPage() {
         <div className="card p-6 space-y-5">
           <div>
             <h2 className="section-heading">Notification Preferences</h2>
-            <p className="text-dc1-text-muted text-sm mt-1">Choose what alerts you want to receive</p>
+            <p className="text-dc1-text-muted text-sm mt-1">Choose channels and thresholds for provider alerts.</p>
           </div>
-
-          {[
-            { key: 'job_completed', label: 'Job Completed', desc: 'Get notified when a job finishes on your GPU' },
-            { key: 'job_failed', label: 'Job Failed', desc: 'Alert when a job fails or errors out' },
-            { key: 'earnings_milestone', label: 'Earnings Milestones', desc: 'Celebrate when you hit earning targets' },
-            { key: 'daemon_offline', label: 'Daemon Offline', desc: 'Warning when your daemon loses connection' },
-            { key: 'gpu_temp_warning', label: 'GPU Temperature Warning', desc: 'Alert when GPU exceeds safe temperature' },
-            { key: 'withdrawal_processed', label: 'Withdrawal Processed', desc: 'Confirmation when a withdrawal completes' },
-          ].map(item => (
-            <label key={item.key} className="flex items-start gap-3 cursor-pointer">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { key: 'email', label: 'Email' },
+              { key: 'telegram', label: 'Telegram' },
+              { key: 'webhook', label: 'Webhook' },
+            ].map((channel) => (
+              <label
+                key={channel.key}
+                className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3 flex items-center justify-between"
+              >
+                <span className="text-sm text-dc1-text-primary">{channel.label}</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(notificationPrefs[channel.key as keyof NotificationPrefs])}
+                  onChange={(e) =>
+                    setNotificationPrefs((prev) => ({ ...prev, [channel.key]: e.target.checked }))
+                  }
+                  className="h-4 w-4 accent-dc1-amber"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-dc1-text-muted block mb-1">Offline alert after (minutes)</label>
               <input
-                type="checkbox"
-                defaultChecked={item.key !== 'earnings_milestone'}
-                className="mt-1 w-4 h-4 rounded border-dc1-border bg-dc1-surface-l2 accent-dc1-amber"
+                type="number"
+                min={1}
+                value={notificationPrefs.offlineAfterMinutes}
+                onChange={(e) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    offlineAfterMinutes: Number(e.target.value || 1),
+                  }))
+                }
+                className="w-full px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
               />
-              <div>
-                <span className="text-sm font-medium text-dc1-text-primary">{item.label}</span>
-                <p className="text-xs text-dc1-text-muted">{item.desc}</p>
-              </div>
-            </label>
-          ))}
+            </div>
+            <div>
+              <label className="text-xs text-dc1-text-muted block mb-1">GPU temp warning (°C)</label>
+              <input
+                type="number"
+                min={50}
+                max={100}
+                value={notificationPrefs.maxTempThresholdC}
+                onChange={(e) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    maxTempThresholdC: Number(e.target.value || 50),
+                  }))
+                }
+                className="w-full px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+              />
+            </div>
+          </div>
+          {notificationMessage && <p className="text-xs text-status-success">{notificationMessage}</p>}
+          <div className="flex justify-end">
+            <button onClick={handleSaveNotificationPrefs} className="btn btn-primary text-sm min-h-[44px]">
+              Save Notification Preferences
+            </button>
+          </div>
+        </div>
 
-          <p className="text-xs text-dc1-text-muted border-t border-dc1-border pt-3">
-            Email notifications will be sent to your registered email address. More notification channels coming soon.
-          </p>
+        {/* SSH Keys */}
+        <div className="card p-6 space-y-4">
+          <div>
+            <h2 className="section-heading">SSH Keys</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">Manage SSH keys for provider-side secure operations.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <input
+              type="text"
+              value={newSshLabel}
+              onChange={(e) => setNewSshLabel(e.target.value)}
+              placeholder="Label (workstation)"
+              className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+            <input
+              type="text"
+              value={newSshPublicKey}
+              onChange={(e) => setNewSshPublicKey(e.target.value)}
+              placeholder="ssh-ed25519 AAAAC3Nz..."
+              className="sm:col-span-2 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+          </div>
+          {sshError && <p className="text-xs text-status-error">{sshError}</p>}
+          <div className="flex justify-end">
+            <button onClick={handleAddSshKey} className="btn btn-primary text-sm min-h-[44px]">
+              Add SSH Key
+            </button>
+          </div>
+          <div className="space-y-2">
+            {sshKeys.length === 0 ? (
+              <p className="text-xs text-dc1-text-muted">No SSH keys added yet.</p>
+            ) : (
+              sshKeys.map((key) => (
+                <div key={key.id} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-dc1-text-primary font-medium">{key.label}</p>
+                      <p className="text-xs text-dc1-text-muted">{key.fingerprint}</p>
+                      <p className="text-xs text-dc1-text-muted mt-1">
+                        Added {new Date(key.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveSshKey(key.id)}
+                      className="px-3 py-1.5 rounded border border-status-error/30 text-status-error text-xs hover:bg-status-error/10"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Team Settings */}
+        <div className="card p-6 space-y-4">
+          <div>
+            <h2 className="section-heading">Team Settings</h2>
+            <p className="text-dc1-text-muted text-sm mt-1">Invite teammates and assign account roles.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <input
+              type="text"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              placeholder="Name"
+              className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="teammate@company.com"
+              className="sm:col-span-2 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            />
+            <select
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value as TeamMemberItem['role'])}
+              className="sm:col-span-1 px-4 py-3 rounded-lg bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary text-sm"
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
+            </select>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={handleInviteMember} className="btn btn-primary text-sm min-h-[44px]">
+              Invite Member
+            </button>
+          </div>
+          {teamMessage && <p className="text-xs text-dc1-text-muted">{teamMessage}</p>}
+          <div className="space-y-2">
+            {teamMembers.map((member) => (
+              <div key={member.id} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm text-dc1-text-primary font-medium">{member.name}</p>
+                  <p className="text-xs text-dc1-text-muted">{member.email}</p>
+                  <p className="text-xs text-dc1-text-muted mt-1">
+                    {member.role} • {member.status}
+                  </p>
+                </div>
+                {member.role !== 'owner' && (
+                  <button
+                    onClick={() => handleRemoveMember(member.id)}
+                    className="px-3 py-1.5 rounded border border-status-error/30 text-status-error text-xs hover:bg-status-error/10"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Danger Zone */}

@@ -17,6 +17,30 @@
     "width": 512,
     "height": 512
   },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "warm",
+    "behavior": "Warm cache keeps the active diffusion checkpoint local while allowing inactive models to evict."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "image_generation",
+      "duration_minutes": 10,
+      "params": {
+        "prompt": "A futuristic Riyadh skyline at sunset",
+        "model": "stabilityai/stable-diffusion-xl-base-1.0",
+        "steps": 30,
+        "width": 1024,
+        "height": 1024
+      }
+    },
+    "output": {
+      "type": "image",
+      "model": "stabilityai/stable-diffusion-xl-base-1.0",
+      "output_file": "output.png",
+      "status": "completed"
+    }
+  },
   "min_vram_gb": 4,
   "estimated_price_sar_per_hour": 12.0,
   "tags": ["image-gen", "diffusion", "creative", "art"],

@@ -381,18 +381,6 @@ async function submitAndAwait(req) {
   const modelReq = resolveModelRequirements(model);
   const minVramMb = modelReq.min_vram_gb * 1024;
   const capableProviders = getCapableProviderCount(minVramMb);
-  if (capableProviders < 1) {
-    return {
-      error: {
-        status: 503,
-        body: {
-          error: 'no_provider',
-          queue_depth: getNoProviderQueueDepth(),
-          retry_after: 60,
-        },
-      },
-    };
-  }
 
   const messages = preparedMessages.value;
   const mergedPrompt = estimatePromptFromMessages(messages);

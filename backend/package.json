@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
+    "templates:validate": "node src/scripts/validate-deploy-templates.js",
     "test": "jest --runInBand",
     "test:integration": "jest tests/integration/ --runInBand",
     "test:smoke": "jest tests/integration/sprint19-20-smoke.test.js",

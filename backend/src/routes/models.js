@@ -1,70 +1,771 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 const db = require('../db');
+
+const PROVIDER_FRESHNESS_MS = 10 * 60 * 1000;
+const DEFAULT_DEPLOY_DURATION_MINUTES = 60;
+const DEPLOY_IMAGE = 'dcp/vllm-serve:latest';
+const ARABIC_PORTFOLIO_FILE = process.env.DCP_ARABIC_PORTFOLIO_FILE
+  || path.join(__dirname, '../../../infra/config/arabic-portfolio.json');
+const TIER_RANK = {
+  tier_a: 1,
+  tier_b: 2,
+  tier_c: 3,
+};
+
+function toNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function toInt(value, { min = null, max = null } = {}) {
+  const num = Number(value);
+  if (!Number.isInteger(num)) return null;
+  if (min != null && num < min) return null;
+  if (max != null && num > max) return null;
+  return num;
+}
+
+function toFixedNumber(value, digits = 2) {
+  const num = toNumber(value);
+  if (num === null) return null;
+  const power = 10 ** digits;
+  return Math.round(num * power) / power;
+}
+
+function normalizeString(value, { maxLen = 500, trim = true } = {}) {
+  if (typeof value !== 'string') return null;
+  const next = trim ? value.trim() : value;
+  if (!next) return null;
+  return next.slice(0, maxLen);
+}
+
+function loadArabicPortfolioIndex() {
+  if (!fs.existsSync(ARABIC_PORTFOLIO_FILE)) return new Map();
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(ARABIC_PORTFOLIO_FILE, 'utf8'));
+    const tiers = parsed && parsed.tiers && typeof parsed.tiers === 'object'
+      ? parsed.tiers
+      : {};
+    const map = new Map();
+
+    for (const [tierName, entries] of Object.entries(tiers)) {
+      if (!Array.isArray(entries)) continue;
+
+      for (const entry of entries) {
+        const repo = normalizeString(entry.repo, { maxLen: 300, trim: true });
+        const id = normalizeString(entry.id, { maxLen: 200, trim: true });
+        const keyRepo = repo ? repo.toLowerCase() : null;
+        const keyId = id ? id.toLowerCase() : null;
+
+        const payload = {
+          tier: tierName,
+          tier_rank: TIER_RANK[tierName] || 99,
+          launch_priority: toInt(entry.launch_priority, { min: 1, max: 999 }) || null,
+          prewarm_class: normalizeString(entry.prewarm_class, { maxLen: 20 }) || 'warm',
+          container_profile: normalizeString(entry.container_profile, { maxLen: 50 }) || 'vllm',
+          benchmark_profile: normalizeString(entry.benchmark_profile, { maxLen: 30 }) || null,
+          target_p95_ms: toInt(entry.target_p95_ms, { min: 1, max: 600000 }) || null,
+          target_cold_start_ms: toInt(entry.target_cold_start_ms, { min: 1, max: 600000 }) || null,
+          min_vram_gb: toInt(entry.min_vram_gb, { min: 1, max: 1024 }) || null,
+          source_id: id,
+          source_repo: repo,
+        };
+
+        if (keyRepo) map.set(keyRepo, payload);
+        if (keyId && !map.has(keyId)) map.set(keyId, payload);
+      }
+    }
+
+    return map;
+  } catch (_) {
+    return new Map();
+  }
+}
+
+function resolvePortfolioMeta(modelId, portfolioIndex) {
+  const key = normalizeString(modelId, { maxLen: 300, trim: true });
+  if (!key) return null;
+  return portfolioIndex.get(key.toLowerCase()) || null;
+}
+
+function buildReadiness(model) {
+  const targetP95 = toInt(model.portfolio?.target_p95_ms, { min: 1, max: 600000 });
+  const targetColdStart = toInt(model.portfolio?.target_cold_start_ms, { min: 1, max: 600000 });
+  const currentP95 = toNumber(model.benchmark?.latency_ms?.p95);
+  const currentColdStart = toNumber(model.benchmark?.cold_start_ms) || toNumber(model.estimated_cold_start_ms);
+
+  const p95Ready = targetP95 != null && currentP95 != null ? currentP95 <= targetP95 : null;
+  const coldStartReady = targetColdStart != null && currentColdStart != null ? currentColdStart <= targetColdStart : null;
+
+  return {
+    benchmark_profile: model.portfolio?.benchmark_profile || null,
+    target_p95_ms: targetP95,
+    target_cold_start_ms: targetColdStart,
+    current_p95_ms: currentP95,
+    current_cold_start_ms: currentColdStart,
+    p95_ready: p95Ready,
+    cold_start_ready: coldStartReady,
+    launch_ready: [p95Ready, coldStartReady].every((value) => value === true),
+  };
+}
+
+function parseUseCases(raw) {
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function parseComputeTypes(raw) {
+  if (!raw) return new Set(['inference', 'training', 'rendering']);
+  if (Array.isArray(raw)) {
+    return new Set(raw.map((value) => String(value).toLowerCase()));
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.map((value) => String(value).toLowerCase()));
+    }
+  } catch (_) {
+    // ignore
+  }
+  return new Set(String(raw).split(',').map((value) => value.trim().toLowerCase()).filter(Boolean));
+}
+
+function resolveProviderVramMb(provider) {
+  const candidates = [
+    provider.vram_mb,
+    provider.gpu_vram_mb,
+    provider.gpu_vram_mib,
+    provider.vram_gb != null ? Number(provider.vram_gb) * 1024 : null,
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = toInt(candidate, { min: 0, max: 1024 * 1024 });
+    if (parsed != null) return parsed;
+  }
+
+  return 0;
+}
+
+function estimateColdStartMs(model) {
+  const benchmarkColdStart = toInt(model.benchmark?.cold_start_ms, { min: 1, max: 10 * 60 * 1000 });
+  if (benchmarkColdStart != null) return benchmarkColdStart;
+
+  const minVram = toInt(model.min_gpu_vram_gb, { min: 1, max: 1024 }) || 8;
+  return 3200 + (minVram * 280);
+}
+
+function getRenterKey(req) {
+  const header = normalizeString(req.headers['x-renter-key'], { maxLen: 128, trim: false });
+  const query = normalizeString(req.query.key, { maxLen: 128, trim: false });
+  return header || query || null;
+}
+
+function requireRenter(req, res, next) {
+  const key = getRenterKey(req);
+  if (!key) return res.status(401).json({ error: 'Renter API key required (?key= or x-renter-key)' });
+
+  const renter = db.get(
+    'SELECT id, api_key, balance_halala, status FROM renters WHERE api_key = ? AND status = ?',
+    key,
+    'active'
+  );
+
+  if (!renter) return res.status(403).json({ error: 'Invalid or inactive renter API key' });
+
+  req.renter = renter;
+  req.renterKey = key;
+  return next();
+}
+
+function isFreshHeartbeat(heartbeatValue) {
+  const heartbeatMs = heartbeatValue ? Date.parse(heartbeatValue) : NaN;
+  if (!Number.isFinite(heartbeatMs)) return false;
+  return (Date.now() - heartbeatMs) <= PROVIDER_FRESHNESS_MS;
+}
+
+function getModelRows() {
+  return db.all(
+    `SELECT
+       m.model_id,
+       m.display_name,
+       m.family,
+       m.vram_gb,
+       m.quantization,
+       m.context_window,
+       m.use_cases,
+       m.min_gpu_vram_gb,
+       m.default_price_halala_per_min,
+       m.is_active,
+       m.updated_at,
+       b.benchmark_suite,
+       b.latency_p50_ms,
+       b.latency_p95_ms,
+       b.latency_p99_ms,
+       b.arabic_mmlu_score,
+       b.arabicaqa_score,
+       b.cost_per_1k_tokens_halala,
+       b.vram_required_gb,
+       b.cold_start_ms,
+       b.measured_at,
+       b.notes_en,
+       b.notes_ar,
+       COUNT(p.id) AS providers_online,
+       SUM(CASE WHEN p.model_preload_status = 'ready' AND p.model_preload_model = m.model_id THEN 1 ELSE 0 END) AS providers_warm,
+       COALESCE(
+         ROUND(AVG(COALESCE(p.price_per_min_halala, m.default_price_halala_per_min)) / 100.0, 2),
+         ROUND(m.default_price_halala_per_min / 100.0, 2)
+       ) AS avg_price_sar_per_min,
+       MIN(COALESCE(p.price_per_min_halala, m.default_price_halala_per_min)) AS min_price_halala_per_min,
+       MAX(COALESCE(p.price_per_min_halala, m.default_price_halala_per_min)) AS max_price_halala_per_min
+     FROM model_registry m
+     LEFT JOIN model_benchmark_profiles b ON b.model_id = m.model_id
+     LEFT JOIN providers p
+       ON p.status = 'online'
+      AND COALESCE(p.is_paused, 0) = 0
+      AND COALESCE(
+            p.vram_gb,
+            CAST(ROUND(COALESCE(p.gpu_vram_mb, p.gpu_vram_mib, 0) / 1024.0) AS INTEGER),
+            0
+          ) >= m.min_gpu_vram_gb
+     WHERE m.is_active = 1
+     GROUP BY m.id
+     ORDER BY m.display_name ASC`
+  );
+}
+
+function buildFreshProviderLookup() {
+  const providers = db.all(
+    `SELECT id, status, is_paused, last_heartbeat, supported_compute_types,
+            vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb, price_per_min_halala,
+            model_preload_status, model_preload_model
+     FROM providers
+     WHERE status = 'online' AND COALESCE(is_paused, 0) = 0`
+  );
+
+  return providers.filter((provider) => {
+    if (!isFreshHeartbeat(provider.last_heartbeat)) return false;
+    const computeTypes = parseComputeTypes(provider.supported_compute_types);
+    return computeTypes.has('inference');
+  });
+}
+
+function buildModelPayload(row, freshProviders, portfolioIndex) {
+  const useCases = parseUseCases(row.use_cases);
+  const minVramGb = toInt(row.min_gpu_vram_gb, { min: 1, max: 1024 }) || 1;
+  const minVramMb = minVramGb * 1024;
+
+  const capableFreshProviders = freshProviders.filter((provider) => resolveProviderVramMb(provider) >= minVramMb);
+  const warmFreshProviders = capableFreshProviders.filter((provider) => {
+    const status = String(provider.model_preload_status || '').toLowerCase();
+    return status === 'ready' && String(provider.model_preload_model || '') === row.model_id;
+  });
+
+  const defaultPriceHalalaPerMin = toInt(row.default_price_halala_per_min, { min: 1, max: 100000 }) || 1;
+  const fallbackMinHalala = toInt(row.min_price_halala_per_min, { min: 1, max: 100000 }) || defaultPriceHalalaPerMin;
+  const fallbackMaxHalala = toInt(row.max_price_halala_per_min, { min: fallbackMinHalala, max: 100000 }) || fallbackMinHalala;
+
+  const benchmark = {
+    benchmark_suite: row.benchmark_suite || 'saudi-arabic-v1',
+    measured_at: row.measured_at || null,
+    latency_ms: {
+      p50: toFixedNumber(row.latency_p50_ms, 1),
+      p95: toFixedNumber(row.latency_p95_ms, 1),
+      p99: toFixedNumber(row.latency_p99_ms, 1),
+    },
+    arabic_quality: {
+      arabic_mmlu_score: toFixedNumber(row.arabic_mmlu_score, 1),
+      arabicaqa_score: toFixedNumber(row.arabicaqa_score, 1),
+    },
+    cost_per_1k_tokens_halala: toNumber(row.cost_per_1k_tokens_halala),
+    cost_per_1k_tokens_sar: toFixedNumber((toNumber(row.cost_per_1k_tokens_halala) || 0) / 100.0, 2),
+    vram_required_gb: toNumber(row.vram_required_gb) || minVramGb,
+    cold_start_ms: toNumber(row.cold_start_ms),
+    notes_en: row.notes_en || null,
+    notes_ar: row.notes_ar || null,
+  };
+
+  const avgPriceSar = toNumber(row.avg_price_sar_per_min);
+  const portfolio = resolvePortfolioMeta(row.model_id, portfolioIndex);
+
+  const payload = {
+    model_id: row.model_id,
+    display_name: row.display_name,
+    family: row.family,
+    vram_gb: toNumber(row.vram_gb) || minVramGb,
+    quantization: row.quantization,
+    context_window: toInt(row.context_window, { min: 1, max: 10 * 1024 * 1024 }) || 4096,
+    use_cases: useCases,
+    min_gpu_vram_gb: minVramGb,
+    benchmark,
+    availability: {
+      providers_online: capableFreshProviders.length,
+      providers_warm: warmFreshProviders.length,
+      status: capableFreshProviders.length > 0 ? 'available' : 'no_providers',
+    },
+    pricing: {
+      default_halala_per_min: defaultPriceHalalaPerMin,
+      default_sar_per_min: toFixedNumber(defaultPriceHalalaPerMin / 100.0, 2),
+      avg_sar_per_min: Number.isFinite(avgPriceSar) ? avgPriceSar : toFixedNumber(defaultPriceHalalaPerMin / 100.0, 2),
+      min_halala_per_min: fallbackMinHalala,
+      max_halala_per_min: fallbackMaxHalala,
+      min_sar_per_min: toFixedNumber(fallbackMinHalala / 100.0, 2),
+      max_sar_per_min: toFixedNumber(fallbackMaxHalala / 100.0, 2),
+    },
+    estimated_cold_start_ms: estimateColdStartMs({
+      benchmark,
+      min_gpu_vram_gb: minVramGb,
+    }),
+    portfolio: portfolio ? {
+      tier: portfolio.tier,
+      tier_rank: portfolio.tier_rank,
+      launch_priority: portfolio.launch_priority,
+      prewarm_class: portfolio.prewarm_class,
+      container_profile: portfolio.container_profile,
+      benchmark_profile: portfolio.benchmark_profile,
+      target_p95_ms: portfolio.target_p95_ms,
+      target_cold_start_ms: portfolio.target_cold_start_ms,
+      min_vram_gb: portfolio.min_vram_gb,
+      source_id: portfolio.source_id,
+      source_repo: portfolio.source_repo,
+    } : null,
+    updated_at: row.updated_at || null,
+  };
+
+  return payload;
+}
+
+function getCatalogModels() {
+  const rows = getModelRows();
+  const freshProviders = buildFreshProviderLookup();
+  const portfolioIndex = loadArabicPortfolioIndex();
+  return rows.map((row) => buildModelPayload(row, freshProviders, portfolioIndex));
+}
+
+function parseCompareIds(req) {
+  const raw = req.query.ids;
+  if (!raw) return [];
+  const joined = Array.isArray(raw) ? raw.join(',') : String(raw);
+  return joined
+    .split(',')
+    .map((id) => normalizeString(id, { maxLen: 200 }))
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function getModelById(modelId) {
+  const models = getCatalogModels();
+  return models.find((model) => model.model_id === modelId) || null;
+}
+
+function toLegacyListItem(model) {
+  return {
+    model_id: model.model_id,
+    display_name: model.display_name,
+    family: model.family,
+    vram_gb: model.vram_gb,
+    quantization: model.quantization,
+    context_window: model.context_window,
+    use_cases: model.use_cases,
+    min_gpu_vram_gb: model.min_gpu_vram_gb,
+    providers_online: model.availability.providers_online,
+    avg_price_sar_per_min: model.pricing.avg_sar_per_min,
+    status: model.availability.status,
+    tier: model.portfolio?.tier || null,
+    prewarm_class: model.portfolio?.prewarm_class || null,
+  };
+}
+
+function toBenchmarksEntry(model) {
+  const readiness = buildReadiness(model);
+  return {
+    model_id: model.model_id,
+    display_name: model.display_name,
+    family: model.family,
+    vram_required_gb: toNumber(model.benchmark.vram_required_gb),
+    latency_ms: {
+      p50: toFixedNumber(model.benchmark.latency_ms.p50, 1),
+      p95: toFixedNumber(model.benchmark.latency_ms.p95, 1),
+      p99: toFixedNumber(model.benchmark.latency_ms.p99, 1),
+    },
+    arabic_quality: {
+      arabic_mmlu_score: toFixedNumber(model.benchmark.arabic_quality.arabic_mmlu_score, 1),
+      arabicaqa_score: toFixedNumber(model.benchmark.arabic_quality.arabicaqa_score, 1),
+    },
+    cost_per_1k_tokens_halala: toNumber(model.benchmark.cost_per_1k_tokens_halala),
+    cost_per_1k_tokens_sar: toFixedNumber(model.benchmark.cost_per_1k_tokens_sar, 2),
+    cold_start_ms: toNumber(model.benchmark.cold_start_ms) || model.estimated_cold_start_ms,
+    measured_at: model.benchmark.measured_at || null,
+    tier: model.portfolio?.tier || null,
+    launch_priority: model.portfolio?.launch_priority || null,
+    prewarm_class: model.portfolio?.prewarm_class || null,
+    benchmark_profile: readiness.benchmark_profile,
+    target_p95_ms: readiness.target_p95_ms,
+    target_cold_start_ms: readiness.target_cold_start_ms,
+    launch_ready: readiness.launch_ready,
+  };
+}
+
+function toCardEntry(model) {
+  const p95 = toFixedNumber(model.benchmark.latency_ms.p95, 0);
+  const mmlu = toFixedNumber(model.benchmark.arabic_quality.arabic_mmlu_score, 1);
+  const costSar = toFixedNumber(model.benchmark.cost_per_1k_tokens_sar, 2);
+  const coldStart = toFixedNumber(model.benchmark.cold_start_ms || model.estimated_cold_start_ms, 0);
+
+  return {
+    model_id: model.model_id,
+    display_name: model.display_name,
+    family: model.family,
+    context_window: model.context_window,
+    quantization: model.quantization,
+    benchmark_suite: model.benchmark.benchmark_suite,
+    measured_at: model.benchmark.measured_at || null,
+    tier: model.portfolio?.tier || null,
+    launch_priority: model.portfolio?.launch_priority || null,
+    prewarm_class: model.portfolio?.prewarm_class || null,
+    container_profile: model.portfolio?.container_profile || null,
+    metrics: {
+      vram_required_gb: toNumber(model.benchmark.vram_required_gb) || model.min_gpu_vram_gb,
+      latency_ms: {
+        p50: toFixedNumber(model.benchmark.latency_ms.p50, 1),
+        p95: toFixedNumber(model.benchmark.latency_ms.p95, 1),
+        p99: toFixedNumber(model.benchmark.latency_ms.p99, 1),
+      },
+      arabic_quality: {
+        arabic_mmlu_score: toFixedNumber(model.benchmark.arabic_quality.arabic_mmlu_score, 1),
+        arabicaqa_score: toFixedNumber(model.benchmark.arabic_quality.arabicaqa_score, 1),
+      },
+      cost_per_1k_tokens_halala: toNumber(model.benchmark.cost_per_1k_tokens_halala),
+      cost_per_1k_tokens_sar: costSar,
+      cold_start_ms: toNumber(model.benchmark.cold_start_ms) || model.estimated_cold_start_ms,
+    },
+    summary: {
+      en: model.benchmark.notes_en
+        || `P95 latency ${p95}ms, Arabic MMLU ${mmlu}%, cost ${costSar} SAR per 1K tokens, cold-start ${coldStart}ms.`,
+      ar: model.benchmark.notes_ar
+        || `زمن الاستجابة P95 حوالي ${p95} مللي ثانية، ودقة Arabic MMLU ${mmlu}%، والتكلفة ${costSar} ريال لكل 1000 رمز، وزمن التشغيل الأولي ${coldStart} مللي ثانية.`,
+    },
+    readiness: buildReadiness(model),
+  };
+}
+
+function buildDeployEstimate(model, options = {}) {
+  const requestedDuration = toInt(options.duration_minutes, { min: 1, max: 1440 }) || DEFAULT_DEPLOY_DURATION_MINUTES;
+  const avgHalalaPerMin = Math.round((toNumber(model.pricing.avg_sar_per_min) || model.pricing.default_sar_per_min) * 100);
+  const defaultHalalaPerMin = toInt(model.pricing.default_halala_per_min, { min: 1, max: 100000 }) || 1;
+  const billableRate = Math.max(1, avgHalalaPerMin || defaultHalalaPerMin);
+
+  const estimatedCostHalala = billableRate * requestedDuration;
+  const estimatedCostSar = toFixedNumber(estimatedCostHalala / 100.0, 2);
+
+  return {
+    duration_minutes: requestedDuration,
+    rate_halala_per_min: billableRate,
+    estimated_cost_halala: estimatedCostHalala,
+    estimated_cost_sar: estimatedCostSar,
+    estimated_cold_start_ms: model.estimated_cold_start_ms,
+    providers_online: model.availability.providers_online,
+    providers_warm: model.availability.providers_warm,
+  };
+}
+
+function buildDeploySubmitPayload(model, options = {}) {
+  const durationMinutes = toInt(options.duration_minutes, { min: 1, max: 1440 }) || DEFAULT_DEPLOY_DURATION_MINUTES;
+  const requestedModelLen = toInt(options.max_model_len, { min: 512, max: 32768 });
+  const maxModelLen = requestedModelLen || Math.min(Math.max(model.context_window, 512), 32768);
+  const dtype = ['float16', 'bfloat16', 'float32'].includes(String(options.dtype || '').toLowerCase())
+    ? String(options.dtype).toLowerCase()
+    : 'float16';
+  const providerId = toInt(options.provider_id, { min: 1 });
+  const prewarmRequested = options.prewarm_requested === true;
+
+  const body = {
+    job_type: 'vllm_serve',
+    duration_minutes: durationMinutes,
+    model: model.model_id,
+    params: {
+      model: model.model_id,
+      max_model_len: maxModelLen,
+      dtype,
+    },
+    container_spec: {
+      image_type: 'vllm-serve',
+      image: DEPLOY_IMAGE,
+      model: model.model_id,
+      prewarm_requested: prewarmRequested,
+    },
+    prewarm_requested: prewarmRequested,
+  };
+
+  if (providerId != null) {
+    body.provider_id = providerId;
+  }
+
+  return body;
+}
 
 // GET /api/models
 // Public model registry with live provider availability and averaged pricing.
 router.get('/', (req, res) => {
   try {
-    const models = db.all(
-      `SELECT
-         m.model_id,
-         m.display_name,
-         m.family,
-         m.vram_gb,
-         m.quantization,
-         m.context_window,
-         m.use_cases,
-         m.min_gpu_vram_gb,
-         COUNT(p.id) AS providers_online,
-         COALESCE(
-           ROUND(AVG(COALESCE(p.price_per_min_halala, m.default_price_halala_per_min)) / 100.0, 2),
-           ROUND(m.default_price_halala_per_min / 100.0, 2)
-         ) AS avg_price_sar_per_min
-       FROM model_registry m
-       LEFT JOIN providers p
-         ON p.status = 'online'
-        AND COALESCE(
-              p.vram_gb,
-              CAST(ROUND(COALESCE(p.gpu_vram_mb, p.gpu_vram_mib, 0) / 1024.0) AS INTEGER),
-              0
-            ) >= m.min_gpu_vram_gb
-       WHERE m.is_active = 1
-       GROUP BY m.id
-       ORDER BY m.display_name ASC`
-    );
-
-    const payload = models.map((row) => {
-      let useCases = [];
-      try {
-        const parsed = JSON.parse(row.use_cases || '[]');
-        useCases = Array.isArray(parsed) ? parsed : [];
-      } catch (_) {
-        useCases = [];
-      }
-
-      const providersOnline = Number(row.providers_online || 0);
-      const avgSarPerMin = Number(row.avg_price_sar_per_min || 0);
-
-      return {
-        model_id: row.model_id,
-        display_name: row.display_name,
-        family: row.family,
-        vram_gb: Number(row.vram_gb || 0),
-        quantization: row.quantization,
-        context_window: Number(row.context_window || 0),
-        use_cases: useCases,
-        min_gpu_vram_gb: Number(row.min_gpu_vram_gb || 0),
-        providers_online: providersOnline,
-        avg_price_sar_per_min: Number.isFinite(avgSarPerMin) ? avgSarPerMin : 0,
-        status: providersOnline > 0 ? 'available' : 'no_providers',
-      };
-    });
-
-    return res.json(payload);
+    const models = getCatalogModels().map(toLegacyListItem);
+    return res.json(models);
   } catch (error) {
     console.error('Model registry error:', error);
     return res.status(500).json({ error: 'Failed to fetch model registry' });
+  }
+});
+
+// GET /api/models/benchmarks
+// Data feed for model benchmarking: latency, Arabic quality, cost/1K, VRAM, cold start.
+router.get('/benchmarks', (req, res) => {
+  try {
+    const models = getCatalogModels().map(toBenchmarksEntry);
+    return res.json({
+      benchmark_suite: 'saudi-arabic-v1',
+      generated_at: new Date().toISOString(),
+      models,
+    });
+  } catch (error) {
+    console.error('Model benchmark feed error:', error);
+    return res.status(500).json({ error: 'Failed to fetch model benchmark feed' });
+  }
+});
+
+// GET /api/models/cards
+// Bilingual model cards enriched with benchmark metrics for renter UX.
+router.get('/cards', (req, res) => {
+  try {
+    const cards = getCatalogModels().map(toCardEntry);
+    return res.json({
+      generated_at: new Date().toISOString(),
+      language: 'bilingual',
+      cards,
+    });
+  } catch (error) {
+    console.error('Model card feed error:', error);
+    return res.status(500).json({ error: 'Failed to fetch model cards' });
+  }
+});
+
+// GET /api/models/catalog
+// Managed model catalog payload used by comparison/deploy UX.
+router.get('/catalog', (req, res) => {
+  try {
+    const models = getCatalogModels();
+    return res.json({
+      generated_at: new Date().toISOString(),
+      total_models: models.length,
+      models,
+    });
+  } catch (error) {
+    console.error('Model catalog feed error:', error);
+    return res.status(500).json({ error: 'Failed to fetch model catalog feed' });
+  }
+});
+
+// GET /api/models/portfolio-readiness
+// Tier-grouped launch readiness feed focused on prewarm-critical Tier A.
+router.get('/portfolio-readiness', (req, res) => {
+  try {
+    const models = getCatalogModels()
+      .filter((model) => model.portfolio && ['tier_a', 'tier_b'].includes(model.portfolio.tier))
+      .sort((a, b) => {
+        const tierA = toInt(a.portfolio?.tier_rank, { min: 1, max: 99 }) || 99;
+        const tierB = toInt(b.portfolio?.tier_rank, { min: 1, max: 99 }) || 99;
+        if (tierA !== tierB) return tierA - tierB;
+
+        const priA = toInt(a.portfolio?.launch_priority, { min: 1, max: 999 }) || 999;
+        const priB = toInt(b.portfolio?.launch_priority, { min: 1, max: 999 }) || 999;
+        return priA - priB;
+      });
+
+    const tierA = models
+      .filter((model) => model.portfolio?.tier === 'tier_a')
+      .map((model) => ({
+        model_id: model.model_id,
+        display_name: model.display_name,
+        portfolio: model.portfolio,
+        benchmark: toBenchmarksEntry(model),
+        readiness: buildReadiness(model),
+      }));
+
+    const tierB = models
+      .filter((model) => model.portfolio?.tier === 'tier_b')
+      .map((model) => ({
+        model_id: model.model_id,
+        display_name: model.display_name,
+        portfolio: model.portfolio,
+        benchmark: toBenchmarksEntry(model),
+        readiness: buildReadiness(model),
+      }));
+
+    const readyCount = [...tierA, ...tierB].filter((entry) => entry.readiness.launch_ready).length;
+    const prewarmCriticalReady = tierA.filter((entry) => entry.readiness.launch_ready).length;
+
+    return res.json({
+      generated_at: new Date().toISOString(),
+      benchmark_suite: 'saudi-arabic-v1',
+      totals: {
+        tier_a: tierA.length,
+        tier_b: tierB.length,
+        ready: readyCount,
+        prewarm_critical_ready: prewarmCriticalReady,
+      },
+      tiers: {
+        tier_a: tierA,
+        tier_b: tierB,
+      },
+    });
+  } catch (error) {
+    console.error('Model portfolio readiness feed error:', error);
+    return res.status(500).json({ error: 'Failed to fetch model portfolio readiness feed' });
+  }
+});
+
+// GET /api/models/compare?ids=id1,id2,id3
+// Fetches comparable model payloads in one call for side-by-side UI.
+router.get('/compare', (req, res) => {
+  try {
+    const ids = parseCompareIds(req);
+    if (ids.length < 2) {
+      return res.status(400).json({ error: 'Provide at least two model ids via ids=comma,separated,list' });
+    }
+
+    const models = getCatalogModels();
+    const selected = ids
+      .map((id) => models.find((model) => model.model_id === id))
+      .filter(Boolean);
+
+    if (selected.length === 0) {
+      return res.status(404).json({ error: 'No matching models found for compare request' });
+    }
+
+    const ranking = [...selected].sort((a, b) => {
+      const qualityA = toNumber(a.benchmark.arabic_quality.arabic_mmlu_score) || 0;
+      const qualityB = toNumber(b.benchmark.arabic_quality.arabic_mmlu_score) || 0;
+      if (qualityA !== qualityB) return qualityB - qualityA;
+      return (toNumber(a.pricing.avg_sar_per_min) || 0) - (toNumber(b.pricing.avg_sar_per_min) || 0);
+    });
+
+    return res.json({
+      generated_at: new Date().toISOString(),
+      requested_ids: ids,
+      models: selected,
+      ranking: ranking.map((model, index) => ({
+        rank: index + 1,
+        model_id: model.model_id,
+        display_name: model.display_name,
+        arabic_mmlu_score: toFixedNumber(model.benchmark.arabic_quality.arabic_mmlu_score, 1),
+        avg_price_sar_per_min: toFixedNumber(model.pricing.avg_sar_per_min, 2),
+        estimated_cold_start_ms: model.estimated_cold_start_ms,
+      })),
+    });
+  } catch (error) {
+    console.error('Model compare error:', error);
+    return res.status(500).json({ error: 'Failed to compare models' });
+  }
+});
+
+// GET /api/models/:model_id/deploy/estimate
+// Returns deployment estimate payload for the selected model.
+router.get('/:model_id/deploy/estimate', (req, res) => {
+  try {
+    const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
+    const model = modelId ? getModelById(modelId) : null;
+    if (!model) return res.status(404).json({ error: 'Model not found or inactive' });
+
+    const estimate = buildDeployEstimate(model, req.query || {});
+    return res.json({
+      model_id: model.model_id,
+      display_name: model.display_name,
+      availability: model.availability,
+      estimate,
+    });
+  } catch (error) {
+    console.error('Deploy estimate error:', error);
+    return res.status(500).json({ error: 'Failed to build deploy estimate' });
+  }
+});
+
+// POST /api/models/:model_id/deploy
+// Authenticated deploy handoff endpoint for managed catalog UX.
+router.post('/:model_id/deploy', requireRenter, (req, res) => {
+  try {
+    const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
+    const model = modelId ? getModelById(modelId) : null;
+    if (!model) return res.status(404).json({ error: 'Model not found or inactive' });
+
+    const deployBody = req.body && typeof req.body === 'object' ? req.body : {};
+    const submitBody = buildDeploySubmitPayload(model, deployBody);
+    const estimate = buildDeployEstimate(model, deployBody);
+
+    const providerId = toInt(submitBody.provider_id, { min: 1 });
+    if (providerId != null) {
+      const provider = db.get(
+        `SELECT id, status, is_paused, last_heartbeat, vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb
+         FROM providers
+         WHERE id = ?`,
+        providerId
+      );
+      if (!provider) return res.status(404).json({ error: 'Requested provider_id does not exist' });
+      if (provider.status !== 'online' || Number(provider.is_paused || 0) === 1 || !isFreshHeartbeat(provider.last_heartbeat)) {
+        return res.status(409).json({ error: 'Requested provider is not currently available for deploy' });
+      }
+      const providerVramMb = resolveProviderVramMb(provider);
+      if (providerVramMb < (model.min_gpu_vram_gb * 1024)) {
+        return res.status(409).json({ error: 'Requested provider does not meet model VRAM requirement' });
+      }
+    }
+
+    return res.json({
+      status: 'ready',
+      model: {
+        model_id: model.model_id,
+        display_name: model.display_name,
+        min_gpu_vram_gb: model.min_gpu_vram_gb,
+      },
+      renter_id: req.renter.id,
+      deploy_mode: 'vllm_serve',
+      availability: model.availability,
+      estimate,
+      submit: {
+        endpoint: '/api/jobs/submit',
+        method: 'POST',
+        auth: 'x-renter-key',
+        body: submitBody,
+      },
+      notes: [
+        'Submit payload to /api/jobs/submit to create the actual serving job.',
+        'Use /api/jobs/queue/status and /api/jobs/:id logs endpoints to track launch progress.',
+      ],
+    });
+  } catch (error) {
+    console.error('Model deploy handoff error:', error);
+    return res.status(500).json({ error: 'Failed to prepare model deploy handoff' });
+  }
+});
+
+// GET /api/models/:model_id
+// Single-model detail payload for managed catalog consumers.
+router.get('/:model_id', (req, res) => {
+  try {
+    const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
+    const model = modelId ? getModelById(modelId) : null;
+    if (!model) return res.status(404).json({ error: 'Model not found or inactive' });
+
+    return res.json(model);
+  } catch (error) {
+    console.error('Model detail error:', error);
+    return res.status(500).json({ error: 'Failed to fetch model details' });
   }
 });
 

@@ -1,0 +1,63 @@
+---
+title: Architecture Overview
+description: End-to-end system map for Next.js frontend, Express API, provider daemon, and data synchronization.
+order: 7
+---
+
+## Platform topology
+
+DCP runs as a three-plane architecture:
+
+1. **Control plane (Web + API)**
+: Next.js 14 on `dcp.sa` and Express API on `api.dcp.sa`.
+2. **Execution plane (Provider GPUs)**
+: `dc1_daemon.py` on provider machines polls for jobs and executes workloads.
+3. **Data plane (SQLite + Supabase sync)**
+: SQLite is write-source for operational data, then sync workers mirror data to Supabase for low-latency reads.
+
+## Request flow (renter job)
+
+1. Renter authenticates with `x-renter-key` or `?key=`.
+2. `POST /api/jobs/submit` creates job row and reserves prepay balance (halala).
+3. Provider daemon polls `GET /api/providers/:key/jobs`.
+4. Daemon executes workload and reports result to `POST /api/providers/job-result`.
+5. Backend settles billing (75% provider / 25% platform) and updates balances.
+6. Renter retrieves output from `GET /api/jobs/:id/output`.
+
+## Core services
+
+- **Next.js frontend**: dashboards, onboarding, docs, marketplace browsing.
+- **Express backend**: auth, routing, billing, queueing, admin controls.
+- **Provider daemon**: heartbeat every 30s, readiness checks, secure job execution.
+- **Supabase sync bridge**: periodic replication for analytics and real-time UI views.
+
+## Security and trust boundaries
+
+- API keys are role-scoped: provider, renter, admin.
+- Admin operations require `x-admin-token`.
+- Job and daemon endpoints enforce role checks and status transitions.
+- Standard error format across API:
+
+```json
+{ "error": "descriptive message" }
+```
+
+## Billing model summary
+
+- Currency: SAR, internal unit: halala.
+- Pre-pay hold at submit time.
+- Final settlement on completion/failure.
+- Revenue split: provider `75%`, DCP `25%`.
+
+## Operational notes
+
+- Provider heartbeats every 30 seconds drive online/stale/offline state.
+- Rate limits and CORS protections are enforced at API layer.
+- Queue visibility is scoped by actor for tenant isolation.
+
+## Related docs
+
+- [Quickstart](/docs/quickstart)
+- [Provider Guide](/docs/provider-guide)
+- [Renter Guide](/docs/renter-guide)
+- [API Reference](/docs/api-reference)

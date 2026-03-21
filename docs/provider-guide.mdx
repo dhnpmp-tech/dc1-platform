@@ -1,37 +1,71 @@
 ---
 title: Provider Guide
-description: Install the daemon, keep your GPU online, and earn with the 75/25 split.
+description: Provider onboarding in under 5 minutes: register, install daemon, verify heartbeat, and start earning.
 order: 5
 ---
 
-## Provider flow
+## 5-minute provider onboarding
 
-1. Register on `/provider/register`
-2. Download installer or daemon script
-3. Keep daemon running and heartbeating every 30 seconds
-4. Complete jobs and track earnings in SAR
+1. Register as provider at `/provider/register`.
+2. Copy your `dcp-provider-...` API key.
+3. Install daemon for your OS.
+4. Confirm heartbeat status becomes `online`.
+5. Keep machine available to receive jobs.
 
-## Linux/macOS installer
+## Prerequisites
+
+- NVIDIA GPU (8 GB VRAM minimum, 16+ GB recommended)
+- Updated NVIDIA drivers (`nvidia-smi` must work)
+- Python 3.8+
+- Docker + NVIDIA Container Toolkit (recommended)
+- Stable internet connection
+
+## Install daemon (Linux/macOS)
 
 ```bash
 curl -sL "https://dcp.sa/api/dc1/providers/download/setup?key=<PROVIDER_KEY>&os=linux" | bash
 ```
 
-## Windows installer
+## Install daemon (Windows PowerShell)
 
 ```powershell
 irm "https://dcp.sa/api/dc1/providers/download/setup?key=<PROVIDER_KEY>&os=windows" | iex
 ```
 
-## Minimum requirements
+## Verify provider status
 
-- NVIDIA GPU with at least 8 GB VRAM
-- Driver 450+ and working `nvidia-smi`
-- Stable internet connection
-- Docker + NVIDIA Container Toolkit recommended
+```bash
+curl -s "https://dcp.sa/api/dc1/providers/me?key=<PROVIDER_KEY>"
+```
 
-## Earnings
+Expected fields:
 
-- DC1 fee: 25%
-- Provider share: 75%
-- Minimum withdrawal: 10 SAR
+- `provider.status` is `online`
+- `provider.last_heartbeat` updates every 30 seconds
+- `provider.total_jobs` increments after successful executions
+
+## Daemon lifecycle
+
+- Heartbeat interval: 30s (`POST /api/providers/heartbeat`)
+- Job poll interval: daemon polls provider queue endpoint
+- Result reporting: `POST /api/providers/job-result`
+
+## Earnings and settlement
+
+- Job revenue split: provider `75%`, platform `25%`
+- Currency: SAR, internal precision in halala
+- Use `GET /api/dc1/providers/earnings?key=...` for available and total earnings
+
+## Troubleshooting quick checks
+
+1. `nvidia-smi` returns your GPU model.
+2. API key is correct (`dcp-provider-...`).
+3. Daemon can reach `https://dcp.sa/api/dc1`.
+4. Firewall allows outbound HTTPS.
+
+## Related docs
+
+- [Quickstart](/docs/quickstart)
+- [Renter Guide](/docs/renter-guide)
+- [Architecture Overview](/docs/architecture-overview)
+- [API Reference](/docs/api-reference)

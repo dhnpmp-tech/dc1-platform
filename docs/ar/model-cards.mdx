@@ -1,0 +1,89 @@
+---
+title: بطاقات النماذج
+description: بطاقات نماذج ثنائية اللغة (عربي/إنجليزي) مع منهجية قابلة لإعادة الإنتاج لقياسات الجودة والتكلفة.
+order: 6
+---
+
+## الهدف من هذه الصفحة
+
+استخدم هذه الصفحة لنشر بطاقات نماذج DCP بصيغة موحدة وسهلة المقارنة.  
+يجب أن تشرح كل بطاقة الجودة، وزمن الاستجابة، والتكلفة، ومتطلبات VRAM لأحمال العمل العربية والثنائية اللغة.
+
+## مصادر البيانات الرسمية
+
+- سجل النماذج: `GET /api/models`
+- تغذية القياسات: `GET /api/models/benchmarks`
+- بطاقات ثنائية اللغة: `GET /api/models/cards`
+- اسم مجموعة القياس: `saudi-arabic-v1`
+
+## مصفوفة المقارنة العامة (Section 3B)
+
+| النموذج | Arabic MMLU (%) | ArabicaQA (%) | زمن P95 (ms) | التكلفة لكل 1000 رمز (SAR) | VRAM (GB) | التشغيل الأولي (ms) |
+|------|------:|------:|------:|------:|------:|------:|
+| Mistral 7B Instruct | 54.2 | 62.4 | 860 | 0.95 | 16 | 6800 |
+| Llama 3 8B Instruct | 58.7 | 66.1 | 960 | 1.08 | 16 | 7500 |
+| Qwen2 7B Instruct | 61.4 | 69.8 | 890 | 1.02 | 16 | 7200 |
+| Phi-3 Mini | 42.9 | 51.2 | 650 | 0.62 | 6 | 4100 |
+| DeepSeek R1 7B | 63.1 | 71.5 | 1100 | 1.24 | 16 | 8900 |
+
+## طريقة تفسير المؤشرات
+
+- `Arabic MMLU` و`ArabicaQA`: كلما ارتفعت القيمة كان أداء العربية أفضل.
+- `P95 latency`: كلما انخفضت القيمة كانت تجربة المحادثة أكثر سلاسة.
+- `Cost / 1K tokens`: كلما انخفضت كانت التكلفة التشغيلية أفضل.
+- `VRAM`: الحد الأدنى العملي لذاكرة GPU المطلوبة.
+- `Cold start`: زمن بدء الحاوية قبل أول رمز عند عدم وجود prewarm.
+
+### ترتيب التقييم المقترح للمشتري
+
+1. ابدأ بفلترة النماذج حسب حد جودة العربية المستهدف.
+2. استبعد النماذج التي تتجاوز SLO لزمن الاستجابة عند `P95`.
+3. قارن التكلفة لكل 1000 رمز بين النماذج المتبقية.
+4. تحقق من توافق VRAM وسياسة prewarm لدى المزود.
+
+## سير نشر قابل لإعادة الإنتاج
+
+### 1) جلب أحدث تغذية قياسات
+
+```bash
+curl -s https://dcp.sa/api/dc1/models/benchmarks
+```
+
+### 2) جلب الملخصات الثنائية
+
+```bash
+curl -s https://dcp.sa/api/dc1/models/cards
+```
+
+### 3) التحقق من الحقول المطلوبة قبل النشر
+
+يجب أن تحتوي كل بطاقة منشورة على:
+
+- `model_id` و`display_name` و`family`
+- `metrics.latency_ms.p50/p95/p99`
+- `metrics.arabic_quality.arabic_mmlu_score`
+- `metrics.arabic_quality.arabicaqa_score`
+- `metrics.cost_per_1k_tokens_halala` و`metrics.cost_per_1k_tokens_sar`
+- `metrics.vram_required_gb`
+- `metrics.cold_start_ms`
+- `summary.en` و`summary.ar`
+- `benchmark_suite` و`measured_at`
+
+## قالب البطاقة (EN/AR)
+
+```md
+### <Display Name> (`<model_id>`)
+- **Arabic quality**: MMLU <x>% · ArabicaQA <y>%
+- **Latency**: P50 <x> ms · P95 <y> ms · P99 <z> ms
+- **Cost**: <halala> halala / 1K tokens (<sar> SAR)
+- **Deployment**: VRAM <x> GB · Cold start <y> ms
+- **Best use**: <one sentence>
+- **Summary (EN)**: <summary.en>
+- **الملخص (AR)**: <summary.ar>
+```
+
+## ملاحظات سياسة النشر
+
+- انشر النسختين الإنجليزية والعربية ضمن نفس نافذة الإصدار.
+- اذكر `benchmark_suite` بشكل واضح لتمييز جيل القياسات.
+- عند تغيير المنهجية، أنشئ اسم مجموعة جديد (مثل `saudi-arabic-v2`) بدل خلط أرقام من مجموعات مختلفة.

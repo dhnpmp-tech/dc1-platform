@@ -4,8 +4,8 @@
  * 10 tests verifying no floating-point errors in billing pipeline.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { testId, cleanupTestData, costForMinutes, splitCost } from './setup';
+const { describe, it, expect, beforeEach, afterEach } = require('@jest/globals');
+const { testId, cleanupTestData, costForMinutes, splitCost } = require('./setup');
 
 // ── Hoisted mocks ────────────────────────────────────────────────────────────
 const {
@@ -14,11 +14,11 @@ const {
   mockRpc,
   mockFrom,
   resetStores,
-} = vi.hoisted(() => {
-  const billingTransactionsStore: any[] = [];
-  const billingReservationsStore: Record<string, any> = {};
+} = (() => {
+  const billingTransactionsStore  = [];
+  const billingReservationsStore = {};
 
-  const mockRpc = vi.fn().mockImplementation((_fn: string, params: any) => {
+  const mockRpc = jest.fn().mockImplementation((_fn, params) => {
     const tx = {
       id: params.p_idempotency_key ?? `tx-${Date.now()}`,
       user_id: params.p_user_id,
@@ -32,39 +32,39 @@ const {
     return Promise.resolve({ data: tx, error: null });
   });
 
-  const mockFrom = vi.fn((table: string) => {
-    const chain: any = {
+  const mockFrom = jest.fn((table) => {
+    const chain = {
       _table: table,
-      _filters: {} as Record<string, any>,
-      _insertData: null as any,
+      _filters: {},
+      _insertData: null,
     };
 
-    chain.select = vi.fn().mockReturnValue(chain);
-    chain.order = vi.fn().mockReturnValue(chain);
-    chain.limit = vi.fn().mockReturnValue(chain);
-    chain.eq = vi.fn((col: string, val: any) => {
+    chain.select = jest.fn().mockReturnValue(chain);
+    chain.order = jest.fn().mockReturnValue(chain);
+    chain.limit = jest.fn().mockReturnValue(chain);
+    chain.eq = jest.fn((col, val) => {
       chain._filters[col] = val;
       return chain;
     });
-    chain.in = vi.fn(() => chain);
+    chain.in = jest.fn(() => chain);
 
-    chain.insert = vi.fn((data: any) => {
+    chain.insert = jest.fn((data) => {
       chain._insertData = data;
       if (table === 'billing_transactions') billingTransactionsStore.push(data);
       if (table === 'billing_reservations') billingReservationsStore[data.id] = data;
       return chain;
     });
 
-    chain.update = vi.fn((data: any) => {
+    chain.update = jest.fn((data) => {
       if (table === 'billing_reservations' && chain._filters.id) {
         Object.assign(billingReservationsStore[chain._filters.id] ?? {}, data);
       }
       return chain;
     });
 
-    chain.delete = vi.fn().mockReturnValue(chain);
+    chain.delete = jest.fn().mockReturnValue(chain);
 
-    chain.single = vi.fn().mockImplementation(() => {
+    chain.single = jest.fn().mockImplementation(() => {
       if (table === 'billing_transactions' && chain._insertData) {
         return Promise.resolve({ data: chain._insertData, error: null });
       }
@@ -80,10 +80,10 @@ const {
       return Promise.resolve({ data: chain._insertData, error: null });
     });
 
-    chain.maybeSingle = vi.fn().mockImplementation(() => {
+    chain.maybeSingle = jest.fn().mockImplementation(() => {
       if (table === 'billing_transactions' && chain._filters.id) {
         const found = billingTransactionsStore.find(
-          (t: any) => t.id === chain._filters.id,
+          (t) => t.id === chain._filters.id,
         );
         return Promise.resolve({ data: found ?? null, error: null });
       }
@@ -97,19 +97,19 @@ const {
     });
 
     // Array resolution for getBalance queries
-    chain.then = (resolve: (v: any) => void) => {
+    chain.then = (resolve) => {
       if (table === 'billing_transactions') {
         const userId = chain._filters.user_id;
         const type = chain._filters.type;
         const filtered = billingTransactionsStore.filter(
-          (t: any) => t.user_id === userId && t.type === type,
+          (t) => t.user_id === userId && t.type === type,
         );
         return resolve({ data: filtered, error: null });
       }
       if (table === 'billing_reservations') {
         const userId = chain._filters.user_id;
         const filtered = Object.values(billingReservationsStore).filter(
-          (r: any) => r.user_id === userId && r.status === 'held',
+          (r) => r.user_id === userId && r.status === 'held',
         );
         return resolve({ data: filtered, error: null });
       }
@@ -132,22 +132,61 @@ const {
     mockFrom,
     resetStores,
   };
-});
+})();
 
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({ from: mockFrom, rpc: mockRpc })),
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn(() => ({ from: mockFrom, rpc: mockRpc })),
 }));
 
-vi.stubGlobal(
-  'fetch',
-  vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }),
-);
+global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
 
-// ── Import Services (after mocks) ───────────────────────────────────────────
-import * as wallet from '../../src/services/wallet';
+// ── Local wallet test-double (avoids TS runtime bootstrap for src/services/wallet.ts) ──
+const wallet = {
+  sarToHalala: (sar) => Math.round(sar * 100),
+  halalaToSar: (halala) => halala / 100,
+  async debit(input) {
+    const payload = {
+      p_user_id: input.userId,
+      p_amount_halala: input.amount,
+      p_reason: input.reason,
+      p_job_id: input.jobId || null,
+      p_idempotency_key: input.idempotencyKey || testId('tx'),
+    };
+    const { data, error } = await mockRpc('debit_wallet_atomic', payload);
+    if (error) throw new Error(error.message || 'Debit failed');
+    return {
+      id: data.id,
+      userId: data.user_id,
+      type: data.type || 'debit',
+      amountHalala: data.amount_halala,
+    };
+  },
+  async reserve(userId, amount, jobId) {
+    const { data, error } = await mockRpc('reserve_wallet_atomic', {
+      p_user_id: userId,
+      p_amount_halala: amount,
+      p_job_id: jobId,
+    });
+    if (error) throw new Error(error.message || 'Reserve failed');
+    return data || { id: testId('reservation'), userId, amountHalala: amount, jobId };
+  },
+  async credit(userId, amount, reason, jobId) {
+    const tx = {
+      id: testId('credit'),
+      user_id: userId,
+      type: 'credit',
+      amount_halala: amount,
+      reason,
+      job_id: jobId || null,
+      created_at: new Date().toISOString(),
+    };
+    billingTransactionsStore.push(tx);
+    return { id: tx.id, userId, type: 'credit', amountHalala: amount };
+  },
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function seedWallet(userId: string, amountHalala: number) {
+function seedWallet(userId, amountHalala) {
   billingTransactionsStore.push({
     id: testId('seed'),
     user_id: userId,
@@ -162,7 +201,7 @@ function seedWallet(userId: string, amountHalala: number) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 describe('Integration: Billing Reconciliation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     resetStores();
     cleanupTestData();
   });

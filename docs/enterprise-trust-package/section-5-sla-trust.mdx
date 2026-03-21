@@ -1,0 +1,117 @@
+---
+title: "Enterprise SLA and Trust Commitments"
+description: "Bronze, Silver, and Gold SLA tiers with uptime, support guarantees, and trust commitments for external publication."
+order: 55
+---
+
+# DCP Enterprise Trust Package — Section 5B SLA and Trust Commitments
+
+**Version**: 1.0  
+**Date**: 2026-03-20 (UTC)  
+**Owner**: DevRel Engineer  
+**Scope**: External enterprise publication
+
+## 1. Purpose
+
+This document defines DCP's customer-facing SLA tiers for enterprise workloads and standard trust commitments for procurement, security review, and service operations.
+
+The controls and architecture referenced here align with:
+
+- `/docs/enterprise-trust-package/section-5-security-whitepaper`
+- `/status` public status page
+
+## 2. SLA Tier Matrix
+
+| Tier | Monthly Uptime SLA | Support Coverage | First Response (P1/P2/P3) | Service Credits (if SLA missed) |
+|------|---------------------|------------------|-----------------------------|----------------------------------|
+| Bronze | 99.0% | Business hours (KSA) | 4h / 8h / 1 business day | 5% monthly fee |
+| Silver | 99.5% | 16x7 | 2h / 4h / 8h | 10% monthly fee |
+| Gold | 99.9% | 24x7 | 30m / 1h / 4h | 15% monthly fee |
+
+### Notes
+
+- Uptime is measured monthly as API and job-control-plane availability.
+- Scheduled maintenance windows with prior notice are excluded from SLA calculations.
+- Service credits are the sole financial remedy and are applied to the next billing cycle.
+
+## 3. Incident Severity Definitions
+
+| Severity | Definition | Example |
+|----------|------------|---------|
+| P1 (Critical) | Full service outage or material data/security event impacting production | Jobs cannot be submitted or executed platform-wide |
+| P2 (High) | Major degradation with significant customer impact, but partial service remains | Job queue delays above SLO for core models |
+| P3 (Normal) | Limited feature issue or non-critical defect | Dashboard metrics delay with job execution unaffected |
+
+## 4. Support and Escalation Guarantees
+
+### 4.1 Support Channels
+
+- Primary: enterprise support email and authenticated support portal
+- Secondary: named customer escalation contacts for Silver and Gold
+
+### 4.2 Escalation Path
+
+1. L1 triage confirms severity and impact scope
+2. L2 on-call engineering mitigation and workaround
+3. L3 incident commander and executive escalation for prolonged P1/P2
+
+### 4.3 Communication Cadence
+
+- P1: updates at least every 30 minutes until mitigation
+- P2: updates at least every 2 hours
+- P3: daily update or next business day resolution plan
+
+## 5. Core Trust Commitments
+
+### 5.1 Security Baseline
+
+- Container isolation controls, restricted runtime privileges, and network isolation are enforced as documented in Section 5 security whitepaper.
+- Image approval and vulnerability gates are required before production use.
+- Digest pinning is enforced; signed-image verification is on DCP hardening roadmap.
+
+### 5.2 Data Governance and PDPL
+
+- DCP supports data export and deletion workflows for providers and renters.
+- PDPL request events are logged and auditable.
+- DCP publishes transfer transparency and Saudi-first data-handling commitments.
+
+### 5.3 Operational Transparency
+
+- Public service state is exposed on `/status`.
+- Incidents are tracked with start/end timestamps, impact summary, and mitigation notes.
+- Post-incident reviews are provided for major events (P1 and qualifying P2).
+
+## 6. SLA Measurement and Claim Process
+
+### 6.1 Measurement Source
+
+- DCP calculates availability using platform telemetry and incident logs.
+- Customer-reported outages are cross-checked with platform traces and status history.
+
+### 6.2 Claim Window
+
+- Customers must submit SLA credit claims within 30 calendar days after the affected month.
+
+### 6.3 Validation and Credit Issuance
+
+- DCP reviews claim evidence and returns determination within 10 business days.
+- Approved credits apply to the next invoice cycle (non-cash, non-transferable).
+
+## 7. Shared Responsibility Model
+
+### DCP Responsibilities
+
+- Maintain control-plane reliability, scheduler integrity, and support response coverage by tier.
+- Operate the documented security baseline and enterprise trust controls.
+
+### Customer Responsibilities
+
+- Use supported API/auth patterns and secure API key handling.
+- Provide accurate incident context for faster triage.
+- Maintain compliant workload inputs and lawful data processing obligations.
+
+## 8. Effective Date and Versioning
+
+- Effective date: 2026-03-20 UTC
+- This SLA/trust section is versioned and may be updated with at least 30 days notice for material changes.
+- Any customer-specific MSA/SLA addendum supersedes this public baseline when explicitly agreed in writing.

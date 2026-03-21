@@ -1,12 +1,72 @@
 ---
 title: دليل المستأجر
-description: اختيار مزود GPU وتشغيل المهام وإدارة الفوترة.
+description: إعداد المستأجر خلال أقل من 5 دقائق: الحساب، الرصيد، اختيار المزود، واستلام مخرجات أول مهمة.
 order: 6
 ---
 
-## البداية
+## إعداد المستأجر خلال 5 دقائق
 
-1. سجّل من `/renter/register`
-2. اشحن الرصيد من `/renter/billing`
-3. اختر مزودًا من `/renter/marketplace`
-4. شغّل المهمة من `/renter/playground`
+1. سجّل من `/renter/register` واحفظ مفتاح `dcp-renter-...`.
+2. اشحن المحفظة من `/renter/billing`.
+3. اختر مزودًا متاحًا من `/renter/marketplace`.
+4. أرسل أول مهمة من `/renter/playground` أو عبر API.
+5. راقب الحالة واسترجع المخرجات.
+
+## مسار سريع عبر API
+
+### 1) التحقق من مفتاح المستأجر
+
+```bash
+curl -s "https://dcp.sa/api/dc1/renters/me?key=<RENTER_KEY>"
+```
+
+### 2) استعراض وحدات GPU المتاحة
+
+```bash
+curl -s "https://dcp.sa/api/dc1/renters/available-providers"
+```
+
+### 3) إرسال أول مهمة
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: <RENTER_KEY>" \
+  -d '{
+    "provider_id": 42,
+    "job_type": "llm-inference",
+    "duration_minutes": 3,
+    "container_spec": { "image_type": "vllm-serve" },
+    "params": {
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "prompt": "اكتب 3 نقاط عن سوق GPU في السعودية"
+    }
+  }'
+```
+
+### 4) جلب المخرجات
+
+```bash
+curl -s "https://dcp.sa/api/dc1/jobs/<JOB_ID>/output?key=<RENTER_KEY>"
+```
+
+## سلوك الفوترة
+
+- DCP يستخدم الهللة داخليًا (`100 هللة = 1 ريال`).
+- يتم حجز التكلفة التقديرية عند الإرسال.
+- التسوية النهائية تعتمد على زمن التشغيل الفعلي.
+- أي رصيد غير مستخدم يُعاد بعد التسوية.
+
+## نموذج الحالات
+
+التسلسل المعتاد:
+
+`pending -> queued -> running -> completed`  
+(أو حالات نهائية `failed` / `cancelled`)
+
+## وثائق مرتبطة
+
+- [البدء السريع](/docs/ar/quickstart)
+- [دليل المزود](/docs/ar/provider-guide)
+- [نظرة معمارية](/docs/ar/architecture-overview)
+- [مرجع API](/docs/ar/api-reference)

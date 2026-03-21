@@ -1,44 +1,72 @@
 ---
 title: SDK Python
-description: Provider SDK usage for registration, resource advertisement, and earnings checks.
+description: End-to-end Python quickstart with auth, submit, live logs, and output retrieval.
 order: 4
 ---
 
 ## Install
 
 ```bash
-pip install dc1_provider
+pip install dc1_provider requests
 ```
 
-## Register provider
+## Run a complete renter flow
 
 ```python
-from dc1_provider import DC1ProviderClient
+import json
+import requests
 
-public_client = DC1ProviderClient()
-result = public_client.register(
-    name="Jeddah Node",
-    email="gpu@example.com",
-    gpu_model="RTX 3090",
-)
-print(result["api_key"])
+BASE_URL = "https://api.dcp.sa"
+RENTER_KEY = "dc1-renter-your-key"
+
+headers = {
+    "Content-Type": "application/json",
+    "x-renter-key": RENTER_KEY,
+}
+
+# 1) Validate auth
+me = requests.get(f"{BASE_URL}/api/renters/me", params={"key": RENTER_KEY}, timeout=15)
+me.raise_for_status()
+print("renter:", me.json().get("email"))
+
+# 2) Submit job
+submit_payload = {
+    "job_type": "llm-inference",
+    "duration_minutes": 3,
+    "max_duration_seconds": 180,
+    "container_spec": {"image_type": "vllm-serve"},
+    "params": {
+        "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "prompt": "Give 3 bullets on AI adoption in Saudi Arabia.",
+    },
+}
+
+submit = requests.post(f"{BASE_URL}/api/jobs/submit", headers=headers, json=submit_payload, timeout=30)
+submit.raise_for_status()
+job_id = submit.json()["job_id"]
+print("job_id:", job_id)
+
+# 3) Stream logs (SSE)
+stream_url = f"{BASE_URL}/api/jobs/{job_id}/logs/stream"
+with requests.get(stream_url, params={"key": RENTER_KEY}, stream=True, timeout=120) as resp:
+    resp.raise_for_status()
+    for raw in resp.iter_lines(decode_unicode=True):
+        if not raw or not raw.startswith("data: "):
+            continue
+        evt = json.loads(raw[6:])
+        if evt.get("type") == "log":
+            print("[log]", evt.get("line"))
+        if evt.get("type") == "end":
+            print("[end]", evt.get("status"))
+            break
+
+# 4) Fetch output
+output = requests.get(f"{BASE_URL}/api/jobs/{job_id}/output", params={"key": RENTER_KEY}, timeout=30)
+print(output.status_code, output.json())
 ```
 
-## Send heartbeat and check jobs
+## Notes
 
-```python
-from dc1_provider import DC1ProviderClient
-
-client = DC1ProviderClient(api_key="dc1-provider-xxxx")
-spec = client.build_resource_spec()
-client.announce(spec)
-jobs = client.get_jobs(status="pending")
-print(f"queued: {len(jobs)}")
-```
-
-## Earnings API
-
-```python
-e = client.get_earnings()
-print(e.total_earned_sar, e.available_sar)
-```
+- `duration_minutes` and `container_spec.image_type` are required by `POST /api/jobs/submit`.
+- Use `GET /api/jobs/:job_id/logs/stream` for live logs.
+- Use `GET /api/jobs/:job_id/output` for final result payload.

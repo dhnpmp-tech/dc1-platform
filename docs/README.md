@@ -12,10 +12,15 @@ DC1 is Saudi Arabia's first decentralized GPU compute marketplace. This director
 | [مرجع API](./api-reference-ar.md) | العربية | جميع نقاط النهاية بالعربية |
 | [Provider Guide](./provider-guide.md) | English | Earn SAR by connecting your NVIDIA GPU |
 | [SDK Guides](./sdk-guides.md) | English | Python and JavaScript code examples |
+| [Model Cards](./model-cards.mdx) | English | Bilingual model card publishing format with benchmark interpretation and reproducible methodology |
+| [بطاقات النماذج](./ar/model-cards.mdx) | العربية | صيغة نشر بطاقات النماذج ثنائية اللغة مع تفسير القياسات |
 | [vLLM Model Catalog](./models.md) | English | Supported LLMs, VRAM requirements, and Arabic model guidance |
+| [Arabic Portfolio Serving Ops](./arabic-portfolio-serving-ops.md) | English | Tiered Arabic model prewarm policy, deployment, and rollback runbook |
 | [GPU Compatibility Matrix](./gpu-matrix.md) | English | GPU-to-model fit, batch sizing, and throughput planning |
 | [Pricing Guide](./pricing-guide.md) | English | SAR pricing bands, earnings calculator, and cloud comparison |
 | [Container Security Baseline](./container-security.md) | English | Docker hardening controls, limits, and inspect verification checks |
+| [Enterprise SLA & Trust Commitments](./enterprise-trust-package/section-5-sla-trust.mdx) | English | Bronze/Silver/Gold uptime and support guarantees with trust commitments |
+| [التزامات SLA والثقة للمؤسسات](./ar/enterprise-trust-package/section-5-sla-trust.mdx) | العربية | مستويات SLA وضمانات الدعم والثقة للمراجعة الخارجية |
 
 ## Test Environment Note
 

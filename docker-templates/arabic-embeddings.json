@@ -1,0 +1,44 @@
+{
+  "id": "arabic-embeddings",
+  "name": "Arabic Embeddings API",
+  "description": "High-throughput embedding service for Arabic and bilingual retrieval pipelines.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Embedding Model (Hugging Face)", "default": "BAAI/bge-m3", "required": true },
+    { "key": "BATCH_SIZE", "label": "Batch Size", "default": "64", "required": false },
+    { "key": "MAX_SEQ_LEN", "label": "Max Sequence Length", "default": "1024", "required": false }
+  ],
+  "params": {
+    "model": "BAAI/bge-m3",
+    "mode": "embedding",
+    "batch_size": 64,
+    "max_seq_len": 1024
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "warm",
+    "behavior": "Warm cache keeps tokenizer and embedding weights resident for lower P95 under burst traffic."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "vllm_serve",
+      "duration_minutes": 60,
+      "params": {
+        "model": "BAAI/bge-m3",
+        "mode": "embedding"
+      }
+    },
+    "output": {
+      "type": "endpoint",
+      "model": "BAAI/bge-m3",
+      "status": "running",
+      "protocol": "http-json"
+    }
+  },
+  "min_vram_gb": 8,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["llm", "embedding", "rag", "arabic"],
+  "sort_order": 5,
+  "difficulty": "easy"
+}

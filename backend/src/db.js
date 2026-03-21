@@ -43,6 +43,10 @@ db.exec(`
     rejected_reason TEXT,
     api_key TEXT,
     notes TEXT,
+    total_earnings REAL DEFAULT 0,
+    total_earnings_halala INTEGER DEFAULT 0,
+    total_jobs INTEGER DEFAULT 0,
+    claimable_earnings_halala INTEGER DEFAULT 0,
     container_restart_count INTEGER DEFAULT 0,
     model_cache_disk_mb INTEGER DEFAULT 0,
     model_cache_disk_total_mb INTEGER DEFAULT 0,
@@ -51,6 +55,8 @@ db.exec(`
     model_preload_model TEXT,
     model_preload_requested_at TEXT,
     model_preload_updated_at TEXT,
+    deleted_at TEXT,
+    deletion_scheduled_for TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
@@ -288,6 +294,316 @@ try {
     modelSeedNow
   );
 } catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'ALLaM-AI/ALLaM-7B-Instruct-preview',
+    'ALLaM 7B Instruct',
+    'allam',
+    24,
+    'bf16',
+    8192,
+    JSON.stringify(['arabic', 'chat', 'enterprise']),
+    24,
+    22,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'tiiuae/Falcon-H1-7B-Instruct',
+    'Falcon H1 7B Instruct',
+    'falcon',
+    24,
+    'bf16',
+    8192,
+    JSON.stringify(['arabic', 'chat', 'reasoning']),
+    24,
+    20,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'inceptionai/jais-13b-chat',
+    'JAIS 13B Chat',
+    'jais',
+    24,
+    'bf16',
+    4096,
+    JSON.stringify(['arabic', 'chat', 'enterprise']),
+    24,
+    27,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'BAAI/bge-m3',
+    'BGE M3 Embeddings',
+    'embedding',
+    8,
+    'fp16',
+    8192,
+    JSON.stringify(['embedding', 'rag', 'retrieval']),
+    8,
+    12,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'BAAI/bge-reranker-v2-m3',
+    'BGE Reranker v2 M3',
+    'reranker',
+    8,
+    'fp16',
+    4096,
+    JSON.stringify(['reranking', 'rag', 'search']),
+    8,
+    14,
+    modelSeedNow
+  );
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO model_registry
+     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    'stabilityai/stable-diffusion-xl-base-1.0',
+    'Stable Diffusion XL Base 1.0',
+    'diffusion',
+    16,
+    'fp16',
+    2048,
+    JSON.stringify(['image-generation', 'creative', 'marketing']),
+    16,
+    30,
+    modelSeedNow
+  );
+} catch (e) {}
+
+// ─── MODEL BENCHMARK PROFILES TABLE ───
+// Benchmarked latency/quality/cost feed used by bilingual model cards.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS model_benchmark_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id TEXT NOT NULL UNIQUE,
+    benchmark_suite TEXT NOT NULL,
+    latency_p50_ms REAL NOT NULL,
+    latency_p95_ms REAL NOT NULL,
+    latency_p99_ms REAL NOT NULL,
+    arabic_mmlu_score REAL NOT NULL,
+    arabicaqa_score REAL NOT NULL,
+    cost_per_1k_tokens_halala INTEGER NOT NULL,
+    vram_required_gb INTEGER NOT NULL,
+    cold_start_ms INTEGER NOT NULL,
+    measured_at TEXT NOT NULL,
+    notes_en TEXT,
+    notes_ar TEXT,
+    FOREIGN KEY (model_id) REFERENCES model_registry(model_id)
+  )
+`);
+const benchmarkSeedNow = new Date().toISOString();
+const benchmarkSeedRows = [
+  {
+    model_id: 'mistralai/Mistral-7B-Instruct-v0.2',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 420,
+    latency_p95_ms: 860,
+    latency_p99_ms: 1210,
+    arabic_mmlu_score: 54.2,
+    arabicaqa_score: 62.4,
+    cost_per_1k_tokens_halala: 95,
+    vram_required_gb: 16,
+    cold_start_ms: 6800,
+    notes_en: 'Strong low-latency baseline for bilingual support bots and summarization.',
+    notes_ar: 'خيار سريع وفعال لتطبيقات الدعم ثنائي اللغة والتلخيص.',
+  },
+  {
+    model_id: 'meta-llama/Meta-Llama-3-8B-Instruct',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 480,
+    latency_p95_ms: 960,
+    latency_p99_ms: 1410,
+    arabic_mmlu_score: 58.7,
+    arabicaqa_score: 66.1,
+    cost_per_1k_tokens_halala: 108,
+    vram_required_gb: 16,
+    cold_start_ms: 7500,
+    notes_en: 'Balanced quality and speed for Arabic+English enterprise assistants.',
+    notes_ar: 'توازن جيد بين الجودة والسرعة للمساعدات المؤسسية بالعربية والإنجليزية.',
+  },
+  {
+    model_id: 'Qwen/Qwen2-7B-Instruct',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 430,
+    latency_p95_ms: 890,
+    latency_p99_ms: 1290,
+    arabic_mmlu_score: 61.4,
+    arabicaqa_score: 69.8,
+    cost_per_1k_tokens_halala: 102,
+    vram_required_gb: 16,
+    cold_start_ms: 7200,
+    notes_en: 'Best Arabic quality in the 7B class with strong long-context behavior.',
+    notes_ar: 'أفضل جودة عربية ضمن فئة 7B مع أداء قوي للسياق الطويل.',
+  },
+  {
+    model_id: 'microsoft/Phi-3-mini-4k-instruct',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 300,
+    latency_p95_ms: 650,
+    latency_p99_ms: 940,
+    arabic_mmlu_score: 42.9,
+    arabicaqa_score: 51.2,
+    cost_per_1k_tokens_halala: 62,
+    vram_required_gb: 6,
+    cold_start_ms: 4100,
+    notes_en: 'Lowest cost profile for lightweight Arabic Q&A and classification.',
+    notes_ar: 'أقل تكلفة للمهام الخفيفة مثل الأسئلة والأجوبة والتصنيف بالعربية.',
+  },
+  {
+    model_id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 560,
+    latency_p95_ms: 1100,
+    latency_p99_ms: 1610,
+    arabic_mmlu_score: 63.1,
+    arabicaqa_score: 71.5,
+    cost_per_1k_tokens_halala: 124,
+    vram_required_gb: 16,
+    cold_start_ms: 8900,
+    notes_en: 'Higher reasoning quality with moderate latency overhead.',
+    notes_ar: 'جودة استدلال أعلى مع زيادة متوسطة في زمن الاستجابة.',
+  },
+  {
+    model_id: 'ALLaM-AI/ALLaM-7B-Instruct-preview',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 510,
+    latency_p95_ms: 990,
+    latency_p99_ms: 1390,
+    arabic_mmlu_score: 67.2,
+    arabicaqa_score: 74.8,
+    cost_per_1k_tokens_halala: 132,
+    vram_required_gb: 24,
+    cold_start_ms: 9100,
+    notes_en: 'Saudi Arabic-first quality profile; prioritize for prewarm Tier A enterprise workloads.',
+    notes_ar: 'جودة عربية سعودية عالية؛ يُفضّل ضمن نماذج Tier A الجاهزة مسبقًا.',
+  },
+  {
+    model_id: 'tiiuae/Falcon-H1-7B-Instruct',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 470,
+    latency_p95_ms: 930,
+    latency_p99_ms: 1320,
+    arabic_mmlu_score: 64.8,
+    arabicaqa_score: 72.1,
+    cost_per_1k_tokens_halala: 118,
+    vram_required_gb: 24,
+    cold_start_ms: 8700,
+    notes_en: 'Balanced Arabic throughput and quality for launch-critical Tier A serving.',
+    notes_ar: 'توازن ممتاز بين السرعة والجودة العربية لدعم الإطلاق ضمن Tier A.',
+  },
+  {
+    model_id: 'inceptionai/jais-13b-chat',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 630,
+    latency_p95_ms: 1260,
+    latency_p99_ms: 1780,
+    arabic_mmlu_score: 70.4,
+    arabicaqa_score: 78.6,
+    cost_per_1k_tokens_halala: 154,
+    vram_required_gb: 24,
+    cold_start_ms: 11600,
+    notes_en: 'High-accuracy Arabic enterprise default for Tier B premium chat workloads.',
+    notes_ar: 'خيار عالي الدقة للمحادثة العربية المؤسسية ضمن Tier B.',
+  },
+  {
+    model_id: 'BAAI/bge-m3',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 110,
+    latency_p95_ms: 260,
+    latency_p99_ms: 410,
+    arabic_mmlu_score: 0,
+    arabicaqa_score: 0,
+    cost_per_1k_tokens_halala: 24,
+    vram_required_gb: 8,
+    cold_start_ms: 3200,
+    notes_en: 'High-throughput embedding profile for Arabic RAG pipelines.',
+    notes_ar: 'نموذج تضمين سريع عالي الإنتاجية لتطبيقات الاسترجاع العربي.',
+  },
+  {
+    model_id: 'BAAI/bge-reranker-v2-m3',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 180,
+    latency_p95_ms: 340,
+    latency_p99_ms: 520,
+    arabic_mmlu_score: 0,
+    arabicaqa_score: 0,
+    cost_per_1k_tokens_halala: 34,
+    vram_required_gb: 8,
+    cold_start_ms: 3600,
+    notes_en: 'Low-latency Arabic reranking for retrieval quality uplift.',
+    notes_ar: 'تحسين جودة الاسترجاع العربي بزمن استجابة منخفض.',
+  },
+  {
+    model_id: 'stabilityai/stable-diffusion-xl-base-1.0',
+    benchmark_suite: 'saudi-arabic-v1',
+    latency_p50_ms: 980,
+    latency_p95_ms: 1880,
+    latency_p99_ms: 2760,
+    arabic_mmlu_score: 0,
+    arabicaqa_score: 0,
+    cost_per_1k_tokens_halala: 0,
+    vram_required_gb: 16,
+    cold_start_ms: 13200,
+    notes_en: 'Tier B Arabic prompt image generation baseline with warm-cache preference.',
+    notes_ar: 'خط أساس لتوليد الصور بالنص العربي ضمن Tier B مع تفضيل الذاكرة الدافئة.',
+  },
+];
+for (const row of benchmarkSeedRows) {
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO model_benchmark_profiles
+       (model_id, benchmark_suite, latency_p50_ms, latency_p95_ms, latency_p99_ms, arabic_mmlu_score, arabicaqa_score, cost_per_1k_tokens_halala, vram_required_gb, cold_start_ms, measured_at, notes_en, notes_ar)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      row.model_id,
+      row.benchmark_suite,
+      row.latency_p50_ms,
+      row.latency_p95_ms,
+      row.latency_p99_ms,
+      row.arabic_mmlu_score,
+      row.arabicaqa_score,
+      row.cost_per_1k_tokens_halala,
+      row.vram_required_gb,
+      row.cold_start_ms,
+      benchmarkSeedNow,
+      row.notes_en,
+      row.notes_ar
+    );
+  } catch (e) {}
+}
 
 // ─── CONTAINER IMAGE ALLOWLIST ─────────────────────────────────────────────
 db.exec(`
@@ -396,6 +712,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN gpu_driver TEXT',
   'ALTER TABLE providers ADD COLUMN gpu_compute TEXT',
   'ALTER TABLE providers ADD COLUMN total_earnings REAL DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN total_earnings_halala INTEGER DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
@@ -541,6 +858,10 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN completion_email_sent_at TEXT',
   'ALTER TABLE jobs ADD COLUMN retried_from_job_id INTEGER',
   'ALTER TABLE jobs ADD COLUMN first_token_at TEXT',
+  // Control-plane lifecycle metadata (DCP-368)
+  'ALTER TABLE jobs ADD COLUMN pricing_class TEXT DEFAULT \'standard\'',
+  'ALTER TABLE jobs ADD COLUMN capacity_class TEXT DEFAULT \'on_demand\'',
+  'ALTER TABLE jobs ADD COLUMN prewarm_requested INTEGER DEFAULT 0',
   'ALTER TABLE job_executions ADD COLUMN gpu_seconds_used REAL DEFAULT 0',
   'ALTER TABLE job_executions ADD COLUMN cost_halala INTEGER DEFAULT 0',
   'ALTER TABLE heartbeat_log ADD COLUMN container_restart_count INTEGER DEFAULT 0',
@@ -573,6 +894,8 @@ db.exec(`
     total_jobs INTEGER DEFAULT 0,
     webhook_url TEXT,
     rotated_at TEXT,
+    deleted_at TEXT,
+    deletion_scheduled_for TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT
   )
@@ -829,6 +1152,142 @@ try {
   db.prepare('ALTER TABLE provider_gpu_telemetry ADD COLUMN cold_start_ms INTEGER').run();
 } catch (e) {}
 
+// ─── CONTROL PLANE POLICY TABLE ───
+// Queue/SLO policy inputs used by autoscale and pre-warm recommendations.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS control_plane_policies (
+    pricing_class TEXT PRIMARY KEY CHECK(pricing_class IN ('priority','standard','economy')),
+    target_queue_wait_seconds INTEGER NOT NULL DEFAULT 90,
+    target_cold_start_ms INTEGER NOT NULL DEFAULT 120000,
+    target_cold_start_p50_ms INTEGER NOT NULL DEFAULT 8000,
+    target_gpu_utilization_pct REAL NOT NULL DEFAULT 85,
+    queue_per_warm_provider INTEGER NOT NULL DEFAULT 2,
+    min_warm_providers INTEGER NOT NULL DEFAULT 1,
+    max_scale_up_step INTEGER NOT NULL DEFAULT 3,
+    scale_down_idle_seconds INTEGER NOT NULL DEFAULT 600,
+    prewarm_enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+  )
+`);
+
+// Seed canonical pricing classes once (idempotent).
+const controlPlaneSeedNow = new Date().toISOString();
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO control_plane_policies
+      (pricing_class, target_queue_wait_seconds, target_cold_start_ms, target_cold_start_p50_ms, target_gpu_utilization_pct, queue_per_warm_provider, min_warm_providers, max_scale_up_step, scale_down_idle_seconds, prewarm_enabled, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('priority', 30, 20000, 8000, 80, 1, 2, 5, 300, 1, controlPlaneSeedNow);
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO control_plane_policies
+      (pricing_class, target_queue_wait_seconds, target_cold_start_ms, target_cold_start_p50_ms, target_gpu_utilization_pct, queue_per_warm_provider, min_warm_providers, max_scale_up_step, scale_down_idle_seconds, prewarm_enabled, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('standard', 90, 20000, 8000, 85, 2, 1, 3, 600, 1, controlPlaneSeedNow);
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO control_plane_policies
+      (pricing_class, target_queue_wait_seconds, target_cold_start_ms, target_cold_start_p50_ms, target_gpu_utilization_pct, queue_per_warm_provider, min_warm_providers, max_scale_up_step, scale_down_idle_seconds, prewarm_enabled, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('economy', 180, 20000, 8000, 92, 3, 0, 2, 1200, 0, controlPlaneSeedNow);
+} catch (e) {}
+
+try {
+  db.prepare('ALTER TABLE control_plane_policies ADD COLUMN target_cold_start_p50_ms INTEGER NOT NULL DEFAULT 8000').run();
+} catch (e) {}
+try {
+  db.prepare('ALTER TABLE control_plane_policies ADD COLUMN target_gpu_utilization_pct REAL NOT NULL DEFAULT 85').run();
+} catch (e) {}
+try {
+  db.prepare(
+    `UPDATE control_plane_policies
+     SET target_cold_start_ms = MIN(COALESCE(target_cold_start_ms, 20000), 20000),
+         target_cold_start_p50_ms = MIN(COALESCE(target_cold_start_p50_ms, 8000), 8000)
+     WHERE pricing_class IN ('priority','standard','economy')`
+  ).run();
+} catch (e) {}
+
+// ─── CONTROL PLANE SIGNAL TABLE ───
+// Snapshot log of queue-aware scaling recommendations and SLO health.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS control_plane_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pricing_class TEXT NOT NULL CHECK(pricing_class IN ('priority','standard','economy')),
+    capacity_class TEXT NOT NULL DEFAULT 'on_demand' CHECK(capacity_class IN ('on_demand','flex','spot')),
+    compute_type TEXT NOT NULL,
+    vram_required_mb INTEGER NOT NULL DEFAULT 0,
+    queued_total INTEGER NOT NULL DEFAULT 0,
+    active_total INTEGER NOT NULL DEFAULT 0,
+    providers_online INTEGER NOT NULL DEFAULT 0,
+    providers_degraded INTEGER NOT NULL DEFAULT 0,
+    providers_warm INTEGER NOT NULL DEFAULT 0,
+    avg_queue_wait_seconds REAL DEFAULT 0,
+    p95_queue_wait_seconds REAL DEFAULT 0,
+    avg_gpu_util_pct REAL,
+    cold_start_p95_ms INTEGER,
+    cold_start_p50_ms INTEGER,
+    recommended_warm_pool INTEGER NOT NULL DEFAULT 0,
+    recommended_scale_delta INTEGER NOT NULL DEFAULT 0,
+    recommended_action TEXT NOT NULL CHECK(recommended_action IN ('scale_up','scale_down','hold')),
+    reason TEXT,
+    snapshot_json TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_control_plane_signals_created_at ON control_plane_signals(created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_control_plane_signals_bucket ON control_plane_signals(pricing_class, compute_type, vram_required_mb, created_at DESC)`);
+try {
+  db.prepare('ALTER TABLE control_plane_signals ADD COLUMN avg_gpu_util_pct REAL').run();
+} catch (e) {}
+try {
+  db.prepare('ALTER TABLE control_plane_signals ADD COLUMN cold_start_p50_ms INTEGER').run();
+} catch (e) {}
+try {
+  db.prepare("ALTER TABLE control_plane_signals ADD COLUMN capacity_class TEXT NOT NULL DEFAULT 'on_demand'").run();
+} catch (e) {}
+
+// ─── CONTROL PLANE CAPACITY POLICY TABLE ───
+// Capacity classes tune prewarm + scaling behavior for serverless pools.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS control_plane_capacity_policies (
+    capacity_class TEXT PRIMARY KEY CHECK(capacity_class IN ('on_demand','flex','spot')),
+    queue_wait_multiplier REAL NOT NULL DEFAULT 1.0,
+    warm_pool_multiplier REAL NOT NULL DEFAULT 1.0,
+    max_scale_up_multiplier REAL NOT NULL DEFAULT 1.0,
+    min_warm_floor INTEGER NOT NULL DEFAULT 0,
+    prewarm_enabled INTEGER NOT NULL DEFAULT 1,
+    spillover_to_higher_class INTEGER NOT NULL DEFAULT 1,
+    preemptible INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+  )
+`);
+
+const capacityPolicySeedNow = new Date().toISOString();
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO control_plane_capacity_policies
+      (capacity_class, queue_wait_multiplier, warm_pool_multiplier, max_scale_up_multiplier, min_warm_floor, prewarm_enabled, spillover_to_higher_class, preemptible, enabled, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('on_demand', 1.0, 1.0, 1.0, 1, 1, 1, 0, 1, capacityPolicySeedNow);
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO control_plane_capacity_policies
+      (capacity_class, queue_wait_multiplier, warm_pool_multiplier, max_scale_up_multiplier, min_warm_floor, prewarm_enabled, spillover_to_higher_class, preemptible, enabled, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('flex', 1.2, 0.6, 0.8, 0, 1, 1, 1, 1, capacityPolicySeedNow);
+} catch (e) {}
+try {
+  db.prepare(
+    `INSERT OR IGNORE INTO control_plane_capacity_policies
+      (capacity_class, queue_wait_multiplier, warm_pool_multiplier, max_scale_up_multiplier, min_warm_floor, prewarm_enabled, spillover_to_higher_class, preemptible, enabled, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('spot', 1.5, 0.0, 0.6, 0, 0, 0, 1, 1, capacityPolicySeedNow);
+} catch (e) {}
+
 // ─── ESCROW HOLDS TABLE ─── (DCP-32: off-chain escrow for GPU job billing)
 // Tracks pre-paid funds through the job lifecycle:
 //   held → locked → released_provider (success)
@@ -866,6 +1325,27 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id, line_no)`);
+
+// ─── JOB LIFECYCLE EVENTS TABLE ───
+// Deterministic status/error event stream used by API + SSE consumers.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_lifecycle_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    sequence_no INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    status TEXT,
+    source TEXT NOT NULL DEFAULT 'api',
+    error_category TEXT,
+    error_code TEXT,
+    message TEXT,
+    payload_json TEXT,
+    occurred_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_job_lifecycle_unique_seq ON job_lifecycle_events(job_id, sequence_no)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_job_lifecycle_occurred ON job_lifecycle_events(job_id, occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_job_lifecycle_error_category ON job_lifecycle_events(error_category, occurred_at DESC)`);
 
 // ─── JOB SWEEP LOG TABLE ───
 // Audit trail for stale-job sweeps (DCP-129)

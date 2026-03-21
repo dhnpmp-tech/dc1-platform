@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
@@ -8,7 +8,6 @@ import StatusBadge from '../../components/ui/StatusBadge'
 
 const API_BASE = '/api/dc1'
 
-// ─── Icons ────────────────────────────────────────────────────────────────────
 const HomeIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 21h6a2 2 0 002-2V9l-7-4-7 4v10a2 2 0 002 2z" /></svg>)
 const ServerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12v4a2 2 0 002 2h10a2 2 0 002-2v-4" /></svg>)
 const UsersIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>)
@@ -19,15 +18,7 @@ const ContainerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 2
 const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 type WdStatus = 'pending' | 'processing' | 'paid' | 'failed'
-
-const statusBadgeMap: Record<WdStatus, 'pending' | 'active' | 'completed' | 'failed'> = {
-  pending: 'pending',
-  processing: 'active',
-  paid: 'completed',
-  failed: 'failed',
-}
 
 interface WithdrawalRequest {
   id: string
@@ -40,94 +31,178 @@ interface WithdrawalRequest {
   processed_at: string | null
   provider_name: string | null
   provider_email: string | null
-  provider_gpu_model: string | null
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function maskIban(iban: string): string {
-  if (!iban) return '—'
-  if (iban.length <= 8) return iban
-  const head = iban.slice(0, 4)
-  const tail = iban.slice(-4)
-  const midLen = iban.length - 8
-  const masked = '•'.repeat(midLen).replace(/(.{4})/g, '$1 ').trim()
-  return `${head} ${masked} ${tail}`
-}
-
-function daysWaiting(createdAt: string): number {
-  return Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000)
+interface Summary {
+  pending_count?: number
+  pending_total_halala?: number
+  paid_this_month_halala?: number
 }
 
 function halalToSar(halala: number): string {
   return (halala / 100).toFixed(2)
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+function maskIban(iban: string): string {
+  if (!iban) return '—'
+  if (iban.length <= 8) return iban
+  const head = iban.slice(0, 4)
+  const tail = iban.slice(-4)
+  const masked = '*'.repeat(Math.max(iban.length - 8, 0))
+  return `${head}${masked}${tail}`
+}
+
+function isWithinLast30Days(dateIso: string | null): boolean {
+  if (!dateIso) return false
+  const dateMs = new Date(dateIso).getTime()
+  if (Number.isNaN(dateMs)) return false
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
+  return Date.now() - dateMs <= thirtyDaysMs
+}
+
+function statusLabel(status: WdStatus): string {
+  if (status === 'paid') return 'Completed'
+  if (status === 'failed') return 'Rejected'
+  if (status === 'processing') return 'Processing'
+  return 'Pending'
+}
+
+function statusBadge(status: WdStatus): 'pending' | 'active' | 'completed' | 'failed' {
+  if (status === 'paid') return 'completed'
+  if (status === 'failed') return 'failed'
+  if (status === 'processing') return 'active'
+  return 'pending'
+}
+
 export default function WithdrawalsPage() {
   const router = useRouter()
-  const [tab, setTab] = useState<'pending' | 'all'>('pending')
-  const [allFilter, setAllFilter] = useState('')
-  const [data, setData] = useState<any>(null)
+  const [token, setToken] = useState<string | null>(null)
+  const [summary, setSummary] = useState<Summary>({})
+  const [pendingWithdrawals, setPendingWithdrawals] = useState<WithdrawalRequest[]>([])
+  const [historyWithdrawals, setHistoryWithdrawals] = useState<WithdrawalRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [errorMsg, setErrorMsg] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [rejectModal, setRejectModal] = useState<WithdrawalRequest | null>(null)
   const [rejectReason, setRejectReason] = useState('')
-  const [errorMsg, setErrorMsg] = useState('')
-
-  const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
-
-  const fetchData = useCallback(async () => {
-    if (!token) { router.push('/login'); return }
-    try {
-      const params = new URLSearchParams({ limit: '50' })
-      if (tab === 'pending') params.set('status', 'pending')
-      else if (allFilter) params.set('status', allFilter)
-      const res = await fetch(`${API_BASE}/admin/withdrawals?${params}`, {
-        headers: { 'x-admin-token': token },
-      })
-      if (res.status === 401) { router.push('/login'); return }
-      setData(await res.json())
-    } catch (err) { console.error(err) }
-    finally { setLoading(false) }
-  }, [token, tab, allFilter, router])
 
   useEffect(() => {
-    setLoading(true)
-    fetchData()
-    const interval = setInterval(fetchData, 30000)
-    return () => clearInterval(interval)
-  }, [fetchData])
+    const stored = localStorage.getItem('dc1_admin_token')
+    if (!stored) {
+      router.push('/login')
+      return
+    }
+    setToken(stored)
+  }, [router])
 
-  const handlePatch = async (id: string, status: string, adminNote?: string) => {
-    setActionLoading(id)
+  const fetchWithdrawals = useCallback(async () => {
+    if (!token) return
+
+    setLoading(true)
     setErrorMsg('')
+
     try {
-      const res = await fetch(`${API_BASE}/admin/withdrawals/${id}`, {
-        method: 'PATCH',
-        headers: { 'x-admin-token': token!, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, admin_note: adminNote }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setErrorMsg(err.error || 'Action failed')
+      const baseHeaders = { 'x-admin-token': token }
+
+      const pendingParams = new URLSearchParams({ status: 'pending', limit: '100' })
+      const paidParams = new URLSearchParams({ status: 'paid', limit: '100' })
+      const failedParams = new URLSearchParams({ status: 'failed', limit: '100' })
+
+      const [pendingRes, paidRes, failedRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/withdrawals?${pendingParams}`, { headers: baseHeaders }),
+        fetch(`${API_BASE}/admin/withdrawals?${paidParams}`, { headers: baseHeaders }),
+        fetch(`${API_BASE}/admin/withdrawals?${failedParams}`, { headers: baseHeaders }),
+      ])
+
+      if ([pendingRes, paidRes, failedRes].some((res) => res.status === 401)) {
+        router.push('/login')
         return
       }
+
+      if (!pendingRes.ok || !paidRes.ok || !failedRes.ok) {
+        setErrorMsg('Failed to load withdrawals')
+        return
+      }
+
+      const [pendingJson, paidJson, failedJson] = await Promise.all([
+        pendingRes.json(),
+        paidRes.json(),
+        failedRes.json(),
+      ])
+
+      const pendingList: WithdrawalRequest[] = pendingJson?.withdrawals || []
+      const paidList: WithdrawalRequest[] = paidJson?.withdrawals || []
+      const failedList: WithdrawalRequest[] = failedJson?.withdrawals || []
+
+      const history = [...paidList, ...failedList]
+        .filter((item) => isWithinLast30Days(item.processed_at))
+        .sort((a, b) => {
+          const aTime = new Date(a.processed_at || a.created_at).getTime()
+          const bTime = new Date(b.processed_at || b.created_at).getTime()
+          return bTime - aTime
+        })
+
+      setPendingWithdrawals(pendingList)
+      setSummary(pendingJson?.summary || {})
+      setHistoryWithdrawals(history)
+    } catch (error) {
+      console.error(error)
+      setErrorMsg('Network error while loading withdrawals')
+    } finally {
+      setLoading(false)
+    }
+  }, [router, token])
+
+  useEffect(() => {
+    fetchWithdrawals()
+  }, [fetchWithdrawals])
+
+  const handlePatch = useCallback(async (id: string, status: 'completed' | 'rejected', note?: string) => {
+    if (!token) return
+
+    setActionLoading(id)
+    setErrorMsg('')
+
+    try {
+      const payload: { status: 'completed' | 'rejected'; note?: string } = { status }
+      if (note) payload.note = note
+
+      const response = await fetch(`${API_BASE}/admin/withdrawals/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'x-admin-token': token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (response.status === 401) {
+        router.push('/login')
+        return
+      }
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        setErrorMsg(errorBody.error || 'Failed to update withdrawal')
+        return
+      }
+
       setRejectModal(null)
       setRejectReason('')
-      await fetchData()
-    } catch (err) {
-      console.error(err)
-      setErrorMsg('Network error')
+      await fetchWithdrawals()
+    } catch (error) {
+      console.error(error)
+      setErrorMsg('Network error while updating withdrawal')
     } finally {
       setActionLoading(null)
     }
-  }
+  }, [fetchWithdrawals, router, token])
 
-  const s = data?.summary || {}
-  const pendingCount: number = s.pending_count || 0
-  const withdrawals: WithdrawalRequest[] = data?.withdrawals || []
+  const pendingCount = summary.pending_count || 0
+  const pendingTotalHalala = summary.pending_total_halala || 0
+  const paidThisMonthHalala = summary.paid_this_month_halala || 0
 
-  const navItems = [
+  const navItems = useMemo(() => [
     { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
     { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
     { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
@@ -137,252 +212,182 @@ export default function WithdrawalsPage() {
     { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
     { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
     { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-  ]
+  ], [pendingCount])
 
   return (
     <DashboardLayout navItems={navItems} role="admin" userName="Admin">
       <div className="space-y-8">
-        {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Withdrawal Management</h1>
-          <p className="text-dc1-text-secondary">Review and process provider payout requests</p>
+          <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Withdrawals</h1>
+          <p className="text-dc1-text-secondary">Review pending provider withdrawals and approve payouts.</p>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <StatCard
-            label="Pending"
-            value={`${pendingCount} requests · ${halalToSar(s.pending_total_halala || 0)} SAR`}
+            label="Total Pending"
+            value={`${pendingCount} · ${halalToSar(pendingTotalHalala)} SAR`}
             accent="amber"
             icon={<WalletIcon />}
           />
           <StatCard
-            label="Paid This Month"
-            value={`${halalToSar(s.paid_this_month_halala || 0)} SAR`}
+            label="Completed This Month"
+            value={`${halalToSar(paidThisMonthHalala)} SAR`}
             accent="success"
-          />
-          <StatCard
-            label="Failed / Rejected"
-            value={`${s.failed_count || 0} requests`}
-            accent="error"
           />
         </div>
 
-        {/* Error message */}
         {errorMsg && (
           <div className="px-4 py-3 rounded bg-red-600/15 border border-red-500/30 text-red-400 text-sm">
             {errorMsg}
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-dc1-border">
-          {(['pending', 'all'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => { setTab(t); setAllFilter('') }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                tab === t
-                  ? 'border-dc1-amber text-dc1-amber'
-                  : 'border-transparent text-dc1-text-secondary hover:text-dc1-text-primary'
-              }`}
-            >
-              {t === 'pending' ? (
-                <span className="flex items-center gap-2">
-                  Pending
-                  {pendingCount > 0 && (
-                    <span className="px-1.5 py-0.5 text-xs rounded-full bg-dc1-amber text-black font-bold">
-                      {pendingCount}
-                    </span>
+        <div className="card">
+          <div className="px-6 pt-6 pb-2">
+            <h2 className="text-lg font-semibold text-dc1-text-primary">Pending Withdrawals</h2>
+          </div>
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="px-6 pb-6 text-dc1-text-secondary">Loading...</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Provider Email</th>
+                    <th>IBAN</th>
+                    <th>Amount (SAR)</th>
+                    <th>Requested</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingWithdrawals.map((withdrawal) => (
+                    <tr key={withdrawal.id}>
+                      <td className="text-sm text-dc1-text-primary">{withdrawal.provider_email || '—'}</td>
+                      <td className="font-mono text-xs text-dc1-text-secondary">{maskIban(withdrawal.iban)}</td>
+                      <td className="font-semibold text-dc1-text-primary">{halalToSar(withdrawal.amount_halala)}</td>
+                      <td className="text-xs text-dc1-text-secondary">
+                        {withdrawal.created_at ? new Date(withdrawal.created_at).toLocaleString() : '—'}
+                      </td>
+                      <td>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handlePatch(withdrawal.id, 'completed')}
+                            disabled={actionLoading === withdrawal.id}
+                            className="text-xs px-2.5 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 font-medium"
+                          >
+                            {actionLoading === withdrawal.id ? '...' : 'Approve'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setRejectModal(withdrawal)
+                              setRejectReason('')
+                            }}
+                            disabled={actionLoading === withdrawal.id}
+                            className="text-xs px-2.5 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50 font-medium"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {pendingWithdrawals.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center text-dc1-text-muted py-10">
+                        No pending withdrawals
+                      </td>
+                    </tr>
                   )}
-                </span>
-              ) : 'All Withdrawals'}
-            </button>
-          ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
 
-        {/* All withdrawals status filter */}
-        {tab === 'all' && (
-          <div className="flex gap-2 flex-wrap">
-            {(['', 'pending', 'processing', 'paid', 'failed'] as const).map((f) => (
-              <button
-                key={f || 'all'}
-                onClick={() => setAllFilter(f)}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                  allFilter === f
-                    ? 'bg-dc1-amber text-black'
-                    : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
-                }`}
-              >
-                {f ? f.charAt(0).toUpperCase() + f.slice(1) : 'All'}
-              </button>
-            ))}
+        <div className="card">
+          <div className="px-6 pt-6 pb-2">
+            <h2 className="text-lg font-semibold text-dc1-text-primary">Completed & Rejected (Last 30 Days)</h2>
           </div>
-        )}
-
-        {/* Table */}
-        {loading ? (
-          <div className="text-dc1-text-secondary">Loading...</div>
-        ) : (
-          <div className="card">
-            <div className="overflow-x-auto">
-              {tab === 'pending' ? (
-                /* ── Pending tab ── */
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Provider</th>
-                      <th>GPU</th>
-                      <th>Amount</th>
-                      <th>IBAN</th>
-                      <th>Requested</th>
-                      <th>Waiting</th>
-                      <th>Actions</th>
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="px-6 pb-6 text-dc1-text-secondary">Loading...</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Provider Email</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th>Admin Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyWithdrawals.map((withdrawal) => (
+                    <tr key={withdrawal.id}>
+                      <td className="text-sm text-dc1-text-primary">{withdrawal.provider_email || '—'}</td>
+                      <td className="font-semibold text-dc1-text-primary">{halalToSar(withdrawal.amount_halala)} SAR</td>
+                      <td>
+                        <StatusBadge status={statusBadge(withdrawal.status)} label={statusLabel(withdrawal.status)} />
+                      </td>
+                      <td className="text-xs text-dc1-text-secondary">
+                        {withdrawal.processed_at ? new Date(withdrawal.processed_at).toLocaleString() : '—'}
+                      </td>
+                      <td className="text-xs text-dc1-text-muted max-w-xs truncate">{withdrawal.admin_note || '—'}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {withdrawals.map((w) => (
-                      <tr key={w.id}>
-                        <td>
-                          <div className="font-medium text-sm">{w.provider_name || '—'}</div>
-                          <div className="text-xs text-dc1-text-muted">{w.provider_email || '—'}</div>
-                        </td>
-                        <td className="text-sm text-dc1-text-secondary">{w.provider_gpu_model || '—'}</td>
-                        <td className="font-semibold text-dc1-text-primary">{halalToSar(w.amount_halala)} SAR</td>
-                        <td className="font-mono text-xs text-dc1-text-secondary">{maskIban(w.iban)}</td>
-                        <td className="text-xs text-dc1-text-secondary">
-                          {w.created_at ? new Date(w.created_at).toLocaleDateString() : '—'}
-                        </td>
-                        <td>
-                          <span className={`text-xs font-medium ${daysWaiting(w.created_at) >= 3 ? 'text-red-400' : 'text-dc1-text-secondary'}`}>
-                            {daysWaiting(w.created_at)}d
-                          </span>
-                        </td>
-                        <td>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handlePatch(w.id, 'processing')}
-                              disabled={actionLoading === w.id}
-                              className="text-xs px-2.5 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 font-medium"
-                            >
-                              {actionLoading === w.id ? '...' : 'Approve → Processing'}
-                            </button>
-                            <button
-                              onClick={() => { setRejectModal(w); setRejectReason('') }}
-                              className="text-xs px-2.5 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 font-medium"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {withdrawals.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="text-center text-dc1-text-muted py-10">
-                          No pending withdrawal requests
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              ) : (
-                /* ── All withdrawals tab ── */
-                <table className="table">
-                  <thead>
+                  ))}
+                  {historyWithdrawals.length === 0 && (
                     <tr>
-                      <th>Provider</th>
-                      <th>Amount</th>
-                      <th>IBAN</th>
-                      <th>Status</th>
-                      <th>Admin Note</th>
-                      <th>Processed</th>
-                      <th>Actions</th>
+                      <td colSpan={5} className="text-center text-dc1-text-muted py-10">
+                        No completed or rejected withdrawals in the last 30 days
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {withdrawals.map((w) => (
-                      <tr key={w.id}>
-                        <td>
-                          <div className="font-medium text-sm">{w.provider_name || '—'}</div>
-                          <div className="text-xs text-dc1-text-muted">{w.provider_email || '—'}</div>
-                        </td>
-                        <td className="font-semibold text-dc1-text-primary">{halalToSar(w.amount_halala)} SAR</td>
-                        <td className="font-mono text-xs text-dc1-text-secondary">{maskIban(w.iban)}</td>
-                        <td>
-                          <StatusBadge
-                            status={statusBadgeMap[w.status] || 'pending'}
-                            label={w.status}
-                          />
-                        </td>
-                        <td className="text-xs text-dc1-text-muted max-w-xs truncate">
-                          {w.admin_note || '—'}
-                        </td>
-                        <td className="text-xs text-dc1-text-secondary">
-                          {w.processed_at ? new Date(w.processed_at).toLocaleDateString() : '—'}
-                        </td>
-                        <td>
-                          {w.status === 'processing' && (
-                            <button
-                              onClick={() => handlePatch(w.id, 'paid')}
-                              disabled={actionLoading === w.id}
-                              className="text-xs px-2.5 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 disabled:opacity-50 font-medium"
-                            >
-                              {actionLoading === w.id ? '...' : 'Mark as Paid'}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {withdrawals.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="text-center text-dc1-text-muted py-10">
-                          No withdrawal requests
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Reject modal */}
       {rejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-dc1-surface-l1 border border-dc1-border rounded-xl p-6 w-full max-w-md shadow-xl">
             <h2 className="text-lg font-bold text-dc1-text-primary mb-1">Reject Withdrawal</h2>
             <p className="text-sm text-dc1-text-secondary mb-4">
-              Rejecting <span className="font-mono text-dc1-amber">{halalToSar(rejectModal.amount_halala)} SAR</span> for{' '}
-              <span className="font-medium text-dc1-text-primary">{rejectModal.provider_email}</span>.
-              The balance will be refunded to their account.
+              Enter a reason for rejecting this withdrawal request.
             </p>
+
             <label className="block text-sm font-medium text-dc1-text-primary mb-2">
-              Rejection reason <span className="text-red-400">*</span>
+              Reason <span className="text-red-400">*</span>
             </label>
             <textarea
               rows={3}
-              placeholder="e.g. Invalid IBAN format, please re-submit with correct details"
+              placeholder="Reason for rejection"
               value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
+              onChange={(event) => setRejectReason(event.target.value)}
               className="input w-full text-sm resize-none mb-4"
             />
-            {errorMsg && (
-              <p className="text-sm text-red-400 mb-3">{errorMsg}</p>
-            )}
+
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => { setRejectModal(null); setRejectReason(''); setErrorMsg('') }}
+                onClick={() => {
+                  setRejectModal(null)
+                  setRejectReason('')
+                  setErrorMsg('')
+                }}
                 className="px-4 py-2 text-sm rounded bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary border border-dc1-border"
               >
                 Cancel
               </button>
               <button
                 onClick={() => {
-                  if (!rejectReason.trim()) { setErrorMsg('Rejection reason is required'); return }
-                  handlePatch(rejectModal.id, 'failed', rejectReason.trim())
+                  if (!rejectReason.trim()) {
+                    setErrorMsg('Rejection reason is required')
+                    return
+                  }
+                  handlePatch(rejectModal.id, 'rejected', rejectReason.trim())
                 }}
                 disabled={actionLoading === rejectModal.id}
                 className="px-4 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 font-medium"

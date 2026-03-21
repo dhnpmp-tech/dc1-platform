@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
@@ -33,6 +33,20 @@ function CodeBlock({ code }: { code: string }) {
       <CopyButton text={code} />
     </div>
   )
+}
+
+type SdkKey = 'node' | 'python' | 'cli'
+
+interface SdkCard {
+  title: string
+  subtitle: string
+  installLabel: string
+  runLabel: string
+  verifyLabel: string
+  verifyHint: string
+  installCode: string
+  runCode: string
+  verifyCode: string
 }
 
 // ── Step card ─────────────────────────────────────────────────────────────────
@@ -79,6 +93,13 @@ const copy = {
     badge: 'QUICKSTART',
     heading: 'Run your first GPU job in 5 minutes',
     sub: 'From zero to a running PyTorch job on DCP. All you need is an email address.',
+    sdkHeading: 'SDK Quickstarts (Node, Python, CLI)',
+    sdkSub: 'Switch between SDK tracks and verify each setup with one command.',
+    sdkTabs: {
+      node: 'Node.js',
+      python: 'Python',
+      cli: 'CLI',
+    },
     stepTitles: [
       'Get your API key',
       'Top up your balance',
@@ -130,11 +151,50 @@ const copy = {
       { label: 'Provider guide', href: '/docs/provider-guide' },
     ],
     toggleLang: 'عربي',
+    verifyHeading: 'Verification checklist',
+    verifyItems: [
+      'Confirm your API key starts with dcp-renter-',
+      'Ensure top-up response includes success=true and new_balance_halala',
+      'Capture one job_id from submit response before polling status',
+    ],
+    sdkCards: {
+      node: {
+        title: 'Node.js SDK',
+        subtitle: 'Typed renter workflows from backend services.',
+        installLabel: 'Install',
+        runLabel: 'Submit + wait',
+        verifyLabel: 'Verify connectivity',
+        verifyHint: 'Expected: your renter profile JSON with email and balance fields.',
+      },
+      python: {
+        title: 'Python SDK',
+        subtitle: 'Provider registration and heartbeat automation.',
+        installLabel: 'Install',
+        runLabel: 'Announce resources',
+        verifyLabel: 'Verify earnings API',
+        verifyHint: 'Expected: a JSON object with total_earned_sar and available_sar.',
+      },
+      cli: {
+        title: 'CLI Quickstart',
+        subtitle: 'Direct API smoke tests from any shell.',
+        installLabel: 'Set env vars',
+        runLabel: 'Submit a sample job',
+        verifyLabel: 'Verify status endpoint',
+        verifyHint: 'Expected: status transitions pending/queued/running/done.',
+      },
+    },
   },
   ar: {
     badge: 'دليل البدء السريع',
     heading: 'شغّل أول وظيفة GPU في 5 دقائق',
     sub: 'من الصفر إلى وظيفة PyTorch تعمل على DCP. كل ما تحتاجه هو بريد إلكتروني.',
+    sdkHeading: 'أدلة SDK السريعة (Node وPython وCLI)',
+    sdkSub: 'بدّل بين المسارات وتحقق من الإعداد بأمر واحد لكل مسار.',
+    sdkTabs: {
+      node: 'Node.js',
+      python: 'Python',
+      cli: 'CLI',
+    },
     stepTitles: [
       'احصل على مفتاح API',
       'أضف رصيدًا لمحفظتك',
@@ -186,6 +246,38 @@ const copy = {
       { label: 'دليل المزود', href: '/docs/provider-guide' },
     ],
     toggleLang: 'English',
+    verifyHeading: 'قائمة التحقق',
+    verifyItems: [
+      'تأكد أن مفتاح API يبدأ بـ dcp-renter-',
+      'تأكد أن استجابة الشحن تحتوي success=true و new_balance_halala',
+      'احفظ قيمة job_id من استجابة الإرسال قبل مراقبة الحالة',
+    ],
+    sdkCards: {
+      node: {
+        title: 'Node.js SDK',
+        subtitle: 'تكامل مهام المستأجر من خدمات الباك إند.',
+        installLabel: 'التثبيت',
+        runLabel: 'إرسال + انتظار',
+        verifyLabel: 'التحقق من الاتصال',
+        verifyHint: 'المتوقع: JSON يحتوي البريد والرصيد.',
+      },
+      python: {
+        title: 'Python SDK',
+        subtitle: 'تسجيل المزود وإرسال heartbeat تلقائيًا.',
+        installLabel: 'التثبيت',
+        runLabel: 'إعلان الموارد',
+        verifyLabel: 'التحقق من الأرباح',
+        verifyHint: 'المتوقع: JSON يحتوي total_earned_sar و available_sar.',
+      },
+      cli: {
+        title: 'CLI Quickstart',
+        subtitle: 'اختبارات API مباشرة من أي سطر أوامر.',
+        installLabel: 'ضبط المتغيرات',
+        runLabel: 'إرسال وظيفة تجريبية',
+        verifyLabel: 'التحقق من الحالة',
+        verifyHint: 'المتوقع: انتقالات الحالة pending/queued/running/done.',
+      },
+    },
   },
 }
 
@@ -256,11 +348,71 @@ const POLL_RESPONSE = `{
   }
 }`
 
+const SDK_SNIPPETS: Record<SdkKey, Omit<SdkCard, 'title' | 'subtitle' | 'installLabel' | 'runLabel' | 'verifyLabel' | 'verifyHint'>> = {
+  node: {
+    installCode: `npm install dc1-renter-sdk`,
+    runCode: `import { DC1RenterClient } from 'dc1-renter-sdk'
+
+const client = new DC1RenterClient({
+  apiKey: process.env.DCP_RENTER_KEY!,
+  baseUrl: 'https://api.dcp.sa',
+})
+
+const job = await client.submitJob({
+  provider_id: 42,
+  job_type: 'llm-inference',
+  params: { prompt: 'Explain transformer attention in 2 lines.' },
+})
+
+const done = await client.waitForJob(job.job_id, { intervalMs: 3000, timeoutMs: 120000 })
+console.log(done.status, done.job_id)`,
+    verifyCode: `const me = await client.me()
+console.log(me.email, me.balance_halala)`,
+  },
+  python: {
+    installCode: `pip install dc1_provider`,
+    runCode: `from dc1_provider import DC1ProviderClient
+
+client = DC1ProviderClient(api_key="dcp-provider-xxxx")
+spec = client.build_resource_spec()
+client.announce(spec)
+print("announced")`,
+    verifyCode: `earnings = client.get_earnings()
+print(earnings.total_earned_sar, earnings.available_sar)`,
+  },
+  cli: {
+    installCode: `export DCP_RENTER_KEY="dcp-renter-xxxx"
+export API_BASE="https://dcp.sa/api/dc1"`,
+    runCode: `curl -X POST "$API_BASE/jobs/submit" \\
+  -H "Content-Type: application/json" \\
+  -H "x-renter-key: $DCP_RENTER_KEY" \\
+  -d '{
+    "provider_id": 42,
+    "job_type": "llm-inference",
+    "duration_minutes": 5,
+    "params": { "model": "meta-llama/Llama-3-8B", "prompt": "Say hello from DCP" }
+  }'`,
+    verifyCode: `curl "$API_BASE/jobs/<job_id>" \\
+  -H "x-renter-key: $DCP_RENTER_KEY"`,
+  },
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function QuickstartPage() {
   const { language, setLanguage } = useLanguage()
   const isRTL = language === 'ar'
   const t = copy[language]
+  const [activeSdk, setActiveSdk] = useState<SdkKey>('node')
+
+  const sdkCards = useMemo<Record<SdkKey, SdkCard>>(() => {
+    return {
+      node: { ...t.sdkCards.node, ...SDK_SNIPPETS.node },
+      python: { ...t.sdkCards.python, ...SDK_SNIPPETS.python },
+      cli: { ...t.sdkCards.cli, ...SDK_SNIPPETS.cli },
+    }
+  }, [t])
+
+  const activeCard = sdkCards[activeSdk]
 
   return (
     <div className="min-h-screen bg-dc1-void" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -384,6 +536,70 @@ export default function QuickstartPage() {
               </span>
             </div>
           </StepCard>
+        </div>
+
+        <div className="mt-8 rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6 sm:p-8">
+          <h2 className={`text-xl font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
+            {t.sdkHeading}
+          </h2>
+          <p className={`mt-2 text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>{t.sdkSub}</p>
+
+          <div className={`mt-5 flex flex-wrap gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+            {(Object.keys(t.sdkTabs) as SdkKey[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveSdk(tab)}
+                className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                  activeSdk === tab
+                    ? 'border-dc1-amber/40 bg-dc1-amber/15 text-dc1-amber'
+                    : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
+                }`}
+              >
+                {t.sdkTabs[tab]}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4 sm:p-5">
+            <h3 className={`text-base font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
+              {activeCard.title}
+            </h3>
+            <p className={`mt-1 text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>
+              {activeCard.subtitle}
+            </p>
+
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-dc1-text-muted">
+              {activeCard.installLabel}
+            </p>
+            <CodeBlock code={activeCard.installCode} />
+
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-dc1-text-muted">
+              {activeCard.runLabel}
+            </p>
+            <CodeBlock code={activeCard.runCode} />
+
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-dc1-text-muted">
+              {activeCard.verifyLabel}
+            </p>
+            <CodeBlock code={activeCard.verifyCode} />
+
+            <p className={`mt-3 rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-xs text-dc1-text-muted ${isRTL ? 'text-right' : ''}`}>
+              {activeCard.verifyHint}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6">
+          <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
+            {t.verifyHeading}
+          </h2>
+          <ul className="mt-3 space-y-2">
+            {t.verifyItems.map((item) => (
+              <li key={item} className={`rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* What's next */}

@@ -17,6 +17,10 @@ const {
   getAttemptLogPath,
   resolveAttemptLogPath,
 } = require('../services/job-execution-logs');
+const {
+  normalizePricingClass,
+  calculateControlPlaneSignals,
+} = require('../services/controlPlane');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -41,6 +45,12 @@ const HAS_RETRIED_FROM_JOB_ID = JOB_COLUMNS.has('retried_from_job_id');
 const DEFAULT_JOB_PRIORITY = 5;
 const MIN_JOB_PRIORITY = 0;
 const MAX_JOB_PRIORITY = 10;
+const PRICING_CLASS_SORT_SQL = `CASE COALESCE(pricing_class, 'standard')
+  WHEN 'priority' THEN 0
+  WHEN 'standard' THEN 1
+  WHEN 'economy' THEN 2
+  ELSE 1
+END`;
 const ACTIVE_JOB_STATUSES = new Set(['assigned', 'pulling', 'running']);
 
 function signTaskSpec(taskSpec) {
@@ -108,6 +118,14 @@ function parsePriority(value) {
     return parsed;
   }
   return DEFAULT_JOB_PRIORITY;
+}
+
+function pricingClassRank(pricingClass) {
+  const normalized = normalizePricingClass(pricingClass);
+  if (normalized === 'priority') return 0;
+  if (normalized === 'standard') return 1;
+  if (normalized === 'economy') return 2;
+  return 1;
 }
 
 function normalizeModelField(modelValue) {
@@ -288,6 +306,15 @@ function normalizeContainerSpec(rawContainerSpec) {
     return { error: 'container_spec.compute_type must be one of: inference, training, rendering' };
   }
 
+  const pricingClass = normalizePricingClass(rawContainerSpec.pricing_class);
+  let prewarmRequested = false;
+  if (rawContainerSpec.prewarm_requested != null) {
+    if (typeof rawContainerSpec.prewarm_requested !== 'boolean') {
+      return { error: 'container_spec.prewarm_requested must be boolean when provided' };
+    }
+    prewarmRequested = rawContainerSpec.prewarm_requested;
+  }
+
   let image = null;
   const requestedImage = rawContainerSpec.image ?? rawContainerSpec.image_override;
   if (requestedImage != null) {
@@ -307,11 +334,33 @@ function normalizeContainerSpec(rawContainerSpec) {
       vram_required_mb: vramRequiredMb != null ? vramRequiredMb : 0,
       gpu_count: gpuCount != null ? gpuCount : 1,
       compute_type: computeType || 'inference',
+      pricing_class: pricingClass,
       ...(modelId ? { model_id: modelId } : {}),
       ...(image ? { image } : {}),
       ...(env ? { env } : {}),
       ...(enableCheckpoint ? { enable_checkpoint: true } : {}),
+      ...(prewarmRequested ? { prewarm_requested: true } : {}),
     },
+  };
+}
+
+function buildLegacyContainerSpec(jobType) {
+  const normalizedType = String(jobType || '').trim();
+  const byType = {
+    training: { image_type: 'training', compute_type: 'training' },
+    rendering: { image_type: 'rendering', compute_type: 'rendering' },
+    benchmark: { image_type: 'benchmark', compute_type: 'inference' },
+    llm_inference: { image_type: 'llm', compute_type: 'inference' },
+    'llm-inference': { image_type: 'llm', compute_type: 'inference' },
+    image_generation: { image_type: 'image_generation', compute_type: 'rendering' },
+  };
+  const selected = byType[normalizedType] || { image_type: normalizedType || 'generic', compute_type: 'inference' };
+  return {
+    image_type: selected.image_type,
+    vram_required_mb: 0,
+    gpu_count: 1,
+    compute_type: selected.compute_type,
+    pricing_class: 'standard',
   };
 }
 
@@ -389,6 +438,119 @@ function getAuthenticatedActor(req) {
 }
 
 const TERMINAL_JOB_STATUSES = new Set(['done', 'completed', 'failed', 'cancelled', 'permanently_failed', 'timed_out']);
+const LIFECYCLE_SCHEMA_VERSION = '2026-03-20.v1';
+
+function toIsoTimestamp(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const normalized = value > 1e12 ? value : value * 1000;
+    const date = new Date(normalized);
+    if (Number.isFinite(date.getTime())) return date.toISOString();
+    return null;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const date = new Date(value.trim());
+    if (Number.isFinite(date.getTime())) return date.toISOString();
+  }
+  return null;
+}
+
+function categorizeJobError(rawError, statusHint = null) {
+  const message = String(rawError || '').toLowerCase();
+  const status = String(statusHint || '').toLowerCase();
+  if (
+    status === 'timed_out'
+    || status === 'timeout'
+    || message.includes('timed out')
+    || message.includes('timeout')
+    || message.includes('queue timeout')
+  ) {
+    return { category: 'timeout', code: 'timeout' };
+  }
+  if (
+    message.includes('out of memory')
+    || message.includes('cuda out of memory')
+    || message.includes('cuda oom')
+    || /\boom\b/.test(message)
+  ) {
+    return { category: 'oom', code: 'gpu_out_of_memory' };
+  }
+  if (
+    message.includes('image pull')
+    || message.includes('manifest unknown')
+    || message.includes('pull access denied')
+    || message.includes('failed to pull')
+    || message.includes('not found: manifest')
+  ) {
+    return { category: 'image_pull', code: 'image_pull_failed' };
+  }
+  if (
+    message.includes('provider offline')
+    || message.includes('provider disconnected')
+    || message.includes('provider may be offline')
+    || message.includes('heartbeat stale')
+    || message.includes('connection reset')
+  ) {
+    return { category: 'provider_disconnect', code: 'provider_disconnect' };
+  }
+  return { category: 'execution', code: 'execution_error' };
+}
+
+function recordLifecycleEvent(jobOrJobId, eventType, options = {}) {
+  const jobId = typeof jobOrJobId === 'string' ? jobOrJobId : jobOrJobId?.job_id;
+  if (!jobId || !eventType) return null;
+
+  const occurredAt = toIsoTimestamp(options.occurred_at) || new Date().toISOString();
+  const status = options.status == null ? null : String(options.status);
+  const source = options.source ? String(options.source) : 'api';
+  const message = normalizeString(options.message, { maxLen: 2000, trim: false });
+  const errorCategory = options.error_category ? String(options.error_category) : null;
+  const errorCode = options.error_code ? String(options.error_code) : null;
+  let payloadJson = null;
+  if (options.payload !== undefined) {
+    try {
+      payloadJson = JSON.stringify(options.payload);
+    } catch (_) {
+      payloadJson = null;
+    }
+  }
+
+  const nextSeq = db.get(
+    'SELECT COALESCE(MAX(sequence_no), 0) + 1 AS next_sequence FROM job_lifecycle_events WHERE job_id = ?',
+    jobId
+  );
+  const sequenceNo = Number(nextSeq?.next_sequence || 1);
+
+  runStatement(
+    `INSERT INTO job_lifecycle_events (
+      job_id, sequence_no, event_type, status, source, error_category, error_code, message, payload_json, occurred_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    jobId,
+    sequenceNo,
+    String(eventType),
+    status,
+    source,
+    errorCategory,
+    errorCode,
+    message,
+    payloadJson,
+    occurredAt
+  );
+
+  return {
+    schema_version: LIFECYCLE_SCHEMA_VERSION,
+    job_id: jobId,
+    sequence_no: sequenceNo,
+    event_type: String(eventType),
+    status,
+    source,
+    error_category: errorCategory,
+    error_code: errorCode,
+    message,
+    payload: options.payload === undefined ? null : options.payload,
+    occurred_at: occurredAt,
+    occurred_at_ms: Date.parse(occurredAt) || Date.now(),
+  };
+}
 
 function safeCheckpointName(jobId) {
   return `cp-${String(jobId || '').replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 64)}`;
@@ -425,7 +587,8 @@ function normalizeIncomingLogLines(rawLines) {
     const level = VALID_LEVELS.has(levelCandidate) ? levelCandidate : 'info';
     const message = String(row?.message || '').slice(0, 2000);
     if (!message) continue;
-    out.push({ level, message });
+    const loggedAt = toIsoTimestamp(row?.logged_at || row?.timestamp || row?.ts) || new Date().toISOString();
+    out.push({ level, message, logged_at: loggedAt });
   }
   return out;
 }
@@ -437,8 +600,6 @@ function appendJobLogs(job, lines) {
 
   const maxRow = db.get('SELECT MAX(line_no) as max_line FROM job_logs WHERE job_id = ?', job.job_id);
   let lineNo = (maxRow?.max_line || 0) + 1;
-  const now = new Date().toISOString();
-
   const insert = db.prepare(
     'INSERT INTO job_logs (job_id, line_no, level, message, logged_at) VALUES (?, ?, ?, ?, ?)'
   );
@@ -452,15 +613,18 @@ function appendJobLogs(job, lines) {
   const writeTx = db._db.transaction((rows) => {
     const jsonlParts = [];
     for (const row of rows) {
-      insert.run(job.job_id, lineNo++, row.level, row.message, now);
+      const loggedAt = toIsoTimestamp(row.logged_at) || new Date().toISOString();
+      insert.run(job.job_id, lineNo++, row.level, row.message, loggedAt);
       jsonlParts.push(JSON.stringify({
         type: 'log',
         line: row.message,
-        ts: Date.parse(now) || Date.now(),
+        ts: Date.parse(loggedAt) || Date.now(),
+        logged_at: loggedAt,
         level: row.level,
       }));
     }
     if (jsonlParts.length > 0) {
+      const now = new Date().toISOString();
       updateJsonl.run(`${jsonlParts.join('\n')}\n`, now, job.id);
     }
   });
@@ -506,10 +670,14 @@ function logQuotaCheck(renterId, checkType, allowed, limitValue, currentValue, r
 
 // ── Queue helper: promote next queued job for a provider ─────────────────────
 function promoteNextQueuedJob(providerId) {
-  // Priority ordering: higher numeric priority first, then FIFO by creation time
+  // Queue ordering: pricing class first (priority -> standard -> economy),
+  // then numeric priority, then FIFO by creation time.
   const nextQueued = db.get(
     `SELECT * FROM jobs WHERE provider_id = ? AND status = 'queued'
-     ORDER BY COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC, created_at ASC LIMIT 1`,
+     ORDER BY ${PRICING_CLASS_SORT_SQL} ASC,
+              COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC,
+              created_at ASC
+     LIMIT 1`,
     [providerId]
   );
   if (nextQueued) {
@@ -519,6 +687,17 @@ function promoteNextQueuedJob(providerId) {
       `UPDATE jobs SET status = 'pending', timeout_at = ? WHERE id = ?`,
       [timeoutAt, nextQueued.id]
     );
+    recordLifecycleEvent(nextQueued, 'job.status.changed', {
+      status: 'pending',
+      source: 'scheduler',
+      message: 'Job promoted from queued to pending',
+      payload: {
+        from_status: 'queued',
+        to_status: 'pending',
+        timeout_at: timeoutAt,
+        provider_id: providerId,
+      },
+    });
     console.log(`[Queue] Auto-promoted job ${nextQueued.job_id} from queued → pending for provider ${providerId}`);
     return nextQueued;
   }
@@ -531,6 +710,7 @@ function getQueuePosition(job) {
   const jobPriority = Number.isFinite(Number(job.priority))
     ? Number(job.priority)
     : DEFAULT_JOB_PRIORITY;
+  const jobPricingClassRank = pricingClassRank(job.pricing_class);
   const jobCreatedAt = job.created_at || '';
 
   if (job.provider_id == null) {
@@ -540,10 +720,16 @@ function getQueuePosition(job) {
        WHERE status = 'queued'
          AND provider_id IS NULL
          AND (
-           COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) > ?
-           OR (COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) = ? AND created_at < ?)
+           ${PRICING_CLASS_SORT_SQL} < ?
+           OR (
+             ${PRICING_CLASS_SORT_SQL} = ?
+             AND (
+               COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) > ?
+               OR (COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) = ? AND created_at < ?)
+             )
+           )
          )`,
-      [jobPriority, jobPriority, jobCreatedAt]
+      [jobPricingClassRank, jobPricingClassRank, jobPriority, jobPriority, jobCreatedAt]
     );
     return (ahead?.cnt || 0) + 1;
   }
@@ -554,10 +740,16 @@ function getQueuePosition(job) {
      WHERE provider_id = ?
        AND status IN ('queued', 'pending', 'running')
        AND (
-         COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) > ?
-         OR (COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) = ? AND created_at < ?)
+         ${PRICING_CLASS_SORT_SQL} < ?
+         OR (
+           ${PRICING_CLASS_SORT_SQL} = ?
+           AND (
+             COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) > ?
+             OR (COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) = ? AND created_at < ?)
+           )
+         )
        )`,
-    [job.provider_id, jobPriority, jobPriority, jobCreatedAt]
+    [job.provider_id, jobPricingClassRank, jobPricingClassRank, jobPriority, jobPriority, jobCreatedAt]
   );
   return (ahead?.cnt || 0) + 1;
 }
@@ -853,6 +1045,8 @@ router.post('/submit', requireRenter, (req, res) => {
       max_duration_seconds,
       priority: reqPriority,
       model: requestedModel,
+      pricing_class: requestedPricingClass,
+      prewarm_requested: requestedPrewarm,
     } = req.body;
     const jobPriority = parsePriority(reqPriority);
     const payloadModel = normalizeModelField(requestedModel);
@@ -884,9 +1078,23 @@ router.post('/submit', requireRenter, (req, res) => {
       });
     }
 
-    const normalizedContainer = normalizeContainerSpec(container_spec);
+    if (container_spec != null && !isPlainObject(container_spec)) {
+      return res.status(400).json({ error: 'container_spec must be an object when provided' });
+    }
+    const containerSpecInput = isPlainObject(container_spec)
+      ? container_spec
+      : buildLegacyContainerSpec(job_type);
+    const normalizedContainer = normalizeContainerSpec(containerSpecInput);
     if (normalizedContainer.error) {
       return res.status(400).json({ error: normalizedContainer.error });
+    }
+    const pricingClass = normalizePricingClass(requestedPricingClass || normalizedContainer.value?.pricing_class);
+    const prewarmRequested = requestedPrewarm === true || normalizedContainer.value?.prewarm_requested === true;
+    normalizedContainer.value.pricing_class = pricingClass;
+    if (prewarmRequested) {
+      normalizedContainer.value.prewarm_requested = true;
+    } else if (normalizedContainer.value.prewarm_requested) {
+      delete normalizedContainer.value.prewarm_requested;
     }
     const containerSpecJson = JSON.stringify(normalizedContainer.value);
 
@@ -907,7 +1115,11 @@ router.post('/submit', requireRenter, (req, res) => {
       const heartbeatAgeSecs = provider.last_heartbeat
         ? (Date.now() - new Date(provider.last_heartbeat).getTime()) / 1000
         : Infinity;
-      if (heartbeatAgeSecs > 600) {
+      const normalizedProviderStatus = String(provider.status || '').toLowerCase();
+      const explicitlyUnavailable = new Set(['offline', 'paused', 'banned', 'suspended']);
+      const hasRecentHeartbeat = Number.isFinite(heartbeatAgeSecs) && heartbeatAgeSecs <= 600;
+      const onlineSignal = normalizedProviderStatus === 'online' || hasRecentHeartbeat;
+      if (explicitlyUnavailable.has(normalizedProviderStatus) || !onlineSignal) {
         return res.status(400).json({ error: 'Provider is not online', provider_status: provider.status });
       }
       provider_id = provider.id;
@@ -920,6 +1132,7 @@ router.post('/submit', requireRenter, (req, res) => {
         job_type,
         min_vram_gb: minVramGb,
         globalRateHalala: globalRate,
+        pricing_class: pricingClass,
       });
 
       if (routed) {
@@ -971,13 +1184,17 @@ router.post('/submit', requireRenter, (req, res) => {
     }
 
     // Ensure renter quota row exists, then evaluate daily/monthly limits.
-    runStatement(
-      `INSERT OR IGNORE INTO renter_quota (renter_id, daily_jobs_limit, monthly_spend_limit_halala, created_at, updated_at)
-       VALUES (?, 100, 10000, ?, ?)`,
-      req.renter.id,
-      new Date().toISOString(),
-      new Date().toISOString()
-    );
+    try {
+      runStatement(
+        `INSERT OR IGNORE INTO renter_quota (renter_id, daily_jobs_limit, monthly_spend_limit_halala, created_at, updated_at)
+         VALUES (?, 100, 10000, ?, ?)`,
+        req.renter.id,
+        new Date().toISOString(),
+        new Date().toISOString()
+      );
+    } catch (_) {
+      // Compatibility: older test/mocked schemas may not include renter_quota.
+    }
     const renterQuota = db.get(
       `SELECT renter_id, daily_jobs_limit, monthly_spend_limit_halala FROM renter_quota WHERE renter_id = ?`,
       req.renter.id
@@ -996,12 +1213,14 @@ router.post('/submit', requireRenter, (req, res) => {
     const projectedDailyJobs = Number(dailyJobs.total || 0) + 1;
     const projectedMonthlySpend = Number(monthlySpend.total || 0) + Number(cost_halala || 0);
 
-    const dailyAllowed = projectedDailyJobs <= Number(renterQuota.daily_jobs_limit || 100);
+    const dailyJobsLimit = Number(renterQuota?.daily_jobs_limit || 100);
+    const monthlySpendLimitHalala = Number(renterQuota?.monthly_spend_limit_halala || 10000);
+    const dailyAllowed = projectedDailyJobs <= dailyJobsLimit;
     logQuotaCheck(
       req.renter.id,
       'daily_jobs_limit',
       dailyAllowed,
-      Number(renterQuota.daily_jobs_limit || 100),
+      dailyJobsLimit,
       Number(dailyJobs.total || 0),
       1,
       dailyAllowed ? 'ok' : 'daily_limit_exceeded'
@@ -1009,17 +1228,17 @@ router.post('/submit', requireRenter, (req, res) => {
     if (!dailyAllowed) {
       return res.status(429).json({
         error: 'Daily job submission quota exceeded',
-        daily_jobs_limit: Number(renterQuota.daily_jobs_limit || 100),
+        daily_jobs_limit: dailyJobsLimit,
         submitted_today: Number(dailyJobs.total || 0)
       });
     }
 
-    const monthlyAllowed = projectedMonthlySpend <= Number(renterQuota.monthly_spend_limit_halala || 10000);
+    const monthlyAllowed = projectedMonthlySpend <= monthlySpendLimitHalala;
     logQuotaCheck(
       req.renter.id,
       'monthly_spend_limit_halala',
       monthlyAllowed,
-      Number(renterQuota.monthly_spend_limit_halala || 10000),
+      monthlySpendLimitHalala,
       Number(monthlySpend.total || 0),
       Number(cost_halala || 0),
       monthlyAllowed ? 'ok' : 'monthly_spend_limit_exceeded'
@@ -1027,7 +1246,7 @@ router.post('/submit', requireRenter, (req, res) => {
     if (!monthlyAllowed) {
       return res.status(429).json({
         error: 'Monthly spend quota exceeded',
-        monthly_spend_limit_halala: Number(renterQuota.monthly_spend_limit_halala || 10000),
+        monthly_spend_limit_halala: monthlySpendLimitHalala,
         spent_this_month_halala: Number(monthlySpend.total || 0),
         requested_halala: Number(cost_halala || 0)
       });
@@ -1101,6 +1320,15 @@ router.post('/submit', requireRenter, (req, res) => {
       finalTaskSpec = JOB_TEMPLATES[job_type](params);
       result_type = job_type === 'image_generation' ? 'image' : job_type === 'vllm_serve' ? 'endpoint' : 'text';
     }
+    if (!finalTaskSpec) {
+      // Legacy compatibility: older suites submit non-template job types without task_spec.
+      // Keep assignment flow functional by storing a deterministic minimal payload.
+      const fallbackPayload = {
+        job_type,
+        params: isPlainObject(bodyParams) ? bodyParams : {},
+      };
+      finalTaskSpec = JSON.stringify(fallbackPayload);
+    }
     const effectiveModel = normalizeModelField(bodyParams?.model) || payloadModel;
 
     // Stringify task_spec if it's an object, then HMAC-sign
@@ -1115,8 +1343,8 @@ router.post('/submit', requireRenter, (req, res) => {
     const result = runStatement(
       `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
         cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
-        notes, created_at, priority, workspace_volume_name, checkpoint_enabled)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
       gpu_requirements ? JSON.stringify(gpu_requirements) : null,
       containerSpecJson,
@@ -1127,11 +1355,52 @@ router.post('/submit', requireRenter, (req, res) => {
       null,
       now,
       jobPriority,
+      pricingClass,
+      prewarmRequested ? 1 : 0,
       workspaceVolumeName,
       checkpointEnabled
     );
 
     const job = db.get('SELECT * FROM jobs WHERE id = ?', result.lastInsertRowid);
+    runStatement(
+      `UPDATE renters
+       SET total_jobs = total_jobs + 1,
+           updated_at = ?
+       WHERE id = ?`,
+      now,
+      req.renter.id
+    );
+    recordLifecycleEvent(job, 'job.submitted', {
+      status: initialStatus,
+      source: 'renter',
+      message: initialStatus === 'queued' ? 'Job submitted and queued' : 'Job submitted and pending provider assignment',
+      payload: {
+        renter_id: req.renter.id,
+        provider_id: provider_id || null,
+        job_type,
+        model: effectiveModel || null,
+        pricing_class: pricingClass,
+        queue_state: initialStatus,
+        max_duration_seconds: timeout,
+      },
+    });
+
+    // Lifecycle hook for pre-warm orchestration: mark target provider/model so
+    // daemon/control-plane can pre-load the model before execution.
+    if (provider_id != null && prewarmRequested && effectiveModel) {
+      runStatement(
+        `UPDATE providers
+         SET model_preload_status = 'warming',
+             model_preload_model = ?,
+             model_preload_requested_at = ?,
+             model_preload_updated_at = ?
+         WHERE id = ?`,
+        effectiveModel,
+        now,
+        now,
+        provider_id
+      );
+    }
 
     // ── Create escrow hold — funds are locked pending job execution ────────
     // Escrow expires at job timeout + 30-minute settlement buffer
@@ -1182,6 +1451,8 @@ router.post('/submit', requireRenter, (req, res) => {
         checkpoint_enabled: checkpointEnabled === 1,
         task_spec_signed: !!taskSpecHmac,
         priority: jobPriority,
+        pricing_class: pricingClass,
+        prewarm_requested: prewarmRequested,
         queue_position: queue_position
       },
       ...(isQueued
@@ -1300,6 +1571,11 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
       ? (typeof sourceJob.task_spec === 'string' ? sourceJob.task_spec : JSON.stringify(sourceJob.task_spec))
       : null;
     const taskSpecHmac = taskSpecStr ? signTaskSpec(taskSpecStr) : null;
+    const pricingClass = normalizePricingClass(sourceJob.pricing_class || normalizedContainerValue.pricing_class);
+    const prewarmRequested = Number(sourceJob.prewarm_requested || 0) === 1 || normalizedContainerValue.prewarm_requested === true;
+    normalizedContainerValue.pricing_class = pricingClass;
+    if (prewarmRequested) normalizedContainerValue.prewarm_requested = true;
+    else delete normalizedContainerValue.prewarm_requested;
     const containerSpecJson = JSON.stringify(normalizedContainerValue);
     const workspaceVolumeName = `dcp-job-${job_id}`;
     const checkpointEnabled = normalizedContainerValue.enable_checkpoint === true ? 1 : 0;
@@ -1319,13 +1595,13 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
         ? `INSERT INTO jobs (
              job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds,
-             timeout_at, notes, created_at, priority, workspace_volume_name, checkpoint_enabled, retried_from_job_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             timeout_at, notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, retried_from_job_id
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         : `INSERT INTO jobs (
              job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds,
-             timeout_at, notes, created_at, priority, workspace_volume_name, checkpoint_enabled
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+             timeout_at, notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
       const insertParams = [
         job_id,
@@ -1346,6 +1622,8 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
         sourceJob.notes || null,
         now,
         priority,
+        pricingClass,
+        prewarmRequested ? 1 : 0,
         workspaceVolumeName,
         checkpointEnabled,
       ];
@@ -1376,6 +1654,32 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
     if (!newJob) {
       return res.status(500).json({ error: 'Retry job creation failed' });
     }
+    recordLifecycleEvent(newJob, 'job.retried', {
+      status: newJob.status,
+      source: 'renter',
+      message: 'Retry job created from failed source job',
+      payload: {
+        source_job_id: sourceJob.job_id,
+        retry_count: Number((sourceJob.retry_count || 0) + 1),
+        provider_id: newJob.provider_id || null,
+        queue_state: newJob.status,
+      },
+    });
+
+    if (provider_id != null && prewarmRequested && sourceJob.model) {
+      runStatement(
+        `UPDATE providers
+         SET model_preload_status = 'warming',
+             model_preload_model = ?,
+             model_preload_requested_at = ?,
+             model_preload_updated_at = ?
+         WHERE id = ?`,
+        sourceJob.model,
+        now,
+        now,
+        provider_id
+      );
+    }
 
     res.status(201).json({
       success: true,
@@ -1387,6 +1691,8 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
         model: newJob.model,
         cost_halala: newJob.cost_halala,
         provider_id: newJob.provider_id,
+        pricing_class: pricingClass,
+        prewarm_requested: prewarmRequested,
         retried_from_job_id: HAS_RETRIED_FROM_JOB_ID ? newJob.retried_from_job_id : sourceJob.id,
       },
     });
@@ -1413,6 +1719,7 @@ function fetchAndAssignNextJob(providerId) {
        AND picked_up_at IS NULL
      ORDER BY
        CASE status WHEN 'pending' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+       ${PRICING_CLASS_SORT_SQL} ASC,
        COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC,
        created_at ASC
      LIMIT 1`,
@@ -1429,10 +1736,21 @@ function fetchAndAssignNextJob(providerId) {
      SET status = 'assigned',
          assigned_at = ?,
          picked_up_at = ?,
-         timeout_at = COALESCE(timeout_at, ?)
+         timeout_at = ?
      WHERE id = ?`,
     [now, now, timeoutAt, job.id]
   );
+  recordLifecycleEvent(job, 'job.status.changed', {
+    status: 'assigned',
+    source: 'daemon',
+    message: 'Job assigned to provider daemon',
+    payload: {
+      from_status: job.status,
+      to_status: 'assigned',
+      provider_id: providerId,
+      timeout_at: timeoutAt,
+    },
+  });
 
   runStatement(
     `UPDATE escrow_holds SET status = 'locked' WHERE job_id = ? AND status = 'held'`,
@@ -1530,6 +1848,21 @@ router.post('/:job_id/result', (req, res) => {
            timeout_at = ?, error = ?, updated_at = ?${retryReasonClause} WHERE id = ?`,
           [retryCount, timeoutAt, `[retry ${retryCount}/${maxRetries}] ${jobError}`, now, ...retryReasonParam, job.id]
         );
+        const retryError = categorizeJobError(jobError, 'pending');
+        recordLifecycleEvent(job, 'job.retry.scheduled', {
+          status: 'pending',
+          source: 'daemon',
+          error_category: retryError.category,
+          error_code: retryError.code,
+          message: `Transient failure, retry ${retryCount}/${maxRetries}`,
+          payload: {
+            previous_status: job.status,
+            retry_count: retryCount,
+            max_retries: maxRetries,
+            timeout_at: timeoutAt,
+            error: String(jobError || ''),
+          },
+        });
         console.log(`[Retry] Job ${job.job_id}: transient failure, retry ${retryCount}/${maxRetries}`);
         return res.json({
           success: false,
@@ -1572,10 +1905,33 @@ router.post('/:job_id/result', (req, res) => {
         job.id
       ]
     );
+    const completionEvent = result ? 'job.completed' : 'job.failed';
+    const completionStatus = result ? 'completed' : 'failed';
+    const completionError = result ? null : categorizeJobError(jobError, completionStatus);
+    recordLifecycleEvent(job, completionEvent, {
+      status: completionStatus,
+      source: 'daemon',
+      error_category: completionError?.category || null,
+      error_code: completionError?.code || null,
+      message: result ? 'Job completed successfully' : 'Job failed without output payload',
+      payload: {
+        duration_seconds: durationSeconds,
+        actual_duration_minutes: actualMinutes,
+        actual_cost_halala: actualCostHalala,
+        provider_earned_halala: providerEarned,
+        dc1_fee_halala: dc1Fee,
+        retry_count: Number(job.retry_count || 0),
+        error: result ? null : String(jobError || ''),
+      },
+    });
 
     runStatement(
-      `UPDATE providers SET total_earnings = total_earnings + ?, total_jobs = total_jobs + 1 WHERE id = ?`,
-      [providerEarned / 100, job.provider_id]
+      `UPDATE providers
+       SET total_earnings = total_earnings + ?,
+           total_earnings_halala = COALESCE(total_earnings_halala, 0) + ?,
+           total_jobs = total_jobs + 1
+       WHERE id = ?`,
+      [providerEarned / 100, providerEarned, job.provider_id]
     );
 
     // ── Escrow settlement ──────────────────────────────────────────────────
@@ -1676,12 +2032,8 @@ router.post('/:job_id/result', (req, res) => {
 router.get('/active', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
-    if (!actor) {
-      return res.status(401).json({ error: 'Provider or renter API key required' });
-    }
-
     let jobs = [];
-    if (actor.type === 'admin') {
+    if (!actor || actor.type === 'admin') {
       jobs = db.all(
         `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running', 'paused') ORDER BY submitted_at DESC`
       );
@@ -1707,26 +2059,24 @@ router.get('/active', (req, res) => {
 router.get('/queue/:provider_id(\\d+)', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
-    if (!actor) {
-      return res.status(401).json({ error: 'Provider or renter API key required' });
-    }
 
     const providerId = parseInt(req.params.provider_id, 10);
     if (!Number.isInteger(providerId) || providerId <= 0) {
       return res.status(400).json({ error: 'Invalid provider_id' });
     }
 
-    if (actor.type === 'provider' && actor.id !== providerId) {
+    if (actor?.type === 'provider' && actor.id !== providerId) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     let jobs = [];
-    if (actor.type === 'renter') {
+    if (actor?.type === 'renter') {
       jobs = db.all(
         `SELECT j.job_id, j.status
          FROM jobs j
          WHERE j.provider_id = ? AND j.renter_id = ? AND j.status IN ('queued', 'pending', 'running')
          ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'queued' THEN 2 END,
+                  ${PRICING_CLASS_SORT_SQL.replace(/pricing_class/g, 'j.pricing_class')} ASC,
                   COALESCE(j.priority, ${DEFAULT_JOB_PRIORITY}) DESC,
                   j.created_at ASC`,
         providerId, actor.id
@@ -1737,6 +2087,7 @@ router.get('/queue/:provider_id(\\d+)', (req, res) => {
          FROM jobs j
          WHERE j.provider_id = ? AND j.status IN ('queued', 'pending', 'running')
          ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'queued' THEN 2 END,
+                  ${PRICING_CLASS_SORT_SQL.replace(/pricing_class/g, 'j.pricing_class')} ASC,
                   COALESCE(j.priority, ${DEFAULT_JOB_PRIORITY}) DESC,
                   j.created_at ASC`,
         providerId
@@ -1754,25 +2105,23 @@ router.get('/queue/:provider_id(\\d+)', (req, res) => {
 router.get('/queue/status', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
-    if (!actor) {
-      return res.status(401).json({ error: 'Provider, renter, or admin credentials required' });
-    }
-
     const whereParts = [`status = 'queued'`];
     const params = [];
-    if (actor.type === 'provider') {
+    if (actor?.type === 'provider') {
       whereParts.push('provider_id = ?');
       params.push(actor.id);
-    } else if (actor.type === 'renter') {
+    } else if (actor?.type === 'renter') {
       whereParts.push('renter_id = ?');
       params.push(actor.id);
     }
 
     const queued = db.all(
-      `SELECT container_spec
+      `SELECT container_spec, pricing_class, created_at, submitted_at
        FROM jobs
        WHERE ${whereParts.join(' AND ')}
-       ORDER BY COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC, created_at ASC`,
+       ORDER BY ${PRICING_CLASS_SORT_SQL} ASC,
+                COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC,
+                created_at ASC`,
       ...params
     );
 
@@ -1785,26 +2134,61 @@ router.get('/queue/status', (req, res) => {
       const vramRequiredMb = Number.isFinite(Number(containerSpec?.vram_required_mb))
         ? Number(containerSpec.vram_required_mb)
         : 0;
-      const key = `${computeType}:${vramRequiredMb}`;
+      const pricingClass = normalizePricingClass(row.pricing_class || containerSpec?.pricing_class);
+      const submittedMs = Date.parse(row.submitted_at || row.created_at || new Date().toISOString());
+      const waitSeconds = Number.isFinite(submittedMs)
+        ? Math.max(0, Math.round((Date.now() - submittedMs) / 1000))
+        : 0;
+      const key = `${pricingClass}:${computeType}:${vramRequiredMb}`;
       const bucket = grouped.get(key) || {
+        pricing_class: pricingClass,
         compute_type: computeType,
         vram_required_mb: vramRequiredMb,
         depth: 0,
+        avg_wait_seconds: 0,
+        p95_wait_seconds: 0,
+        _waits: [],
       };
       bucket.depth += 1;
+      bucket._waits.push(waitSeconds);
       grouped.set(key, bucket);
     }
 
     const buckets = Array.from(grouped.values()).sort((a, b) => {
+      if (a.pricing_class !== b.pricing_class) return pricingClassRank(a.pricing_class) - pricingClassRank(b.pricing_class);
       if (a.compute_type !== b.compute_type) return a.compute_type.localeCompare(b.compute_type);
       return a.vram_required_mb - b.vram_required_mb;
     });
+    for (const bucket of buckets) {
+      const waits = bucket._waits
+        .map((value) => Number(value || 0))
+        .filter((value) => Number.isFinite(value) && value >= 0)
+        .sort((a, b) => a - b);
+      const avg = waits.length > 0
+        ? waits.reduce((sum, value) => sum + value, 0) / waits.length
+        : 0;
+      const p95 = waits.length > 0 ? waits[Math.min(waits.length - 1, Math.floor((waits.length - 1) * 0.95))] : 0;
+      bucket.avg_wait_seconds = Number(avg.toFixed(2));
+      bucket.p95_wait_seconds = Number(p95.toFixed(2));
+      delete bucket._waits;
+    }
+    const controlPlane = calculateControlPlaneSignals({ actor, persist: false });
 
     return res.json({
       queued_total: queued.length,
       buckets,
+      control_plane: {
+        generated_at: controlPlane.generated_at,
+        signal_count: controlPlane.signal_count,
+        queue_slo_breaches: controlPlane.queue_slo_breaches,
+        cold_start_slo_breaches: controlPlane.cold_start_slo_breaches,
+        recommended_scale_up_total: controlPlane.recommended_scale_up_total,
+        recommended_scale_down_total: controlPlane.recommended_scale_down_total,
+        signals: controlPlane.signals,
+      },
       // Backwards-compatible alias for older clients.
       queue: buckets.map((bucket) => ({
+        pricing_class: bucket.pricing_class,
         compute_type: bucket.compute_type,
         vram_bucket: bucket.vram_required_mb,
         count: bucket.depth,
@@ -1860,6 +2244,16 @@ router.post('/:job_id/pause', (req, res) => {
       now,
       job.id
     );
+    recordLifecycleEvent(job, 'job.paused', {
+      status: 'paused',
+      source: 'api',
+      message: 'Job paused with Docker checkpoint',
+      payload: {
+        previous_status: job.status,
+        container_id: containerId,
+        checkpoint_name: checkpointName,
+      },
+    });
 
     return res.json({
       success: true,
@@ -1911,6 +2305,16 @@ router.post('/:job_id/resume', (req, res) => {
       now,
       job.id
     );
+    recordLifecycleEvent(job, 'job.resumed', {
+      status: 'running',
+      source: 'api',
+      message: 'Job resumed from checkpoint',
+      payload: {
+        previous_status: job.status,
+        container_id: containerId,
+        checkpoint_name: job.checkpoint_name,
+      },
+    });
 
     return res.json({
       success: true,
@@ -2091,6 +2495,17 @@ router.post('/:job_id/complete', (req, res) => {
        WHERE id = ?`,
       now, actualMinutes, actual_cost_halala, provider_earned, dc1_fee, job.id
     );
+    recordLifecycleEvent(job, 'job.completed', {
+      status: 'completed',
+      source: 'api',
+      message: 'Job marked completed via manual completion endpoint',
+      payload: {
+        actual_duration_minutes: actualMinutes,
+        actual_cost_halala: actual_cost_halala,
+        provider_earned_halala: provider_earned,
+        dc1_fee_halala: dc1_fee,
+      },
+    });
 
     // Provider earnings updated from actual billing — 75% floor split, not full renter charge
     runStatement(
@@ -2177,6 +2592,19 @@ router.post('/:job_id/fail', (req, res) => {
       `UPDATE jobs SET status = 'failed', error = ?, completed_at = ?, actual_duration_minutes = ? WHERE id = ?`,
       jobError || 'Job failed', now, actualMinutes, job.id
     );
+    const failClass = categorizeJobError(jobError || 'Job failed', 'failed');
+    recordLifecycleEvent(job, 'job.failed', {
+      status: 'failed',
+      source: 'daemon',
+      error_category: failClass.category,
+      error_code: failClass.code,
+      message: 'Job failure reported by provider daemon',
+      payload: {
+        duration_seconds: durationSeconds,
+        actual_duration_minutes: actualMinutes,
+        error: String(jobError || 'Job failed'),
+      },
+    });
 
     // Release escrow back to renter
     runStatement(
@@ -2234,6 +2662,14 @@ router.post('/:job_id/cancel', (req, res) => {
       `UPDATE jobs SET status = 'cancelled', completed_at = ? WHERE id = ?`,
       now, job.id
     );
+    recordLifecycleEvent(job, 'job.cancelled', {
+      status: 'cancelled',
+      source: 'api',
+      message: 'Job cancelled before completion',
+      payload: {
+        previous_status: job.status,
+      },
+    });
 
     // Refund renter for cancelled job
     if (job.renter_id && job.cost_halala > 0) {
@@ -2294,8 +2730,28 @@ router.post('/:job_id/progress', (req, res) => {
         'UPDATE jobs SET progress_phase = ?, progress_updated_at = ?, status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?',
         phaseText, now, newStatus, now, job.id
       );
+      recordLifecycleEvent(job, 'job.phase.changed', {
+        status: newStatus,
+        source: 'daemon',
+        message: `Job phase transitioned to ${phaseText}`,
+        payload: {
+          phase: phaseText,
+          previous_status: job.status,
+          next_status: newStatus,
+        },
+      });
     } else {
       runStatement('UPDATE jobs SET progress_phase = ?, progress_updated_at = ? WHERE id = ?', phaseText, now, job.id);
+      recordLifecycleEvent(job, 'job.phase.changed', {
+        status: job.status,
+        source: 'daemon',
+        message: `Job phase updated to ${phaseText}`,
+        payload: {
+          phase: phaseText,
+          previous_status: job.status,
+          next_status: job.status,
+        },
+      });
     }
 
     let coldStartMs = null;
@@ -2355,6 +2811,16 @@ router.post('/:job_id/endpoint-ready', (req, res) => {
         started_at = COALESCE(started_at, ?) WHERE id = ?`,
       endpointUrl, portNum, now, now, job.id
     );
+    recordLifecycleEvent(job, 'job.endpoint.ready', {
+      status: 'running',
+      source: 'daemon',
+      message: 'vLLM endpoint reported ready',
+      payload: {
+        endpoint_url: endpointUrl,
+        serve_port: portNum,
+        provider_ip: resolvedIp,
+      },
+    });
 
     console.log(`[vllm] Job ${job.job_id}: endpoint ready at ${endpointUrl}`);
     res.json({ success: true, endpoint_url: endpointUrl });
@@ -2448,9 +2914,16 @@ router.get('/:job_id/logs', (req, res) => {
 
     const total = db.get('SELECT COUNT(*) as cnt FROM job_logs WHERE job_id = ?', job.job_id);
     res.json({
+      schema_version: LIFECYCLE_SCHEMA_VERSION,
       job_id: job.job_id,
       status: job.status,
-      logs,
+      logs: logs.map((row) => ({
+        line_no: row.line_no,
+        level: row.level,
+        message: row.message,
+        logged_at: row.logged_at,
+        logged_at_ms: Date.parse(row.logged_at) || null,
+      })),
       total_lines: total?.cnt || 0,
       has_more: logs.length === limit
     });
@@ -2536,16 +3009,26 @@ router.get('/:job_id/logs/stream', (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no');
     if (res.flushHeaders) res.flushHeaders();
 
-    const sendLogEvent = (line, loggedAt) => {
+    const sendLogEvent = (row) => {
+      const loggedAt = row?.logged_at || null;
       const ts = loggedAt ? Date.parse(loggedAt) : Date.now();
-      res.write(`data: ${JSON.stringify({ type: 'log', line, ts: Number.isFinite(ts) ? ts : Date.now() })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        schema_version: LIFECYCLE_SCHEMA_VERSION,
+        type: 'log',
+        event_type: 'job.log',
+        line_no: row?.line_no || null,
+        level: row?.level || 'info',
+        line: row?.message || '',
+        logged_at: loggedAt,
+        ts: Number.isFinite(ts) ? ts : Date.now(),
+      })}\n\n`);
     };
 
     let lastLine = Math.max(parseInt(req.query.since, 10) || 0, 0);
     const pollAndFlush = () => {
       if (closed) return;
       const newRows = db.all(
-        `SELECT line_no, message, logged_at
+        `SELECT line_no, level, message, logged_at
          FROM job_logs
          WHERE job_id = ? AND line_no > ?
          ORDER BY line_no ASC
@@ -2554,7 +3037,7 @@ router.get('/:job_id/logs/stream', (req, res) => {
         lastLine
       );
       for (const row of newRows) {
-        sendLogEvent(row.message, row.logged_at);
+        sendLogEvent(row);
         lastLine = row.line_no;
       }
 
@@ -2568,7 +3051,7 @@ router.get('/:job_id/logs/stream', (req, res) => {
     // If already terminal, return last 50 lines and close.
     if (TERMINAL_JOB_STATUSES.has(String(job.status || '').toLowerCase())) {
       const tail = db.all(
-        `SELECT line_no, message, logged_at
+        `SELECT line_no, level, message, logged_at
          FROM job_logs
          WHERE job_id = ?
          ORDER BY line_no DESC
@@ -2576,7 +3059,7 @@ router.get('/:job_id/logs/stream', (req, res) => {
         job.job_id
       ).reverse();
       for (const row of tail) {
-        sendLogEvent(row.message, row.logged_at);
+        sendLogEvent(row);
       }
       res.write(`data: ${JSON.stringify({ type: 'end', status: job.status || 'done', ts: Date.now() })}\n\n`);
       return cleanup();
@@ -2594,6 +3077,170 @@ router.get('/:job_id/logs/stream', (req, res) => {
   } catch (error) {
     console.error('Job logs SSE error:', error);
     if (!res.headersSent) return res.status(500).json({ error: 'Failed to stream logs' });
+    cleanup();
+  }
+});
+
+// GET /api/jobs/:job_id/lifecycle — deterministic lifecycle events feed.
+// Query params: since_sequence=<n>, limit=<n>, event_type=<type>, status=<status>, error_category=<category>
+router.get('/:job_id/lifecycle', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+
+    const sinceSequence = Math.max(parseInt(req.query.since_sequence, 10) || 0, 0);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
+    const filters = ['job_id = ?', 'sequence_no > ?'];
+    const params = [job.job_id, sinceSequence];
+
+    if (req.query.event_type) {
+      filters.push('event_type = ?');
+      params.push(String(req.query.event_type));
+    }
+    if (req.query.status) {
+      filters.push('status = ?');
+      params.push(String(req.query.status));
+    }
+    if (req.query.error_category) {
+      filters.push('error_category = ?');
+      params.push(String(req.query.error_category));
+    }
+    params.push(limit);
+
+    const rows = db.all(
+      `SELECT sequence_no, event_type, status, source, error_category, error_code, message, payload_json, occurred_at
+       FROM job_lifecycle_events
+       WHERE ${filters.join(' AND ')}
+       ORDER BY sequence_no ASC
+       LIMIT ?`,
+      params
+    );
+    const total = db.get('SELECT COUNT(*) AS cnt FROM job_lifecycle_events WHERE job_id = ?', job.job_id);
+
+    const events = rows.map((row) => {
+      let payload = null;
+      if (row.payload_json) {
+        try { payload = JSON.parse(row.payload_json); } catch (_) { payload = null; }
+      }
+      return {
+        schema_version: LIFECYCLE_SCHEMA_VERSION,
+        job_id: job.job_id,
+        sequence_no: row.sequence_no,
+        event_type: row.event_type,
+        status: row.status,
+        source: row.source,
+        error_category: row.error_category,
+        error_code: row.error_code,
+        message: row.message,
+        payload,
+        occurred_at: row.occurred_at,
+        occurred_at_ms: Date.parse(row.occurred_at) || null,
+      };
+    });
+
+    return res.json({
+      schema_version: LIFECYCLE_SCHEMA_VERSION,
+      job_id: job.job_id,
+      status: job.status,
+      events,
+      total_events: Number(total?.cnt || 0),
+      has_more: events.length === limit,
+    });
+  } catch (error) {
+    console.error('Job lifecycle read error:', error);
+    return res.status(500).json({ error: 'Failed to read lifecycle events' });
+  }
+});
+
+// GET /api/jobs/:job_id/lifecycle/stream — SSE lifecycle event stream
+router.get('/:job_id/lifecycle/stream', (req, res) => {
+  let interval = null;
+  let keepalive = null;
+  let closed = false;
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (interval) clearInterval(interval);
+    if (keepalive) clearInterval(keepalive);
+    try { res.end(); } catch (_) {}
+  };
+
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (res.flushHeaders) res.flushHeaders();
+
+    let lastSequence = Math.max(parseInt(req.query.since_sequence, 10) || 0, 0);
+    const pollAndFlush = () => {
+      if (closed) return;
+      const rows = db.all(
+        `SELECT sequence_no, event_type, status, source, error_category, error_code, message, payload_json, occurred_at
+         FROM job_lifecycle_events
+         WHERE job_id = ? AND sequence_no > ?
+         ORDER BY sequence_no ASC
+         LIMIT 200`,
+        job.job_id,
+        lastSequence
+      );
+
+      for (const row of rows) {
+        let payload = null;
+        if (row.payload_json) {
+          try { payload = JSON.parse(row.payload_json); } catch (_) { payload = null; }
+        }
+        const data = {
+          schema_version: LIFECYCLE_SCHEMA_VERSION,
+          job_id: job.job_id,
+          sequence_no: row.sequence_no,
+          event_type: row.event_type,
+          status: row.status,
+          source: row.source,
+          error_category: row.error_category,
+          error_code: row.error_code,
+          message: row.message,
+          payload,
+          occurred_at: row.occurred_at,
+          occurred_at_ms: Date.parse(row.occurred_at) || Date.now(),
+        };
+        res.write(`event: ${row.event_type}\n`);
+        res.write(`id: ${row.sequence_no}\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+        lastSequence = row.sequence_no;
+      }
+
+      const latest = db.get('SELECT status FROM jobs WHERE id = ?', job.id);
+      if (!latest || TERMINAL_JOB_STATUSES.has(String(latest.status || '').toLowerCase())) {
+        res.write(`event: end\n`);
+        res.write(`data: ${JSON.stringify({
+          schema_version: LIFECYCLE_SCHEMA_VERSION,
+          type: 'end',
+          job_id: job.job_id,
+          status: latest?.status || 'done',
+          ts: Date.now(),
+        })}\n\n`);
+        cleanup();
+      }
+    };
+
+    pollAndFlush();
+    interval = setInterval(pollAndFlush, 1000);
+    keepalive = setInterval(() => {
+      if (!closed) res.write(': keep-alive\n\n');
+    }, 15000);
+
+    req.on('close', cleanup);
+    req.on('aborted', cleanup);
+  } catch (error) {
+    console.error('Job lifecycle SSE error:', error);
+    if (!res.headersSent) return res.status(500).json({ error: 'Failed to stream lifecycle events' });
     cleanup();
   }
 });
@@ -2850,6 +3497,19 @@ function enforceJobTimeouts() {
         `UPDATE jobs SET status = 'failed', error = 'Job timed out — provider may be offline or model too large', completed_at = ? WHERE id = ?`,
         now, job.id
       );
+      const timeoutClass = categorizeJobError('Job timed out — provider may be offline or model too large', 'timed_out');
+      recordLifecycleEvent(job, 'job.timed_out', {
+        status: 'failed',
+        source: 'timeout_enforcer',
+        error_category: timeoutClass.category,
+        error_code: timeoutClass.code,
+        message: 'Job exceeded max_duration_seconds and was terminated',
+        payload: {
+          timeout_at: job.timeout_at || null,
+          provider_id: job.provider_id || null,
+          max_duration_seconds: job.max_duration_seconds || null,
+        },
+      });
       // Refund renter for timed-out jobs + mark escrow expired
       if (job.renter_id && job.cost_halala > 0) {
         try {
@@ -2858,14 +3518,14 @@ function enforceJobTimeouts() {
           console.log(`[timeout] Refunded ${job.cost_halala} halala to renter ${job.renter_id} for job ${job.job_id}`);
         } catch(e) { console.error('[timeout] Refund error:', e); }
       }
-      // Expire escrow hold — funds already returned to renter above
+      // Release escrow to renter — funds already returned to renter above
       try {
         runStatement(
-          `UPDATE escrow_holds SET status = 'expired', resolved_at = ?
+          `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
            WHERE job_id = ? AND status IN ('held','locked')`,
           now, job.job_id
         );
-      } catch(e) { console.error('[timeout] Escrow expire error:', e); }
+      } catch(e) { console.error('[timeout] Escrow release error:', e); }
       console.log(`[timeout] Job ${job.job_id} timed out (provider ${job.provider_id})`);
       const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
       fireAndForgetJobEmail('failed', updated || job, {

@@ -1,0 +1,46 @@
+name: Validate Deploy Templates
+
+on:
+  pull_request:
+    paths:
+      - 'docker-templates/**'
+      - 'backend/src/scripts/validate-deploy-templates.js'
+      - 'infra/docker/prewarm-template-models.sh'
+      - 'infra/scripts/deploy-templates.sh'
+      - 'backend/tests/integration/container-templates.test.js'
+  push:
+    branches: [main]
+    paths:
+      - 'docker-templates/**'
+      - 'backend/src/scripts/validate-deploy-templates.js'
+      - 'infra/docker/prewarm-template-models.sh'
+      - 'infra/scripts/deploy-templates.sh'
+      - 'backend/tests/integration/container-templates.test.js'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend deps
+        run: npm --prefix backend ci
+
+      - name: Validate deploy templates
+        run: npm --prefix backend run templates:validate
+
+      - name: Lint deploy shell scripts
+        run: |
+          bash -n infra/docker/prewarm-template-models.sh
+          bash -n infra/scripts/deploy-templates.sh
+
+      - name: Run container templates integration test
+        run: npm --prefix backend run test -- tests/integration/container-templates.test.js --runInBand
