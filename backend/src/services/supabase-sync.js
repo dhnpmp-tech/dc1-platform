@@ -290,7 +290,7 @@ async function syncRenter(renter) {
     await supabase.from('wallets').update(walletData).eq('id', walletId);
   } else {
     const { data: nw, error: wie } = await supabase
-      .from('wallets').insert({
+      .from('wallets').upsert({
         ...walletData, user_id: userId, created_at: new Date().toISOString()
       }).select('id').single();
     if (wie) throw new Error('Wallet insert failed: ' + wie.message);
@@ -356,10 +356,10 @@ async function syncProviderWallet(provider) {
     }
 
     const { data: nw, error: wie } = await supabase
-      .from('wallets').insert({
+      .from('wallets').upsert({
         ...walletData, user_id: userId, created_at: new Date().toISOString()
       }).select('id').single();
-    if (wie) throw new Error('Provider wallet insert failed: ' + wie.message);
+    if (wie) throw new Error('Provider wallet upsert failed: ' + wie.message);
     return { walletId: nw.id };
   }
 }
