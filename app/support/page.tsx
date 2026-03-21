@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage } from '../lib/i18n'
 
@@ -156,15 +157,7 @@ function SupportPageInner() {
 
   return (
     <div className="min-h-screen bg-dc1-void" dir={isRTL ? 'rtl' : 'ltr'}>
-      <header className="bg-dc1-surface-l1 border-b border-dc1-border">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <img src="/logo.svg" alt="DCP" className="h-8 w-auto" />
-            <span className="text-lg font-bold text-dc1-text-primary">DCP</span>
-          </Link>
-          <Link href="/login" className="text-sm text-dc1-amber hover:underline">{t('auth.sign_in')}</Link>
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('support.page_title')}</h1>
