@@ -6,6 +6,7 @@ const db = require('../db');
 const { COST_RATES } = require('./jobs');
 const { sendWelcomeEmail, sendDataExportReady } = require('../services/emailService');
 const { renterAccountDeletionLimiter, renterDataExportLimiter } = require('../middleware/rateLimiter');
+const { reconcileRenterByEmailFromSupabase } = require('../services/renter-identity-reconciliation');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -554,7 +555,7 @@ router.get('/balance', (req, res) => {
 });
 
 // POST /api/renters/login-email — Login with email instead of API key
-router.post('/login-email', loginEmailLimiter, (req, res) => {
+router.post('/login-email', loginEmailLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     const cleanEmail = normalizeEmail(email);
@@ -564,9 +565,18 @@ router.post('/login-email', loginEmailLimiter, (req, res) => {
     if (!renter) {
       // Also try case-insensitive
       renter = db.get('SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?', cleanEmail, 'active');
-      if (!renter) {
-        return res.status(404).json({ error: 'No renter account found with this email. Register first at /renter/register' });
+    }
+
+    // Runtime self-heal for Supabase-origin renters missing in SQLite.
+    if (!renter) {
+      const reconciliation = await reconcileRenterByEmailFromSupabase({ db, email: cleanEmail });
+      if (reconciliation.reconciled && reconciliation.renter?.status === 'active') {
+        renter = reconciliation.renter;
       }
+    }
+
+    if (!renter) {
+      return res.status(404).json({ error: 'No renter account found with this email. Register first at /renter/register' });
     }
 
     res.json({

@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
+    "renters:backfill": "node src/scripts/backfill-renters-from-supabase.js",
+    "renters:verify-login-email": "node src/scripts/verify-renter-login-email.js",
     "templates:validate": "node src/scripts/validate-deploy-templates.js",
     "test": "jest --runInBand",
     "test:integration": "jest tests/integration/ --runInBand",
