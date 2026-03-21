@@ -1,0 +1,45 @@
+---
+title: ALLaM 7B Instruct
+description: Arabic-first Saudi model guide for deployment on DCP.
+---
+
+## 1. What it is
+
+ALLaM 7B Instruct is a 7B-parameter Arabic-first instruction model from SDAIA/HUMAIN (model repo: `ALLaM-AI/ALLaM-7B-Instruct-preview`).
+
+## 2. What it does
+
+It is optimized for Arabic enterprise text workloads: assistant responses, summarization, and domain QA where Arabic quality is the top priority.
+
+## 3. How it compares
+
+- Versus Falcon H1 7B: similar class, usually choose ALLaM when Arabic nuance matters more than raw throughput.
+- Versus JAIS 13B: JAIS can score higher on difficult Arabic tasks but costs more GPU memory and latency.
+
+## 4. Best for on DCP
+
+- Arabic customer support copilots
+- Saudi public-sector and enterprise assistants
+- Arabic document understanding pipelines
+
+## 5. Hardware requirements on DCP
+
+- DCP floor: `min_vram_gb: 24` (Tier A in `infra/config/arabic-portfolio.json`)
+- Recommended providers: RTX 4090, A100 40GB+
+- Template: `vllm-serve` for OpenAI-compatible API serving
+
+## 6. How to run on DCP
+
+1. Submit a `vllm_serve` job with model `ALLaM-AI/ALLaM-7B-Instruct-preview`.
+2. Set `gpu_requirements.min_vram_gb` to `24`.
+3. Poll job output and endpoint readiness via `/api/jobs/:id/output` and `/api/jobs/:id/endpoint-ready`.
+
+## 7. Licensing and commercial-use notes
+
+ALLaM uses publisher-specific terms (not Apache/MIT). Confirm redistribution and commercial deployment rights directly from the model card terms before production launch.
+
+Sources:
+- https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview
+- /home/node/dc1-platform/infra/config/arabic-portfolio.json
+- /home/node/dc1-platform/backend/src/db.js
+

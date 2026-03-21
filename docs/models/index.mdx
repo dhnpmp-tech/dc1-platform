@@ -1,0 +1,31 @@
+---
+title: DCP Model Catalog
+description: English model docs for all supported DCP launch models and templates.
+order: 7
+---
+
+## DCP models at a glance
+
+Use this index to pick the right model before submitting a job with `POST /api/jobs/submit`.
+
+| Model | Params | Language support | License | Recommended GPU tier on DCP | DCP template |
+|---|---|---|---|---|---|
+| [ALLaM 7B Instruct](./allam-7b) | 7B | Arabic-first, bilingual | Custom ALLaM terms | Tier A (`>=24 GB`) | `vllm-serve` |
+| [Falcon H1 7B Instruct](./falcon-h1-7b) | 7B | Arabic + English | TII Falcon license | Tier A (`>=24 GB`) | `vllm-serve` |
+| [JAIS 13B Chat](./jais-13b) | 13B | Arabic + English | JAIS research/commercial terms | Tier A/B (`>=24 GB`) | `vllm-serve` |
+| [BGE-M3 Embeddings](./bge-m3) | Embedding encoder | 100+ languages incl. Arabic | MIT | Tier B (`>=8 GB`) | `arabic-embeddings` |
+| [BGE Reranker v2 M3](./bge-reranker-v2-m3) | Cross-encoder reranker | Multilingual incl. Arabic | MIT | Tier B (`>=8 GB`) | `arabic-reranker` |
+| [Stable Diffusion XL Base 1.0](./sdxl-base-1-0) | Diffusion checkpoint | Prompt-driven, multilingual text prompts | CreativeML Open RAIL++-M | Tier B (`>=16 GB`) | `stable-diffusion` |
+| [TinyLlama 1.1B Chat](./tinyllama-1-1b-chat) | 1.1B | Mostly English, usable bilingual prototyping | Apache-2.0 | Entry tier (`>=4 GB`, prefer 8 GB) | `ollama` |
+| [Phi-2](./phi-2) | 2.7B | English-first, limited Arabic utility | MIT | Entry tier (`>=6 GB`) | `llm-inference` |
+| [Mistral 7B Instruct v0.2](./mistral-7b-instruct-v0-2) | 7B | Strong bilingual instruction use | Apache-2.0 | Tier A (`>=16 GB`) | `vllm-serve` |
+| [Llama 3 8B Instruct](./llama-3-8b-instruct) | 8B | Strong multilingual incl. Arabic | Llama 3 community license | Tier A (`>=16 GB`) | `vllm-serve` |
+
+## GPU tier mapping used in these pages
+
+- Tier A: high-priority serving GPUs (`>=16 GB`, typically RTX 3090/4090 and above)
+- Tier B: add-on serving workloads (`8-16 GB`)
+- Tier C: frontier/on-demand large models (`>=80 GB`)
+
+These tiers follow `infra/config/arabic-portfolio.json` and DCP benchmark defaults in `backend/src/db.js`.
+

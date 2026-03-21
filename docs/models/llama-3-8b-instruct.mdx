@@ -1,0 +1,45 @@
+---
+title: Llama 3 8B Instruct
+description: General-purpose multilingual 8B model guide for DCP serving.
+---
+
+## 1. What it is
+
+Llama 3 8B Instruct (`meta-llama/Meta-Llama-3-8B-Instruct`) is Meta's 8B instruction model.
+
+## 2. What it does
+
+It offers strong general assistant performance for multilingual chat, coding help, and enterprise workflows.
+
+## 3. How it compares
+
+- Versus Mistral 7B: often chosen when you need stronger general reasoning quality at a similar hardware tier.
+- Versus Arabic-specialized models (ALLaM/JAIS): those may outperform on Arabic-domain benchmarks, while Llama 3 is broader general-purpose.
+
+## 4. Best for on DCP
+
+- General enterprise assistant APIs
+- Multilingual support workflows
+- Rapid prototyping of high-quality chat products
+
+## 5. Hardware requirements on DCP
+
+- DCP floor: `min_vram_gb: 16` (Tier A)
+- Recommended providers: RTX 3090/4090 and above
+- Template: `vllm-serve`
+
+## 6. How to run on DCP
+
+1. Use `job_type: "vllm_serve"`.
+2. Set `params.model: "meta-llama/Meta-Llama-3-8B-Instruct"`.
+3. Configure `max_model_len` and `dtype` based on your throughput target.
+
+## 7. Licensing and commercial-use notes
+
+Llama 3 models use Meta's custom Llama 3 community license. Confirm your commercial and redistribution rights against those terms before launch.
+
+Sources:
+- https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct
+- /home/node/dc1-platform/backend/src/routes/jobs.js
+- /home/node/dc1-platform/backend/src/db.js
+

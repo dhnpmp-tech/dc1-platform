@@ -1,0 +1,52 @@
+---
+title: دليل النماذج
+description: نظرة عامة مقارنة على نماذج DCP المدعومة مع توصيات GPU وقوالب التشغيل.
+order: 7
+---
+
+## الهدف من هذا الدليل
+
+هذه الصفحة تساعد فرق المنتجات والهندسة على اختيار النموذج المناسب حسب اللغة، الجودة، التكلفة، ومتطلبات GPU على منصة DCP.
+
+## جدول المقارنة
+
+| النموذج | المعلمات | دعم اللغات | الترخيص | GPU الموصى به | قالب DCP |
+|------|------:|------|------|------|------|
+| ALLaM 7B Instruct | 7B | العربية + الإنجليزية | Apache 2.0 | RTX 4090 / A100 40GB | `vllm-serve` |
+| Falcon H1 7B Instruct | 7B | متعدد اللغات (عربي قوي) | Falcon License (TII) | RTX 4090 / A100 40GB | `vllm-serve` |
+| JAIS 13B Chat | 13B | العربية + الإنجليزية | Apache 2.0 | RTX 4090 / A100 40GB | `vllm-serve` |
+| BGE-M3 | 0.57B | متعدد اللغات (استرجاع) | MIT | RTX 3090 / RTX 4090 | `arabic-embeddings` |
+| BGE Reranker v2 M3 | 0.57B class | متعدد اللغات (إعادة ترتيب) | MIT | RTX 3090 / RTX 4090 | `arabic-reranker` |
+| SDXL Base 1.0 | Diffusion | نص إلى صورة | OpenRAIL++ | RTX 4090 / A100 40GB | `stable-diffusion` |
+| TinyLlama 1.1B Chat | 1.1B | الإنجليزية + متعدد اللغات أساسي | Apache 2.0 | RTX 3060 / RTX 3090 | `ollama` |
+| Phi-2 | 2.7B | الإنجليزية (جيد للمنطق البرمجي) | MIT | RTX 3060 / RTX 3090 | `vllm-serve` |
+| Mistral 7B Instruct v0.2 | 7B | الإنجليزية + متعدد اللغات | Apache 2.0 | RTX 3090 / RTX 4090 | `vllm-serve` |
+| Llama 3 8B Instruct | 8B | العربية + الإنجليزية + متعدد اللغات | Llama 3 Community License | RTX 3090 / RTX 4090 | `vllm-serve` |
+| Qwen2 7B Instruct | 7B | العربية + الإنجليزية + متعدد اللغات | Apache 2.0 | RTX 3090 / RTX 4090 | `vllm-serve` |
+
+## تموضع نماذج العربية (ALLaM / Falcon / JAIS)
+
+- **ALLaM 7B**: خيار سعودي قوي للتطبيقات المؤسسية العربية الحساسة للجودة والسياق المحلي.
+- **Falcon H1 7B**: توازن ممتاز بين الجودة والسرعة لتطبيقات متعددة اللغات مع حضور عربي جيد.
+- **JAIS 13B**: أعلى جودة عربية في هذه الفئة عادة، مناسب لوكلاء خدمة العملاء والحلول المعرفية العربية.
+
+## سياسة اختيار سريعة
+
+1. إذا كانت الأولوية هي **الفهم العربي العميق**: ابدأ بـ `JAIS 13B` أو `ALLaM 7B`.
+2. إذا كانت الأولوية هي **الكمون والتكلفة**: استخدم `Falcon H1 7B` أو `Qwen2 7B`.
+3. إذا كان المنتج **RAG**: استخدم `BGE-M3` للتضمين + `BGE Reranker` لإعادة الترتيب.
+4. إذا كان المنتج **توليد صور**: استخدم `SDXL` مع GPU بذاكرة 16GB على الأقل.
+
+## صفحات النماذج
+
+- [ALLaM 7B](/docs/ar/models/allam-7b)
+- [Falcon H1 7B](/docs/ar/models/falcon-h1-7b)
+- [JAIS 13B](/docs/ar/models/jais-13b)
+- [BGE-M3](/docs/ar/models/bge-m3)
+- [BGE Reranker v2 M3](/docs/ar/models/bge-reranker-v2-m3)
+- [SDXL Base 1.0](/docs/ar/models/sdxl-base-1)
+- [TinyLlama 1.1B](/docs/ar/models/tinyllama-1-1b)
+- [Phi-2](/docs/ar/models/phi-2)
+- [Mistral 7B Instruct v0.2](/docs/ar/models/mistral-7b-instruct-v0-2)
+- [Llama 3 8B Instruct](/docs/ar/models/llama-3-8b-instruct)
+- [Qwen2 7B Instruct](/docs/ar/models/qwen2-7b-instruct)

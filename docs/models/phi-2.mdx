@@ -1,0 +1,45 @@
+---
+title: Phi-2
+description: Compact Microsoft language model guide for low-VRAM DCP workloads.
+---
+
+## 1. What it is
+
+Phi-2 (`microsoft/phi-2`) is a 2.7B-parameter causal language model from Microsoft.
+
+## 2. What it does
+
+It is designed for compact, efficient text generation and is useful for lightweight reasoning and coding-style prompts.
+
+## 3. How it compares
+
+- Versus TinyLlama: similar lightweight deployment class, often test both for prompt-specific quality.
+- Versus Mistral 7B and Llama 3 8B: significantly lower cost/VRAM but lower ceiling on complex tasks.
+
+## 4. Best for on DCP
+
+- Internal assistants under strict cost budgets
+- Lightweight text generation and classification
+- Dev/test staging workloads
+
+## 5. Hardware requirements on DCP
+
+- Runtime floor from DCP benchmarks/routes: `>=6 GB`
+- Recommended providers: 8 GB+ GPUs for stable batching
+- Template: `llm-inference` (`params.model` allowlist includes `microsoft/phi-2`)
+
+## 6. How to run on DCP
+
+1. Submit with `job_type: "llm-inference"`.
+2. Use `params.model: "microsoft/phi-2"`.
+3. Keep token budget and context modest for best latency on smaller GPUs.
+
+## 7. Licensing and commercial-use notes
+
+Phi-2 is published on Hugging Face with MIT license metadata; confirm your deployment and compliance requirements from the model card and organizational policy.
+
+Sources:
+- https://huggingface.co/microsoft/phi-2
+- /home/node/dc1-platform/backend/src/routes/jobs.js
+- /home/node/dc1-platform/backend/src/db.js
+

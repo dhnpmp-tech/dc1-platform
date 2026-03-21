@@ -1,0 +1,45 @@
+---
+title: BGE Reranker v2 M3
+description: Reranker model guide for Arabic retrieval quality uplift on DCP.
+---
+
+## 1. What it is
+
+BGE Reranker v2 M3 (`BAAI/bge-reranker-v2-m3`) is a multilingual cross-encoder reranker from BAAI.
+
+## 2. What it does
+
+It reranks candidate documents after retrieval to improve top-k precision in search and RAG.
+
+## 3. How it compares
+
+- Versus BGE-M3 embeddings: reranker is slower but higher quality for final ranking.
+- Versus using only ANN retrieval: reranker usually improves factual relevance on difficult Arabic queries.
+
+## 4. Best for on DCP
+
+- Second-stage ranking in Arabic RAG
+- Enterprise search relevance tuning
+- High-quality retrieval for legal/finance KBs
+
+## 5. Hardware requirements on DCP
+
+- DCP floor: `min_vram_gb: 8` (Tier B)
+- Recommended providers: 8 GB+ GPUs
+- Template: `arabic-reranker`
+
+## 6. How to run on DCP
+
+1. Start with template `arabic-reranker`.
+2. Use default model `BAAI/bge-reranker-v2-m3`.
+3. Adjust `TOP_K` and `MAX_SEQ_LEN` in template env vars based on workload.
+
+## 7. Licensing and commercial-use notes
+
+BGE reranker model card uses MIT. Commercial usage is usually allowed, but verify your compliance obligations for dataset and downstream application policy.
+
+Sources:
+- https://huggingface.co/BAAI/bge-reranker-v2-m3
+- /home/node/dc1-platform/docker-templates/arabic-reranker.json
+- /home/node/dc1-platform/infra/config/arabic-portfolio.json
+

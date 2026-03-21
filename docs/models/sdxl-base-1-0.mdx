@@ -1,0 +1,45 @@
+---
+title: Stable Diffusion XL Base 1.0
+description: SDXL image generation deployment guidance on DCP.
+---
+
+## 1. What it is
+
+SDXL Base 1.0 (`stabilityai/stable-diffusion-xl-base-1.0`) is a text-to-image diffusion model from Stability AI.
+
+## 2. What it does
+
+It generates high-quality images from prompts and is suited for creative, marketing, and prototyping workloads.
+
+## 3. How it compares
+
+- Versus SD 1.x: better composition and prompt fidelity, with higher VRAM and cold-start cost.
+- Versus LLMs: SDXL is image generation, not text reasoning/chat.
+
+## 4. Best for on DCP
+
+- Arabic and English marketing visuals
+- Concept art and product mockups
+- Batch image generation pipelines
+
+## 5. Hardware requirements on DCP
+
+- DCP floor: `min_vram_gb: 16` (Tier B diffusion profile)
+- Recommended providers: RTX 3090/4090 or better
+- Template: `stable-diffusion`
+
+## 6. How to run on DCP
+
+1. Use template `stable-diffusion`.
+2. Set `params.model` to `stabilityai/stable-diffusion-xl-base-1.0`.
+3. Include `steps`, `width`, `height`, and prompt in the job payload.
+
+## 7. Licensing and commercial-use notes
+
+SDXL model card publishes CreativeML Open RAIL++-M style terms with usage restrictions. Review the license and use restrictions before public or commercial deployment.
+
+Sources:
+- https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0
+- /home/node/dc1-platform/docker-templates/stable-diffusion.json
+- /home/node/dc1-platform/infra/config/arabic-portfolio.json
+

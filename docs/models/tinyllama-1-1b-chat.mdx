@@ -1,0 +1,45 @@
+---
+title: TinyLlama 1.1B Chat
+description: Ultra-lightweight chat model for low-cost prototyping on DCP.
+---
+
+## 1. What it is
+
+TinyLlama 1.1B Chat (`TinyLlama/TinyLlama-1.1B-Chat-v1.0`) is a small 1.1B instruction/chat model.
+
+## 2. What it does
+
+It supports low-cost experimentation, lightweight assistants, and simple text tasks on smaller GPUs.
+
+## 3. How it compares
+
+- Versus Mistral/Llama 3 8B: much cheaper and lighter, but lower reasoning quality.
+- Versus Phi-2: similar low-cost class; pick based on your prompt style and eval outcomes.
+
+## 4. Best for on DCP
+
+- Prototyping and dev/test APIs
+- Cost-sensitive internal tools
+- Simple classification and drafting
+
+## 5. Hardware requirements on DCP
+
+- Runtime floor in templates/routes: `>=4 GB` (prefer 8 GB for stable throughput)
+- Recommended providers: entry GPUs or any higher-tier machine
+- Template: `ollama` (or lightweight `llm-inference` jobs)
+
+## 6. How to run on DCP
+
+1. Use template `ollama` and keep `MODEL_ID=TinyLlama/TinyLlama-1.1B-Chat-v1.0`.
+2. For job API scripts, use `job_type: "llm-inference"` and set `params.model` to TinyLlama.
+3. Tune `max_tokens` low for best latency/cost.
+
+## 7. Licensing and commercial-use notes
+
+TinyLlama is released under Apache-2.0 in the model card, which is generally commercial-friendly with attribution/notice obligations.
+
+Sources:
+- https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0
+- /home/node/dc1-platform/docker-templates/ollama.json
+- /home/node/dc1-platform/backend/src/routes/jobs.js
+

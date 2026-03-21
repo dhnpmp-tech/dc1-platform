@@ -1,0 +1,45 @@
+---
+title: BGE-M3 Embeddings
+description: Embedding model guide for Arabic and multilingual retrieval on DCP.
+---
+
+## 1. What it is
+
+BGE-M3 (`BAAI/bge-m3`) is a multilingual embedding model from BAAI designed for dense, sparse, and multi-vector retrieval modes.
+
+## 2. What it does
+
+It turns text into vectors for semantic search and RAG retrieval, with broad language support including Arabic.
+
+## 3. How it compares
+
+- Versus general LLMs: lower cost and latency for retrieval tasks.
+- Versus rerankers: embeddings are the first-stage retriever; rerankers are usually second-stage quality boosters.
+
+## 4. Best for on DCP
+
+- Arabic document search
+- Hybrid RAG pipelines
+- Multilingual retrieval APIs
+
+## 5. Hardware requirements on DCP
+
+- DCP floor: `min_vram_gb: 8` (Tier B)
+- Recommended providers: 8 GB+ GPUs
+- Template: `arabic-embeddings`
+
+## 6. How to run on DCP
+
+1. Choose template `arabic-embeddings`.
+2. Keep `MODEL_ID=BAAI/bge-m3`.
+3. Tune `BATCH_SIZE` and `MAX_SEQ_LEN` from template env vars for your latency/throughput target.
+
+## 7. Licensing and commercial-use notes
+
+BGE-M3 is distributed under MIT in the model card. MIT is generally commercial-friendly, but still validate data and output compliance in your product domain.
+
+Sources:
+- https://huggingface.co/BAAI/bge-m3
+- /home/node/dc1-platform/docker-templates/arabic-embeddings.json
+- /home/node/dc1-platform/infra/config/arabic-portfolio.json
+

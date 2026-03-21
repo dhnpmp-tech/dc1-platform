@@ -1,0 +1,45 @@
+---
+title: JAIS 13B Chat
+description: High-accuracy Arabic conversational model guidance for DCP.
+---
+
+## 1. What it is
+
+JAIS 13B Chat (`inceptionai/jais-13b-chat`) is a 13B Arabic-centric conversational model developed in the UAE ecosystem.
+
+## 2. What it does
+
+It targets high-quality Arabic generation and enterprise chat use cases where quality is more important than minimum latency.
+
+## 3. How it compares
+
+- Versus ALLaM/Falcon 7B models: usually stronger Arabic answer quality at higher latency/cost.
+- Versus Llama 3 8B: often preferred when Arabic quality is the primary metric.
+
+## 4. Best for on DCP
+
+- Arabic enterprise chat
+- Policy/knowledge assistants with higher quality thresholds
+- Customer-facing Arabic support where accuracy matters more than speed
+
+## 5. Hardware requirements on DCP
+
+- DCP floor: `min_vram_gb: 24` (Tier B launch model, 24 GB class GPU)
+- Recommended providers: RTX 4090 or A100 40GB
+- Template: `vllm-serve`
+
+## 6. How to run on DCP
+
+1. Submit `vllm_serve` with `params.model: "inceptionai/jais-13b-chat"`.
+2. Set `gpu_requirements.min_vram_gb` to `24`.
+3. Keep warm/prewarmed placement enabled to reduce cold starts.
+
+## 7. Licensing and commercial-use notes
+
+JAIS has model-specific terms on Hugging Face. Review license and acceptable use clauses before production deployment.
+
+Sources:
+- https://huggingface.co/inceptionai/jais-13b-chat
+- /home/node/dc1-platform/infra/config/arabic-portfolio.json
+- /home/node/dc1-platform/backend/src/db.js
+

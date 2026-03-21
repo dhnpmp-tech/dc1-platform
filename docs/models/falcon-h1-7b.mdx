@@ -1,0 +1,45 @@
+---
+title: Falcon H1 7B Instruct
+description: Falcon H1 7B deployment guidance for Arabic-heavy production use.
+---
+
+## 1. What it is
+
+Falcon H1 7B Instruct (`tiiuae/Falcon-H1-7B-Instruct`) is a 7B instruction-tuned model from TII UAE.
+
+## 2. What it does
+
+It provides balanced Arabic and English chat/instruction performance with strong throughput for API serving.
+
+## 3. How it compares
+
+- Versus ALLaM 7B: Falcon H1 can be a good balance choice when you need bilingual coverage with strong speed.
+- Versus JAIS 13B: lower memory cost and generally lower latency, but JAIS may outperform on high-precision Arabic enterprise prompts.
+
+## 4. Best for on DCP
+
+- Bilingual assistants with high request volume
+- Regional support bots
+- Arabic-first copilots where 24 GB GPUs are available
+
+## 5. Hardware requirements on DCP
+
+- DCP floor: `min_vram_gb: 24` (Tier A)
+- Recommended providers: RTX 4090, A100 40GB+
+- Template: `vllm-serve`
+
+## 6. How to run on DCP
+
+1. Use `job_type: "vllm_serve"` with `params.model: "tiiuae/Falcon-H1-7B-Instruct"`.
+2. Set `gpu_requirements.min_vram_gb` to `24`.
+3. Consume the OpenAI-compatible endpoint returned by job output.
+
+## 7. Licensing and commercial-use notes
+
+Falcon models use TII model license terms. Validate your intended commercial use (hosting, redistribution, derivatives) against the card license text.
+
+Sources:
+- https://huggingface.co/tiiuae/Falcon-H1-7B-Instruct
+- /home/node/dc1-platform/infra/config/arabic-portfolio.json
+- /home/node/dc1-platform/backend/src/db.js
+
