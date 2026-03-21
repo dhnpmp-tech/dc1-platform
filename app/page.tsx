@@ -72,10 +72,10 @@ export default function HomePage() {
   }, [])
 
   const stats = [
-    { value: liveGpuCount !== null ? `${liveGpuCount}` : '12+', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
-    { value: '99.2%', label: t('landing.stat_uptime'), live: false },
-    { value: 'SAR 0.50/hr', label: t('landing.stat_min_rate'), live: false },
-    { value: 'KSA-first', label: t('landing.stat_platform'), live: false },
+    { value: liveGpuCount !== null ? `${liveGpuCount}` : '1', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
+    { value: '75%', label: t('landing.stat_uptime'), live: false },
+    { value: 'RTX 4090 · A100 · H100', label: t('landing.stat_min_rate'), live: false },
+    { value: '7', label: t('landing.stat_platform'), live: false },
   ]
 
   return (
@@ -155,14 +155,54 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Founding Rates */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
+            Founding Rates
+          </h2>
+          <p className="text-dc1-text-secondary max-w-2xl mx-auto">
+            Locked-in pricing for early community members. Billed in SAR with approximate USD equivalents.
+          </p>
+        </div>
+        <div className="max-w-3xl mx-auto">
+          <div className="bg-dc1-surface-l2 border border-dc1-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-4 gap-0 bg-dc1-surface-l1 px-6 py-3 text-xs font-mono uppercase tracking-wider text-dc1-text-muted border-b border-dc1-border">
+              <span>GPU</span>
+              <span>Founding Rate (SAR)</span>
+              <span>USD Approx.</span>
+              <span>Availability</span>
+            </div>
+            {[
+              { gpu: 'RTX 4090', sar: '3.19 SAR/hr', usd: '~$0.85 USD/hr', avail: 'Available now', live: true },
+              { gpu: 'A100 80GB', sar: '7.31 SAR/hr', usd: '~$1.95 USD/hr', avail: 'Coming soon', live: false },
+              { gpu: 'H100', sar: '9.19 SAR/hr', usd: '~$2.45 USD/hr', avail: 'Coming soon', live: false },
+            ].map((row) => (
+              <div key={row.gpu} className="grid grid-cols-4 gap-0 px-6 py-4 text-sm border-b border-dc1-border last:border-0 items-center">
+                <span className="font-semibold text-dc1-text-primary">{row.gpu}</span>
+                <span className="text-dc1-amber font-mono">{row.sar}</span>
+                <span className="text-dc1-text-secondary">{row.usd}</span>
+                <span className="flex items-center gap-2 text-dc1-text-secondary">
+                  {row.live && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
+                  {row.avail}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-dc1-text-muted text-center mt-4">
+            Founding rates locked for early providers and renters. Job-level billing: LLM inference at 15 halala/min, image generation at 20 halala/min.
+          </p>
+        </div>
+      </section>
+
       {/* Usage Paths */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            Two Ways to Use DCP
+            Two Ways to Use GPU Compute
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            Whether you want instant browser-based inference or full custom job control, DCP has you covered.
+            Start with instant inference in the Playground, or bring your own containers for heavier workloads.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -176,7 +216,7 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Playground</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Run LLM inference directly in your browser — no setup required. Ideal for quick prototyping and exploration.
+              Run LLM inference and image generation directly from your browser. Pick a model, enter a prompt, get results in seconds. No containers, no CLI, no configuration.
             </p>
             <ul className="space-y-2 mb-8">
               {[
@@ -191,7 +231,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/renter/register" className="btn btn-primary btn-sm">
-              Try Playground
+              Try the Playground
             </Link>
           </div>
 
@@ -204,7 +244,7 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Custom Jobs</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Submit any Docker workload via REST API. Full GPU access with no virtualization overhead.
+              Bring your own Docker image for training, fine-tuning, batch processing, or any GPU workload. Your container runs on bare-metal GPUs with NVIDIA Container Toolkit support.
             </p>
             <ul className="space-y-2 mb-8">
               {[
@@ -219,7 +259,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/docs" className="btn btn-secondary btn-sm">
-              View API Docs
+              Read the Renter Guide
             </Link>
           </div>
         </div>
@@ -472,7 +512,7 @@ Invoke-WebRequest \`
             {
               title: t('landing.run_llm_title'),
               desc: t('landing.run_llm_desc'),
-              tags: ['llama3', 'mistral', 'deepseek'],
+              tags: ['ALLaM', 'Falcon', 'Llama 3', 'JAIS'],
               icon: (
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
@@ -482,7 +522,7 @@ Invoke-WebRequest \`
             {
               title: t('landing.run_sd_title'),
               desc: t('landing.run_sd_desc'),
-              tags: ['SD 1.5', 'SDXL', 'ControlNet'],
+              tags: ['SDXL', 'ControlNet', 'DreamBooth'],
               icon: (
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -492,7 +532,7 @@ Invoke-WebRequest \`
             {
               title: t('landing.run_pytorch_title'),
               desc: t('landing.run_pytorch_desc'),
-              tags: ['PyTorch', 'CUDA', 'DeepSpeed'],
+              tags: ['LoRA', 'QLoRA', 'PyTorch'],
               icon: (
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -502,7 +542,7 @@ Invoke-WebRequest \`
             {
               title: t('landing.run_jupyter_title'),
               desc: t('landing.run_jupyter_desc'),
-              tags: ['Jupyter', 'Python', 'RAPIDS'],
+              tags: ['ALLaM 7B', 'Falcon H1', 'JAIS 13B', 'BGE-M3'],
               icon: (
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -522,7 +562,7 @@ Invoke-WebRequest \`
             {
               title: t('landing.run_cuda_title'),
               desc: t('landing.run_cuda_desc'),
-              tags: ['CUDA', 'HPC', 'Render'],
+              tags: ['CUDA', 'Batch', 'HPC'],
               icon: (
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
@@ -548,15 +588,12 @@ Invoke-WebRequest \`
         </div>
       </section>
 
-      {/* VS Code Extension */}
+      {/* Official SDKs */}
       <section className="bg-dc1-surface-l1 border-y border-dc1-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V16.09h1.09v-2.727h-1.09V7.272h3.819c.904 0 1.636.732 1.636 1.636zM0 19.366V5.457C0 4.553.732 3.82 1.636 3.82H5.46v6.636H4.37v2.727h1.09V22.99H1.636A1.636 1.636 0 0 1 0 19.366zm7.272-15.547v18.363h9.456V3.819H7.272zm4.728 15.636a1.09 1.09 0 1 1 0-2.181 1.09 1.09 0 0 1 0 2.181z"/>
-                </svg>
                 {t('landing.vscode_badge')}
               </div>
               <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-6">
@@ -594,33 +631,25 @@ Invoke-WebRequest \`
                 <div className="w-3 h-3 rounded-full bg-red-500/60" />
                 <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                 <div className="w-3 h-3 rounded-full bg-green-500/60" />
-                <span className="text-xs text-dc1-text-muted font-mono ml-2">VS Code — DCP Extension</span>
+                <span className="text-xs text-dc1-text-muted font-mono ml-2">terminal</span>
               </div>
-              <div className="space-y-2">
-                <p className="text-xs text-dc1-text-muted font-mono">Command Palette  (Ctrl+Shift+P)</p>
-                <div className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border">
-                  <p className="text-xs text-dc1-amber font-mono">&gt; DCP: Start vLLM Serve Session</p>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-dc1-text-muted font-mono mb-1"># Python — provider SDK</p>
+                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono">pip install dcp-provider</pre>
                 </div>
-              </div>
-              <div className="border-t border-dc1-border pt-4 space-y-2">
-                <p className="text-xs text-dc1-text-muted font-mono">Model selection</p>
-                <div className="bg-dc1-surface-l2 rounded border border-dc1-amber/20 divide-y divide-dc1-border">
-                  {['meta-llama/Llama-3-8B-Instruct', 'mistralai/Mistral-7B-v0.3', 'Qwen/Qwen2-7B-Instruct'].map((model, i) => (
-                    <div key={model} className={`px-3 py-2 flex items-center justify-between ${i === 0 ? 'bg-dc1-amber/5' : ''}`}>
-                      <span className="text-xs font-mono text-dc1-text-primary">{model}</span>
-                      {i === 0 && <span className="text-xs text-dc1-amber">↵</span>}
-                    </div>
-                  ))}
+                <div>
+                  <p className="text-xs text-dc1-text-muted font-mono mb-1"># Node.js — renter SDK</p>
+                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono">npm install dcp-renter-sdk</pre>
                 </div>
               </div>
               <div className="border-t border-dc1-border pt-4">
-                <p className="text-xs text-dc1-text-muted font-mono mb-2">Status bar</p>
-                <div className="inline-flex items-center gap-2 bg-dc1-surface-l2 border border-dc1-border rounded px-3 py-1.5">
-                  <span className="text-xs text-dc1-amber">🚀</span>
-                  <span className="text-xs font-mono text-dc1-text-primary">Llama-3-8B</span>
-                  <span className="text-xs text-dc1-text-muted font-mono">12:34</span>
-                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                </div>
+                <p className="text-xs text-dc1-text-muted font-mono mb-2">Quick start:</p>
+                <pre className="text-xs text-green-400 font-mono leading-relaxed whitespace-pre-wrap">{`from dcp_provider import DCPProvider
+
+provider = DCPProvider(api_key="your-key")
+provider.register_gpu()
+provider.start()  # auto-detect, heartbeat, earn`}</pre>
               </div>
             </div>
           </div>
@@ -659,17 +688,15 @@ Invoke-WebRequest \`
             </ul>
           </div>
           <div className="card border-dc1-amber/20">
-            <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Submit a job via curl</p>
-            <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://api.dcp.sa/api/jobs/submit \\
-  -H "x-renter-key: YOUR_RENTER_KEY" \\
+            <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Submit a job</p>
+            <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://dcp.sa/api/dc1/jobs/submit \\
   -H "Content-Type: application/json" \\
   -d '{
-    "jobType": "llm_inference",
-    "dockerImage": "dcp/llama3-8b:latest",
-    "input": {
-      "prompt": "Explain quantum computing",
-      "max_tokens": 512
-    }
+    "renter_key": "dc1-renter-...",
+    "provider_id": 26,
+    "job_type": "llm_inference",
+    "model": "ALLaM-7B-Instruct",
+    "prompt": "Hello world"
   }'`}</pre>
             <div className="mt-4 pt-4 border-t border-dc1-border">
               <p className="text-xs text-dc1-text-muted mb-2">Response:</p>
