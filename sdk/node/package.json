@@ -1,5 +1,5 @@
 {
-  "name": "dc1-renter-sdk",
+  "name": "dcp-renter-sdk",
   "version": "0.1.0",
   "description": "Official TypeScript/JavaScript SDK for GPU renters on DC1 — Saudi Arabia's compute marketplace",
   "main": "dist/index.js",

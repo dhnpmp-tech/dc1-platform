@@ -1,9 +1,9 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "dc1"
+name = "dcp-provider"
 version = "0.1.0"
 description = "Official Python SDK for the DC1 GPU compute marketplace"
 readme = "README.md"
