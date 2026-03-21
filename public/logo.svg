@@ -1,55 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="140" height="40" viewBox="0 0 140 40" fill="none">
-  <!-- Icon: rounded square with circuit traces and ض -->
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="36" viewBox="0 0 120 36" fill="none">
+  <!-- Lightning bolt with circuit traces icon -->
   <g transform="translate(2, 2)">
-    <!-- Circuit traces extending from the icon -->
-    <g stroke="#38B6E0" stroke-width="1.5" stroke-linecap="round">
-      <!-- Top traces -->
-      <line x1="10" y1="0" x2="10" y2="5"/>
-      <line x1="18" y1="0" x2="18" y2="3.5"/>
-      <line x1="26" y1="0" x2="26" y2="5"/>
-
-      <!-- Bottom traces -->
-      <line x1="10" y1="36" x2="10" y2="31"/>
-      <line x1="18" y1="36" x2="18" y2="32.5"/>
-      <line x1="26" y1="36" x2="26" y2="31"/>
-
-      <!-- Left traces -->
-      <line x1="0" y1="10" x2="5" y2="10"/>
-      <line x1="0" y1="18" x2="3.5" y2="18"/>
-      <line x1="0" y1="26" x2="5" y2="26"/>
-
-      <!-- Right traces -->
-      <line x1="36" y1="10" x2="31" y2="10"/>
-      <line x1="36" y1="18" x2="32.5" y2="18"/>
-      <line x1="36" y1="26" x2="31" y2="26"/>
+    <!-- Bolt -->
+    <polygon points="18,0 10,15 14,15 8,32 24,13 19,13 26,0" fill="#E85D20"/>
+    <!-- Circuit traces -->
+    <g stroke="#888888" stroke-width="1.2" fill="none">
+      <line x1="16" y1="10" x2="28" y2="7"/>
+      <line x1="16" y1="18" x2="30" y2="18"/>
+      <line x1="16" y1="24" x2="28" y2="27"/>
     </g>
-
-    <!-- Trace endpoint dots -->
-    <g fill="#38B6E0">
-      <circle cx="10" cy="5" r="1.5"/>
-      <circle cx="18" cy="3.5" r="1.2"/>
-      <circle cx="26" cy="5" r="1.5"/>
-      <circle cx="10" cy="31" r="1.5"/>
-      <circle cx="18" cy="32.5" r="1.2"/>
-      <circle cx="26" cy="31" r="1.5"/>
-      <circle cx="5" cy="10" r="1.5"/>
-      <circle cx="3.5" cy="18" r="1.2"/>
-      <circle cx="5" cy="26" r="1.5"/>
-      <circle cx="31" cy="10" r="1.5"/>
-      <circle cx="32.5" cy="18" r="1.2"/>
-      <circle cx="31" cy="26" r="1.5"/>
-    </g>
-
-    <!-- Inner rounded square border -->
-    <rect x="5" y="5" width="26" height="26" rx="6" fill="none" stroke="#38B6E0" stroke-width="2"/>
-
-    <!-- Arabic letter ض (Dhad) -->
-    <text x="18" y="25" text-anchor="middle" font-family="'Noto Sans Arabic', 'Geeza Pro', 'Arial', sans-serif" font-size="18" font-weight="700" fill="#38B6E0">ض</text>
+    <!-- Circuit nodes -->
+    <circle cx="28" cy="7" r="2" fill="#888888"/>
+    <circle cx="30" cy="18" r="2" fill="#888888"/>
+    <circle cx="28" cy="27" r="2" fill="#888888"/>
   </g>
-
   <!-- DCP text -->
-  <text x="46" y="26" font-family="'Inter', 'Helvetica Neue', sans-serif" font-size="22" font-weight="700" letter-spacing="0.02em" fill="#38B6E0">DCP</text>
-
-  <!-- Period/dot after DCP -->
-  <circle cx="88" cy="24" r="2.5" fill="#38B6E0"/>
+  <text x="40" y="25" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="22" font-weight="500" letter-spacing="-0.5" fill="#ffffff">DCP</text>
+  <!-- Orange underline accent -->
+  <rect x="40" y="27" width="44" height="2" rx="1" fill="#E85D20"/>
+  <!-- Dot -->
+  <circle cx="90" cy="24" r="2.5" fill="#E85D20"/>
 </svg>
