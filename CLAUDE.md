@@ -1,5 +1,30 @@
 # DCP Platform  Claude Agent Memory
 
+## CRITICAL WORKFLOW RULES (NEVER VIOLATE)
+
+### Rule 1: NO DEPLOY WITHOUT REVIEW
+- **Agent code (Paperclip CEO, Frontend Developer, etc.) must NEVER be committed to main without human review.**
+- Agents write code in their workspace on the VPS. They do NOT have git commit access.
+- Only Claude-Cowork (this agent) or the human (Peter) may commit and push to main.
+- Before committing any agent-produced code: review it, check for quality, and get Peter's approval.
+- This applies to ALL agent output: docs, code, configs, i18n strings, everything.
+
+### Rule 2: NO LOGO OR BRAND CHANGES WITHOUT EXPLICIT APPROVAL
+- The DCP brand logo is the blue ض (Dhad) circuit icon (#38B6E0) with "DCP" wordmark.
+- Do NOT change the logo, brand colors, or visual identity without Peter's explicit approval.
+- The brand color is NOT orange. The UI accent color (dc1-amber) is a separate design token.
+
+### Rule 3: HOMEPAGE COPY IS LOCKED
+- The homepage copy was overhauled on 2026-03-21 (founding community positioning).
+- Do NOT revert or significantly change homepage copy without Peter's approval.
+- Issue DCP-418 documents this. Agents must read it before touching page.tsx or i18n.tsx.
+
+### Rule 4: COMMIT DISCIPLINE
+- Always use conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
+- Always update AGENT_LOG.md after any code change
+- Never force-push to main
+- Always pull before push
+
 ## MANDATORY: Cross-Agent Communication Protocol
 
 **EVERY session, BEFORE doing anything else:**

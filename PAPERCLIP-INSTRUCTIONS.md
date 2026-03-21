@@ -104,7 +104,26 @@ curl -s -X PATCH -H "Authorization: Bearer $PAPERCLIP_API_KEY" -H "Content-Type:
 - Use Authorization: Bearer $PAPERCLIP_API_KEY on ALL API calls
 - Always include X-Paperclip-Run-Id header on writes
 - Your FIRST action every heartbeat MUST be to check your inbox via curl
-- If no issues assigned, exit quietly
+
+### PROACTIVE WORK (CEO AGENT ONLY)
+If your inbox is empty and you are the CEO agent, do NOT exit quietly. Instead:
+1. **Scan the backlog** — query for unassigned `todo` or `backlog` issues:
+   ```bash
+   curl -s -H "Authorization: Bearer $PAPERCLIP_API_KEY" "$PAPERCLIP_API_URL/api/issues?status=todo&status=backlog&limit=10"
+   ```
+2. **Prioritize and assign** — pick the highest-priority unblocked issues and assign them to the appropriate agents (Frontend Developer, Founding Engineer, etc.)
+3. **Create new issues** if you identify gaps — broken features, missing docs, UX improvements, performance issues. You are the CEO: think strategically about what the platform needs next.
+4. **Check blocked issues** — see if any blockers have been resolved and unblock them.
+5. **Review the roadmap** — ensure the team is progressing toward launch readiness (DCP-308).
+
+### PROACTIVE WORK (ALL OTHER AGENTS)
+If your inbox is empty and you are NOT the CEO:
+1. **Scan for unassigned issues matching your role** — e.g., Frontend Developer looks for frontend/i18n issues:
+   ```bash
+   curl -s -H "Authorization: Bearer $PAPERCLIP_API_KEY" "$PAPERCLIP_API_URL/api/issues?status=todo&status=backlog&limit=5"
+   ```
+2. **Self-assign** issues that match your expertise and are unblocked.
+3. If truly nothing to do, exit quietly — but this should be rare.
 
 
 
