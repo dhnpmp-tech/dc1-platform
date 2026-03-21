@@ -4,6 +4,15 @@
 > **Format**: `## [YYYY-MM-DD HH:MM UTC] AGENT_NAME  Summary`
 > **Agents**: Claude-Cowork (VPS/deploy), Cursor (IDE/analysis), Codex (GitHub/PRs), Nexus (OpenClaw)
 
+## [2026-03-21 17:20 UTC] Codex — DCP-464: Customer segmentation + competitor UX intelligence report delivered
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: add evidence-backed competitive UX teardown and conversion-focused IA recommendations`
+- **Files**: `docs/research/dcp-464-segmentation-ux-ia.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added a concise deliverable covering: customer segment matrix, competitor UX/copy teardown (Vast.ai, RunPod, Lambda, Akash, Together.ai, Replit), prioritized IA/copy recommendations, and page/file-level implementation mapping.
+  - Recommendations are constrained to DCP’s actual container-based GPU compute model (no fabricated claims/pricing).
+  - Frontend/product agents can execute directly from the file mapping section without additional discovery.
+
 ## [2026-03-20 13:30 UTC] Frontend Developer — DCP-138: Renter billing UI — topup modal + payment history complete
 
 - `app/renter/billing/page.tsx`: Upgraded billing page with:
@@ -3958,3 +3967,845 @@ Assign in this order when issue creation comes back:
     - webhook negative-path checks (unsupported status, missing payment id)
     - `/api/providers/available` launch-status contract assertions (`total`, `online_count`, `degraded_count`, `timestamp`).
   - Validation run limitations: full Jest integration execution in this container is blocked by `better-sqlite3` native binary ABI mismatch (`NODE_MODULE_VERSION 127` vs runtime `137`); static syntax checks passed for all touched files.
+
+## [2026-03-21 16:14 UTC] Codex — Paperclip heartbeat processed (no actionable assignment)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox check + backlog scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory heartbeat step first: `GET /api/agents/me/inbox-lite` returned empty array.
+  - Per non-CEO proactive rule, attempted backlog scan for unassigned work; company-scoped issues endpoint returned `Internal server error`, and non-scoped endpoint requires company path.
+  - No assigned `todo/in_progress/blocked` issue available to execute in this cycle.
+  - No code changes made.
+
+## [2026-03-21 16:16 UTC] Codex — Paperclip heartbeat triage (launch-gate still blocked)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: blocked heartbeat cycle with context refresh`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed required first step (`GET /api/agents/me/inbox-lite`) and confirmed only assigned issue is `DCP-308` in `blocked`.
+  - Refreshed latest cross-agent log entries and briefing context (`DC1-AGENT-BRIEFING.md`; `DCP-AGENT-BRIEFING.md` filename not present in workspace).
+  - Verified `DCP-308` latest comment remains unchanged since 15:27 UTC; skipped duplicate blocker comment per dedup protocol.
+  - No code changes in this heartbeat.
+
+## [2026-03-21 16:21 UTC] Codex — DCP-445: Auth surface hardening for job queue visibility + admin token compare
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: require authenticated actor for queue visibility endpoints and use constant-time admin token checks`
+- **Files**: `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Closed unauthenticated data exposure on job visibility endpoints:
+    - `GET /api/jobs/active` now returns `401` when no authenticated actor is present.
+    - `GET /api/jobs/queue/:provider_id` now returns `401` when no authenticated actor is present.
+    - `GET /api/jobs/queue/status` now returns `401` when no authenticated actor is present.
+  - Preserved tenant scoping behavior for renter/provider actors and full visibility for authenticated admin.
+  - Hardened admin token verification in both `jobs.js` and `admin.js` to use constant-time comparison and accept either `x-admin-token` or `Authorization: Bearer` without falling back to weak equality checks.
+  - Verification run: `node --check backend/src/routes/jobs.js && node --check backend/src/routes/admin.js` (pass).
+
+## [2026-03-21 16:22 UTC] Codex — DCP-447: vLLM runtime guardrails + smoke coverage for no-capacity path
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: fail fast on vLLM no-capacity with diagnostics and add smoke coverage`
+- **Files**: `backend/src/routes/vllm.js`, `backend/tests/integration/sprint19-20-smoke.test.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Added fail-fast capacity guardrail in `POST /api/vllm/complete`: when zero capable providers satisfy model VRAM/compute requirements, API now returns `503` with `error: no_capacity` instead of queuing into long timeout.
+  - Added structured vLLM diagnostics payload (`model_id`, `min_vram_gb`, `capable_providers`, `queued_vllm_jobs`, stale-heartbeat threshold, wait timeout, `job_id`) on degraded outcomes.
+  - Added operator-focused degradation logs (`[vllm:no_capacity]`, `[vllm:terminal_failure]`) with JSON context for faster incident triage.
+  - Added integration smoke test asserting fast `503 no_capacity` response + diagnostics payload shape.
+  - Verification: `node --check` passed for changed files. `npm --prefix backend run test:smoke` blocked in container due `better-sqlite3` native module ABI mismatch (compiled for NODE_MODULE_VERSION 127, runtime expects 137).
+
+## [2026-03-21 16:23 UTC] Codex — DCP-453: Founding Engineer integration checkpoint (launch-hardening lanes)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: integrate and verify DCP-430 child-lane hardening outputs with merge-readiness gate report`
+- **Files**: `docs/reports/2026-03-21-dcp-453-integration-status.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory heartbeat flow and checked out `DCP-453` (`in_progress`), then enumerated all `DCP-430` child lanes and current statuses.
+  - Verified integration-critical backend/security surfaces with command evidence: syntax checks pass for `payments.js`, `providers.js`, `standup.js`, `server.js`; no merge markers in `app`, `backend/src`, `contracts`, `vscode-extension`.
+  - Captured known runtime limits in this container: integration tests blocked by `better-sqlite3` ABI mismatch; deploy preflight script blocked by missing host PM2 binary.
+  - Published unified integration status + merge/deploy readiness gate report at `docs/reports/2026-03-21-dcp-453-integration-status.md` for board/operator handoff.
+
+## [2026-03-21 16:22 UTC] Codex — DCP-445 correction: admin auth already centralized
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: clarify actual touched files after concurrent admin auth refactor`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Correction to 16:21 UTC entry: in the current workspace state, `backend/src/routes/admin.js` uses `requireAdminAuth` from `backend/src/middleware/auth.js`, which already performs constant-time admin token verification.
+  - Effective code change from this run is in `backend/src/routes/jobs.js` (auth required for `/active`, `/queue/:provider_id`, `/queue/status`, plus constant-time `isAdmin` token comparison).
+  - Posted matching correction comment on issue `DCP-445` for audit consistency.
+
+## [2026-03-21 16:23 UTC] Codex - DCP-452: DevRel auth + runtime docs refresh
+- **Commit**: `N/A (Paperclip container: git disabled)` - `docs: refresh auth hardening guidance, add runtime verification runbook, and publish non-payment quickstart flow`
+- **Files**: `docs/api-reference.mdx`, `docs/quickstart.mdx`, `docs/provider-guide.mdx`, `docs/ops/runtime-verification.mdx`, `AGENT_LOG.md`
+- **Impact**: Developer docs now include explicit secure key-handling guidance, linked runtime/container verification checks for operators, and a concise compute-only quickstart path that intentionally excludes billing/escrow content.
+
+## [2026-03-21 16:23 UTC] Codex — DCP-450: QA auth/container regression suite expansion
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: expand auth-scoped queue status, provider startup health gating, and core health payload contracts`
+- **Files**: `backend/tests/integration/docker-system.test.js`, `backend/tests/integration/launch-health-status.test.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Updated queue-status integration coverage to require authenticated actor and validate renter-scoped queue visibility (prevents cross-tenant queue leakage regressions).
+  - Added provider startup health regressions: stale-heartbeat providers (>10 min) must not receive jobs; degraded-but-online providers (<10 min) can still receive jobs.
+  - Strengthened `/api/health` contract assertions (timestamp + numeric counters) and DB-backed counter validation.
+  - **Blocking environment defect**: backend Jest execution is currently blocked in this container by native module ABI mismatch (`better-sqlite3` built for NODE_MODULE_VERSION 127 while runtime expects 137), so runtime pass/fail evidence requires host-side rebuild or compatible Node runtime.
+
+## [2026-03-21 16:24 UTC] Codex — Paperclip heartbeat triage (DCP-308 remains blocked)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox/context refresh with blocked-issue dedup`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed required first-step inbox check (`GET /api/agents/me/inbox-lite`); only assigned issue is `DCP-308` in `blocked`.
+  - Refreshed cross-agent context from `AGENT_LOG.md` and issue heartbeat context for `DCP-308`; latest comment cursor remains unchanged (`2026-03-21T15:27:53.542Z`).
+  - Confirmed `DCP-AGENT-BRIEFING.md` is not present in workspace; `DC1-AGENT-BRIEFING.md` remains the available briefing reference.
+  - No code changes made and no duplicate issue comment posted in this cycle.
+
+## [2026-03-21 16:23 UTC] Codex — DCP-446: container runtime baseline hardening + reproducible post-restart checks
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: harden container runtime defaults and add deterministic runtime verification + non-payment restart/rollback runbook`
+- **Files**: `infra/docker/run-job.sh`, `infra/scripts/verify-runtime-baseline.sh`, `infra/scripts/verify-deploy.sh`, `docs/ops/non-payment-restart-rollback.md`, `docs/ops/launch-window-deploy-runbook.md`, `docs/container-security-policy.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Hardened `run-job.sh` template mode to enforce `--network none`, CPU/memory/PID limits, and `--memory-swap` parity; added `--seccomp-profile` support with env-driven fail-closed mode (`DCP_REQUIRE_SECCOMP_PROFILE=true`).
+  - Added `infra/scripts/verify-runtime-baseline.sh` for reproducible operator-safe checks (PM2 service status, local/public health, and static hardening assertions in launcher script).
+  - `infra/scripts/verify-deploy.sh` now invokes runtime baseline verification by default (can be bypassed with `SKIP_RUNTIME_BASELINE=1` for emergency triage).
+  - Added non-payment restart/rollback runbook and linked it from launch-window deploy runbook for operator handoff consistency.
+
+## [2026-03-21 16:23 UTC] Codex — DCP-448: Frontend auth UX hardening + explicit credential failure states
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: add explicit invalid/expired auth handling for renter/provider entry flows`
+- **Files**: `app/login/page.tsx`, `app/renter/page.tsx`, `app/provider/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Added reason-based auth redirects/messages (`invalid_credentials`, `expired_session`, `missing_credentials`) across login/provider/renter entry points, normalized 401/403 messaging for API-key and email login flows, switched API-key placeholder branding to `dcp-*`, and added EN/AR i18n auth error strings for clearer failure-state UX.
+
+## [2026-03-21 16:23 UTC] Codex — DCP-451: P2P provider discovery robustness pass
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: harden P2P discovery with stale-record checks, schema validation, and fallback resolver hooks`
+- **Files**: `p2p/dcp-discovery-scaffold.js`, `p2p/README.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added TTL-backed envelope metadata (`expires_at`) for provider and environment DHT records.
+  - Added resolver-side validation for malformed provider/env envelopes and stale-record filtering before returning discovery results.
+  - Added `fallbackResolver` hooks to peer/CID resolve paths so backend integration can fall back to centralized provider listings when DHT data is missing/invalid/stale.
+  - Updated P2P docs with explicit reliability behavior and clearer “demo-ready now vs deferred” scope.
+  - Validation: `node --check p2p/dcp-discovery-scaffold.js`, `node --check p2p/demo-cid-discovery.js`, `npm --prefix p2p run demo:cid` all pass.
+
+## [2026-03-21 16:24 UTC] Codex — Paperclip heartbeat triage (inbox blocked; backlog query endpoint failing)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute required heartbeat inbox scan and triage blocked state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed required first-step inbox check (`GET /api/agents/me/inbox-lite`); only assigned issue is `DCP-103` in `blocked`.
+  - Attempted proactive non-CEO backlog scan per runbook; `GET /api/issues?...` returned `Missing companyId in path`, and `GET /api/companies/{companyId}/issues?...` returned `Internal server error` in this environment.
+  - Refreshed local context from `AGENT_LOG.md`; no code changes performed this heartbeat.
+
+## [2026-03-21 16:24 UTC] IDE Extension Developer — DCP-449: auth/session resilience + retry hardening in VS Code extension
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: harden IDE extension auth/session recovery and transient retry behavior for submit/log workflows`
+- **Files**: `vscode-extension/src/api/dc1Client.ts`, `vscode-extension/src/auth/AuthManager.ts`, `vscode-extension/src/panels/JobSubmitPanel.ts`, `vscode-extension/src/panels/VllmSubmitPanel.ts`, `vscode-extension/src/extension.ts`, `vscode-extension/README.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added typed API errors (`DC1ApiError`) plus shared `isAuthError` / `isRetryableError` helpers for consistent handling.
+  - Renter key resolution now prefers SecretStorage, migrates legacy `dc1.renterApiKey` setting into secrets, and clears plain-text setting.
+  - Added renter auth-recovery prompts on 401/403 during submit and log-stream workflows.
+  - Added bounded retry/backoff for container submit and vLLM submit (up to 3 attempts) on transient failures.
+  - Hardened SSE log streaming with bounded reconnect attempts before surfacing failure; stream commands now provide clearer fallback messaging to polling.
+  - Updated extension README with secure token handling and reliability behavior notes.
+
+## [2026-03-21 16:25 UTC] Codex — QA heartbeat processed (no assignable issues)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat, review agent log, and scan backlog for QA self-assignment`
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Inbox was empty; company backlog scan found no unassigned `todo/backlog` issues matching QA scope and no active issues assigned to QA agent. No code/test changes were made this heartbeat.
+
+## [2026-03-21 16:25 UTC] Codex — DCP-444: Auth hardening (fail-closed admin auth + API-key normalization)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: centralize auth parsing and enforce fail-closed admin checks across backend routes`
+- **Files**: `backend/src/middleware/auth.js`, `backend/src/middleware/rateLimiter.js`, `backend/src/routes/admin.js`, `backend/src/routes/security.js`, `backend/src/routes/intelligence.js`, `backend/src/routes/verification.js`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/src/__tests__/security.test.js`, `backend/src/__tests__/auth-hardening.test.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Added shared auth middleware to normalize/validate credentials, support `x-admin-token` + `Authorization: Bearer`, and enforce constant-time token comparison.
+  - Replaced route-local admin checks with shared fail-closed middleware in admin-only surfaces (`admin`, `security`, `intelligence`, `verification/challenge`, `jobs/test`).
+  - Removed legacy `admin_token` request-body auth path from verification challenge endpoint (header/Bearer only).
+  - Hardened API key extraction in `jobs.js` actor resolution (`requireRenter`, `getRenterFromReq`, `getProviderFromReq`) to ignore malformed/blank/non-string keys.
+  - Updated security tests for admin auth and added focused auth-hardening tests for Bearer support, missing-env fail-closed behavior, and legacy body-token rejection.
+  - Validation run: `node --check` passed for all changed source and test files. Full Jest execution remains blocked in this container due native `better-sqlite3` ABI mismatch (NODE_MODULE_VERSION 127 vs 137).
+
+## [2026-03-21 16:25 UTC] Codex — Paperclip heartbeat sync (no code changes)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: process heartbeat and sync issue status`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory heartbeat flow (`inbox-lite` and issue context checks) for assigned P2P lane `DCP-451`.
+  - Confirmed `DCP-451` was already `done`; posted a fresh Paperclip status comment with verification notes.
+  - Scanned company `todo/backlog`; no unassigned P2P-matching issues available in this run.
+
+## [2026-03-21 16:26 UTC] IDE Extension Developer — Paperclip heartbeat triage (no assignable inbox item)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat inbox scan and report backlog query failure`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory heartbeat step 1: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Executed non-CEO proactive backlog scan and hit API routing failures:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - No code changes performed this heartbeat due absence of assignable issue and backend issue-listing API errors.
+
+## [2026-03-21 16:27 UTC] Codex - DCP-460: remove forbidden git CLI steps from launch runbook
+- **Commit**: `N/A (Paperclip container: git disabled)` - `docs: replace launch-runbook git pull/checkout flow with board-controlled release sync/restore guidance`
+- **Files**: `docs/ops/launch-window-deploy-runbook.md`, `AGENT_LOG.md`
+- **Impact**: Launch deploy docs no longer instruct `git fetch/pull/log/checkout`; operator flow now references approved release manifest workflow and still captures deployed/rollback SHA evidence for Paperclip handoff.
+
+## [2026-03-21 16:27 UTC] Codex — DCP-459: remove forbidden npm install commands from P2P docs
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: remove npm install steps from p2p README and align with Paperclip package-install policy`
+- **Files**: `p2p/README.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Removed both explicit `npm install` commands from `p2p/README.md` (Quick start and VPS setup sections).
+  - Added policy-compliant note clarifying dependencies are provisioned by the board operator during controlled deploys.
+  - Preserved runnable demo/start instructions (`node demo.js`, `pm2 start bootstrap.js`) so workflow documentation remains usable without forbidden install steps.
+
+## [2026-03-21 16:27 UTC] Codex — DCP-458: Replace db.run with db.prepare().run in integration tests
+- **Commit**: `N/A (Paperclip container: git disabled)` — `test: replace direct db.run calls in integration tests for better-sqlite3 API consistency`
+- **Files**: `backend/tests/integration/payment-flow.test.js`, `backend/tests/integration/launch-health-status.test.js`, `AGENT_LOG.md`
+- **Impact**:
+  - Replaced all `db.run(...)` occurrences in the two flagged integration tests with `db.prepare(...).run(...)`.
+  - No billing/Moyasar/escrow logic changes; test-only refactor.
+  - Validation: zero `db.run(` remains in these files (`grep -nF "db.run(" ...` returned no matches).
+  - Attempted targeted Jest run was blocked by existing `better-sqlite3` Node ABI mismatch in container (`NODE_MODULE_VERSION 127` vs required `137`).
+
+## [2026-03-21 16:28 UTC] Codex — Heartbeat triage: no assignable work surfaced
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox check and proactive backlog scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first heartbeat step completed: `GET /api/agents/me/inbox-lite` returned empty array.
+  - Non-CEO proactive backlog scan attempted.
+    - Generic endpoint `/api/issues?...` returned `Missing companyId in path`.
+    - Company-scoped endpoint `/api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` returned `Internal server error`.
+  - No issue available to checkout/self-assign in this heartbeat; no code changes made.
+
+## [2026-03-21 16:28 UTC] Codex — DCP-461 re-review after fix wave (DCP-458/459/460)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `review: validate fix wave and report strict checklist result`
+- **Files**: `backend/tests/integration/payment-flow.test.js`, `backend/tests/integration/launch-health-status.test.js`, `p2p/README.md`, `docs/ops/launch-window-deploy-runbook.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Posted `REVIEW: FAIL` on DCP-461 and marked the issue `done`.
+  - Confirmed prior blockers are fixed: `db.run()` removed in both integration tests; forbidden `npm install` removed from `p2p/README.md`; forbidden git commands removed from `docs/ops/launch-window-deploy-runbook.md`.
+  - Remaining blocker: Check 9 branding violations in `p2p/README.md` lines `1, 8, 70, 337, 338` still use `DC1` instead of `DCP`.
+
+## [2026-03-21 16:29 UTC] Codex — Heartbeat sync: no actionable backend checkout
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: complete heartbeat triage and record idle state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory heartbeat flow: inbox check, identity check, assignment scan, and task-id inspection.
+  - `DCP-458` (assigned task in wake context) is already `done`; no `todo/in_progress/blocked` issues assigned to Backend Architect.
+  - Backlog/todo scan showed only CEO-assigned items (`DCP-456`, `DCP-457`); no safe checkout targets for this agent.
+
+## [2026-03-21 16:29 UTC] Codex — Paperclip heartbeat triage (DCP-308 still blocked)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat blocked-issue verification and no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory first action (`GET /api/agents/me/inbox-lite`); only inbox item remains `DCP-308` with status `blocked`.
+  - Refreshed issue heartbeat context; comment cursor unchanged (`latestCommentAt: 2026-03-21T15:27:53.542Z`), so no new unblock evidence.
+  - No duplicate issue comment posted and no code changes made in this cycle.
+
+## [2026-03-21 16:29 UTC] Codex — Heartbeat triage: inbox empty, backlog scan endpoint failing
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and record no-op state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan attempted but blocked by Paperclip issue-list API errors on this instance:
+    - `/api/issues?...` -> `Missing companyId in path`
+    - `/api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - No assignable issue was available to checkout; no code or docs changes made this heartbeat.
+
+## [2026-03-21 16:31 UTC] Codex — QA heartbeat triage (no self-assignable issues)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory inbox check and proactive backlog scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `inbox-lite` returned empty and company issue scan shows only CEO-assigned open issues (`DCP-430`, `DCP-456`, `DCP-457`). No unassigned QA todo/backlog issue available; no code or test changes made this cycle.
+
+## [2026-03-21 16:33 UTC] Codex — DevOps heartbeat triage (blocked inbox + backlog API error)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and record no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned only `DCP-103` (`blocked`).
+  - Non-CEO proactive backlog scan attempted per instructions but failed at issue listing layer:
+    - `/api/issues?...` -> `Missing companyId in path`
+    - `/api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - No assignable unblocked issue available; no code or docs changes made in this heartbeat.
+
+## [2026-03-21 16:33 UTC] Codex — P2P heartbeat triage (no assignable issue; issue-list API blocked)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandated heartbeat checks and document issue-list API failure`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan attempted on both list endpoints:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - No issue available to checkout or self-assign in this heartbeat; no code changes made.
+
+## [2026-03-21 16:34 UTC] Codex — ML Infra heartbeat triage (no assignable issue)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and record no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO backlog scan attempted: `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` returned `Internal server error`.
+  - No issue available to checkout/self-assign in this heartbeat; no code changes made.
+
+## [2026-03-21 16:34 UTC] Codex — Founding heartbeat triage (DCP-308 blocked, no new context)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: mandatory heartbeat + blocked issue refresh`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - First heartbeat action executed: `GET /api/agents/me/inbox-lite`; only `DCP-308` present and still `blocked`.
+  - Refreshed `DCP-308` heartbeat context and latest log tail; blocker context is unchanged (`latestCommentAt` remains `2026-03-21T15:27:53.542Z`).
+  - No actionable unblocked issue in inbox and no code changes made this cycle.
+
+## [2026-03-21 16:34 UTC] Codex — Backend heartbeat triage: no self-assignable issues
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat checks and record no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first step completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Loaded latest cross-agent context from `AGENT_LOG.md` and technical briefing from `DC1-AGENT-BRIEFING.md`.
+  - Proactive non-CEO scan (`todo` + `backlog`) found no unassigned backend-suitable issues; only CEO-assigned items `DCP-456` and `DCP-457` are open.
+  - Noted instruction/path mismatch: runbook references `DCP-AGENT-BRIEFING.md`, while repository contains `DC1-AGENT-BRIEFING.md`.
+
+## [2026-03-21 16:35 UTC] Codex — DevRel heartbeat triage: no assignable issue
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and document no-op state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan attempted:
+    - `/api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path`
+    - `/api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - Refreshed `AGENT_LOG.md` tail and `DC1-AGENT-BRIEFING.md` context; no safe checkout target available for DevRel in this heartbeat.
+  - No code or docs files changed.
+
+## [2026-03-21 16:37 UTC] Codex — QA heartbeat triage (no available checkout)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat inbox check, refresh context, and scan open issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Inbox remained empty and open issue scan shows only CEO-assigned items (`DCP-430`, `DCP-456`, `DCP-457`). No unassigned QA `todo/backlog` issue exists to self-assign; no code or tests changed.
+
+## [2026-03-21 16:39 UTC] Codex — DevOps heartbeat triage (blocked assignment; issue index still failing)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat checks and document blocked/no-op cycle`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check returned only `DCP-103` (`blocked`), so no eligible checkout target.
+  - Non-CEO proactive scan still blocked by Paperclip issue-list API behavior:
+    - `/api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path`
+    - `/api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - No self-assignable unblocked issue available; no repo file changes this cycle beyond AGENT_LOG heartbeat note.
+
+## [2026-03-21 16:40 UTC] Codex — Backend heartbeat triage: inbox empty, no eligible checkout
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: complete mandatory heartbeat checks and document no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - First action completed as required: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed cross-agent context from `AGENT_LOG.md`.
+  - Proactive scan of company issues found only CEO-assigned `todo` items (`DCP-456`, `DCP-457`) and no `backlog`; nothing unassigned for backend self-checkout.
+  - No code changes were made in this heartbeat.
+
+## [2026-03-21 16:41 UTC] Codex — DevRel heartbeat triage: inbox empty, issue index still failing
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and record no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first step completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scan still blocked by issue-list API behavior:
+    - `/api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path`
+    - `/api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - Refreshed `AGENT_LOG.md` and `DC1-AGENT-BRIEFING.md` context; no assignable DevRel checkout target found.
+  - No code/docs changes made in this heartbeat.
+
+## [2026-03-21 16:41 UTC] Codex — DCP-308 heartbeat processed (launch gate remains operator-blocked)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: process launch-gate heartbeat and refresh blocked status with operator handoff`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory Paperclip heartbeat flow: inbox check, checkout, heartbeat-context, comment/status update.
+  - Re-validated known engineer-actionable branding paths (`app/admin/jobs/[id]/page.tsx`, `app/renter/billing/confirm/page.tsx`, `app/renter/templates/page.tsx`) and found no remaining obvious `DC1` label strings in those files.
+  - Updated issue `DCP-308` back to `blocked` with explicit dependency list (deploy manifests, VPS env+DNS+TLS, SDK credentials) for board/operator execution.
+
+## [2026-03-21 16:43 UTC] Codex — QA heartbeat no-op (no unassigned backlog)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat inbox check and unassigned backlog scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `inbox-lite` returned empty and company issue scan found no unassigned `todo/backlog` issues to self-assign for QA. No code/test changes in this cycle.
+
+## [2026-03-21 16:45 UTC] Codex — DevOps heartbeat triage (blocked inbox; company issue list 500)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and log no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action `GET /api/agents/me/inbox-lite` returned only `DCP-103` in `blocked` state.
+  - Proactive non-CEO backlog scan `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` returned `Internal server error`.
+  - No unblocked issue was available to checkout/self-assign; no code changes this cycle.
+
+## [2026-03-21 16:46 UTC] Codex — DCP-463: Final p2p README branding cleanup (DC1 -> DCP)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: replace user-facing DC1 branding with DCP in p2p README`
+- **Files**: `p2p/README.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Updated user-facing prose branding in `p2p/README.md` from DC1 to DCP (title, overview, scoped DHT narrative, design rationale text).
+  - Updated renter demo image example `dc1/simulate` -> `dcp/simulate` for user-facing consistency.
+  - Left technical identifiers unchanged (`/dc1/...` protocol namespace, `DC1_*` env vars, `dc1-node.js`, `dc1_daemon.py`, paths) to avoid breaking implementation references.
+
+## [2026-03-21 16:46 UTC] Codex — Backend heartbeat no-op: only CEO-owned todos open
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat flow and log no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory first step: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent changes from `AGENT_LOG.md`.
+  - Proactive issue scan found no unassigned `todo/backlog` items for backend self-assignment; open `todo` items remain CEO-owned (`DCP-456`, `DCP-457`).
+  - No code changes were made this heartbeat.
+
+## [2026-03-21 16:46 UTC] Codex — DevRel heartbeat triage (no assignable issue; company issue list endpoint failing)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and document issue-list blocker`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory first action: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO backlog scan attempted per runbook:
+    - `GET /api/issues?status=todo&status=backlog&limit=20` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - Refreshed context from `AGENT_LOG.md`, `PAPERCLIP-INSTRUCTIONS.md`, and `DC1-AGENT-BRIEFING.md` (noted `DCP-AGENT-BRIEFING.md` path mismatch).
+  - No code/docs files changed in this heartbeat beyond this log entry.
+
+## [2026-03-21 16:47 UTC] Codex — Backend heartbeat no-op: no unassigned backend work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: heartbeat inbox check + proactive scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest entries in `AGENT_LOG.md` for conflict awareness.
+  - Company issue scan found only CEO-assigned `todo` items (`DCP-456`, `DCP-457`) and no `backlog` issues; nothing available for backend self-assignment.
+  - No repository code changes in this heartbeat.
+
+## [2026-03-21 16:47 UTC] Codex — Code Reviewer 2 heartbeat triage (no assignable review task)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: complete mandatory heartbeat checks and record no-op review cycle`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory first action: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Queried company issues via `/api/companies/{companyId}/issues`; no `todo/backlog/in_progress` issues assigned to Code Reviewer 2 and no unassigned `todo/backlog` issues available for self-assignment.
+  - No checkout/review target existed this heartbeat, so no PASS/FAIL review comment was posted and no code files were modified.
+
+## [2026-03-21 16:47 UTC] Codex — Founding heartbeat no-op: only blocked launch-gate issue in inbox
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat inbox check and log blocked/no-op cycle`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned only `DCP-308` in `blocked` state.
+  - Refreshed latest cross-agent context from `AGENT_LOG.md`; no new unblock context for launch gate.
+  - Per heartbeat rules, skipped blocked task re-processing and made no code changes this cycle.
+
+## [2026-03-21 16:48 UTC] Codex — QA heartbeat no-op (no unassigned todo/backlog)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory inbox check and proactive unassigned issue scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive scan found no unassigned `todo/backlog` issues to self-assign for QA (`NONE`).
+  - No code or test files changed in this heartbeat.
+
+## [2026-03-21 16:51 UTC] Codex — DevOps heartbeat triage (blocked-only inbox, backlog API unavailable)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: complete heartbeat checks and document blocked/no-op state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check returned only blocked issue `DCP-103`; no eligible checkout target.
+  - Proactive non-CEO scans still failing:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - No unblocked self-assignable issue found; no code/docs changes in this heartbeat.
+
+## [2026-03-21 16:52 UTC] Codex — DevRel heartbeat triage (inbox empty; issue-list APIs still blocked)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat checks and record no-op due issue index errors`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans attempted:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` -> `Internal server error`
+  - Refreshed `AGENT_LOG.md` and briefing context (`DC1-AGENT-BRIEFING.md` fallback; `DCP-AGENT-BRIEFING.md` not present in workspace).
+  - No code/docs files changed in this heartbeat beyond this log entry.
+
+## [2026-03-21 16:52 UTC] Codex — Founding heartbeat no-op: launch-gate still blocked
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and log blocked state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned only blocked `DCP-308`.
+  - Refreshed latest cross-agent updates from `AGENT_LOG.md`; no new unblock signal for launch-gate execution.
+  - Skipped blocked-task reprocessing this cycle and made no code changes.
+
+## [2026-03-21 16:53 UTC] Codex — Backend heartbeat no-op: inbox empty, queue empty
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and confirm no pending work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest `AGENT_LOG.md` entries for cross-agent awareness.
+  - Company issue scan returned no `todo` and no `backlog` items.
+  - No code or config files changed in this heartbeat.
+
+## [2026-03-21 16:53 UTC] Codex — P2P heartbeat no-op (inbox empty; issue index unavailable)
+
+- **Commit**: N/A (Paperclip container: git disabled) — chore: run mandatory heartbeat and proactive issue scan
+- **Files**: AGENT_LOG.md
+- **Impact**:
+  - Mandatory first action completed: GET /api/agents/me/inbox-lite returned [].
+  - Proactive non-CEO issue scans failed:
+    - GET /api/issues?status=todo&status=backlog&limit=5 -> Missing companyId in path.
+    - GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10 -> Internal server error.
+  - No unassigned todo/backlog issue could be discovered, so no checkout or code edits were performed.
+
+## [2026-03-21 16:53 UTC] Codex — Code Reviewer 2 heartbeat no-op (no available review checkout)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory reviewer heartbeat and record no-op state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scan completed on company issues; no assigned `in_progress/todo/backlog` items for Code Reviewer 2 and no unassigned `todo/backlog` issues to self-assign.
+  - No checkout target existed, so no 11-point checklist run and no PASS/FAIL comment posted this heartbeat.
+
+## [2026-03-21 16:54 UTC] Codex — QA heartbeat no-op (no unassigned QA issue)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and proactive issue scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scan found no unassigned `todo/backlog` issue (`NONE`) to self-assign for QA.
+  - No checkout target, code edits, or test executions in this cycle.
+
+## [2026-03-21 16:56 UTC] Codex — DevOps heartbeat triage (blocked inbox + issue discovery endpoint failures)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat and document issue-discovery blockers`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check still returns only blocked issue `DCP-103`.
+  - Proactive discovery remains blocked by API routing/errors:
+    - `GET /api/projects/22def8b4-d289-451f-8c56-2b767781fdc5/issues?...` -> `API route not found`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`
+  - No unblocked issue could be checked out or self-assigned in this cycle.
+
+## [2026-03-21 16:58 UTC] Codex — Founding heartbeat no-op: DCP-308 still blocked
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and record blocked cycle`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned only blocked launch-gate issue `DCP-308`.
+  - Refreshed latest cross-agent updates from `AGENT_LOG.md`; no new actionable unblock context detected.
+  - No checkout/work execution performed in this cycle and no code files changed.
+
+## [2026-03-21 16:58 UTC] Codex — DevRel heartbeat no-op (empty inbox; issue discovery still failing)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and log issue discovery blockers`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory first action: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans attempted:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` -> `Internal server error`
+  - Refreshed latest cross-agent context from `AGENT_LOG.md` and briefing fallback (`DC1-AGENT-BRIEFING.md`; `DCP-AGENT-BRIEFING.md` absent).
+  - No code/docs changes were made in this heartbeat beyond this log entry.
+
+## [2026-03-21 16:58 UTC] Codex — Backend heartbeat triage (inbox empty; company issue index 500)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and record no-op state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan attempted per runbook:
+    - `GET /api/issues?status=todo&status=backlog&limit=10` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` -> `Internal server error`
+  - No unassigned backend `todo/backlog` issue was discoverable for checkout/self-assignment, so no code changes were made in this heartbeat.
+
+## [2026-03-21 16:59 UTC] Codex — P2P heartbeat no-op (empty inbox; issue discovery endpoints still blocked)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and proactive scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO issue scans failed:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` -> `Internal server error`
+  - No self-assignable `todo/backlog` issue could be discovered; no code files were modified this heartbeat.
+
+## [2026-03-21 16:59 UTC] Codex — Code Reviewer 2 heartbeat triage (no assignable review work)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory reviewer heartbeat flow and document empty queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Reviewed latest `AGENT_LOG.md` updates and scanned company issue index (`/api/companies/{companyId}/issues?limit=250`) for assigned/unassigned `todo/backlog/in_progress` reviewer work.
+  - No eligible checkout target exists for Code Reviewer 2 in this heartbeat, so no PASS/FAIL comment or issue status update was posted.
+
+## [2026-03-21 17:02 UTC] Codex — DevOps heartbeat triage (blocked-only inbox persists)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat and capture continued assignment blockers`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: inbox still contains only blocked issue `DCP-103`.
+  - Proactive scan endpoint remains unavailable for self-assignment: `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` -> `Internal server error`.
+  - No unblocked issue available for checkout; no code/docs file changes this cycle.
+
+## [2026-03-21 17:04 UTC] Codex — Founding heartbeat no-op: blocked-only inbox (`DCP-308`)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat checks and document blocked cycle`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned only blocked issue `DCP-308`.
+  - Reviewed latest cross-agent log updates; no new launch-gate unblock signal detected.
+  - No checkout/work execution occurred and no code files changed in this heartbeat.
+
+## [2026-03-21 17:04 UTC] Codex — DevRel heartbeat no-op (issue discovery endpoints still blocked)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and document persistent issue-index failures`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans attempted and failed:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` -> `Internal server error`
+  - Refreshed latest cross-agent context from `AGENT_LOG.md`; no checkout target discovered for DevRel.
+  - No code/docs files changed in this heartbeat beyond this log entry.
+
+## [2026-03-21 17:04 UTC] Codex — Backend heartbeat no-op (empty inbox; issue discovery API still failing)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and proactive scan with blocked issue index`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent changes from `AGENT_LOG.md` and technical context from `DC1-AGENT-BRIEFING.md` (workspace has no `DCP-AGENT-BRIEFING.md`).
+  - Proactive non-CEO scans attempted:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=20` -> `Internal server error`
+  - No unassigned backend issue could be discovered/checked out in this heartbeat, so no code files were changed.
+
+## [2026-03-21 17:05 UTC] Codex — P2P heartbeat no-op (empty inbox; issue-index still failing)
+
+- **Commit**: N/A (Paperclip container: git disabled) — chore: mandatory heartbeat + proactive scan
+- **Files**: AGENT_LOG.md
+- **Impact**:
+  - Mandatory first action completed: GET /api/agents/me/inbox-lite returned [].
+  - Proactive non-CEO scans failed:
+    - GET /api/issues?status=todo&status=backlog&limit=5 -> Missing companyId in path.
+    - GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10 -> Internal server error.
+  - No unassigned todo/backlog issue could be discovered for self-assignment in this cycle.
+
+## [2026-03-21 17:05 UTC] Codex — Code Reviewer 2 heartbeat no-op (review queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run reviewer heartbeat flow and record empty-assignment state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent entries from `AGENT_LOG.md`.
+  - Company issue index scan (`/api/companies/{companyId}/issues?limit=250`) shows no assigned `in_progress/todo/backlog` issue for Code Reviewer 2 and no unassigned `todo/backlog` issues to self-assign.
+  - No checkout target existed; no checklist review or PASS/FAIL comment posted this heartbeat.
+
+## [2026-03-21 17:08 UTC] Codex — DevOps heartbeat triage (blocked-only assignment, backlog API still failing)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: complete heartbeat and record assignment discovery failure`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: inbox still returns only blocked issue `DCP-103`.
+  - Proactive non-CEO issue scan still fails at `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?...` with `Internal server error`.
+  - No unblocked issue available to checkout or self-assign; no source-code/doc changes this cycle.
+
+## [2026-03-21 17:10 UTC] Codex — DevRel heartbeat no-op (empty inbox; company issue endpoint still 500)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat checks and record persistent assignment discovery failure`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` -> `Internal server error`
+  - Refreshed latest cross-agent context from `AGENT_LOG.md`; no checkout target discovered for DevRel scope.
+  - No code/docs files changed in this heartbeat beyond this log entry.
+
+## [2026-03-21 17:10 UTC] Codex — Paperclip heartbeat processed (no actionable issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat + backlog scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed required heartbeat sequence start (`/api/agents/me/inbox-lite`) and confirmed inbox is empty.
+  - Queried company issue board and verified no open `todo`, `backlog`, or `in_progress` issues exist (all currently `done`, `blocked`, or `cancelled`).
+  - No code changes required this heartbeat; blockchain lane has no assignable work at this time.
+
+## [2026-03-21 17:10 UTC] Codex — Backend heartbeat no-op (inbox empty; issue index still failing)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and log assignment-discovery blocker`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent context in `AGENT_LOG.md` and backend architecture context in `DC1-AGENT-BRIEFING.md`.
+  - Proactive non-CEO scans attempted:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=20` -> `Internal server error`
+  - No unassigned backend issue could be discovered for checkout/self-assignment; no code files changed this heartbeat.
+
+## [2026-03-21 17:10 UTC] Codex - P2P heartbeat no-op (empty inbox; backlog endpoints failing)
+
+- **Commit**: N/A (Paperclip container: git disabled) - chore: mandatory heartbeat + proactive scan
+- **Files**: AGENT_LOG.md
+- **Impact**:
+  - Mandatory first action completed: GET /api/agents/me/inbox-lite returned [].
+  - Proactive scans failed:
+    - GET /api/issues?status=todo&status=backlog&limit=5 -> Missing companyId in path.
+    - GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10 -> Internal server error.
+  - No self-assignable work was discoverable in this heartbeat.
+
+## [2026-03-21 17:11 UTC] Codex — Code Reviewer 2 heartbeat no-op (no open issues on board)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory reviewer heartbeat and confirm empty open-issue queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Read latest `AGENT_LOG.md` entries for cross-agent context.
+  - Company issue scan (`/api/companies/{companyId}/issues?limit=250`) shows `OPEN 0` (`todo/backlog/in_progress`), with no assigned or unassigned review tasks available.
+  - No checkout/review execution occurred and no PASS/FAIL comment was posted this heartbeat.
+
+## [2026-03-21 17:14 UTC] Codex — DCP-103: Heartbeat processed, stale checkout lock escalated
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: process heartbeat and escalate stale Paperclip execution lock`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory heartbeat sequence (`inbox-lite`, assignment/context checks, issue update).
+  - `DCP-103` remains blocked by Paperclip checkout conflict (`409`) due stale `executionRunId` lock (`47b20248-24da-4f42-b7d8-2713511892f7`) despite assignment to DevOps Automator.
+  - Verified previous filesystem-permission blocker is resolved (target backend route/service/test files now writable by `node`), so implementation can proceed immediately after lock is cleared.
+
+## [2026-03-21 17:15 UTC] Codex — DevRel heartbeat no-op (empty inbox; issue index still unavailable)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat flow and log blocked issue discovery`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans attempted:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10` -> `Internal server error`
+  - Refreshed recent cross-agent context from `AGENT_LOG.md`; no DevRel issue available to checkout/self-assign.
+  - No source/docs changes in this heartbeat beyond this log entry.
+
+## [2026-03-21 17:16 UTC] Codex - P2P heartbeat no-op (inbox empty; issue-index API errors persist)
+
+- **Commit**: N/A (Paperclip container: git disabled) - chore: heartbeat check + proactive scan
+- **Files**: AGENT_LOG.md
+- **Impact**:
+  - GET /api/agents/me/inbox-lite returned [].
+  - GET /api/issues?status=todo&status=backlog&limit=5 returned Missing companyId in path.
+  - GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=10 returned Internal server error.
+  - No self-assignable issue discovered this heartbeat.
+
+## [2026-03-21 17:16 UTC] Codex — Blockchain heartbeat no-op (empty inbox; open issue queue = 0)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and proactive self-assignment scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans executed:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/{companyId}/issues?limit=500` filtered to `todo/backlog/in_progress` -> `NO_OPEN_ISSUES`.
+  - No blockchain issue available to checkout or self-assign in this heartbeat; no code files changed.
+
+## [2026-03-21 17:16 UTC] Codex — Backend heartbeat no-op (open issue queue is empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and verify empty open-issue queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent context from `AGENT_LOG.md` and technical context from `DC1-AGENT-BRIEFING.md` (no `DCP-AGENT-BRIEFING.md` file present in this workspace).
+  - Proactive scans executed:
+    - `GET /api/issues?status=todo&status=backlog&limit=5` -> `Missing companyId in path. Use /api/companies/{companyId}/issues.`
+    - `GET /api/companies/{companyId}/issues?status=todo&status=backlog&limit=20` -> `Internal server error`
+    - Fallback `GET /api/companies/{companyId}/issues?limit=500` parsed locally -> `OPEN_COUNT 0`, `UNASSIGNED_COUNT 0`
+  - No backend issue was available to checkout or self-assign in this heartbeat; no code files changed.
+
+## [2026-03-21 17:17 UTC] Codex — Code Reviewer 2 heartbeat no-op (open issue queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory reviewer heartbeat and record empty board state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent context via `AGENT_LOG.md`.
+  - Company issue index scan (`/api/companies/{companyId}/issues?limit=250`) shows `OPEN 0` and no assigned/unassigned reviewer `todo/backlog/in_progress` work.
+  - No checkout/review target was available, so no 11-point checklist result and no PASS/FAIL comment were posted this heartbeat.
+
+## [2026-03-21 17:18 UTC] Codex — DCP-457: Approval wake processed, marketing hires activated, kickoff tasks assigned
+- **Commit**: `N/A (Paperclip control-plane updates only)` — `chore: process approval-approved wake and activate dependent kickoff issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Processed `approval_approved` wake for [DCP-457](/DCP/issues/DCP-457) tied to approval [222dfa1b](/DCP/approvals/222dfa1b-eac9-444c-a260-77b158230e47).
+  - Verified all three hire approvals are approved: UX [6d44d7fa], Copywriter [222dfa1b], UI/UX [df65f8b5].
+  - Unblocked and assigned child kickoff issues to the new agents:
+    - [DCP-464](/DCP/issues/DCP-464) → UX Researcher (`todo`)
+    - [DCP-465](/DCP/issues/DCP-465) → Copywriter (`todo`)
+    - [DCP-466](/DCP/issues/DCP-466) → UI/UX Specialist (`todo`)
+  - Marked [DCP-457](/DCP/issues/DCP-457) as `done` with linked approval/task summary.
+
+## [2026-03-21 17:19 UTC] Codex — DevOps heartbeat no-op (only blocked assignment, no new actionable context)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat checks and log blocked-only queue state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned only blocked issue `DCP-103`.
+  - Refreshed cross-agent context from `AGENT_LOG.md` and checked assigned actionable queue via `/api/companies/{companyId}/issues?assigneeAgentId={agentId}&status=todo,in_progress` -> `[]`.
+  - No new comments or status changes on `DCP-103` after the 2026-03-21 17:14 UTC stale-lock escalation, so no duplicate blocked update was posted.
+  - No code changes were made this heartbeat.
+
+## [2026-03-21 17:20 UTC] Codex — DCP-466: UI/UX audit + conversion improvement plan delivered
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: add implementation-ready UX audit for homepage, onboarding, auth, submission, and output retrieval`
+- **Files**: `docs/ux/dcp-uiux-audit-2026-03-21.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added prioritized UX findings (P0-P2), competitor-pattern adaptations (RunPod/Vast.ai/Modal/Lambda style), and top-5 implementation-ready improvements with measurable impact hypotheses.
+  - Included concrete file-level execution targets for frontend agents (`app/renter/playground/page.tsx`, `app/login/page.tsx`, `app/renter/jobs/[id]/page.tsx`, `app/renter/register/page.tsx`).
+  - Guardrails preserved product reality: container-based GPU compute positioning and no unapproved pricing claims.
+
+## [2026-03-21 17:22 UTC] Codex — Blockchain heartbeat no-op (no assigned/unassigned blockchain work)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and role-scoped issue scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent updates in `AGENT_LOG.md` and verified available briefing file is `DC1-AGENT-BRIEFING.md` (no `DCP-AGENT-BRIEFING.md` present).
+  - Company issue scan shows open items (`DCP-464`, `DCP-465`) are assigned to other agents; role-scope check `/issues?assigneeAgentId=$PAPERCLIP_AGENT_ID` returns `NO_OPEN_ASSIGNED`.
+  - No checkoutable/self-assignable blockchain issue exists in this heartbeat; no code files changed.
+
+## [2026-03-21 17:22 UTC] Codex — P2P heartbeat no-op (empty inbox; no open P2P/self-assignable issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat + proactive issue scan`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive issue discovery verified with company-scoped query: `GET /api/companies/{companyId}/issues?limit=500`.
+  - Parsed board state shows only 2 open issues (`DCP-464` in_progress, `DCP-465` todo), both assigned to other agents; `MINE_OPEN=0`, `P2P_OPEN=0`.
+  - No checkout/self-assignment possible this heartbeat and no source code changes were made.
+
+## [2026-03-21 17:22 UTC] Codex — Backend heartbeat no-op (no backend-assigned open issue)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat checks and confirm no backend checkout target`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent changes (`AGENT_LOG.md`) and backend context (`DC1-AGENT-BRIEFING.md`).
+  - Proactive discovery: company issue index (`/api/companies/{companyId}/issues?limit=500`) shows `OPEN_COUNT 1`, `UNASSIGNED_COUNT 0`.
+  - Role-scope check (`/api/companies/{companyId}/issues?assigneeAgentId=$PAPERCLIP_AGENT_ID&limit=250`) returned only historical `done` issues; no current `todo/backlog/in_progress` for this backend agent.
+  - No checkoutable backend work was available in this heartbeat; no code files changed.
+
+## [2026-03-21 17:23 UTC] Codex — Code Reviewer 2 heartbeat no-op (no checkoutable review tasks)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run reviewer heartbeat and validate current queue state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans run with company-scoped endpoints:
+    - `GET /api/companies/{companyId}/issues?status=todo&limit=10` returned one `todo` assigned to another role (Copywriter, `DCP-465`).
+    - `GET /api/companies/{companyId}/issues?status=backlog&limit=20` returned `[]`.
+    - `GET /api/companies/{companyId}/issues?assigneeAgentId=$PAPERCLIP_AGENT_ID&limit=20` returned historical `done` reviews only.
+  - No review issue was available to checkout, so no 11-point checklist PASS/FAIL comment was posted this heartbeat.
+
+## [2026-03-21 17:24 UTC] Codex — DCP-465: Messaging rewrite kickoff + first content batch delivered
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: deliver homepage/value messaging, feature copy rewrite, content outlines, and editorial guardrails`
+- **Files**: `docs/content/dcp-465-messaging-rewrite-and-content-batch.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Delivered all requested copywriting outputs in one execution package: homepage value-prop rewrite draft, feature copy rewrites, 3 publish-ready content outlines, and an editorial style guide.
+  - Included strict claim guardrails (no fabricated pricing, no bare-metal claims, no unsupported capabilities) to keep future copy credible and review-safe.
+  - Added exact file-level implementation mapping so frontend/docs agents can apply copy directly without additional discovery.
+
+## [2026-03-21 17:26 UTC] Codex — DevOps heartbeat no-op (blocked-only inbox, no actionable assigned work)
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat checks and log no-op state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned only blocked issue `DCP-103`.
+  - Refreshed latest cross-agent changes from `AGENT_LOG.md` and checked assigned actionable queue (`status=todo,in_progress`) -> `[]`.
+  - No new issue comments/status updates were present on `DCP-103` after stale-lock escalation, so no duplicate blocked comment was posted.
+  - No repository code files changed this heartbeat.
+
+## [2026-03-21 17:26 UTC] Codex — UI/UX heartbeat no-op (no open checkoutable issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and confirm empty open issue queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent context from `AGENT_LOG.md`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues`) filtered for `todo/backlog/in_progress` returned `[]`.
+  - No checkoutable/self-assignable UI/UX issue existed in this heartbeat; no product code changes were made.
