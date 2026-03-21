@@ -114,20 +114,20 @@ function LoginPageInner() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to send verification code')
+        throw new Error(data.error || t('login.error.send_failed'))
       }
       setAuthStep('otp')
-      setSuccessMsg('Verification code sent! Check your email.')
+      setSuccessMsg(t('login.otp.sent_success'))
       setCountdown(60)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send verification code')
+      setError(err instanceof Error ? err.message : t('login.error.send_failed'))
     } finally { setIsLoading(false) }
   }
 
   const handleVerifyOtp = async () => {
     setError(''); setSuccessMsg(''); setIsLoading(true)
     try {
-      if (!otpCode.trim()) { setError('Please enter the verification code'); setIsLoading(false); return }
+      if (!otpCode.trim()) { setError(t('login.error.enter_verification_code')); setIsLoading(false); return }
       const endpoint = role === 'renter' ? 'renters/verify-otp' : 'providers/verify-otp'
       const res = await fetch(`${API_BASE}/${endpoint}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -135,10 +135,10 @@ function LoginPageInner() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(normalizeAuthError(res.status, data.error || 'Verification failed', 'Invalid or expired code'))
+        throw new Error(normalizeAuthError(res.status, data.error || t('login.error.verification_failed'), t('login.error.invalid_or_expired_code')))
       }
       const data = await res.json()
-      if (!data.success || !data.api_key) throw new Error('Verification failed')
+      if (!data.success || !data.api_key) throw new Error(t('login.error.verification_failed'))
       if (role === 'renter') {
         localStorage.setItem('dc1_renter_key', data.api_key)
         localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'renter', userName: data.renter?.name, email: data.renter?.email }))
@@ -149,7 +149,7 @@ function LoginPageInner() {
         router.push('/provider')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed')
+      setError(err instanceof Error ? err.message : t('login.error.verification_failed'))
     } finally { setIsLoading(false) }
   }
 
@@ -161,7 +161,7 @@ function LoginPageInner() {
         const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey.trim())}`)
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials'))) }
         const data = await res.json()
-        if (!data.renter) throw new Error('Renter not found')
+        if (!data.renter) throw new Error(t('login.error.renter_not_found'))
         localStorage.setItem('dc1_renter_key', apiKey.trim())
         localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'renter', userName: data.renter.name, email: data.renter.email }))
         router.push(getRenterPostLoginRedirect())
@@ -169,13 +169,13 @@ function LoginPageInner() {
         const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey.trim())}`)
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials'))) }
         const data = await res.json()
-        if (!data.provider) throw new Error('Provider not found')
+        if (!data.provider) throw new Error(t('login.error.provider_not_found'))
         localStorage.setItem('dc1_provider_key', apiKey.trim())
         localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'provider', userName: data.provider.name, email: data.provider.email }))
         router.push('/provider')
       } else if (role === 'admin') {
         const res = await fetch(`${API_BASE}/admin/dashboard`, { headers: { 'x-admin-token': apiKey.trim() } })
-        if (!res.ok) throw new Error(normalizeAuthError(res.status, 'Invalid admin key', t('auth.error.invalid_credentials')))
+        if (!res.ok) throw new Error(normalizeAuthError(res.status, t('login.error.invalid_admin_key'), t('auth.error.invalid_credentials')))
         localStorage.setItem('dc1_admin_token', apiKey.trim())
         localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'admin', userName: 'Admin' }))
         router.push('/admin')
@@ -194,6 +194,26 @@ function LoginPageInner() {
 
   const handleResendOtp = () => { if (countdown > 0) return; setOtpCode(''); handleSendOtp() }
   const handleBackToEmail = () => { setAuthStep('email'); setOtpCode(''); setError(''); setSuccessMsg(''); setCountdown(0) }
+  const helperRows = [
+    {
+      id: 'renter',
+      roleLabel: t('login.role.renter'),
+      authLabel: t('login.auth_mode.email_otp'),
+      destination: '/renter/playground',
+    },
+    {
+      id: 'provider',
+      roleLabel: t('login.role.provider'),
+      authLabel: t('login.auth_mode.email_otp'),
+      destination: '/provider',
+    },
+    {
+      id: 'admin',
+      roleLabel: t('login.role.admin'),
+      authLabel: t('login.auth_mode.api_key'),
+      destination: '/admin',
+    },
+  ]
 
   return (
     <div className="flex flex-col min-h-screen bg-dc1-void">
@@ -206,7 +226,7 @@ function LoginPageInner() {
             </div>
             <h1 className="text-2xl font-bold text-dc1-text-primary text-center mb-2">{t('auth.sign_in')}</h1>
             <p className="text-sm text-dc1-text-secondary text-center mb-6">
-              {authStep === 'otp' ? 'Enter the verification code sent to your email' : t('login.sign_in_desc')}
+              {authStep === 'otp' ? t('login.otp.step_description') : t('login.sign_in_desc')}
             </p>
 
             {authStep === 'email' && (
@@ -231,8 +251,24 @@ function LoginPageInner() {
                   {(loginMethod === 'email' ? ['renter', 'provider'] as const : ['renter', 'provider', 'admin'] as const).map((r) => (
                     <label key={r} className="flex items-center gap-2 flex-1 cursor-pointer">
                       <input type="radio" value={r} checked={role === r} onChange={(e) => setRole(e.target.value as Role)} className="w-4 h-4 accent-dc1-amber" />
-                      <span className="text-sm text-dc1-text-primary capitalize">{r}</span>
+                      <span className="text-sm text-dc1-text-primary">{t(`login.role.${r}`)}</span>
                     </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {authStep === 'email' && (
+              <div className="mb-6 rounded-lg border border-dc1-border bg-dc1-surface-l2/60 p-4">
+                <h2 className="text-sm font-semibold text-dc1-text-primary mb-1">{t('login.helper.title')}</h2>
+                <p className="text-xs text-dc1-text-secondary mb-3">{t('login.helper.subtitle')}</p>
+                <div className="space-y-2">
+                  {helperRows.map((row) => (
+                    <div key={row.id} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-dc1-text-primary">{row.roleLabel}</span>
+                      <span className="text-dc1-text-secondary">{row.authLabel}</span>
+                      <span className="font-mono text-dc1-amber">{row.destination}</span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -263,21 +299,24 @@ function LoginPageInner() {
                   ) : (
                     <div>
                       <div className="mb-4 p-3 bg-dc1-surface-l2 rounded-md">
-                        <p className="text-xs text-dc1-text-secondary">Sending code to:</p>
+                        <p className="text-xs text-dc1-text-secondary">{t('login.otp.sending_to')}</p>
                         <p className="text-sm text-dc1-text-primary font-medium">{email}</p>
-                        <button type="button" onClick={handleBackToEmail} className="text-xs text-dc1-amber hover:text-dc1-amber/80 mt-1">Change email</button>
+                        <button type="button" onClick={handleBackToEmail} className="text-xs text-dc1-amber hover:text-dc1-amber/80 mt-1">{t('login.otp.change_email')}</button>
                       </div>
-                      <label htmlFor="otpCode" className="label">Verification Code</label>
+                      <label htmlFor="otpCode" className="label">{t('login.otp.code_label')}</label>
+                      <p className="mb-2 text-xs text-dc1-text-secondary">
+                        {t('login.otp.expectation')}
+                      </p>
                       <input id="otpCode" ref={otpInputRef} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6}
-                        placeholder="Enter 6-digit code" value={otpCode}
+                        placeholder={t('login.otp.placeholder')} value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
                         className="input text-center text-2xl tracking-[0.5em] font-mono" disabled={isLoading} required autoComplete="one-time-code" />
                       <div className="mt-2 text-center">
                         {countdown > 0 ? (
-                          <span className="text-xs text-dc1-text-secondary">Resend code in {countdown}s</span>
+                          <span className="text-xs text-dc1-text-secondary">{t('login.otp.resend_in').replace('{seconds}', String(countdown))}</span>
                         ) : (
                           <button type="button" onClick={handleResendOtp} className="text-xs text-dc1-amber hover:text-dc1-amber/80" disabled={isLoading}>
-                            Resend verification code
+                            {t('login.otp.resend')}
                           </button>
                         )}
                       </div>
@@ -296,15 +335,15 @@ function LoginPageInner() {
 
               <button type="submit" disabled={isLoading} className="btn btn-primary w-full">
                 {isLoading
-                  ? (authStep === 'otp' ? 'Verifying...' : t('login.signing_in'))
-                  : (loginMethod === 'email' ? (authStep === 'otp' ? 'Verify Code' : 'Send Verification Code') : t('auth.sign_in'))}
+                  ? (authStep === 'otp' ? t('login.otp.verifying') : t('login.signing_in'))
+                  : (loginMethod === 'email' ? (authStep === 'otp' ? t('login.otp.verify_cta') : t('login.otp.send_cta')) : t('auth.sign_in'))}
               </button>
             </form>
 
             <div className="mt-6 pt-6 border-t border-dc1-border/30">
               <p className="text-xs text-dc1-text-secondary text-center mb-3">
                 {loginMethod === 'email'
-                  ? (authStep === 'otp' ? 'Check your inbox and spam folder for the verification code.' : 'We will send a one-time verification code to your email.')
+                  ? (authStep === 'otp' ? t('login.otp.check_inbox') : t('login.otp.send_notice'))
                   : t('login.apikey_hint')}
               </p>
             </div>

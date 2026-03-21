@@ -166,6 +166,45 @@ export default function HomePage() {
     { value: '7', label: t('landing.stat_platform'), live: false },
   ]
 
+  const heroPathCards =
+    selectedIntent === 'provider'
+      ? [
+          {
+            role: 'provider' as const,
+            labelKey: 'landing.path_provider_label',
+            titleKey: 'landing.path_provider_register_title',
+            descKey: 'landing.path_provider_register_desc',
+            href: '/provider/register',
+            analyticsLabel: 'Register GPU / get API key',
+          },
+          {
+            role: 'provider' as const,
+            labelKey: 'landing.path_provider_label',
+            titleKey: 'landing.path_provider_install_title',
+            descKey: 'landing.path_provider_install_desc',
+            href: '/docs/provider-guide',
+            analyticsLabel: 'Install daemon / heartbeat verification',
+          },
+        ]
+      : [
+          {
+            role: 'renter' as const,
+            labelKey: 'landing.path_renter_label',
+            titleKey: 'landing.path_renter_playground_title',
+            descKey: 'landing.path_renter_playground_desc',
+            href: '/renter/register',
+            analyticsLabel: 'Playground (browser, no setup)',
+          },
+          {
+            role: 'renter' as const,
+            labelKey: 'landing.path_renter_label',
+            titleKey: 'landing.path_renter_container_title',
+            descKey: 'landing.path_renter_container_desc',
+            href: '/docs/quickstart',
+            analyticsLabel: 'Container Jobs (API + Docker image)',
+          },
+        ]
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -203,7 +242,7 @@ export default function HomePage() {
                       : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
                   }`}
                 >
-                  I need compute
+                  {t('landing.intent_renter_chip')}
                 </button>
                 <button
                   type="button"
@@ -221,53 +260,35 @@ export default function HomePage() {
                       : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
                   }`}
                 >
-                  I have GPUs
+                  {t('landing.intent_provider_chip')}
                 </button>
               </div>
 
-              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 text-left ${selectedIntent === 'provider' ? 'opacity-75' : ''}`}>
-                <Link
-                  href="/renter/register"
-                  onClick={() =>
-                    trackLandingEvent('landing_path_selected', {
-                      page: 'landing',
-                      selection_type: 'path_card',
-                      role: 'renter',
-                      path_label: 'Playground (browser, no setup)',
-                      destination: '/renter/register',
-                    })
-                  }
-                  className={`rounded-xl p-5 border transition-all ${
-                    selectedIntent === 'renter'
-                      ? 'border-dc1-amber bg-dc1-amber/10 shadow-sm'
-                      : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-border-light'
-                  }`}
-                >
-                  <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">Renter path</p>
-                  <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">Playground (browser, no setup)</h3>
-                  <p className="text-sm text-dc1-text-secondary">Start immediately in your browser with no Docker or CLI required.</p>
-                </Link>
-                <Link
-                  href="/docs/quickstart"
-                  onClick={() =>
-                    trackLandingEvent('landing_path_selected', {
-                      page: 'landing',
-                      selection_type: 'path_card',
-                      role: 'renter',
-                      path_label: 'Container Jobs (API + Docker image)',
-                      destination: '/docs/quickstart',
-                    })
-                  }
-                  className={`rounded-xl p-5 border transition-all ${
-                    selectedIntent === 'renter'
-                      ? 'border-dc1-amber/60 bg-dc1-surface-l2 hover:border-dc1-amber'
-                      : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-border-light'
-                  }`}
-                >
-                  <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">Renter path</p>
-                  <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">Container Jobs (API + Docker image)</h3>
-                  <p className="text-sm text-dc1-text-secondary">Bring your image and submit container workloads through the API.</p>
-                </Link>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+                {heroPathCards.map((card, index) => (
+                  <Link
+                    key={`${card.href}-${index}`}
+                    href={card.href}
+                    onClick={() =>
+                      trackLandingEvent('landing_path_selected', {
+                        page: 'landing',
+                        selection_type: 'path_card',
+                        role: card.role,
+                        path_label: card.analyticsLabel,
+                        destination: card.href,
+                      })
+                    }
+                    className={`rounded-xl p-5 border transition-all ${
+                      index === 0
+                        ? 'border-dc1-amber bg-dc1-amber/10 shadow-sm'
+                        : 'border-dc1-amber/60 bg-dc1-surface-l2 hover:border-dc1-amber'
+                    }`}
+                  >
+                    <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">{t(card.labelKey)}</p>
+                    <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">{t(card.titleKey)}</h3>
+                    <p className="text-sm text-dc1-text-secondary">{t(card.descKey)}</p>
+                  </Link>
+                ))}
               </div>
 
               <div className="mt-4 rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-4 text-left">
@@ -377,69 +398,71 @@ export default function HomePage() {
       {/* Billing transparency */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div ref={billingExplainerRef} className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
-          <h2 className="text-xl font-semibold text-dc1-text-primary mb-3">How DCP Billing Works</h2>
+          <h2 className="text-xl font-semibold text-dc1-text-primary mb-3">{t('billing.explainer.title')}</h2>
           <ul className="space-y-2 text-sm text-dc1-text-secondary">
-            <li>1. We place a prepay estimate hold in halala before your job starts.</li>
-            <li>2. Final cost uses actual runtime settlement, not the initial estimate.</li>
-            <li>3. Any unused hold is automatically refunded in halala after completion.</li>
+            <li>{t('billing.explainer.step1')}</li>
+            <li>{t('billing.explainer.step2')}</li>
+            <li>{t('billing.explainer.step3')}</li>
           </ul>
-          <p className="mt-3 text-xs text-dc1-text-muted">100 halala = 1 SAR.</p>
+          <p className="mt-3 text-xs text-dc1-text-muted">{t('billing.explainer.note')}</p>
         </div>
       </section>
 
-      {/* Supported Models & Why DCP */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber mb-6 text-center">
+      {/* Supported Models – scrolling marquee */}
+      <section className="py-16 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber text-center">
             Run these models on DCP today
           </p>
-          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-6 items-center justify-items-center mb-8">
-            {[
-              { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM', label: 'ALLaM 7B' },
-              { src: '/arabic-ai-logos/falcon-tii.svg', alt: 'Falcon', label: 'Falcon H1' },
-              { src: '/arabic-ai-logos/jais-inception.png', alt: 'JAIS', label: 'JAIS 13B' },
-              { src: '/arabic-ai-logos/baai.png', alt: 'BGE-M3', label: 'BGE-M3' },
-              { src: '/arabic-ai-logos/sdxl-stability.png', alt: 'SDXL', label: 'SDXL' },
-            ].map((m) => (
-              <div key={m.alt} className="flex flex-col items-center gap-2">
-                <div className="w-12 h-12 rounded-lg bg-white/10 border border-dc1-border flex items-center justify-center p-1.5">
-                  <img src={m.src} alt={m.alt} className="max-w-full max-h-full object-contain brightness-0 invert opacity-80" />
-                </div>
-                <span className="text-[10px] text-dc1-text-secondary font-medium">{m.label}</span>
-              </div>
-            ))}
-            {[
-              { label: 'Llama 3.1' },
-              { label: 'Mistral' },
-              { label: 'Qwen 2.5' },
-              { label: 'Gemma 2' },
-              { label: 'Whisper' },
-            ].map((m) => (
-              <div key={m.label} className="flex flex-col items-center gap-2">
-                <div className="w-12 h-12 rounded-lg bg-dc1-amber/10 border border-dc1-amber/20 flex items-center justify-center">
-                  <span className="text-dc1-amber text-xs font-bold">{m.label.slice(0, 2).toUpperCase()}</span>
-                </div>
-                <span className="text-[10px] text-dc1-text-secondary font-medium">{m.label}</span>
+        </div>
+        <div className="relative w-full">
+          <div className="absolute left-0 top-0 bottom-0 w-24 sm:w-40 bg-gradient-to-r from-[#0d1117] to-transparent z-10 pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-24 sm:w-40 bg-gradient-to-l from-[#0d1117] to-transparent z-10 pointer-events-none" />
+          <div className="flex animate-marquee">
+            {[0, 1].map((copy) => (
+              <div key={copy} className="flex items-center gap-14 sm:gap-20 px-7 sm:px-10 shrink-0">
+                {[
+                  { src: '/logos/meta.png', alt: 'Meta' },
+                  { src: '/logos/falcon-white.svg', alt: 'Falcon LLM' },
+                  { src: '/logos/mistral.png', alt: 'Mistral AI' },
+                  { src: '/logos/inception-full.png', alt: 'Inception' },
+                  { src: '/logos/qwen.png', alt: 'Qwen' },
+                  { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM' },
+                  { src: '/logos/tii.png', alt: 'TII' },
+                  { src: '/logos/stability.png', alt: 'Stability AI' },
+                  { src: '/logos/microsoft.png', alt: 'Microsoft' },
+                  { src: '/logos/huggingface.png', alt: 'Hugging Face' },
+                ].map((logo, i) => (
+                  <img
+                    key={`${copy}-${i}`}
+                    src={logo.src}
+                    alt={logo.alt}
+                    className="h-8 sm:h-10 w-auto object-contain brightness-0 invert opacity-60 hover:opacity-100 transition-opacity duration-300 shrink-0"
+                  />
+                ))}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-dc1-border">
-            <div className="text-center">
-              <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_energy_title')}</p>
-              <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_energy_desc')}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_models_title')}</p>
-              <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_models_desc')}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_container_title')}</p>
-              <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_container_desc')}</p>
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
+          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center">
+                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_energy_title')}</p>
+                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_energy_desc')}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_models_title')}</p>
+                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_models_desc')}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_container_title')}</p>
+                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_container_desc')}</p>
+              </div>
             </div>
           </div>
         </div>
       </section>
-
       {/* Pricing section removed — rates not yet finalized */}
 
       {/* Usage Paths */}
