@@ -5384,7 +5384,7 @@ Assign in this order when issue creation comes back:
 
 ## [2026-03-21 18:13 UTC] Frontend Developer — DCP-478: Live reliability strips added to home + renter marketplace CTAs
 
-- **Commit**: `pending` — `feat: add live reliability strip with provider/family coverage and timezone-safe refresh timestamps`
+- **Commit**: `4b7203e` — `feat: add live reliability strip with provider/family coverage and timezone-safe refresh timestamps`
 - **Files**: `app/page.tsx`, `app/renter/marketplace/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
 - **Impact**:
   - Added live reliability strip near primary CTA clusters on homepage and renter marketplace.
