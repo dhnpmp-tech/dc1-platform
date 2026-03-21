@@ -7,10 +7,47 @@ import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
 
 const GPU_RATES: { model: string; rate: number }[] = []
+const RELIABILITY_POLL_MS = 30_000
+
+interface AvailabilityProvider {
+  gpu_model?: string | null
+  is_live?: boolean | null
+}
+
+function extractGpuFamily(gpuModel: string | null | undefined): string {
+  const model = String(gpuModel || '').toUpperCase()
+  if (!model) return 'Unknown'
+  if (model.includes('H200')) return 'H200'
+  if (model.includes('H100')) return 'H100'
+  if (model.includes('A100')) return 'A100'
+  if (model.includes('A40')) return 'A40'
+  if (model.includes('L40')) return 'L40'
+  if (model.includes('4090')) return 'RTX 4090'
+  if (model.includes('3090')) return 'RTX 3090'
+  if (model.includes('A6000')) return 'RTX A6000'
+  if (model.includes('A5000')) return 'RTX A5000'
+  if (model.includes('RTX')) return 'RTX'
+  return model.split(/[\s/-]+/).slice(0, 2).join(' ') || 'Unknown'
+}
+
+function formatReliabilityTimestamp(date: Date | null): string {
+  if (!date) return '—'
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  })
+}
 
 export default function HomePage() {
   const { t } = useLanguage()
   const [liveGpuCount, setLiveGpuCount] = useState<number | null>(null)
+  const [gpuFamilyCoverage, setGpuFamilyCoverage] = useState<number | null>(null)
+  const [reliabilityUpdatedAt, setReliabilityUpdatedAt] = useState<Date | null>(null)
+  const [selectedIntent, setSelectedIntent] = useState<'renter' | 'provider'>('renter')
 
 
   const features = [
@@ -50,12 +87,39 @@ export default function HomePage() {
   ]
 
   useEffect(() => {
-    fetch('/api/dc1/providers/available')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setLiveGpuCount(data.length)
-      })
-      .catch(() => {})
+    const fetchReliability = async () => {
+      try {
+        const res = await fetch('/api/dc1/providers/available')
+        if (!res.ok) return
+
+        const payload = await res.json()
+        const providers: AvailabilityProvider[] = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.providers)
+            ? payload.providers
+            : []
+
+        const hasLiveFlag = providers.some((p) => typeof p?.is_live === 'boolean')
+        const liveCount = hasLiveFlag
+          ? providers.filter((p) => p?.is_live).length
+          : providers.length
+        const families = new Set(
+          providers
+            .map((p) => extractGpuFamily(p?.gpu_model))
+            .filter((family) => family !== 'Unknown')
+        )
+
+        setLiveGpuCount(liveCount)
+        setGpuFamilyCoverage(families.size)
+        setReliabilityUpdatedAt(new Date())
+      } catch {
+        // Keep last successful values visible.
+      }
+    }
+
+    fetchReliability()
+    const interval = setInterval(fetchReliability, RELIABILITY_POLL_MS)
+    return () => clearInterval(interval)
   }, [])
 
   const stats = [
@@ -79,19 +143,79 @@ export default function HomePage() {
               {t('landing.hero_badge')}
             </div>
             <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
-              {t('landing.hero_title_1')}{' '}{t('landing.hero_title_2')}
+              {t('landing.hero_title')}
             </h1>
             <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
               {t('landing.hero_desc')}
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/provider/register" className="btn btn-primary btn-lg w-full sm:w-auto">
-                {t('landing.cta_provider')}
-              </Link>
-              <Link href="/renter/register" className="btn btn-secondary btn-lg w-full sm:w-auto">
-                {t('landing.cta_renter')}
-              </Link>
+            <div className="max-w-4xl mx-auto w-full">
+              <div className="flex flex-wrap items-center justify-center gap-3 mb-5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedIntent('renter')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    selectedIntent === 'renter'
+                      ? 'bg-dc1-amber text-dc1-void'
+                      : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
+                  }`}
+                >
+                  I need compute
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIntent('provider')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    selectedIntent === 'provider'
+                      ? 'bg-dc1-amber text-dc1-void'
+                      : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
+                  }`}
+                >
+                  I have GPUs
+                </button>
+              </div>
+
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 text-left ${selectedIntent === 'provider' ? 'opacity-75' : ''}`}>
+                <Link
+                  href="/renter/register"
+                  className={`rounded-xl p-5 border transition-all ${
+                    selectedIntent === 'renter'
+                      ? 'border-dc1-amber bg-dc1-amber/10 shadow-sm'
+                      : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-border-light'
+                  }`}
+                >
+                  <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">Renter path</p>
+                  <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">Playground (browser, no setup)</h3>
+                  <p className="text-sm text-dc1-text-secondary">Start immediately in your browser with no Docker or CLI required.</p>
+                </Link>
+                <Link
+                  href="/docs/quickstart"
+                  className={`rounded-xl p-5 border transition-all ${
+                    selectedIntent === 'renter'
+                      ? 'border-dc1-amber/60 bg-dc1-surface-l2 hover:border-dc1-amber'
+                      : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-border-light'
+                  }`}
+                >
+                  <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">Renter path</p>
+                  <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">Container Jobs (API + Docker image)</h3>
+                  <p className="text-sm text-dc1-text-secondary">Bring your image and submit container workloads through the API.</p>
+                </Link>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-5">
+                <Link
+                  href="/provider/register"
+                  className={`btn btn-lg w-full sm:w-auto ${
+                    selectedIntent === 'provider' ? 'btn-primary' : 'btn-secondary'
+                  }`}
+                >
+                  {t('landing.cta_provider')}
+                </Link>
+                <Link href="/earn" className="btn btn-secondary btn-lg w-full sm:w-auto">
+                  {t('landing.earn_calc')}
+                </Link>
+              </div>
             </div>
+            <p className="text-xs text-dc1-text-muted mt-4">{t('landing.hero_helper')}</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
               <Link
                 href="/marketplace"
@@ -113,11 +237,49 @@ export default function HomePage() {
                 </svg>
               </Link>
             </div>
+            <div className="mt-5 mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
+                {t('landing.reliability_strip_label')}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
+                <p>
+                  <span className="text-dc1-text-primary font-semibold">{liveGpuCount ?? '—'}</span> {t('landing.reliability_live_providers')}
+                </p>
+                <p>
+                  <span className="text-dc1-text-primary font-semibold">{gpuFamilyCoverage ?? '—'}</span> {t('landing.reliability_gpu_families')}
+                </p>
+                <p>
+                  <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable')}</span>
+                </p>
+              </div>
+            </div>
             <p className="text-dc1-text-secondary text-sm mt-6">
               {t('landing.already_account')}{' '}
               <Link href="/login" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold underline underline-offset-2">
                 {t('landing.sign_in_here')}
               </Link>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Strategic differentiators */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 sm:-mt-8 relative z-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber mb-2">
+              {t('landing.diff_energy_title')}
+            </p>
+            <p className="text-sm text-dc1-text-secondary leading-relaxed">
+              {t('landing.diff_energy_desc')}
+            </p>
+          </div>
+          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber mb-2">
+              {t('landing.diff_models_title')}
+            </p>
+            <p className="text-sm text-dc1-text-secondary leading-relaxed">
+              {t('landing.diff_models_desc')}
             </p>
           </div>
         </div>
@@ -142,16 +304,45 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Billing transparency */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
+          <h2 className="text-xl font-semibold text-dc1-text-primary mb-3">How DCP Billing Works</h2>
+          <ul className="space-y-2 text-sm text-dc1-text-secondary">
+            <li>1. We place a prepay estimate hold in halala before your job starts.</li>
+            <li>2. Final cost uses actual runtime settlement, not the initial estimate.</li>
+            <li>3. Any unused hold is automatically refunded in halala after completion.</li>
+          </ul>
+          <p className="mt-3 text-xs text-dc1-text-muted">100 halala = 1 SAR.</p>
+        </div>
+      </section>
+
+      {/* Differentiator strip */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { title: t('landing.diff_energy_title'), body: t('landing.diff_energy_desc') },
+            { title: t('landing.diff_models_title'), body: t('landing.diff_models_desc') },
+            { title: t('landing.diff_container_title'), body: t('landing.diff_container_desc') },
+          ].map((item) => (
+            <div key={item.title} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-5">
+              <h3 className="text-base font-semibold text-dc1-text-primary mb-2">{item.title}</h3>
+              <p className="text-sm text-dc1-text-secondary leading-relaxed">{item.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Pricing section removed — rates not yet finalized */}
 
       {/* Usage Paths */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            Two Ways to Use GPU Compute
+            Two Ways to Rent GPUs
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            Start with instant inference in the Playground, or bring your own containers for heavier workloads.
+            Start in the browser for fast tests, then move to container jobs when you need repeatable workflows.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -165,13 +356,13 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Playground</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Run LLM inference and image generation directly from your browser. Pick a model, enter a prompt, get results in seconds. No containers, no CLI, no configuration.
+              Rent GPUs for LLM inference and image generation directly from your browser. Pick a model, submit a prompt, and review output before scaling.
             </p>
             <ul className="space-y-2 mb-8">
               {[
                 'Browser-based — no install needed',
                 'Results in seconds to minutes',
-                'Pay-as-you-go billing',
+                'Prepay estimate before run',
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -180,7 +371,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/renter/register" className="btn btn-primary btn-sm">
-              Try the Playground
+              Start renting GPUs
             </Link>
           </div>
 
@@ -191,14 +382,14 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Custom Jobs</h3>
+            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Container Jobs</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Bring your own Docker image for training, fine-tuning, batch processing, or any GPU workload. Your container runs on GPU-accelerated Docker instances with NVIDIA Container Toolkit support.
+              Bring your own Docker image for training, fine-tuning, batch processing, or any GPU workload. Container jobs run with NVIDIA Container Toolkit support.
             </p>
             <ul className="space-y-2 mb-8">
               {[
                 'Any Docker image with CUDA support',
-                'Full GPU access, no virtualization',
+                'Container-based execution path',
                 'Submit via REST API',
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
@@ -208,7 +399,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/docs" className="btn btn-secondary btn-sm">
-              Read the Renter Guide
+              View API docs
             </Link>
           </div>
         </div>
@@ -532,7 +723,7 @@ provider.start()  # auto-detect, heartbeat, earn`}</pre>
             <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://dcp.sa/api/dc1/jobs/submit \\
   -H "Content-Type: application/json" \\
   -d '{
-    "renter_key": "dc1-renter-...",
+    "renter_key": "dcp-renter-...",
     "provider_id": 26,
     "job_type": "llm_inference",
     "model": "ALLaM-7B-Instruct",
@@ -560,11 +751,11 @@ provider.start()  # auto-detect, heartbeat, earn`}</pre>
             {t('landing.cta_desc')}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/provider/register" className="btn btn-primary btn-lg w-full sm:w-auto">
-              {t('landing.cta_register_provider')}
-            </Link>
             <Link href="/renter/register" className="btn btn-primary btn-lg w-full sm:w-auto">
               {t('landing.cta_register_renter')}
+            </Link>
+            <Link href="/provider/register" className="btn btn-secondary btn-lg w-full sm:w-auto">
+              {t('landing.cta_register_provider')}
             </Link>
           </div>
           <div className="mt-6">
