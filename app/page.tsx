@@ -6,25 +6,12 @@ import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
 
-const GPU_RATES = [
-  { model: 'RTX 3060', rate: 3.50 },
-  { model: 'RTX 3090', rate: 7.50 },
-  { model: 'RTX 4090', rate: 12.00 },
-  { model: 'A100', rate: 22.00 },
-  { model: 'H100', rate: 38.00 },
-]
+const GPU_RATES: { model: string; rate: number }[] = []
 
 export default function HomePage() {
   const { t } = useLanguage()
   const [liveGpuCount, setLiveGpuCount] = useState<number | null>(null)
-  const [calcGpu, setCalcGpu] = useState('RTX 4090')
-  const [calcHours, setCalcHours] = useState(8)
-  const [calcDays, setCalcDays] = useState(30)
 
-  const calcRate = GPU_RATES.find(g => g.model === calcGpu)?.rate ?? 12
-  const calcGross = Math.round(calcRate * calcHours * calcDays)
-  const calcFee = Math.round(calcGross * 0.25)
-  const calcNet = calcGross - calcFee
 
   const features = [
     {
@@ -155,45 +142,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Founding Rates */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            Founding Rates
-          </h2>
-          <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            Locked-in pricing for early community members. Billed in SAR with approximate USD equivalents.
-          </p>
-        </div>
-        <div className="max-w-3xl mx-auto">
-          <div className="bg-dc1-surface-l2 border border-dc1-border rounded-xl overflow-hidden">
-            <div className="grid grid-cols-4 gap-0 bg-dc1-surface-l1 px-6 py-3 text-xs font-mono uppercase tracking-wider text-dc1-text-muted border-b border-dc1-border">
-              <span>GPU</span>
-              <span>Founding Rate (SAR)</span>
-              <span>USD Approx.</span>
-              <span>Availability</span>
-            </div>
-            {[
-              { gpu: 'RTX 4090', sar: '3.19 SAR/hr', usd: '~$0.85 USD/hr', avail: 'Available now', live: true },
-              { gpu: 'A100 80GB', sar: '7.31 SAR/hr', usd: '~$1.95 USD/hr', avail: 'Coming soon', live: false },
-              { gpu: 'H100', sar: '9.19 SAR/hr', usd: '~$2.45 USD/hr', avail: 'Coming soon', live: false },
-            ].map((row) => (
-              <div key={row.gpu} className="grid grid-cols-4 gap-0 px-6 py-4 text-sm border-b border-dc1-border last:border-0 items-center">
-                <span className="font-semibold text-dc1-text-primary">{row.gpu}</span>
-                <span className="text-dc1-amber font-mono">{row.sar}</span>
-                <span className="text-dc1-text-secondary">{row.usd}</span>
-                <span className="flex items-center gap-2 text-dc1-text-secondary">
-                  {row.live && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
-                  {row.avail}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-dc1-text-muted text-center mt-4">
-            Founding rates locked for early providers and renters. Job-level billing: LLM inference at 15 halala/min, image generation at 20 halala/min.
-          </p>
-        </div>
-      </section>
+      {/* Pricing section removed — rates not yet finalized */}
 
       {/* Usage Paths */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
@@ -222,7 +171,7 @@ export default function HomePage() {
               {[
                 'Browser-based — no install needed',
                 'Results in seconds to minutes',
-                'Per-minute billing (15–20 halala/min)',
+                'Pay-as-you-go billing',
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -244,7 +193,7 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Custom Jobs</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Bring your own Docker image for training, fine-tuning, batch processing, or any GPU workload. Your container runs on bare-metal GPUs with NVIDIA Container Toolkit support.
+              Bring your own Docker image for training, fine-tuning, batch processing, or any GPU workload. Your container runs on GPU-accelerated Docker instances with NVIDIA Container Toolkit support.
             </p>
             <ul className="space-y-2 mb-8">
               {[
@@ -396,108 +345,7 @@ Invoke-WebRequest \`
           <div className="text-center mb-12">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-4">
               <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              {t('calculator.badge')}
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-              {t('calculator.title')}
-            </h2>
-            <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-              {t('calculator.subtitle')}
-            </p>
-          </div>
-
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-8 space-y-8">
-              {/* GPU Model */}
-              <div>
-                <label className="block text-sm font-medium text-dc1-text-primary mb-2">
-                  {t('calculator.gpu')}
-                </label>
-                <select
-                  value={calcGpu}
-                  onChange={e => setCalcGpu(e.target.value)}
-                  className="w-full bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-dc1-text-primary text-sm focus:outline-none focus:border-dc1-amber/50 transition-colors"
-                >
-                  {GPU_RATES.map(g => (
-                    <option key={g.model} value={g.model}>
-                      {g.model} — {g.rate.toFixed(2)} SAR/hr
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Hours/day slider */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <label className="text-sm font-medium text-dc1-text-primary">
-                    {t('calculator.hours_per_day')}
-                  </label>
-                  <span className="text-sm font-bold text-dc1-amber">{calcHours}h</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={24}
-                  value={calcHours}
-                  onChange={e => setCalcHours(Number(e.target.value))}
-                  className="w-full accent-dc1-amber"
-                />
-                <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
-                  <span>1h</span>
-                  <span>24h</span>
-                </div>
-              </div>
-
-              {/* Days/month slider */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <label className="text-sm font-medium text-dc1-text-primary">
-                    {t('calculator.days_per_month')}
-                  </label>
-                  <span className="text-sm font-bold text-dc1-amber">{calcDays}d</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={31}
-                  value={calcDays}
-                  onChange={e => setCalcDays(Number(e.target.value))}
-                  className="w-full accent-dc1-amber"
-                />
-                <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
-                  <span>1d</span>
-                  <span>31d</span>
-                </div>
-              </div>
-
-              {/* Results */}
-              <div className="border-t border-dc1-border pt-6 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-dc1-text-secondary">{t('calculator.estimated')}</span>
-                  <span className="text-lg font-bold text-dc1-text-primary">{calcGross.toLocaleString()} SAR</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-dc1-text-secondary">{t('calculator.dcp_fee')}</span>
-                  <span className="text-sm text-red-400">−{calcFee.toLocaleString()} SAR</span>
-                </div>
-                <div className="flex justify-between items-center bg-dc1-amber/5 border border-dc1-amber/20 rounded-lg px-4 py-3">
-                  <span className="text-sm font-semibold text-dc1-amber">► {t('calculator.you_keep')}</span>
-                  <span className="text-2xl font-extrabold text-dc1-amber">{calcNet.toLocaleString()} SAR/mo</span>
-                </div>
-              </div>
-
-              <Link href="/provider/register" className="btn btn-primary btn-lg w-full text-center block">
-                {t('landing.cta_provider')} →
-              </Link>
-            </div>
-            <p className="text-xs text-dc1-text-muted text-center mt-4">
-              {t('calculator.disclaimer')}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* What You Can Run */}
+              {t('{/* What You Can Run */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
