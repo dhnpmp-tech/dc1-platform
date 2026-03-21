@@ -353,27 +353,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Strategic differentiators */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 sm:-mt-8 relative z-10">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber mb-2">
-              {t('landing.diff_energy_title')}
-            </p>
-            <p className="text-sm text-dc1-text-secondary leading-relaxed">
-              {t('landing.diff_energy_desc')}
-            </p>
-          </div>
-          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber mb-2">
-              {t('landing.diff_models_title')}
-            </p>
-            <p className="text-sm text-dc1-text-secondary leading-relaxed">
-              {t('landing.diff_models_desc')}
-            </p>
-          </div>
-        </div>
-      </section>
+
 
       {/* Stats bar */}
       <section className="border-y border-dc1-border bg-dc1-surface-l1/50">
@@ -407,19 +387,56 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Differentiator strip */}
+      {/* Supported Models & Why DCP */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            { title: t('landing.diff_energy_title'), body: t('landing.diff_energy_desc') },
-            { title: t('landing.diff_models_title'), body: t('landing.diff_models_desc') },
-            { title: t('landing.diff_container_title'), body: t('landing.diff_container_desc') },
-          ].map((item) => (
-            <div key={item.title} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-5">
-              <h3 className="text-base font-semibold text-dc1-text-primary mb-2">{item.title}</h3>
-              <p className="text-sm text-dc1-text-secondary leading-relaxed">{item.body}</p>
+        <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber mb-6 text-center">
+            Run these models on DCP today
+          </p>
+          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-6 items-center justify-items-center mb-8">
+            {[
+              { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM', label: 'ALLaM 7B' },
+              { src: '/arabic-ai-logos/falcon-tii.svg', alt: 'Falcon', label: 'Falcon H1' },
+              { src: '/arabic-ai-logos/jais-inception.png', alt: 'JAIS', label: 'JAIS 13B' },
+              { src: '/arabic-ai-logos/baai.png', alt: 'BGE-M3', label: 'BGE-M3' },
+              { src: '/arabic-ai-logos/sdxl-stability.png', alt: 'SDXL', label: 'SDXL' },
+            ].map((m) => (
+              <div key={m.alt} className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-lg bg-white/10 border border-dc1-border flex items-center justify-center p-1.5">
+                  <img src={m.src} alt={m.alt} className="max-w-full max-h-full object-contain brightness-0 invert opacity-80" />
+                </div>
+                <span className="text-[10px] text-dc1-text-secondary font-medium">{m.label}</span>
+              </div>
+            ))}
+            {[
+              { label: 'Llama 3.1' },
+              { label: 'Mistral' },
+              { label: 'Qwen 2.5' },
+              { label: 'Gemma 2' },
+              { label: 'Whisper' },
+            ].map((m) => (
+              <div key={m.label} className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-lg bg-dc1-amber/10 border border-dc1-amber/20 flex items-center justify-center">
+                  <span className="text-dc1-amber text-xs font-bold">{m.label.slice(0, 2).toUpperCase()}</span>
+                </div>
+                <span className="text-[10px] text-dc1-text-secondary font-medium">{m.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-dc1-border">
+            <div className="text-center">
+              <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_energy_title')}</p>
+              <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_energy_desc')}</p>
             </div>
-          ))}
+            <div className="text-center">
+              <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_models_title')}</p>
+              <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_models_desc')}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_container_title')}</p>
+              <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_container_desc')}</p>
+            </div>
+          </div>
         </div>
       </section>
 
