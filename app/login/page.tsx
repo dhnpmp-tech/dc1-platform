@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
@@ -10,6 +10,8 @@ const API_BASE = '/api/dc1'
 
 type Role = 'provider' | 'renter' | 'admin'
 type LoginMethod = 'email' | 'apikey'
+type AuthStep = 'email' | 'otp'
+
 type PendingPlaygroundIntent = {
   providerId?: number
   model?: string
@@ -23,12 +25,28 @@ function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { t } = useLanguage()
+
   const [email, setEmail] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [otpCode, setOtpCode] = useState('')
   const [role, setRole] = useState<Role>('renter')
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('email')
+  const [authStep, setAuthStep] = useState<AuthStep>('email')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+  const [countdown, setCountdown] = useState(0)
+  const otpInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (countdown <= 0) return
+    const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [countdown])
+
+  useEffect(() => {
+    if (authStep === 'otp' && otpInputRef.current) otpInputRef.current.focus()
+  }, [authStep])
 
   const getSafeRedirect = (fallback: string) => {
     const redirectParam = searchParams.get('redirect')
@@ -40,23 +58,16 @@ function LoginPageInner() {
   const getRenterPostLoginRedirect = () => {
     const defaultRedirect = getSafeRedirect('/renter')
     if (typeof window === 'undefined') return defaultRedirect
-
     const rawIntent = sessionStorage.getItem(PENDING_AUTH_INTENT_KEY)
     if (!rawIntent) return defaultRedirect
-
     try {
       const intent = JSON.parse(rawIntent) as PendingPlaygroundIntent
       const params = new URLSearchParams()
       if (intent.providerId != null && Number.isFinite(intent.providerId)) params.set('provider', String(intent.providerId))
       if (intent.model) params.set('model', intent.model)
       if (intent.mode) params.set('mode', intent.mode)
-
-      sessionStorage.setItem(RESTORED_AUTH_INTENT_KEY, JSON.stringify({
-        ...intent,
-        restoredAt: new Date().toISOString(),
-      }))
+      sessionStorage.setItem(RESTORED_AUTH_INTENT_KEY, JSON.stringify({ ...intent, restoredAt: new Date().toISOString() }))
       sessionStorage.removeItem(PENDING_AUTH_INTENT_KEY)
-
       const targetBase = defaultRedirect === '/renter' ? '/renter/playground' : defaultRedirect
       return params.size > 0 ? `${targetBase}?${params.toString()}` : targetBase
     } catch {
@@ -75,307 +86,244 @@ function LoginPageInner() {
   const normalizeAuthError = (status: number, rawError: string, fallback: string) => {
     const lower = rawError.toLowerCase()
     if (status === 401 || status === 403) {
-      if (lower.includes('expired') || lower.includes('session')) {
-        return t('auth.error.expired_session')
-      }
+      if (lower.includes('expired') || lower.includes('session')) return t('auth.error.expired_session')
       return t('auth.error.invalid_credentials')
     }
-    if (lower.includes('expired') || lower.includes('session')) {
-      return t('auth.error.expired_session')
-    }
+    if (lower.includes('expired') || lower.includes('session')) return t('auth.error.expired_session')
     return rawError || fallback
   }
 
   useEffect(() => {
     const roleParam = searchParams.get('role')
-    if (roleParam === 'renter' || roleParam === 'provider' || roleParam === 'admin') {
-      setRole(roleParam)
-    }
-
+    if (roleParam === 'renter' || roleParam === 'provider' || roleParam === 'admin') setRole(roleParam)
     const methodParam = searchParams.get('method')
-    if (methodParam === 'email' || methodParam === 'apikey') {
-      setLoginMethod(methodParam)
-    }
-
+    if (methodParam === 'email' || methodParam === 'apikey') setLoginMethod(methodParam)
     const reasonParam = searchParams.get('reason')
-    if (reasonParam) {
-      setError(getReasonMessage(reasonParam))
-    }
+    if (reasonParam) setError(getReasonMessage(reasonParam))
   }, [searchParams, t])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setIsLoading(true)
-
+  const handleSendOtp = async () => {
+    setError(''); setSuccessMsg(''); setIsLoading(true)
     try {
-      if (loginMethod === 'email') {
-        // Email-based login
-        if (!email.trim()) {
-          setError(t('login.enter_email'))
-          setIsLoading(false)
-          return
-        }
+      if (!email.trim()) { setError(t('login.enter_email')); setIsLoading(false); return }
+      if (role === 'admin') { setError(t('login.admin_needs_key')); setIsLoading(false); return }
+      const endpoint = role === 'renter' ? 'renters/send-otp' : 'providers/send-otp'
+      const res = await fetch(`${API_BASE}/${endpoint}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to send verification code')
+      }
+      setAuthStep('otp')
+      setSuccessMsg('Verification code sent! Check your email.')
+      setCountdown(60)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send verification code')
+    } finally { setIsLoading(false) }
+  }
 
-        if (role === 'admin') {
-          setError(t('login.admin_needs_key'))
-          setIsLoading(false)
-          return
-        }
-
-        const endpoint = role === 'renter' ? 'renters/login-email' : 'providers/login-email'
-        const res = await fetch(`${API_BASE}/${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email.trim() }),
-          redirect: 'follow',
-        })
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => '')
-          let errorMsg = 'Login failed'
-          try {
-            if (text && !text.startsWith('<!')) {
-              const data = JSON.parse(text)
-              errorMsg = data.error || 'Login failed'
-            }
-          } catch {}
-          throw new Error(normalizeAuthError(res.status, errorMsg, t('auth.error.sign_in_failed')))
-        }
-
-        const data = await res.json()
-        if (!data.success || !data.api_key) throw new Error('Login failed')
-
-        if (role === 'renter') {
-          localStorage.setItem('dc1_renter_key', data.api_key)
-          localStorage.setItem('dc1_user_data', JSON.stringify({
-            role: 'renter',
-            userName: data.renter?.name,
-            email: data.renter?.email,
-          }))
-          router.push(getRenterPostLoginRedirect())
-        } else {
-          localStorage.setItem('dc1_provider_key', data.api_key)
-          localStorage.setItem('dc1_user_data', JSON.stringify({
-            role: 'provider',
-            userName: data.provider?.name,
-            email: data.provider?.email,
-          }))
-          router.push('/provider')
-        }
-
+  const handleVerifyOtp = async () => {
+    setError(''); setSuccessMsg(''); setIsLoading(true)
+    try {
+      if (!otpCode.trim()) { setError('Please enter the verification code'); setIsLoading(false); return }
+      const endpoint = role === 'renter' ? 'renters/verify-otp' : 'providers/verify-otp'
+      const res = await fetch(`${API_BASE}/${endpoint}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), token: otpCode.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(normalizeAuthError(res.status, data.error || 'Verification failed', 'Invalid or expired code'))
+      }
+      const data = await res.json()
+      if (!data.success || !data.api_key) throw new Error('Verification failed')
+      if (role === 'renter') {
+        localStorage.setItem('dc1_renter_key', data.api_key)
+        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'renter', userName: data.renter?.name, email: data.renter?.email }))
+        router.push(getRenterPostLoginRedirect())
       } else {
-        // API key-based login (original flow)
-        if (!apiKey.trim()) {
-          setError(t('login.enter_key'))
-          setIsLoading(false)
-          return
-        }
+        localStorage.setItem('dc1_provider_key', data.api_key)
+        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'provider', userName: data.provider?.name, email: data.provider?.email }))
+        router.push('/provider')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed')
+    } finally { setIsLoading(false) }
+  }
 
-        if (role === 'renter') {
-          const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey.trim())}`)
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}))
-            throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials')))
-          }
-          const data = await res.json()
-          if (!data.renter) throw new Error('Renter not found')
-
-          localStorage.setItem('dc1_renter_key', apiKey.trim())
-          localStorage.setItem('dc1_user_data', JSON.stringify({
-            role: 'renter',
-            userName: data.renter.name,
-            email: data.renter.email,
-          }))
-          router.push(getRenterPostLoginRedirect())
-
-        } else if (role === 'provider') {
-          const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey.trim())}`)
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}))
-            throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials')))
-          }
-          const data = await res.json()
-          if (!data.provider) throw new Error('Provider not found')
-
-          localStorage.setItem('dc1_provider_key', apiKey.trim())
-          localStorage.setItem('dc1_user_data', JSON.stringify({
-            role: 'provider',
-            userName: data.provider.name,
-            email: data.provider.email,
-          }))
-          router.push('/provider')
-
-        } else if (role === 'admin') {
-          const res = await fetch(`${API_BASE}/admin/dashboard`, {
-            headers: { 'x-admin-token': apiKey.trim() },
-          })
-          if (!res.ok) throw new Error(normalizeAuthError(res.status, 'Invalid admin key', t('auth.error.invalid_credentials')))
-
-          localStorage.setItem('dc1_admin_token', apiKey.trim())
-          localStorage.setItem('dc1_user_data', JSON.stringify({
-            role: 'admin',
-            userName: 'Admin',
-          }))
-          router.push('/admin')
-        }
+  const handleApiKeyLogin = async () => {
+    setError(''); setIsLoading(true)
+    try {
+      if (!apiKey.trim()) { setError(t('login.enter_key')); setIsLoading(false); return }
+      if (role === 'renter') {
+        const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey.trim())}`)
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials'))) }
+        const data = await res.json()
+        if (!data.renter) throw new Error('Renter not found')
+        localStorage.setItem('dc1_renter_key', apiKey.trim())
+        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'renter', userName: data.renter.name, email: data.renter.email }))
+        router.push(getRenterPostLoginRedirect())
+      } else if (role === 'provider') {
+        const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey.trim())}`)
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials'))) }
+        const data = await res.json()
+        if (!data.provider) throw new Error('Provider not found')
+        localStorage.setItem('dc1_provider_key', apiKey.trim())
+        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'provider', userName: data.provider.name, email: data.provider.email }))
+        router.push('/provider')
+      } else if (role === 'admin') {
+        const res = await fetch(`${API_BASE}/admin/dashboard`, { headers: { 'x-admin-token': apiKey.trim() } })
+        if (!res.ok) throw new Error(normalizeAuthError(res.status, 'Invalid admin key', t('auth.error.invalid_credentials')))
+        localStorage.setItem('dc1_admin_token', apiKey.trim())
+        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'admin', userName: 'Admin' }))
+        router.push('/admin')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t('auth.error.sign_in_failed'))
-    } finally {
-      setIsLoading(false)
-    }
+    } finally { setIsLoading(false) }
   }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (loginMethod === 'apikey') return handleApiKeyLogin()
+    if (authStep === 'email') return handleSendOtp()
+    return handleVerifyOtp()
+  }
+
+  const handleResendOtp = () => { if (countdown > 0) return; setOtpCode(''); handleSendOtp() }
+  const handleBackToEmail = () => { setAuthStep('email'); setOtpCode(''); setError(''); setSuccessMsg(''); setCountdown(0) }
 
   return (
     <div className="flex flex-col min-h-screen bg-dc1-void">
       <Header />
-
       <main className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           <div className="card border-dc1-border/50 shadow-lg">
-            {/* Logo */}
             <div className="flex justify-center mb-8">
-              <img
-                src="/logo.svg"
-                alt="DCP"
-                className="h-12 w-auto"
-              />
+              <img src="/logo.svg" alt="DCP" className="h-12 w-auto" />
             </div>
-
-            <h1 className="text-2xl font-bold text-dc1-text-primary text-center mb-2">
-              {t('auth.sign_in')}
-            </h1>
+            <h1 className="text-2xl font-bold text-dc1-text-primary text-center mb-2">{t('auth.sign_in')}</h1>
             <p className="text-sm text-dc1-text-secondary text-center mb-6">
-              {t('login.sign_in_desc')}
+              {authStep === 'otp' ? 'Enter the verification code sent to your email' : t('login.sign_in_desc')}
             </p>
 
-            {/* Login Method Toggle */}
-            <div className="mb-6">
-              <div className="flex rounded-lg border border-dc1-border overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => { setLoginMethod('email'); setError('') }}
-                  className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                    loginMethod === 'email'
-                      ? 'bg-dc1-amber text-dc1-void'
-                      : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
-                  }`}
-                >
-                  {t('login.email')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setLoginMethod('apikey'); setError('') }}
-                  className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                    loginMethod === 'apikey'
-                      ? 'bg-dc1-amber text-dc1-void'
-                      : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
-                  }`}
-                >
-                  {t('login.api_key')}
-                </button>
-              </div>
-            </div>
-
-            {/* Role Selector */}
-            <div className="mb-6">
-              <label className="label">{t('login.account_type')}</label>
-              <div className="flex gap-3">
-                {(loginMethod === 'email' ? ['renter', 'provider'] as const : ['renter', 'provider', 'admin'] as const).map((r) => (
-                  <label key={r} className="flex items-center gap-2 flex-1 cursor-pointer">
-                    <input
-                      type="radio"
-                      value={r}
-                      checked={role === r}
-                      onChange={(e) => setRole(e.target.value as Role)}
-                      className="w-4 h-4 accent-dc1-amber"
-                    />
-                    <span className="text-sm text-dc1-text-primary capitalize">{r}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Error message */}
-            {error && (
-              <div className="mb-4 p-3 bg-status-error/10 border border-status-error/30 rounded-md text-status-error text-sm">
-                {error}
+            {authStep === 'email' && (
+              <div className="mb-6">
+                <div className="flex rounded-lg border border-dc1-border overflow-hidden">
+                  <button type="button" onClick={() => { setLoginMethod('email'); setError(''); setSuccessMsg('') }}
+                    className={`flex-1 py-2.5 text-sm font-medium transition-colors ${loginMethod === 'email' ? 'bg-dc1-amber text-dc1-void' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'}`}>
+                    {t('login.email')}
+                  </button>
+                  <button type="button" onClick={() => { setLoginMethod('apikey'); setError(''); setSuccessMsg('') }}
+                    className={`flex-1 py-2.5 text-sm font-medium transition-colors ${loginMethod === 'apikey' ? 'bg-dc1-amber text-dc1-void' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'}`}>
+                    {t('login.api_key')}
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* Form */}
+            {authStep === 'email' && (
+              <div className="mb-6">
+                <label className="label">{t('login.account_type')}</label>
+                <div className="flex gap-3">
+                  {(loginMethod === 'email' ? ['renter', 'provider'] as const : ['renter', 'provider', 'admin'] as const).map((r) => (
+                    <label key={r} className="flex items-center gap-2 flex-1 cursor-pointer">
+                      <input type="radio" value={r} checked={role === r} onChange={(e) => setRole(e.target.value as Role)} className="w-4 h-4 accent-dc1-amber" />
+                      <span className="text-sm text-dc1-text-primary capitalize">{r}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-md text-emerald-400 text-sm flex items-center gap-2">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                {successMsg}
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-4 p-3 bg-status-error/10 border border-status-error/30 rounded-md text-status-error text-sm">{error}</div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {loginMethod === 'email' ? (
-                <div>
-                  <label htmlFor="email" className="label">
-                    {t('login.email_address')}
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="input"
-                    disabled={isLoading}
-                    required
-                    autoFocus
-                  />
-                </div>
+                <>
+                  {authStep === 'email' ? (
+                    <div>
+                      <label htmlFor="email" className="label">{t('login.email_address')}</label>
+                      <input id="email" type="email" placeholder="you@example.com" value={email}
+                        onChange={(e) => setEmail(e.target.value)} className="input" disabled={isLoading} required autoFocus />
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="mb-4 p-3 bg-dc1-surface-l2 rounded-md">
+                        <p className="text-xs text-dc1-text-secondary">Sending code to:</p>
+                        <p className="text-sm text-dc1-text-primary font-medium">{email}</p>
+                        <button type="button" onClick={handleBackToEmail} className="text-xs text-dc1-amber hover:text-dc1-amber/80 mt-1">Change email</button>
+                      </div>
+                      <label htmlFor="otpCode" className="label">Verification Code</label>
+                      <input id="otpCode" ref={otpInputRef} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6}
+                        placeholder="Enter 6-digit code" value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                        className="input text-center text-2xl tracking-[0.5em] font-mono" disabled={isLoading} required autoComplete="one-time-code" />
+                      <div className="mt-2 text-center">
+                        {countdown > 0 ? (
+                          <span className="text-xs text-dc1-text-secondary">Resend code in {countdown}s</span>
+                        ) : (
+                          <button type="button" onClick={handleResendOtp} className="text-xs text-dc1-amber hover:text-dc1-amber/80" disabled={isLoading}>
+                            Resend verification code
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div>
-                  <label htmlFor="apiKey" className="label">
-                    {t('login.api_key')}
-                  </label>
-                  <input
-                    id="apiKey"
-                    type="password"
+                  <label htmlFor="apiKey" className="label">{t('login.api_key')}</label>
+                  <input id="apiKey" type="password"
                     placeholder={role === 'renter' ? 'dcp-renter-...' : role === 'provider' ? 'dcp-provider-...' : 'admin key'}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="input font-mono"
-                    disabled={isLoading}
-                    required
-                  />
+                    value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+                    className="input font-mono" disabled={isLoading} required />
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="btn btn-primary w-full"
-              >
-                {isLoading ? t('login.signing_in') : t('auth.sign_in')}
+              <button type="submit" disabled={isLoading} className="btn btn-primary w-full">
+                {isLoading
+                  ? (authStep === 'otp' ? 'Verifying...' : t('login.signing_in'))
+                  : (loginMethod === 'email' ? (authStep === 'otp' ? 'Verify Code' : 'Send Verification Code') : t('auth.sign_in'))}
               </button>
             </form>
 
-            {/* Help text */}
             <div className="mt-6 pt-6 border-t border-dc1-border/30">
               <p className="text-xs text-dc1-text-secondary text-center mb-3">
-                {loginMethod === 'email' ? t('login.email_hint') : t('login.apikey_hint')}
+                {loginMethod === 'email'
+                  ? (authStep === 'otp' ? 'Check your inbox and spam folder for the verification code.' : 'We will send a one-time verification code to your email.')
+                  : t('login.apikey_hint')}
               </p>
             </div>
 
-            {/* Register links */}
-            <div className="mt-4 space-y-2 text-center text-sm">
-              <p className="text-dc1-text-secondary">
-                {t('login.new_to_dc1')}{' '}
-                <a href="/provider/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">
-                  {t('login.become_provider')}
-                </a>
-              </p>
-              <p className="text-dc1-text-secondary">
-                {t('login.want_to_rent')}{' '}
-                <a href="/renter/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">
-                  {t('login.register_as_renter')}
-                </a>
-              </p>
-            </div>
+            {authStep === 'email' && (
+              <div className="mt-4 space-y-2 text-center text-sm">
+                <p className="text-dc1-text-secondary">
+                  {t('login.new_to_dc1')}{' '}
+                  <a href="/provider/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">{t('login.become_provider')}</a>
+                </p>
+                <p className="text-dc1-text-secondary">
+                  {t('login.want_to_rent')}{' '}
+                  <a href="/renter/register" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">{t('login.register_as_renter')}</a>
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </main>
-
       <Footer />
     </div>
   )

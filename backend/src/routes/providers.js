@@ -326,6 +326,66 @@ router.post('/register', async (req, res) => {
 // ============================================================================
 // POST /api/providers/login-email - Login with email instead of API key
 // ============================================================================
+
+// --- SUPABASE AUTH OTP (Real Magic Link) ---
+const { sendOtp, verifyOtp } = require('../services/auth-otp');
+
+// POST /api/providers/send-otp - Send magic link OTP code via Supabase Auth
+router.post('/send-otp', loginEmailLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
+
+    const result = await sendOtp(cleanEmail);
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to send verification code' });
+    }
+
+    res.json({ success: true, message: 'Verification code sent to your email' });
+  } catch (error) {
+    console.error('Provider OTP send error:', error);
+    res.status(500).json({ error: 'Failed to send verification code' });
+  }
+});
+
+// POST /api/providers/verify-otp - Verify OTP code and return API key
+router.post('/verify-otp', loginEmailLimiter, async (req, res) => {
+  try {
+    const { email, token } = req.body;
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
+    if (!token) return res.status(400).json({ error: 'Verification code is required' });
+
+    const otpResult = await verifyOtp(cleanEmail, token);
+    if (!otpResult.success) {
+      return res.status(401).json({ error: otpResult.error || 'Invalid or expired verification code' });
+    }
+
+    // OTP verified via Supabase Auth - now find the provider in SQLite
+    const provider = db.get('SELECT * FROM providers WHERE LOWER(email) = LOWER(?)', cleanEmail);
+
+    if (!provider) {
+      return res.status(404).json({ error: 'No provider account found with this email. Register first.' });
+    }
+
+    res.json({
+      success: true,
+      api_key: provider.api_key,
+      provider: {
+        id: provider.id,
+        name: provider.name,
+        email: provider.email,
+        gpu_model: provider.gpu_model,
+        status: provider.status,
+      }
+    });
+  } catch (error) {
+    console.error('Provider OTP verify error:', error);
+    res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
 router.post('/login-email', loginEmailLimiter, (req, res) => {
     try {
         const { email } = req.body;

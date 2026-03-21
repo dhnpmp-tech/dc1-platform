@@ -560,6 +560,75 @@ router.get('/balance', (req, res) => {
 });
 
 // POST /api/renters/login-email — Login with email instead of API key
+
+// --- SUPABASE AUTH OTP (Real Magic Link) ---
+const { sendOtp, verifyOtp } = require('../services/auth-otp');
+
+// POST /api/renters/send-otp - Send magic link OTP code via Supabase Auth
+router.post('/send-otp', loginEmailLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
+
+    const result = await sendOtp(cleanEmail);
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to send verification code' });
+    }
+
+    res.json({ success: true, message: 'Verification code sent to your email' });
+  } catch (error) {
+    console.error('Renter OTP send error:', error);
+    res.status(500).json({ error: 'Failed to send verification code' });
+  }
+});
+
+// POST /api/renters/verify-otp - Verify OTP code and return API key
+router.post('/verify-otp', loginEmailLimiter, async (req, res) => {
+  try {
+    const { email, token } = req.body;
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
+    if (!token) return res.status(400).json({ error: 'Verification code is required' });
+
+    const otpResult = await verifyOtp(cleanEmail, token);
+    if (!otpResult.success) {
+      return res.status(401).json({ error: otpResult.error || 'Invalid or expired verification code' });
+    }
+
+    // OTP verified via Supabase Auth - now find the renter in SQLite
+    let renter = db.get('SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?', cleanEmail, 'active');
+
+    if (!renter) {
+      const reconciliation = await reconcileRenterByEmailFromSupabase({ db, email: cleanEmail });
+      if (reconciliation.reconciled && reconciliation.renter && reconciliation.renter.status === 'active') {
+        renter = reconciliation.renter;
+      }
+    }
+
+    if (!renter) {
+      return res.status(404).json({ error: 'No renter account found with this email. Register first at /renter/register' });
+    }
+
+    res.json({
+      success: true,
+      api_key: renter.api_key,
+      renter: {
+        id: renter.id,
+        name: renter.name,
+        email: renter.email,
+        organization: renter.organization,
+        balance_halala: renter.balance_halala,
+        total_spent_halala: renter.total_spent_halala,
+        total_jobs: renter.total_jobs,
+      }
+    });
+  } catch (error) {
+    console.error('Renter OTP verify error:', error);
+    res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
 router.post('/login-email', loginEmailLimiter, async (req, res) => {
   try {
     const { email } = req.body;
