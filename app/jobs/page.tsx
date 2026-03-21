@@ -105,10 +105,15 @@ export default function JobsPage() {
   }, []);
 
   useEffect(() => {
+    const renterKey = typeof window !== 'undefined' ? sessionStorage.getItem('dc1_renter_key') : null;
+    if (renterKey) {
+      router.replace('/renter/jobs');
+      return;
+    }
     fetchJobs();
     const interval = setInterval(fetchJobs, 15000);
     return () => clearInterval(interval);
-  }, [fetchJobs]);
+  }, [fetchJobs, router]);
 
   useEffect(() => {
     if (jobs.length > 0 && !selectedId) {

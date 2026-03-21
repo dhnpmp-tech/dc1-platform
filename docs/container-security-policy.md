@@ -66,7 +66,8 @@ These controls are required to prevent runaway workloads and host instability.
 ### 7) Seccomp Enforcement
 
 - A restricted seccomp profile MUST be present and passed via `--security-opt seccomp=<path>`.
-- `run-job.sh` fails fast if seccomp profile is missing.
+- `run-job.sh` accepts `--seccomp-profile` (or `DCP_SECCOMP_PROFILE`) and fails fast when the path does not exist.
+- Set `DCP_REQUIRE_SECCOMP_PROFILE=true` to enforce fail-closed startup when no seccomp profile is configured.
 - `docker-manager.ts` appends seccomp policy when profile path exists.
 
 ### 8) Privilege Minimization
@@ -121,3 +122,10 @@ These controls are required to prevent runaway workloads and host instability.
 7. `image_scans.critical_count = 0` before image is marked approved.
 8. `docker inspect <container>` confirms non-zero `Memory`, `MemorySwap`, `NanoCpus`, and `PidsLimit`.
 9. `docker inspect <container>` confirms image is in approved allowlist.
+
+## Reproducible Runtime Verification
+
+Run `infra/scripts/verify-runtime-baseline.sh` after restart/reload to assert:
+- PM2 non-payment services are online.
+- Local/public API health endpoints are healthy.
+- `infra/docker/run-job.sh` still contains required hardening flags (network isolation, no-new-privileges, read-only rootfs, memory-swap parity, PID limits).

@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
+const PUBLIC_API_FALLBACK = `https://dcp.sa${API_BASE}`
 
 interface RegistrationFormData {
   fullName: string
@@ -28,6 +29,41 @@ const GPU_EARNINGS: Record<string, { rate: number; providerRate: number; label: 
   'RTX 4090': { rate: 22, providerRate: 16.5, label: 'RTX 4090 (24 GB)' },
   'A100': { rate: 75, providerRate: 56.25, label: 'A100 (80 GB)' },
   'H100': { rate: 120, providerRate: 90, label: 'H100 (80 GB)' },
+}
+
+type InstallTarget = 'linux' | 'windows'
+
+function normalizeApiBase(raw: string): string {
+  return raw.trim().replace(/\/+$/, '')
+}
+
+function getProviderInstallApiBase(): string {
+  const envBase = process.env.NEXT_PUBLIC_DC1_API
+  if (envBase) {
+    const normalized = normalizeApiBase(envBase)
+    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+      return normalized
+    }
+    if (typeof window !== 'undefined' && normalized.startsWith('/')) {
+      return `${window.location.origin}${normalized}`
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}${API_BASE}`
+  }
+
+  return PUBLIC_API_FALLBACK
+}
+
+function buildProviderInstallCommand(target: InstallTarget, apiBase: string, key: string): string {
+  const encodedKey = encodeURIComponent(key)
+
+  if (target === 'windows') {
+    return `irm ${apiBase}/providers/download/setup?key=${encodedKey}&os=windows | iex`
+  }
+
+  return `curl -fsSL ${apiBase}/providers/download/daemon?key=${encodedKey} -o dc1_daemon.py && python3 dc1_daemon.py`
 }
 
 export default function ProviderRegisterPage() {
@@ -55,6 +91,22 @@ export default function ProviderRegisterPage() {
   ])
   const [showSuccess, setShowSuccess] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollingKeyRef = useRef<string | null>(null)
+
+  const stopStatusPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    pollingKeyRef.current = null
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      stopStatusPolling()
+    }
+  }, [stopStatusPolling])
 
   // Validate form
   const validateForm = () => {
@@ -135,7 +187,14 @@ export default function ProviderRegisterPage() {
 
   // Poll provider status via heartbeat
   const startStatusPolling = (key: string) => {
-    const interval = setInterval(async () => {
+    if (pollingKeyRef.current === key && pollingIntervalRef.current) {
+      return
+    }
+
+    stopStatusPolling()
+    pollingKeyRef.current = key
+
+    pollingIntervalRef.current = setInterval(async () => {
       try {
         const response = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(key)}`)
         if (!response.ok) return
@@ -166,14 +225,12 @@ export default function ProviderRegisterPage() {
           setStatusSteps((prev) =>
             prev.map((s) => ({ ...s, status: 'completed' }))
           )
-          clearInterval(interval)
+          stopStatusPolling()
         }
       } catch (err) {
         console.error('Failed to fetch status:', err)
       }
     }, 5000)
-
-    return () => clearInterval(interval)
   }
 
   // Copy to clipboard
@@ -194,6 +251,12 @@ export default function ProviderRegisterPage() {
   }
 
   if (showSuccess && apiKey) {
+    const installApiBase = getProviderInstallApiBase()
+    const linuxInstallCommand = buildProviderInstallCommand('linux', installApiBase, apiKey)
+    const windowsInstallCommand = buildProviderInstallCommand('windows', installApiBase, apiKey)
+    const reachabilityCheckCommand = `curl -I ${installApiBase}/providers/download/daemon?key=${encodeURIComponent(apiKey)}`
+    const keyValidationCommand = `curl ${installApiBase}/providers/me?key=${encodeURIComponent(apiKey)}`
+
     return (
       <>
         <Header />
@@ -293,16 +356,9 @@ export default function ProviderRegisterPage() {
                       Linux (Ubuntu/Debian)
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
-                      <code className="text-dc1-amber">
-                        curl -fsSL https://api.dcp.sa/api/providers/download/daemon?key={apiKey} -o dc1_daemon.py && python3 dc1_daemon.py
-                      </code>
+                      <code className="text-dc1-amber">{linuxInstallCommand}</code>
                       <button
-                        onClick={() =>
-                          copyToClipboard(
-                            `curl -fsSL https://api.dcp.sa/api/providers/download/daemon?key=${apiKey} -o dc1_daemon.py && python3 dc1_daemon.py`,
-                            1
-                          )
-                        }
+                        onClick={() => copyToClipboard(linuxInstallCommand, 1)}
                         className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
                         title="Copy installation command"
                       >
@@ -343,16 +399,9 @@ export default function ProviderRegisterPage() {
                       Windows PowerShell
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
-                      <code className="text-dc1-amber">
-                        irm https://api.dcp.sa/api/providers/download/setup?key={apiKey}&os=windows | iex
-                      </code>
+                      <code className="text-dc1-amber">{windowsInstallCommand}</code>
                       <button
-                        onClick={() =>
-                          copyToClipboard(
-                            `irm https://api.dcp.sa/api/providers/download/setup?key=${apiKey}&os=windows | iex`,
-                            2
-                          )
-                        }
+                        onClick={() => copyToClipboard(windowsInstallCommand, 2)}
                         className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
                         title="Copy installation command"
                       >
@@ -386,6 +435,17 @@ export default function ProviderRegisterPage() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                <div className="mt-4 rounded-md border border-status-warning/30 bg-status-warning/5 p-4">
+                  <p className="text-sm font-semibold text-dc1-text-primary mb-2">
+                    Command did not run? Check these 3 items:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-2 text-xs text-dc1-text-secondary font-mono">
+                    <li>Endpoint reachability: {reachabilityCheckCommand}</li>
+                    <li>API key validity: {keyValidationCommand}</li>
+                    <li>Daemon startup: rerun the install command, then confirm this page reaches step 3 (Connected) and step 4 (Ready).</li>
+                  </ol>
                 </div>
               </div>
 

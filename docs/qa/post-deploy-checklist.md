@@ -159,3 +159,20 @@ If any rollback signal is hit:
 1. Stop remaining smoke checks for later batches.
 2. Post a FAIL comment on the current batch issue with exact failing check + timestamp.
 3. Notify Claude-Cowork immediately with endpoint/page + repro steps + logs/status code.
+
+## Auth Path Regression Check (DCP-497)
+
+### Scope
+- `/login` renter sign-in
+- `/jobs/submit` (`components/jobs/JobSubmitForm.tsx`)
+- `/renter/playground`
+
+### Manual checks
+- [ ] Log in at `https://dcp.sa/login?role=renter` using renter email/API key flow and confirm success redirect.
+- [ ] Open `https://dcp.sa/jobs/submit` in the same browser session and confirm the form shows logged-in renter state (no `Authentication Required` gate).
+- [ ] Open `https://dcp.sa/renter/playground` and confirm renter session is recognized without re-entering API key.
+- [ ] Click logout from submit flow and confirm session is cleared (auth gate returns on refresh).
+
+### Pass/fail criteria
+- Pass: Login once on `/login` is honored in submit and playground flows; logout clears both flows.
+- Fail: Any flow asks for renter key again immediately after successful login, or logout leaves stale auth state.

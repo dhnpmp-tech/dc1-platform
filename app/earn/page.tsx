@@ -321,6 +321,9 @@ export default function EarnPage() {
         <p className="text-xs text-dc1-text-muted mt-4">
           {t('earn.payout_disclaimer')}
         </p>
+        <p className="text-xs text-dc1-text-muted mt-2">
+          {t('earn.payout_status')}
+        </p>
       </section>
 
       <Footer />

@@ -20,6 +20,35 @@ Key examples:
 - `dcp-provider-...`
 - `dcp-renter-...`
 
+## Auth hardening checklist
+
+Use this baseline in production clients and SDK wrappers:
+
+1. Prefer headers (`x-provider-key`, `x-renter-key`, `x-admin-token`) over query params.
+2. Use query params only where required by existing GET endpoints (`/providers/me?key=...`, `/renters/me?key=...`).
+3. Keep keys in server-side env vars or local CLI env vars, never in committed source.
+4. Never print full API keys in logs, screenshots, or support tickets.
+5. Rotate keys immediately if exposed and update daemon/CI secrets in one change window.
+
+Minimal secure request pattern:
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: $RENTER_KEY" \
+  -d '{"provider_id": 42, "job_type": "llm-inference", "duration_minutes": 2}'
+```
+
+## Non-payment compute flow (quick path)
+
+This doc update intentionally excludes payment and escrow flows. For sandbox or internal demos, the core API path is:
+
+1. Validate key (`GET /renters/me?key=...`).
+2. Discover capacity (`GET /renters/available-providers`).
+3. Submit compute (`POST /jobs/submit` with `x-renter-key`).
+4. Observe execution (`GET /jobs/:id/logs` or `/logs/stream`).
+5. Retrieve output (`GET /jobs/:id/output`).
+
 ## Error contract
 
 All failures return JSON:
@@ -100,3 +129,4 @@ curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
 
 - Human-readable: [API docs page](/docs/api)
 - Machine-readable: `/docs/openapi.yaml`
+- Runtime checks: [Runtime Verification Runbook](/docs/ops/runtime-verification)

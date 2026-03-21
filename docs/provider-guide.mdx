@@ -63,9 +63,28 @@ Expected fields:
 3. Daemon can reach `https://dcp.sa/api/dc1`.
 4. Firewall allows outbound HTTPS.
 
+## Runtime verification (operator baseline)
+
+Before declaring a provider machine production-ready, verify host runtime and API wiring:
+
+```bash
+# GPU + driver visibility
+nvidia-smi
+
+# Docker sees NVIDIA runtime
+docker info | grep -i runtime
+
+# Provider heartbeat + status
+curl -s "https://dcp.sa/api/dc1/providers/me?key=<PROVIDER_KEY>"
+```
+
+Then run end-to-end smoke validation from submit to output retrieval. Full checklist:
+- [Runtime Verification Runbook](/docs/ops/runtime-verification)
+
 ## Related docs
 
 - [Quickstart](/docs/quickstart)
 - [Renter Guide](/docs/renter-guide)
 - [Architecture Overview](/docs/architecture-overview)
 - [API Reference](/docs/api-reference)
+- [Runtime Verification Runbook](/docs/ops/runtime-verification)

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "smoke:gpu-job": "node scripts/gpu-job-lifecycle-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

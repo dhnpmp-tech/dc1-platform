@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 const API_BASE = '/api/dc1';
@@ -46,6 +46,7 @@ function Skeleton({ className = '' }: { className?: string }) {
 
 export default function JobSubmitForm() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const urlProvider = searchParams.get('provider') || '';
@@ -75,9 +76,10 @@ export default function JobSubmitForm() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showTaskSpec, setShowTaskSpec] = useState(false);
 
-  // Check for existing renter key in sessionStorage
+  // Bootstrap renter key from login flow storage.
+  // /login persists in localStorage, while older submit flow used sessionStorage.
   useEffect(() => {
-    const saved = sessionStorage.getItem('dc1_renter_key');
+    const saved = localStorage.getItem('dc1_renter_key') || sessionStorage.getItem('dc1_renter_key');
     if (saved) {
       setRenterKey(saved);
       verifyRenterKey(saved);
@@ -94,10 +96,12 @@ export default function JobSubmitForm() {
         const data = await res.json();
         setRenterName(data.renter?.name || 'Renter');
         setRenterKey(key);
+        localStorage.setItem('dc1_renter_key', key);
         sessionStorage.setItem('dc1_renter_key', key);
       } else {
         setRenterName(null);
         setRenterKey('');
+        localStorage.removeItem('dc1_renter_key');
         sessionStorage.removeItem('dc1_renter_key');
       }
     } catch {
@@ -169,6 +173,9 @@ export default function JobSubmitForm() {
   const selectedRate = JOB_TYPES.find(j => j.value === form.jobType)?.rate || 10;
   const costEstimateHalala = selectedRate * form.estimatedHours * 60;
   const costEstimateSar = costEstimateHalala / 100;
+  const legacyQuery = searchParams.toString();
+  const canonicalPlaygroundHref = legacyQuery ? `/renter/playground?${legacyQuery}` : '/renter/playground';
+  const showLegacyNotice = pathname === '/jobs/submit';
 
   function validate(): boolean {
     const e: FormErrors = {};
@@ -223,7 +230,7 @@ export default function JobSubmitForm() {
       }
       const data = await res.json();
       if (data.success && data.job?.id) {
-        router.push(`/jobs/${data.job.id}/monitor`);
+        router.push(`/renter/jobs/${data.job.id}`);
       } else if (data.success && data.job?.job_id) {
         router.push(`/renter`);
       } else {
@@ -253,6 +260,15 @@ export default function JobSubmitForm() {
   if (!renterName) {
     return (
       <div className="space-y-6">
+        {showLegacyNotice && (
+          <div className="rounded-xl border border-[#FFD700]/30 bg-[#FFD700]/10 p-4 text-sm text-white/80">
+            This legacy submission form has moved. Use{' '}
+            <Link href={canonicalPlaygroundHref} className="text-[#FFD700] hover:underline">
+              /renter/playground
+            </Link>{' '}
+            for the canonical renter job flow.
+          </div>
+        )}
         <div className="bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-xl p-6 text-center">
           <h2 className="text-lg font-semibold mb-2">Authentication Required</h2>
           <p className="text-white/50 text-sm mb-4">
@@ -287,6 +303,15 @@ export default function JobSubmitForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {showLegacyNotice && (
+        <div className="rounded-xl border border-[#FFD700]/30 bg-[#FFD700]/10 p-4 text-sm text-white/80">
+          This legacy submission form has moved. Use{' '}
+          <Link href={canonicalPlaygroundHref} className="text-[#FFD700] hover:underline">
+            /renter/playground
+          </Link>{' '}
+          for the canonical renter job flow.
+        </div>
+      )}
       {/* Auth Banner */}
       <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-4 py-3">
         <div className="flex items-center gap-2">
@@ -295,7 +320,12 @@ export default function JobSubmitForm() {
         </div>
         <button
           type="button"
-          onClick={() => { sessionStorage.removeItem('dc1_renter_key'); setRenterName(null); setRenterKey(''); }}
+          onClick={() => {
+            localStorage.removeItem('dc1_renter_key');
+            sessionStorage.removeItem('dc1_renter_key');
+            setRenterName(null);
+            setRenterKey('');
+          }}
           className="text-xs text-white/30 hover:text-white/60 transition"
         >
           Logout

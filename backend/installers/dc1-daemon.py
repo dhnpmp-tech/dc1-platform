@@ -694,22 +694,29 @@ def build_resource_spec(gpu=None):
     """Build Ocean-style resource_spec JSON for GPU advertisement.
 
     Schema mirrors Ocean Protocol's DOCKER_COMPUTE_ENVIRONMENTS pattern:
-      {"resources": [{id, total, min, max, type?, ...gpu fields}]}
+      {"resources": [{id, total, min, max, type?, ...gpu fields}],
+       "compute_environments": [{id, compute_types, resources, tags}]}
     """
     resources = []
+    compute_environments = []
+    cpu_resource = None
+    ram_resource = None
+    disk_resource = None
 
     # CPU resource
     try:
         import multiprocessing
         cpu_count = multiprocessing.cpu_count()
-        resources.append({
+        cpu_resource = {
             "id": "cpu",
             "total": cpu_count,
             "min": 1,
             "max": max(1, cpu_count // 2),
-        })
+        }
+        resources.append(cpu_resource)
     except Exception:
-        resources.append({"id": "cpu", "total": 1, "min": 1, "max": 1})
+        cpu_resource = {"id": "cpu", "total": 1, "min": 1, "max": 1}
+        resources.append(cpu_resource)
 
     # RAM resource (GB)
     try:
@@ -718,15 +725,17 @@ def build_resource_spec(gpu=None):
                 if line.startswith("MemTotal:"):
                     ram_kb = int(line.split()[1])
                     ram_gb = round(ram_kb / 1024 / 1024, 1)
-                    resources.append({
+                    ram_resource = {
                         "id": "ram",
                         "total": ram_gb,
                         "min": 1,
                         "max": max(1, int(ram_gb // 2)),
-                    })
+                    }
+                    resources.append(ram_resource)
                     break
     except Exception:
-        resources.append({"id": "ram", "total": 8, "min": 1, "max": 4})
+        ram_resource = {"id": "ram", "total": 8, "min": 1, "max": 4}
+        resources.append(ram_resource)
 
     # Disk resource (GB free on home dir)
     try:
@@ -734,15 +743,17 @@ def build_resource_spec(gpu=None):
         usage = _shutil.disk_usage(str(Path.home()))
         disk_total_gb = round(usage.total / 1024 / 1024 / 1024, 1)
         disk_free_gb = round(usage.free / 1024 / 1024 / 1024, 1)
-        resources.append({
+        disk_resource = {
             "id": "disk",
             "total": disk_total_gb,
             "free": disk_free_gb,
             "min": 5,
             "max": max(5, int(disk_free_gb * 0.8)),
-        })
+        }
+        resources.append(disk_resource)
     except Exception:
-        resources.append({"id": "disk", "total": 100, "min": 5, "max": 50})
+        disk_resource = {"id": "disk", "total": 100, "min": 5, "max": 50}
+        resources.append(disk_resource)
 
     # GPU resources — one entry per detected GPU
     if gpu:
@@ -750,7 +761,7 @@ def build_resource_spec(gpu=None):
         for g in all_gpus:
             vram_gb = round(g.get("gpu_vram_mib", 0) / 1024, 1)
             gpu_uuid = g.get("uuid") or f"gpu-nvidia-{g.get('index', 0)}"
-            resources.append({
+            gpu_resource = {
                 "id": gpu_uuid,
                 "type": "gpu",
                 "total": 1,
@@ -761,9 +772,23 @@ def build_resource_spec(gpu=None):
                 "cuda_version": g.get("cuda_version"),
                 "compute_capability": g.get("compute_capability"),
                 "driver_version": g.get("driver_version"),
+            }
+            resources.append(gpu_resource)
+
+            compute_environments.append({
+                "id": f"docker-{gpu_uuid}",
+                "name": f"Docker CUDA on {g.get('gpu_name') or gpu_uuid}",
+                "compute_types": ["inference", "training", "rendering"],
+                "tags": ["docker", "cuda", "nvidia", f"gpu_uuid:{gpu_uuid}"],
+                "resources": [
+                    {"id": "cpu", "min": 1, "max": (cpu_resource or {}).get("max", 1)},
+                    {"id": "ram", "min": 1, "max": (ram_resource or {}).get("max", 4)},
+                    {"id": "disk", "min": 5, "max": (disk_resource or {}).get("max", 50)},
+                    {"id": gpu_uuid, "type": "gpu", "min": 1, "max": 1},
+                ],
             })
 
-    return {"resources": resources}
+    return {"resources": resources, "compute_environments": compute_environments}
 
 # ─── HEARTBEAT ───────────────────────────────────────────────────────────────
 

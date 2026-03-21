@@ -447,6 +447,16 @@ export default function QuickstartPage() {
   }, [t])
 
   const activeCard = sdkCards[activeSdk]
+  const firstJobChecklist = useMemo(
+    () => [
+      { label: tr('conversion.first_job.step.register'), href: '/renter/register' },
+      { label: tr('conversion.first_job.step.topup'), href: '/renter/billing' },
+      { label: tr('conversion.first_job.step.choose_gpu'), href: '/renter/marketplace' },
+      { label: tr('conversion.first_job.step.submit'), href: '/renter/playground?starter=1' },
+      { label: tr('conversion.first_job.step.monitor'), href: '/renter/jobs' },
+    ],
+    [tr]
+  )
 
   useEffect(() => {
     const node = billingExplainerRef.current
@@ -508,22 +518,22 @@ export default function QuickstartPage() {
         {/* Billing transparency */}
         <div ref={billingExplainerRef} className="mt-6 rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
           <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
-            How DCP Billing Works
+            {tr('billing.explainer.title')}
           </h2>
           <ul className={`mt-3 space-y-2 text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>
-            <li>1. We place a prepay estimate hold in halala before your job starts.</li>
-            <li>2. Final cost uses actual runtime settlement, not the initial estimate.</li>
-            <li>3. Any unused hold is automatically refunded in halala after completion.</li>
+            <li>{tr('billing.explainer.step1')}</li>
+            <li>{tr('billing.explainer.step2')}</li>
+            <li>{tr('billing.explainer.step3')}</li>
           </ul>
-          <p className={`mt-3 text-xs text-dc1-text-muted ${isRTL ? 'text-right' : ''}`}>100 halala = 1 SAR.</p>
+          <p className={`mt-3 text-xs text-dc1-text-muted ${isRTL ? 'text-right' : ''}`}>{tr('billing.explainer.note')}</p>
         </div>
 
         <div className="mt-6 rounded-xl border border-dc1-border bg-dc1-surface-l1 p-6">
           <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
-            {t.checklistHeading}
+            {tr('conversion.first_job.title')}
           </h2>
           <ol className="mt-4 space-y-2">
-            {t.checklistItems.map((item, index) => (
+            {firstJobChecklist.map((item, index) => (
               <li key={item.href} className={`flex items-center justify-between gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <span className={`text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>
                   {index + 1}. {item.label}
@@ -540,7 +550,7 @@ export default function QuickstartPage() {
                   }
                   className="text-xs font-medium text-dc1-amber hover:underline"
                 >
-                  {isRTL ? 'افتح' : 'Open'}
+                  {tr('common.open')}
                 </Link>
               </li>
             ))}

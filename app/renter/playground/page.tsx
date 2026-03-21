@@ -1151,32 +1151,32 @@ function GpuPlayground() {
   if (!providerId) {
     submitBlockers.push({
       code: 'provider_missing',
-      reason: 'Select a provider before submitting this job.',
-      ctaLabel: 'Refresh providers',
+      reason: t('playground.blocker.provider_missing.reason'),
+      ctaLabel: t('playground.blocker.provider_missing.cta'),
       onRecover: fetchProviders,
     });
   }
   if (jobType !== 'vllm_serve' && !prompt.trim()) {
     submitBlockers.push({
       code: 'prompt_missing',
-      reason: 'Add a prompt to continue.',
-      ctaLabel: 'Focus prompt',
+      reason: t('playground.blocker.prompt_missing.reason'),
+      ctaLabel: t('playground.blocker.prompt_missing.cta'),
       onRecover: () => promptRef.current?.focus(),
     });
   }
   if (showFirstJobWizard && !fitConfirmed) {
     submitBlockers.push({
       code: 'fit_not_confirmed',
-      reason: 'Confirm fit in the First Job Wizard before submitting.',
-      ctaLabel: 'Confirm fit now',
+      reason: t('playground.blocker.fit_not_confirmed.reason'),
+      ctaLabel: t('playground.blocker.fit_not_confirmed.cta'),
       onRecover: () => setFitConfirmed(true),
     });
   }
   if (canRecoverLowBalance) {
     submitBlockers.push({
       code: 'insufficient_balance',
-      reason: `Insufficient balance. Add at least ${(estimatedMaxHalala / 100).toFixed(2)} SAR to cover this run.`,
-      ctaLabel: 'Top up balance',
+      reason: `${t('playground.blocker.insufficient_balance.reason_prefix')} ${(estimatedMaxHalala / 100).toFixed(2)} SAR ${t('playground.blocker.insufficient_balance.reason_suffix')}`,
+      ctaLabel: t('playground.blocker.insufficient_balance.cta'),
       onRecover: () => {
         trackPlaygroundEvent('topup_cta_clicked_from_playground', {
           balance_halala: availableBalanceHalala,
@@ -1190,8 +1190,8 @@ function GpuPlayground() {
   if (isRunning) {
     submitBlockers.push({
       code: 'job_in_progress',
-      reason: 'A job is already running. Wait for it to finish before submitting another one.',
-      ctaLabel: 'View job history',
+      reason: t('playground.blocker.job_in_progress.reason'),
+      ctaLabel: t('playground.blocker.job_in_progress.cta'),
       onRecover: () => setViewMode('history'),
     });
   }
@@ -1207,6 +1207,11 @@ function GpuPlayground() {
     submitWasBlockedRef.current = true;
     submitBlockers.forEach((blocker) => {
       if (blockedReasonTrackedRef.current.has(blocker.code)) return;
+      trackPlaygroundEvent('playground_submit_blocked_reason', {
+        reason: blocker.code,
+        job_type: jobType,
+        provider_id: providerId,
+      });
       trackPlaygroundEvent('submit_blocked_reason', {
         reason: blocker.code,
         job_type: jobType,

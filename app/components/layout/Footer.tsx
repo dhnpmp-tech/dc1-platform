@@ -1,6 +1,11 @@
+'use client'
+
 import Link from 'next/link'
+import { useLanguage } from '../../lib/i18n'
 
 export default function Footer() {
+  const { t } = useLanguage()
+
   return (
     <footer className="bg-dc1-surface-l1 border-t border-dc1-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -15,39 +20,39 @@ export default function Footer() {
               />
             </div>
             <p className="text-sm text-dc1-text-secondary leading-relaxed">
-              Decentralized Compute Platform. Borderless infrastructure connecting global GPU supply with AI engineering demand.
+              {t('footer.brand_description')}
             </p>
           </div>
 
           {/* Platform */}
           <div>
-            <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">Platform</h4>
+            <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">{t('footer.platform')}</h4>
             <ul className="space-y-2">
-              <li><Link href="/renter/register" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Rent GPUs</Link></li>
-              <li><Link href="/provider/register" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Earn with GPUs</Link></li>
-              <li><Link href="/marketplace" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Marketplace</Link></li>
+              <li><Link href="/renter/register" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.rent_gpus')}</Link></li>
+              <li><Link href="/provider/register" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.earn_with_gpus')}</Link></li>
+              <li><Link href="/marketplace" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.marketplace')}</Link></li>
             </ul>
           </div>
 
           {/* Resources */}
           <div>
-            <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">Resources</h4>
+            <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">{t('footer.resources')}</h4>
             <ul className="space-y-2">
-              <li><Link href="/docs" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Docs</Link></li>
-              <li><Link href="/docs/api" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">API Reference</Link></li>
-              <li><Link href="/support" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Support</Link></li>
-              <li><Link href="/login" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Console Login</Link></li>
+              <li><Link href="/docs" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.docs')}</Link></li>
+              <li><Link href="/docs/api" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.api_reference')}</Link></li>
+              <li><Link href="/support" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.support')}</Link></li>
+              <li><Link href="/login" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.console_login')}</Link></li>
             </ul>
           </div>
 
           {/* Legal */}
           <div>
-            <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">Legal</h4>
+            <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">{t('footer.legal')}</h4>
             <ul className="space-y-2">
-              <li><Link href="/terms" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Terms of Service</Link></li>
-              <li><Link href="/legal/privacy" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Privacy Policy</Link></li>
-              <li><Link href="/acceptable-use" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Acceptable Use</Link></li>
-              <li><Link href="/status" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">System Status</Link></li>
+              <li><Link href="/terms" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.terms')}</Link></li>
+              <li><Link href="/legal/privacy" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.privacy')}</Link></li>
+              <li><Link href="/acceptable-use" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.acceptable_use')}</Link></li>
+              <li><Link href="/status" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.system_status')}</Link></li>
             </ul>
           </div>
         </div>
@@ -55,7 +60,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="mt-10 pt-6 border-t border-dc1-border flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-dc1-text-muted">
-            &copy; {new Date().getFullYear()} DC Power Solutions Company. CR: 7053667775. All rights reserved.
+            &copy; {new Date().getFullYear()} {t('footer.company_legal')}
           </p>
           <p className="text-xs text-dc1-text-muted">
             dcp.sa

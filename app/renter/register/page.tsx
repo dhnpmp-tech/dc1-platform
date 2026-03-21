@@ -141,21 +141,13 @@ export default function RenterRegisterPage() {
   }, [success, trackRegisterEvent])
 
   if (success && result) {
-    const firstJobChecklist = isRTL
-      ? [
-          { label: 'سجّلت الحساب', href: '/renter/register' },
-          { label: 'اشحن المحفظة', href: '/renter/billing' },
-          { label: 'اختر GPU من السوق', href: '/renter/marketplace' },
-          { label: 'أرسل وظيفة تجريبية', href: '/renter/playground?starter=1' },
-          { label: 'راقب المخرجات والسجلات', href: '/renter/jobs' },
-        ]
-      : [
-          { label: 'Register account', href: '/renter/register' },
-          { label: 'Top up wallet', href: '/renter/billing' },
-          { label: 'Choose GPU in marketplace', href: '/renter/marketplace' },
-          { label: 'Submit starter job', href: '/renter/playground?starter=1' },
-          { label: 'Monitor output and logs', href: '/renter/jobs' },
-        ]
+    const firstJobChecklist = [
+      { label: t('conversion.first_job.step.register'), href: '/renter/register' },
+      { label: t('conversion.first_job.step.topup'), href: '/renter/billing' },
+      { label: t('conversion.first_job.step.choose_gpu'), href: '/renter/marketplace' },
+      { label: t('conversion.first_job.step.submit'), href: '/renter/playground?starter=1' },
+      { label: t('conversion.first_job.step.monitor'), href: '/renter/jobs' },
+    ]
 
     return (
       <>
@@ -192,7 +184,7 @@ export default function RenterRegisterPage() {
 
               <div className={`bg-dc1-surface-l2 border border-dc1-border rounded-lg p-5 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
                 <h3 className="text-base font-semibold text-dc1-text-primary mb-3">
-                  {isRTL ? 'قائمة أول وظيفة للمستأجر' : 'Renter first-job checklist'}
+                  {t('conversion.first_job.title')}
                 </h3>
                 <ol className="space-y-2 text-sm text-dc1-text-secondary">
                   {firstJobChecklist.map((item, index) => (
@@ -212,7 +204,7 @@ export default function RenterRegisterPage() {
                         }
                         className="text-xs font-medium text-dc1-amber hover:underline"
                       >
-                        {isRTL ? 'افتح' : 'Open'}
+                        {t('common.open')}
                       </a>
                     </li>
                   ))}
@@ -254,13 +246,14 @@ export default function RenterRegisterPage() {
         {/* Billing transparency */}
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
           <div ref={billingExplainerRef} className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
-            <h2 className="text-lg font-semibold text-dc1-text-primary mb-3">How DCP Billing Works</h2>
+            <h2 className="text-lg font-semibold text-dc1-text-primary mb-3">{t('billing.explainer.title')}</h2>
             <ul className="space-y-2 text-sm text-dc1-text-secondary">
-              <li>1. We place a prepay estimate hold in halala before your job starts.</li>
-              <li>2. Final cost settles on actual runtime, not the initial estimate.</li>
-              <li>3. Any unused hold is automatically refunded in halala after completion.</li>
+              <li>{t('billing.explainer.step1')}</li>
+              <li>{t('billing.explainer.step2')}</li>
+              <li>{t('billing.explainer.step3')}</li>
             </ul>
-            <p className="mt-3 text-xs text-dc1-text-muted">100 halala = 1 SAR.</p>
+            <p className="mt-3 text-xs text-dc1-text-muted">{t('billing.explainer.note')}</p>
+            <p className="mt-2 text-xs text-dc1-text-muted">{t('billing.explainer.rail_status')}</p>
           </div>
         </section>
 

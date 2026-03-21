@@ -170,11 +170,25 @@ function SupportPageInner() {
         <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('support.page_title')}</h1>
         <p className="text-dc1-text-secondary mb-10">{t('support.page_subtitle')}</p>
         {prefilledCategory === 'enterprise' && (
-          <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-4">
-            <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-1">
-              {t('support.enterprise_prefill_label')}
-            </p>
-            <p className="text-sm text-dc1-text-secondary">{t('support.enterprise_prefill_desc')}</p>
+          <div className="mb-8 space-y-3">
+            <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-1">
+                {t('support.enterprise_prefill_label')}
+              </p>
+              <p className="text-sm text-dc1-text-secondary">{t('support.enterprise_prefill_desc')}</p>
+            </div>
+            <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-4">
+              <p className="text-sm font-semibold text-dc1-text-primary mb-2">
+                {t('support.enterprise_checklist_title')}
+              </p>
+              <p className="text-sm text-dc1-text-secondary mb-2">{t('support.enterprise_checklist_intro')}</p>
+              <ul className="list-disc text-sm text-dc1-text-secondary ps-5 space-y-1">
+                <li>{t('support.enterprise_checklist_item_use_case')}</li>
+                <li>{t('support.enterprise_checklist_item_usage_volume')}</li>
+                <li>{t('support.enterprise_checklist_item_compliance')}</li>
+                <li>{t('support.enterprise_checklist_item_timeline')}</li>
+              </ul>
+            </div>
           </div>
         )}
 

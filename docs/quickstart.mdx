@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Submit your first renter job in under 5 minutes using curl.
+description: Submit your first renter job in under 5 minutes using curl (non-payment flow).
 order: 1
 ---
 
@@ -9,9 +9,18 @@ order: 1
 Complete a first-job flow in under 5 minutes:
 
 1. Validate your renter key.
-2. Submit a workload.
-3. Poll status or stream logs.
-4. Fetch final output.
+2. Find an online provider.
+3. Submit a workload.
+4. Poll status or stream logs.
+5. Fetch final output.
+
+This guide intentionally avoids payment/top-up steps and focuses on pure compute lifecycle APIs.
+
+## Why teams choose DCP
+
+- **Saudi energy-cost advantage**: workloads run in a structurally lower electricity-cost market for better long-run compute economics.
+- **Arabic AI model support**: production paths for **ALLaM 7B**, **Falcon H1**, **JAIS 13B**, and **BGE-M3**.
+- **Container-based execution**: bring your own container workloads with NVIDIA-accelerated Docker runtime.
 
 ## 1) Set environment variables
 
@@ -26,14 +35,26 @@ export RENTER_KEY="dcp-renter-your-key"
 curl -s "$DCP_API/renters/me?key=$RENTER_KEY"
 ```
 
-## 3) Submit first job
+## 3) Discover available providers
+
+```bash
+curl -s "$DCP_API/renters/available-providers"
+```
+
+Pick a `provider.id` from the response and export it:
+
+```bash
+export PROVIDER_ID="42"
+```
+
+## 4) Submit first job
 
 ```bash
 JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
   -H "Content-Type: application/json" \
   -H "x-renter-key: $RENTER_KEY" \
   -d '{
-    "provider_id": 42,
+    "provider_id": '"$PROVIDER_ID"',
     "job_type": "llm-inference",
     "duration_minutes": 3,
     "max_duration_seconds": 180,
@@ -51,13 +72,13 @@ JOB_ID=$(echo "$JOB_JSON" | jq -r '.job.job_id // .job_id')
 echo "JOB_ID=$JOB_ID"
 ```
 
-## 4) Check logs (optional)
+## 5) Check logs (optional)
 
 ```bash
 curl -N "$DCP_API/jobs/$JOB_ID/logs/stream?key=$RENTER_KEY"
 ```
 
-## 5) Poll output
+## 6) Poll output
 
 ```bash
 curl -s "$DCP_API/jobs/$JOB_ID/output?key=$RENTER_KEY"
@@ -71,3 +92,4 @@ If not finished yet, you may receive `202` until terminal state.
 - [Provider Guide](/docs/provider-guide)
 - [Architecture Overview](/docs/architecture-overview)
 - [API Reference](/docs/api-reference)
+- [Runtime Verification Runbook](/docs/ops/runtime-verification)

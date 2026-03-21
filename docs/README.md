@@ -19,6 +19,7 @@ DC1 is Saudi Arabia's first decentralized GPU compute marketplace. This director
 | [GPU Compatibility Matrix](./gpu-matrix.md) | English | GPU-to-model fit, batch sizing, and throughput planning |
 | [Pricing Guide](./pricing-guide.md) | English | SAR pricing bands, earnings calculator, and cloud comparison |
 | [Container Security Baseline](./container-security.md) | English | Docker hardening controls, limits, and inspect verification checks |
+| [Launch Window Deploy Runbook](./ops/launch-window-deploy-runbook.md) | English | Operator command sequence for deploy, verify, rollback, and blocker triage |
 | [Enterprise SLA & Trust Commitments](./enterprise-trust-package/section-5-sla-trust.mdx) | English | Bronze/Silver/Gold uptime and support guarantees with trust commitments |
 | [التزامات SLA والثقة للمؤسسات](./ar/enterprise-trust-package/section-5-sla-trust.mdx) | العربية | مستويات SLA وضمانات الدعم والثقة للمراجعة الخارجية |
 
@@ -45,7 +46,7 @@ After deploying backend/frontend changes on the VPS, run:
 ./infra/scripts/verify-deploy.sh
 ```
 
-The script validates PM2 service status, API health, `https://dcp.sa` reachability, SQLite connectivity, and recent PM2 logs.  
+The script validates required PM2 service status, launch-critical PM2 env vars, local/public API health, `https://dcp.sa` reachability, SQLite connectivity, and recent fatal log signatures.  
 Exit code `0` means pass; exit code `1` means fail.
 
 ## OpenAPI Spec

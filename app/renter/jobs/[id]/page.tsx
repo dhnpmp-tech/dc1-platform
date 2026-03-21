@@ -459,6 +459,9 @@ export default function RenterJobDetailPage() {
   const [activeTab, setActiveTab] = useState<TabId>('overview')
   const [providerGpu, setProviderGpu] = useState<string | null>(null)
   const [exportError, setExportError] = useState('')
+  const [templateSaving, setTemplateSaving] = useState(false)
+  const [templateFeedback, setTemplateFeedback] = useState('')
+  const [copyFeedback, setCopyFeedback] = useState('')
   const viewedSummaryRef = useRef<string | null>(null)
 
   const trackJobEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
@@ -686,7 +689,53 @@ export default function RenterJobDetailPage() {
     setExportError('Export is unavailable until the job produces output.')
   }
 
+  const copyTextOutput = async () => {
+    if (!output?.response) return
+    try {
+      await navigator.clipboard.writeText(output.response)
+      setCopyFeedback('Output copied to clipboard.')
+    } catch {
+      setCopyFeedback('Copy failed. Please use Export output instead.')
+    }
+  }
+
+  const saveAsTemplate = async () => {
+    if (!job || templateSaving) return
+    setTemplateSaving(true)
+    setTemplateFeedback('')
+    let parsed: Record<string, unknown> = {}
+    try {
+      if (job.params) parsed = JSON.parse(job.params)
+    } catch { /* keep fallback payload */ }
+    try {
+      const templateDate = new Date().toISOString().slice(0, 10)
+      const templateName = `${(job.job_type || 'job').replace(/_/g, ' ')} - ${templateDate}`
+      const res = await fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: templateName,
+          job_type: job.job_type,
+          model: parsed.model || job.model || job.job_type,
+          resource_spec_json: JSON.stringify(parsed),
+        }),
+      })
+      if (!res.ok) {
+        setTemplateFeedback('Failed to save template. Please retry.')
+        return
+      }
+      setTemplateFeedback('Template saved. Open Playground to reuse it.')
+    } catch {
+      setTemplateFeedback('Failed to save template. Please retry.')
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
   const isTerminal = ['completed', 'failed', 'permanently_failed', 'cancelled'].includes(job.status)
+  const isCompleted = job.status === 'completed'
+  const isFailed = ['failed', 'permanently_failed'].includes(job.status)
+  const hasTextOutput = Boolean(output?.type === 'text' && output?.response)
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: t('renter.job_detail.tab_overview') },
     { id: 'logs', label: t('renter.job_detail.tab_logs') },
@@ -718,6 +767,71 @@ export default function RenterJobDetailPage() {
             )}
           </div>
         </div>
+
+        {(isCompleted || isFailed) && (
+          <div className={`card ${isFailed ? 'border-status-error/30 bg-status-error/5' : 'border-dc1-amber/30'}`}>
+            <h2 className={`section-heading mb-2 ${isFailed ? 'text-status-error' : ''}`}>
+              {isFailed ? 'Recommended next step' : 'Next actions'}
+            </h2>
+            <p className="text-sm text-dc1-text-secondary mb-4">
+              {isFailed
+                ? 'Open logs first to identify the failure reason, then retry with an updated configuration.'
+                : 'Keep momentum by launching a follow-up run, saving this setup, or exporting output.'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {isFailed ? (
+                <>
+                  <button
+                    onClick={() => setActiveTab('logs')}
+                    className="btn btn-primary text-sm min-h-[40px] px-4"
+                  >
+                    Review failure logs
+                  </button>
+                  <button
+                    onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
+                    className="btn btn-secondary text-sm min-h-[40px] px-4"
+                  >
+                    Retry this job
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
+                    className="btn btn-primary text-sm min-h-[40px] px-4"
+                  >
+                    Retry same params
+                  </button>
+                  <button
+                    onClick={goToVariantRun}
+                    className="btn btn-secondary text-sm min-h-[40px] px-4"
+                    disabled={!variantModel}
+                    title={variantModel ? `Switch to ${variantModel}` : 'No cheaper/faster variant available'}
+                  >
+                    Run similar variant
+                  </button>
+                  <button
+                    onClick={saveAsTemplate}
+                    className="btn btn-secondary text-sm min-h-[40px] px-4"
+                    disabled={templateSaving}
+                  >
+                    {templateSaving ? 'Saving...' : 'Save as template'}
+                  </button>
+                  <button
+                    onClick={hasTextOutput ? copyTextOutput : exportOutput}
+                    className="btn btn-secondary text-sm min-h-[40px] px-4"
+                    disabled={!canExportOutput}
+                    title={canExportOutput ? 'Copy or export output' : 'Output action available after completion'}
+                  >
+                    {hasTextOutput ? 'Copy output' : 'Export output'}
+                  </button>
+                </>
+              )}
+            </div>
+            {templateFeedback && <p className="mt-2 text-xs text-dc1-text-muted">{templateFeedback}</p>}
+            {copyFeedback && <p className="mt-2 text-xs text-dc1-text-muted">{copyFeedback}</p>}
+          </div>
+        )}
 
         {/* Tab bar */}
         <div className="flex border-b border-dc1-border" role="tablist">

@@ -1,9 +1,31 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import JobMonitor from '../../../../components/jobs/JobMonitor';
 
 export default function MonitorPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const [checkedAuth, setCheckedAuth] = useState(false);
+
+  useEffect(() => {
+    const renterKey = typeof window !== 'undefined' ? sessionStorage.getItem('dc1_renter_key') : null;
+    if (renterKey) {
+      router.replace(`/renter/jobs/${params.id}`);
+      return;
+    }
+    setCheckedAuth(true);
+  }, [params.id, router]);
+
+  if (!checkedAuth) {
+    return (
+      <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center">
+        <p className="text-white/60 text-sm">Redirecting...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#1a1a1a] text-white">
       <div className="max-w-3xl mx-auto px-4 py-8">
