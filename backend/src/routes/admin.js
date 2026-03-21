@@ -5,6 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
+const { requireAdminAuth, getAdminTokenFromReq } = require('../middleware/auth');
 const {
   normalizeImageRef,
   validateAndNormalizeImageRef,
@@ -46,19 +47,7 @@ const DOCKER_TIMEOUT_MS = Number.parseInt(process.env.DCP_DOCKER_TIMEOUT_MS || '
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
 // Requires DC1_ADMIN_TOKEN env var.
-router.use((req, res, next) => {
-  const adminToken = process.env.DC1_ADMIN_TOKEN;
-  const provided =
-    req.headers['x-admin-token'] ||
-    (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (!adminToken) {
-    return res.status(503).json({ error: 'Admin token not configured' });
-  }
-  if (provided !== adminToken) {
-    return res.status(401).json({ error: 'Admin access denied' });
-  }
-  next();
-});
+router.use(requireAdminAuth);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -247,7 +236,7 @@ function runCriticalImageScan(imageRef) {
 }
 
 function adminActorFingerprint(req) {
-  const token = String(req.headers['x-admin-token'] || req.headers.authorization || req.ip || 'admin');
+  const token = String(getAdminTokenFromReq(req) || req.ip || 'admin');
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 

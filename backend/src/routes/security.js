@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { requireAdminAuth } = require('../middleware/auth');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -11,17 +12,7 @@ function runStatement(sql, ...params) {
   return db.prepare(sql).run(...flattenRunParams(params));
 }
 
-// Auth middleware — checks admin token header
-function requireAdminToken(req, res, next) {
-  const token = req.headers['x-admin-token'] || '';
-  const expected = process.env.DC1_ADMIN_TOKEN;
-  if (!expected || token !== expected) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-}
-
-router.use(requireAdminToken);
+router.use(requireAdminAuth);
 
 // Ensure schema has columns we need (idempotent)
 try {

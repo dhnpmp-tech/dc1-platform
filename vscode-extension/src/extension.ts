@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AuthManager } from './auth/AuthManager';
-import { dc1 } from './api/dc1Client';
+import { dc1, isAuthError, isRetryableError } from './api/dc1Client';
 import { GPUTreeProvider } from './providers/GPUTreeProvider';
 import { JobsTreeProvider } from './providers/JobsTreeProvider';
 import { ProviderStatusTreeProvider } from './providers/ProviderStatusTreeProvider';
@@ -236,8 +236,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.submitJob', async () => {
       // Check for API key — show guidance if missing
-      const settingsKey = vscode.workspace.getConfiguration('dc1').get<string>('renterApiKey', '').trim();
-      if (!settingsKey && !auth.isAuthenticated) {
+      const storedKey = await auth.getStoredRenterKey();
+      if (!storedKey && !auth.isAuthenticated) {
         const action = await vscode.window.showWarningMessage(
           'DCP: Set your renter API key to submit inference jobs.',
           'Set Key in Settings',
@@ -357,9 +357,17 @@ export function activate(context: vscode.ExtensionContext): void {
             });
           },
           (err) => {
+            if (isAuthError(err)) {
+              auth.handleRenterAuthError(err, 'streaming logs').then((newKey) => {
+                if (newKey) {
+                  ch.appendLine('Authentication refreshed. Restart "View Job Logs" to reconnect stream.');
+                }
+              });
+            }
             if (!sseConnected) {
               // SSE not available — fall back to polling
-              ch.appendLine(`Log stream unavailable (${err.message}). Falling back to polling…`);
+              const retryNote = isRetryableError(err) ? ' after automatic retries' : '';
+              ch.appendLine(`Log stream unavailable${retryNote} (${err.message}). Falling back to polling…`);
               startPolling();
             } else {
               ch.appendLine(`Stream error: ${err.message}`);
@@ -453,7 +461,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.watchJobLogs', async (jobIdArg?: string) => {
       const key = auth.apiKey
-        || vscode.workspace.getConfiguration('dc1').get<string>('renterApiKey', '').trim()
+        || await auth.getStoredRenterKey()
         || await auth.ensureKey();
       if (!key) { return; }
 
@@ -533,8 +541,19 @@ export function activate(context: vscode.ExtensionContext): void {
           updateStatusBar();
         },
         (err) => {
+          if (isAuthError(err)) {
+            auth.handleRenterAuthError(err, 'watching job logs').then((newKey) => {
+              if (newKey) {
+                ch.appendLine('Authentication refreshed. Restart log watch for continuous streaming.');
+              }
+            });
+          }
           if (!receivedStreamData) {
-            ch.appendLine(`Stream unavailable: ${err.message}`);
+            if (isRetryableError(err)) {
+              ch.appendLine(`Stream unavailable after automatic retries: ${err.message}`);
+            } else {
+              ch.appendLine(`Stream unavailable: ${err.message}`);
+            }
             startPollingFallback();
             return;
           }

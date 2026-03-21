@@ -390,6 +390,35 @@ export default function ProviderRegisterPage() {
               </div>
 
               {/* Status Tracker */}
+              <div className="card border-dc1-amber/20">
+                <h2 className="text-xl font-semibold text-dc1-text-primary mb-4">{t('provider.trust.title')}</h2>
+                <p className="text-dc1-text-secondary text-sm mb-4">
+                  {t('provider.trust.description')}
+                </p>
+                <ul className="space-y-2 text-sm text-dc1-text-secondary">
+                  <li className="flex items-start gap-2">
+                    <span className="text-dc1-amber">•</span>
+                    <span>{t('provider.trust.heartbeat')}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-dc1-amber">•</span>
+                    <span>{t('provider.trust.polling')}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-dc1-amber">•</span>
+                    <span>{t('provider.trust.pause_resume')}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-dc1-amber">•</span>
+                    <span>{t('provider.trust.runtime')}</span>
+                  </li>
+                </ul>
+                <p className="mt-4 text-xs text-dc1-text-muted">
+                  {t('provider.trust.earnings_estimate')}
+                </p>
+              </div>
+
+              {/* Status Tracker */}
               <div className="card">
                 <h2 className="text-xl font-semibold text-dc1-text-primary mb-6 flex items-center gap-2">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm">
@@ -636,7 +665,7 @@ export default function ProviderRegisterPage() {
               </div>
             )}
             <p className="text-xs text-dc1-text-muted mt-4">
-              Estimates based on {GPU_EARNINGS[calcGpu]?.rate} SAR/hr renter rate × 75% provider share. Actual earnings depend on job availability and utilization.
+              Scenario estimate only: {GPU_EARNINGS[calcGpu]?.rate} SAR/hr renter rate x 75% provider share. Actual earnings vary by demand, uptime, and accepted jobs.
             </p>
           </div>
         </section>
@@ -780,6 +809,9 @@ export default function ProviderRegisterPage() {
               </div>
 
               {/* Submit Button */}
+              <p className="text-xs text-dc1-text-muted">
+                Earnings shown in this flow are illustrative scenarios, not payout guarantees.
+              </p>
               <button
                 type="submit"
                 disabled={isLoading}
@@ -841,7 +873,7 @@ export default function ProviderRegisterPage() {
               </div>
               <h3 className="font-semibold text-dc1-text-primary mb-2">Earn More</h3>
               <p className="text-sm text-dc1-text-secondary">
-                Set your own prices and maximize revenue from idle hardware.
+                Earn from completed jobs based on current marketplace pricing and utilization.
               </p>
             </div>
 
@@ -853,7 +885,7 @@ export default function ProviderRegisterPage() {
               </div>
               <h3 className="font-semibold text-dc1-text-primary mb-2">Secure & Reliable</h3>
               <p className="text-sm text-dc1-text-secondary">
-                Enterprise-grade security and 99.9% uptime SLA.
+                HMAC-signed jobs, containerized execution, and provider pause/resume controls.
               </p>
             </div>
           </div>

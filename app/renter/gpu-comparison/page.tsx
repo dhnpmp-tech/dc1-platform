@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 import { getApiBase, getRenterKey } from '../../../lib/api'
+import { useLanguage } from '../../lib/i18n'
 
 // ── SVG Icons ──────────────────────────────────────────────────────────────
 const HomeIcon = () => (
@@ -38,16 +39,6 @@ const GpuCompareIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
   </svg>
 )
-
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Jobs', href: '/renter/jobs', icon: <LightningIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <GpuCompareIcon /> },
-  { label: 'GPU Compare', href: '/renter/gpu-comparison', icon: <ChartIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <CurrencyIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
-]
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface ProviderEntry {
@@ -96,12 +87,22 @@ function UtilBar({ value, color, label }: { value: number; color: string; label:
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function GpuComparisonPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [providers, setProviders] = useState<ProviderEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [sortBy, setSortBy] = useState<SortKey>('vram')
   const [filterGpu, setFilterGpu] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid')
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <LightningIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <GpuCompareIcon /> },
+    { label: t('renter.gpu_compare.nav'), href: '/renter/gpu-comparison', icon: <ChartIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <CurrencyIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
+  ]
 
   useEffect(() => {
     const key = getRenterKey()
@@ -179,9 +180,9 @@ export default function GpuComparisonPage() {
         {/* Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-3xl font-bold text-dc1-text-primary">GPU Comparison</h1>
+            <h1 className="text-3xl font-bold text-dc1-text-primary">{t('renter.gpu_compare.title')}</h1>
             <p className="text-dc1-text-secondary mt-1">
-              {filtered.length} provider{filtered.length !== 1 ? 's' : ''} available
+              {filtered.length} {t('renter.gpu_compare.providers_available')}
               {selectedIds.size > 0 && ` · ${selectedIds.size} selected for comparison`}
             </p>
           </div>
@@ -190,7 +191,7 @@ export default function GpuComparisonPage() {
               onClick={() => setViewMode(v => v === 'grid' ? 'table' : 'grid')}
               className="px-3 py-2 text-sm bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary rounded-lg transition-colors"
             >
-              {viewMode === 'grid' ? 'Table view' : 'Grid view'}
+              {viewMode === 'grid' ? t('renter.gpu_compare.table_view') : t('renter.gpu_compare.grid_view')}
             </button>
           </div>
         </div>
@@ -202,7 +203,7 @@ export default function GpuComparisonPage() {
             onChange={e => setFilterGpu(e.target.value)}
             className="px-3 py-2 text-sm bg-dc1-surface-l2 border border-dc1-border text-dc1-text-primary rounded-lg focus:outline-none focus:border-dc1-amber"
           >
-            <option value="">All GPU models</option>
+            <option value="">{t('renter.gpu_compare.all_gpu_models')}</option>
             {gpuModels.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
@@ -230,7 +231,7 @@ export default function GpuComparisonPage() {
               onClick={() => setSelectedIds(new Set())}
               className="px-3 py-2 text-sm text-dc1-text-muted hover:text-dc1-text-primary transition-colors"
             >
-              Clear selection
+              {t('renter.gpu_compare.clear_selection')}
             </button>
           )}
         </div>
@@ -238,7 +239,7 @@ export default function GpuComparisonPage() {
         {/* Side-by-side comparison panel (when 2–4 selected) */}
         {selected.length >= 2 && (
           <div className="card">
-            <h2 className="section-heading mb-4">Side-by-Side Comparison</h2>
+            <h2 className="section-heading mb-4">{t('renter.gpu_compare.side_by_side')}</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -293,14 +294,14 @@ export default function GpuComparisonPage() {
         {/* Tip when no providers selected */}
         {selected.length < 2 && filtered.length > 1 && (
           <p className="text-xs text-dc1-text-muted">
-            Select 2–4 providers to compare side-by-side.
+            {t('renter.gpu_compare.select_hint')}
           </p>
         )}
 
         {/* No providers */}
         {filtered.length === 0 && (
           <div className="card text-center py-12">
-            <p className="text-dc1-text-secondary">No providers match your filters.</p>
+            <p className="text-dc1-text-secondary">{t('renter.gpu_compare.no_match')}</p>
           </div>
         )}
 
@@ -506,7 +507,7 @@ export default function GpuComparisonPage() {
               href="/renter/marketplace"
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-dc1-amber text-dc1-void font-semibold rounded-lg hover:bg-dc1-amber/90 transition-colors text-sm"
             >
-              Browse full marketplace
+              {t('renter.gpu_compare.browse_full_marketplace')}
             </a>
           </div>
         )}

@@ -247,6 +247,27 @@ describe('Sprint 19-20 smoke: manual job retry', () => {
 });
 
 describe('Sprint 19-20 smoke: vLLM completion', () => {
+  test('fails fast with 503 + diagnostics when no capable providers are online', async () => {
+    const renter = await createRenter({ balance_halala: 20000 });
+
+    const res = await request(app)
+      .post(`/api/vllm/complete?key=${renter.apiKey}`)
+      .send({
+        model: 'mistralai/Mistral-7B-Instruct-v0.2',
+        messages: [{ role: 'user', content: 'Capacity check' }],
+        max_tokens: 16,
+      });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('no_capacity');
+    expect(res.body.diagnostics).toEqual(expect.objectContaining({
+      model_id: expect.any(String),
+      min_vram_gb: expect.any(Number),
+      capable_providers: 0,
+      queued_vllm_jobs: expect.any(Number),
+    }));
+  });
+
   test('completes with valid model+prompt and returns choices[0].message.content', async () => {
     const renter = await createRenter({ balance_halala: 20000 });
     const provider = await createProvider({ gpu_model: 'RTX 4090' });

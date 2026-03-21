@@ -7,6 +7,8 @@ PUBLIC_API_HEALTH_CANDIDATES="${PUBLIC_API_HEALTH_CANDIDATES:-https://api.dcp.sa
 PM2_APP_NAME="${PM2_APP_NAME:-dc1-provider-onboarding}"
 REQUIRED_PM2_SERVICES="${REQUIRED_PM2_SERVICES:-dc1-provider-onboarding,dcp-vps-health-cron,dcp-job-volume-cleanup-cron,dcp-stale-provider-sweep-cron}"
 REQUIRED_ENV_VARS="${REQUIRED_ENV_VARS:-DC1_ADMIN_TOKEN,DC1_HMAC_SECRET,FRONTEND_URL,BACKEND_URL}"
+RUNTIME_BASELINE_SCRIPT="${RUNTIME_BASELINE_SCRIPT:-./infra/scripts/verify-runtime-baseline.sh}"
+SKIP_RUNTIME_BASELINE="${SKIP_RUNTIME_BASELINE:-0}"
 
 timestamp="$(date -u '+%Y-%m-%d %H:%M UTC')"
 printf '[DEPLOY CHECK] %s\n' "$timestamp"
@@ -171,5 +173,15 @@ if printf '%s' "$pm2_log_chunk" | grep -Eiq 'FATAL|UnhandledPromiseRejection|EAD
   fail "PM2 logs for ${PM2_APP_NAME} contain fatal signatures in last 80 lines"
 fi
 pass "PM2 logs: no fatal signatures for ${PM2_APP_NAME}"
+
+if [ "$SKIP_RUNTIME_BASELINE" != "1" ]; then
+  if [ ! -x "$RUNTIME_BASELINE_SCRIPT" ]; then
+    fail "Runtime baseline script missing or not executable: ${RUNTIME_BASELINE_SCRIPT}"
+  fi
+  if ! runtime_output="$("$RUNTIME_BASELINE_SCRIPT" 2>&1)"; then
+    fail "Runtime baseline check failed: ${runtime_output}"
+  fi
+  pass "Runtime baseline verification completed"
+fi
 
 printf '[DEPLOY CHECK] PASS\n'

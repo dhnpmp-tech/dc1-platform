@@ -123,6 +123,7 @@ export default function ProviderDashboard() {
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileSaved, setProfileSaved] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [gpuProfileDraft, setGpuProfileDraft] = useState({
     gpuModel: '',
     vramMb: 4096,
@@ -253,23 +254,33 @@ export default function ProviderDashboard() {
   useEffect(() => {
     const API_BASE = '/api/dc1'
 
+    const redirectToLogin = (reason: 'missing_credentials' | 'invalid_credentials' | 'expired_session') => {
+      router.push(`/login?role=provider&method=apikey&reason=${reason}`)
+    }
+
     const initializeDashboard = async () => {
       // Check for API key
       const apiKey = localStorage.getItem('dc1_provider_key')
       if (!apiKey) {
-        router.push('/provider/register')
+        redirectToLogin('missing_credentials')
         return
       }
       setProviderApiKey(apiKey)
+      setLoadError('')
 
       try {
         // Fetch real provider data from VPS
         const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey)}`)
 
         if (!res.ok) {
+          const payload = await res.json().catch(() => ({}))
+          const rawError = String(payload?.error || '').toLowerCase()
+          const reason = (res.status === 401 || res.status === 403)
+            ? (rawError.includes('expired') || rawError.includes('session') ? 'expired_session' : 'invalid_credentials')
+            : 'invalid_credentials'
           // Invalid key — clear and redirect
           localStorage.removeItem('dc1_provider_key')
-          router.push('/login')
+          redirectToLogin(reason)
           return
         }
 
@@ -336,6 +347,7 @@ export default function ProviderDashboard() {
         } catch { /* ignore chart data failure */ }
       } catch (error) {
         console.error('Failed to load provider data:', error)
+        setLoadError(t('auth.error.network'))
       } finally {
         setLoading(false)
       }
@@ -394,6 +406,9 @@ export default function ProviderDashboard() {
       <DashboardLayout navItems={getNavItems()} role="provider" userName="Provider">
         <div className="card">
           <p className="text-dc1-text-secondary">{t('provider.failed_load')}</p>
+          {loadError && (
+            <p className="text-status-error text-sm mt-3">{loadError}</p>
+          )}
         </div>
       </DashboardLayout>
     )

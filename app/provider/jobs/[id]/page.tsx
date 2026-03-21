@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import { useLanguage } from '../../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -68,14 +69,6 @@ const GpuIcon = () => (
   </svg>
 )
 
-const navItems = [
-  { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
-  { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
-  { label: 'Earnings', href: '/provider/earnings', icon: <CurrencyIcon /> },
-  { label: 'GPU Metrics', href: '/provider/gpu', icon: <GpuIcon /> },
-  { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
-]
-
 function DetailRow({ label, value, highlight, mono }: { label: string; value: string; highlight?: boolean; mono?: boolean }) {
   return (
     <div className="flex justify-between items-center py-2 border-b border-dc1-border/50 last:border-0">
@@ -90,12 +83,20 @@ function DetailRow({ label, value, highlight, mono }: { label: string; value: st
 export default function ProviderJobDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { t } = useLanguage()
   const jobId = params.id as string
   const [job, setJob] = useState<JobDetail | null>(null)
   const [latestExec, setLatestExec] = useState<LatestExecution | null>(null)
   const [loading, setLoading] = useState(true)
   const [providerName, setProviderName] = useState('Provider')
   const [error, setError] = useState('')
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
+    { label: t('nav.jobs'), href: '/provider/jobs', icon: <LightningIcon /> },
+    { label: t('nav.earnings'), href: '/provider/earnings', icon: <CurrencyIcon /> },
+    { label: t('nav.gpu_metrics'), href: '/provider/gpu', icon: <GpuIcon /> },
+    { label: t('nav.settings'), href: '/provider/settings', icon: <GearIcon /> },
+  ]
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_provider_key')
@@ -121,7 +122,7 @@ export default function ProviderJobDetailPage() {
           headers: { 'x-provider-key': apiKey },
         })
         if (!jobRes.ok) {
-          setError('Job not found or access denied')
+          setError(t('provider.job_detail.not_found_or_denied'))
           return
         }
         const jobData = await jobRes.json()
@@ -142,7 +143,7 @@ export default function ProviderJobDetailPage() {
         } catch { /* executions endpoint may not have data */ }
       } catch (err) {
         console.error('Failed to load job:', err)
-        setError('Failed to load job details')
+        setError(t('provider.job_detail.load_failed'))
       } finally {
         setLoading(false)
       }
@@ -169,9 +170,9 @@ export default function ProviderJobDetailPage() {
     return (
       <DashboardLayout navItems={navItems} role="provider" userName={providerName}>
         <div className="space-y-4">
-          <Link href="/provider/jobs" className="text-dc1-amber text-sm hover:underline">&larr; Back to Jobs</Link>
+          <Link href="/provider/jobs" className="text-dc1-amber text-sm hover:underline">&larr; {t('provider.job_detail.back_to_jobs')}</Link>
           <div className="card p-8 text-center">
-            <p className="text-dc1-text-secondary">{error || 'Job not found'}</p>
+            <p className="text-dc1-text-secondary">{error || t('provider.job_detail.not_found')}</p>
           </div>
         </div>
       </DashboardLayout>
@@ -191,12 +192,12 @@ export default function ProviderJobDetailPage() {
     <DashboardLayout navItems={navItems} role="provider" userName={providerName}>
       <div className="space-y-6 max-w-3xl">
         {/* Back link */}
-        <Link href="/provider/jobs" className="text-dc1-amber text-sm hover:underline">&larr; Back to Jobs</Link>
+        <Link href="/provider/jobs" className="text-dc1-amber text-sm hover:underline">&larr; {t('provider.job_detail.back_to_jobs')}</Link>
 
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-dc1-text-primary">Job Detail</h1>
+            <h1 className="text-2xl font-bold text-dc1-text-primary">{t('provider.job_detail.title')}</h1>
             <p className="text-dc1-text-muted text-sm font-mono mt-1">{job.job_id || `#${job.id}`}</p>
           </div>
           <StatusBadge status={job.status as any} />
@@ -204,29 +205,29 @@ export default function ProviderJobDetailPage() {
 
         {/* Job Info */}
         <div className="card">
-          <h2 className="section-heading mb-4">Job Information</h2>
-          <DetailRow label="Job Type" value={(job.job_type || '').replace(/_/g, ' ')} />
-          <DetailRow label="Renter" value={job.renter_name || 'Anonymous'} />
-          <DetailRow label="Status" value={job.status} />
-          {job.progress_phase && <DetailRow label="Progress" value={job.progress_phase.replace(/_/g, ' ')} />}
-          <DetailRow label="Submitted" value={job.submitted_at ? new Date(job.submitted_at).toLocaleString() : '—'} />
-          <DetailRow label="Started" value={job.started_at ? new Date(job.started_at).toLocaleString() : '—'} />
-          <DetailRow label="Completed" value={job.completed_at ? new Date(job.completed_at).toLocaleString() : '—'} />
-          <DetailRow label="Duration" value={job.actual_duration_minutes ? `${job.actual_duration_minutes} min` : '—'} />
+          <h2 className="section-heading mb-4">{t('provider.job_detail.info')}</h2>
+          <DetailRow label={t('table.job_type')} value={(job.job_type || '').replace(/_/g, ' ')} />
+          <DetailRow label={t('provider.job_detail.renter')} value={job.renter_name || t('provider.job_detail.anonymous')} />
+          <DetailRow label={t('table.status')} value={job.status} />
+          {job.progress_phase && <DetailRow label={t('provider.job_detail.progress')} value={job.progress_phase.replace(/_/g, ' ')} />}
+          <DetailRow label={t('provider.job_detail.submitted')} value={job.submitted_at ? new Date(job.submitted_at).toLocaleString() : t('provider.jobs.na')} />
+          <DetailRow label={t('provider.job_detail.started')} value={job.started_at ? new Date(job.started_at).toLocaleString() : t('provider.jobs.na')} />
+          <DetailRow label={t('table.completed')} value={job.completed_at ? new Date(job.completed_at).toLocaleString() : t('provider.jobs.na')} />
+          <DetailRow label={t('table.duration')} value={job.actual_duration_minutes ? `${job.actual_duration_minutes} ${t('common.min')}` : t('provider.jobs.na')} />
         </div>
 
         {/* Earnings Breakdown */}
         <div className="card">
-          <h2 className="section-heading mb-4">Earnings Breakdown</h2>
-          <DetailRow label="Total Job Cost" value={`${totalCost.toFixed(2)} SAR`} />
-          <DetailRow label="Your Earnings (75%)" value={`${earned.toFixed(2)} SAR`} highlight />
-          <DetailRow label="DCP Fee (25%)" value={`${fee.toFixed(2)} SAR`} />
+          <h2 className="section-heading mb-4">{t('provider.job_detail.earnings_breakdown')}</h2>
+          <DetailRow label={t('provider.job_detail.total_job_cost')} value={`${totalCost.toFixed(2)} SAR`} />
+          <DetailRow label={t('provider.job_detail.your_earnings')} value={`${earned.toFixed(2)} SAR`} highlight />
+          <DetailRow label={t('provider.job_detail.dcp_fee')} value={`${fee.toFixed(2)} SAR`} />
         </div>
 
         {/* Job Parameters */}
         {parsedParams && (
           <div className="card">
-            <h2 className="section-heading mb-4">Job Parameters</h2>
+            <h2 className="section-heading mb-4">{t('provider.job_detail.params')}</h2>
             {Object.entries(parsedParams).map(([key, value]) => (
               <DetailRow key={key} label={key.replace(/_/g, ' ')} value={String(value)} mono />
             ))}
@@ -236,34 +237,34 @@ export default function ProviderJobDetailPage() {
         {/* Container Stats */}
         {(latestExec || job.container_id) && (
           <div className="card">
-            <h2 className="section-heading mb-4">Container Stats</h2>
+            <h2 className="section-heading mb-4">{t('provider.job_detail.container_stats')}</h2>
             {job.container_id && (
-              <DetailRow label="Container ID" value={job.container_id.slice(0, 12)} mono />
+              <DetailRow label={t('provider.job_detail.container_id')} value={job.container_id.slice(0, 12)} mono />
             )}
             {latestExec && (
               <>
                 <DetailRow
-                  label="Exit Code"
-                  value={latestExec.exit_code != null ? String(latestExec.exit_code) : '—'}
+                  label={t('provider.job_detail.exit_code')}
+                  value={latestExec.exit_code != null ? String(latestExec.exit_code) : t('provider.jobs.na')}
                 />
                 <DetailRow
-                  label="GPU Seconds Used"
-                  value={latestExec.gpu_seconds_used ? `${latestExec.gpu_seconds_used.toFixed(2)}s` : '—'}
+                  label={t('provider.job_detail.gpu_seconds')}
+                  value={latestExec.gpu_seconds_used ? `${latestExec.gpu_seconds_used.toFixed(2)}s` : t('provider.jobs.na')}
                 />
                 {latestExec.started_at && latestExec.ended_at && (
                   <DetailRow
-                    label="Container Duration"
+                    label={t('provider.job_detail.container_duration')}
                     value={`${Math.round((new Date(latestExec.ended_at).getTime() - new Date(latestExec.started_at).getTime()) / 1000)}s`}
                   />
                 )}
                 <DetailRow
-                  label="Attempt #"
+                  label={t('provider.job_detail.attempt')}
                   value={String(latestExec.attempt_number)}
                 />
               </>
             )}
             {job.retry_count > 0 && (
-              <DetailRow label="Total Retries" value={String(job.retry_count)} />
+              <DetailRow label={t('provider.job_detail.total_retries')} value={String(job.retry_count)} />
             )}
           </div>
         )}
@@ -271,7 +272,7 @@ export default function ProviderJobDetailPage() {
         {/* Error */}
         {job.error && (
           <div className="card border-status-error/30 bg-status-error/5">
-            <h2 className="section-heading text-status-error mb-2">Error</h2>
+            <h2 className="section-heading text-status-error mb-2">{t('common.error')}</h2>
             <pre className="text-sm text-dc1-text-secondary whitespace-pre-wrap break-words">{job.error}</pre>
           </div>
         )}

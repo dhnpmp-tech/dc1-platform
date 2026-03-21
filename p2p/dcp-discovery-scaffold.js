@@ -29,6 +29,8 @@ export const DCP_KAD_PROTOCOL = '/dcp/nodes/1.0.0/kad/1.0.0'
 export const DCP_ENV_PREFIX = `${DCP_KAD_PROTOCOL}/environments/`
 export const DCP_PROVIDER_PREFIX = `${DCP_KAD_PROTOCOL}/providers/`
 export const DCP_GOSSIP_TOPIC = '/dcp/providers/availability/1.0.0'
+export const DEFAULT_DISCOVERY_TIMEOUT_MS = 8000
+export const DEFAULT_PROVIDER_TTL_MS = 120_000
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
@@ -117,7 +119,99 @@ export function providerKey(peerId) {
   return textEncoder.encode(`${DCP_PROVIDER_PREFIX}${peerId}`)
 }
 
-async function dhtPutJson(node, key, value, timeoutMs = 8000) {
+function asPositiveFiniteNumber(value, fallback) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback
+  }
+  return parsed
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function asIsoTimestamp(value) {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const ms = Date.parse(value)
+  if (!Number.isFinite(ms)) {
+    return null
+  }
+  return new Date(ms).toISOString()
+}
+
+function isExpiredRecord({
+  announcedAt,
+  expiresAt,
+  nowMs = Date.now(),
+  defaultTtlMs = DEFAULT_PROVIDER_TTL_MS
+}) {
+  const expiresMs = Date.parse(expiresAt ?? '')
+  if (Number.isFinite(expiresMs)) {
+    return expiresMs <= nowMs
+  }
+
+  const announcedMs = Date.parse(announcedAt ?? '')
+  if (!Number.isFinite(announcedMs)) {
+    return true
+  }
+  return announcedMs + defaultTtlMs <= nowMs
+}
+
+function validateProviderEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') {
+    return { ok: false, reason: 'provider envelope missing or non-object' }
+  }
+  if (typeof envelope.peer_id !== 'string' || envelope.peer_id.length === 0) {
+    return { ok: false, reason: 'provider envelope missing peer_id' }
+  }
+  if (typeof envelope.env_cid !== 'string' || envelope.env_cid.length === 0) {
+    return { ok: false, reason: 'provider envelope missing env_cid' }
+  }
+  const announcedAt = asIsoTimestamp(envelope.announced_at)
+  if (!announcedAt) {
+    return { ok: false, reason: 'provider envelope has invalid announced_at' }
+  }
+  return { ok: true, announcedAt }
+}
+
+function validateEnvironmentEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') {
+    return { ok: false, reason: 'environment envelope missing or non-object' }
+  }
+  if (!envelope.env || typeof envelope.env !== 'object') {
+    return { ok: false, reason: 'environment envelope missing env payload' }
+  }
+  const announcedAt = asIsoTimestamp(envelope.announced_at)
+  if (!announcedAt) {
+    return { ok: false, reason: 'environment envelope has invalid announced_at' }
+  }
+  const gpuModel = envelope.env.gpu_model
+  if (typeof gpuModel !== 'string' || gpuModel.trim().length === 0 || gpuModel === 'unknown') {
+    return { ok: false, reason: 'environment payload missing valid gpu_model' }
+  }
+  const vram = Number(envelope.env.vram_gb)
+  if (!Number.isFinite(vram) || vram <= 0) {
+    return { ok: false, reason: 'environment payload has invalid vram_gb' }
+  }
+  return { ok: true, announcedAt }
+}
+
+async function resolveFallback(fallbackResolver, ctx) {
+  if (typeof fallbackResolver !== 'function') {
+    return null
+  }
+  try {
+    return await fallbackResolver(ctx)
+  } catch (error) {
+    console.warn(`[DCP-P2P] Fallback resolver failed: ${error.message}`)
+    return null
+  }
+}
+
+async function dhtPutJson(node, key, value, timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS) {
   const timeout = withTimeout(timeoutMs)
   try {
     for await (const event of node.services.dht.put(key, encodeJson(value), { signal: timeout.signal })) {
@@ -135,7 +229,7 @@ async function dhtPutJson(node, key, value, timeoutMs = 8000) {
   }
 }
 
-async function dhtGetJson(node, key, timeoutMs = 8000) {
+async function dhtGetJson(node, key, timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS) {
   const timeout = withTimeout(timeoutMs)
   try {
     for await (const event of node.services.dht.get(key, { signal: timeout.signal })) {
@@ -238,36 +332,44 @@ export function nodeAddress(node) {
 function normalizeProviderEnv(providerEnv) {
   return {
     gpu_model: providerEnv.gpu_model ?? providerEnv.gpu ?? 'unknown',
-    vram_gb: Number(providerEnv.vram_gb ?? providerEnv.vram ?? 0),
-    price_sar_per_hour: Number(providerEnv.price_sar_per_hour ?? 0),
+    vram_gb: asPositiveFiniteNumber(providerEnv.vram_gb ?? providerEnv.vram ?? 0, 0),
+    price_sar_per_hour: asPositiveFiniteNumber(providerEnv.price_sar_per_hour ?? 0, 0),
     cuda_version: providerEnv.cuda_version ?? null,
     driver_version: providerEnv.driver_version ?? null,
     os: providerEnv.os ?? null,
     region: providerEnv.region ?? providerEnv.location ?? 'sa',
-    reliability_score: Number(providerEnv.reliability_score ?? 0),
-    daemon_version: providerEnv.daemon_version ?? null,
-    available_slots: Number(providerEnv.available_slots ?? 1),
+    reliability_score: clamp(asPositiveFiniteNumber(providerEnv.reliability_score ?? 0, 0), 0, 100),
+    daemon_version: providerEnv.daemon_version ?? providerEnv.version ?? null,
+    available_slots: asPositiveFiniteNumber(providerEnv.available_slots ?? 1, 1),
     tags: Array.isArray(providerEnv.tags) ? providerEnv.tags : []
   }
 }
 
-export async function announceProviderEnvironment(node, providerEnv) {
+export async function announceProviderEnvironment(node, providerEnv, options = {}) {
   const normalized = normalizeProviderEnv(providerEnv)
+  const ttlMs = clamp(
+    asPositiveFiniteNumber(options.ttlMs ?? providerEnv.ttl_ms ?? DEFAULT_PROVIDER_TTL_MS, DEFAULT_PROVIDER_TTL_MS),
+    30_000,
+    86_400_000
+  )
   const envCid = await toEnvCid(normalized)
-  const now = new Date().toISOString()
+  const announcedAt = new Date().toISOString()
+  const expiresAt = new Date(Date.now() + ttlMs).toISOString()
 
   const envEnvelope = {
     version: 1,
     cid: envCid.toString(),
     env: normalized,
-    announced_at: now
+    announced_at: announcedAt,
+    expires_at: expiresAt
   }
 
   const providerEnvelope = {
     version: 1,
     peer_id: node.peerId.toString(),
     env_cid: envCid.toString(),
-    announced_at: now,
+    announced_at: announcedAt,
+    expires_at: expiresAt,
     addrs: node.getMultiaddrs().map((address) => address.toString())
   }
 
@@ -279,33 +381,144 @@ export async function announceProviderEnvironment(node, providerEnv) {
       type: 'provider.announce',
       peer_id: providerEnvelope.peer_id,
       env_cid: providerEnvelope.env_cid,
-      announced_at: providerEnvelope.announced_at
+      announced_at: providerEnvelope.announced_at,
+      expires_at: providerEnvelope.expires_at
     }))
   }
 
   return providerEnvelope
 }
 
-export async function resolveProviderByPeerId(node, peerId) {
+export async function resolveProviderByPeerId(node, peerId, options = {}) {
+  const {
+    allowStale = false,
+    maxAgeMs = DEFAULT_PROVIDER_TTL_MS,
+    fallbackResolver
+  } = options
+
   const provider = await dhtGetJson(node, providerKey(peerId))
   if (!provider || !provider.env_cid) {
-    return null
+    return resolveFallback(fallbackResolver, {
+      peerId,
+      reason: 'provider_record_missing'
+    })
   }
 
-  const env = await dhtGetJson(node, environmentKeyFromCid(CID.parse(provider.env_cid)))
+  const providerValidation = validateProviderEnvelope(provider)
+  if (!providerValidation.ok) {
+    return resolveFallback(fallbackResolver, {
+      peerId,
+      reason: providerValidation.reason,
+      provider
+    })
+  }
+  if (!allowStale && isExpiredRecord({
+    announcedAt: provider.announced_at,
+    expiresAt: provider.expires_at,
+    defaultTtlMs: maxAgeMs
+  })) {
+    return resolveFallback(fallbackResolver, {
+      peerId,
+      reason: 'provider_record_stale',
+      provider
+    })
+  }
+
+  let envCid
+  try {
+    envCid = CID.parse(provider.env_cid)
+  } catch {
+    return resolveFallback(fallbackResolver, {
+      peerId,
+      reason: 'provider_record_invalid_cid',
+      provider
+    })
+  }
+
+  const env = await dhtGetJson(node, environmentKeyFromCid(envCid))
   if (!env) {
-    return null
+    return resolveFallback(fallbackResolver, {
+      peerId,
+      reason: 'environment_record_missing',
+      provider
+    })
+  }
+
+  const environmentValidation = validateEnvironmentEnvelope(env)
+  if (!environmentValidation.ok) {
+    return resolveFallback(fallbackResolver, {
+      peerId,
+      reason: environmentValidation.reason,
+      provider,
+      environment: env
+    })
+  }
+  if (!allowStale && isExpiredRecord({
+    announcedAt: env.announced_at,
+    expiresAt: env.expires_at,
+    defaultTtlMs: maxAgeMs
+  })) {
+    return resolveFallback(fallbackResolver, {
+      peerId,
+      reason: 'environment_record_stale',
+      provider,
+      environment: env
+    })
   }
 
   return {
     provider,
-    environment: env
+    environment: env,
+    source: 'dht',
+    stale: false
   }
 }
 
-export async function resolveEnvironmentByCid(node, cidInput) {
-  const cid = typeof cidInput === 'string' ? CID.parse(cidInput) : cidInput
-  return dhtGetJson(node, environmentKeyFromCid(cid))
+export async function resolveEnvironmentByCid(node, cidInput, options = {}) {
+  const {
+    allowStale = false,
+    maxAgeMs = DEFAULT_PROVIDER_TTL_MS,
+    fallbackResolver
+  } = options
+
+  let cid
+  try {
+    cid = typeof cidInput === 'string' ? CID.parse(cidInput) : cidInput
+  } catch {
+    return resolveFallback(fallbackResolver, {
+      cid: String(cidInput),
+      reason: 'environment_record_invalid_cid'
+    })
+  }
+  const env = await dhtGetJson(node, environmentKeyFromCid(cid))
+  if (!env) {
+    return resolveFallback(fallbackResolver, {
+      cid: cid.toString(),
+      reason: 'environment_record_missing'
+    })
+  }
+
+  const environmentValidation = validateEnvironmentEnvelope(env)
+  if (!environmentValidation.ok) {
+    return resolveFallback(fallbackResolver, {
+      cid: cid.toString(),
+      reason: environmentValidation.reason,
+      environment: env
+    })
+  }
+  if (!allowStale && isExpiredRecord({
+    announcedAt: env.announced_at,
+    expiresAt: env.expires_at,
+    defaultTtlMs: maxAgeMs
+  })) {
+    return resolveFallback(fallbackResolver, {
+      cid: cid.toString(),
+      reason: 'environment_record_stale',
+      environment: env
+    })
+  }
+
+  return env
 }
 
 export async function subscribeProviderAvailability(node, onEvent) {

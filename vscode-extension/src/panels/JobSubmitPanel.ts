@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { dc1, Provider, JOB_TYPES, SubmitJobRequest, ContainerSpec } from '../api/dc1Client';
+import { dc1, Provider, JOB_TYPES, SubmitJobRequest, isAuthError, isRetryableError } from '../api/dc1Client';
 import { AuthManager } from '../auth/AuthManager';
 
 // Friendly container type definitions shown in the panel
@@ -85,7 +85,7 @@ export class JobSubmitPanel {
     }
 
     if (msg.type === 'submit') {
-      const key = await this.auth.ensureKey();
+      let key = await this.auth.ensureKey();
       if (!key) { return; }
 
       const payload = msg.payload;
@@ -94,7 +94,21 @@ export class JobSubmitPanel {
       this._panel.webview.postMessage({ type: 'submitting' });
 
       try {
-        const result = await dc1.submitJob(key, payload);
+        const result = await this.submitJobWithRetry(() => {
+          if (!key) {
+            throw new Error('Missing renter API key');
+          }
+          return dc1.submitJob(key, payload);
+        }, async (err) => {
+          if (!isAuthError(err)) {
+            return undefined;
+          }
+          const refreshed = await this.auth.handleRenterAuthError(err, 'submitting a container job');
+          if (refreshed) {
+            key = refreshed;
+          }
+          return refreshed;
+        });
         this._panel.webview.postMessage({
           type: 'success',
           jobId: result.job_id,
@@ -115,10 +129,35 @@ export class JobSubmitPanel {
         });
 
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = humanizeError(err);
         this._panel.webview.postMessage({ type: 'error', message: errMsg });
       }
     }
+  }
+
+  private async submitJobWithRetry<T>(
+    request: () => Promise<T>,
+    onAuthError: (err: unknown) => Promise<string | undefined>
+  ): Promise<T> {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await request();
+      } catch (err) {
+        const newKey = await onAuthError(err);
+        if (newKey) {
+          continue;
+        }
+
+        if (attempt < maxAttempts && isRetryableError(err)) {
+          await delay(attempt * 700);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw new Error('Unable to submit job after multiple attempts.');
   }
 
   private buildHtml(providers: Provider[], preselected?: Provider, registryImages: string[] = []): string {
@@ -550,4 +589,24 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function humanizeError(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return String(err);
+  }
+
+  if (isAuthError(err)) {
+    return 'Authentication failed. Re-run "DCP: Set Renter API Key" and try again.';
+  }
+
+  if (isRetryableError(err)) {
+    return `${err.message}. DCP retried automatically; please retry once more if the network is unstable.`;
+  }
+
+  return err.message;
 }

@@ -392,12 +392,62 @@ describe('DCP-324 Docker wave integration suite', () => {
         },
       });
 
-      const queueRes = await request(app).get('/api/jobs/queue/status');
+      const queueRes = await request(app)
+        .get('/api/jobs/queue/status')
+        .set('x-renter-key', renterKey);
       expect(queueRes.status).toBe(200);
       expect(queueRes.body.queued_total).toBeGreaterThanOrEqual(2);
       expect(Array.isArray(queueRes.body.buckets)).toBe(true);
       expect(queueRes.body.buckets.some((b) => b.compute_type === 'training')).toBe(true);
       expect(queueRes.body.buckets.some((b) => b.compute_type === 'inference')).toBe(true);
+    });
+
+    it('rejects queue status without authenticated actor', async () => {
+      const res = await request(app).get('/api/jobs/queue/status');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toMatch(/authentication required/i);
+    });
+
+    it('scopes queue status to renter-owned queued jobs', async () => {
+      const { renterKey: renterA } = await registerRenter({ balance_halala: 50_000 });
+      const { renterKey: renterB } = await registerRenter({ balance_halala: 50_000 });
+
+      const submitA = await submitContainerJob(renterA, {
+        container_spec: {
+          image_type: 'training',
+          image: 'dcp/training:latest',
+          vram_required_mb: 16384,
+          gpu_count: 1,
+          compute_type: 'training',
+        },
+      });
+      const submitB = await submitContainerJob(renterB, {
+        container_spec: {
+          image_type: 'llm',
+          image: 'dcp/vllm-serve:latest',
+          vram_required_mb: 4096,
+          gpu_count: 1,
+          compute_type: 'inference',
+        },
+      });
+      expect(submitA.status).toBe(201);
+      expect(submitB.status).toBe(201);
+
+      const queueA = await request(app)
+        .get('/api/jobs/queue/status')
+        .set('x-renter-key', renterA);
+      expect(queueA.status).toBe(200);
+      expect(queueA.body.queued_total).toBe(1);
+      expect(queueA.body.queue).toHaveLength(1);
+      expect(queueA.body.queue[0].compute_type).toBe('training');
+
+      const queueB = await request(app)
+        .get('/api/jobs/queue/status')
+        .set('x-renter-key', renterB);
+      expect(queueB.status).toBe(200);
+      expect(queueB.body.queued_total).toBe(1);
+      expect(queueB.body.queue).toHaveLength(1);
+      expect(queueB.body.queue[0].compute_type).toBe('inference');
     });
 
     it('updates queue_position after earlier queued job is claimed', async () => {
@@ -513,6 +563,53 @@ describe('DCP-324 Docker wave integration suite', () => {
       expect(row.status).toBe('failed');
       expect(row.restart_count).toBe(3);
       expect(row.last_error).toMatch(/crashed/i);
+    });
+  });
+
+  describe('provider startup health gating', () => {
+    it('does not assign queued jobs to provider with stale heartbeat (>10 min)', async () => {
+      const { providerKey, providerId } = await registerProvider();
+      const staleHeartbeat = new Date(Date.now() - (11 * 60 * 1000)).toISOString();
+      db.prepare(
+        `UPDATE providers
+         SET status = 'online', is_paused = 0, last_heartbeat = ?, vram_mb = ?, gpu_count_reported = ?
+         WHERE id = ?`
+      ).run(staleHeartbeat, 24576, 1, providerId);
+
+      const { renterKey } = await registerRenter({ balance_halala: 20_000 });
+      const submitRes = await submitContainerJob(renterKey, { provider_id: providerId });
+      expect(submitRes.status).toBe(201);
+
+      const nextRes = await request(app).get(`/api/providers/jobs/next?key=${providerKey}`);
+      expect(nextRes.status).toBe(200);
+      expect(nextRes.body.job).toBeNull();
+
+      const row = db.prepare('SELECT status, picked_up_at FROM jobs WHERE job_id = ?').get(submitRes.body.job.job_id);
+      expect(row.status).toMatch(/queued|pending/);
+      expect(row.picked_up_at).toBeNull();
+    });
+
+    it('assigns queued jobs to degraded-but-online provider (<10 min heartbeat age)', async () => {
+      const { providerKey, providerId } = await registerProvider();
+      const degradedHeartbeat = new Date(Date.now() - (5 * 60 * 1000)).toISOString();
+      db.prepare(
+        `UPDATE providers
+         SET status = 'online', is_paused = 0, last_heartbeat = ?, vram_mb = ?, gpu_count_reported = ?
+         WHERE id = ?`
+      ).run(degradedHeartbeat, 24576, 1, providerId);
+
+      const { renterKey } = await registerRenter({ balance_halala: 20_000 });
+      const submitRes = await submitContainerJob(renterKey, { provider_id: providerId });
+      expect(submitRes.status).toBe(201);
+
+      const nextRes = await request(app).get(`/api/providers/jobs/next?key=${providerKey}`);
+      expect(nextRes.status).toBe(200);
+      expect(nextRes.body.job).toBeTruthy();
+      expect(nextRes.body.job.job_id).toBe(submitRes.body.job.job_id);
+
+      const row = db.prepare('SELECT status, picked_up_at FROM jobs WHERE job_id = ?').get(submitRes.body.job.job_id);
+      expect(row.status).toBe('running');
+      expect(row.picked_up_at).toBeTruthy();
     });
   });
 });

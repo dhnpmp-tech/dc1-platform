@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import { getApiBase, getProviderKey } from '../../../lib/api'
+import { useLanguage } from '../../lib/i18n'
 
 // ── SVG Icons ──────────────────────────────────────────────────────────────
 const HomeIcon = () => (
@@ -34,14 +35,6 @@ const GpuIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6M9 16h6M9 8h6" />
   </svg>
 )
-
-const navItems = [
-  { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
-  { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
-  { label: 'Earnings', href: '/provider/earnings', icon: <CurrencyIcon /> },
-  { label: 'GPU Metrics', href: '/provider/gpu', icon: <GpuIcon /> },
-  { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
-]
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface GpuSample {
@@ -222,10 +215,18 @@ function MultiGpuView({ samples, gpuCount }: MultiGpuViewProps) {
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function ProviderGpuMetrics() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [metrics, setMetrics] = useState<GpuMetricsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
+    { label: t('nav.jobs'), href: '/provider/jobs', icon: <LightningIcon /> },
+    { label: t('nav.earnings'), href: '/provider/earnings', icon: <CurrencyIcon /> },
+    { label: t('nav.gpu_metrics'), href: '/provider/gpu', icon: <GpuIcon /> },
+    { label: t('nav.settings'), href: '/provider/settings', icon: <GearIcon /> },
+  ]
 
   const fetchMetrics = useCallback(async (range: TimeRange) => {
     const key = getProviderKey()
@@ -317,7 +318,7 @@ export default function ProviderGpuMetrics() {
         {/* Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-3xl font-bold text-dc1-text-primary">GPU Metrics</h1>
+            <h1 className="text-3xl font-bold text-dc1-text-primary">{t('provider.gpu_metrics.title')}</h1>
             {metrics?.gpu_name && (
               <p className="text-dc1-text-secondary mt-1">
                 {metrics.gpu_name}
@@ -345,7 +346,7 @@ export default function ProviderGpuMetrics() {
             {/* Live indicator */}
             <div className="flex items-center gap-2 text-sm text-dc1-text-muted">
               <span className="w-2 h-2 rounded-full bg-status-success animate-pulse" />
-              <span>Live</span>
+              <span>{t('provider.gpu_metrics.live')}</span>
             </div>
           </div>
         </div>
@@ -353,9 +354,9 @@ export default function ProviderGpuMetrics() {
         {/* No data state */}
         {!samples.length && (
           <div className="card text-center py-12">
-            <p className="text-dc1-text-secondary">No GPU metrics data yet.</p>
+            <p className="text-dc1-text-secondary">{t('provider.gpu_metrics.no_data')}</p>
             <p className="text-dc1-text-muted text-sm mt-2">
-              Metrics are collected every ~30 seconds when your daemon is running.
+              {t('provider.gpu_metrics.no_data_hint')}
             </p>
           </div>
         )}
@@ -365,14 +366,14 @@ export default function ProviderGpuMetrics() {
             {/* Current Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard
-                label="GPU Utilization"
+                label={t('provider.gpu_metrics.utilization')}
                 value={`${currentUtil}%`}
                 accent="amber"
                 icon={<GpuIcon />}
                 trend={{ value: `Avg ${avgUtil}% · Peak ${peakUtil}%`, positive: true }}
               />
               <StatCard
-                label="Temperature"
+                label={t('provider.gpu_metrics.temperature')}
                 value={`${currentTemp}°C`}
                 accent={currentTemp >= 80 ? 'error' : currentTemp >= 70 ? 'default' : 'success'}
                 icon={
@@ -383,7 +384,7 @@ export default function ProviderGpuMetrics() {
                 trend={{ value: `Peak ${peakTemp}°C`, positive: currentTemp < 80 }}
               />
               <StatCard
-                label="VRAM Usage"
+                label={t('provider.gpu_metrics.vram_usage')}
                 value={`${currentVramPct}%`}
                 accent="info"
                 icon={
@@ -394,7 +395,7 @@ export default function ProviderGpuMetrics() {
                 trend={{ value: currentVramGb, positive: currentVramPct < 90 }}
               />
               <StatCard
-                label="Power Draw"
+                label={t('provider.gpu_metrics.power_draw')}
                 value={`${currentPower}W`}
                 accent="default"
                 icon={
@@ -485,28 +486,28 @@ export default function ProviderGpuMetrics() {
 
             {/* Summary Table */}
             <div className="card">
-              <h2 className="section-heading mb-4">Period Summary</h2>
+              <h2 className="section-heading mb-4">{t('provider.gpu_metrics.period_summary')}</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="bg-dc1-surface-l2 rounded-lg p-4">
-                  <p className="text-dc1-text-muted mb-1">Samples collected</p>
+                  <p className="text-dc1-text-muted mb-1">{t('provider.gpu_metrics.samples_collected')}</p>
                   <p className="text-xl font-bold text-dc1-text-primary">{samples.length}</p>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg p-4">
-                  <p className="text-dc1-text-muted mb-1">Avg GPU util</p>
+                  <p className="text-dc1-text-muted mb-1">{t('provider.gpu_metrics.avg_gpu_util')}</p>
                   <p className="text-xl font-bold text-dc1-amber">{avgUtil}%</p>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg p-4">
-                  <p className="text-dc1-text-muted mb-1">Peak temperature</p>
+                  <p className="text-dc1-text-muted mb-1">{t('provider.gpu_metrics.peak_temperature')}</p>
                   <p className="text-xl font-bold" style={{ color: getTempColor(peakTemp) }}>{peakTemp}°C</p>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg p-4">
-                  <p className="text-dc1-text-muted mb-1">Peak power</p>
+                  <p className="text-dc1-text-muted mb-1">{t('provider.gpu_metrics.peak_power')}</p>
                   <p className="text-xl font-bold text-dc1-text-primary">{maxPower}W</p>
                 </div>
               </div>
               {lastUpdated && (
                 <p className="text-xs text-dc1-text-muted mt-4">
-                  Last updated: {lastUpdated.toLocaleTimeString()} · Auto-refreshes every 30s
+                  {t('provider.gpu_metrics.last_updated')} {lastUpdated.toLocaleTimeString()} · {t('provider.gpu_metrics.auto_refresh')}
                 </p>
               )}
             </div>

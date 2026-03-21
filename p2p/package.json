@@ -5,6 +5,8 @@
   "description": "DC1 P2P provider discovery layer — libp2p Kademlia DHT prototype (Phase C)",
   "scripts": {
     "demo": "node demo.js",
+    "demo:cid": "node demo-cid-discovery.js",
+    "smoke:cid": "node smoke-cid-discovery.js",
     "bootstrap": "node bootstrap.js"
   },
   "dependencies": {

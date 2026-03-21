@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
@@ -132,7 +132,7 @@ const copy = {
       p1: 'Submit a PyTorch LLM inference job. Pass your renter key in the',
       code: 'x-renter-key',
       p2: 'header:',
-      note: 'Cost is deducted as a pre-pay hold. Any unused halala is refunded when the job completes.',
+      note: 'Billing uses a prepay estimate before launch, then actual runtime settlement after completion.',
     },
     s5: {
       p1: 'Poll the job endpoint until',
@@ -144,14 +144,22 @@ const copy = {
       statusFlow: 'pending → queued → running → done',
       logsNote: 'Logs are available at',
     },
-    next: 'What\'s next?',
+    next: 'Next actions',
     nextItems: [
-      { label: 'Full API reference', href: '/docs/api' },
-      { label: 'Renter guide', href: '/docs/renter-guide' },
-      { label: 'Provider guide', href: '/docs/provider-guide' },
+      { label: 'View API reference', href: '/docs/api' },
+      { label: 'Open renter guide', href: '/docs/renter-guide' },
+      { label: 'Open provider guide', href: '/docs/provider-guide' },
     ],
     toggleLang: 'عربي',
     verifyHeading: 'Verification checklist',
+    checklistHeading: 'Renter first-job checklist',
+    checklistItems: [
+      { label: 'Register renter account', href: '/renter/register' },
+      { label: 'Top up wallet', href: '/renter/billing' },
+      { label: 'Choose a GPU in marketplace', href: '/renter/marketplace' },
+      { label: 'Submit starter job', href: '/renter/playground?starter=1' },
+      { label: 'Monitor output and logs', href: '/renter/jobs' },
+    ],
     verifyItems: [
       'Confirm your API key starts with dcp-renter-',
       'Ensure top-up response includes success=true and new_balance_halala',
@@ -227,7 +235,7 @@ const copy = {
       p1: 'أرسل وظيفة استدلال LLM باستخدام PyTorch. مرّر مفتاح المستأجر في ترويسة',
       code: 'x-renter-key',
       p2: ':',
-      note: 'يُخصم التكلفة كاحتجاز مسبق. أي هللات غير مستخدمة تُعاد عند اكتمال الوظيفة.',
+      note: 'تستخدم الفوترة تقديرًا مسبقًا قبل التشغيل ثم تسوية حسب وقت التشغيل الفعلي بعد الاكتمال.',
     },
     s5: {
       p1: 'استطلع نقطة نهاية الوظيفة حتى يصل',
@@ -239,14 +247,22 @@ const copy = {
       statusFlow: 'pending → queued → running → done',
       logsNote: 'السجلات متاحة على',
     },
-    next: 'ما التالي؟',
+    next: 'الخطوات التالية',
     nextItems: [
-      { label: 'مرجع API الكامل', href: '/docs/api' },
-      { label: 'دليل المستأجر', href: '/docs/renter-guide' },
-      { label: 'دليل المزود', href: '/docs/provider-guide' },
+      { label: 'عرض مرجع API', href: '/docs/api' },
+      { label: 'فتح دليل المستأجر', href: '/docs/renter-guide' },
+      { label: 'فتح دليل المزود', href: '/docs/provider-guide' },
     ],
     toggleLang: 'English',
     verifyHeading: 'قائمة التحقق',
+    checklistHeading: 'قائمة المستأجر لأول وظيفة',
+    checklistItems: [
+      { label: 'سجل حساب مستأجر', href: '/renter/register' },
+      { label: 'اشحن المحفظة', href: '/renter/billing' },
+      { label: 'اختر GPU من السوق', href: '/renter/marketplace' },
+      { label: 'أرسل وظيفة تجريبية', href: '/renter/playground?starter=1' },
+      { label: 'راقب المخرجات والسجلات', href: '/renter/jobs' },
+    ],
     verifyItems: [
       'تأكد أن مفتاح API يبدأ بـ dcp-renter-',
       'تأكد أن استجابة الشحن تحتوي success=true و new_balance_halala',
@@ -350,8 +366,8 @@ const POLL_RESPONSE = `{
 
 const SDK_SNIPPETS: Record<SdkKey, Omit<SdkCard, 'title' | 'subtitle' | 'installLabel' | 'runLabel' | 'verifyLabel' | 'verifyHint'>> = {
   node: {
-    installCode: `npm install dc1-renter-sdk`,
-    runCode: `import { DC1RenterClient } from 'dc1-renter-sdk'
+    installCode: `npm install dcp-renter-sdk`,
+    runCode: `import { DC1RenterClient } from 'dcp-renter-sdk'
 
 const client = new DC1RenterClient({
   apiKey: process.env.DCP_RENTER_KEY!,
@@ -399,10 +415,28 @@ export API_BASE="https://dcp.sa/api/dc1"`,
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function QuickstartPage() {
-  const { language, setLanguage } = useLanguage()
+  const { language, setLanguage, t: tr } = useLanguage()
   const isRTL = language === 'ar'
   const t = copy[language]
   const [activeSdk, setActiveSdk] = useState<SdkKey>('node')
+  const billingExplainerRef = useRef<HTMLDivElement | null>(null)
+  const hasTrackedBillingExplainerView = useRef(false)
+
+  const trackQuickstartEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = { event, source: 'docs_quickstart', ...payload }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & {
+      dataLayer?: Array<Record<string, unknown>>
+      gtag?: (...args: unknown[]) => void
+    }
+    if (Array.isArray(win.dataLayer)) {
+      win.dataLayer.push(detail)
+    }
+    if (typeof win.gtag === 'function') {
+      win.gtag('event', event, detail)
+    }
+  }, [])
 
   const sdkCards = useMemo<Record<SdkKey, SdkCard>>(() => {
     return {
@@ -413,6 +447,26 @@ export default function QuickstartPage() {
   }, [t])
 
   const activeCard = sdkCards[activeSdk]
+
+  useEffect(() => {
+    const node = billingExplainerRef.current
+    if (!node || hasTrackedBillingExplainerView.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (hasTrackedBillingExplainerView.current) return
+        if (entries.some((entry) => entry.isIntersecting)) {
+          hasTrackedBillingExplainerView.current = true
+          trackQuickstartEvent('billing_explainer_viewed', { page: 'quickstart' })
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.35 }
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [trackQuickstartEvent])
 
   return (
     <div className="min-h-screen bg-dc1-void" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -431,9 +485,9 @@ export default function QuickstartPage() {
             </button>
           </div>
           <h1 className={`mt-2 text-3xl font-bold text-dc1-text-primary sm:text-4xl ${isRTL ? 'text-right' : ''}`}>
-            {t.heading}
+            {tr('quickstart.intro_headline')}
           </h1>
-          <p className={`mt-3 text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>{t.sub}</p>
+          <p className={`mt-3 text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>{tr('quickstart.intro_body')}</p>
 
           {/* Step progress bar */}
           <div className={`mt-6 flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -446,6 +500,51 @@ export default function QuickstartPage() {
               </div>
             ))}
           </div>
+          <p className={`mt-4 text-xs text-dc1-text-muted ${isRTL ? 'text-right' : ''}`}>
+            {tr('quickstart.intro_note')}
+          </p>
+        </div>
+
+        {/* Billing transparency */}
+        <div ref={billingExplainerRef} className="mt-6 rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
+          <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
+            How DCP Billing Works
+          </h2>
+          <ul className={`mt-3 space-y-2 text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>
+            <li>1. We place a prepay estimate hold in halala before your job starts.</li>
+            <li>2. Final cost uses actual runtime settlement, not the initial estimate.</li>
+            <li>3. Any unused hold is automatically refunded in halala after completion.</li>
+          </ul>
+          <p className={`mt-3 text-xs text-dc1-text-muted ${isRTL ? 'text-right' : ''}`}>100 halala = 1 SAR.</p>
+        </div>
+
+        <div className="mt-6 rounded-xl border border-dc1-border bg-dc1-surface-l1 p-6">
+          <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
+            {t.checklistHeading}
+          </h2>
+          <ol className="mt-4 space-y-2">
+            {t.checklistItems.map((item, index) => (
+              <li key={item.href} className={`flex items-center justify-between gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <span className={`text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>
+                  {index + 1}. {item.label}
+                </span>
+                <Link
+                  href={item.href}
+                  onClick={() =>
+                    trackQuickstartEvent('first_job_checklist_step_clicked', {
+                      page: 'quickstart',
+                      step_index: index + 1,
+                      step_label: item.label,
+                      destination: item.href,
+                    })
+                  }
+                  className="text-xs font-medium text-dc1-amber hover:underline"
+                >
+                  {isRTL ? 'افتح' : 'Open'}
+                </Link>
+              </li>
+            ))}
+          </ol>
         </div>
 
         {/* Steps */}

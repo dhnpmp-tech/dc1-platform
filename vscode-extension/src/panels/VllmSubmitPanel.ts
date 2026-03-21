@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { dc1, VllmModel, VllmCompleteRequest } from '../api/dc1Client';
+import { dc1, VllmModel, VllmCompleteRequest, isAuthError, isRetryableError } from '../api/dc1Client';
 import { AuthManager } from '../auth/AuthManager';
 
 type WebviewMessage =
@@ -77,7 +77,7 @@ export class VllmSubmitPanel {
 
     if (msg.type === 'submit') {
       // Get API key: check settings first, then secrets
-      let key = vscode.workspace.getConfiguration('dc1').get<string>('renterApiKey', '').trim();
+      let key = (await this.auth.getStoredRenterKey()) ?? '';
       if (!key) {
         key = (await this.auth.ensureKey()) ?? '';
       }
@@ -96,7 +96,16 @@ export class VllmSubmitPanel {
       };
 
       try {
-        const result = await dc1.vllmComplete(key, payload);
+        const result = await this.completeWithRetry(() => dc1.vllmComplete(key, payload), async (err) => {
+          if (!isAuthError(err)) {
+            return undefined;
+          }
+          const refreshed = await this.auth.handleRenterAuthError(err, 'running inference');
+          if (refreshed) {
+            key = refreshed;
+          }
+          return refreshed;
+        });
         const text = result.choices[0]?.message?.content ?? '';
         const jobId = result.id.replace('chatcmpl-', '');
         const costSar = (result.cost_halala / 100).toFixed(4);
@@ -120,10 +129,35 @@ export class VllmSubmitPanel {
         });
 
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = humanizeError(err);
         this._panel.webview.postMessage({ type: 'error', message: errMsg });
       }
     }
+  }
+
+  private async completeWithRetry<T>(
+    request: () => Promise<T>,
+    onAuthError: (err: unknown) => Promise<string | undefined>
+  ): Promise<T> {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await request();
+      } catch (err) {
+        const newKey = await onAuthError(err);
+        if (newKey) {
+          continue;
+        }
+
+        if (attempt < maxAttempts && isRetryableError(err)) {
+          await delay(attempt * 800);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw new Error('Inference request exhausted retry attempts.');
   }
 
   private buildHtml(models: VllmModel[], loading: boolean, loadError: string | null): string {
@@ -431,4 +465,24 @@ function escapeForHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function humanizeError(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return String(err);
+  }
+
+  if (isAuthError(err)) {
+    return 'Authentication failed. Re-run "DCP: Set Renter API Key" and submit again.';
+  }
+
+  if (isRetryableError(err)) {
+    return `${err.message}. DCP retried automatically; please retry if the API remains busy.`;
+  }
+
+  return err.message;
 }

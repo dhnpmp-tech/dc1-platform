@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
+import { useLanguage } from '../../lib/i18n'
 
 const DAEMON_VERSION = 'v3.3.0'
 
@@ -53,6 +54,7 @@ const REQUIREMENTS = [
 ]
 
 export default function ProviderDownloadPage() {
+  const { t } = useLanguage()
   const [copied, setCopied] = useState<OS | null>(null)
 
   async function handleCopy(os: OS, text: string) {
@@ -76,13 +78,13 @@ export default function ProviderDownloadPage() {
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-4"
             style={{ background: 'rgba(245,165,36,0.12)', color: '#F5A524', border: '1px solid rgba(245,165,36,0.25)' }}
           >
-            Current version: {DAEMON_VERSION}
+            {t('provider.download.current_version')} {DAEMON_VERSION}
           </div>
           <h1 className="text-4xl font-bold mb-4" style={{ color: '#F0F0F0' }}>
-            DCP Provider Daemon
+            {t('provider.download.title')}
           </h1>
           <p className="text-lg max-w-xl mx-auto" style={{ color: '#94A3B8' }}>
-            Install the daemon on your GPU machine to start earning SAR from compute jobs on the DCP marketplace.
+            {t('provider.download.subtitle')}
           </p>
         </div>
 
@@ -134,7 +136,7 @@ export default function ProviderDownloadPage() {
                   }}
                   aria-label={`Copy install command for ${card.label}`}
                 >
-                  {copied === card.id ? '✓ Copied!' : card.primaryLabel}
+                  {copied === card.id ? t('provider.download.copied') : card.primaryLabel}
                 </button>
               )}
             </div>
@@ -148,7 +150,7 @@ export default function ProviderDownloadPage() {
             className="text-xl font-semibold mb-6"
             style={{ color: '#F0F0F0' }}
           >
-            System Requirements
+            {t('provider.download.requirements')}
           </h2>
           <div
             className="rounded-xl divide-y"
@@ -183,9 +185,9 @@ export default function ProviderDownloadPage() {
           style={{ background: 'rgba(245,165,36,0.06)', border: '1px solid rgba(245,165,36,0.18)' }}
         >
           <div>
-            <p className="font-semibold text-sm mb-1" style={{ color: '#F5A524' }}>Need help getting started?</p>
+            <p className="font-semibold text-sm mb-1" style={{ color: '#F5A524' }}>{t('provider.download.help_title')}</p>
             <p className="text-sm" style={{ color: '#94A3B8' }}>
-              Our setup guide walks you through installation, daemon configuration, and your first compute job.
+              {t('provider.download.help_desc')}
             </p>
           </div>
           <a
@@ -193,7 +195,7 @@ export default function ProviderDownloadPage() {
             className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
             style={{ background: '#F5A524', color: '#07070E' }}
           >
-            Get Support
+            {t('provider.download.get_support')}
           </a>
         </div>
       </main>

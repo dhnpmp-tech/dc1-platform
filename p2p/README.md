@@ -1,11 +1,11 @@
-# DC1 P2P Provider Discovery — Phase C Prototype
+# DCP P2P Provider Discovery — Phase C Prototype
 
 > **Status**: Research prototype (Phase C). Not yet integrated into production.
 > Production integration is planned for Phase D.
 
 ## Overview
 
-DC1 currently uses a centralised SQLite registry on the VPS at `76.13.179.86`.
+DCP currently uses a centralised SQLite registry on the VPS at `76.13.179.86`.
 Providers register once and renters query `/api/providers/available` — a single
 point of failure that also requires the VPS to be online for any GPU discovery
 to work.
@@ -36,11 +36,14 @@ Renter selects GPU                 Renter selects GPU
 
 | Layer | Package | Note |
 |---|---|---|
-| Transport | `@libp2p/tcp` | TCP for provider/VPS nodes; WebSocket added in Phase D for browser renters |
+| Transport | `@libp2p/tcp` + `@libp2p/websockets` (optional hook) | TCP for provider/VPS nodes; WebSocket hook for browser-friendly renters |
 | Encryption | `@libp2p/noise` | Noise XX handshake — libp2p standard |
 | Muxer | `@libp2p/yamux` | Stream multiplexer |
 | Discovery | `@libp2p/kad-dht` | Kademlia DHT, scoped to `/dc1/kad/1.0.0` |
 | Bootstrap | `@libp2p/bootstrap` | Initial seed peer (VPS) for network entry |
+| Local Discovery | `@libp2p/mdns` (optional hook) | LAN peer discovery for provider clusters |
+| NAT Traversal | `@libp2p/circuit-relay-v2` (optional hook) | Circuit Relay v2 support for NATed providers |
+| Broadcast | `@chainsafe/libp2p-gossipsub` (optional hook) | Network-wide provider availability gossip |
 
 ### DHT key schema
 
@@ -67,7 +70,7 @@ Example record:
 ### Scoped DHT
 
 The DHT uses protocol `/dc1/kad/1.0.0` — **it never touches the public IPFS DHT**.
-DC1 provider data stays within the DC1 network.
+DCP provider data stays within the DCP network.
 
 ## Files
 
@@ -83,11 +86,19 @@ DC1 provider data stays within the DC1 network.
 
 ```bash
 cd p2p
-npm install
 
 # Run the discovery demo (no VPS needed):
 node demo.js
+
+# Run CID publish+discover flow:
+npm run demo:cid
+
+# Deterministic smoke validation (non-zero exit on failure):
+npm run smoke:cid
 ```
+
+`p2p` dependencies are provisioned by the board operator during controlled deploys.
+Do not run package installation commands directly in the Paperclip container.
 
 ## Python Job Routing Prototype (Phase C)
 
@@ -144,7 +155,7 @@ DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
 
 # Terminal 4 — renter
 DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
-  python3 renter_client.py --image dc1/simulate --max-price 25.0
+  python3 renter_client.py --image dcp/simulate --max-price 25.0
 ```
 
 ### Environment variables (Python layer)
@@ -167,7 +178,6 @@ Run the bootstrap node on the VPS alongside the Express API:
 ```bash
 # On VPS
 cd /opt/dc1/p2p
-npm install
 pm2 start bootstrap.js --name dc1-p2p-bootstrap
 pm2 save
 ```
@@ -220,6 +230,80 @@ Backend route `/api/p2p/announce` (to be built in Phase D) calls the libp2p
 node internally via IPC and keeps a single persistent libp2p node per VPS
 process — more efficient than spawning per heartbeat.
 
+## DCP-440 Migration Spike (Phase A/B focus)
+
+This sprint adds a **repo-contained scaffold** for migration without breaking
+today's centralized flows.
+
+### New files
+
+- `dcp-discovery-scaffold.js`
+  - CID-based provider environment records in DHT
+  - Namespace aligned to Ocean-style pattern:
+    - `/dcp/nodes/1.0.0/kad/1.0.0/providers/{peerId}`
+    - `/dcp/nodes/1.0.0/kad/1.0.0/environments/{cid}`
+  - Reliability hardening:
+    - TTL-backed envelopes (`expires_at`) to detect stale records
+    - schema validation on provider/env records before returning data
+    - resolver fallback hooks (`fallbackResolver`) when DHT data is missing/invalid/stale
+  - Optional module hooks (auto-degrade when package missing):
+    - mDNS discovery (`@libp2p/mdns`)
+    - WebSocket transport (`@libp2p/websockets`)
+    - Circuit Relay v2 (`@libp2p/circuit-relay-v2`)
+    - GossipSub broadcasts (`@chainsafe/libp2p-gossipsub`)
+- `demo-cid-discovery.js`
+  - Provider announces compute environment as CID-backed DHT record
+  - Renter resolves by peer ID and by CID
+
+Run the new demo:
+
+```bash
+cd p2p
+npm run demo:cid
+```
+
+### Backend integration path
+
+1. Keep existing `/api/providers/available` from SQLite as **primary** output.
+2. Add a read-only shadow route: `GET /api/p2p/providers` that resolves DHT
+   provider records and returns the same shape as `/api/providers/available`.
+3. Add a lightweight `POST /api/p2p/announce` route called from daemon heartbeat
+   to forward provider env payloads into `announceProviderEnvironment`.
+4. Add feature flag `P2P_DISCOVERY_READ_PATH` with rollout:
+   - `sqlite` (default): current behavior
+   - `shadow`: return SQLite response + include P2P diagnostics in logs
+   - `p2p-primary`: use DHT records with SQLite fallback resolver
+5. Add periodic health probe endpoint (`GET /api/p2p/health`) that checks:
+   - bootstrap reachability
+   - DHT put/get loopback probe
+   - gossip subscription state (if enabled)
+3. Add a dual-write path from heartbeat:
+   - existing SQLite heartbeat updates (unchanged)
+   - P2P announce using `announceProviderEnvironment(...)`
+4. Compare both data sources in admin (`/api/admin/daemon-health`) until drift
+   stays below agreed threshold.
+5. Flip renter discovery to prefer P2P data when confidence is high.
+
+### What can be demoed tonight
+
+- Local two-node CID discovery (`npm run demo:cid`)
+- DHT key layout aligned with decentralized roadmap
+- Provider envelope + environment envelope separation
+- Stale-provider filtering via `expires_at` + max-age fallback
+- Graceful fallback path when DHT data is unavailable or malformed
+- Backward-compatible migration path (no breaking API cutover)
+
+### What remains after tonight
+
+- Install optional P2P modules in production image
+- Persistent peer identity key on bootstrap node
+- Production bootstrap/relay topology (multi-region)
+- Centralized fallback implementation for `fallbackResolver` (e.g. `/api/providers/available`)
+- Provider daemon wiring to call scaffold from live heartbeat path
+- API route for renter-side peer discovery and feature-flagged cutover
+- Security hardening (record signatures, peer trust policy, spam controls)
+- Availability indexing strategy for listing all providers efficiently
+
 ## Phase Roadmap
 
 ### Phase A/B (current) — Centralised
@@ -269,8 +353,8 @@ decentralised data asset discovery. It is battle-tested at millions of nodes
 and well supported by libp2p.
 
 ### Why not just use IPFS?
-DC1 provider data is ephemeral (expires when a provider goes offline) and
-financially sensitive. A scoped private DHT keeps DC1 data off the public IPFS
+DCP provider data is ephemeral (expires when a provider goes offline) and
+financially sensitive. A scoped private DHT keeps DCP data off the public IPFS
 network and allows us to enforce access control in later phases.
 
 ### Why TCP for now?

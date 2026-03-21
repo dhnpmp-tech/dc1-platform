@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
@@ -48,7 +48,24 @@ export default function HomePage() {
   const [gpuFamilyCoverage, setGpuFamilyCoverage] = useState<number | null>(null)
   const [reliabilityUpdatedAt, setReliabilityUpdatedAt] = useState<Date | null>(null)
   const [selectedIntent, setSelectedIntent] = useState<'renter' | 'provider'>('renter')
+  const billingExplainerRef = useRef<HTMLDivElement | null>(null)
+  const hasTrackedBillingExplainerView = useRef(false)
 
+  const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = { event, source: 'landing', ...payload }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & {
+      dataLayer?: Array<Record<string, unknown>>
+      gtag?: (...args: unknown[]) => void
+    }
+    if (Array.isArray(win.dataLayer)) {
+      win.dataLayer.push(detail)
+    }
+    if (typeof win.gtag === 'function') {
+      win.gtag('event', event, detail)
+    }
+  }
 
   const features = [
     {
@@ -122,6 +139,26 @@ export default function HomePage() {
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    const node = billingExplainerRef.current
+    if (!node || hasTrackedBillingExplainerView.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (hasTrackedBillingExplainerView.current) return
+        if (entries.some((entry) => entry.isIntersecting)) {
+          hasTrackedBillingExplainerView.current = true
+          trackLandingEvent('billing_explainer_viewed', { page: 'landing' })
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.35 }
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
   const stats = [
     { value: liveGpuCount !== null ? `${liveGpuCount}` : '1', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
     { value: '75%', label: t('landing.stat_uptime'), live: false },
@@ -152,7 +189,14 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center justify-center gap-3 mb-5">
                 <button
                   type="button"
-                  onClick={() => setSelectedIntent('renter')}
+                  onClick={() => {
+                    setSelectedIntent('renter')
+                    trackLandingEvent('landing_path_selected', {
+                      page: 'landing',
+                      selection_type: 'intent_chip',
+                      role: 'renter',
+                    })
+                  }}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                     selectedIntent === 'renter'
                       ? 'bg-dc1-amber text-dc1-void'
@@ -163,7 +207,14 @@ export default function HomePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedIntent('provider')}
+                  onClick={() => {
+                    setSelectedIntent('provider')
+                    trackLandingEvent('landing_path_selected', {
+                      page: 'landing',
+                      selection_type: 'intent_chip',
+                      role: 'provider',
+                    })
+                  }}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                     selectedIntent === 'provider'
                       ? 'bg-dc1-amber text-dc1-void'
@@ -177,6 +228,15 @@ export default function HomePage() {
               <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 text-left ${selectedIntent === 'provider' ? 'opacity-75' : ''}`}>
                 <Link
                   href="/renter/register"
+                  onClick={() =>
+                    trackLandingEvent('landing_path_selected', {
+                      page: 'landing',
+                      selection_type: 'path_card',
+                      role: 'renter',
+                      path_label: 'Playground (browser, no setup)',
+                      destination: '/renter/register',
+                    })
+                  }
                   className={`rounded-xl p-5 border transition-all ${
                     selectedIntent === 'renter'
                       ? 'border-dc1-amber bg-dc1-amber/10 shadow-sm'
@@ -189,6 +249,15 @@ export default function HomePage() {
                 </Link>
                 <Link
                   href="/docs/quickstart"
+                  onClick={() =>
+                    trackLandingEvent('landing_path_selected', {
+                      page: 'landing',
+                      selection_type: 'path_card',
+                      role: 'renter',
+                      path_label: 'Container Jobs (API + Docker image)',
+                      destination: '/docs/quickstart',
+                    })
+                  }
                   className={`rounded-xl p-5 border transition-all ${
                     selectedIntent === 'renter'
                       ? 'border-dc1-amber/60 bg-dc1-surface-l2 hover:border-dc1-amber'
@@ -198,6 +267,27 @@ export default function HomePage() {
                   <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">Renter path</p>
                   <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">Container Jobs (API + Docker image)</h3>
                   <p className="text-sm text-dc1-text-secondary">Bring your image and submit container workloads through the API.</p>
+                </Link>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-4 text-left">
+                <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">
+                  {t('landing.enterprise_label')}
+                </p>
+                <p className="text-sm text-dc1-text-secondary mb-3">
+                  {t('landing.enterprise_desc')}
+                </p>
+                <Link
+                  href="/support?category=enterprise&source=landing-hero"
+                  onClick={() =>
+                    trackLandingEvent('enterprise_cta_clicked', { placement: 'hero_path_chooser' })
+                  }
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-dc1-amber hover:text-dc1-amber/80 transition-colors"
+                >
+                  {t('landing.enterprise_cta')}
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
                 </Link>
               </div>
 
@@ -306,7 +396,7 @@ export default function HomePage() {
 
       {/* Billing transparency */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
+        <div ref={billingExplainerRef} className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
           <h2 className="text-xl font-semibold text-dc1-text-primary mb-3">How DCP Billing Works</h2>
           <ul className="space-y-2 text-sm text-dc1-text-secondary">
             <li>1. We place a prepay estimate hold in halala before your job starts.</li>

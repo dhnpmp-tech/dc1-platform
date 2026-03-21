@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
+const { requireAdminAuth } = require('../middleware/auth');
 
 // ============================================================================
 // KNOWN NVIDIA GPU DATABASE — Expected specs for fraud detection
@@ -224,19 +225,8 @@ function analyzeVerification(provider, challenge, result) {
 // ============================================================================
 // POST /api/verification/challenge — Request a verification challenge for a provider
 // ============================================================================
-router.post('/challenge', (req, res) => {
+router.post('/challenge', requireAdminAuth, (req, res) => {
   try {
-    const adminToken = req.headers['x-admin-token'] || req.body.admin_token;
-    const expectedToken = process.env.DC1_ADMIN_TOKEN;
-
-    if (!expectedToken) {
-      return res.status(503).json({ error: 'Admin token not configured' });
-    }
-
-    if (adminToken !== expectedToken) {
-      return res.status(403).json({ error: 'Admin token required' });
-    }
-
     const { provider_id } = req.body;
     if (!provider_id) return res.status(400).json({ error: 'provider_id required' });
 

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage } from '../lib/i18n'
@@ -10,9 +10,18 @@ const API_BASE = '/api/dc1'
 
 type Role = 'provider' | 'renter' | 'admin'
 type LoginMethod = 'email' | 'apikey'
+type PendingPlaygroundIntent = {
+  providerId?: number
+  model?: string
+  mode?: 'llm_inference' | 'image_generation' | 'vllm_serve'
+}
 
-export default function LoginPage() {
+const PENDING_AUTH_INTENT_KEY = 'dc1_pending_auth_intent'
+const RESTORED_AUTH_INTENT_KEY = 'dc1_restored_auth_intent'
+
+function LoginPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { t } = useLanguage()
   const [email, setEmail] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -20,6 +29,79 @@ export default function LoginPage() {
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('email')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const getSafeRedirect = (fallback: string) => {
+    const redirectParam = searchParams.get('redirect')
+    if (!redirectParam) return fallback
+    if (!redirectParam.startsWith('/') || redirectParam.startsWith('//')) return fallback
+    return redirectParam
+  }
+
+  const getRenterPostLoginRedirect = () => {
+    const defaultRedirect = getSafeRedirect('/renter')
+    if (typeof window === 'undefined') return defaultRedirect
+
+    const rawIntent = sessionStorage.getItem(PENDING_AUTH_INTENT_KEY)
+    if (!rawIntent) return defaultRedirect
+
+    try {
+      const intent = JSON.parse(rawIntent) as PendingPlaygroundIntent
+      const params = new URLSearchParams()
+      if (intent.providerId != null && Number.isFinite(intent.providerId)) params.set('provider', String(intent.providerId))
+      if (intent.model) params.set('model', intent.model)
+      if (intent.mode) params.set('mode', intent.mode)
+
+      sessionStorage.setItem(RESTORED_AUTH_INTENT_KEY, JSON.stringify({
+        ...intent,
+        restoredAt: new Date().toISOString(),
+      }))
+      sessionStorage.removeItem(PENDING_AUTH_INTENT_KEY)
+
+      const targetBase = defaultRedirect === '/renter' ? '/renter/playground' : defaultRedirect
+      return params.size > 0 ? `${targetBase}?${params.toString()}` : targetBase
+    } catch {
+      sessionStorage.removeItem(PENDING_AUTH_INTENT_KEY)
+      return defaultRedirect
+    }
+  }
+
+  const getReasonMessage = (reason: string) => {
+    if (reason === 'expired_session') return t('auth.error.expired_session')
+    if (reason === 'missing_credentials') return t('auth.error.missing_credentials')
+    if (reason === 'invalid_credentials') return t('auth.error.invalid_credentials')
+    return t('auth.error.sign_in_failed')
+  }
+
+  const normalizeAuthError = (status: number, rawError: string, fallback: string) => {
+    const lower = rawError.toLowerCase()
+    if (status === 401 || status === 403) {
+      if (lower.includes('expired') || lower.includes('session')) {
+        return t('auth.error.expired_session')
+      }
+      return t('auth.error.invalid_credentials')
+    }
+    if (lower.includes('expired') || lower.includes('session')) {
+      return t('auth.error.expired_session')
+    }
+    return rawError || fallback
+  }
+
+  useEffect(() => {
+    const roleParam = searchParams.get('role')
+    if (roleParam === 'renter' || roleParam === 'provider' || roleParam === 'admin') {
+      setRole(roleParam)
+    }
+
+    const methodParam = searchParams.get('method')
+    if (methodParam === 'email' || methodParam === 'apikey') {
+      setLoginMethod(methodParam)
+    }
+
+    const reasonParam = searchParams.get('reason')
+    if (reasonParam) {
+      setError(getReasonMessage(reasonParam))
+    }
+  }, [searchParams, t])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,7 +140,7 @@ export default function LoginPage() {
               errorMsg = data.error || 'Login failed'
             }
           } catch {}
-          throw new Error(errorMsg)
+          throw new Error(normalizeAuthError(res.status, errorMsg, t('auth.error.sign_in_failed')))
         }
 
         const data = await res.json()
@@ -71,7 +153,7 @@ export default function LoginPage() {
             userName: data.renter?.name,
             email: data.renter?.email,
           }))
-          router.push('/renter')
+          router.push(getRenterPostLoginRedirect())
         } else {
           localStorage.setItem('dc1_provider_key', data.api_key)
           localStorage.setItem('dc1_user_data', JSON.stringify({
@@ -94,7 +176,7 @@ export default function LoginPage() {
           const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey.trim())}`)
           if (!res.ok) {
             const data = await res.json().catch(() => ({}))
-            throw new Error(data.error || 'Invalid API key')
+            throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials')))
           }
           const data = await res.json()
           if (!data.renter) throw new Error('Renter not found')
@@ -105,13 +187,13 @@ export default function LoginPage() {
             userName: data.renter.name,
             email: data.renter.email,
           }))
-          router.push('/renter')
+          router.push(getRenterPostLoginRedirect())
 
         } else if (role === 'provider') {
           const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey.trim())}`)
           if (!res.ok) {
             const data = await res.json().catch(() => ({}))
-            throw new Error(data.error || 'Invalid API key')
+            throw new Error(normalizeAuthError(res.status, data.error || '', t('auth.error.invalid_credentials')))
           }
           const data = await res.json()
           if (!data.provider) throw new Error('Provider not found')
@@ -128,7 +210,7 @@ export default function LoginPage() {
           const res = await fetch(`${API_BASE}/admin/dashboard`, {
             headers: { 'x-admin-token': apiKey.trim() },
           })
-          if (!res.ok) throw new Error('Invalid admin key')
+          if (!res.ok) throw new Error(normalizeAuthError(res.status, 'Invalid admin key', t('auth.error.invalid_credentials')))
 
           localStorage.setItem('dc1_admin_token', apiKey.trim())
           localStorage.setItem('dc1_user_data', JSON.stringify({
@@ -139,7 +221,7 @@ export default function LoginPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed')
+      setError(err instanceof Error ? err.message : t('auth.error.sign_in_failed'))
     } finally {
       setIsLoading(false)
     }
@@ -249,7 +331,7 @@ export default function LoginPage() {
                   <input
                     id="apiKey"
                     type="password"
-                    placeholder={role === 'renter' ? 'dc1-renter-...' : role === 'provider' ? 'dc1-provider-...' : 'admin key'}
+                    placeholder={role === 'renter' ? 'dcp-renter-...' : role === 'provider' ? 'dcp-provider-...' : 'admin key'}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     className="input font-mono"
@@ -296,5 +378,13 @@ export default function LoginPage() {
 
       <Footer />
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0d1117]" />}>
+      <LoginPageInner />
+    </Suspense>
   )
 }

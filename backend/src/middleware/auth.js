@@ -1,0 +1,87 @@
+const crypto = require('crypto');
+
+function normalizeCredential(value, { maxLen = 512 } = {}) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLen) return null;
+  return normalized;
+}
+
+function normalizeHeaderToken(rawHeader) {
+  if (Array.isArray(rawHeader)) return null;
+  return normalizeCredential(rawHeader);
+}
+
+function getBearerToken(req) {
+  const authHeader = normalizeHeaderToken(req.headers?.authorization);
+  if (!authHeader) return null;
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match || !match[1]) return null;
+  return normalizeCredential(match[1]);
+}
+
+function getAdminTokenFromReq(req) {
+  return normalizeHeaderToken(req.headers?.['x-admin-token']) || getBearerToken(req);
+}
+
+function getExpectedAdminToken() {
+  return normalizeCredential(process.env.DC1_ADMIN_TOKEN);
+}
+
+function secureTokenEqual(provided, expected) {
+  if (!provided || !expected) return false;
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(expected);
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
+}
+
+function isAdminRequest(req) {
+  const expected = getExpectedAdminToken();
+  const provided = getAdminTokenFromReq(req);
+  return secureTokenEqual(provided, expected);
+}
+
+function requireAdminAuth(req, res, next) {
+  const expected = getExpectedAdminToken();
+  if (!expected) {
+    return res.status(503).json({ error: 'Admin token not configured' });
+  }
+  const provided = getAdminTokenFromReq(req);
+  if (!secureTokenEqual(provided, expected)) {
+    return res.status(401).json({ error: 'Admin access denied' });
+  }
+  return next();
+}
+
+function getApiKeyFromReq(req, options = {}) {
+  const {
+    headerName,
+    queryNames = [],
+    bodyNames = [],
+    maxLen = 128,
+  } = options;
+
+  const candidates = [];
+  if (headerName) candidates.push(req.headers?.[headerName]);
+  for (const queryName of queryNames) candidates.push(req.query?.[queryName]);
+  for (const bodyName of bodyNames) candidates.push(req.body?.[bodyName]);
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) continue;
+    const normalized = normalizeCredential(candidate, { maxLen });
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+module.exports = {
+  getAdminTokenFromReq,
+  getApiKeyFromReq,
+  getBearerToken,
+  getExpectedAdminToken,
+  isAdminRequest,
+  normalizeCredential,
+  requireAdminAuth,
+  secureTokenEqual,
+};

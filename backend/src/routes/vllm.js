@@ -7,6 +7,7 @@ const router = express.Router();
 
 const WAIT_TIMEOUT_MS = 300 * 1000;
 const WAIT_POLL_MS = 1500;
+const PROVIDER_HEARTBEAT_STALE_MS = 10 * 60 * 1000;
 const TERMINAL_FAILURE_STATUSES = new Set(['failed', 'cancelled', 'permanently_failed', 'timed_out']);
 
 function flattenRunParams(params) {
@@ -180,7 +181,7 @@ function getCapableProviderCount(minVramMb) {
   let count = 0;
   for (const provider of providers) {
     const heartbeatMs = provider.last_heartbeat ? Date.parse(provider.last_heartbeat) : NaN;
-    if (Number.isFinite(heartbeatMs) && (nowMs - heartbeatMs) > (10 * 60 * 1000)) continue;
+    if (Number.isFinite(heartbeatMs) && (nowMs - heartbeatMs) > PROVIDER_HEARTBEAT_STALE_MS) continue;
 
     const computeTypes = parseComputeTypes(provider.supported_compute_types);
     if (!computeTypes.has('inference')) continue;
@@ -192,6 +193,29 @@ function getCapableProviderCount(minVramMb) {
   }
 
   return count;
+}
+
+function buildRuntimeDiagnostics({ modelId, minVramGb, jobId = null }) {
+  const minVramMb = toFiniteInt(minVramGb, { min: 0, max: 1024 }) != null ? Number(minVramGb) * 1024 : 0;
+  return {
+    model_id: modelId || null,
+    min_vram_gb: Number(minVramGb || 0),
+    capable_providers: getCapableProviderCount(minVramMb),
+    queued_vllm_jobs: getNoProviderQueueDepth(),
+    provider_heartbeat_stale_ms: PROVIDER_HEARTBEAT_STALE_MS,
+    wait_timeout_ms: WAIT_TIMEOUT_MS,
+    job_id: jobId,
+  };
+}
+
+function logVllmDegradation(event, diagnostics, details = {}) {
+  const payload = {
+    event,
+    diagnostics,
+    details,
+    ts: new Date().toISOString(),
+  };
+  console.warn(`[vllm:${event}] ${JSON.stringify(payload)}`);
 }
 
 function getNoProviderQueueDepth() {
@@ -280,7 +304,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForJobCompletion(jobId) {
+async function waitForJobCompletion(jobId, diagnosticsContext = {}) {
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
@@ -293,6 +317,15 @@ async function waitForJobCompletion(jobId) {
     }
 
     if (TERMINAL_FAILURE_STATUSES.has(status)) {
+      const diagnostics = buildRuntimeDiagnostics({
+        modelId: diagnosticsContext.modelId,
+        minVramGb: diagnosticsContext.minVramGb,
+        jobId: job.job_id,
+      });
+      logVllmDegradation('terminal_failure', diagnostics, {
+        status: job.status,
+        error: job.error || null,
+      });
       return {
         error: {
           status: 502,
@@ -301,6 +334,7 @@ async function waitForJobCompletion(jobId) {
             job_id: job.job_id,
             status: job.status,
             details: job.error || null,
+            diagnostics,
           },
         },
       };
@@ -315,6 +349,11 @@ async function waitForJobCompletion(jobId) {
       body: {
         error: 'timeout',
         message: 'Inference did not complete within 300 seconds',
+        diagnostics: buildRuntimeDiagnostics({
+          modelId: diagnosticsContext.modelId,
+          minVramGb: diagnosticsContext.minVramGb,
+          jobId: diagnosticsContext.jobId || null,
+        }),
       },
     },
   };
@@ -381,6 +420,27 @@ async function submitAndAwait(req) {
   const modelReq = resolveModelRequirements(model);
   const minVramMb = modelReq.min_vram_gb * 1024;
   const capableProviders = getCapableProviderCount(minVramMb);
+  if (capableProviders < 1) {
+    const diagnostics = buildRuntimeDiagnostics({
+      modelId: modelReq.model_id,
+      minVramGb: modelReq.min_vram_gb,
+      jobId: null,
+    });
+    logVllmDegradation('no_capacity', diagnostics, {
+      renter_id: req.renter?.id || null,
+      route: req.originalUrl || '/api/vllm/complete',
+    });
+    return {
+      error: {
+        status: 503,
+        body: {
+          error: 'no_capacity',
+          message: 'No online providers currently satisfy this model GPU requirement',
+          diagnostics,
+        },
+      },
+    };
+  }
 
   const messages = preparedMessages.value;
   const mergedPrompt = estimatePromptFromMessages(messages);
@@ -487,7 +547,11 @@ async function submitAndAwait(req) {
     throw error;
   }
 
-  const waitResult = await waitForJobCompletion(insert.lastInsertRowid);
+  const waitResult = await waitForJobCompletion(insert.lastInsertRowid, {
+    modelId: modelReq.model_id,
+    minVramGb: modelReq.min_vram_gb,
+    jobId,
+  });
   if (waitResult.error) {
     return waitResult;
   }

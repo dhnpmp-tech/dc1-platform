@@ -1,26 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import Footer from '../components/layout/Footer'
+import { useLanguage } from '../lib/i18n'
 
-const supportChannels = [
-  { title: 'Email Support', description: 'For account issues, billing questions, and general inquiries.', contact: 'support@dcp.sa', icon: '✉' },
-  { title: 'Abuse Reports', description: 'Report policy violations or suspicious activity.', contact: 'abuse@dcp.sa', icon: '⚠' },
-  { title: 'Privacy Requests', description: 'Data access, correction, or deletion requests.', contact: 'privacy@dcp.sa', icon: '🔒' },
-]
-
-const faqs = [
-  { q: 'How do I get my API key?', a: 'Your API key is generated automatically when you register as a provider or renter. It is shown once on the registration success screen — save it securely.' },
-  { q: 'I lost my API key. How do I recover it?', a: 'Contact support@dcp.sa with your registered email address. We will verify your identity and issue a new key.' },
-  { q: 'My daemon shows as offline. What should I do?', a: 'Ensure the Python process is running (check with `ps aux | grep dc1_daemon`). Verify your internet connection and that no firewall blocks outbound HTTPS.' },
-  { q: 'How is billing calculated?', a: 'LLM inference is billed at 15 halala/minute, image generation at 20 halala/minute. Providers receive 75% and DCP retains 25%.' },
-  { q: 'Can I use DCP for cryptocurrency mining?', a: 'No. Cryptocurrency mining is prohibited under our Acceptable Use Policy and will result in account termination.' },
-]
-
-function ContactForm() {
-  const [form, setForm] = useState({ name: '', email: '', category: 'general', message: '' });
+function ContactForm({ t, initialCategory }: { t: (key: string) => string; initialCategory: string }) {
+  const [form, setForm] = useState({ name: '', email: '', category: initialCategory || 'general', message: '' });
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  const categoryOptions = [
+    { value: 'general', label: t('support.form.category.general') },
+    { value: 'account', label: t('support.form.category.account') },
+    { value: 'billing', label: t('support.form.category.billing') },
+    { value: 'provider', label: t('support.form.category.provider') },
+    { value: 'renter', label: t('support.form.category.renter') },
+    { value: 'bug', label: t('support.form.category.bug') },
+    { value: 'enterprise', label: t('support.form.category.enterprise') },
+  ]
+
+  useEffect(() => {
+    const hasCategory = categoryOptions.some((option) => option.value === initialCategory)
+    const nextCategory = hasCategory ? initialCategory : 'general'
+    setForm((prev) => ({ ...prev, category: nextCategory }))
+  }, [initialCategory])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,59 +53,58 @@ function ContactForm() {
 
   return (
     <div className="mb-12">
-      <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">Send Us a Message</h2>
+      <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">{t('support.form.title')}</h2>
       {status === 'sent' ? (
         <div className="card text-center py-8">
           <div className="text-3xl mb-3">✅</div>
-          <p className="text-dc1-text-primary font-semibold mb-1">Message sent!</p>
-          <p className="text-sm text-dc1-text-secondary">We&apos;ll get back to you within 24 hours.</p>
-          <button onClick={() => setStatus('idle')} className="mt-4 text-sm text-dc1-amber hover:underline">Send another message</button>
+          <p className="text-dc1-text-primary font-semibold mb-1">{t('support.form.sent_title')}</p>
+          <p className="text-sm text-dc1-text-secondary">{t('support.form.sent_subtitle')}</p>
+          <button onClick={() => setStatus('idle')} className="mt-4 text-sm text-dc1-amber hover:underline">{t('support.form.send_another')}</button>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="card space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-dc1-text-secondary mb-1">Name</label>
+              <label className="block text-sm text-dc1-text-secondary mb-1">{t('support.form.name')}</label>
               <input
                 type="text" required value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 className="w-full bg-dc1-surface-l2 border border-dc1-border rounded-lg px-3 py-2 text-sm text-dc1-text-primary placeholder-dc1-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-dc1-amber"
-                placeholder="Your name"
+                placeholder={t('support.form.name_placeholder')}
               />
             </div>
             <div>
-              <label className="block text-sm text-dc1-text-secondary mb-1">Email</label>
+              <label className="block text-sm text-dc1-text-secondary mb-1">{t('support.form.email')}</label>
               <input
                 type="email" required value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 className="w-full bg-dc1-surface-l2 border border-dc1-border rounded-lg px-3 py-2 text-sm text-dc1-text-primary placeholder-dc1-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-dc1-amber"
-                placeholder="you@example.com"
+                placeholder={t('support.form.email_placeholder')}
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm text-dc1-text-secondary mb-1">Category</label>
+            <label className="block text-sm text-dc1-text-secondary mb-1">{t('support.form.category')}</label>
             <select
               value={form.category}
               onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
               className="w-full bg-dc1-surface-l2 border border-dc1-border rounded-lg px-3 py-2 text-sm text-dc1-text-primary focus:outline-none focus:ring-1 focus:ring-dc1-amber"
             >
-              <option value="general">General Inquiry</option>
-              <option value="account">Account Issue</option>
-              <option value="billing">Billing Question</option>
-              <option value="provider">Provider Support</option>
-              <option value="renter">Renter Support</option>
-              <option value="bug">Bug Report</option>
+              {categoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </div>
           <div>
-            <label className="block text-sm text-dc1-text-secondary mb-1">Message</label>
+            <label className="block text-sm text-dc1-text-secondary mb-1">{t('support.form.message')}</label>
             <textarea
               required value={form.message}
               onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
               rows={5}
               className="w-full bg-dc1-surface-l2 border border-dc1-border rounded-lg px-3 py-2 text-sm text-dc1-text-primary placeholder-dc1-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-dc1-amber resize-none"
-              placeholder="Describe your issue or question..."
+              placeholder={t('support.form.message_placeholder')}
             />
           </div>
           <button
@@ -109,7 +112,7 @@ function ContactForm() {
             disabled={status === 'sending'}
             className="bg-dc1-amber text-dc1-void px-6 py-2 rounded-lg font-semibold text-sm hover:bg-dc1-amber/90 transition-colors disabled:opacity-50"
           >
-            {status === 'sending' ? 'Sending...' : 'Send Message'}
+            {status === 'sending' ? t('support.form.sending') : t('support.form.submit')}
           </button>
         </form>
       )}
@@ -117,22 +120,63 @@ function ContactForm() {
   );
 }
 
-export default function SupportPage() {
+function SupportPageInner() {
+  const { t, isRTL } = useLanguage()
+  const searchParams = useSearchParams()
+  const requestedCategory = (searchParams.get('category') || '').toLowerCase()
+  const prefilledCategory = requestedCategory === 'enterprise' ? 'enterprise' : 'general'
+
+  useEffect(() => {
+    if (prefilledCategory !== 'enterprise') return
+    const detail = {
+      event: 'support_enterprise_prefill_loaded',
+      source: searchParams.get('source') || 'direct',
+      category: 'enterprise',
+    }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & { dataLayer?: Array<Record<string, unknown>> }
+    if (Array.isArray(win.dataLayer)) {
+      win.dataLayer.push(detail)
+    }
+  }, [prefilledCategory, searchParams])
+
+  const supportChannels = [
+    { title: t('support.channels.email.title'), description: t('support.channels.email.desc'), contact: 'support@dcp.sa', icon: '✉' },
+    { title: t('support.channels.abuse.title'), description: t('support.channels.abuse.desc'), contact: 'abuse@dcp.sa', icon: '⚠' },
+    { title: t('support.channels.privacy.title'), description: t('support.channels.privacy.desc'), contact: 'privacy@dcp.sa', icon: '🔒' },
+  ]
+
+  const faqs = [
+    { q: t('support.faq.q1'), a: t('support.faq.a1') },
+    { q: t('support.faq.q2'), a: t('support.faq.a2') },
+    { q: t('support.faq.q3'), a: t('support.faq.a3') },
+    { q: t('support.faq.q4'), a: t('support.faq.a4') },
+    { q: t('support.faq.q5'), a: t('support.faq.a5') },
+  ]
+
   return (
-    <div className="min-h-screen bg-dc1-void">
+    <div className="min-h-screen bg-dc1-void" dir={isRTL ? 'rtl' : 'ltr'}>
       <header className="bg-dc1-surface-l1 border-b border-dc1-border">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <img src="/logo.svg" alt="DCP" className="h-8 w-auto" />
             <span className="text-lg font-bold text-dc1-text-primary">DCP</span>
           </Link>
-          <Link href="/login" className="text-sm text-dc1-amber hover:underline">Sign In</Link>
+          <Link href="/login" className="text-sm text-dc1-amber hover:underline">{t('auth.sign_in')}</Link>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Support</h1>
-        <p className="text-dc1-text-secondary mb-10">Get help with the DCP platform.</p>
+        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('support.page_title')}</h1>
+        <p className="text-dc1-text-secondary mb-10">{t('support.page_subtitle')}</p>
+        {prefilledCategory === 'enterprise' && (
+          <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-1">
+              {t('support.enterprise_prefill_label')}
+            </p>
+            <p className="text-sm text-dc1-text-secondary">{t('support.enterprise_prefill_desc')}</p>
+          </div>
+        )}
 
         {/* Contact channels */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
@@ -147,10 +191,10 @@ export default function SupportPage() {
         </div>
 
         {/* Contact Form */}
-        <ContactForm />
+        <ContactForm t={t} initialCategory={prefilledCategory} />
 
         {/* FAQ */}
-        <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">Frequently Asked Questions</h2>
+        <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">{t('support.faq.title')}</h2>
         <div className="space-y-4">
           {faqs.map((faq, i) => (
             <div key={i} className="card">
@@ -163,5 +207,13 @@ export default function SupportPage() {
 
       <Footer />
     </div>
+  )
+}
+
+export default function SupportPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0d1117]" />}>
+      <SupportPageInner />
+    </Suspense>
   )
 }

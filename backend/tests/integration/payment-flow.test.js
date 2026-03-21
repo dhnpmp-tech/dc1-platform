@@ -63,14 +63,14 @@ let app;
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function cleanDb() {
-  try { db.run('DELETE FROM payments'); }         catch (_) {}
-  try { db.run('DELETE FROM benchmark_runs'); }   catch (_) {}
-  try { db.run('DELETE FROM recovery_events'); }  catch (_) {}
-  try { db.run('DELETE FROM escrow_holds'); }     catch (_) {}
-  try { db.run('DELETE FROM heartbeat_log'); }    catch (_) {}
-  try { db.run('DELETE FROM jobs'); }             catch (_) {}
-  try { db.run('DELETE FROM renters'); }          catch (_) {}
-  try { db.run('DELETE FROM providers'); }        catch (_) {}
+  try { db.prepare('DELETE FROM payments').run(); }         catch (_) {}
+  try { db.prepare('DELETE FROM benchmark_runs').run(); }   catch (_) {}
+  try { db.prepare('DELETE FROM recovery_events').run(); }  catch (_) {}
+  try { db.prepare('DELETE FROM escrow_holds').run(); }     catch (_) {}
+  try { db.prepare('DELETE FROM heartbeat_log').run(); }    catch (_) {}
+  try { db.prepare('DELETE FROM jobs').run(); }             catch (_) {}
+  try { db.prepare('DELETE FROM renters').run(); }          catch (_) {}
+  try { db.prepare('DELETE FROM providers').run(); }        catch (_) {}
 }
 
 async function seedRenter(balanceHalala = 0) {
@@ -80,7 +80,7 @@ async function seedRenter(balanceHalala = 0) {
   });
   expect(res.status).toBe(201);
   // Always set the requested balance (register defaults to 1000 halala)
-  db.run('UPDATE renters SET balance_halala = ? WHERE id = ?', balanceHalala, res.body.renter_id);
+  db.prepare('UPDATE renters SET balance_halala = ? WHERE id = ?').run(balanceHalala, res.body.renter_id);
   return { key: res.body.api_key, id: res.body.renter_id };
 }
 
@@ -88,9 +88,10 @@ async function seedRenter(balanceHalala = 0) {
 function insertPayment(renterId, overrides = {}) {
   const paymentId = overrides.payment_id || `test-pay-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const now = new Date().toISOString();
-  db.run(
+  db.prepare(
     `INSERT INTO payments (payment_id, renter_id, amount_sar, amount_halala, status, source_type, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
     paymentId,
     renterId,
     overrides.amount_sar ?? 10.0,

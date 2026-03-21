@@ -23,10 +23,9 @@ export default function Footer() {
           <div>
             <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">Platform</h4>
             <ul className="space-y-2">
-              <li><Link href="/provider/register" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Become a Provider</Link></li>
-              <li><Link href="/earn" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Earn with DCP</Link></li>
               <li><Link href="/renter/register" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Rent GPUs</Link></li>
-              <li><Link href="/renter/marketplace" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">GPU Marketplace</Link></li>
+              <li><Link href="/provider/register" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Earn with GPUs</Link></li>
+              <li><Link href="/marketplace" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Marketplace</Link></li>
             </ul>
           </div>
 
@@ -34,9 +33,10 @@ export default function Footer() {
           <div>
             <h4 className="text-sm font-semibold text-dc1-text-primary mb-4">Resources</h4>
             <ul className="space-y-2">
-              <li><Link href="/docs" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Documentation</Link></li>
+              <li><Link href="/docs" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Docs</Link></li>
               <li><Link href="/docs/api" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">API Reference</Link></li>
               <li><Link href="/support" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Support</Link></li>
+              <li><Link href="/login" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">Console Login</Link></li>
             </ul>
           </div>
 

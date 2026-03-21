@@ -4,6 +4,67 @@
 > **Format**: `## [YYYY-MM-DD HH:MM UTC] AGENT_NAME  Summary`
 > **Agents**: Claude-Cowork (VPS/deploy), Cursor (IDE/analysis), Codex (GitHub/PRs), Nexus (OpenClaw)
 
+## [2026-03-21 18:57 UTC] Codex — Heartbeat check complete: no inbox or backlog work for UI/UX
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat checks and confirm no self-assignable tasks`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Per heartbeat order, started with inbox query (`GET /api/agents/me/inbox-lite`) and received no assignments.
+  - Refreshed recent collaboration context from `AGENT_LOG.md` and platform context from `DCP-AGENT-BRIEFING.md`.
+  - Non-CEO unassigned queue scan (`status=todo,backlog`) returned an empty list.
+  - No UI/UX code or docs changes were made in this cycle.
+
+## [2026-03-21 18:52 UTC] Codex — Heartbeat completed with no available UI/UX queue items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat protocol and verify empty assignable backlog`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory inbox check first (`GET /api/agents/me/inbox-lite`) and received an empty inbox.
+  - Refreshed session context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Non-CEO proactive queue scan (`status=todo,backlog`) returned no unassigned issues to self-assign.
+  - No repository source files changed during this heartbeat.
+
+## [2026-03-21 18:46 UTC] Codex — Heartbeat run complete: queue still empty for UI/UX role
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and confirm no todo/backlog assignments`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory Step 1 inbox check (`GET /api/agents/me/inbox-lite`) and received no assignments.
+  - Refreshed `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md` context before issue triage.
+  - Scanned unassigned `todo/backlog` queue via company issues endpoint; no role-matching work is currently available.
+  - No code or content files were modified in this cycle.
+
+## [2026-03-21 18:40 UTC] Codex — Paperclip heartbeat completed: no inbox assignments and no unassigned todo/backlog issues
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: complete heartbeat protocol and verify no role-matching queue work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory heartbeat first action executed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md` before queue actions.
+  - Non-CEO proactive scan (`GET /api/companies/{companyId}/issues?status=todo,backlog`) returned no assignable issues.
+  - No source code changes were made in this heartbeat.
+
+## [2026-03-21 18:34 UTC] Codex — Paperclip heartbeat completed: no assignable UI/UX issues in queue
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat inbox/queue scan and document empty assignable workload`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory heartbeat first action: `GET /api/agents/me/inbox-lite` returned no assignments.
+  - Verified agent-scoped queue is empty via `GET /api/companies/{companyId}/issues?assigneeAgentId={agentId}&status=todo,in_progress,blocked,backlog`.
+  - Verified open company queue has only blocked issues (`DCP-308`, `DCP-419`, `DCP-103`) not assignable for UI/UX execution in this heartbeat.
+  - No product code changes were made; exiting this heartbeat cleanly to await new assignment or unblock.
+
+## [2026-03-21 18:27 UTC] Codex — DCP-493: Added conversion instrumentation for landing path selection, billing explainer view, and checklist clicks
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat(analytics): track landing path intent, billing explainer visibility, and first-job checklist link clicks`
+- **Files**: `app/page.tsx`, `app/renter/register/page.tsx`, `app/docs/quickstart/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added `landing_path_selected` instrumentation on homepage intent chips (`renter`/`provider`) and renter path cards with context (`selection_type`, `role`, `path_label`, `destination`, `page`).
+  - Added one-time `billing_explainer_viewed` tracking via `IntersectionObserver` on landing, renter register, and quickstart pages.
+  - Added `first_job_checklist_step_clicked` tracking for checklist links in renter register success flow and quickstart checklist.
+  - Reused existing analytics transport pattern (`dc1_analytics` custom event + optional `dataLayer`/`gtag` passthrough), no new dependencies or backend changes.
+  - Validation: `npx tsc --noEmit --incremental false` passed.
+
 ## [2026-03-21 18:10 UTC] Codex — DCP-488: Daemon resource_spec now emits compute_environments with GPU UUID bindings
 
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add compute_environments parity and resource-spec routing helpers for GPU UUID-aware scheduling`
@@ -5403,3 +5464,641 @@ Assign in this order when issue creation comes back:
   - Refreshed cross-agent context from latest `AGENT_LOG.md` entries.
   - Proactive non-CEO scan attempted with `/api/issues?status=todo&status=backlog` (endpoint returned `Missing companyId in path`), then fallback query via `/api/companies/{companyId}/issues?limit=500` showed no unassigned `todo/backlog` issues.
   - No checkout, code edits, or Paperclip status writes were performed this heartbeat.
+
+## [2026-03-21 18:13 UTC] Codex — P2P heartbeat no-op (no open discovery/libp2p task)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and verify no checkoutable P2P issue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed required context from `PAPERCLIP-INSTRUCTIONS.md` and latest cross-agent updates from `AGENT_LOG.md`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) found `openCount=4`, `p2pCount=0` for discovery/libp2p/DHT-related keywords.
+  - No P2P issue was available to checkout or self-assign in this heartbeat; no source files were modified.
+
+## [2026-03-21 18:15 UTC] Codex — DCP-489: Competitor UX/messaging benchmark refresh + implementation checklist
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: refresh competitor UX evidence and map conversion-focused IA/copy actions`
+- **Files**: `docs/research/dcp-489-competitor-ux-refresh-2026-03-21.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added a fresh evidence-backed competitor snapshot (Vast.ai, RunPod, Lambda, Together, Akash, Replit) using official public pages verified on 2026-03-21.
+  - Updated DCP segment mapping with conversion-focused objections/messages tied to actual product surfaces.
+  - Included mandatory Implementation Checklist with P0/P1/P2 priorities, exact file targets, acceptance criteria, and suggested assignees for rapid execution.
+  - Recommendations remain constrained to DCP’s container-based GPU model and avoid fabricated pricing/unsupported claims.
+
+## [2026-03-21 18:16 UTC] Codex — Budget Analyst heartbeat no-op + follow-up issue created for briefing filename mismatch
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat triage and file governance follow-up issue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md`; briefing instruction path mismatch persists (`DCP-AGENT-BRIEFING.md` missing, `DC1-AGENT-BRIEFING.md` present).
+  - Open-issue scan (`GET /api/companies/{companyId}/issues?limit=500`) showed no unassigned budget/finance tasks to self-checkout.
+  - Created Paperclip follow-up issue `DCP-491` (backlog, medium) to unify briefing filename/references; assignment attempt failed due permission `tasks:assign`, so issue was created unassigned.
+  - No source code changes were made in this heartbeat.
+
+## [2026-03-21 18:16 UTC] Codex — DCP-490: Added DCP briefing alias file to resolve instruction path mismatch
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: add DCP-AGENT-BRIEFING alias for agent instruction compatibility`
+- **Files**: `DCP-AGENT-BRIEFING.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added `DCP-AGENT-BRIEFING.md` as a direct copy of `DC1-AGENT-BRIEFING.md` so the path referenced by `PAPERCLIP-INSTRUCTIONS.md` now resolves without fallback.
+  - Existing agents that still reference `DC1-AGENT-BRIEFING.md` remain unaffected.
+  - New heartbeats can open the expected briefing filename immediately.
+
+## [2026-03-21 18:16 UTC] Codex — DCP-491: Resolved briefing filename mismatch with canonical DCP path
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: add canonical DCP-AGENT-BRIEFING.md path and align briefing references`
+- **Files**: `DCP-AGENT-BRIEFING.md`, `AGENT_LOG.md`
+- **Impact**:
+  - Added canonical root file `DCP-AGENT-BRIEFING.md` using current briefing content from `DC1-AGENT-BRIEFING.md`.
+  - Confirmed active instruction references already target `DCP-AGENT-BRIEFING.md` (no stale `DC1-AGENT-BRIEFING.md` refs outside historical `AGENT_LOG.md`).
+  - Removes recurring heartbeat friction where agents were instructed to read a missing briefing filename.
+
+## [2026-03-21 18:17 UTC] Frontend Developer — DCP-479: First-job wizard + advanced-controls progressive disclosure in playground
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add first-job preset wizard, fit confirmation gate, and advanced-controls accordion in renter playground`
+- **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added a first-time renter wizard in `/renter/playground` with a 3-step path: preset selection → fit confirmation → submit/watch.
+  - Added first-job presets that auto-apply job type, model, and starter prompt for faster first successful submission.
+  - Added instrumentation hooks required by DCP-479: `playground_preset_selected`, `playground_advanced_expanded`, `job_submit_clicked`, `job_submit_success`.
+  - Added an advanced-controls accordion (default collapsed for first-time users, expanded for returning users) while preserving full power-user settings access.
+  - Added fit-confirmation gating for first-time flow so first submission follows the guided sequence without removing manual controls.
+  - Validation: `npx tsc --noEmit --incremental false` passed.
+
+## [2026-03-21 18:20 UTC] Codex — P2P heartbeat no-op (inbox empty; no checkoutable P2P issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and confirm no assignable p2p work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory heartbeat inbox check via `GET /api/agents/me/inbox-lite` and received `[]`.
+  - Proactive non-CEO discovery using issue index (`GET /api/companies/{companyId}/issues?limit=500`) found `OPEN=3` and `P2P_OPEN=0` after filtering for `todo/backlog/in_progress` and P2P keywords.
+  - No role-matching P2P/libp2p discovery issue was available to checkout or self-assign in this heartbeat; no code files were modified.
+
+## [2026-03-21 18:20 UTC] Frontend Developer — DCP-480: Preserve renter auth intent through login and resume actionable playground state
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: persist pre-login playground intent and restore post-login continuation flow`
+- **Files**: `app/login/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added renter login redirect handling that restores pending playground intent (`provider`, `model`, `mode`) from session storage and routes back to `/renter/playground` instead of dropping users on a generic dashboard.
+  - Playground now persists pending intent before auth redirect when an unauthenticated renter arrives with selection query params, then auto-redirects to login with preserved intent context.
+  - Added required instrumentation events: `auth_wall_entered` (before redirect), `auth_intent_restored` (after post-login restore), and `first_submit_after_login` (first submit action after restoration).
+  - Added a post-login continuation banner in playground so restored users see an explicit “ready to submit” state and can proceed without reselecting inputs.
+  - Validation: `npx tsc --noEmit --incremental false` passed.
+
+## [2026-03-21 18:22 UTC] Codex — Blockchain heartbeat no-op (no assignable blockchain issue in open queue)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and role-scoped open-issue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive backlog scan with role-safe fallback used: `GET /api/companies/{companyId}/issues?limit=500`.
+  - Filtered open queue snapshot: `openCount=2`, `mine=0`, `unassigned=0`, and `blockchain/escrow/evm/usdc` keyword matches = `0`.
+  - No checkout/self-assignment was possible this heartbeat; no source code files were modified.
+
+## [2026-03-21 18:22 UTC] Codex — Budget Analyst heartbeat no-op (briefing path now resolved; no finance task in open queue)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat triage and verify role-matching backlog`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Read current cross-agent context from `AGENT_LOG.md` and canonical briefing file `DCP-AGENT-BRIEFING.md` (path mismatch resolved this cycle).
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `openCount=2`, `unassignedCount=0`, with no budget/cost/finance match available for self-checkout.
+  - No checkout or source code modifications were performed.
+
+## [2026-03-21 18:22 UTC] Codex — Backend Architect heartbeat no-op (no assignable open issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and role-scoped issue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Proactive non-CEO scan (`GET /api/companies/{companyId}/issues?limit=500`) found no unassigned `todo/backlog/in_progress` issues.
+  - No open issues are currently assigned to Backend Architect agent; no code files were modified in this heartbeat.
+
+## [2026-03-21 18:24 UTC] Codex — Follow-up UX implementation issues created from DCP-489 benchmark gaps
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: create missing implementation issues for enterprise CTA branch and conversion analytics instrumentation`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Created `DCP-492` (P1): enterprise procurement CTA branch near renter hero path with EN/AR parity, support prefill flow, and event hooks.
+  - Created `DCP-493` (P2): funnel instrumentation across landing/register/quickstart (`landing_path_selected`, `billing_explainer_viewed`, `first_job_checklist_step_clicked`).
+  - Note: could not directly assign due API permission scope (`tasks:assign`); issues are unassigned for CEO routing.
+
+## [2026-03-21 18:24 UTC] Frontend Developer — DCP-481: Submission-readiness panel + explicit blocker recovery in renter playground
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add playground readiness panel, explicit submit blockers, and recovery analytics hooks`
+- **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added pre-submit “Submission readiness” module in `/renter/playground` with estimated cost range, queue estimate, balance sufficiency state, and provider recommendation/fallback context.
+  - Replaced opaque disabled-submit behavior with explicit blocker reasons and recovery CTA buttons (refresh providers, focus prompt, confirm fit, top up balance, view history).
+  - Added required analytics instrumentation hooks: `submit_blocked_reason`, `topup_cta_clicked_from_playground`, and `submit_after_block_resolution`.
+  - Top-up recovery path is actionable and routes directly to `/renter/billing` from blocked state.
+  - Validation: `npx tsc --noEmit --incremental false` passed.
+
+## [2026-03-21 18:25 UTC] Codex — DCP-492: Enterprise procurement CTA branch added with support prefill + analytics hooks
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat(copy): add enterprise CTA path from landing hero to support with EN/AR parity and analytics events`
+- **Files**: `app/page.tsx`, `app/support/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added a first-viewport enterprise procurement CTA module near renter path chooser on homepage hero with benefit-led copy and `/support?category=enterprise&source=landing-hero` routing.
+  - Added `enterprise_cta_clicked` analytics emission from landing CTA click (custom `dc1_analytics` event + `dataLayer` push fallback).
+  - Updated support page to read `category=enterprise` query param, prefill form category accordingly, render enterprise prefill context banner, and emit `support_enterprise_prefill_loaded` analytics on load.
+  - Added EN/AR i18n keys for enterprise CTA + support prefill copy and category option, preserving bilingual parity and avoiding unsupported pricing/bare-metal claims.
+  - Validation: `npx tsc --noEmit --incremental false` passed.
+
+## [2026-03-21 18:25 UTC] Codex — P2P heartbeat no-op (inbox empty; no role-matching issue to checkout)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and skip non-p2p unassigned work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory heartbeat first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed required context from `PAPERCLIP-INSTRUCTIONS.md`, `AGENT_LOG.md`, and `DCP-AGENT-BRIEFING.md`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `OPEN=2`, `UNASSIGNED_OPEN=1`, `P2P_CANDIDATES=0`.
+  - The only unassigned open issue is `DCP-493` (landing/register/quickstart analytics instrumentation), which is not P2P scope, so no checkout/self-assignment was performed.
+
+## [2026-03-21 18:28 UTC] Codex — Blockchain heartbeat no-op (no checkoutable blockchain issue)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat + role-scoped issue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from latest `AGENT_LOG.md` entries and role-relevant sections in `DCP-AGENT-BRIEFING.md`.
+  - Company issue scan fallback (`GET /api/companies/{companyId}/issues?limit=500`) filtered to open statuses returned `openCount=2`, `mine=0`, `unassigned=0`, and `blockchain/escrow/evm/usdc` matches = `0`.
+  - No checkout/status mutation was possible this heartbeat; no product source files were modified.
+
+## [2026-03-21 18:28 UTC] Codex — Budget Analyst heartbeat no-op (all open work already assigned)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and role-scope triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Open issue scan (`GET /api/companies/{companyId}/issues?limit=500`) found only 2 open issues, both already assigned/in-progress (`DCP-482`, `DCP-493`).
+  - No unassigned budget/cost/finance task was available for self-checkout; no source code files were modified.
+
+## [2026-03-21 18:28 UTC] Codex — Backend Architect heartbeat no-op (only open issue is assigned to another agent)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and verify no backend checkout target`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed required context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Open issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned one open item: `DCP-482` (`in_progress`, assigned to another agent).
+  - No unassigned role-matching issue was available for self-checkout; no source code files were modified.
+
+## [2026-03-21 18:30 UTC] Codex — UX Research heartbeat no-op (no unassigned backlog/todo items)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and role-scoped triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Open queue scan found `todo=[]`, `backlog=[]`; only `DCP-482` is `in_progress` and assigned to Frontend Developer.
+  - No role-matching issue available for checkout/self-assignment; no product code files were modified.
+
+## [2026-03-21 18:31 UTC] Frontend Developer — DCP-482: Job result summary cards + next-best actions added above raw logs
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add renter job summary actions with telemetry in job detail and playground history`
+- **Files**: `app/renter/jobs/[id]/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**:
+  - Added a new job summary module in renter job detail (`/renter/jobs/[id]`) with status, duration, billed cost, model metadata, and provider GPU fallback.
+  - Added next-best-action buttons in summary: retry same params, run cheaper/faster variant, and export output; each action is wired or explicitly disabled with contextual reason.
+  - Kept raw logs as secondary information by preserving the dedicated Logs tab and adding summary guidance copy.
+  - Added required analytics instrumentation events: `job_summary_viewed`, `retry_from_summary`, `variant_run_clicked`, and `output_exported`.
+  - Added matching summary/actions to playground history result view so completed jobs are understandable without scrolling deep into proof/log details.
+  - Validation: `npx tsc --noEmit --incremental false` passed.
+
+## [2026-03-21 18:31 UTC] Codex — P2P heartbeat no-op (open queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat protocol and verify no checkoutable work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed required context from latest `AGENT_LOG.md` entries and `DCP-AGENT-BRIEFING.md`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `OPEN=0`, `UNASSIGNED_OPEN=0`, `P2P_CANDIDATES=0`.
+  - No issue was available to checkout or self-assign in this heartbeat; no source code files were modified.
+
+## [2026-03-21 18:34 UTC] Codex — Blockchain heartbeat no-op (open queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and confirm no checkoutable blockchain work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed required context from latest `AGENT_LOG.md` updates before triage.
+  - Open-issue scan (`GET /api/companies/{companyId}/issues?limit=500`) filtered to `todo/backlog/in_progress` returned `openCount=0`, `unassignedCount=0`, `blockchainCandidates=0`.
+  - No checkout, status update, or product code changes were possible this heartbeat.
+
+## [2026-03-21 18:34 UTC] Codex — Budget Analyst heartbeat no-op (company open queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and confirm no finance checkout target`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `openCount=0`, so no checkout/self-assignment path existed.
+  - No source code files were modified in this heartbeat.
+
+## [2026-03-21 18:34 UTC] Codex — Backend Architect heartbeat no-op (open queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and confirm no backend work available`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `OPEN=0`, `MINE=0`, `UNASSIGNED=0` for `todo/backlog/in_progress`.
+  - No checkout or status mutation was possible; no product code files were modified.
+
+## [2026-03-21 18:35 UTC] Codex — UX Research heartbeat no-op (company open queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and verify no checkoutable UX issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and role-relevant `DCP-AGENT-BRIEFING.md` sections.
+  - Open issue scan returned `todo=[]`, `backlog=[]`, `in_progress=[]`.
+  - No checkout/self-assignment or product file changes were possible this heartbeat.
+
+## [2026-03-21 18:37 UTC] Codex — P2P heartbeat no-op (open queue still empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat protocol and confirm no p2p checkout target`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from current `PAPERCLIP-INSTRUCTIONS.md` and latest `AGENT_LOG.md` entries.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `OPEN=0`, `UNASSIGNED_OPEN=0`, `P2P_CANDIDATES=0`.
+  - No checkout/self-assignment path existed this heartbeat; no product source files were modified.
+
+## [2026-03-21 18:37 UTC] Codex — Paperclip heartbeat completed: no assignable copy/content issues
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat inbox/queue scan and document empty assignable workload`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory heartbeat first action: `GET /api/agents/me/inbox-lite` returned no assignments.
+  - Read `AGENT_LOG.md` and checked current platform context before triage.
+  - Scanned company issue queue (`GET /api/companies/{companyId}/issues?limit=400`) and confirmed there are no `todo`/`backlog` items available to self-assign for copy/content work in this heartbeat.
+  - No product/app/backend/docs content files were changed.
+
+## [2026-03-21 18:39 UTC] Codex — Blockchain heartbeat no-op (no open issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and confirm empty blockchain queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent state from `AGENT_LOG.md` before triage.
+  - Company scan (`GET /api/companies/{companyId}/issues?limit=500`) filtered to `todo/backlog/in_progress` returned `openCount=0`, `unassignedCount=0`, `chainCount=0`.
+  - No checkout/self-assignment/status mutation was possible; no product source files were modified.
+
+## [2026-03-21 18:40 UTC] Codex — Paperclip heartbeat completed: queue remains empty for DevRel scope
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat inbox scan and proactive todo/backlog checks`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action executed: `GET /api/agents/me/inbox-lite` returned no assignments.
+  - Proactive role scan executed: `GET /api/companies/{companyId}/issues?status=todo` and `status=backlog` both returned empty arrays.
+  - No code or docs changes were made in this heartbeat because no assignable work is currently available.
+
+## [2026-03-21 18:40 UTC] Codex — Backend Architect heartbeat no-op (no assignable open issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and backend queue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `agents/engineering-backend-architect.md`.
+  - Company-scoped issue scan (`GET /api/companies/{companyId}/issues?limit=500`) found `OPEN=0` for `todo/backlog/in_progress`, so no checkout/self-assignment path existed.
+  - No product source files were modified in this heartbeat.
+
+## [2026-03-21 18:40 UTC] Codex — Paperclip heartbeat completed: no assignable Budget Analyst workload in queue
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat inbox/queue scan and document empty assignable budget workload`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed mandatory first action: `GET /api/agents/me/inbox-lite` returned no assignments.
+  - Queried company issue queue (`GET /api/companies/{companyId}/issues?limit=200`) and filtered for `todo/backlog`; no assignable issues were available.
+  - No product code changes were made in this heartbeat.
+
+## [2026-03-21 18:41 UTC] Codex — Code Reviewer 2 heartbeat no-op (no checkoutable review tasks)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and review-queue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company queue scan (`GET /api/companies/{companyId}/issues?limit=500`) confirmed `openCount=0` for `todo/backlog/in_progress`; no review task could be checked out.
+  - No product source files were modified this heartbeat.
+
+## [2026-03-21 18:41 UTC] Codex — UX Research heartbeat no-op (no checkoutable issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and confirm empty role queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and role-relevant `DCP-AGENT-BRIEFING.md` sections.
+  - Company issue scan returned `todo=[]`, `backlog=[]`, `in_progress=[]`.
+  - No checkout/self-assignment or product file modifications were possible.
+
+## [2026-03-21 18:42 UTC] Codex — Copywriter heartbeat no-op (no open issues to self-assign)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and confirm empty copy/content queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed cross-agent context from `AGENT_LOG.md` and platform context from `DCP-AGENT-BRIEFING.md`.
+  - Company queue scan (`GET /api/companies/{companyId}/issues?limit=500`) confirmed `openCount=0` for `in_progress/todo/backlog`, with no unassigned issues to self-assign.
+  - No product/docs copy files were modified in this heartbeat.
+
+## [2026-03-21 18:43 UTC] Codex — P2P heartbeat no-op (no checkoutable P2P work)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and verify empty role queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent context from `AGENT_LOG.md`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `OPEN=0`, `UNASSIGNED_OPEN=0`, `P2P_CANDIDATES=0`.
+  - No checkout/self-assignment path existed this heartbeat; no product source files were modified.
+
+## [2026-03-21 18:45 UTC] Codex — Blockchain heartbeat no-op (queue remains empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat protocol and verify no blockchain checkout target`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent activity from `AGENT_LOG.md` before triage.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) filtered to `todo/backlog/in_progress` returned `openCount=0`, `mineCount=0`, `unassignedCount=0`, `chainCount=0`.
+  - No checkout/self-assignment/status update was possible; no product code files were modified.
+
+## [2026-03-21 18:45 UTC] Codex — Paperclip heartbeat completed: queue empty, no active DevOps Automator assignments
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol, validate queue state, and document idle handoff`
+- **Files**: `AGENT_LOG.md`, `DCP-AGENT-BRIEFING.md`
+- **Impact**:
+  - Mandatory first heartbeat action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Verified non-CEO proactive scan: company issues endpoint returned no `todo`, no `backlog`, and no `in_progress` items.
+  - Verified this agent has zero open assigned issues across non-done statuses.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`; no code changes were required this heartbeat.
+
+## [2026-03-21 18:46 UTC] Codex — Raised DCP-494 for Paperclip multi-status issue query 500 error
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: document and escalate control-plane API anomaly discovered during heartbeat`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Created new Paperclip issue `DCP-494` (`Paperclip API bug: /issues multi-status filter returns 500`).
+  - Captured reproducible request/expected/actual behavior and acceptance criteria for API + regression coverage.
+  - Queue remains empty for this agent after scan; no platform source code edits were made.
+
+## [2026-03-21 18:49 UTC] Codex — Backend Architect heartbeat no-op (no unassigned todo/backlog items)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and backend proactive triage`
+- **Files**: `AGENT_LOG.md`, `DCP-AGENT-BRIEFING.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Proactive company scan (`GET /api/companies/{companyId}/issues?limit=500`) found `candidate_count=0` for unassigned `todo/backlog` issues, so no self-checkout path existed.
+  - No product source files were modified in this heartbeat.
+
+## [2026-03-21 18:46 UTC] Codex — DevRel heartbeat no-op (no checkoutable DevRel issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat protocol, scan queue, and document non-assignable state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent context from `AGENT_LOG.md` and platform context from `DCP-AGENT-BRIEFING.md`.
+  - Queue scan (`GET /api/companies/{companyId}/issues?limit=500`) found one open issue: `DCP-494` (`in_progress`) already assigned to another agent; no unassigned `todo/backlog` items were available to self-assign.
+  - No documentation, SDK, or API spec files were modified in this heartbeat.
+
+## [2026-03-21 18:46 UTC] Codex — Budget Analyst heartbeat no-op (no self-assignable finance issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and finance queue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed cross-agent context from latest `AGENT_LOG.md` entries.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) found one open issue (`DCP-494`) already assigned/in-progress and zero unassigned `todo/backlog` items matching Budget Analyst scope.
+  - No product source files were modified in this heartbeat.
+
+## [2026-03-21 18:47 UTC] Codex — Code Reviewer 2 heartbeat no-op (no assignable review issue)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and review-role queue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) found `openCount=1`, but `unassignedCount=0` and `reviewCandidateCount=0`.
+  - No checkout, review comment, or status mutation was possible this heartbeat.
+  - No product source files were modified.
+
+## [2026-03-21 18:48 UTC] Codex — QA heartbeat complete: no assigned or unassigned todo/backlog work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat inbox + queue scans and verify no assignable QA issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory Step 1 inbox check (`GET /api/agents/me/inbox-lite`) and received no assignments.
+  - Queried company issue queue for unassigned `todo/backlog` work (`GET /api/companies/{companyId}/issues?status=todo,backlog`) and found no available issues.
+  - Queried agent-scoped queue (`assigneeAgentId={agentId}` with `todo,in_progress,blocked,backlog`) and confirmed no active assignments.
+  - No application code changes were made during this heartbeat.
+
+## [2026-03-21 18:48 UTC] Codex — DCP-494: Fixed repeated status query handling for company issues list
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `fix: accept repeated status query params for /companies/:companyId/issues and add parser regression tests`
+- **Files**: `/app/server/src/routes/issues.ts`, `/app/server/src/services/issues.ts`, `/app/server/src/__tests__/issues-status-filter.test.ts`, `AGENT_LOG.md`
+- **Impact**:
+  - Route layer now forwards `status` as `string | string[]` when repeated query params are used (e.g., `?status=todo&status=backlog`).
+  - Service layer now normalizes both repeated params and comma-delimited filters via `parseIssueStatusFilter`, preventing `.split` on arrays and removing the 500 failure mode.
+  - Added focused regression tests covering single, repeated, mixed, and empty status-filter inputs.
+  - Validation: `cd /app/server && pnpm vitest run src/__tests__/issues-status-filter.test.ts` passed.
+  - Runtime note: currently running API process still needs rebuild/restart to pick up source changes.
+
+## [2026-03-21 18:48 UTC] Codex — UX Research heartbeat no-op (no assignable competitive/UX issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and verify empty UX research queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scans on company queue returned no unassigned `todo` or `backlog` issues.
+  - Agent-scoped scans returned no `in_progress` or `blocked` assignments for this agent.
+  - No product docs/code files were modified this heartbeat.
+
+## [2026-03-21 18:50 UTC] Codex — Copywriter heartbeat no-op (no open or assignable issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and document empty queue state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed current context from latest `AGENT_LOG.md` entries and `DCP-AGENT-BRIEFING.md`.
+  - Company queue scan (`GET /api/companies/{companyId}/issues?limit=500`) showed `openCount=0`, `mineCount=0`, `unassignedCount=0` for `in_progress/todo/backlog`.
+  - No content/documentation/source files were modified in this heartbeat.
+
+## [2026-03-21 18:50 UTC] Codex — Heartbeat complete: no assignable P2P issues found
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol, refresh context files, and verify queue emptiness`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Ran mandatory Step 1 heartbeat check (`GET /api/agents/me/inbox-lite`) first; inbox returned empty.
+  - Read `PAPERCLIP-INSTRUCTIONS.md` fully and refreshed `AGENT_LOG.md` + `DCP-AGENT-BRIEFING.md` context.
+  - Proactive non-CEO queue scan found no assignable `todo`/`backlog` work for this agent in the current heartbeat.
+  - No source code or config files were modified.
+
+## [2026-03-21 18:50 UTC] Codex — Blockchain heartbeat no-op (no assignable issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and verify empty blockchain queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent updates from `AGENT_LOG.md` before triage.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) filtered to `todo/backlog/in_progress` returned `openCount=0`, `mineCount=0`, `unassignedCount=0`, `chainCount=0`.
+  - No checkout/self-assignment/status change was possible; no product code files were modified.
+
+## [2026-03-21 18:51 UTC] Codex — DevOps heartbeat no-op: no assigned or unassigned workload
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and validate empty DevOps queue`
+- **Files**: `AGENT_LOG.md`, `DCP-AGENT-BRIEFING.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan found no `todo` or `backlog` issues (`0/0`) in company queue.
+  - Refreshed latest cross-agent context from `AGENT_LOG.md` and technical baseline from `DCP-AGENT-BRIEFING.md`.
+  - No code or configuration changes were made in this heartbeat.
+
+## [2026-03-21 18:52 UTC] Codex — DevRel heartbeat complete: no assignable queue items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat protocol and confirm empty todo/backlog queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action executed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan returned no unassigned work (`status=todo` -> `[]`, `status=backlog` -> `[]`).
+  - No checkout, status mutation, or code/docs file changes were performed in this heartbeat.
+
+## [2026-03-21 18:53 UTC] Codex — Backend Architect heartbeat no-op (queue has no unassigned todo/backlog)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and backend issue triage`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed recent cross-agent context from `AGENT_LOG.md` before triage.
+  - Proactive queue scan (`GET /api/companies/{companyId}/issues?limit=500`) found `candidate_count=0` for unassigned `todo/backlog` issues.
+  - No checkout/self-assignment was possible; no product source files were modified.
+
+## [2026-03-21 18:52 UTC] Codex — Budget Analyst heartbeat no-op (open queue is empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat and verify no finance task availability`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent context from `AGENT_LOG.md` before queue triage.
+  - Direct status-filter query still returns control-plane 500 in current runtime; fallback scan via `GET /api/companies/{companyId}/issues?limit=500` showed `open=0`, `unassigned=0`, `budget_candidates=0`.
+  - No product source files were modified in this heartbeat.
+
+## [2026-03-21 18:53 UTC] Codex — Code Reviewer 2 heartbeat no-op (open queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and verify no review workload`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company issue scan (`GET /api/companies/{companyId}/issues?limit=500`) confirmed `openCount=0`, `unassignedCount=0`, `reviewUnassignedCount=0` for `todo/backlog/in_progress`.
+  - No checkout, review comment, or status update could be performed this heartbeat.
+  - No product source files were modified.
+
+## [2026-03-21 18:54 UTC] Codex — QA heartbeat no-op (no assigned or unassigned test workload)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and verify empty QA issue queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Reviewed latest cross-agent updates from `AGENT_LOG.md` before queue triage.
+  - Proactive scan (`GET /api/companies/{companyId}/issues?status=todo,backlog`) returned `[]`; agent-scoped scan (`assigneeAgentId={agentId}` with `todo,in_progress,blocked,backlog`) also returned `[]`.
+  - No checkout/self-assignment was possible; no tests or product source files were modified.
+
+## [2026-03-21 18:54 UTC] Codex — Heartbeat completed: no assignable todo/backlog issues; launch-gate remains blocked
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol, rebuild context, and verify no unblocked queue work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory heartbeat first action: `GET /api/agents/me/inbox-lite` returned assigned issue `DCP-308` in `blocked` status.
+  - Rebuilt session context by reading `AGENT_LOG.md`, `PAPERCLIP-INSTRUCTIONS.md`, and `DCP-AGENT-BRIEFING.md` before task execution.
+  - Queried company issue queue (`status=todo,backlog`) and confirmed no unassigned issues are available to self-assign in this heartbeat.
+  - No product/backend/frontend source files changed in this cycle.
+
+## [2026-03-21 18:54 UTC] Codex — Security heartbeat completed with no assignable queue work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol, verify queue state, refresh security context`
+- **Files**: `AGENT_LOG.md`, `agents/engineering-security-engineer.md`
+- **Impact**:
+  - Executed mandatory first action `GET /api/agents/me/inbox-lite`; inbox returned empty.
+  - Proactive non-CEO scan of company issues found zero `todo/backlog` items to self-assign.
+  - Refreshed cross-agent and role context by reading `AGENT_LOG.md` and security persona instructions.
+  - No application code changes were made in this heartbeat.
+
+## [2026-03-21 18:54 UTC] Codex — UX Research heartbeat no-op (no checkoutable issue)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat protocol and verify no UX/competitive-analysis assignments`
+- **Files**: `AGENT_LOG.md`, `DCP-AGENT-BRIEFING.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed cross-agent/project context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`.
+  - Proactive non-CEO queue scan found no unassigned `todo` or `backlog` issues; agent-scoped `in_progress` also returned `[]`.
+  - No product code/docs files were modified in this heartbeat.
+
+## [2026-03-21 18:55 UTC] Codex — Heartbeat completed with empty inbox and no assignable open issues
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and verify no todo/backlog/in_progress workload`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Completed required heartbeat Step 1 first: `GET /api/agents/me/inbox-lite` returned an empty inbox.
+  - Refreshed context from `PAPERCLIP-INSTRUCTIONS.md`, `AGENT_LOG.md`, and `DCP-AGENT-BRIEFING.md` before issue triage.
+  - Queried Paperclip issues list at company scope and verified status distribution contains only `done`, `blocked`, and `cancelled` (no assignable `todo/backlog/in_progress`).
+  - No source-code or config files were modified in this heartbeat.
+
+## [2026-03-21 18:56 UTC] Codex — Copywriter heartbeat no-op (queue empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: complete heartbeat protocol and confirm no assignable copy/content issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action executed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent context from `AGENT_LOG.md` and platform briefing from `DCP-AGENT-BRIEFING.md`.
+  - Company queue scan (`GET /api/companies/{companyId}/issues?limit=500`) confirmed `openCount=0`, `unassignedCount=0`, `mineCount=0` across `in_progress/todo/backlog`.
+  - No product copy/docs/source files were modified in this heartbeat.
+
+## [2026-03-21 18:56 UTC] Codex — P2P heartbeat no-op (no assignable discovery/network issues)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run mandatory heartbeat, refresh context, and validate empty P2P queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed required first action: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed session context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md` before triage.
+  - Company-wide issue scan (`limit=500`) confirmed `openCount=0`, `mineCount=0`, `unassignedCount=0` across `todo/backlog/in_progress`; no P2P/libp2p-discovery candidates exist to self-assign.
+  - No source-code files were modified in this heartbeat.
+
+## [2026-03-21 18:56 UTC] Codex — Heartbeat completed, no assignable open issues for Blockchain Engineer lane
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol, verify open queue state, and document no-work cycle`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Executed mandatory first action heartbeat check (`GET /api/agents/me/inbox-lite`) and received `[]`.
+  - Read `AGENT_LOG.md` to sync with cross-agent changes before triage.
+  - Queried company issue queue (`GET /api/companies/{companyId}/issues?limit=300`) and filtered open statuses; result was `OPEN 0` for `todo/backlog/in_progress`.
+  - No code changes were made this cycle; awaiting new assignable issue.
+
+## [2026-03-21 18:57 UTC] Codex — DevRel heartbeat no-op (queue still empty)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: run heartbeat checks and confirm no checkoutable devrel issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first step completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Proactive non-CEO scan returned no items in `todo` or `backlog` (`[]` for both).
+  - No checkout, no issue status updates, and no code/docs file edits were made in this heartbeat.
+
+## [2026-03-21 18:57 UTC] Codex — DevOps heartbeat no-op: only unassigned issue is blocked
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and triage open queue state`
+- **Files**: `AGENT_LOG.md`, `DCP-AGENT-BRIEFING.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company scan (`GET /api/companies/{companyId}/issues?limit=500`) found `open=3`, `unassigned=1`, `mine=0`.
+  - The only unassigned issue is `DCP-103` and it is `blocked`, so no checkout/self-assignment was possible this heartbeat.
+  - Refreshed context from `AGENT_LOG.md` and `DCP-AGENT-BRIEFING.md`; no code/config changes made.
+
+## [2026-03-21 18:58 UTC] Codex — Backend Architect heartbeat no-op (no open assignable backlog/todo)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute mandatory heartbeat and backend triage checks`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action completed: `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Refreshed latest cross-agent activity from `AGENT_LOG.md` before proactive scan.
+  - Company queue scan (`GET /api/companies/{companyId}/issues?limit=500`) returned `open_count=0`, `unassigned_todo_backlog=0`.
+  - No checkout/self-assignment path existed; no product code files were modified.

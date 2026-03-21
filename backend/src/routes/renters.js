@@ -110,10 +110,13 @@ function hashedDeletedEmail(rawEmail, accountId) {
 // POST /api/renters/register
 router.post('/register', (req, res) => {
   try {
-    const { name, email, organization } = req.body;
+    const { name, email, organization, use_case, useCase, phone } = req.body;
     const cleanName = normalizeString(name, { maxLen: 120 });
     const cleanEmail = normalizeEmail(email);
     const cleanOrg = normalizeString(organization, { maxLen: 160 });
+    // Keep frontend labels and persisted payload aligned: both `use_case` and legacy `useCase` are accepted.
+    const cleanUseCase = normalizeString(use_case ?? useCase, { maxLen: 120 });
+    const cleanPhone = normalizeString(phone, { maxLen: 40 });
 
     if (!cleanName || !cleanEmail) {
       return res.status(400).json({ error: 'Missing required fields: name, email' });
@@ -123,9 +126,9 @@ router.post('/register', (req, res) => {
     const now = new Date().toISOString();
 
     const result = runStatement(
-      `INSERT INTO renters (name, email, api_key, organization, status, balance_halala, created_at)
-       VALUES (?, ?, ?, ?, 'active', 1000, ?)`,
-      cleanName, cleanEmail, api_key, cleanOrg || null, now
+      `INSERT INTO renters (name, email, api_key, organization, use_case, phone, status, balance_halala, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'active', 1000, ?)`,
+      cleanName, cleanEmail, api_key, cleanOrg || null, cleanUseCase || null, cleanPhone || null, now
     );
 
     res.status(201).json({
@@ -169,6 +172,8 @@ router.get('/me', (req, res) => {
         name: renter.name,
         email: renter.email,
         organization: renter.organization,
+        use_case: renter.use_case || null,
+        phone: renter.phone || null,
         webhook_url: renter.webhook_url || null,
         balance_halala: renter.balance_halala,
         total_spent_halala: renter.total_spent_halala,

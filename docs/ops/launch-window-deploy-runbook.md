@@ -28,8 +28,8 @@ If DNS does not resolve or PM2 env values are placeholder/empty, stop and resolv
 cd /root/dc1-platform
 
 # 1) Sync latest code (operator-controlled)
-git fetch --all --prune
-git pull --ff-only origin main
+# Use board-approved release sync workflow to place the approved build in /root/dc1-platform.
+# Record the deployed commit SHA from the release manifest in the Paperclip issue comment.
 
 # 2) Apply PM2 ecosystem safely
 cd backend
@@ -39,6 +39,7 @@ pm2 save
 # 3) Verify services are healthy
 cd /root/dc1-platform
 ./infra/scripts/verify-deploy.sh
+./infra/scripts/verify-runtime-baseline.sh
 
 # 4) Run focused smoke checks
 ./infra/scripts/deploy-templates.sh --api-base http://127.0.0.1:8083/api --skip-scan
@@ -54,9 +55,9 @@ pm2 status
 pm2 logs dc1-provider-onboarding --nostream --lines 200
 curl -sS -i http://127.0.0.1:8083/api/health
 
-# 2) Roll back repo to previous known-good commit
-git log --oneline -n 5
-git checkout <PREVIOUS_GOOD_COMMIT>
+# 2) Restore previous known-good release (board-operator controlled)
+# Use the rollback target from the incident/release channel and restore /root/dc1-platform accordingly.
+# Record the rollback commit SHA in Paperclip + AGENT_LOG evidence.
 
 # 3) Restart/reload services
 cd backend
@@ -66,6 +67,7 @@ pm2 save
 # 4) Re-run health verification
 cd /root/dc1-platform
 ./infra/scripts/verify-deploy.sh
+./infra/scripts/verify-runtime-baseline.sh
 ```
 
 ## Blocking Conditions
@@ -78,8 +80,13 @@ cd /root/dc1-platform
 
 ### Agent-fixable blockers
 - Script coverage gaps in `infra/scripts/verify-deploy.sh`.
+- Runtime baseline drift in `infra/docker/run-job.sh` (container hardening flags missing).
 - Missing operator docs/runbook steps in repo.
 - Non-fatal endpoint path mismatches (`/health` vs `/api/health`) that can be handled in validation scripts.
+
+## Related Runbooks
+
+- `docs/ops/non-payment-restart-rollback.md` for non-payment restart/rollback operations with operator handoff checklist.
 
 ## Reporting Template (Paperclip comment)
 

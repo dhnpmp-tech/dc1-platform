@@ -3,6 +3,7 @@ const express = require('express');
 const request = require('supertest');
 
 let app;
+const ADMIN_TOKEN = 'test-admin-token';
 
 function flatParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -27,6 +28,7 @@ jest.mock('../db', () => {
 });
 
 beforeEach(() => {
+  process.env.DC1_ADMIN_TOKEN = ADMIN_TOKEN;
   global.__testDb = new Database(':memory:');
   global.__testDb.pragma('journal_mode = WAL');
   global.__testDb.exec(`
@@ -61,20 +63,19 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.DC1_ADMIN_TOKEN;
   try { global.__testDb.close(); } catch {}
 });
 
-// 1: Events endpoint returns array
 test('GET /api/security/events returns events array', async () => {
-  const res = await request(app).get('/api/security/events');
+  const res = await request(app).get('/api/security/events').set('x-admin-token', ADMIN_TOKEN);
   expect(res.status).toBe(200);
   expect(Array.isArray(res.body.events)).toBe(true);
   expect(typeof res.body.total).toBe('number');
 });
 
-// 2: Summary counts by severity
 test('GET /api/security/summary returns severity counts', async () => {
-  const res = await request(app).get('/api/security/summary');
+  const res = await request(app).get('/api/security/summary').set('x-admin-token', ADMIN_TOKEN);
   expect(res.status).toBe(200);
   expect(res.body).toHaveProperty('total');
   expect(res.body).toHaveProperty('critical');
@@ -82,35 +83,32 @@ test('GET /api/security/summary returns severity counts', async () => {
   expect(res.body).toHaveProperty('info');
 });
 
-// 3: Stale heartbeat detection
 test('detects stale heartbeat as critical event', async () => {
   global.__testDb.prepare(
     `INSERT INTO providers (name, email, gpu_model, os, status, last_heartbeat, created_at)
      VALUES (?, ?, ?, ?, ?, datetime('now', '-10 minutes'), datetime('now', '-2 days'))`
   ).run('StaleGuy', 'stale@test.com', 'RTX 4090', 'linux', 'online');
 
-  const res = await request(app).get('/api/security/events');
+  const res = await request(app).get('/api/security/events').set('x-admin-token', ADMIN_TOKEN);
   expect(res.status).toBe(200);
   const staleEvents = res.body.events.filter(e => e.type === 'failed_heartbeat');
   expect(staleEvents.length).toBe(1);
   expect(staleEvents[0].severity).toBe('critical');
 });
 
-// 4: New registration detection (24h window)
 test('detects new registrations as info events', async () => {
   global.__testDb.prepare(
     `INSERT INTO providers (name, email, gpu_model, os, status, created_at)
      VALUES (?, ?, ?, ?, ?, datetime('now', '-1 hour'))`
   ).run('NewGuy', 'new@test.com', 'RTX 3090', 'linux', 'registered');
 
-  const res = await request(app).get('/api/security/events');
+  const res = await request(app).get('/api/security/events').set('x-admin-token', ADMIN_TOKEN);
   const newEvents = res.body.events.filter(e => e.type === 'new_registration');
   expect(newEvents.length).toBe(1);
   expect(newEvents[0].severity).toBe('info');
 });
 
-// 5: Flag endpoint requires auth
-test('POST /api/security/flag requires MC_TOKEN', async () => {
+test('POST /api/security/flag requires admin token', async () => {
   global.__testDb.prepare(
     `INSERT INTO providers (name, email, gpu_model, os, status) VALUES (?, ?, ?, ?, ?)`
   ).run('Target', 'target@test.com', 'RTX 4090', 'linux', 'online');
@@ -118,32 +116,27 @@ test('POST /api/security/flag requires MC_TOKEN', async () => {
   expect(res.status).toBe(401);
 });
 
-// 6: Flag endpoint rejects invalid provider ID
 test('POST /api/security/flag rejects nonexistent provider', async () => {
-  process.env.MC_TOKEN = 'test-token';
   const res = await request(app)
     .post('/api/security/flag/9999')
-    .set('x-mc-token', 'test-token');
+    .set('x-admin-token', ADMIN_TOKEN);
   expect(res.status).toBe(404);
-  delete process.env.MC_TOKEN;
 });
 
-// 7: Empty DB returns zero events
 test('empty DB returns zero events without error', async () => {
-  const res = await request(app).get('/api/security/events');
+  const res = await request(app).get('/api/security/events').set('x-admin-token', ADMIN_TOKEN);
   expect(res.status).toBe(200);
   expect(res.body.events).toEqual([]);
   expect(res.body.total).toBe(0);
 });
 
-// 8: Response schema validation
 test('events have required schema fields', async () => {
   global.__testDb.prepare(
     `INSERT INTO providers (name, email, gpu_model, os, status, last_heartbeat, created_at)
      VALUES (?, ?, ?, ?, ?, datetime('now', '-10 minutes'), datetime('now', '-1 hour'))`
   ).run('SchemaTest', 'schema@test.com', 'RTX 4090', 'linux', 'online');
 
-  const res = await request(app).get('/api/security/events');
+  const res = await request(app).get('/api/security/events').set('x-admin-token', ADMIN_TOKEN);
   expect(res.status).toBe(200);
   for (const event of res.body.events) {
     expect(event).toHaveProperty('type');

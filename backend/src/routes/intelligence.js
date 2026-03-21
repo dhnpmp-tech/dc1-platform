@@ -1,17 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { requireAdminAuth } = require('../middleware/auth');
 
-function requireAdminToken(req, res, next) {
-  const token = req.headers['x-admin-token'] || '';
-  const expected = process.env.DC1_ADMIN_TOKEN;
-  if (!expected || token !== expected) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-}
-
-router.use(requireAdminToken);
+router.use(requireAdminAuth);
 
 // Helper: extract GPU utilization from gpu_status JSON blob
 function extractUtilization(gpuStatusStr) {

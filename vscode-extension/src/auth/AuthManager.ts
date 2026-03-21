@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
-import { dc1 } from '../api/dc1Client';
+import { dc1, isAuthError } from '../api/dc1Client';
 
 const RENTER_SECRET_KEY = 'dc1.renterApiKey';
 const PROVIDER_SECRET_KEY = 'dc1.providerKey';
+const RENTER_SETTING_KEY = 'renterApiKey';
 
 export class AuthManager {
   // ── Renter key ────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ export class AuthManager {
   constructor(private readonly secrets: vscode.SecretStorage) {}
 
   async load(): Promise<void> {
-    this._apiKey = await this.secrets.get(RENTER_SECRET_KEY);
+    this._apiKey = await this.getStoredRenterKey();
     this._providerKey = await this.secrets.get(PROVIDER_SECRET_KEY);
   }
 
@@ -42,6 +43,34 @@ export class AuthManager {
     await this.secrets.delete(RENTER_SECRET_KEY);
     this._apiKey = undefined;
     this._onDidChangeKey.fire(undefined);
+  }
+
+  /**
+   * Resolve renter key from secure storage, with one-way migration from workspace settings.
+   * Settings key fallback is retained only for backward compatibility.
+   */
+  async getStoredRenterKey(): Promise<string | undefined> {
+    if (this._apiKey?.trim()) {
+      return this._apiKey.trim();
+    }
+
+    const secretKey = (await this.secrets.get(RENTER_SECRET_KEY))?.trim();
+    if (secretKey) {
+      this._apiKey = secretKey;
+      return secretKey;
+    }
+
+    const settings = vscode.workspace.getConfiguration('dc1');
+    const settingsKey = settings.get<string>(RENTER_SETTING_KEY, '').trim();
+    if (!settingsKey) {
+      return undefined;
+    }
+
+    await this.secrets.store(RENTER_SECRET_KEY, settingsKey);
+    this._apiKey = settingsKey;
+    this._onDidChangeKey.fire(settingsKey);
+    await settings.update(RENTER_SETTING_KEY, '', vscode.ConfigurationTarget.Global);
+    return settingsKey;
   }
 
   /**
@@ -88,11 +117,38 @@ export class AuthManager {
 
   /** Ensure renter key is set; prompt if not. Returns the key or undefined. */
   async ensureKey(): Promise<string | undefined> {
-    if (this._apiKey) {
-      return this._apiKey;
+    const existing = await this.getStoredRenterKey();
+    if (existing) {
+      return existing;
     }
     const saved = await this.promptAndSave();
     return saved ? this._apiKey : undefined;
+  }
+
+  /** Handle expired/invalid renter auth and prompt for re-authentication. */
+  async handleRenterAuthError(err: unknown, action: string): Promise<string | undefined> {
+    if (!isAuthError(err)) {
+      return this._apiKey;
+    }
+
+    await this.clearApiKey();
+    const next = await vscode.window.showWarningMessage(
+      `DCP: Authentication failed while ${action}. Re-enter renter API key?`,
+      'Re-authenticate',
+      'Open Settings'
+    );
+
+    if (next === 'Open Settings') {
+      await vscode.commands.executeCommand('workbench.action.openSettings', 'dc1.renterApiKey');
+      return undefined;
+    }
+
+    if (next === 'Re-authenticate') {
+      const saved = await this.promptAndSave();
+      return saved ? this._apiKey : undefined;
+    }
+
+    return undefined;
   }
 
   // ── Provider key accessors ────────────────────────────────────────

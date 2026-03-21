@@ -844,6 +844,8 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN model_preload_requested_at TEXT',
   'ALTER TABLE providers ADD COLUMN model_preload_updated_at TEXT',
   // Optional renter callback endpoint for job lifecycle webhooks
+  'ALTER TABLE renters ADD COLUMN use_case TEXT',
+  'ALTER TABLE renters ADD COLUMN phone TEXT',
   'ALTER TABLE renters ADD COLUMN webhook_url TEXT',
   'ALTER TABLE renters ADD COLUMN rotated_at TEXT',
   // PDPL deletion lifecycle tracking
@@ -888,6 +890,8 @@ db.exec(`
     email TEXT NOT NULL UNIQUE,
     api_key TEXT NOT NULL UNIQUE,
     organization TEXT,
+    use_case TEXT,
+    phone TEXT,
     status TEXT DEFAULT 'active',
     balance_halala INTEGER DEFAULT 0,
     total_spent_halala INTEGER DEFAULT 0,

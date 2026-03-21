@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../../components/layout/DashboardLayout'
 import StatusBadge from '../../../../components/ui/StatusBadge'
+import { useLanguage } from '../../../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -121,16 +122,6 @@ const ArrowLeftIcon = () => (
 )
 
 // ── Nav ────────────────────────────────────────────────────────────
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-  { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
-  { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
-]
-
 // ── Stat Card ──────────────────────────────────────────────────────
 function StatBlock({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -145,11 +136,21 @@ function StatBlock({ label, value, sub }: { label: string; value: string; sub?: 
 // ── Main Page ──────────────────────────────────────────────────────
 export default function ProviderProfilePage() {
   const params = useParams()
+  const { t } = useLanguage()
   const providerId = Number(params.id)
 
   const [provider, setProvider] = useState<Provider | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
+  ]
 
   useEffect(() => {
     if (!providerId || isNaN(providerId)) {
@@ -180,7 +181,7 @@ export default function ProviderProfilePage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="w-8 h-8 border-2 border-dc1-amber border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-dc1-text-muted text-sm">Loading provider profile…</p>
+            <p className="text-dc1-text-muted text-sm">{t('renter.provider_profile.loading')}</p>
           </div>
         </div>
       </DashboardLayout>
@@ -193,10 +194,10 @@ export default function ProviderProfilePage() {
       <DashboardLayout navItems={navItems} role="renter">
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
           <GpuIcon />
-          <h1 className="text-xl font-semibold text-dc1-text-primary">Provider not found</h1>
-          <p className="text-dc1-text-muted text-sm">This provider may be offline or no longer available.</p>
+          <h1 className="text-xl font-semibold text-dc1-text-primary">{t('renter.provider_profile.not_found')}</h1>
+          <p className="text-dc1-text-muted text-sm">{t('renter.provider_profile.not_found_hint')}</p>
           <Link href="/renter/marketplace" className="btn btn-primary text-sm">
-            Back to Marketplace
+            {t('renter.provider_profile.back_to_marketplace')}
           </Link>
         </div>
       </DashboardLayout>
@@ -219,7 +220,7 @@ export default function ProviderProfilePage() {
           className="inline-flex items-center gap-1.5 text-sm text-dc1-text-muted hover:text-dc1-text-primary transition-colors"
         >
           <ArrowLeftIcon />
-          Back to Marketplace
+          {t('renter.provider_profile.back_to_marketplace')}
         </Link>
       </div>
 
@@ -237,7 +238,7 @@ export default function ProviderProfilePage() {
             />
             {provider.is_live && (
               <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-status-success/15 text-status-success border border-status-success/30">
-                Available Now
+                {t('renter.provider_profile.available_now')}
               </span>
             )}
           </div>
@@ -258,7 +259,7 @@ export default function ProviderProfilePage() {
           href={`/renter/playground?provider=${provider.id}`}
           className="btn btn-primary px-6 py-2.5 text-sm font-semibold whitespace-nowrap"
         >
-          Rent GPU
+          {t('marketplace.rent_now')}
         </Link>
       </div>
 

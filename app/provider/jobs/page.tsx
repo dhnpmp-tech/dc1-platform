@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -53,20 +54,20 @@ const GpuIcon = () => (
   </svg>
 )
 
-const navItems = [
-  { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
-  { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
-  { label: 'Earnings', href: '/provider/earnings', icon: <CurrencyIcon /> },
-  { label: 'GPU Metrics', href: '/provider/gpu', icon: <GpuIcon /> },
-  { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
-]
-
 export default function ProviderJobsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [providerName, setProviderName] = useState('Provider')
   const [stats, setStats] = useState({ total: 0, completed: 0, failed: 0, earned: 0 })
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
+    { label: t('nav.jobs'), href: '/provider/jobs', icon: <LightningIcon /> },
+    { label: t('nav.earnings'), href: '/provider/earnings', icon: <CurrencyIcon /> },
+    { label: t('nav.gpu_metrics'), href: '/provider/gpu', icon: <GpuIcon /> },
+    { label: t('nav.settings'), href: '/provider/settings', icon: <GearIcon /> },
+  ]
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_provider_key')
@@ -122,24 +123,24 @@ export default function ProviderJobsPage() {
   return (
     <DashboardLayout navItems={navItems} role="provider" userName={providerName}>
       <div className="space-y-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">Job History</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">{t('provider.jobs.history_title')}</h1>
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Total Jobs</p>
+            <p className="text-sm text-dc1-text-secondary">{t('provider.jobs.total_jobs')}</p>
             <p className="text-2xl font-bold text-dc1-text-primary">{stats.total}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Completed</p>
+            <p className="text-sm text-dc1-text-secondary">{t('table.completed')}</p>
             <p className="text-2xl font-bold text-status-success">{stats.completed}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Failed</p>
+            <p className="text-sm text-dc1-text-secondary">{t('provider.jobs.failed')}</p>
             <p className="text-2xl font-bold text-status-error">{stats.failed}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">Total Earned</p>
+            <p className="text-sm text-dc1-text-secondary">{t('provider.jobs.total_earned')}</p>
             <p className="text-2xl font-bold text-dc1-amber">{stats.earned.toFixed(2)} SAR</p>
           </div>
         </div>
@@ -149,12 +150,12 @@ export default function ProviderJobsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>Renter</th>
-                <th>Duration</th>
-                <th>Status</th>
-                <th>Earned</th>
+                <th>{t('provider.jobs.time')}</th>
+                <th>{t('table.type')}</th>
+                <th>{t('provider.jobs.renter')}</th>
+                <th>{t('table.duration')}</th>
+                <th>{t('table.status')}</th>
+                <th>{t('table.earnings')}</th>
               </tr>
             </thead>
             <tbody>
@@ -167,15 +168,15 @@ export default function ProviderJobsPage() {
                           ? new Date(j.completed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                           : j.submitted_at
                           ? new Date(j.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                          : '—'}
+                          : t('provider.jobs.na')}
                       </Link>
                     </td>
                     <td>
                       <Link href={`/provider/jobs/${j.id}`} className="text-sm hover:text-dc1-amber transition">{(j.job_type || '').replace(/_/g, ' ')}</Link>
                     </td>
-                    <td className="text-sm text-dc1-text-secondary">{j.renter_name || '—'}</td>
+                    <td className="text-sm text-dc1-text-secondary">{j.renter_name || t('provider.jobs.na')}</td>
                     <td className="text-sm text-dc1-text-secondary">
-                      {j.actual_duration_minutes ? `${j.actual_duration_minutes} min` : '—'}
+                      {j.actual_duration_minutes ? `${j.actual_duration_minutes} ${t('common.min')}` : t('provider.jobs.na')}
                     </td>
                     <td>
                       <StatusBadge status={j.status as any} />
@@ -186,14 +187,14 @@ export default function ProviderJobsPage() {
                     <td className="text-dc1-amber font-semibold">
                       {j.status === 'completed' && j.provider_earned_halala
                         ? `${(j.provider_earned_halala / 100).toFixed(2)} SAR`
-                        : '—'}
+                        : t('provider.jobs.na')}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-dc1-text-secondary">
-                    No jobs yet. Once renters submit jobs to your GPU, they will appear here.
+                    {t('provider.jobs.empty')}
                   </td>
                 </tr>
               )}

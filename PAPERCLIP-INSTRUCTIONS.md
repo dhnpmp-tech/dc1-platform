@@ -246,3 +246,63 @@ Read `DCP-AGENT-BRIEFING.md` — it contains:
 - Environment variables reference
 - Provider daemon lifecycle
 - Gap analysis vs vast.ai
+
+---
+
+## RESEARCH-TO-IMPLEMENTATION LOOP (MANDATORY)
+
+This is the core process that makes DCP self-improving. Every agent MUST follow this.
+
+### For CEO Agent (Mandatory Every Heartbeat):
+
+1. **Read Completed Deliverables**: Check for any issues in 'done' status that have attached documents or reports in docs/ directory. Read them fully.
+2. **Extract Actionable Items**: From every research report, UX audit, competitive analysis, or content draft, extract EVERY actionable recommendation.
+3. **Create Implementation Issues**: For each actionable item, create a new issue with clear title, description including file paths and acceptance criteria, and priority.
+4. **Assign to Right Engineer**: Match each task to the agent with the right expertise (frontend dev for UI changes, backend dev for API work, etc.).
+5. **Track Completion**: In your next heartbeat, check if assigned issues are progressing. If stalled, reassign or break down further.
+
+### For ALL Agents (Self-Improving Behavior):
+
+- When you complete a task and discover something that needs follow-up work, create a new issue for it immediately.
+- When you encounter an unexpected finding during implementation, document it and create an issue.
+- When you see something broken or wrong that is outside your current task scope, flag it as a new issue.
+- Never let knowledge die in a completed issue. If it is actionable, it becomes a new issue.
+
+### For Research Agents (UX Researcher, Copywriter, UI/UX Specialist):
+
+Every deliverable MUST include an "Implementation Checklist" section at the end with:
+- Specific file paths to modify
+- Exact changes needed (not vague suggestions)
+- Priority ranking (P0, P1, P2)
+- Acceptance criteria for each item
+- Suggested assignee role
+
+---
+
+## DCP UNIQUE POSITIONING (ALL AGENTS MUST KNOW)
+
+DCP has two key competitive advantages that must be emphasized in all content, copy, and strategic decisions:
+
+### 1. Saudi Energy Cost Advantage
+- Saudi Arabia has among the lowest electricity costs globally
+- This is a structural, permanent advantage (not a temporary promo)
+- This means GPU compute on DCP can be fundamentally cheaper than US/EU-based providers
+- This MUST be headline-level messaging, not buried in a FAQ
+- Compare to: Vast.ai, RunPod, Lambda all run on expensive US/EU energy
+
+### 2. Arabic AI Models - First-Class Support
+- DCP natively supports Arabic-optimized AI models:
+  - ALLaM 7B (SDAIA foundation model)
+  - Falcon H1 (TII Abu Dhabi)
+  - JAIS 13B (Inception/G42)
+  - BGE-M3 (multilingual embeddings)
+- No other GPU cloud platform offers this level of Arabic AI support
+- This is a key differentiator for MENA customers
+- Position as: "The home for Arabic AI development"
+
+### Content Guidelines:
+- NEVER invent pricing, rates, or financial figures unless explicitly approved by leadership
+- NEVER claim "bare-metal" GPUs - DCP uses GPU-accelerated Docker containers with NVIDIA Container Toolkit
+- Always lead with the energy cost advantage and Arabic AI support as top-level differentiators
+- NO billing, Moyasar, or escrow implementation until platform is stable
+- Focus on: features, hardening, containers, models, auth flows, scale readiness

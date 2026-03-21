@@ -1,4 +1,5 @@
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { getAdminTokenFromReq } = require('./auth');
 
 function ipFallbackKey(req) {
   return `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`;
@@ -49,14 +50,7 @@ function getApiKey(req) {
 }
 
 function getAdminToken(req) {
-  const headerToken = req.headers['x-admin-token'];
-  if (headerToken) return String(headerToken);
-
-  const authHeader = String(req.headers.authorization || '');
-  const bearer = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (bearer && bearer[1]) return bearer[1];
-
-  return null;
+  return getAdminTokenFromReq(req);
 }
 
 const registerLimiter = createRateLimiter({

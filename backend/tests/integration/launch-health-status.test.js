@@ -40,8 +40,8 @@ function createLaunchCheckApp() {
 }
 
 function cleanDb() {
-  try { db.run('DELETE FROM jobs'); } catch (_) {}
-  try { db.run('DELETE FROM providers'); } catch (_) {}
+  try { db.prepare('DELETE FROM jobs').run(); } catch (_) {}
+  try { db.prepare('DELETE FROM providers').run(); } catch (_) {}
 }
 
 describe('Launch readiness health/status endpoints', () => {
@@ -65,8 +65,43 @@ describe('Launch readiness health/status endpoints', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
     expect(res.body.db).toBe('ok');
+    expect(typeof res.body.timestamp).toBe('string');
     expect(res.body.providers).toBeDefined();
     expect(res.body.jobs).toBeDefined();
+    expect(typeof res.body.providers.total).toBe('number');
+    expect(typeof res.body.providers.online).toBe('number');
+    expect(typeof res.body.jobs.queued).toBe('number');
+    expect(typeof res.body.jobs.running).toBe('number');
+    expect(typeof res.body.sweepErrors).toBe('number');
+  });
+
+  test('GET /api/health reflects provider/job counters from DB state', async () => {
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO providers (name, email, api_key, gpu_model, os, status, last_heartbeat, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('Health Provider 1', `health-p1-${Date.now()}@dcp.test`, `dc1-provider-health-1-${Date.now()}`, 'RTX 4090', 'linux', 'online', nowIso, nowIso, nowIso);
+    db.prepare(
+      `INSERT INTO providers (name, email, api_key, gpu_model, os, status, last_heartbeat, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('Health Provider 2', `health-p2-${Date.now()}@dcp.test`, `dc1-provider-health-2-${Date.now()}`, 'RTX 3090', 'linux', 'offline', nowIso, nowIso, nowIso);
+
+    db.prepare(
+      `INSERT INTO jobs (job_id, status, created_at)
+       VALUES (?, ?, ?)`
+    ).run(`job-health-queued-${Date.now()}`, 'queued', nowIso);
+    db.prepare(
+      `INSERT INTO jobs (job_id, status, created_at)
+       VALUES (?, ?, ?)`
+    ).run(`job-health-running-${Date.now()}`, 'running', nowIso);
+
+    const res = await request(app).get('/api/health');
+
+    expect(res.status).toBe(200);
+    expect(res.body.providers.total).toBe(2);
+    expect(res.body.providers.online).toBe(1);
+    expect(res.body.jobs.queued).toBe(1);
+    expect(res.body.jobs.running).toBe(1);
   });
 
   test('GET /api/providers/available responds with JSON list', async () => {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -16,18 +17,6 @@ const CpuIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" 
 const ContainerIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>)
 const CurrencyIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 const WalletIcon = () => (<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>)
-
-const navItems = [
-  { label: 'Dashboard', href: '/admin', icon: <HomeIcon /> },
-  { label: 'Providers', href: '/admin/providers', icon: <ServerIcon /> },
-  { label: 'Renters', href: '/admin/renters', icon: <UsersIcon /> },
-  { label: 'Jobs', href: '/admin/jobs', icon: <BriefcaseIcon /> },
-  { label: 'Finance', href: '/admin/finance', icon: <CurrencyIcon /> },
-  { label: 'Withdrawals', href: '/admin/withdrawals', icon: <WalletIcon /> },
-  { label: 'Security', href: '/admin/security', icon: <ShieldIcon /> },
-  { label: 'Fleet Health', href: '/admin/fleet', icon: <CpuIcon /> },
-  { label: 'Containers', href: '/admin/containers', icon: <ContainerIcon /> },
-]
 
 interface SecurityEvent {
   id: number
@@ -47,6 +36,7 @@ interface SecuritySummary {
 }
 
 export default function SecurityPage() {
+  const { t } = useLanguage()
   const router = useRouter()
   const [events, setEvents] = useState<SecurityEvent[]>([])
   const [summary, setSummary] = useState<SecuritySummary | null>(null)
@@ -56,6 +46,17 @@ export default function SecurityPage() {
   const [auditPage, setAuditPage] = useState(1)
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
+    { label: t('nav.providers'), href: '/admin/providers', icon: <ServerIcon /> },
+    { label: t('nav.renters'), href: '/admin/renters', icon: <UsersIcon /> },
+    { label: t('nav.jobs'), href: '/admin/jobs', icon: <BriefcaseIcon /> },
+    { label: t('nav.finance'), href: '/admin/finance', icon: <CurrencyIcon /> },
+    { label: t('nav.withdrawals'), href: '/admin/withdrawals', icon: <WalletIcon /> },
+    { label: t('nav.security'), href: '/admin/security', icon: <ShieldIcon /> },
+    { label: t('nav.fleet'), href: '/admin/fleet', icon: <CpuIcon /> },
+    { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
+  ]
 
   useEffect(() => {
     if (!token) { router.push('/login'); return }
@@ -147,31 +148,31 @@ export default function SecurityPage() {
   }
 
   const formatTime = (iso: string) => {
-    if (!iso) return 'Unknown'
+    if (!iso) return t('admin.security.unknown')
     const date = new Date(iso)
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
   return (
-    <DashboardLayout navItems={navItems} role="admin" userName="Admin">
+    <DashboardLayout navItems={navItems} role="admin" userName={t('admin.security.admin_fallback')}>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">Security & Audit Log</h1>
+        <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('admin.security.title')}</h1>
         <p className="text-dc1-text-secondary">
-          Monitor security events and system activity
+          {t('admin.security.subtitle')}
         </p>
       </div>
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Events" value={String(summary?.total_events ?? 0)} accent="info" />
-        <StatCard label="High Severity" value={String(summary?.high_severity ?? 0)} accent="error" />
-        <StatCard label="Medium Severity" value={String(summary?.medium_severity ?? 0)} accent="amber" />
-        <StatCard label="Flagged Providers" value={String(summary?.flagged_providers ?? 0)} accent="default" />
+        <StatCard label={t('admin.security.total_events')} value={String(summary?.total_events ?? 0)} accent="info" />
+        <StatCard label={t('admin.security.high_severity')} value={String(summary?.high_severity ?? 0)} accent="error" />
+        <StatCard label={t('admin.security.medium_severity')} value={String(summary?.medium_severity ?? 0)} accent="amber" />
+        <StatCard label={t('admin.security.flagged_providers')} value={String(summary?.flagged_providers ?? 0)} accent="default" />
       </div>
 
       {/* Events Table */}
       {loading ? (
-        <div className="text-dc1-text-secondary">Loading security events...</div>
+        <div className="text-dc1-text-secondary">{t('admin.security.loading')}</div>
       ) : (
         <>
           <div className="card mb-8">
@@ -179,11 +180,11 @@ export default function SecurityPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Timestamp</th>
-                    <th>Event Type</th>
-                    <th>Severity</th>
-                    <th>Provider</th>
-                    <th>Details</th>
+                    <th>{t('admin.security.timestamp')}</th>
+                    <th>{t('admin.security.event_type')}</th>
+                    <th>{t('admin.security.severity')}</th>
+                    <th>{t('admin.security.provider')}</th>
+                    <th>{t('admin.security.details')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,7 +194,7 @@ export default function SecurityPage() {
                       <td className="text-sm font-medium">{event.event_type}</td>
                       <td>
                         <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getSeverityColor(event.severity)}`}>
-                          {event.severity?.charAt(0).toUpperCase() + event.severity?.slice(1) || 'Unknown'}
+                          {event.severity?.charAt(0).toUpperCase() + event.severity?.slice(1) || t('admin.security.unknown')}
                         </span>
                       </td>
                       <td className="text-sm">{event.provider_name || event.provider_id || '—'}</td>
@@ -201,7 +202,7 @@ export default function SecurityPage() {
                     </tr>
                   ))}
                   {events.length === 0 && (
-                    <tr><td colSpan={5} className="text-dc1-text-muted text-sm text-center">No security events found</td></tr>
+                    <tr><td colSpan={5} className="text-dc1-text-muted text-sm text-center">{t('admin.security.no_events')}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -211,17 +212,17 @@ export default function SecurityPage() {
           {/* Audit Log Table */}
           <div className="card">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold text-dc1-text-primary">Admin Audit Log</h2>
-              <p className="text-sm text-dc1-text-secondary">Track administrative actions and changes</p>
+              <h2 className="text-xl font-semibold text-dc1-text-primary">{t('admin.security.audit_title')}</h2>
+              <p className="text-sm text-dc1-text-secondary">{t('admin.security.audit_subtitle')}</p>
             </div>
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Timestamp</th>
-                    <th>Action</th>
-                    <th>Target</th>
-                    <th>Details</th>
+                    <th>{t('admin.security.timestamp')}</th>
+                    <th>{t('admin.security.action')}</th>
+                    <th>{t('admin.security.target')}</th>
+                    <th>{t('admin.security.details')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -230,7 +231,7 @@ export default function SecurityPage() {
                       <td className="text-sm text-dc1-text-secondary">{formatTime(entry.timestamp)}</td>
                       <td>
                         <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getActionColor(entry.action)}`}>
-                          {entry.action?.replace(/_/g, ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Unknown'}
+                          {entry.action?.replace(/_/g, ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || t('admin.security.unknown')}
                         </span>
                       </td>
                       <td className="text-sm font-medium">{entry.target_type} #{entry.target_id}</td>
@@ -238,7 +239,7 @@ export default function SecurityPage() {
                     </tr>
                   ))}
                   {auditLog.length === 0 && (
-                    <tr><td colSpan={4} className="text-dc1-text-muted text-sm text-center">No audit log entries found</td></tr>
+                    <tr><td colSpan={4} className="text-dc1-text-muted text-sm text-center">{t('admin.security.no_audit_entries')}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -248,7 +249,10 @@ export default function SecurityPage() {
             {auditPagination && auditPagination.total_pages > 1 && (
               <div className="mt-6 flex items-center justify-between border-t border-dc1-border pt-4">
                 <div className="text-sm text-dc1-text-secondary">
-                  Page {auditPagination.page} of {auditPagination.total_pages} ({auditPagination.total} total entries)
+                  {t('admin.security.pagination')
+                    .replace('{page}', String(auditPagination.page))
+                    .replace('{totalPages}', String(auditPagination.total_pages))
+                    .replace('{total}', String(auditPagination.total))}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -256,14 +260,14 @@ export default function SecurityPage() {
                     disabled={auditPage === 1}
                     className="px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3"
                   >
-                    Previous
+                    {t('admin.security.previous')}
                   </button>
                   <button
                     onClick={() => setAuditPage(Math.min(auditPagination.total_pages, auditPage + 1))}
                     disabled={auditPage === auditPagination.total_pages}
                     className="px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3"
                   >
-                    Next
+                    {t('admin.security.next')}
                   </button>
                 </div>
               </div>

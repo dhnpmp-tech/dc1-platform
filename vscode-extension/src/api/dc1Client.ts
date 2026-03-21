@@ -3,6 +3,37 @@ import * as http from 'http';
 import * as vscode from 'vscode';
 import { IncomingMessage } from 'http';
 
+export class DC1ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode?: number,
+    public readonly responseBody?: string
+  ) {
+    super(message);
+    this.name = 'DC1ApiError';
+  }
+}
+
+export function isAuthError(err: unknown): boolean {
+  if (err instanceof DC1ApiError && (err.statusCode === 401 || err.statusCode === 403)) {
+    return true;
+  }
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  return /(?:^|\b)(401|403|unauthori[sz]ed|forbidden|invalid api key|api key is required|session expired)(?:\b|$)/i.test(err.message);
+}
+
+export function isRetryableError(err: unknown): boolean {
+  if (err instanceof DC1ApiError) {
+    return err.statusCode !== undefined && [408, 425, 429, 500, 502, 503, 504].includes(err.statusCode);
+  }
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  return /timed out|timeout|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(err.message);
+}
+
 export interface Provider {
   id: string;
   name: string;
@@ -179,13 +210,13 @@ export class DC1Client {
           try {
             const parsed = JSON.parse(body);
             if (statusCode >= 400) {
-              reject(new Error(parsed.error || parsed.message || `HTTP ${statusCode}`));
+              reject(new DC1ApiError(parsed.error || parsed.message || `HTTP ${statusCode}`, statusCode, body));
               return;
             }
             resolve(parsed as T);
           } catch {
             if (statusCode >= 400) {
-              reject(new Error(`HTTP ${statusCode}: ${body.slice(0, 200)}`));
+              reject(new DC1ApiError(`HTTP ${statusCode}: ${body.slice(0, 200)}`, statusCode, body));
               return;
             }
             reject(new Error(`Failed to parse response: ${body.slice(0, 200)}`));
@@ -193,7 +224,10 @@ export class DC1Client {
         });
       });
 
-      req.on('error', reject);
+      req.on('error', (err: NodeJS.ErrnoException) => {
+        const code = err.code ? `${err.code}: ` : '';
+        reject(new Error(`${code}${err.message}`));
+      });
       req.setTimeout(timeoutMs, () => {
         req.destroy();
         reject(new Error(`Request timed out after ${timeoutMs / 1000}s`));
@@ -279,57 +313,115 @@ export class DC1Client {
 
     let req: http.ClientRequest | null = null;
     let aborted = false;
+    let connectAttempt = 0;
+    const maxConnectAttempts = 3;
+    let hasReceivedAnyData = false;
 
     const dispose = () => {
       aborted = true;
       req?.destroy();
     };
 
-    try {
-      req = lib.request(options, (res: IncomingMessage) => {
-        if (res.statusCode && res.statusCode >= 400) {
-          onError(new Error(`SSE stream returned HTTP ${res.statusCode}`));
-          return;
-        }
+    const maybeRetryOrFail = (err: Error, hasDataForThisAttempt: boolean) => {
+      if (aborted) {
+        return;
+      }
 
-        let buffer = '';
-        res.setEncoding('utf8');
+      if (!hasDataForThisAttempt && connectAttempt < maxConnectAttempts && isRetryableError(err)) {
+        const backoffMs = connectAttempt * 1000;
+        setTimeout(() => startStream(), backoffMs);
+        return;
+      }
 
-        res.on('data', (chunk: string) => {
-          if (aborted) { return; }
-          buffer += chunk;
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
+      onError(err);
+    };
 
-          for (const line of lines) {
-            if (line.startsWith('data:')) {
-              const data = line.slice(5).trim();
-              if (data && data !== '[DONE]') {
-                onLine(data);
+    const startStream = () => {
+      if (aborted) {
+        return;
+      }
+
+      connectAttempt += 1;
+      let hasDataForThisAttempt = false;
+
+      try {
+        req = lib.request(options, (res: IncomingMessage) => {
+          if (res.statusCode && res.statusCode >= 400) {
+            let errorBody = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => (errorBody += chunk));
+            res.on('end', () => {
+              let message = `SSE stream returned HTTP ${res.statusCode}`;
+              const trimmed = errorBody.trim();
+              if (trimmed) {
+                try {
+                  const parsed = JSON.parse(trimmed) as { error?: string; message?: string };
+                  message = parsed.error || parsed.message || message;
+                } catch {
+                  message = `${message}: ${trimmed.slice(0, 200)}`;
+                }
+              }
+              maybeRetryOrFail(new DC1ApiError(message, res.statusCode, trimmed), false);
+            });
+            return;
+          }
+
+          connectAttempt = maxConnectAttempts;
+          let buffer = '';
+          res.setEncoding('utf8');
+
+          res.on('data', (chunk: string) => {
+            if (aborted) { return; }
+            buffer += chunk;
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (line.startsWith('data:')) {
+                const data = line.slice(5).trim();
+                if (data && data !== '[DONE]') {
+                  hasDataForThisAttempt = true;
+                  hasReceivedAnyData = true;
+                  onLine(data);
+                }
               }
             }
-          }
+          });
+
+          res.on('end', () => {
+            if (!aborted) {
+              onEnd();
+            }
+          });
+
+          res.on('error', (err: Error) => {
+            maybeRetryOrFail(err, hasDataForThisAttempt);
+          });
         });
 
-        res.on('end', () => {
+        req.on('error', (err: NodeJS.ErrnoException) => {
+          const code = err.code ? `${err.code}: ` : '';
+          maybeRetryOrFail(new Error(`${code}${err.message}`), hasDataForThisAttempt);
+        });
+
+        req.setTimeout(300_000, () => {
+          req?.destroy();
+          if (!hasReceivedAnyData) {
+            maybeRetryOrFail(new Error('SSE connection timed out before receiving log data'), hasDataForThisAttempt);
+            return;
+          }
           if (!aborted) { onEnd(); }
         });
 
-        res.on('error', (err: Error) => {
-          if (!aborted) { onError(err); }
-        });
-      });
+        req.end();
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        maybeRetryOrFail(error, hasDataForThisAttempt);
+      }
+    };
 
-      req.on('error', (err: Error) => {
-        if (!aborted) { onError(err); }
-      });
-
-      req.setTimeout(300_000, () => {
-        req?.destroy();
-        if (!aborted) { onEnd(); }
-      });
-
-      req.end();
+    try {
+      startStream();
     } catch (err) {
       onError(err instanceof Error ? err : new Error(String(err)));
     }

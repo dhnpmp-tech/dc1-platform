@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -14,7 +14,10 @@ interface RegistrationResult {
 }
 
 export default function RenterRegisterPage() {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
+  const isRTL = language === 'ar'
+  const billingExplainerRef = useRef<HTMLDivElement | null>(null)
+  const hasTrackedBillingExplainerView = useRef(false)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -29,6 +32,22 @@ export default function RenterRegisterPage() {
   const [result, setResult] = useState<RegistrationResult | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+
+  const trackRegisterEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = { event, source: 'renter_register', ...payload }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & {
+      dataLayer?: Array<Record<string, unknown>>
+      gtag?: (...args: unknown[]) => void
+    }
+    if (Array.isArray(win.dataLayer)) {
+      win.dataLayer.push(detail)
+    }
+    if (typeof win.gtag === 'function') {
+      win.gtag('event', event, detail)
+    }
+  }, [])
 
   const useCaseOptions = [
     'AI Training',
@@ -67,6 +86,8 @@ export default function RenterRegisterPage() {
           name: formData.name.trim(),
           email: formData.email.trim(),
           organization: formData.organization.trim() || undefined,
+          use_case: formData.useCase.trim() || undefined,
+          phone: formData.phone.trim() || undefined,
         }),
       })
 
@@ -99,7 +120,43 @@ export default function RenterRegisterPage() {
     window.location.href = '/renter'
   }
 
+  useEffect(() => {
+    const node = billingExplainerRef.current
+    if (!node || hasTrackedBillingExplainerView.current || success) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (hasTrackedBillingExplainerView.current) return
+        if (entries.some((entry) => entry.isIntersecting)) {
+          hasTrackedBillingExplainerView.current = true
+          trackRegisterEvent('billing_explainer_viewed', { page: 'renter_register' })
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.35 }
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [success, trackRegisterEvent])
+
   if (success && result) {
+    const firstJobChecklist = isRTL
+      ? [
+          { label: 'سجّلت الحساب', href: '/renter/register' },
+          { label: 'اشحن المحفظة', href: '/renter/billing' },
+          { label: 'اختر GPU من السوق', href: '/renter/marketplace' },
+          { label: 'أرسل وظيفة تجريبية', href: '/renter/playground?starter=1' },
+          { label: 'راقب المخرجات والسجلات', href: '/renter/jobs' },
+        ]
+      : [
+          { label: 'Register account', href: '/renter/register' },
+          { label: 'Top up wallet', href: '/renter/billing' },
+          { label: 'Choose GPU in marketplace', href: '/renter/marketplace' },
+          { label: 'Submit starter job', href: '/renter/playground?starter=1' },
+          { label: 'Monitor output and logs', href: '/renter/jobs' },
+        ]
+
     return (
       <>
         <Header />
@@ -133,6 +190,35 @@ export default function RenterRegisterPage() {
                 {t('register.renter.key_security')}
               </p>
 
+              <div className={`bg-dc1-surface-l2 border border-dc1-border rounded-lg p-5 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <h3 className="text-base font-semibold text-dc1-text-primary mb-3">
+                  {isRTL ? 'قائمة أول وظيفة للمستأجر' : 'Renter first-job checklist'}
+                </h3>
+                <ol className="space-y-2 text-sm text-dc1-text-secondary">
+                  {firstJobChecklist.map((item, index) => (
+                    <li key={item.href} className={`flex items-center justify-between gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l3 px-3 py-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      <span>
+                        {index + 1}. {item.label}
+                      </span>
+                      <a
+                        href={item.href}
+                        onClick={() =>
+                          trackRegisterEvent('first_job_checklist_step_clicked', {
+                            page: 'renter_register_success',
+                            step_index: index + 1,
+                            step_label: item.label,
+                            destination: item.href,
+                          })
+                        }
+                        className="text-xs font-medium text-dc1-amber hover:underline"
+                      >
+                        {isRTL ? 'افتح' : 'Open'}
+                      </a>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-3">
                 <a href="/renter" className="btn btn-primary flex-1">
                   {t('register.renter.go_dashboard')}
@@ -162,6 +248,19 @@ export default function RenterRegisterPage() {
             <p className="text-xl text-dc1-text-secondary max-w-2xl mx-auto">
               {t('register.renter.subtitle_main')}
             </p>
+          </div>
+        </section>
+
+        {/* Billing transparency */}
+        <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+          <div ref={billingExplainerRef} className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
+            <h2 className="text-lg font-semibold text-dc1-text-primary mb-3">How DCP Billing Works</h2>
+            <ul className="space-y-2 text-sm text-dc1-text-secondary">
+              <li>1. We place a prepay estimate hold in halala before your job starts.</li>
+              <li>2. Final cost settles on actual runtime, not the initial estimate.</li>
+              <li>3. Any unused hold is automatically refunded in halala after completion.</li>
+            </ul>
+            <p className="mt-3 text-xs text-dc1-text-muted">100 halala = 1 SAR.</p>
           </div>
         </section>
 
@@ -240,6 +339,7 @@ export default function RenterRegisterPage() {
                   name="useCase"
                   value={formData.useCase}
                   onChange={handleChange}
+                  required
                   className="input"
                 >
                   {useCaseOptions.map(option => (
@@ -261,7 +361,7 @@ export default function RenterRegisterPage() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
-                  placeholder="+1 (555) 123-4567"
+                  placeholder={t('register.renter.phone_placeholder')}
                   className="input"
                 />
               </div>

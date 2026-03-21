@@ -4,6 +4,7 @@ const { execFileSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
 const { retryJobLimiter } = require('../middleware/rateLimiter');
+const { getApiKeyFromReq, isAdminRequest, requireAdminAuth } = require('../middleware/auth');
 const { validateAndNormalizeImageRef, isApprovedImageRef } = require('../lib/container-registry');
 const { getChainEscrow } = require('../services/escrow-chain');
 const {
@@ -382,19 +383,24 @@ function applyRetryMetadata(job) {
 }
 
 function isAdmin(req) {
-  const provided = req.headers['x-admin-token'] || '';
-  const expected = process.env.DC1_ADMIN_TOKEN;
-  return !!expected && provided === expected;
+  return isAdminRequest(req);
 }
 
 function getRenterFromReq(req) {
-  const key = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
+  const key = getApiKeyFromReq(req, {
+    headerName: 'x-renter-key',
+    queryNames: ['renter_key', 'key'],
+  });
   if (!key) return null;
   return db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active') || null;
 }
 
 function getProviderFromReq(req) {
-  const key = req.headers['x-provider-key'] || req.query.key || req.body?.api_key;
+  const key = getApiKeyFromReq(req, {
+    headerName: 'x-provider-key',
+    queryNames: ['key'],
+    bodyNames: ['api_key'],
+  });
   if (!key) return null;
   return db.get('SELECT id FROM providers WHERE api_key = ?', key) || null;
 }
@@ -635,7 +641,10 @@ function appendJobLogs(job, lines) {
 
 // Renter auth middleware — validates renter API key from header or query
 function requireRenter(req, res, next) {
-  const key = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
+  const key = getApiKeyFromReq(req, {
+    headerName: 'x-renter-key',
+    queryNames: ['renter_key', 'key'],
+  });
   if (!key) {
     return res.status(401).json({ error: 'Renter API key required (x-renter-key header or renter_key query)' });
   }
@@ -2032,8 +2041,11 @@ router.post('/:job_id/result', (req, res) => {
 router.get('/active', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
+    if (!actor) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     let jobs = [];
-    if (!actor || actor.type === 'admin') {
+    if (actor.type === 'admin') {
       jobs = db.all(
         `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running', 'paused') ORDER BY submitted_at DESC`
       );
@@ -2059,6 +2071,9 @@ router.get('/active', (req, res) => {
 router.get('/queue/:provider_id(\\d+)', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
+    if (!actor) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
     const providerId = parseInt(req.params.provider_id, 10);
     if (!Number.isInteger(providerId) || providerId <= 0) {
@@ -2105,6 +2120,9 @@ router.get('/queue/:provider_id(\\d+)', (req, res) => {
 router.get('/queue/status', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
+    if (!actor) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     const whereParts = [`status = 'queued'`];
     const params = [];
     if (actor?.type === 'provider') {
@@ -3547,18 +3565,8 @@ function enforceJobTimeouts() {
 // ============================================================================
 // POST /api/jobs/test - Admin creates test benchmark job for a provider
 // ============================================================================
-router.post('/test', (req, res) => {
+router.post('/test', requireAdminAuth, (req, res) => {
   try {
-    const adminToken = req.headers['x-admin-token']
-      || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    const expectedToken = process.env.DC1_ADMIN_TOKEN;
-    if (!expectedToken) {
-      return res.status(503).json({ error: 'Admin token not configured' });
-    }
-    if (adminToken !== expectedToken) {
-      return res.status(403).json({ error: 'Admin token required' });
-    }
-
     const { provider_id, matrix_size, iterations } = req.body;
     const providerId = toFiniteInt(provider_id, { min: 1 });
     if (!providerId) return res.status(400).json({ error: 'provider_id required' });

@@ -6,9 +6,11 @@ import { useState } from 'react'
 import { LanguageToggle } from '../../lib/i18n'
 
 const publicNav = [
-  { label: 'Compute', href: '/renter/register' },
-  { label: 'Supply', href: '/provider/register' },
+  { label: 'Rent GPUs', href: '/renter/register' },
+  { label: 'Earn with GPUs', href: '/provider/register' },
+  { label: 'Marketplace', href: '/marketplace' },
   { label: 'Docs', href: '/docs' },
+  { label: 'Support', href: '/support' },
 ]
 
 export default function Header() {
@@ -56,8 +58,8 @@ export default function Header() {
             <Link href="/login" className="btn btn-secondary btn-sm">
               Console Login
             </Link>
-            <Link href="/provider/register" className="btn btn-primary btn-sm">
-              Get Early Access
+            <Link href="/renter/register" className="btn btn-primary btn-sm">
+              Rent GPUs
             </Link>
           </div>
 
@@ -99,7 +101,7 @@ export default function Header() {
             <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-dc1-border px-4">
               <LanguageToggle className="self-start" />
               <Link href="/login" className="btn btn-secondary text-center">Console Login</Link>
-              <Link href="/provider/register" className="btn btn-primary text-center">Get Early Access</Link>
+              <Link href="/renter/register" className="btn btn-primary text-center">Rent GPUs</Link>
             </div>
           </div>
         )}

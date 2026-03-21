@@ -12,6 +12,7 @@ const {
     providerAccountDeletionLimiter,
     providerDataExportLimiter,
 } = require('../middleware/rateLimiter');
+const { isAdminRequest } = require('../middleware/auth');
 const { sendAlert } = require('../services/notifications');
 const {
     sendWelcomeEmail,
@@ -1472,6 +1473,19 @@ function discoverComputeTypesFromResourceSpec(resourceSpec) {
             if (Array.isArray(env?.compute_types)) env.compute_types.forEach(addCapability);
         });
     }
+    if (Array.isArray(resourceSpec.resources)) {
+        resourceSpec.resources.forEach((resource) => {
+            if (!resource || typeof resource !== 'object') return;
+            addCapability(resource?.id);
+            addCapability(resource?.type);
+            addCapability(resource?.model);
+            if (Array.isArray(resource?.tags)) resource.tags.forEach(addCapability);
+            if (Array.isArray(resource?.compute_types)) resource.compute_types.forEach(addCapability);
+            if (Array.isArray(resource?.capabilities?.compute_types)) {
+                resource.capabilities.compute_types.forEach(addCapability);
+            }
+        });
+    }
 
     return discovered;
 }
@@ -2654,23 +2668,30 @@ function inferVramGb(provider) {
         return provider.vram_gb;
     }
     const resourceSpec = safeJsonParse(provider.resource_spec);
-    const gpuResource = Array.isArray(resourceSpec?.resources)
-        ? resourceSpec.resources.find(r => String(r?.type || '').toLowerCase() === 'gpu')
-        : null;
-    if (!gpuResource) return 0;
-    const candidates = [
-        gpuResource.vram_gb,
-        gpuResource.memory_gb,
-        gpuResource.total_memory_gb,
-        gpuResource.total_gb,
-        gpuResource.total,
-    ];
-    const firstGb = candidates.find(v => Number.isFinite(Number(v)) && Number(v) > 0);
-    if (firstGb != null) return Number(firstGb);
-    if (Number.isFinite(Number(gpuResource.memory_mib)) && Number(gpuResource.memory_mib) > 0) {
-        return Number(gpuResource.memory_mib) / 1024;
-    }
-    return 0;
+    const gpuResources = Array.isArray(resourceSpec?.resources)
+        ? resourceSpec.resources.filter(r => String(r?.type || '').toLowerCase() === 'gpu')
+        : [];
+    if (gpuResources.length === 0) return 0;
+
+    let maxVramGb = 0;
+    gpuResources.forEach((gpuResource) => {
+        const candidates = [
+            gpuResource?.vram_gb,
+            gpuResource?.memory_gb,
+            gpuResource?.total_memory_gb,
+            gpuResource?.total_gb,
+            gpuResource?.total,
+        ];
+        const firstGb = candidates.find(v => Number.isFinite(Number(v)) && Number(v) > 0);
+        if (firstGb != null) {
+            maxVramGb = Math.max(maxVramGb, Number(firstGb));
+            return;
+        }
+        if (Number.isFinite(Number(gpuResource?.memory_mib)) && Number(gpuResource.memory_mib) > 0) {
+            maxVramGb = Math.max(maxVramGb, Number(gpuResource.memory_mib) / 1024);
+        }
+    });
+    return maxVramGb;
 }
 
 function getFallbackModelsForVram(vramGb) {
@@ -3194,11 +3215,7 @@ router.get('/public', publicProvidersLimiter, (req, res) => {
 // ============================================================================
 router.get('/:id/benchmarks', benchmarkLimiter, (req, res) => {
     try {
-        const isAdminReq = (() => {
-            const provided = req.headers['x-admin-token'] || '';
-            const expected = process.env.DC1_ADMIN_TOKEN;
-            return !!expected && provided === expected;
-        })();
+        const isAdminReq = isAdminRequest(req);
 
         const providerId = parseInt(req.params.id, 10);
         if (!Number.isFinite(providerId)) {
@@ -3253,11 +3270,7 @@ router.get('/:id/benchmarks', benchmarkLimiter, (req, res) => {
 // ============================================================================
 router.get('/:id/gpu-metrics', (req, res) => {
     try {
-        const isAdminReq = (() => {
-            const provided = req.headers['x-admin-token'] || '';
-            const expected = process.env.DC1_ADMIN_TOKEN;
-            return !!expected && provided === expected;
-        })();
+        const isAdminReq = isAdminRequest(req);
 
         const providerIdParam = req.params.id;
 
@@ -3530,3 +3543,7 @@ router.delete('/me', providerAccountDeletionLimiter, (req, res) => {
 });
 
 module.exports = router;
+module.exports.__private = {
+    discoverComputeTypesFromResourceSpec,
+    inferVramGb,
+};

@@ -43,10 +43,39 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.dc1 = exports.DC1Client = exports.JOB_TYPES = void 0;
+exports.dc1 = exports.DC1Client = exports.JOB_TYPES = exports.DC1ApiError = void 0;
+exports.isAuthError = isAuthError;
+exports.isRetryableError = isRetryableError;
 const https = __importStar(__webpack_require__(/*! https */ "https"));
 const http = __importStar(__webpack_require__(/*! http */ "http"));
 const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+class DC1ApiError extends Error {
+    constructor(message, statusCode, responseBody) {
+        super(message);
+        this.statusCode = statusCode;
+        this.responseBody = responseBody;
+        this.name = 'DC1ApiError';
+    }
+}
+exports.DC1ApiError = DC1ApiError;
+function isAuthError(err) {
+    if (err instanceof DC1ApiError && (err.statusCode === 401 || err.statusCode === 403)) {
+        return true;
+    }
+    if (!(err instanceof Error)) {
+        return false;
+    }
+    return /(?:^|\b)(401|403|unauthori[sz]ed|forbidden|invalid api key|api key is required|session expired)(?:\b|$)/i.test(err.message);
+}
+function isRetryableError(err) {
+    if (err instanceof DC1ApiError) {
+        return err.statusCode !== undefined && [408, 425, 429, 500, 502, 503, 504].includes(err.statusCode);
+    }
+    if (!(err instanceof Error)) {
+        return false;
+    }
+    return /timed out|timeout|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(err.message);
+}
 exports.JOB_TYPES = [
     { value: 'llm_inference', label: 'LLM Inference' },
     { value: 'image_generation', label: 'Image Generation' },
@@ -95,21 +124,24 @@ class DC1Client {
                     try {
                         const parsed = JSON.parse(body);
                         if (statusCode >= 400) {
-                            reject(new Error(parsed.error || parsed.message || `HTTP ${statusCode}`));
+                            reject(new DC1ApiError(parsed.error || parsed.message || `HTTP ${statusCode}`, statusCode, body));
                             return;
                         }
                         resolve(parsed);
                     }
                     catch {
                         if (statusCode >= 400) {
-                            reject(new Error(`HTTP ${statusCode}: ${body.slice(0, 200)}`));
+                            reject(new DC1ApiError(`HTTP ${statusCode}: ${body.slice(0, 200)}`, statusCode, body));
                             return;
                         }
                         reject(new Error(`Failed to parse response: ${body.slice(0, 200)}`));
                     }
                 });
             });
-            req.on('error', reject);
+            req.on('error', (err) => {
+                const code = err.code ? `${err.code}: ` : '';
+                reject(new Error(`${code}${err.message}`));
+            });
             req.setTimeout(timeoutMs, () => {
                 req.destroy();
                 reject(new Error(`Request timed out after ${timeoutMs / 1000}s`));
@@ -177,57 +209,105 @@ class DC1Client {
         };
         let req = null;
         let aborted = false;
+        let connectAttempt = 0;
+        const maxConnectAttempts = 3;
+        let hasReceivedAnyData = false;
         const dispose = () => {
             aborted = true;
             req?.destroy();
         };
-        try {
-            req = lib.request(options, (res) => {
-                if (res.statusCode && res.statusCode >= 400) {
-                    onError(new Error(`SSE stream returned HTTP ${res.statusCode}`));
-                    return;
-                }
-                let buffer = '';
-                res.setEncoding('utf8');
-                res.on('data', (chunk) => {
-                    if (aborted) {
+        const maybeRetryOrFail = (err, hasDataForThisAttempt) => {
+            if (aborted) {
+                return;
+            }
+            if (!hasDataForThisAttempt && connectAttempt < maxConnectAttempts && isRetryableError(err)) {
+                const backoffMs = connectAttempt * 1000;
+                setTimeout(() => startStream(), backoffMs);
+                return;
+            }
+            onError(err);
+        };
+        const startStream = () => {
+            if (aborted) {
+                return;
+            }
+            connectAttempt += 1;
+            let hasDataForThisAttempt = false;
+            try {
+                req = lib.request(options, (res) => {
+                    if (res.statusCode && res.statusCode >= 400) {
+                        let errorBody = '';
+                        res.setEncoding('utf8');
+                        res.on('data', (chunk) => (errorBody += chunk));
+                        res.on('end', () => {
+                            let message = `SSE stream returned HTTP ${res.statusCode}`;
+                            const trimmed = errorBody.trim();
+                            if (trimmed) {
+                                try {
+                                    const parsed = JSON.parse(trimmed);
+                                    message = parsed.error || parsed.message || message;
+                                }
+                                catch {
+                                    message = `${message}: ${trimmed.slice(0, 200)}`;
+                                }
+                            }
+                            maybeRetryOrFail(new DC1ApiError(message, res.statusCode, trimmed), false);
+                        });
                         return;
                     }
-                    buffer += chunk;
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() ?? '';
-                    for (const line of lines) {
-                        if (line.startsWith('data:')) {
-                            const data = line.slice(5).trim();
-                            if (data && data !== '[DONE]') {
-                                onLine(data);
+                    connectAttempt = maxConnectAttempts;
+                    let buffer = '';
+                    res.setEncoding('utf8');
+                    res.on('data', (chunk) => {
+                        if (aborted) {
+                            return;
+                        }
+                        buffer += chunk;
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() ?? '';
+                        for (const line of lines) {
+                            if (line.startsWith('data:')) {
+                                const data = line.slice(5).trim();
+                                if (data && data !== '[DONE]') {
+                                    hasDataForThisAttempt = true;
+                                    hasReceivedAnyData = true;
+                                    onLine(data);
+                                }
                             }
                         }
-                    }
+                    });
+                    res.on('end', () => {
+                        if (!aborted) {
+                            onEnd();
+                        }
+                    });
+                    res.on('error', (err) => {
+                        maybeRetryOrFail(err, hasDataForThisAttempt);
+                    });
                 });
-                res.on('end', () => {
+                req.on('error', (err) => {
+                    const code = err.code ? `${err.code}: ` : '';
+                    maybeRetryOrFail(new Error(`${code}${err.message}`), hasDataForThisAttempt);
+                });
+                req.setTimeout(300000, () => {
+                    req?.destroy();
+                    if (!hasReceivedAnyData) {
+                        maybeRetryOrFail(new Error('SSE connection timed out before receiving log data'), hasDataForThisAttempt);
+                        return;
+                    }
                     if (!aborted) {
                         onEnd();
                     }
                 });
-                res.on('error', (err) => {
-                    if (!aborted) {
-                        onError(err);
-                    }
-                });
-            });
-            req.on('error', (err) => {
-                if (!aborted) {
-                    onError(err);
-                }
-            });
-            req.setTimeout(300000, () => {
-                req?.destroy();
-                if (!aborted) {
-                    onEnd();
-                }
-            });
-            req.end();
+                req.end();
+            }
+            catch (err) {
+                const error = err instanceof Error ? err : new Error(String(err));
+                maybeRetryOrFail(error, hasDataForThisAttempt);
+            }
+        };
+        try {
+            startStream();
         }
         catch (err) {
             onError(err instanceof Error ? err : new Error(String(err)));
@@ -311,6 +391,7 @@ const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
 const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
 const RENTER_SECRET_KEY = 'dc1.renterApiKey';
 const PROVIDER_SECRET_KEY = 'dc1.providerKey';
+const RENTER_SETTING_KEY = 'renterApiKey';
 class AuthManager {
     constructor(secrets) {
         this.secrets = secrets;
@@ -320,7 +401,7 @@ class AuthManager {
         this.onDidChangeProviderKey = this._onDidChangeProviderKey.event;
     }
     async load() {
-        this._apiKey = await this.secrets.get(RENTER_SECRET_KEY);
+        this._apiKey = await this.getStoredRenterKey();
         this._providerKey = await this.secrets.get(PROVIDER_SECRET_KEY);
     }
     // ── Renter key accessors ──────────────────────────────────────────
@@ -339,6 +420,30 @@ class AuthManager {
         await this.secrets.delete(RENTER_SECRET_KEY);
         this._apiKey = undefined;
         this._onDidChangeKey.fire(undefined);
+    }
+    /**
+     * Resolve renter key from secure storage, with one-way migration from workspace settings.
+     * Settings key fallback is retained only for backward compatibility.
+     */
+    async getStoredRenterKey() {
+        if (this._apiKey?.trim()) {
+            return this._apiKey.trim();
+        }
+        const secretKey = (await this.secrets.get(RENTER_SECRET_KEY))?.trim();
+        if (secretKey) {
+            this._apiKey = secretKey;
+            return secretKey;
+        }
+        const settings = vscode.workspace.getConfiguration('dc1');
+        const settingsKey = settings.get(RENTER_SETTING_KEY, '').trim();
+        if (!settingsKey) {
+            return undefined;
+        }
+        await this.secrets.store(RENTER_SECRET_KEY, settingsKey);
+        this._apiKey = settingsKey;
+        this._onDidChangeKey.fire(settingsKey);
+        await settings.update(RENTER_SETTING_KEY, '', vscode.ConfigurationTarget.Global);
+        return settingsKey;
     }
     /**
      * Prompt user for their DC1 renter API key, validate it, then store it.
@@ -375,11 +480,29 @@ class AuthManager {
     }
     /** Ensure renter key is set; prompt if not. Returns the key or undefined. */
     async ensureKey() {
-        if (this._apiKey) {
-            return this._apiKey;
+        const existing = await this.getStoredRenterKey();
+        if (existing) {
+            return existing;
         }
         const saved = await this.promptAndSave();
         return saved ? this._apiKey : undefined;
+    }
+    /** Handle expired/invalid renter auth and prompt for re-authentication. */
+    async handleRenterAuthError(err, action) {
+        if (!(0, dc1Client_1.isAuthError)(err)) {
+            return this._apiKey;
+        }
+        await this.clearApiKey();
+        const next = await vscode.window.showWarningMessage(`DCP: Authentication failed while ${action}. Re-enter renter API key?`, 'Re-authenticate', 'Open Settings');
+        if (next === 'Open Settings') {
+            await vscode.commands.executeCommand('workbench.action.openSettings', 'dc1.renterApiKey');
+            return undefined;
+        }
+        if (next === 'Re-authenticate') {
+            const saved = await this.promptAndSave();
+            return saved ? this._apiKey : undefined;
+        }
+        return undefined;
     }
     // ── Provider key accessors ────────────────────────────────────────
     get providerKey() {
@@ -675,8 +798,8 @@ function activate(context) {
     // dc1.submitJob — open vLLM inference panel (model selector → POST /api/vllm/complete)
     context.subscriptions.push(vscode.commands.registerCommand('dc1.submitJob', async () => {
         // Check for API key — show guidance if missing
-        const settingsKey = vscode.workspace.getConfiguration('dc1').get('renterApiKey', '').trim();
-        if (!settingsKey && !auth.isAuthenticated) {
+        const storedKey = await auth.getStoredRenterKey();
+        if (!storedKey && !auth.isAuthenticated) {
             const action = await vscode.window.showWarningMessage('DCP: Set your renter API key to submit inference jobs.', 'Set Key in Settings', 'Set Key via Command');
             if (action === 'Set Key in Settings') {
                 vscode.commands.executeCommand('workbench.action.openSettings', 'dc1.renterApiKey');
@@ -782,9 +905,17 @@ function activate(context) {
                     ch.appendLine('Could not fetch final output.');
                 });
             }, (err) => {
+                if ((0, dc1Client_1.isAuthError)(err)) {
+                    auth.handleRenterAuthError(err, 'streaming logs').then((newKey) => {
+                        if (newKey) {
+                            ch.appendLine('Authentication refreshed. Restart "View Job Logs" to reconnect stream.');
+                        }
+                    });
+                }
                 if (!sseConnected) {
                     // SSE not available — fall back to polling
-                    ch.appendLine(`Log stream unavailable (${err.message}). Falling back to polling…`);
+                    const retryNote = (0, dc1Client_1.isRetryableError)(err) ? ' after automatic retries' : '';
+                    ch.appendLine(`Log stream unavailable${retryNote} (${err.message}). Falling back to polling…`);
                     startPolling();
                 }
                 else {
@@ -869,7 +1000,7 @@ function activate(context) {
     // dc1.watchJobLogs — stream logs for a job ID to a named output channel
     context.subscriptions.push(vscode.commands.registerCommand('dc1.watchJobLogs', async (jobIdArg) => {
         const key = auth.apiKey
-            || vscode.workspace.getConfiguration('dc1').get('renterApiKey', '').trim()
+            || await auth.getStoredRenterKey()
             || await auth.ensureKey();
         if (!key) {
             return;
@@ -947,8 +1078,20 @@ function activate(context) {
             jobsProvider.refresh();
             updateStatusBar();
         }, (err) => {
+            if ((0, dc1Client_1.isAuthError)(err)) {
+                auth.handleRenterAuthError(err, 'watching job logs').then((newKey) => {
+                    if (newKey) {
+                        ch.appendLine('Authentication refreshed. Restart log watch for continuous streaming.');
+                    }
+                });
+            }
             if (!receivedStreamData) {
-                ch.appendLine(`Stream unavailable: ${err.message}`);
+                if ((0, dc1Client_1.isRetryableError)(err)) {
+                    ch.appendLine(`Stream unavailable after automatic retries: ${err.message}`);
+                }
+                else {
+                    ch.appendLine(`Stream unavailable: ${err.message}`);
+                }
                 startPollingFallback();
                 return;
             }
@@ -1096,7 +1239,7 @@ class JobSubmitPanel {
             return;
         }
         if (msg.type === 'submit') {
-            const key = await this.auth.ensureKey();
+            let key = await this.auth.ensureKey();
             if (!key) {
                 return;
             }
@@ -1104,7 +1247,21 @@ class JobSubmitPanel {
             // Post message back to webview: submitting
             this._panel.webview.postMessage({ type: 'submitting' });
             try {
-                const result = await dc1Client_1.dc1.submitJob(key, payload);
+                const result = await this.submitJobWithRetry(() => {
+                    if (!key) {
+                        throw new Error('Missing renter API key');
+                    }
+                    return dc1Client_1.dc1.submitJob(key, payload);
+                }, async (err) => {
+                    if (!(0, dc1Client_1.isAuthError)(err)) {
+                        return undefined;
+                    }
+                    const refreshed = await this.auth.handleRenterAuthError(err, 'submitting a container job');
+                    if (refreshed) {
+                        key = refreshed;
+                    }
+                    return refreshed;
+                });
                 this._panel.webview.postMessage({
                     type: 'success',
                     jobId: result.job_id,
@@ -1121,10 +1278,30 @@ class JobSubmitPanel {
                 });
             }
             catch (err) {
-                const errMsg = err instanceof Error ? err.message : String(err);
+                const errMsg = humanizeError(err);
                 this._panel.webview.postMessage({ type: 'error', message: errMsg });
             }
         }
+    }
+    async submitJobWithRetry(request, onAuthError) {
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                return await request();
+            }
+            catch (err) {
+                const newKey = await onAuthError(err);
+                if (newKey) {
+                    continue;
+                }
+                if (attempt < maxAttempts && (0, dc1Client_1.isRetryableError)(err)) {
+                    await delay(attempt * 700);
+                    continue;
+                }
+                throw err;
+            }
+        }
+        throw new Error('Unable to submit job after multiple attempts.');
     }
     buildHtml(providers, preselected, registryImages = []) {
         const providersJson = JSON.stringify(providers);
@@ -1552,6 +1729,21 @@ function getNonce() {
         text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+}
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function humanizeError(err) {
+    if (!(err instanceof Error)) {
+        return String(err);
+    }
+    if ((0, dc1Client_1.isAuthError)(err)) {
+        return 'Authentication failed. Re-run "DCP: Set Renter API Key" and try again.';
+    }
+    if ((0, dc1Client_1.isRetryableError)(err)) {
+        return `${err.message}. DCP retried automatically; please retry once more if the network is unstable.`;
+    }
+    return err.message;
 }
 
 
@@ -2226,7 +2418,7 @@ class VllmSubmitPanel {
         }
         if (msg.type === 'submit') {
             // Get API key: check settings first, then secrets
-            let key = vscode.workspace.getConfiguration('dc1').get('renterApiKey', '').trim();
+            let key = (await this.auth.getStoredRenterKey()) ?? '';
             if (!key) {
                 key = (await this.auth.ensureKey()) ?? '';
             }
@@ -2242,7 +2434,16 @@ class VllmSubmitPanel {
                 temperature: msg.temperature,
             };
             try {
-                const result = await dc1Client_1.dc1.vllmComplete(key, payload);
+                const result = await this.completeWithRetry(() => dc1Client_1.dc1.vllmComplete(key, payload), async (err) => {
+                    if (!(0, dc1Client_1.isAuthError)(err)) {
+                        return undefined;
+                    }
+                    const refreshed = await this.auth.handleRenterAuthError(err, 'running inference');
+                    if (refreshed) {
+                        key = refreshed;
+                    }
+                    return refreshed;
+                });
                 const text = result.choices[0]?.message?.content ?? '';
                 const jobId = result.id.replace('chatcmpl-', '');
                 const costSar = (result.cost_halala / 100).toFixed(4);
@@ -2261,10 +2462,30 @@ class VllmSubmitPanel {
                 });
             }
             catch (err) {
-                const errMsg = err instanceof Error ? err.message : String(err);
+                const errMsg = humanizeError(err);
                 this._panel.webview.postMessage({ type: 'error', message: errMsg });
             }
         }
+    }
+    async completeWithRetry(request, onAuthError) {
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                return await request();
+            }
+            catch (err) {
+                const newKey = await onAuthError(err);
+                if (newKey) {
+                    continue;
+                }
+                if (attempt < maxAttempts && (0, dc1Client_1.isRetryableError)(err)) {
+                    await delay(attempt * 800);
+                    continue;
+                }
+                throw err;
+            }
+        }
+        throw new Error('Inference request exhausted retry attempts.');
     }
     buildHtml(models, loading, loadError) {
         const nonce = getNonce();
@@ -2567,6 +2788,21 @@ function escapeForHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function humanizeError(err) {
+    if (!(err instanceof Error)) {
+        return String(err);
+    }
+    if ((0, dc1Client_1.isAuthError)(err)) {
+        return 'Authentication failed. Re-run "DCP: Set Renter API Key" and submit again.';
+    }
+    if ((0, dc1Client_1.isRetryableError)(err)) {
+        return `${err.message}. DCP retried automatically; please retry if the API remains busy.`;
+    }
+    return err.message;
 }
 
 

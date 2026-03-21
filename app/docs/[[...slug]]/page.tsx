@@ -29,14 +29,24 @@ export default function DocsPage({ params }: DocsPageProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber">Docs Portal</p>
             <h1 className="mt-3 text-3xl font-bold text-dc1-text-primary sm:text-4xl">DCP Developer Documentation</h1>
             <p className="mt-4 max-w-3xl text-dc1-text-secondary">
-              API-first onboarding for providers and renters. Start your first job in under 5 minutes, then scale with SDKs and OpenAPI.
+              API-first onboarding for providers and renters on container-based GPU infrastructure in Saudi Arabia. Build with a structural energy-cost advantage and first-class Arabic AI model support.
             </p>
             <p className="mt-2 max-w-3xl text-dc1-text-secondary">
-              بوابة توثيق ثنائية اللغة (عربي/إنجليزي) لإعداد المزودين والمستأجرين بسرعة مع مرجع API كامل.
+              بوابة توثيق ثنائية اللغة (عربي/إنجليزي) لحوسبة GPU بالحاويات داخل السعودية، مع ميزة تكلفة طاقة هيكلية ودعم أساسي لنماذج الذكاء الاصطناعي العربية.
             </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Saudi Energy Advantage</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">Lower structural electricity-cost environment for long-run GPU workloads.</p>
+              </div>
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Arabic AI Models</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">ALLaM 7B, Falcon H1, JAIS 13B, and BGE-M3 are supported as first-class paths.</p>
+              </div>
+            </div>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/docs/quickstart" className="btn btn-primary btn-sm">Start in English</Link>
-              <Link href="/docs/ar/quickstart" className="btn btn-secondary btn-sm">ابدأ بالعربية</Link>
+              <Link href="/docs/quickstart" className="btn btn-primary btn-sm">Start Quickstart</Link>
+              <Link href="/docs/api-reference" className="btn btn-secondary btn-sm">View API reference</Link>
             </div>
           </section>
 

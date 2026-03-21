@@ -15,6 +15,7 @@ Template mode arguments:
 Template mode options:
   --timeout-seconds N           Max runtime before forced stop (default: 3600)
   --model-cache-dir PATH        Host cache dir mounted to /opt/dcp/model-cache (default: /opt/dcp/model-cache)
+  --seccomp-profile PATH        Seccomp profile JSON path (optional; can be required via env)
   --stream-logs                 Stream docker logs (default: enabled)
   --no-stream-logs              Disable docker log streaming
   --image IMAGE                 Override image resolved from container_type
@@ -215,6 +216,10 @@ run_template_mode() {
   local stream_logs="$8"
   local pinned_digest="$9"
   local require_pinned_digest="${10}"
+  local cpus="${11}"
+  local memory="${12}"
+  local pids_limit="${13}"
+  local seccomp_profile="${14}"
 
   local image
   image="$image_override"
@@ -245,6 +250,10 @@ run_template_mode() {
 
   mkdir -p "$output_dir"
   mkdir -p "$model_cache_dir"
+  if [[ -n "$seccomp_profile" && ! -f "$seccomp_profile" ]]; then
+    echo "Error: seccomp profile not found: $seccomp_profile" >&2
+    exit 1
+  fi
 
   local container_name
   local container_id=""
@@ -259,24 +268,39 @@ run_template_mode() {
 
   trap cleanup_container EXIT INT TERM
 
-  container_id="$(docker run --detach --rm \
-    --name "$container_name" \
-    --gpus all \
-    --security-opt no-new-privileges:true \
-    --cap-drop ALL \
-    --cap-add SYS_PTRACE \
-    --read-only \
-    --tmpfs "/tmp:rw,noexec,nosuid,size=256m" \
-    --tmpfs "/var/tmp:rw,noexec,nosuid,size=128m" \
-    --mount "type=bind,src=${model_cache_dir},dst=/opt/dcp/model-cache" \
-    --mount "type=bind,src=${model_path},dst=/opt/dcp/model,readonly" \
-    --mount "type=bind,src=${job_payload},dst=/opt/dcp/input/job_payload.json,readonly" \
-    --mount "type=bind,src=${output_dir},dst=/opt/dcp/output" \
-    -e "DCP_CONTAINER_TYPE=${container_type}" \
-    -e "DCP_MODEL_PATH=/opt/dcp/model" \
-    -e "DCP_JOB_PAYLOAD_PATH=/opt/dcp/input/job_payload.json" \
-    -e "DCP_OUTPUT_DIR=/opt/dcp/output" \
-    "$image")"
+  local template_docker_args
+  template_docker_args=(
+    run
+    --detach
+    --rm
+    --name "$container_name"
+    --network none
+    --cpus "$cpus"
+    --memory "$memory"
+    --memory-swap "$memory"
+    --pids-limit "$pids_limit"
+    --gpus all
+    --security-opt no-new-privileges:true
+    --cap-drop ALL
+    --cap-add SYS_PTRACE
+    --read-only
+    --tmpfs "/tmp:rw,noexec,nosuid,size=256m"
+    --tmpfs "/var/tmp:rw,noexec,nosuid,size=128m"
+    --mount "type=bind,src=${model_cache_dir},dst=/opt/dcp/model-cache"
+    --mount "type=bind,src=${model_path},dst=/opt/dcp/model,readonly"
+    --mount "type=bind,src=${job_payload},dst=/opt/dcp/input/job_payload.json,readonly"
+    --mount "type=bind,src=${output_dir},dst=/opt/dcp/output"
+    -e "DCP_CONTAINER_TYPE=${container_type}"
+    -e "DCP_MODEL_PATH=/opt/dcp/model"
+    -e "DCP_JOB_PAYLOAD_PATH=/opt/dcp/input/job_payload.json"
+    -e "DCP_OUTPUT_DIR=/opt/dcp/output"
+  )
+  if [[ -n "$seccomp_profile" ]]; then
+    template_docker_args+=(--security-opt "seccomp=${seccomp_profile}")
+  fi
+  template_docker_args+=("$image")
+
+  container_id="$(docker "${template_docker_args[@]}")"
 
   echo "mode=template container_id=${container_id} image=${image}"
 
@@ -317,6 +341,7 @@ run_legacy_mode() {
   local checkpoint_name="${15}"
   local pinned_digest="${16}"
   local require_pinned_digest="${17}"
+  local seccomp_profile="${18}"
 
   if [[ -z "$job_id" || -z "$image" ]]; then
     echo "Error: --job-id and --image are required" >&2
@@ -345,6 +370,10 @@ run_legacy_mode() {
   fi
 
   verify_pinned_digest "$image" "$pinned_digest"
+  if [[ -n "$seccomp_profile" && ! -f "$seccomp_profile" ]]; then
+    echo "Error: seccomp profile not found: $seccomp_profile" >&2
+    exit 1
+  fi
 
   local container_name
   local init_cmd
@@ -365,6 +394,7 @@ run_legacy_mode() {
     --network "$effective_network"
     --cpus "$cpus"
     --memory "$memory"
+    --memory-swap "$memory"
     --pids-limit "$pids_limit"
     --security-opt no-new-privileges:true
     --cap-drop ALL
@@ -379,6 +409,8 @@ run_legacy_mode() {
   if [[ "$enable_checkpoint" == "1" ]]; then
     docker_args+=(--security-opt seccomp=unconfined)
     docker_args+=(--cap-add CHECKPOINT_RESTORE)
+  elif [[ -n "$seccomp_profile" ]]; then
+    docker_args+=(--security-opt "seccomp=${seccomp_profile}")
   fi
 
   if [[ "$gpu_request" != "none" ]]; then
@@ -434,6 +466,8 @@ ENABLE_CHECKPOINT="0"
 CHECKPOINT_NAME=""
 PINNED_DIGEST=""
 REQUIRE_PINNED_DIGEST="0"
+SECCOMP_PROFILE="${DCP_SECCOMP_PROFILE:-}"
+REQUIRE_SECCOMP_PROFILE="${DCP_REQUIRE_SECCOMP_PROFILE:-false}"
 
 # Template mode defaults
 CONTAINER_TYPE=""
@@ -483,6 +517,8 @@ while [[ $# -gt 0 ]]; do
       PINNED_DIGEST="${2:-}"; shift 2 ;;
     --require-pinned-digest)
       REQUIRE_PINNED_DIGEST="1"; shift ;;
+    --seccomp-profile)
+      SECCOMP_PROFILE="${2:-}"; shift 2 ;;
     --workspace-volume)
       WORKSPACE_VOLUME="${2:-}"; shift 2 ;;
     --enable-checkpoint)
@@ -514,6 +550,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$REQUIRE_SECCOMP_PROFILE" == "true" && -z "$SECCOMP_PROFILE" ]]; then
+  echo "Error: DCP_REQUIRE_SECCOMP_PROFILE=true but no seccomp profile configured." >&2
+  echo "Set DCP_SECCOMP_PROFILE or pass --seccomp-profile PATH." >&2
+  exit 1
+fi
+
 require_cmd docker
 require_cmd timeout
 docker info >/dev/null 2>&1 || {
@@ -538,7 +580,11 @@ if [[ -n "$CONTAINER_TYPE" || -n "$MODEL_PATH" || -n "$JOB_PAYLOAD" || -n "$OUTP
     "$IMAGE" \
     "$STREAM_LOGS" \
     "$PINNED_DIGEST" \
-    "$REQUIRE_PINNED_DIGEST"
+    "$REQUIRE_PINNED_DIGEST" \
+    "$CPUS" \
+    "$MEMORY" \
+    "$PIDS_LIMIT" \
+    "$SECCOMP_PROFILE"
   exit $?
 fi
 
@@ -559,4 +605,5 @@ run_legacy_mode \
   "$ENABLE_CHECKPOINT" \
   "$CHECKPOINT_NAME" \
   "$PINNED_DIGEST" \
-  "$REQUIRE_PINNED_DIGEST"
+  "$REQUIRE_PINNED_DIGEST" \
+  "$SECCOMP_PROFILE"

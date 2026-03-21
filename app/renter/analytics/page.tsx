@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -73,16 +74,6 @@ const GearIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 )
-
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-  { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
-  { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
-]
 
 // ── SVG Donut Chart ────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
@@ -248,11 +239,21 @@ function GpuChart({ gpus }: { gpus: TopGpu[] }) {
 // ── Main Page ──────────────────────────────────────────────────────
 export default function RenterAnalyticsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [renterName, setRenterName] = useState('')
   const [period, setPeriod] = useState<Period>('30d')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
+  ]
 
   const fetchAnalytics = useCallback(async (key: string, p: Period) => {
     setLoading(true)
@@ -311,8 +312,8 @@ export default function RenterAnalyticsPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold text-dc1-text-primary">Usage Analytics</h1>
-            <p className="text-dc1-text-secondary text-sm mt-1">Track your GPU spending and job performance</p>
+            <h1 className="text-2xl font-bold text-dc1-text-primary">{t('renter.analytics.title')}</h1>
+            <p className="text-dc1-text-secondary text-sm mt-1">{t('renter.analytics.subtitle')}</p>
           </div>
           <div className="flex gap-2" role="group" aria-label="Time period">
             {(['7d', '30d', '90d'] as Period[]).map(p => (
@@ -326,7 +327,7 @@ export default function RenterAnalyticsPage() {
                 }`}
                 aria-pressed={period === p}
               >
-                {p === '7d' ? '7 days' : p === '30d' ? '30 days' : '90 days'}
+                {p === '7d' ? t('provider.period_7d') : p === '30d' ? t('provider.period_30d') : t('provider.period_90d')}
               </button>
             ))}
           </div>
@@ -362,12 +363,12 @@ export default function RenterAnalyticsPage() {
                 accent="default"
               />
               <StatCard
-                label="Success Rate"
+                label={t('renter.analytics.success_rate')}
                 value={allCount > 0 ? `${successRate}%` : '—'}
                 accent="success"
               />
               <StatCard
-                label="Avg Duration"
+                label={t('renter.analytics.avg_duration')}
                 value={formatDuration(avgDurMin ?? null)}
                 accent="info"
               />
@@ -376,7 +377,7 @@ export default function RenterAnalyticsPage() {
             {/* Spend Chart */}
             <div className="card">
               <h2 className="text-base font-semibold text-dc1-text-primary mb-4">
-                Spend History — Last {period === '7d' ? '7 Days' : period === '30d' ? '30 Days' : '90 Days'}
+                {t('renter.analytics.spend_history')}
               </h2>
               <SpendBarChart data={analytics.daily_spend} period={period} />
             </div>
@@ -385,13 +386,13 @@ export default function RenterAnalyticsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Job Status Donut */}
               <div className="card">
-                <h2 className="text-base font-semibold text-dc1-text-primary mb-4">Jobs by Status</h2>
+                <h2 className="text-base font-semibold text-dc1-text-primary mb-4">{t('renter.analytics.jobs_by_status')}</h2>
                 <DonutChart counts={analytics.status_counts} />
               </div>
 
               {/* Top GPUs */}
               <div className="card">
-                <h2 className="text-base font-semibold text-dc1-text-primary mb-4">Top GPU Models Used</h2>
+                <h2 className="text-base font-semibold text-dc1-text-primary mb-4">{t('renter.analytics.top_gpu_models')}</h2>
                 <GpuChart gpus={analytics.top_gpus} />
               </div>
             </div>

@@ -1,0 +1,109 @@
+---
+title: Runtime Verification Runbook
+description: Operator checklist to verify daemon heartbeat, container runtime readiness, and end-to-end non-payment compute flow.
+order: 40
+---
+
+## Scope
+
+Use this runbook after daemon install, host maintenance, or runtime upgrades.
+
+This checklist covers:
+
+1. Host GPU and container runtime readiness.
+2. Provider API auth and heartbeat visibility.
+3. End-to-end renter job path (submit -> logs -> output).
+
+It intentionally excludes payment, escrow, and payout flows.
+
+## 1) Host readiness checks
+
+```bash
+# GPU driver + device visibility
+nvidia-smi
+
+# Docker daemon status
+docker ps
+
+# Verify NVIDIA runtime is registered
+docker info | grep -i runtime
+```
+
+Expected:
+
+- `nvidia-smi` shows the target GPU.
+- Docker command returns healthy daemon output.
+- `docker info` output includes `nvidia` runtime.
+
+## 2) Provider auth and heartbeat
+
+```bash
+export DCP_API="https://dcp.sa/api/dc1"
+export PROVIDER_KEY="dcp-provider-your-key"
+
+curl -s "$DCP_API/providers/me?key=$PROVIDER_KEY"
+```
+
+Validate:
+
+- `provider.status` is `online` (or transitions to `online` after daemon restart).
+- `provider.last_heartbeat` updates roughly every 30 seconds.
+- `provider.daemon_version` is present and expected for your rollout.
+
+## 3) Non-payment renter flow smoke
+
+```bash
+export RENTER_KEY="dcp-renter-your-key"
+
+# Account + capacity checks
+curl -s "$DCP_API/renters/me?key=$RENTER_KEY"
+curl -s "$DCP_API/renters/available-providers"
+```
+
+Submit a short compute job:
+
+```bash
+JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: $RENTER_KEY" \
+  -d '{
+    "provider_id": 42,
+    "job_type": "llm-inference",
+    "duration_minutes": 2,
+    "max_duration_seconds": 120,
+    "container_spec": { "image_type": "vllm-serve" },
+    "params": {
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "prompt": "Runtime verification check"
+    }
+  }')
+
+echo "$JOB_JSON"
+JOB_ID=$(echo "$JOB_JSON" | jq -r '.job.job_id // .job_id')
+echo "JOB_ID=$JOB_ID"
+```
+
+Watch logs and final output:
+
+```bash
+curl -s "$DCP_API/jobs/$JOB_ID/logs?key=$RENTER_KEY"
+curl -s "$DCP_API/jobs/$JOB_ID/output?key=$RENTER_KEY"
+```
+
+Pass criteria:
+
+- Submit returns `201` and job id.
+- Logs endpoint shows runtime progression (`pending` -> `running`).
+- Output endpoint reaches terminal state (`completed` or expected controlled failure).
+
+## 4) Operator notes
+
+- Prefer header auth (`x-provider-key`, `x-renter-key`) for automation; keep query-key usage to legacy GET endpoints.
+- If any check fails, capture response bodies and timestamps in incident notes before restarting services.
+- Re-run this checklist after PM2 restarts or daemon upgrades.
+
+## Related docs
+
+- [Quickstart](/docs/quickstart)
+- [Provider Guide](/docs/provider-guide)
+- [API Reference](/docs/api-reference)

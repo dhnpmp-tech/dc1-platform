@@ -22,6 +22,13 @@ const FAQ_KEYS = [
   { q: 'earn.faq_q5', a: 'earn.faq_a5' },
 ]
 
+const TRUST_BULLET_KEYS = [
+  'provider.trust.heartbeat',
+  'provider.trust.polling',
+  'provider.trust.pause_resume',
+  'provider.trust.runtime',
+]
+
 function FaqItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false)
   return (
@@ -90,10 +97,56 @@ export default function EarnPage() {
                 {t('earn.cta_secondary')}
               </Link>
             </div>
+            <p className="text-xs text-dc1-text-muted mt-4">
+              {t('earn.scenario_disclaimer')}
+            </p>
             <div className={`flex justify-center mt-6 ${isRTL ? '' : ''}`}>
               <LanguageToggle />
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Provider value section */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+        <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-8">
+          <h2 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-4">
+            {t('earn.value_title')}
+          </h2>
+          <p className="text-dc1-text-secondary leading-relaxed mb-6">
+            {t('earn.value_body')}
+          </p>
+          <ul className="space-y-3">
+            {[t('earn.value_bullet_1'), t('earn.value_bullet_2'), t('earn.value_bullet_3')].map((item) => (
+              <li key={item} className="flex items-center gap-3 text-sm text-dc1-text-secondary">
+                <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* Provider trust module */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-14">
+        <div className="rounded-2xl border border-dc1-amber/20 bg-dc1-surface-l1 p-8">
+          <h2 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-4">
+            {t('provider.trust.title')}
+          </h2>
+          <p className="text-dc1-text-secondary leading-relaxed mb-6">
+            {t('provider.trust.description')}
+          </p>
+          <ul className="space-y-3">
+            {TRUST_BULLET_KEYS.map((key) => (
+              <li key={key} className="flex items-start gap-3 text-sm text-dc1-text-secondary">
+                <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full mt-2 flex-shrink-0" />
+                {t(key)}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-dc1-text-muted mt-4">
+            {t('provider.trust.earnings_estimate')} {t('earn.trust_note')}
+          </p>
         </div>
       </section>
 
@@ -198,6 +251,9 @@ export default function EarnPage() {
             <p className="text-xs text-dc1-text-muted text-center mt-4">
               {t('earn.calc_disclaimer')}
             </p>
+            <p className="text-xs text-dc1-text-muted text-center mt-2">
+              {t('earn.scenario_short')}
+            </p>
           </div>
         </div>
       </section>
@@ -258,10 +314,13 @@ export default function EarnPage() {
           <Link href="/provider/register" className="btn btn-primary btn-lg w-full sm:w-auto">
             {t('earn.cta_register')}
           </Link>
-          <Link href="/login" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+          <Link href="/login" className="btn btn-secondary btn-lg w-full sm:w-auto">
             {t('earn.cta_signin')}
           </Link>
         </div>
+        <p className="text-xs text-dc1-text-muted mt-4">
+          {t('earn.payout_disclaimer')}
+        </p>
       </section>
 
       <Footer />

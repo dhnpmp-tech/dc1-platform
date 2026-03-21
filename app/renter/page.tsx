@@ -92,6 +92,7 @@ export default function RenterDashboard() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [authChecking, setAuthChecking] = useState(true)
   const [renterKey, setRenterKey] = useState('')
+  const [authError, setAuthError] = useState('')
   const [bannerDismissed, setBannerDismissed] = useState(false)
 
   useEffect(() => {
@@ -128,12 +129,14 @@ export default function RenterDashboard() {
       }, 30000)
       return () => clearInterval(interval)
     } else {
+      setAuthError('')
       setAuthChecking(false)
     }
   }, [])
 
   const verifyKey = async (key: string) => {
     setAuthChecking(true)
+    setAuthError('')
     try {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
       if (res.ok) {
@@ -147,14 +150,27 @@ export default function RenterDashboard() {
         } else {
           setRenter(null)
           localStorage.removeItem('dc1_renter_key')
+          setAuthError(t('auth.error.invalid_credentials'))
         }
       } else {
+        const payload = await res.json().catch(() => ({}))
+        const rawError = String(payload?.error || '').toLowerCase()
         setRenter(null)
         localStorage.removeItem('dc1_renter_key')
+        if (res.status === 401 || res.status === 403) {
+          if (rawError.includes('expired') || rawError.includes('session')) {
+            setAuthError(t('auth.error.expired_session'))
+          } else {
+            setAuthError(t('auth.error.invalid_credentials'))
+          }
+        } else {
+          setAuthError(payload?.error || t('auth.error.sign_in_failed'))
+        }
       }
     } catch (err) {
       console.error('Auth error:', err)
       setRenter(null)
+      setAuthError(t('auth.error.network'))
     } finally {
       setAuthChecking(false)
     }
@@ -210,6 +226,7 @@ export default function RenterDashboard() {
     localStorage.removeItem('dc1_renter_key')
     setRenter(null)
     setRenterKey('')
+    setAuthError('')
     window.location.href = '/'
   }
 
@@ -236,11 +253,16 @@ export default function RenterDashboard() {
           <p className="text-dc1-text-secondary mb-8">
             {t('renter.sign_in_prompt')}
           </p>
+          {authError && (
+            <div className="mb-6 p-3 rounded-lg border border-status-error/40 bg-status-error/10 text-status-error text-sm text-left">
+              {authError}
+            </div>
+          )}
 
           <form
             onSubmit={e => {
               e.preventDefault()
-              const keyInput = (e.target as HTMLFormElement).querySelector('input')?.value
+              const keyInput = (e.target as HTMLFormElement).querySelector('input')?.value?.trim()
               if (keyInput) {
                 verifyKey(keyInput)
               }

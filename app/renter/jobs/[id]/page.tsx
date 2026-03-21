@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import { useLanguage } from '../../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -13,6 +14,8 @@ interface JobDetail {
   job_id: string
   job_type: string
   status: string
+  provider_id?: number | null
+  model?: string | null
   submitted_at: string
   started_at: string
   completed_at: string
@@ -98,16 +101,6 @@ const GearIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 )
-
-const navItems = [
-  { label: 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-  { label: 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-  { label: 'Playground', href: '/renter/playground', icon: <PlaygroundIcon /> },
-  { label: 'My Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-  { label: 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-  { label: 'Analytics', href: '/renter/analytics', icon: <ChartIcon /> },
-  { label: 'Settings', href: '/renter/settings', icon: <GearIcon /> },
-]
 
 function DetailRow({ label, value, highlight, mono }: { label: string; value: string; highlight?: boolean; mono?: boolean }) {
   return (
@@ -420,9 +413,41 @@ interface RetryState {
 
 type TabId = 'overview' | 'logs' | 'history'
 
+const MODEL_VARIANTS: Record<string, string> = {
+  'meta-llama/meta-llama-3-8b-instruct': 'google/gemma-2b-it',
+  'mistralai/mistral-7b-instruct-v0.2': 'google/gemma-2b-it',
+  'qwen/qwen2-7b-instruct': 'google/gemma-2b-it',
+  'deepseek-ai/deepseek-r1-distill-qwen-7b': 'google/gemma-2b-it',
+  'deepseek-ai/deepseek-r1-distill-llama-8b': 'google/gemma-2b-it',
+  'microsoft/phi-3-mini-4k-instruct': 'tinyllama/tinyllama-1.1b-chat-v1.0',
+  'google/gemma-2b-it': 'tinyllama/tinyllama-1.1b-chat-v1.0',
+}
+
+function selectVariantModel(model: string | null) {
+  if (!model) return null
+  const key = model.trim().toLowerCase()
+  if (!key) return null
+  if (MODEL_VARIANTS[key]) return MODEL_VARIANTS[key]
+  if (key.includes('stable-diffusion')) return null
+  if (key.includes('tinyllama')) return null
+  return 'google/gemma-2b-it'
+}
+
+function formatJobDuration(job: JobDetail) {
+  if (job.completed_at && job.submitted_at) {
+    const secs = Math.round((new Date(job.completed_at).getTime() - new Date(job.submitted_at).getTime()) / 1000)
+    return secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`
+  }
+  if (job.actual_duration_minutes) {
+    return `${job.actual_duration_minutes} min`
+  }
+  return '—'
+}
+
 export default function RenterJobDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { t } = useLanguage()
   const jobId = params.id as string
   const [job, setJob] = useState<JobDetail | null>(null)
   const [output, setOutput] = useState<JobOutput | null>(null)
@@ -432,6 +457,34 @@ export default function RenterJobDetailPage() {
   const [error, setError] = useState('')
   const [retry, setRetry] = useState<RetryState>({ open: false, loading: false, error: '', requiredHalala: null })
   const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [providerGpu, setProviderGpu] = useState<string | null>(null)
+  const [exportError, setExportError] = useState('')
+  const viewedSummaryRef = useRef<string | null>(null)
+
+  const trackJobEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = { event, ...payload }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as Window & {
+      dataLayer?: Array<Record<string, unknown>>;
+      gtag?: (...args: unknown[]) => void;
+    }
+    if (Array.isArray(win.dataLayer)) {
+      win.dataLayer.push(detail)
+    }
+    if (typeof win.gtag === 'function') {
+      win.gtag('event', event, payload)
+    }
+  }, [])
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
+  ]
 
   useEffect(() => {
     const key = localStorage.getItem('dc1_renter_key')
@@ -456,7 +509,7 @@ export default function RenterJobDetailPage() {
           headers: { 'x-renter-key': key },
         })
         if (!jobRes.ok) {
-          setError('Job not found or access denied')
+          setError(t('renter.job_detail.not_found_or_denied'))
           return
         }
         const jobData = await jobRes.json()
@@ -475,7 +528,7 @@ export default function RenterJobDetailPage() {
         }
       } catch (err) {
         console.error('Failed to load job:', err)
-        setError('Failed to load job details')
+        setError(t('renter.job_detail.load_failed'))
       } finally {
         setLoading(false)
       }
@@ -485,6 +538,20 @@ export default function RenterJobDetailPage() {
     const interval = setInterval(fetchData, 10000)
     return () => clearInterval(interval)
   }, [jobId, router])
+
+  useEffect(() => {
+    if (!job?.provider_id) {
+      setProviderGpu(null)
+      return
+    }
+    fetch(`${API_BASE}/renters/available-providers`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const match = (data?.providers || []).find((p: { id: number; gpu_model?: string }) => p.id === job.provider_id)
+        setProviderGpu(match?.gpu_model || null)
+      })
+      .catch(() => setProviderGpu(null))
+  }, [job?.provider_id])
 
   const confirmRetry = async () => {
     if (!job) return
@@ -512,6 +579,12 @@ export default function RenterJobDetailPage() {
       }
       const data = await res.json()
       const newId = data.job?.id || data.id || null
+      trackJobEvent('retry_from_summary', {
+        source: 'job_detail',
+        job_id: job.id,
+        model: job.model || null,
+        job_type: job.job_type,
+      })
       setRetry({ open: false, loading: false, error: '', requiredHalala: null })
       if (newId) {
         router.push(`/renter/jobs/${newId}`)
@@ -520,6 +593,34 @@ export default function RenterJobDetailPage() {
       setRetry(r => ({ ...r, loading: false, error: 'Network error. Please try again.' }))
     }
   }
+
+  const cost = job ? (job.actual_cost_halala || 0) / 100 : 0
+  const durationStr = job ? formatJobDuration(job) : '—'
+  let parsedParams: Record<string, unknown> | null = null
+  if (job?.params) {
+    try {
+      parsedParams = JSON.parse(job.params)
+    } catch { /* ignore */ }
+  }
+  const modelName = job
+    ? (output?.model || (typeof parsedParams?.model === 'string' ? parsedParams.model : null) || job.model || '—')
+    : '—'
+  const providerGpuLabel = providerGpu || 'Unavailable'
+  const variantModel = selectVariantModel(modelName === '—' ? null : String(modelName))
+  const canExportOutput = Boolean((output?.type === 'text' && output?.response) || (output?.type === 'image' && output?.image_base64))
+
+  useEffect(() => {
+    if (!job || !modelName) return
+    if (viewedSummaryRef.current === String(job.id)) return
+    trackJobEvent('job_summary_viewed', {
+      source: 'job_detail',
+      job_id: job.id,
+      status: job.status,
+      model: modelName,
+      provider_gpu: providerGpuLabel,
+    })
+    viewedSummaryRef.current = String(job.id)
+  }, [job, modelName, providerGpuLabel, trackJobEvent])
 
   if (loading) {
     return (
@@ -535,46 +636,73 @@ export default function RenterJobDetailPage() {
     return (
       <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
         <div className="space-y-4">
-          <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">&larr; Back to Jobs</Link>
+          <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">&larr; {t('renter.job_detail.back_to_jobs')}</Link>
           <div className="card p-8 text-center">
-            <p className="text-dc1-text-secondary">{error || 'Job not found'}</p>
+            <p className="text-dc1-text-secondary">{error || t('renter.job_detail.not_found')}</p>
           </div>
         </div>
       </DashboardLayout>
     )
   }
 
-  const cost = (job.actual_cost_halala || 0) / 100
-  let durationStr = '—'
-  if (job.completed_at && job.submitted_at) {
-    const secs = Math.round((new Date(job.completed_at).getTime() - new Date(job.submitted_at).getTime()) / 1000)
-    durationStr = secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`
-  } else if (job.actual_duration_minutes) {
-    durationStr = `${job.actual_duration_minutes} min`
+  const goToVariantRun = () => {
+    if (!variantModel) return
+    const params = new URLSearchParams()
+    params.set('mode', job.job_type === 'image_generation' ? 'image_generation' : 'llm_inference')
+    params.set('model', variantModel)
+    if (job.provider_id) params.set('provider', String(job.provider_id))
+    trackJobEvent('variant_run_clicked', {
+      source: 'job_detail',
+      job_id: job.id,
+      from_model: modelName,
+      to_model: variantModel,
+      job_type: job.job_type,
+    })
+    router.push(`/renter/playground?${params.toString()}`)
   }
 
-  let parsedParams: Record<string, unknown> | null = null
-  try {
-    if (job.params) parsedParams = JSON.parse(job.params)
-  } catch { /* ignore */ }
+  const exportOutput = () => {
+    if (!output) return
+    setExportError('')
+    if (output.type === 'text' && output.response) {
+      const textBlob = new Blob([output.response], { type: 'text/plain;charset=utf-8' })
+      const href = URL.createObjectURL(textBlob)
+      const link = document.createElement('a')
+      link.href = href
+      link.download = `dcp-job-${job.id}-output.txt`
+      link.click()
+      URL.revokeObjectURL(href)
+      trackJobEvent('output_exported', { source: 'job_detail', job_id: job.id, format: 'txt', output_type: 'text' })
+      return
+    }
+    if (output.type === 'image' && output.image_base64) {
+      const link = document.createElement('a')
+      link.href = `data:image/${output.format || 'png'};base64,${output.image_base64}`
+      link.download = `dcp-job-${job.id}-output.${output.format || 'png'}`
+      link.click()
+      trackJobEvent('output_exported', { source: 'job_detail', job_id: job.id, format: output.format || 'png', output_type: 'image' })
+      return
+    }
+    setExportError('Export is unavailable until the job produces output.')
+  }
 
   const isTerminal = ['completed', 'failed', 'permanently_failed', 'cancelled'].includes(job.status)
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'logs', label: 'Live Logs' },
-    { id: 'history', label: 'History' },
+    { id: 'overview', label: t('renter.job_detail.tab_overview') },
+    { id: 'logs', label: t('renter.job_detail.tab_logs') },
+    { id: 'history', label: t('renter.job_detail.tab_history') },
   ]
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
       <div className="space-y-6 max-w-3xl">
         {/* Back link */}
-        <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">&larr; Back to Jobs</Link>
+        <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">&larr; {t('renter.job_detail.back_to_jobs')}</Link>
 
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-dc1-text-primary">Job Detail</h1>
+            <h1 className="text-2xl font-bold text-dc1-text-primary">{t('renter.job_detail.title')}</h1>
             <p className="text-dc1-text-muted text-sm font-mono mt-1">{job.job_id || `#${job.id}`}</p>
           </div>
           <div className="flex items-center gap-3">
@@ -585,7 +713,7 @@ export default function RenterJobDetailPage() {
                 className="btn btn-primary text-sm min-h-[44px] px-4"
                 aria-label="Retry this job"
               >
-                Retry Job
+                {t('renter.retry_job')}
               </button>
             )}
           </div>
@@ -613,9 +741,67 @@ export default function RenterJobDetailPage() {
         {/* Tab: Overview */}
         {activeTab === 'overview' && (
           <div className="space-y-5">
+            <div className="card border-dc1-amber/30">
+              <h2 className="section-heading mb-4">Job Summary</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
+                <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
+                  <div className="text-dc1-text-muted text-xs">Status</div>
+                  <div className="text-dc1-text-primary font-semibold">{job.status}</div>
+                </div>
+                <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
+                  <div className="text-dc1-text-muted text-xs">Duration</div>
+                  <div className="text-dc1-text-primary font-semibold">{durationStr}</div>
+                </div>
+                <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
+                  <div className="text-dc1-text-muted text-xs">Billed Cost</div>
+                  <div className="text-dc1-amber font-semibold">{cost > 0 ? `${cost.toFixed(2)} SAR` : '—'}</div>
+                </div>
+                <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
+                  <div className="text-dc1-text-muted text-xs">Model</div>
+                  <div className="text-dc1-text-primary font-mono text-xs break-all">{modelName}</div>
+                </div>
+                <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2 sm:col-span-2">
+                  <div className="text-dc1-text-muted text-xs">Provider GPU</div>
+                  <div className="text-dc1-text-primary">{providerGpuLabel}</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
+                  className="btn btn-primary text-sm min-h-[40px] px-4"
+                  disabled={!isTerminal}
+                  title={isTerminal ? 'Retry same parameters' : 'Retry is available after job completion'}
+                >
+                  Retry same params
+                </button>
+                <button
+                  onClick={goToVariantRun}
+                  className="btn btn-secondary text-sm min-h-[40px] px-4"
+                  disabled={!variantModel}
+                  title={variantModel ? `Switch to ${variantModel}` : 'No cheaper/faster variant available'}
+                >
+                  Run cheaper/faster variant
+                </button>
+                <button
+                  onClick={exportOutput}
+                  className="btn btn-secondary text-sm min-h-[40px] px-4"
+                  disabled={!canExportOutput}
+                  title={canExportOutput ? 'Export current output' : 'Output export is available after completion'}
+                >
+                  Export output
+                </button>
+              </div>
+              {exportError && (
+                <p className="mt-2 text-xs text-status-error">{exportError}</p>
+              )}
+              <p className="mt-3 text-xs text-dc1-text-muted">
+                Raw execution logs are available in the Logs tab.
+              </p>
+            </div>
+
             {/* Job Info */}
             <div className="card">
-              <h2 className="section-heading mb-4">Job Information</h2>
+              <h2 className="section-heading mb-4">{t('renter.job_detail.info')}</h2>
               <DetailRow label="Job Type" value={(job.job_type || '').replace(/_/g, ' ')} />
               <DetailRow label="Status" value={job.status} />
               {job.progress_phase && <DetailRow label="Progress" value={job.progress_phase.replace(/_/g, ' ')} />}
@@ -629,7 +815,7 @@ export default function RenterJobDetailPage() {
             {/* Job Parameters */}
             {parsedParams && (
               <div className="card">
-                <h2 className="section-heading mb-4">Job Parameters</h2>
+                <h2 className="section-heading mb-4">{t('renter.job_detail.params')}</h2>
                 {Object.entries(parsedParams).map(([key, value]) => (
                   <DetailRow key={key} label={key.replace(/_/g, ' ')} value={String(value)} mono />
                 ))}
@@ -639,7 +825,7 @@ export default function RenterJobDetailPage() {
             {/* Output */}
             {output && (
               <div className="card">
-                <h2 className="section-heading mb-4">Output</h2>
+                <h2 className="section-heading mb-4">{t('renter.job_detail.output')}</h2>
                 {output.type === 'text' && output.response && (
                   <div className="space-y-3">
                     <div className="bg-dc1-surface-l2 rounded-lg p-4">
@@ -712,7 +898,7 @@ export default function RenterJobDetailPage() {
             {/* Error */}
             {job.error && (
               <div className="card border-status-error/30 bg-status-error/5">
-                <h2 className="section-heading text-status-error mb-2">Error</h2>
+                <h2 className="section-heading text-status-error mb-2">{t('common.error')}</h2>
                 <pre className="text-sm text-dc1-text-secondary whitespace-pre-wrap break-words">{job.error}</pre>
               </div>
             )}
@@ -722,15 +908,15 @@ export default function RenterJobDetailPage() {
         {/* Tab: Live Logs */}
         {activeTab === 'logs' && (
           <div className="card">
-            <h2 className="section-heading mb-4">Live Log Stream</h2>
+            <h2 className="section-heading mb-4">{t('renter.job_detail.live_logs')}</h2>
             {apiKey ? (
               <LogStream jobId={String(job.id)} apiKey={apiKey} jobStatus={job.status} />
             ) : (
-              <p className="text-dc1-text-muted text-sm">Authentication required.</p>
+              <p className="text-dc1-text-muted text-sm">{t('renter.job_detail.auth_required')}</p>
             )}
             {isTerminal && (
               <p className="mt-3 text-xs text-dc1-text-muted">
-                This job has finished — showing last captured output.
+                {t('renter.job_detail.finished_hint')}
               </p>
             )}
           </div>
@@ -752,15 +938,15 @@ export default function RenterJobDetailPage() {
         >
           <div className="card w-full max-w-md p-6 space-y-5">
             <h2 id="retry-modal-title" className="text-lg font-bold text-dc1-text-primary">
-              Retry Job?
+              {t('renter.job_detail.retry_title')}
             </h2>
             <p className="text-dc1-text-secondary text-sm">
               Retry this job? {((retry.requiredHalala || 0) / 100).toFixed(2)} SAR will be held from your balance.
             </p>
             <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
-              <span className="text-dc1-text-muted">Type: </span>{(job.job_type || '').replace(/_/g, ' ')}
+                <span className="text-dc1-text-muted">{t('table.type')}: </span>{(job.job_type || '').replace(/_/g, ' ')}
               <br />
-              <span className="text-dc1-text-muted">Job ID: </span>{job.job_id || `#${job.id}`}
+              <span className="text-dc1-text-muted">{t('table.job_id')}: </span>{job.job_id || `#${job.id}`}
             </div>
 
             {retry.error === 'insufficient_balance' ? (
@@ -781,7 +967,7 @@ export default function RenterJobDetailPage() {
                 disabled={retry.loading}
                 className="btn btn-secondary min-h-[44px] px-4"
               >
-                Cancel
+                {t('admin.pricing.cancelBtn')}
               </button>
               <button
                 onClick={confirmRetry}
@@ -791,7 +977,7 @@ export default function RenterJobDetailPage() {
                 {retry.loading && (
                   <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
                 )}
-                {retry.loading ? 'Retrying…' : 'Retry Job'}
+                {retry.loading ? t('renter.job_detail.retrying') : t('renter.retry_job')}
               </button>
             </div>
           </div>
