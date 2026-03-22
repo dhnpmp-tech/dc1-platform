@@ -150,14 +150,24 @@ async function lockJobFunds(jobUuid, providerWallet, usdcAmountMicro, expiryUnix
 ```js
 async function signJobCompletion(jobUuid, providerWallet, usdcAmountMicro) {
   const jobId = ethers.keccak256(ethers.toUtf8Bytes(jobUuid));
-  const messageHash = ethers.keccak256(
-    ethers.solidityPacked(
-      ['bytes32', 'address', 'uint256'],
-      [jobId, providerWallet, usdcAmountMicro]
-    )
-  );
-  // ethers v6 automatically prefixes with "\x19Ethereum Signed Message:\n32"
-  const proof = await oracleWallet.signMessage(ethers.getBytes(messageHash));
+  const domain = {
+    name: 'DCP Escrow',
+    version: '1',
+    chainId: Number(process.env.NEXT_PUBLIC_BASE_CHAIN_ID || 84532),
+    verifyingContract: process.env.ESCROW_CONTRACT_ADDRESS,
+  };
+  const types = {
+    Claim: [
+      { name: 'jobId', type: 'bytes32' },
+      { name: 'provider', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+  };
+  const proof = await oracleWallet.signTypedData(domain, types, {
+    jobId,
+    provider: providerWallet,
+    amount: usdcAmountMicro,
+  });
   return proof;
 }
 ```

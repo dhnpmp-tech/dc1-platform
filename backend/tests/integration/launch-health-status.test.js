@@ -26,6 +26,7 @@ function createLaunchCheckApp() {
 
       res.json({
         status: 'ok',
+        timestamp: new Date().toISOString(),
         db: 'ok',
         providers: { total: providersTotal, online: providersOnline },
         jobs: { queued: jobsQueued, running: jobsRunning },

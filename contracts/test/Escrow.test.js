@@ -27,11 +27,21 @@ describe("Escrow", function () {
 
   // Sign a job-completion proof as oracle
   async function oracleSign(jobId, providerAddr, amount, signer) {
-    const packedHash = ethers.solidityPackedKeccak256(
-      ["bytes32", "address", "uint256"],
-      [jobId, providerAddr, amount]
-    );
-    return signer.signMessage(ethers.getBytes(packedHash));
+    const domain = {
+      name: "DCP Escrow",
+      version: "1",
+      chainId: (await ethers.provider.getNetwork()).chainId,
+      verifyingContract: await escrow.getAddress(),
+    };
+    const types = {
+      Claim: [
+        { name: "jobId", type: "bytes32" },
+        { name: "provider", type: "address" },
+        { name: "amount", type: "uint256" },
+      ],
+    };
+    const value = { jobId, provider: providerAddr, amount };
+    return signer.signTypedData(domain, types, value);
   }
 
   beforeEach(async function () {

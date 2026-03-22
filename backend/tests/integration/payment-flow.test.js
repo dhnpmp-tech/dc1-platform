@@ -631,15 +631,19 @@ describe('Escrow integration with payment flow', () => {
   it('webhook credits balance → sufficient for job → job submitted successfully', async () => {
     const { key: renterKey, id: renterId } = await seedRenter(0);
     const { id: providerId } = await seedProvider();
+    const webhookSecret = 'test-webhook-secret-balance-credit';
+    process.env.MOYASAR_WEBHOOK_SECRET = webhookSecret;
 
     // Payment record in 'initiated' state
     const paymentId = insertPayment(renterId, { amount_halala: 10_000, status: 'initiated' });
+    const body = webhookBody(paymentId, 'paid', 10_000);
 
     // Webhook fires → credits balance
     await request(app)
       .post('/api/payments/webhook')
       .set('Content-Type', 'application/json')
-      .send(webhookBody(paymentId, 'paid', 10_000));
+      .set('x-moyasar-signature', webhookSignature(webhookSecret, body))
+      .send(body);
 
     const balanceAfterWebhook = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId).balance_halala;
     expect(balanceAfterWebhook).toBe(10_000);
@@ -651,6 +655,7 @@ describe('Escrow integration with payment flow', () => {
       .send({ provider_id: providerId, job_type: 'llm_inference', duration_minutes: 5,
               params: { prompt: 'test', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' } });
     expect(jobRes.status).toBe(201);
+    delete process.env.MOYASAR_WEBHOOK_SECRET;
   });
 
   it('refund on job failure — renter balance restored', async () => {

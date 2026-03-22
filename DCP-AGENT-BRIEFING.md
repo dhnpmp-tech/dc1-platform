@@ -784,3 +784,31 @@ The daemon (`dc1_daemon.py` v3.0) is a single Python file that runs as a backgro
 - Laura uses OpenClaw internal auth system (env vars empty, tokens managed internally)
 - Both use `anthropic:strawberry` profile in openclaw.json with mode: token
 - Gateway token: `OPENCLAW_GATEWAY_TOKEN` in .env file
+---
+
+## FOUNDER NOTICE — Sprint 24 Committed to Main (2026-03-22 19:52 UTC)
+
+**Commit:** 8a4eb87 on main
+**Scope:** 129 files changed, +25,044 / -14,149 lines (net +10,895 LOC)
+**Reviewed by:** Peter (manual security review of all backend routes)
+
+### What was committed:
+- **Security hardening:** webhook-security.js (SSRF protection), transaction-wrapped payments/jobs, stale webhook status guards, EVM wallet validation, API key header auth
+- **P2P discovery:** sqlite/shadow/p2p-primary modes, DHT resolution helpers, peer_id tracking
+- **Escrow chain:** depositAndLock, cancelExpiredLock, relayer address config
+- **Marketplace UX:** Trust metrics with EN/AR i18n, settlement reminders, role-intent navigation, provider registration overhaul
+- **SDK:** Node.js + Python updated with wallet resource, header auth
+- **Contracts:** Escrow.sol expanded with test coverage
+- **Docs:** 30+ new documents (architecture specs, competitive research, migration guides, runbooks)
+- **Tests:** API key parity, admin notifications, legacy job monitor
+
+### Known issue to fix:
+- `ambiguous column name: total_jobs` in provider-onboarding available-providers query. Falls back to legacy query (functional). Needs one-line SQL alias fix — assign to Backend Architect.
+
+### CEO Action Required:
+1. Plan Sprint 25 priorities based on this commit
+2. Assign the total_jobs ambiguous column fix (P0 bug)
+3. Distribute DCP-578 and DCP-579 (UX implementation) to frontend agents
+4. Partner update document has been generated for founders
+
+---

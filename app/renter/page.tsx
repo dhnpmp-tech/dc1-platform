@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import StatCard from '../components/ui/StatCard'
 import StatusBadge from '../components/ui/StatusBadge'
@@ -87,12 +88,12 @@ const LOW_BALANCE_THRESHOLD_HALALA = 500
 // ── Main Component ─────────────────────────────────────────────────
 export default function RenterDashboard() {
   const { t } = useLanguage()
+  const router = useRouter()
   const [renter, setRenter] = useState<RenterInfo | null>(null)
   const [gpus, setGpus] = useState<GPU[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [authChecking, setAuthChecking] = useState(true)
-  const [renterKey, setRenterKey] = useState('')
-  const [authError, setAuthError] = useState('')
+  const [authReason, setAuthReason] = useState<'missing_credentials' | 'invalid_credentials' | 'expired_session' | null>(null)
   const [bannerDismissed, setBannerDismissed] = useState(false)
 
   useEffect(() => {
@@ -122,35 +123,44 @@ export default function RenterDashboard() {
   useEffect(() => {
     const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
     if (key) {
-      setRenterKey(key)
+      setAuthReason(null)
       verifyKey(key)
       const interval = setInterval(() => {
         verifyKey(key)
       }, 30000)
       return () => clearInterval(interval)
     } else {
-      setAuthError('')
+      setAuthReason('missing_credentials')
       setAuthChecking(false)
     }
   }, [])
 
+  useEffect(() => {
+    if (authChecking || renter) return
+    const params = new URLSearchParams({
+      role: 'renter',
+      redirect: '/renter',
+    })
+    if (authReason) params.set('reason', authReason)
+    router.replace(`/login?${params.toString()}`)
+  }, [authChecking, renter, authReason, router])
+
   const verifyKey = async (key: string) => {
     setAuthChecking(true)
-    setAuthError('')
+    setAuthReason(null)
     try {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
       if (res.ok) {
         const data = await res.json()
         if (data.renter) {
           setRenter(data.renter)
-          setRenterKey(key)
           localStorage.setItem('dc1_renter_key', key)
           fetchGPUs()
           fetchJobs(key)
         } else {
           setRenter(null)
           localStorage.removeItem('dc1_renter_key')
-          setAuthError(t('auth.error.invalid_credentials'))
+          setAuthReason('invalid_credentials')
         }
       } else {
         const payload = await res.json().catch(() => ({}))
@@ -159,18 +169,18 @@ export default function RenterDashboard() {
         localStorage.removeItem('dc1_renter_key')
         if (res.status === 401 || res.status === 403) {
           if (rawError.includes('expired') || rawError.includes('session')) {
-            setAuthError(t('auth.error.expired_session'))
+            setAuthReason('expired_session')
           } else {
-            setAuthError(t('auth.error.invalid_credentials'))
+            setAuthReason('invalid_credentials')
           }
         } else {
-          setAuthError(payload?.error || t('auth.error.sign_in_failed'))
+          setAuthReason('invalid_credentials')
         }
       }
     } catch (err) {
       console.error('Auth error:', err)
       setRenter(null)
-      setAuthError(t('auth.error.network'))
+      setAuthReason('invalid_credentials')
     } finally {
       setAuthChecking(false)
     }
@@ -225,8 +235,7 @@ export default function RenterDashboard() {
   const handleLogout = () => {
     localStorage.removeItem('dc1_renter_key')
     setRenter(null)
-    setRenterKey('')
-    setAuthError('')
+    setAuthReason('missing_credentials')
     window.location.href = '/'
   }
 
@@ -243,49 +252,9 @@ export default function RenterDashboard() {
   if (!renter) {
     return (
       <div className="min-h-screen bg-dc1-void flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center">
-          <div className="mb-6">
-            <svg className="w-16 h-16 text-dc1-amber mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-dc1-text-primary mb-2">{t('login.welcome_back')}</h1>
-          <p className="text-dc1-text-secondary mb-8">
-            {t('renter.sign_in_prompt')}
-          </p>
-          {authError && (
-            <div className="mb-6 p-3 rounded-lg border border-status-error/40 bg-status-error/10 text-status-error text-sm text-left">
-              {authError}
-            </div>
-          )}
-
-          <form
-            onSubmit={e => {
-              e.preventDefault()
-              const keyInput = (e.target as HTMLFormElement).querySelector('input')?.value?.trim()
-              if (keyInput) {
-                verifyKey(keyInput)
-              }
-            }}
-            className="space-y-4"
-          >
-            <input
-              type="password"
-              placeholder={t('auth.api_key_placeholder')}
-              className="input"
-              required
-            />
-            <button type="submit" className="btn btn-primary w-full">
-              {t('auth.sign_in')}
-            </button>
-          </form>
-
-          <p className="text-sm text-dc1-text-secondary mt-6">
-            {t('auth.no_account')}{' '}
-            <a href="/renter/register" className="text-dc1-amber hover:underline">
-              {t('auth.register_here')}
-            </a>
-          </p>
+        <div className="flex flex-col items-center gap-4 text-dc1-text-secondary">
+          <div className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full" />
+          <p>{t('common.loading')}</p>
         </div>
       </div>
     )

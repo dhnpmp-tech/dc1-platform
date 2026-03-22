@@ -1226,6 +1226,67 @@ function GpuPlayground() {
   const availableBalanceHalala = renterBalance != null ? Math.round(renterBalance * 100) : null;
   const isBalanceSufficient = availableBalanceHalala == null ? true : availableBalanceHalala >= estimatedMaxHalala;
   const canRecoverLowBalance = !isRunning && !isBalanceSufficient;
+  const hasAuthKey = renterKey.trim().length > 0;
+  const isProviderOnline = selectedProvider ? selectedProvider.status === 'online' : false;
+  const isModelCompatible =
+    selectedProvider && selectedModelVramGb > 0
+      ? (selectedProvider.vram_gb || 0) >= selectedModelVramGb
+      : true;
+  const hasHoldEstimate = queueEstimateMinutes !== null;
+  const expectedOutputType =
+    jobType === 'image_generation' ? 'Image file (PNG/JPG/WebP)' : jobType === 'vllm_serve' ? 'Live API endpoint URL' : 'Text response';
+  const readinessChecks: Array<{
+    key: string;
+    label: string;
+    passing: boolean;
+    detail: string;
+    required: boolean;
+  }> = [
+    {
+      key: 'auth_valid',
+      label: 'Auth valid',
+      passing: hasAuthKey,
+      detail: hasAuthKey ? 'Renter API key is loaded.' : 'Login key is missing.',
+      required: true,
+    },
+    {
+      key: 'provider_online',
+      label: 'Provider online',
+      passing: Boolean(providerId) && isProviderOnline,
+      detail: providerId
+        ? isProviderOnline
+          ? 'Selected provider is online.'
+          : 'Selected provider is offline.'
+        : 'Select a provider first.',
+      required: true,
+    },
+    {
+      key: 'model_compat',
+      label: 'Model compatibility',
+      passing: isModelCompatible,
+      detail:
+        selectedProvider && selectedModelVramGb > 0
+          ? isModelCompatible
+            ? `${selectedProvider.vram_gb || 0} GB VRAM covers model requirement.`
+            : `Model needs ~${selectedModelVramGb} GB; selected provider has ${selectedProvider.vram_gb || 0} GB.`
+          : 'Compatibility will validate once provider/model are selected.',
+      required: true,
+    },
+    {
+      key: 'hold_visible',
+      label: 'Estimated hold visible',
+      passing: hasHoldEstimate,
+      detail: hasHoldEstimate ? 'Queue estimate is available.' : 'Queue estimate is still loading.',
+      required: false,
+    },
+    {
+      key: 'output_type',
+      label: 'Expected output type',
+      passing: true,
+      detail: expectedOutputType,
+      required: false,
+    },
+  ];
 
   const submitBlockers: Array<{
     code: string;
@@ -1238,6 +1299,32 @@ function GpuPlayground() {
       code: 'provider_missing',
       reason: t('playground.blocker.provider_missing.reason'),
       ctaLabel: t('playground.blocker.provider_missing.cta'),
+      onRecover: fetchProviders,
+    });
+  }
+  if (!hasAuthKey) {
+    submitBlockers.push({
+      code: 'auth_missing',
+      reason: 'Authentication key missing. Re-authenticate before submitting.',
+      ctaLabel: 'Go to login',
+      onRecover: () => {
+        window.location.href = '/login?role=renter&source=playground-submit';
+      },
+    });
+  }
+  if (providerId && selectedProvider && !isProviderOnline) {
+    submitBlockers.push({
+      code: 'provider_offline',
+      reason: 'Selected provider is offline. Pick an online provider before submit.',
+      ctaLabel: 'Refresh providers',
+      onRecover: fetchProviders,
+    });
+  }
+  if (providerId && selectedProvider && !isModelCompatible) {
+    submitBlockers.push({
+      code: 'model_incompatible',
+      reason: `Selected GPU VRAM is below model requirement (~${selectedModelVramGb} GB).`,
+      ctaLabel: 'Choose compatible provider',
       onRecover: fetchProviders,
     });
   }
@@ -2151,20 +2238,33 @@ function GpuPlayground() {
 
               <div className="rounded-xl border border-[#00D9FF]/25 bg-[#00D9FF]/5 p-4 space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[#7CE8FF]">Submission readiness</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                    <p className="text-white/45">Estimated cost range</p>
+                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                  <p className="text-white/45">Estimated cost range</p>
+                  <p className="text-white/90 font-medium">
+                    {(estimatedMinHalala / 100).toFixed(2)}–{(estimatedMaxHalala / 100).toFixed(2)} SAR
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {readinessChecks.map((check) => (
+                    <div key={check.key} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-white/80 font-medium">{check.label}</p>
+                        <span className={check.passing ? 'text-green-300' : 'text-red-300'}>
+                          {check.passing ? 'PASS' : check.required ? 'FAIL' : 'INFO'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-white/55">{check.detail}</p>
+                    </div>
+                  ))}
+                  <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                    <p className="text-white/45">Provider recommendation</p>
                     <p className="text-white/90 font-medium">
-                      {(estimatedMinHalala / 100).toFixed(2)}–{(estimatedMaxHalala / 100).toFixed(2)} SAR
+                      {recommendedProvider
+                        ? `${recommendedProvider.gpu_model} (${recommendedProvider.vram_gb || '?'} GB)`
+                        : 'No online providers'}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                    <p className="text-white/45">Queue estimate</p>
-                    <p className="text-white/90 font-medium">
-                      {queueEstimateMinutes == null ? 'Checking queue...' : queueEstimateMinutes === 0 ? 'No wait' : `~${queueEstimateMinutes} min`}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                  <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs">
                     <p className="text-white/45">Balance check</p>
                     <p className={`font-medium ${isBalanceSufficient ? 'text-green-300' : 'text-red-300'}`}>
                       {renterBalance == null
@@ -2173,20 +2273,6 @@ function GpuPlayground() {
                         ? `${renterBalance.toFixed(2)} SAR available`
                         : `${renterBalance.toFixed(2)} SAR available (top up needed)`}
                     </p>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                    <p className="text-white/45">Provider recommendation</p>
-                    <p className="text-white/90 font-medium">
-                      {recommendedProvider
-                        ? `${recommendedProvider.gpu_model} (${recommendedProvider.vram_gb || '?'} GB)`
-                        : 'No online providers'}
-                    </p>
-                    {selectedProvider && recommendedProvider && selectedProvider.id !== recommendedProvider.id && (
-                      <p className="text-white/45 mt-0.5">
-                        Selected: {selectedProvider.gpu_model}
-                        {selectedModelVramGb > 0 && selectedProvider.vram_gb < selectedModelVramGb ? ' (low VRAM for this model)' : ''}
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>

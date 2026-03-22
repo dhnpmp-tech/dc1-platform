@@ -36,47 +36,59 @@ export default function DocsPage({ params }: DocsPageProps) {
               بوابة توثيق ثنائية اللغة (عربي/إنجليزي) للتأهل السريع في حوسبة GPU داخل السعودية — تشغيل عبر حاويات، مع دعم حقيقي لنماذج الذكاء الاصطناعي العربية.
             </p>
             <div className="mt-6">
-              <h2 className="text-lg font-semibold text-dc1-text-primary">Choose your role to ship faster</h2>
+              <h2 className="text-lg font-semibold text-dc1-text-primary">Choose your mode</h2>
               <p className="mt-2 max-w-3xl text-sm text-dc1-text-secondary">
-                Start with one role-first checklist. Every path keeps the same trust anchors: Saudi energy economics, Arabic AI readiness, and containerized execution.
+                Keep the same operating labels across DCP surfaces so next steps stay predictable.
               </p>
               <p className="mt-2 max-w-3xl text-sm text-dc1-text-secondary">
-                اختر مسارك حسب الدور. كل مسار يبدأ بخطوات واضحة مع نفس ركائز الثقة: ميزة الطاقة في السعودية، دعم نماذج عربية، وتشغيل عبر الحاويات.
+                اختر الوضع المناسب بنفس التسميات الموحدة عبر المنصة: Marketplace وPlayground وDocs/API وEnterprise Support.
               </p>
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <div className="mt-4 grid gap-3 lg:grid-cols-4">
                 <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Renter</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Marketplace</p>
                   <p className="mt-2 text-sm text-dc1-text-secondary">
-                    Submit your first workload with runtime settlement and a guided checklist.
+                    Browse live GPU options and shortlist a provider path.
                   </p>
                   <p className="mt-2 text-sm text-dc1-text-secondary">
-                    مستأجر: ابدأ أول حمولة مع قائمة تحقق واضحة وتسوية حسب وقت التشغيل الفعلي.
+                    تصفّح السوق الحي وحدد مسار المزود المناسب.
                   </p>
-                  <RoleIntentLink href="/docs/quickstart#renter-onboarding-checklist" persistIntent="renter" source="docs_role_card_renter" className="btn btn-primary btn-sm mt-4">
-                    Open Renter Checklist
+                  <RoleIntentLink href="/renter/marketplace" persistIntent="renter" source="docs_mode_card_marketplace" className="btn btn-primary btn-sm mt-4">
+                    Open Marketplace
                   </RoleIntentLink>
                 </div>
                 <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Provider</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Playground</p>
                   <p className="mt-2 text-sm text-dc1-text-secondary">
-                    Register your GPU, install daemon, and reach heartbeat-ready status.
+                    Run a starter workload in-browser before deeper integration.
                   </p>
                   <p className="mt-2 text-sm text-dc1-text-secondary">
-                    مزود: سجّل GPU، ثبّت الـ daemon، ووصل الجهاز إلى حالة heartbeat جاهزة.
+                    شغّل حمولة أولية من المتصفح قبل التوسّع في التكامل.
                   </p>
-                  <RoleIntentLink href="/provider/register" persistIntent="provider" source="docs_role_card_provider" className="btn btn-primary btn-sm mt-4">
-                    Start Provider Onboarding
+                  <RoleIntentLink href="/renter/playground?starter=1" persistIntent="renter" source="docs_mode_card_playground" className="btn btn-primary btn-sm mt-4">
+                    Open Playground
                   </RoleIntentLink>
                 </div>
                 <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Enterprise</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Docs/API</p>
                   <p className="mt-2 text-sm text-dc1-text-secondary">
-                    Start enterprise procurement support for reserved capacity, security review, and rollout planning.
+                    Use quickstart and API reference to integrate your container workflows.
                   </p>
                   <p className="mt-2 text-sm text-dc1-text-secondary">
-                    مؤسسة: ابدأ دعم المشتريات المؤسسية للسعة المخصصة ومراجعة الأمان وخطة الإطلاق.
+                    راجع التوثيق ومرجع API لتكامل الحاويات بشكل واضح.
                   </p>
-                  <RoleIntentLink href="/support?category=enterprise&source=docs-enterprise-support-card" persistIntent="enterprise" source="docs_role_card_enterprise" className="btn btn-primary btn-sm mt-4">
+                  <Link href="/docs/api-reference" className="btn btn-primary btn-sm mt-4">
+                    Open Docs/API
+                  </Link>
+                </div>
+                <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Enterprise Support</p>
+                  <p className="mt-2 text-sm text-dc1-text-secondary">
+                    Open enterprise procurement, security review, and rollout planning support.
+                  </p>
+                  <p className="mt-2 text-sm text-dc1-text-secondary">
+                    افتح مسار دعم المؤسسات للمشتريات، مراجعة الأمان، وخطة الإطلاق.
+                  </p>
+                  <RoleIntentLink href="/support?category=enterprise&source=docs-enterprise-support-card" persistIntent="enterprise" source="docs_mode_card_enterprise_support" className="btn btn-primary btn-sm mt-4">
                     Open Enterprise Support
                   </RoleIntentLink>
                 </div>

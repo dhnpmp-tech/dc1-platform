@@ -54,7 +54,15 @@ export default function HomePage() {
 
   const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
-    const detail = { event, source: 'landing', ...payload }
+    const detail = {
+      event,
+      source_page: 'landing',
+      role_intent: selectedIntent,
+      surface: 'landing_page',
+      destination: 'none',
+      step: 'view',
+      ...payload,
+    }
     window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
     const win = window as typeof window & {
       dataLayer?: Array<Record<string, unknown>>
@@ -77,9 +85,10 @@ export default function HomePage() {
       reason: previousIntent && previousIntent !== intent ? 'overridden' : 'persisted',
     })
     trackLandingEvent('landing_path_selected', {
-      page: 'landing',
-      selection_type: selectionType,
-      role: intent,
+      role_intent: intent,
+      surface: source,
+      destination: 'intent_selection',
+      step: selectionType,
     })
   }
 
@@ -170,7 +179,11 @@ export default function HomePage() {
         if (hasTrackedBillingExplainerView.current) return
         if (entries.some((entry) => entry.isIntersecting)) {
           hasTrackedBillingExplainerView.current = true
-          trackLandingEvent('billing_explainer_viewed', { page: 'landing' })
+          trackLandingEvent('billing_explainer_viewed', {
+            surface: 'billing_explainer',
+            destination: 'onscreen',
+            step: 'view',
+          })
           observer.disconnect()
         }
       },
@@ -181,77 +194,84 @@ export default function HomePage() {
     return () => observer.disconnect()
   }, [])
 
-  const stats = [
+  const liveStats = [
     { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
-    { value: t('landing.stat_settlement_value'), label: t('landing.stat_settlement_label'), live: false },
-    { value: t('landing.stat_execution_value'), label: t('landing.stat_execution_label'), live: false },
-    { value: t('landing.stat_arabic_models_value'), label: t('landing.stat_arabic_models_label'), live: false },
+    { value: gpuFamilyCoverage !== null ? `${gpuFamilyCoverage}` : '—', label: t('landing.reliability_gpu_families'), live: gpuFamilyCoverage !== null },
+    {
+      value: reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable'),
+      label: t('landing.live_stat_last_updated'),
+      live: reliabilityUpdatedAt !== null,
+    },
   ]
 
-  const heroPathCards =
-    selectedIntent === 'provider'
-      ? [
-          {
-            role: 'provider' as const,
-            labelKey: 'landing.path_provider_label',
-            titleKey: 'landing.path_provider_register_title',
-            descKey: 'landing.path_provider_register_desc',
-            href: '/provider/register',
-            analyticsLabel: 'Register GPU / get API key',
-          },
-          {
-            role: 'provider' as const,
-            labelKey: 'landing.path_provider_label',
-            titleKey: 'landing.path_provider_install_title',
-            descKey: 'landing.path_provider_install_desc',
-            href: '/docs/provider-guide',
-            analyticsLabel: 'Install daemon / heartbeat verification',
-          },
-        ]
-      : selectedIntent === 'enterprise'
-        ? [
-            {
-              role: 'enterprise' as const,
-              labelKey: 'landing.path_enterprise_label',
-              titleKey: 'landing.path_enterprise_support_title',
-              descKey: 'landing.path_enterprise_support_desc',
-              href: '/support?category=enterprise&source=landing-intent',
-              analyticsLabel: 'Enterprise support intake',
-            },
-            {
-              role: 'enterprise' as const,
-              labelKey: 'landing.path_enterprise_label',
-              titleKey: 'landing.path_enterprise_docs_title',
-              descKey: 'landing.path_enterprise_docs_desc',
-              href: '/docs/quickstart',
-              analyticsLabel: 'Enterprise quickstart',
-            },
-          ]
-        : [
-            {
-              role: 'renter' as const,
-              labelKey: 'landing.path_renter_label',
-              titleKey: 'landing.path_renter_playground_title',
-              descKey: 'landing.path_renter_playground_desc',
-              href: '/renter/register',
-              analyticsLabel: 'Playground (browser, no setup)',
-            },
-            {
-              role: 'renter' as const,
-              labelKey: 'landing.path_renter_label',
-              titleKey: 'landing.path_renter_container_title',
-              descKey: 'landing.path_renter_container_desc',
-              href: '/docs/quickstart',
-              analyticsLabel: 'Container Jobs (API + Docker image)',
-            },
-          ]
-
-  const intentOutcomeKey =
-    selectedIntent === 'provider'
-      ? 'landing.intent_provider_outcome'
-      : selectedIntent === 'enterprise'
-        ? 'landing.intent_enterprise_outcome'
-        : 'landing.intent_renter_outcome'
+  const trustPolicies = [
+    {
+      title: t('landing.trust_settlement_title'),
+      description: t('landing.trust_settlement_desc'),
+    },
+    {
+      title: t('landing.trust_execution_title'),
+      description: t('landing.trust_execution_desc'),
+    },
+    {
+      title: t('landing.trust_models_title'),
+      description: t('landing.trust_models_desc'),
+    },
+  ]
+  const segmentProofItems = [
+    t('proof.segment.item_energy'),
+    t('proof.segment.item_models'),
+    t('proof.segment.item_execution'),
+  ]
+  const modeStripItems = [
+    { key: 'marketplace', label: t('mode.label.marketplace'), description: t('mode.desc.marketplace'), href: '/renter/marketplace' },
+    { key: 'playground', label: t('mode.label.playground'), description: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
+    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api-reference' },
+    { key: 'enterprise_support', label: t('mode.label.enterprise_support'), description: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=landing-mode-strip' },
+  ]
+  const pathChooserLanes = [
+    {
+      key: 'self_serve_renter',
+      label: t('path_chooser.self_serve.label'),
+      description: t('path_chooser.self_serve.desc'),
+      href: '/renter/register?source=landing_path_chooser&lane=self_serve_renter',
+    },
+    {
+      key: 'provider_onboarding',
+      label: t('path_chooser.provider.label'),
+      description: t('path_chooser.provider.desc'),
+      href: '/provider/register?source=landing_path_chooser&lane=provider_onboarding',
+    },
+    {
+      key: 'enterprise_intake',
+      label: t('path_chooser.enterprise.label'),
+      description: t('path_chooser.enterprise.desc'),
+      href: '/support?category=enterprise&source=landing_path_chooser&lane=enterprise_intake#contact-form',
+    },
+    {
+      key: 'arabic_model_docs',
+      label: t('path_chooser.arabic.label'),
+      description: t('path_chooser.arabic.desc'),
+      href: '/docs?source=landing_path_chooser&lane=arabic_model_docs',
+    },
+  ]
+  const howDcpWorksSteps = [
+    {
+      key: 'choose_gpu',
+      title: 'Choose GPU',
+      description: 'Pick a live provider in the marketplace by model, uptime, and SAR/hour rate.',
+    },
+    {
+      key: 'run_container_workload',
+      title: 'Run container workload',
+      description: 'Deploy your workload in NVIDIA containerized runtime paths across supported GPUs.',
+    },
+    {
+      key: 'settle_usage',
+      title: 'Settle usage',
+      description: 'Track usage and settlement records through usage-based billing flows.',
+    },
+  ]
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -272,6 +292,47 @@ export default function HomePage() {
             <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
               {t('landing.hero_desc')}
             </p>
+            <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
+              Saudi energy-cost advantage first, Arabic AI model support built in, and every workload runs in secure NVIDIA containerized execution.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
+              <Link
+                href="/renter/register?source=landing_first_fold&intent=renter"
+                onClick={() => {
+                  updateIntent('renter', 'landing_first_fold', 'primary_cta')
+                  trackLandingEvent('landing_primary_cta_clicked', {
+                    role_intent: 'renter',
+                    surface: 'hero_primary_cta',
+                    destination: '/renter/register?source=landing_first_fold&intent=renter',
+                    step: 'primary_cta',
+                  })
+                }}
+                className="btn btn-primary btn-lg w-full sm:w-auto min-w-[240px]"
+              >
+                {t('landing.cta_renter')}
+              </Link>
+              <Link
+                href="/provider/register?source=landing_first_fold&intent=provider"
+                onClick={() => {
+                  updateIntent('provider', 'landing_first_fold', 'primary_cta')
+                  trackLandingEvent('landing_primary_cta_clicked', {
+                    role_intent: 'provider',
+                    surface: 'hero_primary_cta',
+                    destination: '/provider/register?source=landing_first_fold&intent=provider',
+                    step: 'primary_cta',
+                  })
+                }}
+                className="btn btn-secondary btn-lg w-full sm:w-auto min-w-[240px]"
+              >
+                {t('landing.cta_provider')}
+              </Link>
+            </div>
+            <p className="text-xs text-dc1-text-muted mb-8">
+              {t('landing.cta_alt_prefix')}{' '}
+              <Link href="/support?category=enterprise&source=landing-first-fold" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold">
+                {t('landing.cta_enterprise')}
+              </Link>
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
               <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
                 <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>
@@ -286,152 +347,69 @@ export default function HomePage() {
                 <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
               </div>
             </div>
-            <div className="max-w-4xl mx-auto w-full">
-              <div className="flex flex-wrap items-center justify-center gap-3 mb-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateIntent('renter', 'landing_intent_chip', 'intent_chip')
-                  }}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    selectedIntent === 'renter'
-                      ? 'bg-dc1-amber text-dc1-void'
-                      : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
-                  }`}
-                >
-                  {t('landing.intent_renter_chip')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateIntent('provider', 'landing_intent_chip', 'intent_chip')
-                  }}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    selectedIntent === 'provider'
-                      ? 'bg-dc1-amber text-dc1-void'
-                      : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
-                  }`}
-                >
-                  {t('landing.intent_provider_chip')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateIntent('enterprise', 'landing_intent_chip', 'intent_chip')
-                  }}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    selectedIntent === 'enterprise'
-                      ? 'bg-dc1-amber text-dc1-void'
-                      : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
-                  }`}
-                >
-                  {t('landing.intent_enterprise_chip')}
-                </button>
-              </div>
-              <p className="text-sm text-dc1-text-secondary mb-4">
-                {t(intentOutcomeKey)}
+            <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+                How DCP works
               </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
-                {heroPathCards.map((card, index) => (
-                  <Link
-                    key={`${card.href}-${index}`}
-                    href={card.href}
-                    onClick={() => {
-                      persistRoleIntent(card.role, {
-                        source: 'landing_path_card',
-                        previousIntent: selectedIntent,
-                        reason: selectedIntent !== card.role ? 'overridden' : 'persisted',
-                      })
-                      trackLandingEvent('landing_path_selected', {
-                        page: 'landing',
-                        selection_type: 'path_card',
-                        role: card.role,
-                        path_label: card.analyticsLabel,
-                        destination: card.href,
-                      })
-                    }}
-                    className={`rounded-xl p-5 border transition-all ${
-                      index === 0
-                        ? 'border-dc1-amber bg-dc1-amber/10 shadow-sm'
-                        : 'border-dc1-amber/60 bg-dc1-surface-l2 hover:border-dc1-amber'
-                    }`}
-                  >
-                    <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">{t(card.labelKey)}</p>
-                    <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">{t(card.titleKey)}</h3>
-                    <p className="text-sm text-dc1-text-secondary">{t(card.descKey)}</p>
-                  </Link>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {howDcpWorksSteps.map((item, index) => (
+                  <div key={item.key} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-3">
+                    <p className="text-xs font-semibold text-dc1-amber">{index + 1}. {item.title}</p>
+                    <p className="mt-1 text-xs text-dc1-text-secondary leading-relaxed">{item.description}</p>
+                  </div>
                 ))}
               </div>
-
-              <div className="mt-4 rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-4 text-left">
-                <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">
-                  {t('landing.enterprise_label')}
-                </p>
-                <p className="text-sm text-dc1-text-secondary mb-3">
-                  {t('landing.enterprise_desc')}
-                </p>
-                <Link
-                  href="/support?category=enterprise&source=landing-hero"
-                  onClick={() => {
-                    persistRoleIntent('enterprise', {
-                      source: 'landing_enterprise_cta',
-                      previousIntent: selectedIntent,
-                      reason: selectedIntent !== 'enterprise' ? 'overridden' : 'persisted',
-                    })
-                    trackLandingEvent('enterprise_cta_clicked', { placement: 'hero_path_chooser' })
-                  }}
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-dc1-amber hover:text-dc1-amber/80 transition-colors"
-                >
-                  {t('landing.enterprise_cta')}
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-5">
-                <div className="w-full sm:w-auto rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-2 text-xs text-dc1-text-secondary text-center">
-                  {t('landing.hero_settlement_proof')}
+            </div>
+            <details className="max-w-4xl mx-auto w-full mb-4 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-left">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+                Explore all paths and tools
+              </summary>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+                    {t('mode.strip.title')}
+                  </p>
+                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('mode.strip.subtitle')}</p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {modeStripItems.map((item) => (
+                      <Link
+                        key={item.key}
+                        href={item.href}
+                        onClick={() =>
+                          trackLandingEvent('mode_strip_clicked', {
+                            surface: 'mode_strip',
+                            destination: item.href,
+                            step: 'mode_click',
+                            mode_key: item.key,
+                            mode_label: item.label,
+                          })
+                        }
+                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
+                      >
+                        <p className="text-sm font-semibold text-dc1-text-primary">{item.label}</p>
+                        <p className="mt-1 text-xs text-dc1-text-secondary">{item.description}</p>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+                    {t('path_chooser.title')}
+                  </p>
+                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('path_chooser.subtitle')}</p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {pathChooserLanes.map((lane) => (
+                      <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber">
+                        <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
+                        <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div className="flex flex-col items-center justify-center gap-3 mt-3">
-                <Link
-                  href={
-                    selectedIntent === 'provider'
-                      ? '/provider/register'
-                      : selectedIntent === 'enterprise'
-                        ? '/support?category=enterprise&source=landing-primary-cta'
-                        : '/renter/register'
-                  }
-                  className="btn btn-primary btn-lg w-full sm:w-auto min-w-[260px]"
-                >
-                  {selectedIntent === 'provider'
-                    ? t('landing.cta_provider')
-                    : selectedIntent === 'enterprise'
-                      ? t('landing.cta_enterprise')
-                      : t('landing.cta_renter')}
-                </Link>
-                <p className="text-xs text-dc1-text-muted">
-                  {t('landing.cta_alt_prefix')}{' '}
-                  <Link
-                    href={
-                      selectedIntent === 'provider'
-                        ? '/renter/register'
-                        : selectedIntent === 'enterprise'
-                          ? '/provider/register'
-                          : '/provider/register'
-                    }
-                    className="text-dc1-amber hover:text-dc1-amber/80 font-semibold"
-                  >
-                    {selectedIntent === 'provider'
-                      ? t('landing.cta_alt_link_renter')
-                      : selectedIntent === 'enterprise'
-                        ? t('landing.cta_alt_link_provider')
-                        : t('landing.cta_alt_link_provider')}
-                  </Link>
-                </p>
-              </div>
+            </details>
+            <div className="w-full rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-2 text-xs text-dc1-text-secondary text-center">
+              {t('landing.hero_settlement_proof')}
             </div>
             <p className="text-xs text-dc1-text-muted mt-4">{t('landing.hero_helper')}</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
@@ -471,6 +449,16 @@ export default function HomePage() {
                 </p>
               </div>
             </div>
+            <div className="mt-4 mx-auto max-w-3xl rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-3 text-left">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
+                {t('proof.segment.title')}
+              </p>
+              <ul className="list-disc ps-5 space-y-1 text-sm text-dc1-text-secondary">
+                {segmentProofItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
             <p className="text-dc1-text-secondary text-sm mt-6">
               {t('landing.already_account')}{' '}
               <Link href="/login" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold underline underline-offset-2">
@@ -483,11 +471,11 @@ export default function HomePage() {
 
 
 
-      {/* Stats bar */}
+      {/* Live telemetry */}
       <section className="border-y border-dc1-border bg-dc1-surface-l1/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
-            {stats.map((stat) => (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+            {liveStats.map((stat) => (
               <div key={stat.label} className="text-center">
                 <div className="flex items-center justify-center gap-2">
                   <p className="text-2xl sm:text-3xl font-bold text-dc1-amber">{stat.value}</p>
@@ -496,6 +484,22 @@ export default function HomePage() {
                   )}
                 </div>
                 <p className="text-sm text-dc1-text-secondary mt-1">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Trust policy module */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-6">
+          <h2 className="text-xl font-semibold text-dc1-text-primary mb-2">{t('landing.trust_module_title')}</h2>
+          <p className="text-sm text-dc1-text-secondary mb-4">{t('landing.trust_module_intro')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {trustPolicies.map((item) => (
+              <div key={item.title} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4 text-left">
+                <p className="text-sm font-semibold text-dc1-text-primary mb-1">{item.title}</p>
+                <p className="text-xs text-dc1-text-secondary">{item.description}</p>
               </div>
             ))}
           </div>

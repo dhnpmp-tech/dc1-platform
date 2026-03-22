@@ -114,12 +114,22 @@ function DetailRow({ label, value, highlight, mono }: { label: string; value: st
 }
 
 type StreamStatus = 'connecting' | 'live' | 'completed' | 'failed'
+type LogDownloadSurface = 'logs_tab' | 'history_tab'
 
-function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string; jobStatus: string }) {
+function LogStream({
+  jobId,
+  apiKey,
+  onLogDownloadClick,
+}: {
+  jobId: string
+  apiKey: string
+  onLogDownloadClick: (surface: LogDownloadSurface, blocked: boolean) => void
+}) {
   const { t } = useLanguage()
   const [lines, setLines] = useState<string[]>([])
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting')
   const [autoScroll, setAutoScroll] = useState(true)
+  const [downloadHint, setDownloadHint] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const esRef = useRef<EventSource | null>(null)
   const closedRef = useRef(false)
@@ -197,6 +207,33 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
     live: 'text-green-400',
     completed: 'text-dc1-amber',
     failed: 'text-status-error',
+  }
+  const hasApiKey = Boolean(apiKey)
+  const logDownloadUrl = hasApiKey
+    ? `${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs?since=0&limit=1000&key=${encodeURIComponent(apiKey)}`
+    : ''
+
+  if (!hasApiKey) {
+    return (
+      <div className="space-y-3">
+        <p className="text-dc1-text-muted text-sm">{t('renter.job_detail.auth_required')}</p>
+        <div className="text-end">
+          <button
+            type="button"
+            className="text-sm text-dc1-text-muted underline decoration-dotted"
+            onClick={() => {
+              setDownloadHint(t('renter.job_detail.auth_required'))
+              onLogDownloadClick('logs_tab', true)
+            }}
+          >
+            {t('renter.job_detail.logs_download_full')}
+          </button>
+          {downloadHint && (
+            <p className="mt-2 text-xs text-status-error">{downloadHint}</p>
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -277,27 +314,62 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
 
       {/* Download link */}
       <div className="text-end">
-        <a
-          href={`${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs?since=0&limit=1000`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-dc1-amber hover:underline"
-          download={`dcp-job-${jobId}.log`}
-        >
-          {t('renter.job_detail.logs_download_full')}
-        </a>
+        {hasApiKey ? (
+          <a
+            href={logDownloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-dc1-amber hover:underline"
+            download={`dcp-job-${jobId}.log`}
+            onClick={() => {
+              setDownloadHint('')
+              onLogDownloadClick('logs_tab', false)
+            }}
+          >
+            {t('renter.job_detail.logs_download_full')}
+          </a>
+        ) : (
+          <button
+            type="button"
+            className="text-sm text-dc1-text-muted underline decoration-dotted"
+            onClick={() => {
+              setDownloadHint(t('renter.job_detail.auth_required'))
+              onLogDownloadClick('logs_tab', true)
+            }}
+          >
+            {t('renter.job_detail.logs_download_full')}
+          </button>
+        )}
+        {downloadHint && (
+          <p className="mt-2 text-xs text-status-error">{downloadHint}</p>
+        )}
       </div>
     </div>
   )
 }
 
-function HistoryTab({ jobId, apiKey, job }: { jobId: string; apiKey: string; job: JobDetail }) {
+function HistoryTab({
+  jobId,
+  apiKey,
+  job,
+  onLogDownloadClick,
+}: {
+  jobId: string
+  apiKey: string
+  job: JobDetail
+  onLogDownloadClick: (surface: LogDownloadSurface, blocked: boolean) => void
+}) {
   const { t } = useLanguage()
   const [history, setHistory] = useState<ExecutionHistory | null>(null)
   const [loading, setLoading] = useState(true)
+  const [downloadHint, setDownloadHint] = useState('')
 
   useEffect(() => {
-    if (!apiKey) return
+    if (!apiKey) {
+      setLoading(false)
+      setHistory(null)
+      return
+    }
     fetch(`${API_BASE}/jobs/${encodeURIComponent(jobId)}/executions`, {
       headers: { 'x-renter-key': apiKey },
     })
@@ -318,6 +390,33 @@ function HistoryTab({ jobId, apiKey, job }: { jobId: string; apiKey: string; job
   const quotedSAR = ((history?.cost_halala || job.cost_halala || 0) / 100).toFixed(2)
   const actualSAR = ((history?.actual_cost_halala || job.actual_cost_halala || 0) / 100).toFixed(2)
   const executions = history?.executions || []
+  const hasApiKey = Boolean(apiKey)
+  const logDownloadUrl = hasApiKey
+    ? `${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs?since=0&limit=1000&key=${encodeURIComponent(apiKey)}`
+    : ''
+
+  if (!hasApiKey) {
+    return (
+      <div className="card">
+        <p className="text-dc1-text-muted text-sm">{t('renter.job_detail.auth_required')}</p>
+        <div className="text-end mt-3">
+          <button
+            type="button"
+            className="text-xs text-dc1-text-muted underline decoration-dotted"
+            onClick={() => {
+              setDownloadHint(t('renter.job_detail.auth_required'))
+              onLogDownloadClick('history_tab', true)
+            }}
+          >
+            {t('renter.job_detail.history_download_logs')}
+          </button>
+          {downloadHint && (
+            <p className="mt-2 text-xs text-status-error">{downloadHint}</p>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -391,19 +490,39 @@ function HistoryTab({ jobId, apiKey, job }: { jobId: string; apiKey: string; job
                   </div>
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-xs text-dc1-text-muted">{t('renter.job_detail.history_cost_prefix')} {costSAR} SAR</span>
-                    <a
-                      href={`${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs?since=0&limit=1000`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-dc1-amber hover:underline"
-                    >
-                      {t('renter.job_detail.history_download_logs')}
-                    </a>
+                    {hasApiKey ? (
+                      <a
+                        href={logDownloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-dc1-amber hover:underline"
+                        onClick={() => {
+                          setDownloadHint('')
+                          onLogDownloadClick('history_tab', false)
+                        }}
+                      >
+                        {t('renter.job_detail.history_download_logs')}
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="text-xs text-dc1-text-muted underline decoration-dotted"
+                        onClick={() => {
+                          setDownloadHint(t('renter.job_detail.auth_required'))
+                          onLogDownloadClick('history_tab', true)
+                        }}
+                      >
+                        {t('renter.job_detail.history_download_logs')}
+                      </button>
+                    )}
                   </div>
                 </div>
               )
             })}
           </div>
+        )}
+        {downloadHint && (
+          <p className="mt-2 text-xs text-status-error">{downloadHint}</p>
         )}
       </div>
     </div>
@@ -485,6 +604,14 @@ export default function RenterJobDetailPage() {
       win.gtag('event', event, payload)
     }
   }, [])
+  const trackLogDownloadClick = useCallback((surface: LogDownloadSurface, blocked: boolean) => {
+    trackJobEvent(blocked ? 'log_download_auth_missing' : 'log_download_clicked', {
+      source: 'job_detail',
+      surface,
+      job_id: job?.id ?? null,
+      status: job?.status ?? null,
+    })
+  }, [job?.id, job?.status, trackJobEvent])
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
@@ -1029,11 +1156,7 @@ export default function RenterJobDetailPage() {
         {activeTab === 'logs' && (
           <div className="card">
             <h2 className="section-heading mb-4">{t('renter.job_detail.live_logs')}</h2>
-            {apiKey ? (
-              <LogStream jobId={String(job.id)} apiKey={apiKey} jobStatus={job.status} />
-            ) : (
-              <p className="text-dc1-text-muted text-sm">{t('renter.job_detail.auth_required')}</p>
-            )}
+            <LogStream jobId={String(job.id)} apiKey={apiKey} onLogDownloadClick={trackLogDownloadClick} />
             {isTerminal && (
               <p className="mt-3 text-xs text-dc1-text-muted">
                 {t('renter.job_detail.finished_hint')}
@@ -1043,8 +1166,8 @@ export default function RenterJobDetailPage() {
         )}
 
         {/* Tab: History */}
-        {activeTab === 'history' && apiKey && (
-          <HistoryTab jobId={String(job.id)} apiKey={apiKey} job={job} />
+        {activeTab === 'history' && (
+          <HistoryTab jobId={String(job.id)} apiKey={apiKey} job={job} onLogDownloadClick={trackLogDownloadClick} />
         )}
       </div>
 

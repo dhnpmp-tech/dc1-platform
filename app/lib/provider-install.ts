@@ -57,3 +57,19 @@ export function buildProviderTroubleshootingHref(state: ProviderNextActionState)
       return '/docs/provider-guide#status-stale-restart-daemon'
   }
 }
+
+export function getProviderOnboardingStep(state: ProviderNextActionState): string {
+  switch (state) {
+    case 'waiting':
+      return 'install_daemon'
+    case 'heartbeat':
+      return 'verify_heartbeat'
+    case 'ready':
+      return 'accept_jobs'
+    case 'paused':
+      return 'resume_provider'
+    case 'stale':
+    default:
+      return 'restart_daemon'
+  }
+}

@@ -2,10 +2,12 @@
 
 import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useLanguage } from '../../lib/i18n';
 
 function SubmitJobRedirect() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
 
   useEffect(() => {
     const query = searchParams.toString();
@@ -14,9 +16,10 @@ function SubmitJobRedirect() {
   }, [router, searchParams]);
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] text-white flex items-center justify-center px-4">
-      <div className="text-center">
-        <p className="text-sm text-white/60">Redirecting to the renter playground...</p>
+    <div className="min-h-screen bg-dc1-void text-dc1-text-primary flex items-center justify-center px-4">
+      <div className="text-center rounded-xl border border-dc1-border bg-dc1-surface-l1 px-6 py-5">
+        <p className="text-base font-semibold text-dc1-text-primary">{t('jobs_submit_redirect.title')}</p>
+        <p className="mt-1 text-sm text-dc1-text-secondary">{t('jobs_submit_redirect.message')}</p>
       </div>
     </div>
   );
@@ -24,7 +27,7 @@ function SubmitJobRedirect() {
 
 export default function SubmitJobPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#1a1a1a]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-dc1-void" />}>
       <SubmitJobRedirect />
     </Suspense>
   );

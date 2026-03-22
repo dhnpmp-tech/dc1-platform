@@ -21,7 +21,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dcp.sa';
 const getMoyasarSecret = () => process.env.MOYASAR_SECRET_KEY || '';
 const getMoyasarWebhookSecret = () => process.env.MOYASAR_WEBHOOK_SECRET || '';
 const WEBHOOK_STATUSES = new Set(['initiated', 'paid', 'failed', 'refunded']);
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const isProduction = () => process.env.NODE_ENV === 'production';
 const ALLOWED_CALLBACK_ORIGINS = new Set(
   [
     FRONTEND_URL,
@@ -40,7 +40,7 @@ const ALLOWED_CALLBACK_ORIGINS = new Set(
     .filter(Boolean)
 );
 
-if (process.env.NODE_ENV === 'production' && !getMoyasarWebhookSecret()) {
+if (isProduction() && !getMoyasarWebhookSecret()) {
   console.warn('[payments] MOYASAR_WEBHOOK_SECRET is not set; /api/payments/webhook will return 503 until configured');
 }
 
@@ -68,8 +68,8 @@ function normalizeCallbackUrl(value) {
     return null;
   }
   if (!['https:', 'http:'].includes(parsed.protocol)) return null;
-  if (IS_PRODUCTION && parsed.protocol !== 'https:') return null;
-  if (IS_PRODUCTION && !ALLOWED_CALLBACK_ORIGINS.has(parsed.origin)) return null;
+  if (isProduction() && parsed.protocol !== 'https:') return null;
+  if (isProduction() && !ALLOWED_CALLBACK_ORIGINS.has(parsed.origin)) return null;
   return parsed.toString();
 }
 
@@ -255,7 +255,7 @@ router.post('/topup', requireRenter, (req, res) => {
   const callbackUrl = normalizedCallbackUrl || `${FRONTEND_URL}/renter/billing?payment=callback`;
   if (callback_url != null && !normalizedCallbackUrl) {
     return res.status(400).json({
-      error: IS_PRODUCTION
+      error: isProduction()
         ? 'callback_url must be an https URL on an allowlisted origin'
         : 'callback_url must be a valid http(s) URL',
     });
@@ -300,7 +300,7 @@ router.post('/topup', requireRenter, (req, res) => {
     .catch(err => {
       console.error('[payments] Moyasar topup error:', err.message, err.moyasarError);
       if (err.message === 'MOYASAR_SECRET_KEY not configured') {
-        const sandboxAllowed = !IS_PRODUCTION && !getMoyasarSecret();
+        const sandboxAllowed = !isProduction() && !getMoyasarSecret();
         return res.status(503).json({
           error: 'Payment gateway not configured. Set MOYASAR_SECRET_KEY.',
           action_required: 'Configure MOYASAR_SECRET_KEY and MOYASAR_WEBHOOK_SECRET.',
@@ -319,7 +319,7 @@ router.post('/topup', requireRenter, (req, res) => {
 // Dev-only sandbox top-up: directly credits balance without Moyasar (when key not set).
 // Disabled in production (requires MOYASAR_SECRET_KEY to be absent).
 router.post('/topup-sandbox', (req, res) => {
-  if (IS_PRODUCTION) {
+  if (isProduction()) {
     return res.status(403).json({
       error: 'Sandbox top-up is disabled in production.',
     });

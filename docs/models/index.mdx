@@ -8,6 +8,15 @@ order: 7
 
 Use this index to pick the right model before submitting a job with `POST /api/jobs/submit`.
 
+## Arabic AI Quick Launch
+
+For Arabic-first and bilingual launches, start with these model pages:
+
+- [ALLaM 7B Instruct](./allam-7b)
+- [Falcon H1 7B Instruct](./falcon-h1-7b)
+- [JAIS 13B Chat](./jais-13b)
+- [BGE-M3 Embeddings](./bge-m3)
+
 | Model | Params | Language support | License | Recommended GPU tier on DCP | DCP template |
 |---|---|---|---|---|---|
 | [ALLaM 7B Instruct](./allam-7b) | 7B | Arabic-first, bilingual | Custom ALLaM terms | Tier A (`>=24 GB`) | `vllm-serve` |
@@ -28,4 +37,3 @@ Use this index to pick the right model before submitting a job with `POST /api/j
 - Tier C: frontier/on-demand large models (`>=80 GB`)
 
 These tiers follow `infra/config/arabic-portfolio.json` and DCP benchmark defaults in `backend/src/db.js`.
-

@@ -8,6 +8,7 @@ import {
   buildProviderTroubleshootingHref,
   buildProviderDaemonDownloadUrl,
   buildProviderInstallCommand,
+  getProviderOnboardingStep,
   getProviderInstallApiBase,
   ProviderNextActionState,
 } from '../../lib/provider-install'
@@ -68,10 +69,44 @@ export default function ProviderRegisterPage() {
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollingKeyRef = useRef<string | null>(null)
   const lastTrackedStateRef = useRef<ProviderNextActionState | null>(null)
+  const pathChooserLanes = [
+    {
+      key: 'self_serve_renter',
+      label: t('path_chooser.self_serve.label'),
+      description: t('path_chooser.self_serve.desc'),
+      href: '/renter/register?source=provider_register_path_chooser&lane=self_serve_renter',
+    },
+    {
+      key: 'provider_onboarding',
+      label: t('path_chooser.provider.label'),
+      description: t('path_chooser.provider.desc'),
+      href: '/provider/register?source=provider_register_path_chooser&lane=provider_onboarding',
+    },
+    {
+      key: 'enterprise_intake',
+      label: t('path_chooser.enterprise.label'),
+      description: t('path_chooser.enterprise.desc'),
+      href: '/support?category=enterprise&source=provider_register_path_chooser&lane=enterprise_intake#contact-form',
+    },
+    {
+      key: 'arabic_model_docs',
+      label: t('path_chooser.arabic.label'),
+      description: t('path_chooser.arabic.desc'),
+      href: '/docs?source=provider_register_path_chooser&lane=arabic_model_docs',
+    },
+  ]
 
   const trackProviderRegisterEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
-    const detail = { event, source: 'provider_register', ...payload }
+    const detail = {
+      event,
+      source_page: 'provider_register',
+      role_intent: 'provider',
+      surface: 'registration',
+      destination: 'none',
+      step: 'view',
+      ...payload,
+    }
     window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
     const win = window as typeof window & {
       dataLayer?: Array<Record<string, unknown>>
@@ -171,6 +206,9 @@ export default function ProviderRegisterPage() {
 
       setShowSuccess(true)
       trackProviderRegisterEvent('provider_register_success', {
+        surface: 'registration_form',
+        destination: '/api/dc1/providers/register',
+        step: 'submit_success',
         provider_id: data.provider_id,
         gpu_model: formData.gpuModel,
         os: formData.operatingSystem,
@@ -178,6 +216,9 @@ export default function ProviderRegisterPage() {
       startStatusPolling(data.api_key)
     } catch (err) {
       trackProviderRegisterEvent('provider_register_failed', {
+        surface: 'registration_form',
+        destination: '/api/dc1/providers/register',
+        step: 'submit_failure',
         error: err instanceof Error ? err.message : 'unknown_error',
       })
       setError(err instanceof Error ? err.message : 'An error occurred')
@@ -227,6 +268,9 @@ export default function ProviderRegisterPage() {
           lastTrackedStateRef.current = nextAction
           trackProviderRegisterEvent('provider_onboarding_state_seen', {
             state: nextAction,
+            surface: 'onboarding_status',
+            destination: provider.status === 'online' || provider.status === 'idle' || provider.status === 'paused' ? '/provider/dashboard' : '/docs/provider-guide',
+            step: getProviderOnboardingStep(nextAction),
             provider_status: provider.status || 'unknown',
             has_heartbeat: Boolean(provider.last_heartbeat),
           })
@@ -257,6 +301,9 @@ export default function ProviderRegisterPage() {
   const copyToClipboard = (text: string, index: number) => {
     navigator.clipboard.writeText(text)
     trackProviderRegisterEvent('provider_register_copy_clicked', {
+      surface: 'success_commands',
+      destination: 'clipboard',
+      step: 'copy_command',
       copy_target:
         index === 0
           ? 'api_key'
@@ -288,35 +335,52 @@ export default function ProviderRegisterPage() {
     const keyValidationCommand = `curl ${installApiBase}/providers/me?key=${encodeURIComponent(apiKey)}`
     const nextActionMap: Record<
       ProviderNextActionState,
-      { label: string; desc: string; cta: string; href: string }
+      {
+        label: string
+        desc: string
+        expectation: string
+        nextSuccess: string
+        cta: string
+        href: string
+      }
     > = {
       waiting: {
         label: t('register.provider.state.waiting.label'),
         desc: t('register.provider.state.waiting.desc'),
+        expectation: t('register.provider.state.waiting.expectation'),
+        nextSuccess: t('register.provider.state.waiting.next_success'),
         cta: t('register.provider.state.waiting.cta'),
         href: '/docs/provider-guide',
       },
       heartbeat: {
         label: t('register.provider.state.heartbeat.label'),
         desc: t('register.provider.state.heartbeat.desc'),
+        expectation: t('register.provider.state.heartbeat.expectation'),
+        nextSuccess: t('register.provider.state.heartbeat.next_success'),
         cta: t('register.provider.state.heartbeat.cta'),
         href: '/provider/dashboard',
       },
       ready: {
         label: t('register.provider.state.ready.label'),
         desc: t('register.provider.state.ready.desc'),
+        expectation: t('register.provider.state.ready.expectation'),
+        nextSuccess: t('register.provider.state.ready.next_success'),
         cta: t('register.provider.state.ready.cta'),
         href: '/provider/dashboard',
       },
       paused: {
         label: t('register.provider.state.paused.label'),
         desc: t('register.provider.state.paused.desc'),
+        expectation: t('register.provider.state.paused.expectation'),
+        nextSuccess: t('register.provider.state.paused.next_success'),
         cta: t('register.provider.state.paused.cta'),
         href: '/provider/dashboard',
       },
       stale: {
         label: t('register.provider.state.stale.label'),
         desc: t('register.provider.state.stale.desc'),
+        expectation: t('register.provider.state.stale.expectation'),
+        nextSuccess: t('register.provider.state.stale.next_success'),
         cta: t('register.provider.state.stale.cta'),
         href: '/docs/provider-guide',
       },
@@ -337,31 +401,37 @@ export default function ProviderRegisterPage() {
       state: ProviderNextActionState
       action: string
       href: string
+      supportHref: string
     }> = [
       {
         state: 'waiting',
         action: t('register.provider.status_matrix.waiting.action'),
         href: buildProviderTroubleshootingHref('waiting'),
+        supportHref: buildSupportPrefillHref('waiting'),
       },
       {
         state: 'heartbeat',
         action: t('register.provider.status_matrix.heartbeat.action'),
         href: buildProviderTroubleshootingHref('heartbeat'),
+        supportHref: buildSupportPrefillHref('heartbeat'),
       },
       {
         state: 'stale',
         action: t('register.provider.status_matrix.stale.action'),
         href: buildProviderTroubleshootingHref('stale'),
+        supportHref: buildSupportPrefillHref('stale'),
       },
       {
         state: 'paused',
         action: t('register.provider.status_matrix.paused.action'),
         href: buildProviderTroubleshootingHref('paused'),
+        supportHref: buildSupportPrefillHref('paused'),
       },
       {
         state: 'ready',
         action: t('register.provider.status_matrix.ready.action'),
         href: buildProviderTroubleshootingHref('ready'),
+        supportHref: buildSupportPrefillHref('ready'),
       },
     ]
     const supportPrefillHref = buildSupportPrefillHref(nextActionState)
@@ -654,52 +724,82 @@ export default function ProviderRegisterPage() {
                   {t('register.provider.next_action_title')}
                 </h2>
                 <div className="rounded-lg border border-dc1-amber/25 bg-dc1-amber/5 p-4">
+                  <p className="text-xs text-dc1-text-muted mb-2">
+                    Step: {getProviderOnboardingStep(nextActionState)}
+                  </p>
                   <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">
                     {t('register.provider.next_action_now')}
                   </p>
                   <p className="text-base font-semibold text-dc1-text-primary">{nextAction.label}</p>
                   <p className="text-sm text-dc1-text-secondary mt-1">{nextAction.desc}</p>
+                  <div className="mt-3 space-y-2 text-xs text-dc1-text-secondary">
+                    <p>
+                      <span className="font-semibold text-dc1-text-primary">
+                        {t('register.provider.state.expectation_label')}:
+                      </span>{' '}
+                      {nextAction.expectation}
+                    </p>
+                    <p>
+                      <span className="font-semibold text-dc1-text-primary">
+                        {t('register.provider.state.next_success_label')}:
+                      </span>{' '}
+                      {nextAction.nextSuccess}
+                    </p>
+                  </div>
                   <a
                     href={nextAction.href}
                     className="btn btn-primary mt-4 w-full sm:w-auto"
                     onClick={() =>
                       trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
                         state: nextActionState,
+                        surface: 'next_action',
                         destination: nextAction.href,
+                        step: getProviderOnboardingStep(nextActionState),
                         cta_type: 'primary',
                       })
                     }
                   >
                     {nextAction.cta}
                   </a>
-                  <a
-                    href={troubleshootingGuideHref}
-                    className="inline-flex mt-3 text-sm font-medium text-dc1-amber hover:underline"
-                    onClick={() =>
-                      trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
-                        state: nextActionState,
-                        destination: troubleshootingGuideHref,
-                        cta_type: 'troubleshoot',
-                      })
-                    }
-                  >
-                    {t('register.provider.status_matrix.guide_cta')}
-                  </a>
-                  {showContextualSupport && (
-                    <a
-                      href={supportPrefillHref}
-                      className="inline-flex mt-3 text-sm font-medium text-dc1-text-primary hover:text-dc1-amber"
-                      onClick={() =>
-                        trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
-                          state: nextActionState,
-                          destination: supportPrefillHref,
-                          cta_type: 'support',
-                        })
-                      }
-                    >
-                      {t('register.provider.next_action_support_cta')}
-                    </a>
-                  )}
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs text-dc1-text-muted hover:text-dc1-amber">
+                      {t('register.provider.advanced.show')}
+                    </summary>
+                    <div className="mt-2 space-y-1">
+                      <a
+                        href={troubleshootingGuideHref}
+                        className="inline-flex text-xs text-dc1-text-muted hover:text-dc1-amber"
+                        onClick={() =>
+                          trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
+                            state: nextActionState,
+                            surface: 'next_action_secondary',
+                            destination: troubleshootingGuideHref,
+                            step: getProviderOnboardingStep(nextActionState),
+                            cta_type: 'troubleshoot',
+                          })
+                        }
+                      >
+                        {t('register.provider.status_matrix.guide_cta')}
+                      </a>
+                      {showContextualSupport && (
+                        <a
+                          href={supportPrefillHref}
+                          className="inline-flex text-xs text-dc1-text-muted hover:text-dc1-amber"
+                          onClick={() =>
+                            trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
+                              state: nextActionState,
+                              surface: 'next_action_secondary',
+                              destination: supportPrefillHref,
+                              step: getProviderOnboardingStep(nextActionState),
+                              cta_type: 'support',
+                            })
+                          }
+                        >
+                          {t('register.provider.next_action_support_cta')}
+                        </a>
+                      )}
+                    </div>
+                  </details>
                 </div>
               </div>
 
@@ -758,7 +858,21 @@ export default function ProviderRegisterPage() {
                                   {nextActionMap[row.state].label}
                                 </span>
                               </td>
-                              <td className="py-3 pe-4 text-dc1-text-secondary">{row.action}</td>
+                              <td className="py-3 pe-4 text-dc1-text-secondary">
+                                <p>{row.action}</p>
+                                <p className="mt-1 text-xs">
+                                  <span className="font-medium text-dc1-text-primary">
+                                    {t('register.provider.state.expectation_label')}:
+                                  </span>{' '}
+                                  {nextActionMap[row.state].expectation}
+                                </p>
+                                <p className="mt-1 text-xs">
+                                  <span className="font-medium text-dc1-text-primary">
+                                    {t('register.provider.state.next_success_label')}:
+                                  </span>{' '}
+                                  {nextActionMap[row.state].nextSuccess}
+                                </p>
+                              </td>
                               <td className="py-3">
                                 <a
                                   href={row.href}
@@ -766,7 +880,9 @@ export default function ProviderRegisterPage() {
                                   onClick={() =>
                                     trackProviderRegisterEvent('provider_onboarding_matrix_guide_clicked', {
                                       state: row.state,
+                                      surface: 'status_matrix',
                                       destination: row.href,
+                                      step: getProviderOnboardingStep(row.state),
                                     })
                                   }
                                 >
@@ -775,12 +891,14 @@ export default function ProviderRegisterPage() {
                               </td>
                               <td className="py-3">
                                 <a
-                                  href={buildSupportPrefillHref(row.state)}
+                                  href={row.supportHref}
                                   className="text-dc1-text-primary font-medium hover:text-dc1-amber"
                                   onClick={() =>
                                     trackProviderRegisterEvent('provider_onboarding_matrix_support_clicked', {
                                       state: row.state,
-                                      destination: 'support_prefill',
+                                      surface: 'status_matrix',
+                                      destination: row.supportHref,
+                                      step: getProviderOnboardingStep(row.state),
                                     })
                                   }
                                 >
@@ -896,6 +1014,21 @@ export default function ProviderRegisterPage() {
                   <span>{t('register.provider.instant_payouts')}</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <div className={`rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5 ${isRTL ? 'text-right' : 'text-left'}`}>
+            <h2 className="text-base font-semibold text-dc1-text-primary mb-1">{t('path_chooser.title')}</h2>
+            <p className="text-xs text-dc1-text-secondary mb-3">{t('path_chooser.subtitle')}</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {pathChooserLanes.map((lane) => (
+                <a key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 hover:border-dc1-amber transition-colors">
+                  <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
+                  <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
+                </a>
+              ))}
             </div>
           </div>
         </section>

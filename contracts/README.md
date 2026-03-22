@@ -35,20 +35,33 @@ struct EscrowRecord {
 
 #### Oracle proof format
 
-The DC1 backend signs job completion using its private key. The proof is an EIP-191 personal signature over:
+The DC1 backend signs job completion using an EIP-712 typed signature scoped to
+the current chain and escrow contract address:
 
-```
-keccak256(abi.encodePacked(jobId, providerAddress, amount))
-```
-
-The backend constructs this in `backend/src/services/escrow.js` (future issue) using ethers.js:
+- Domain: `{ name: "DCP Escrow", version: "1", chainId, verifyingContract }`
+- Type: `Claim(bytes32 jobId,address provider,uint256 amount)`
 
 ```js
-const messageHash = ethers.solidityPackedKeccak256(
-  ["bytes32", "address", "uint256"],
-  [jobId, providerAddress, amount]
-);
-const proof = await oracleWallet.signMessage(ethers.getBytes(messageHash));
+const domain = {
+  name: "DCP Escrow",
+  version: "1",
+  chainId,
+  verifyingContract: escrowAddress,
+};
+
+const types = {
+  Claim: [
+    { name: "jobId", type: "bytes32" },
+    { name: "provider", type: "address" },
+    { name: "amount", type: "uint256" },
+  ],
+};
+
+const proof = await oracleWallet.signTypedData(domain, types, {
+  jobId,
+  provider: providerAddress,
+  amount,
+});
 ```
 
 ### `MockUSDC.sol`
@@ -144,6 +157,7 @@ Recommended backend envs:
 - `ESCROW_RELAYER_ADDRESS` (optional; operator address authorized to claim/cancel when wallet addresses are routed through backend)
 - `ESCROW_USDC_ADDRESS` (optional; defaults to Base Sepolia USDC)
 - `BASE_RPC_URL` (optional; defaults to `https://sepolia.base.org`)
+- `ESCROW_PROOF_SCHEME` (optional; `typed` default, set `personal` only for legacy contracts that still verify EIP-191 signatures)
 
 Current launch workflow:
 

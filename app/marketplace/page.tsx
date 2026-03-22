@@ -423,6 +423,32 @@ export default function MarketplacePage() {
   })
 
   const onlineCount = providers.filter(p => p.is_live).length
+  const pathChooserLanes = [
+    {
+      key: 'self_serve_renter',
+      label: t('path_chooser.self_serve.label'),
+      description: t('path_chooser.self_serve.desc'),
+      href: '/renter/register?source=public_marketplace_path_chooser&lane=self_serve_renter',
+    },
+    {
+      key: 'provider_onboarding',
+      label: t('path_chooser.provider.label'),
+      description: t('path_chooser.provider.desc'),
+      href: '/provider/register?source=public_marketplace_path_chooser&lane=provider_onboarding',
+    },
+    {
+      key: 'enterprise_intake',
+      label: t('path_chooser.enterprise.label'),
+      description: t('path_chooser.enterprise.desc'),
+      href: '/support?category=enterprise&source=public_marketplace_path_chooser&lane=enterprise_intake#contact-form',
+    },
+    {
+      key: 'arabic_model_docs',
+      label: t('path_chooser.arabic.label'),
+      description: t('path_chooser.arabic.desc'),
+      href: '/docs?source=public_marketplace_path_chooser&lane=arabic_model_docs',
+    },
+  ]
 
   return (
     <div className="min-h-screen flex flex-col" dir={dir}>
@@ -451,6 +477,20 @@ export default function MarketplacePage() {
                 <Link href="/docs" className="btn btn-secondary btn-lg">
                   {t('marketplace.view_docs')}
                 </Link>
+              </div>
+              <div className="mt-5 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-1">
+                  {t('path_chooser.title')}
+                </p>
+                <p className="text-xs text-dc1-text-secondary mb-3">{t('path_chooser.subtitle')}</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {pathChooserLanes.map((lane) => (
+                    <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber">
+                      <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
+                      <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
+                    </Link>
+                  ))}
+                </div>
               </div>
               <div className="mt-5 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4">
                 <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -25,7 +25,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * Oracle:        DC1 backend signing key (set on deploy, updateable by owner)
  * Fee:           2500 BPS = 25%
  */
-contract Escrow is Ownable, ReentrancyGuard {
+contract Escrow is Ownable, ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
@@ -39,6 +39,8 @@ contract Escrow is Ownable, ReentrancyGuard {
     /// @notice DC1 fee in basis points (25 %)
     uint256 public constant FEE_BPS = 2500;
     uint256 public constant BPS_DENOMINATOR = 10_000;
+    bytes32 private constant CLAIM_TYPEHASH =
+        keccak256("Claim(bytes32 jobId,address provider,uint256 amount)");
 
     // ────────────────────────────────────────────────────────────────────────
     // State
@@ -102,7 +104,7 @@ contract Escrow is Ownable, ReentrancyGuard {
      * @param _usdc   USDC token address (Base Sepolia: 0x036CbD53842c5426634e7929541eC2318f3dCF7e)
      * @param _oracle DC1 backend signing address
      */
-    constructor(address _usdc, address _oracle) Ownable(msg.sender) {
+    constructor(address _usdc, address _oracle) Ownable(msg.sender) EIP712("DCP Escrow", "1") {
         require(_usdc != address(0), "Invalid USDC address");
         require(_oracle != address(0), "Invalid oracle address");
         usdc = IERC20(_usdc);
@@ -150,7 +152,7 @@ contract Escrow is Ownable, ReentrancyGuard {
      *         Requires a valid ECDSA signature from the DC1 oracle confirming completion.
      *
      * @param jobId Unique job identifier
-     * @param proof Oracle signature over keccak256(abi.encodePacked(jobId, provider, amount))
+     * @param proof Oracle EIP-712 signature over Claim(jobId, provider, amount)
      *
      * Fee split: 75 % → provider, 25 % → DC1 (contract owner)
      */
@@ -164,12 +166,12 @@ contract Escrow is Ownable, ReentrancyGuard {
         );
         require(block.timestamp <= escrow.expiry, "Expired");
 
-        // Verify oracle signature: sign( keccak256(jobId || provider || amount) )
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(jobId, escrow.provider, escrow.amount)
+        // Verify oracle signature over EIP-712 typed data bound to this chain+contract.
+        bytes32 structHash = keccak256(
+            abi.encode(CLAIM_TYPEHASH, jobId, escrow.provider, escrow.amount)
         );
-        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
-        address signer = ethSignedHash.recover(proof);
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address signer = digest.recover(proof);
         require(signer == oracle, "Invalid oracle proof");
 
         escrow.status = EscrowStatus.CLAIMED;

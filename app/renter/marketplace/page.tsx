@@ -441,7 +441,15 @@ function FilterSidebar({
 }
 
 // ── GPU Card ───────────────────────────────────────────────────────
-function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => string }) {
+function GPUCard({
+  provider,
+  t,
+  onCtaClick,
+}: {
+  provider: Provider
+  t: (key: string) => string
+  onCtaClick: (payload: { surface: string; destination: string; step: string }) => void
+}) {
   const llmRate = provider.cost_rates_halala_per_min?.['llm-inference']
     ?? provider.cost_rates_halala_per_min?.llm_inference
     ?? 15
@@ -579,12 +587,26 @@ function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => stri
       <div className="flex gap-2 mt-auto">
         <Link
           href={`/renter/marketplace/providers/${provider.id}`}
+          onClick={() =>
+            onCtaClick({
+              surface: 'gpu_card',
+              destination: `/renter/marketplace/providers/${provider.id}`,
+              step: 'view_profile',
+            })
+          }
           className="btn text-sm flex-1 text-center bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3 border border-dc1-border"
         >
           {t('marketplace.view_profile')}
         </Link>
         <Link
           href={`/renter/playground?provider=${provider.id}`}
+          onClick={() =>
+            onCtaClick({
+              surface: 'gpu_card',
+              destination: `/renter/playground?provider=${provider.id}`,
+              step: 'rent_now',
+            })
+          }
           className="btn btn-primary text-sm flex-1 text-center"
         >
           {t('marketplace.rent_now')}
@@ -600,12 +622,14 @@ function ModelCard({
   benchmark,
   compared,
   onToggleCompare,
+  onCtaClick,
   t,
 }: {
   model: ModelRegistryEntry
   benchmark: ModelCardFeedEntry | undefined
   compared: boolean
   onToggleCompare: (modelId: string) => void
+  onCtaClick: (payload: { surface: string; destination: string; step: string }) => void
   t: (key: string) => string
 }) {
   const meta = splitModelUseCases(model.use_cases)
@@ -713,12 +737,26 @@ function ModelCard({
         <div className="mt-auto grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Link
             href={`/renter/playground?model=${encodeURIComponent(model.model_id)}`}
+            onClick={() =>
+              onCtaClick({
+                surface: 'model_card',
+                destination: `/renter/playground?model=${encodeURIComponent(model.model_id)}`,
+                step: 'use_playground',
+              })
+            }
             className="btn text-center text-sm bg-dc1-surface-l2 text-dc1-text-primary hover:bg-dc1-surface-l3 border border-dc1-border"
           >
             {t('marketplace.use_playground')}
           </Link>
           <Link
             href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve`}
+            onClick={() =>
+              onCtaClick({
+                surface: 'model_card',
+                destination: `/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve`,
+                step: 'one_click_deploy',
+              })
+            }
             className="btn btn-primary text-center text-sm"
           >
             {t('marketplace.one_click_deploy')}
@@ -735,7 +773,8 @@ function ModelCard({
 
 // ── Main Page ──────────────────────────────────────────────────────
 export default function MarketplacePage() {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
+  const modelDocsHref = language === 'ar' ? '/docs/ar/models' : '/docs/models'
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
@@ -753,6 +792,7 @@ export default function MarketplacePage() {
   const [modelsLoading, setModelsLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [renterName, setRenterName] = useState(t('renter.settings.user_name_fallback'))
+  const [hasRenterKey, setHasRenterKey] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('reputation')
   const [filters, setFilters] = useState<Filters>({
@@ -769,6 +809,61 @@ export default function MarketplacePage() {
   const [compareModelIds, setCompareModelIds] = useState<string[]>([])
   const countdownRef = useRef<number>(POLL_INTERVAL_MS / 1000)
   const [countdown, setCountdown] = useState(POLL_INTERVAL_MS / 1000)
+  const segmentProofItems = [
+    t('proof.segment.item_energy'),
+    t('proof.segment.item_models'),
+    t('proof.segment.item_execution'),
+  ]
+  const pathChooserLanes = [
+    {
+      key: 'self_serve_renter',
+      label: t('path_chooser.self_serve.label'),
+      description: t('path_chooser.self_serve.desc'),
+      href: '/renter/register?source=renter_marketplace_path_chooser&lane=self_serve_renter',
+    },
+    {
+      key: 'provider_onboarding',
+      label: t('path_chooser.provider.label'),
+      description: t('path_chooser.provider.desc'),
+      href: '/provider/register?source=renter_marketplace_path_chooser&lane=provider_onboarding',
+    },
+    {
+      key: 'enterprise_intake',
+      label: t('path_chooser.enterprise.label'),
+      description: t('path_chooser.enterprise.desc'),
+      href: '/support?category=enterprise&source=renter_marketplace_path_chooser&lane=enterprise_intake#contact-form',
+    },
+    {
+      key: 'arabic_model_docs',
+      label: t('path_chooser.arabic.label'),
+      description: t('path_chooser.arabic.desc'),
+      href: '/docs?source=renter_marketplace_path_chooser&lane=arabic_model_docs',
+    },
+  ]
+
+  const trackMarketplaceEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = {
+      event,
+      source_page: 'renter_marketplace',
+      role_intent: 'renter',
+      surface: 'marketplace',
+      destination: 'none',
+      step: 'view',
+      ...payload,
+    }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & {
+      dataLayer?: Array<Record<string, unknown>>
+      gtag?: (...args: unknown[]) => void
+    }
+    if (Array.isArray(win.dataLayer)) {
+      win.dataLayer.push(detail)
+    }
+    if (typeof win.gtag === 'function') {
+      win.gtag('event', event, detail)
+    }
+  }, [])
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -816,10 +911,13 @@ export default function MarketplacePage() {
   useEffect(() => {
     const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
     if (key) {
+      setHasRenterKey(true)
       fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d?.renter?.name) setRenterName(d.renter.name) })
         .catch(() => {})
+    } else {
+      setHasRenterKey(false)
     }
   }, [])
 
@@ -1020,6 +1118,150 @@ export default function MarketplacePage() {
           </div>
         </div>
         <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2/60 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
+            Quick intent actions
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('models')
+                setModelLanguageFilter('arabic')
+                trackMarketplaceEvent('marketplace_quick_intent_clicked', {
+                  surface: 'quick_intent_chips',
+                  destination: '/renter/marketplace#models',
+                  step: 'arabic_model_ready',
+                  intent: 'arabic_model_ready',
+                })
+              }}
+              className="rounded-full border border-dc1-amber/40 bg-dc1-amber/10 px-3 py-1.5 text-xs font-semibold text-dc1-amber hover:bg-dc1-amber/20 transition-colors"
+            >
+              Arabic model ready
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('models')
+                setModelTaskFilter('inference')
+                trackMarketplaceEvent('marketplace_quick_intent_clicked', {
+                  surface: 'quick_intent_chips',
+                  destination: '/renter/marketplace#models',
+                  step: 'inference',
+                  intent: 'inference',
+                })
+              }}
+              className="rounded-full border border-dc1-border bg-dc1-surface-l1 px-3 py-1.5 text-xs font-semibold text-dc1-text-primary hover:border-dc1-amber transition-colors"
+            >
+              Inference
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('models')
+                setModelTaskFilter('training')
+                trackMarketplaceEvent('marketplace_quick_intent_clicked', {
+                  surface: 'quick_intent_chips',
+                  destination: '/renter/marketplace#models',
+                  step: 'training',
+                  intent: 'training',
+                })
+              }}
+              className="rounded-full border border-dc1-border bg-dc1-surface-l1 px-3 py-1.5 text-xs font-semibold text-dc1-text-primary hover:border-dc1-amber transition-colors"
+            >
+              Training
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('gpus')
+                setSortBy('price-asc')
+                trackMarketplaceEvent('marketplace_quick_intent_clicked', {
+                  surface: 'quick_intent_chips',
+                  destination: '/renter/marketplace#gpus',
+                  step: 'lowest_sar_hr',
+                  intent: 'lowest_sar_hr',
+                })
+              }}
+              className="rounded-full border border-dc1-border bg-dc1-surface-l1 px-3 py-1.5 text-xs font-semibold text-dc1-text-primary hover:border-dc1-amber transition-colors"
+            >
+              Lowest SAR/hr
+            </button>
+          </div>
+        </div>
+        <div className="rounded-xl border border-dc1-amber/30 bg-dc1-surface-l2/70 px-4 py-4">
+          <h2 className="text-sm font-semibold text-dc1-text-primary">Start here</h2>
+          <p className="mt-1 text-sm text-dc1-text-secondary">
+            {hasRenterKey
+              ? 'You are signed in. Pick a provider, then launch your first run in Playground.'
+              : 'Sign in with your renter key first, then return to launch your first workload.'}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {hasRenterKey ? (
+              <>
+                <Link
+                  href="/renter/playground?starter=1&source=renter_marketplace_start_here"
+                  onClick={() =>
+                    trackMarketplaceEvent('marketplace_start_here_clicked', {
+                      surface: 'start_here_panel',
+                      destination: '/renter/playground?starter=1&source=renter_marketplace_start_here',
+                      step: 'launch_first_run',
+                      auth_state: 'signed_in',
+                    })
+                  }
+                  className="btn btn-primary btn-sm"
+                >
+                  Launch first run
+                </Link>
+                <Link
+                  href="/renter/playground?source=renter_marketplace_start_here&entry=cta_open_submit"
+                  onClick={() =>
+                    trackMarketplaceEvent('marketplace_start_here_clicked', {
+                      surface: 'start_here_panel',
+                      destination: '/renter/playground?source=renter_marketplace_start_here&entry=cta_open_submit',
+                      step: 'open_playground',
+                      auth_state: 'signed_in',
+                    })
+                  }
+                  className="btn btn-secondary btn-sm"
+                >
+                  Open renter playground
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login?role=renter&source=renter_marketplace_start_here"
+                  onClick={() =>
+                    trackMarketplaceEvent('marketplace_start_here_clicked', {
+                      surface: 'start_here_panel',
+                      destination: '/login?role=renter&source=renter_marketplace_start_here',
+                      step: 'open_login',
+                      auth_state: 'signed_out',
+                    })
+                  }
+                  className="btn btn-primary btn-sm"
+                >
+                  Sign in with renter key
+                </Link>
+                <Link
+                  href="/renter/register?source=renter_marketplace_start_here"
+                  onClick={() =>
+                    trackMarketplaceEvent('marketplace_start_here_clicked', {
+                      surface: 'start_here_panel',
+                      destination: '/renter/register?source=renter_marketplace_start_here',
+                      step: 'open_register',
+                      auth_state: 'signed_out',
+                    })
+                  }
+                  className="btn btn-secondary btn-sm"
+                >
+                  Create renter account
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2/60 px-4 py-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-dc1-text-secondary">
             <p>
               <span className="text-dc1-text-primary font-semibold">{t('marketplace.filter_gpu_model')}</span>
@@ -1034,11 +1276,79 @@ export default function MarketplacePage() {
               {lastUpdated ? formatReliabilityTimestamp(lastUpdated) : t('marketplace.reliability_unavailable')}
             </p>
             <p>
-              <Link href="/renter/playground?starter=1" className="text-dc1-amber hover:underline">
+              <Link
+                href="/renter/playground?starter=1"
+                onClick={() =>
+                  trackMarketplaceEvent('marketplace_use_playground_clicked', {
+                    surface: 'reliability_strip',
+                    destination: '/renter/playground?starter=1',
+                    step: 'open_playground',
+                  })
+                }
+                className="text-dc1-amber hover:underline"
+              >
                 {t('marketplace.use_playground')}
               </Link>
             </p>
           </div>
+        </div>
+        <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2/60 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-1">
+            {t('path_chooser.title')}
+          </p>
+          <p className="text-xs text-dc1-text-secondary mb-3">{t('path_chooser.subtitle')}</p>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {pathChooserLanes.map((lane) => (
+              <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 transition-colors hover:border-dc1-amber">
+                <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
+                <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2/70 px-4 py-4">
+          <h2 className="text-sm font-semibold text-dc1-text-primary">{t('marketplace.arabic_bridge.title')}</h2>
+          <p className="mt-1 text-sm text-dc1-text-secondary">{t('marketplace.arabic_bridge.subtitle')}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={modelDocsHref}
+              onClick={() =>
+                trackMarketplaceEvent('marketplace_arabic_model_docs_clicked', {
+                  surface: 'trust_strip',
+                  destination: modelDocsHref,
+                  step: 'open_model_library',
+                })
+              }
+              className="btn btn-secondary btn-sm"
+            >
+              {t('marketplace.arabic_bridge.docs_cta')}
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('models')
+                trackMarketplaceEvent('marketplace_arabic_model_catalog_clicked', {
+                  surface: 'trust_strip',
+                  destination: '/renter/marketplace#models',
+                  step: 'open_model_catalog',
+                })
+              }}
+              className="btn btn-secondary btn-sm"
+            >
+              {t('marketplace.arabic_bridge.models_cta')}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-dc1-text-muted">{t('marketplace.arabic_bridge.note')}</p>
+        </div>
+        <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
+            {t('proof.segment.title')}
+          </p>
+          <ul className="list-disc ps-5 space-y-1 text-sm text-dc1-text-secondary">
+            {segmentProofItems.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         </div>
 
         {/* ── Layout: sidebar + cards ──────────────────────────────── */}
@@ -1236,7 +1546,18 @@ export default function MarketplacePage() {
             ) : activeTab === 'gpus' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {sorted.map(p => (
-                  <GPUCard key={p.id} provider={p} t={t} />
+                  <GPUCard
+                    key={p.id}
+                    provider={p}
+                    t={t}
+                    onCtaClick={({ surface, destination, step }) =>
+                      trackMarketplaceEvent('marketplace_gpu_cta_clicked', {
+                        surface,
+                        destination,
+                        step,
+                      })
+                    }
+                  />
                 ))}
               </div>
             ) : modelsLoading ? (
@@ -1265,6 +1586,14 @@ export default function MarketplacePage() {
                     benchmark={modelCards[model.model_id]}
                     compared={compareModelIds.includes(model.model_id)}
                     onToggleCompare={toggleCompareModel}
+                    onCtaClick={({ surface, destination, step }) =>
+                      trackMarketplaceEvent('marketplace_model_cta_clicked', {
+                        surface,
+                        destination,
+                        step,
+                        model_id: model.model_id,
+                      })
+                    }
                     t={t}
                   />
                 ))}

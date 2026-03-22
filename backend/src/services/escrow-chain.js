@@ -88,10 +88,12 @@ class ChainEscrowService {
       ? configuredRelayer
       : this.txWallet.address;
     this.usdcAddress = usdcAddress;
+    const proofScheme = String(process.env.ESCROW_PROOF_SCHEME || 'typed').toLowerCase();
+    this.proofScheme = proofScheme === 'personal' ? 'personal' : 'typed';
 
     console.log(
       `[escrow-chain] Enabled — contract=${process.env.ESCROW_CONTRACT_ADDRESS} ` +
-      `tx=${this.txWallet.address} oracle=${this.oracleWallet.address} relayer=${this.relayerAddress} usdc=${usdcAddress} rpc=${rpcUrl}`
+      `tx=${this.txWallet.address} oracle=${this.oracleWallet.address} relayer=${this.relayerAddress} usdc=${usdcAddress} rpc=${rpcUrl} proof=${this.proofScheme}`
     );
   }
 
@@ -108,14 +110,35 @@ class ChainEscrowService {
 
   /**
    * Build oracle proof for claimLock.
-   * The contract verifies: ECDSA.recover(toEthSignedMessageHash(keccak256(abi.encode(jobId32))), proof) == oracle
+   * The contract verifies an EIP-712 typed signature:
+   *   Claim(bytes32 jobId,address provider,uint256 amount)
+   * scoped to chainId + verifying contract address.
    */
   async _buildProof(jobId32, providerAddress, amount) {
-    const packedHash = ethers.solidityPackedKeccak256(
-      ['bytes32', 'address', 'uint256'],
-      [jobId32, providerAddress, amount]
-    );
-    return this.oracleWallet.signMessage(ethers.getBytes(packedHash));
+    if (this.proofScheme === 'personal') {
+      const packedHash = ethers.solidityPackedKeccak256(
+        ['bytes32', 'address', 'uint256'],
+        [jobId32, providerAddress, amount]
+      );
+      return this.oracleWallet.signMessage(ethers.getBytes(packedHash));
+    }
+
+    const network = await this.provider.getNetwork();
+    const domain = {
+      name: 'DCP Escrow',
+      version: '1',
+      chainId: Number(network.chainId),
+      verifyingContract: this.contract.target,
+    };
+    const types = {
+      Claim: [
+        { name: 'jobId', type: 'bytes32' },
+        { name: 'provider', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+      ],
+    };
+    const value = { jobId: jobId32, provider: providerAddress, amount };
+    return this.oracleWallet.signTypedData(domain, types, value);
   }
 
   async _ensureAllowance(amount) {

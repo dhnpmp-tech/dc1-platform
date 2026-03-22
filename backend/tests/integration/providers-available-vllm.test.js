@@ -105,4 +105,41 @@ describe('GET /api/providers/available — vLLM capability contract', () => {
       expect(p.cost_rates_halala_per_min.vllm_serve).toBe(20);
     });
   });
+
+  test('qualifies providers.total_jobs in the availability query to avoid SQL ambiguity', async () => {
+    const nowIso = new Date().toISOString();
+    mockDb.all.mockReturnValue([
+      {
+        id: 1,
+        name: 'Alias Check',
+        gpu_model: 'RTX 4090',
+        gpu_name_detected: 'RTX 4090',
+        gpu_vram_mib: 24 * 1024,
+        gpu_driver: '550.54',
+        gpu_compute_capability: '8.9',
+        gpu_cuda_version: '12.2',
+        gpu_count_reported: 1,
+        gpu_spec_json: null,
+        status: 'online',
+        location: 'Riyadh',
+        run_mode: 'always-on',
+        reliability_score: 99,
+        reputation_score: 99,
+        cached_models: '[]',
+        last_heartbeat: nowIso,
+        uptime_percent: 99.9,
+        total_jobs: 1,
+        is_paused: 0,
+        created_at: nowIso,
+      },
+    ]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/providers/available');
+
+    expect(res.status).toBe(200);
+    expect(mockDb.all).toHaveBeenCalled();
+    const primarySql = String(mockDb.all.mock.calls[0][0] || '');
+    expect(primarySql).toMatch(/\bp\.total_jobs\b/);
+  });
 });

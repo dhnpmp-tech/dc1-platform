@@ -752,7 +752,7 @@ describe('Transient failure retry logic — POST /api/jobs/:job_id/result', () =
     expect(failRes.body.retry).toBeFalsy();
 
     const updatedJob = mockDb._tables.jobs.find(j => j.job_id === jobId);
-    expect(updatedJob.status).toBe('completed');
+    expect(updatedJob.status).toBe('failed');
   });
 
   test('does NOT retry non-transient (permanent) failures', async () => {

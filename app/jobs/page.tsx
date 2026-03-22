@@ -221,7 +221,7 @@ export default function JobsPage() {
                 {t('jobs_legacy.live')}
               </span>
             )}
-            <Link href="/jobs/submit" className="btn btn-primary min-h-[40px] px-4">
+            <Link href="/renter/playground?source=legacy_jobs_header_submit" className="btn btn-primary min-h-[40px] px-4">
               {t('jobs_legacy.submit_job')}
             </Link>
             <span className="text-xs text-dc1-text-muted">
@@ -279,7 +279,7 @@ export default function JobsPage() {
             ) : (
               <p className="text-sm text-dc1-text-secondary text-center py-10">
                 {t('jobs_legacy.no_active_jobs')}{' '}
-                <Link href="/jobs/submit" className="text-dc1-amber hover:underline">
+                <Link href="/renter/playground?source=legacy_jobs_empty_submit" className="text-dc1-amber hover:underline">
                   {t('jobs_legacy.submit_one')}
                 </Link>
               </p>
@@ -356,7 +356,7 @@ export default function JobsPage() {
                   <p className="text-sm text-dc1-text-secondary mb-3">
                     {jobs.length === 0 ? t('jobs_legacy.no_active_jobs') : t('jobs_legacy.select_job')}
                   </p>
-                  <Link href="/jobs/submit" className="btn btn-primary min-h-[40px] px-4">
+                  <Link href="/renter/playground?source=legacy_jobs_panel_submit" className="btn btn-primary min-h-[40px] px-4">
                     {t('jobs_legacy.submit_job')}
                   </Link>
                 </div>

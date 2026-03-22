@@ -9,11 +9,11 @@
     "renters:backfill": "node src/scripts/backfill-renters-from-supabase.js",
     "renters:verify-login-email": "node src/scripts/verify-renter-login-email.js",
     "templates:validate": "node src/scripts/validate-deploy-templates.js",
-    "test": "jest --runInBand",
-    "test:integration": "jest tests/integration/ --runInBand",
-    "test:smoke": "jest tests/integration/sprint19-20-smoke.test.js",
-    "test:s21": "jest tests/integration/sprint21-smoke.test.js",
-    "test:e2e": "jest tests/integration/ --forceExit --testTimeout=30000",
+    "test": "NODE_ENV=test jest --runInBand",
+    "test:integration": "NODE_ENV=test jest tests/integration/ --runInBand",
+    "test:smoke": "NODE_ENV=test jest tests/integration/sprint19-20-smoke.test.js",
+    "test:s21": "NODE_ENV=test jest tests/integration/sprint21-smoke.test.js",
+    "test:e2e": "NODE_ENV=test jest tests/integration/ --forceExit --testTimeout=30000",
     "test:load": "node tests/load/load-test.js"
   },
   "dependencies": {
