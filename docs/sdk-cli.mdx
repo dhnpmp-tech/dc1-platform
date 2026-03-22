@@ -36,7 +36,7 @@ curl -X POST "$API_BASE/jobs/submit" \
   }'
 ```
 
-Expected: response contains `job.job_id` and `status` as `pending`.
+Expected: response contains `job.job_id` and `status` as `queued` or `pending`.
 
 ## Poll job status
 
@@ -44,7 +44,7 @@ Expected: response contains `job.job_id` and `status` as `pending`.
 curl "$API_BASE/jobs/<job_id>" -H "x-renter-key: $DCP_RENTER_KEY"
 ```
 
-Status lifecycle: `pending` → `queued` → `running` → `done`.
+Status lifecycle: `pending` → `queued` → `running` → `completed`.
 
 ## Fetch output
 

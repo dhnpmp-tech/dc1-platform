@@ -65,7 +65,7 @@ export default function PrivacyPage() {
         We are planning migration to Saudi Arabia-hosted infrastructure (STC Cloud or AWS Bahrain ap-southeast-3) in Q3 2026.
       </p>
       <p>
-        The DCP frontend is served via Vercel (global CDN). Payment processing uses Moyasar (Saudi payment gateway).
+        The DCP frontend is served via Vercel (global CDN). Payments are processed through the configured payment provider.
       </p>
 
       <h2>6. Data Retention</h2>
@@ -156,7 +156,7 @@ export default function PrivacyPage() {
 
       <h2>10. Third-Party Services</h2>
       <ul>
-        <li><strong>Moyasar</strong>: Saudi payment gateway for SAR top-ups (their privacy policy applies to payment data)</li>
+        <li><strong>Billing partner</strong>: payment data is handled through our configured payment partner, using standard security practices.</li>
         <li><strong>Vercel</strong>: Frontend hosting and CDN (edge caching of pages, no PII stored)</li>
         <li><strong>Supabase</strong>: Real-time data sync for provider metrics (anonymized aggregate data only)</li>
       </ul>

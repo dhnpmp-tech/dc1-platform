@@ -46,3 +46,9 @@ __pycache__/
 backend/node_modules/
 backend/data/
 backend/logs/
+completion
+logs
+run
+sdk/node/dist/
+sdk/python/dist/
+sdk/python/dcp_provider.egg-info/

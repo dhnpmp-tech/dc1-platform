@@ -35,7 +35,7 @@ Owner: Copywriter / Content Strategist
 - Card 1 title:
   - `Playground (Fast Start)`
 - Card 1 body:
-  - `Run your first workload from the browser without infrastructure setup.`
+  - `Run GPU workloads from the browser before moving to container automation.`
 - Card 1 CTA:
   - `Open Playground`
 - Card 2 title:
@@ -69,7 +69,7 @@ Owner: Copywriter / Content Strategist
 
 ### Current-to-proposed direction
 - Feature: `Playground`
-  - Proposed headline: `From idea to first run in one session`
+- Proposed headline: `From idea to first validated workload in one session`
   - Proposed body: `Use the web interface to submit jobs quickly, validate output, and iterate before automating.`
 - Feature: `Container Jobs`
   - Proposed headline: `Bring your Docker workflow without retooling`
@@ -96,7 +96,7 @@ Owner: Copywriter / Content Strategist
   - Show the low-friction path from browser experimentation to API/container execution.
 - Structure:
   - `Problem`: teams lose time jumping directly into infra work.
-  - `Step 1`: run first job in Playground.
+  - `Step 1`: run your first workload in Playground.
   - `Step 2`: capture parameters and expected outputs.
   - `Step 3`: move to Docker job submission.
   - `Step 4`: operational checklist (cost estimate, retries, monitoring links).
@@ -174,4 +174,3 @@ Owner: Copywriter / Content Strategist
 - Header/Footer labels: `app/components/layout/Header.tsx`, `app/components/layout/Footer.tsx`
 - Renter quickstart copy touchpoints: `app/docs/page.tsx`, `app/docs/quickstart/page.tsx`
 - Provider conversion/supporting copy: `app/earn/page.tsx`, `app/provider/register/page.tsx`
-

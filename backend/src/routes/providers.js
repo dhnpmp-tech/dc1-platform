@@ -21,6 +21,9 @@ const {
     sendJobFailed,
     sendDataExportReady,
 } = require('../services/emailService');
+const {
+    announceFromProviderHeartbeat,
+} = require('../services/p2p-discovery');
 const { getBenchmarkResult } = require('../services/benchmarkRunner');
 const {
     appendAttemptLogLines,
@@ -792,6 +795,19 @@ router.post('/heartbeat', (req, res) => {
 
         // Tell daemon if update is available (semantic version comparison)
         const needsUpdate = !daemonVersion || compareVersions(daemonVersion, LATEST_DAEMON_VERSION) < 0;
+        try {
+            announceFromProviderHeartbeat(p, {
+                gpu_status: normalizedGpuStatus || {},
+                gpu_info: gi,
+                provider_ip: providerIp || null,
+                provider_hostname: providerHostname || null,
+                resource_spec,
+                resolved_total_vram_mib: resolvedTotalVramMb,
+                heartbeat_issued_at: now,
+            });
+        } catch (announcementError) {
+            console.warn('[p2p-discovery] heartbeat announce enqueue failed:', announcementError.message);
+        }
         return res.json({
             success: true, message: 'Heartbeat received', timestamp: now,
             needs_update: needsUpdate,

@@ -36,7 +36,7 @@ curl -X POST "$API_BASE/jobs/submit" \
   }'
 ```
 
-المتوقع: وجود `job.job_id` و `status` بقيمة `pending`.
+المتوقع: وجود `job.job_id` و `status` بقيمة `queued` أو `pending`.
 
 ## مراقبة الحالة
 
@@ -44,7 +44,7 @@ curl -X POST "$API_BASE/jobs/submit" \
 curl "$API_BASE/jobs/<job_id>" -H "x-renter-key: $DCP_RENTER_KEY"
 ```
 
-تسلسل الحالة: `pending` → `queued` → `running` → `done`.
+تسلسل الحالة: `pending` → `queued` → `running` → `completed`.
 
 ## جلب المخرجات
 

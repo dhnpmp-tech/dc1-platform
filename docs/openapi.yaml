@@ -3,7 +3,7 @@ info:
   title: DCP Platform API
   version: 5.0.0
   description: |
-    DCP is Saudi Arabia's first decentralized GPU compute marketplace.
+    DCP is a Saudi-hosted GPU compute marketplace for AI workloads.
     Providers register NVIDIA GPUs, install the Python daemon, and earn SAR.
     Renters submit compute jobs (LLM inference, image generation, training) that
     run on provider hardware. DCP takes 25% fee; providers earn 75%.
@@ -1068,7 +1068,8 @@ paths:
       tags: [Renters]
       summary: Register a new renter account
       description: |
-        Creates renter account and credits 1000 halala (10 SAR) welcome balance.
+        Creates a renter account.
+        Bonus, welcome credits, and rollout-specific limits are defined by deployment policy.
         Rate limited to 5 per IP per hour.
       requestBody:
         required: true
@@ -1237,10 +1238,11 @@ paths:
   /api/renters/topup:
     post:
       tags: [Renters]
-      summary: Direct balance top-up (dev/legacy — use /api/payments/topup for production)
+      summary: Development wallet top-up endpoint (not production checkout flow)
       description: |
         Directly credits halala to renter balance. Accepts either `amount_halala`
-        or `amount_sar`. Max 1000 SAR per transaction. Rate limited to 10/min.
+        or `amount_sar`. This endpoint is intended for non-production flows and
+        is rate-limited to 10/min.
       security:
         - RenterApiKey: []
       requestBody:
@@ -2748,8 +2750,8 @@ paths:
       summary: Request an earnings withdrawal
       description: |
         Provider submits a withdrawal request for a portion of their claimable
-        earnings. Minimum withdrawal is 10 SAR. Processing takes 1–3 business
-        days via the configured `payout_method`.
+        earnings. Payout method, timing, and minimum threshold are
+        configured in platform payout settings.
 
         The request is created with status `pending` and appears in the admin
         withdrawal queue at `/api/admin/withdrawals`.
@@ -2770,8 +2772,7 @@ paths:
                 amount_sar:
                   type: number
                   format: float
-                  minimum: 10
-                  description: Amount to withdraw in SAR (min 10 SAR)
+                  description: Amount to withdraw in SAR (platform-configured minimum)
                   example: 250.00
                 payout_method:
                   type: string
@@ -2806,7 +2807,7 @@ paths:
                     example: pending
                   message:
                     type: string
-                    example: Withdrawal request submitted. Processing takes 1-3 business days.
+                    example: Withdrawal request submitted.
         '400':
           description: Missing or invalid fields
           content:
@@ -4097,8 +4098,8 @@ paths:
       summary: Request an earnings payout (provider self-service)
       description: |
         Alias for `POST /api/providers/withdraw`. Submits a withdrawal request
-        for a portion of the provider's claimable earnings. Minimum 10 SAR.
-        Request is processed within 1–3 business days.
+        for a portion of the provider's claimable earnings. Payout timing and
+        thresholds are configured in provider payout settings.
       security:
         - ProviderApiKey: []
       requestBody:
@@ -4111,7 +4112,6 @@ paths:
               properties:
                 amount_sar:
                   type: number
-                  minimum: 10
                   example: 100.00
                 payout_method:
                   type: string

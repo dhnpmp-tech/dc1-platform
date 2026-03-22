@@ -312,13 +312,17 @@ export class DC1Client {
     };
 
     let req: http.ClientRequest | null = null;
+    let ws: any | null = null;
     let aborted = false;
+    let hasReceivedAnyData = false;
+    let activeMode: 'idle' | 'sse' | 'ws' = 'idle';
     let connectAttempt = 0;
     const maxConnectAttempts = 3;
-    let hasReceivedAnyData = false;
+    let fallbackTried = false;
 
     const dispose = () => {
       aborted = true;
+      ws?.close(1000, 'closed by client');
       req?.destroy();
     };
 
@@ -329,20 +333,53 @@ export class DC1Client {
 
       if (!hasDataForThisAttempt && connectAttempt < maxConnectAttempts && isRetryableError(err)) {
         const backoffMs = connectAttempt * 1000;
-        setTimeout(() => startStream(), backoffMs);
+        setTimeout(() => startSseStream(), backoffMs);
         return;
       }
 
       onError(err);
     };
 
-    const startStream = () => {
+    const parseSseChunk = (chunk: string) => {
+      let buffer = '';
+      buffer += chunk;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          const data = line.slice(5).trim();
+          if (!data || data === '[DONE]') {
+            continue;
+          }
+          try {
+            const payload = JSON.parse(data) as { type?: string; line?: string };
+            if (payload.type === 'end') {
+              onEnd();
+              continue;
+            }
+            if (payload.type === 'log' && typeof payload.line === 'string') {
+              onLine(payload.line);
+            }
+          } catch {
+            onLine(data);
+          }
+        }
+      }
+
+      return buffer;
+    };
+
+    const startSseStream = () => {
+      activeMode = 'sse';
       if (aborted) {
         return;
       }
 
       connectAttempt += 1;
+
       let hasDataForThisAttempt = false;
+      let buffer = '';
 
       try {
         req = lib.request(options, (res: IncomingMessage) => {
@@ -367,24 +404,17 @@ export class DC1Client {
           }
 
           connectAttempt = maxConnectAttempts;
-          let buffer = '';
           res.setEncoding('utf8');
 
           res.on('data', (chunk: string) => {
             if (aborted) { return; }
-            buffer += chunk;
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
-
-            for (const line of lines) {
-              if (line.startsWith('data:')) {
-                const data = line.slice(5).trim();
-                if (data && data !== '[DONE]') {
-                  hasDataForThisAttempt = true;
-                  hasReceivedAnyData = true;
-                  onLine(data);
-                }
-              }
+            const before = buffer;
+            buffer = `${before}${chunk}`;
+            const newBuffer = parseSseChunk(buffer);
+            if (newBuffer !== buffer) {
+              hasDataForThisAttempt = true;
+              hasReceivedAnyData = true;
+              buffer = newBuffer;
             }
           });
 
@@ -420,8 +450,137 @@ export class DC1Client {
       }
     };
 
+    const startWebSocketStream = () => {
+      const wsConstructor: any = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string | string[]) => any }).WebSocket;
+      if (typeof wsConstructor !== 'function') {
+        startSseStream();
+        return;
+      }
+
+      const wsUrl = new URL(url.toString());
+      wsUrl.protocol = isHttps ? 'wss:' : 'ws:';
+      wsUrl.searchParams.set('key', apiKey);
+
+      const wsConnectTimeoutMs = 1200;
+      let wsOpened = false;
+      let wsBuffer = '';
+      let wsConnectTimeout: NodeJS.Timeout | null = null;
+
+      try {
+        ws = new wsConstructor(wsUrl.toString());
+      } catch (err) {
+        if (!aborted) {
+          startSseStream();
+        }
+        return;
+      }
+
+      wsConnectTimeout = setTimeout(() => {
+        if (!wsOpened && !aborted) {
+          ws?.close(4000, 'websocket connect timeout');
+          if (!fallbackTried) {
+            fallbackTried = true;
+            startSseStream();
+          }
+        }
+      }, wsConnectTimeoutMs);
+
+      ws.onopen = () => {
+        wsOpened = true;
+        activeMode = 'ws';
+        if (wsConnectTimeout) {
+          clearTimeout(wsConnectTimeout);
+          wsConnectTimeout = null;
+        }
+      };
+
+      ws.onmessage = (event: any) => {
+        if (aborted || !event) {
+          return;
+        }
+
+        const payload = typeof event.data === 'string' ? event.data : String(event.data || '');
+        wsBuffer += payload;
+
+        if (!wsBuffer.includes('\n')) {
+          return;
+        }
+
+        const lines = wsBuffer.split('\n');
+        wsBuffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            continue;
+          }
+
+          if (trimmed.startsWith('data:')) {
+            const data = trimmed.slice(5).trim();
+            if (!data || data === '[DONE]') {
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(data) as { type?: string; line?: string };
+              if (parsed.type === 'log' && typeof parsed.line === 'string') {
+                hasReceivedAnyData = true;
+                onLine(parsed.line);
+              }
+              if (parsed.type === 'end') {
+                onEnd();
+              }
+            } catch {
+              onLine(data);
+            }
+            continue;
+          }
+
+          if (trimmed === '[DONE]') {
+            onEnd();
+            continue;
+          }
+
+          hasReceivedAnyData = true;
+          onLine(trimmed);
+        }
+      };
+
+      ws.onerror = () => {
+        if (aborted) {
+          return;
+        }
+
+        if (!wsOpened && !fallbackTried) {
+          fallbackTried = true;
+          startSseStream();
+          return;
+        }
+
+        onError(new Error('WebSocket log stream error'));
+      };
+
+      ws.onclose = () => {
+        if (wsConnectTimeout) {
+          clearTimeout(wsConnectTimeout);
+        }
+        if (aborted) {
+          return;
+        }
+
+        if (!wsOpened && !fallbackTried) {
+          fallbackTried = true;
+          startSseStream();
+          return;
+        }
+
+        if (hasReceivedAnyData || !fallbackTried) {
+          onEnd();
+        }
+      };
+    };
+
     try {
-      startStream();
+      startWebSocketStream();
     } catch (err) {
       onError(err instanceof Error ? err : new Error(String(err)));
     }

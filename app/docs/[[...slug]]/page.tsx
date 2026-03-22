@@ -29,19 +29,19 @@ export default function DocsPage({ params }: DocsPageProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber">Docs Portal</p>
             <h1 className="mt-3 text-3xl font-bold text-dc1-text-primary sm:text-4xl">DCP Developer Documentation</h1>
             <p className="mt-4 max-w-3xl text-dc1-text-secondary">
-              API-first onboarding for providers and renters on container-based GPU infrastructure in Saudi Arabia. Build with a structural energy-cost advantage and first-class Arabic AI model support.
+              API-first onboarding for providers and renters on container-based GPU infrastructure in Saudi Arabia. Focus first on secure workflow setup, then scale job routing when demand and policy match.
             </p>
             <p className="mt-2 max-w-3xl text-dc1-text-secondary">
-              بوابة توثيق ثنائية اللغة (عربي/إنجليزي) لحوسبة GPU بالحاويات داخل السعودية، مع ميزة تكلفة طاقة هيكلية ودعم أساسي لنماذج الذكاء الاصطناعي العربية.
+              بوابة توثيق ثنائية اللغة (عربي/إنجليزي) للتأهل السريع في حوسبة GPU داخل السعودية — تشغيل عبر حاويات، مع دعم حقيقي لنماذج الذكاء الاصطناعي العربية.
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Saudi Energy Advantage</p>
-                <p className="mt-2 text-sm text-dc1-text-secondary">Lower structural electricity-cost environment for long-run GPU workloads.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">Built for practical Saudi deployment economics and transparent routing behavior.</p>
               </div>
               <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Arabic AI Models</p>
-                <p className="mt-2 text-sm text-dc1-text-secondary">ALLaM 7B, Falcon H1, JAIS 13B, and BGE-M3 are supported as first-class paths.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">ALLaM 7B, Falcon H1, JAIS 13B, and BGE-M3 are documented as supported deployment paths.</p>
               </div>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
@@ -55,18 +55,18 @@ export default function DocsPage({ params }: DocsPageProps) {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Link href="/docs/quickstart" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
                 <h3 className="text-base font-semibold text-dc1-text-primary">Quickstart</h3>
-                <p className="mt-1 text-sm text-dc1-text-secondary">Run your first renter job in under 5 minutes.</p>
-                <p className="mt-2 text-sm text-dc1-text-secondary">البدء السريع لتشغيل أول مهمة خلال 5 دقائق.</p>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Start a full renter flow from setup through output review.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">ابدأ من الإعداد إلى مراجعة المخرجات عبر تدفق كامل للمستأجر.</p>
               </Link>
               <Link href="/docs/provider-guide" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
                 <h3 className="text-base font-semibold text-dc1-text-primary">Provider Onboarding</h3>
-                <p className="mt-1 text-sm text-dc1-text-secondary">Install daemon, verify heartbeat, and start earning.</p>
-                <p className="mt-2 text-sm text-dc1-text-secondary">دليل إعداد المزود: التثبيت، heartbeat، والأرباح.</p>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Install daemon, verify heartbeat, and start earning with transparent status updates.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">دليل إعداد المزود: التثبيت، heartbeat، وإظهار حالة التشغيل بوضوح.</p>
               </Link>
               <Link href="/docs/renter-guide" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
                 <h3 className="text-base font-semibold text-dc1-text-primary">Renter Onboarding</h3>
-                <p className="mt-1 text-sm text-dc1-text-secondary">Registration, balance, job submit, and output retrieval.</p>
-                <p className="mt-2 text-sm text-dc1-text-secondary">إعداد المستأجر من التسجيل حتى استلام المخرجات.</p>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Fund wallet, choose a provider, submit jobs, and retrieve results safely.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">دليل المستأجر: التسجيل، اختيار مزود، إرسال الوظيفة واستلام المخرجات.</p>
               </Link>
               <Link href="/docs/api-reference" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
                 <h3 className="text-base font-semibold text-dc1-text-primary">API Reference</h3>

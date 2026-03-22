@@ -11,7 +11,7 @@ DCP runs as a three-plane architecture:
 1. **Control plane (Web + API)**
 : Next.js 14 on `dcp.sa` and Express API on `api.dcp.sa`.
 2. **Execution plane (Provider GPUs)**
-: `dc1_daemon.py` on provider machines polls for jobs and executes workloads.
+: `dc1_daemon.py` on provider machines polls for jobs and executes workloads in containerized environments.
 3. **Data plane (SQLite + Supabase sync)**
 : SQLite is write-source for operational data, then sync workers mirror data to Supabase for low-latency reads.
 
@@ -20,7 +20,7 @@ DCP runs as a three-plane architecture:
 1. Renter authenticates with `x-renter-key` or `?key=`.
 2. `POST /api/jobs/submit` creates job row and reserves prepay balance (halala).
 3. Provider daemon polls `GET /api/providers/:key/jobs`.
-4. Daemon executes workload and reports result to `POST /api/providers/job-result`.
+4. Daemon executes workload in isolated containers and reports result to `POST /api/providers/job-result`.
 5. Backend settles billing (75% provider / 25% platform) and updates balances.
 6. Renter retrieves output from `GET /api/jobs/:id/output`.
 
@@ -28,7 +28,7 @@ DCP runs as a three-plane architecture:
 
 - **Next.js frontend**: dashboards, onboarding, docs, marketplace browsing.
 - **Express backend**: auth, routing, billing, queueing, admin controls.
-- **Provider daemon**: heartbeat every 30s, readiness checks, secure job execution.
+- **Provider daemon**: heartbeat every 30s, readiness checks, and secure containerized execution.
 - **Supabase sync bridge**: periodic replication for analytics and real-time UI views.
 
 ## Security and trust boundaries

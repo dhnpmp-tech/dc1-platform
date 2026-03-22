@@ -81,7 +81,7 @@ function PaymentConfirmPageInner() {
             </div>
             <h1 className="text-2xl font-bold text-dc1-text-primary mb-2">Verifying Payment</h1>
             <p className="text-dc1-text-secondary mb-4">
-              Confirming your payment with Moyasar...
+              Confirming your payment...
             </p>
             <p className="text-sm text-dc1-text-muted">
               Attempt {attempt + 1} of 10

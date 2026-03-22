@@ -36,7 +36,7 @@ After validation, transition to renter API-driven execution for repeatability. U
 
 Operational benefits of this step:
 - Consistent submission format for team workflows.
-- Clear job lifecycle visibility (`pending`, `queued`, `running`, `done`).
+- Clear job lifecycle visibility (`pending`, `queued`, `running`, `completed`).
 - Better handoff from prototype scripts to product services.
 
 ## Step 4: Add production safeguards

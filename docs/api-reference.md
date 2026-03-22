@@ -29,7 +29,7 @@ Most read endpoints for renters accept `?key=` as a query param. All write endpo
 | `POST /renters/register` | 5 / IP / 10 minutes |
 | `POST /jobs/submit` | 10 / API key / minute |
 | `GET /providers/marketplace` | 60 / API key / minute |
-| `POST /payments/topup` | 10 / IP / minute |
+| `POST /renters/topup` | 10 / IP / minute |
 | `GET /api/admin/*` | 30 / admin token / minute |
 | All other `/api/*` | 300 / IP / minute |
 
@@ -156,7 +156,7 @@ Add balance to a renter account.
 { "amount_sar": 50 }
 ```
 
-Max 1,000 SAR (100,000 halala) per transaction.
+Top-up limits are configured by platform policy and may vary by deployment.
 
 **Response 200:**
 
@@ -175,7 +175,7 @@ Max 1,000 SAR (100,000 halala) per transaction.
 | Code | Reason |
 |------|--------|
 | 400 | Amount missing, ≤ 0, or non-numeric |
-| 400 | Amount exceeds 100,000 halala |
+| 400 | Amount exceeds configured transaction cap |
 | 401 | API key not provided |
 | 404 | Renter not found |
 
@@ -692,11 +692,11 @@ Request a payout. Alias for `POST /api/providers/withdraw`.
 {
   "amount_sar": 100.00,
   "payout_method": "bank_transfer",
-  "payout_details": { "iban": "SA4420000001234567891234", "account_name": "Ahmed Al-Rashidi" }
+  "payout_details": { "iban": "REDACTED", "account_name": "Your legal name" }
 }
 ```
 
-Minimum 10 SAR. Processing takes 1–3 business days.
+Minimum amount and processing timing follow your active payout configuration.
 
 **Response 201:**
 
@@ -706,7 +706,7 @@ Minimum 10 SAR. Processing takes 1–3 business days.
   "withdrawal_id": "wd-1710843600000-ab3f",
   "amount_sar": 100.00,
   "status": "pending",
-  "message": "Withdrawal request submitted. Processing takes 1-3 business days."
+  "message": "Withdrawal request submitted."
 }
 ```
 

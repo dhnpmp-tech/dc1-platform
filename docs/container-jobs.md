@@ -127,13 +127,7 @@ These guarantees protect both renters (job isolation) and providers (no maliciou
 
 ## Pricing
 
-Jobs are billed by the minute from container start to container exit:
-
-| Job type | Rate |
-|----------|------|
-| LLM inference | 0.15 SAR/min |
-| Image generation | 0.20 SAR/min |
-| Training | 0.25 SAR/min |
+Jobs are charged by elapsed container runtime using live provider-side rate parameters returned during scheduling.
 
 Billing is deducted from your renter balance in halala (100 halala = 1 SAR). Top up your balance before submitting long-running jobs:
 
@@ -159,4 +153,4 @@ curl -X POST https://dcp.sa/api/dc1/renters/topup \
 - The job script may have written to stderr instead of stdout. Check the `error` field.
 
 **Billing deducted but no result:**
-- If a job fails due to provider-side error, the charge is refunded automatically within 1 hour. Check your balance with `GET /api/renters/me`.
+- If a job fails without output, settlement follows standard failure refund behavior. Check your balance with `GET /api/renters/me` after the job lifecycle ends.

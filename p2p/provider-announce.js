@@ -7,52 +7,59 @@
  *
  * ── Usage ────────────────────────────────────────────────────────────────
  *
- *   # Inline spec (from daemon subprocess call):
  *   node p2p/provider-announce.js --spec '{"gpu":"RTX 4090","vram_gb":24,"price_sar_per_hour":45}'
- *
- *   # From a JSON file:
- *   node p2p/provider-announce.js --spec-file /tmp/dc1-spec.json
- *
- *   # With a custom bootstrap node:
- *   DC1_P2P_BOOTSTRAP=/ip4/76.13.179.86/tcp/4001/p2p/<PEER_ID> \
- *     node p2p/provider-announce.js --spec '...'
- *
- * ── How dc1_daemon.py calls this ────────────────────────────────────────
- *
- *   Option A (subprocess — simplest):
- *     import subprocess, json
- *     spec = {"gpu": gpu_name, "vram_gb": vram, "price_sar_per_hour": price}
- *     subprocess.Popen(
- *       ["node", "p2p/provider-announce.js", "--spec", json.dumps(spec)],
- *       cwd="/opt/dc1"
- *     )
- *
- *   Option B (HTTP — if daemon already has aiohttp):
- *     POST /api/p2p/announce  { spec: {...} }
- *     (backend IPC route calls this module — see backend/src/routes/p2p.js in Phase D)
- *
- * ── Environment vars ─────────────────────────────────────────────────────
- *   DC1_P2P_BOOTSTRAP   Full multiaddr of bootstrap node (required in prod)
- *   DC1_P2P_PORT        Local TCP port for this provider's libp2p node (default: 0)
- *   DC1_P2P_TIMEOUT_MS  How long to wait for DHT put before exit (default: 15000)
  */
 
 import { readFileSync } from 'fs'
-import { createDC1Node, announceProvider, waitForPeers, DEFAULT_BOOTSTRAP_ADDR, nodeAddr } from './dc1-node.js'
-
-// ── Argument parsing ───────────────────────────────────────────────────────
 
 function parseArgs () {
   const args = process.argv.slice(2)
   const result = {}
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--spec' && args[i + 1]) {
-      result.spec = args[++i]
+      result.spec = args[i + 1]
+      i++
     } else if (args[i] === '--spec-file' && args[i + 1]) {
-      result.specFile = args[++i]
+      result.specFile = args[i + 1]
+      i++
     }
   }
   return result
+}
+
+function parseBoolean (value, fallback = false) {
+  const normalized = String(value || '').toLowerCase()
+  if (!normalized) return fallback
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
+}
+
+function parsePositiveInt (value, fallback = 0) {
+  const num = Number.parseInt(value, 10)
+  if (!Number.isFinite(num) || num < 0) return fallback
+  return num
+}
+
+function normalizeBootstrapList (value) {
+  if (Array.isArray(value)) {
+    return value
+  }
+  return String(value || '')
+    .split(',')
+    .map((entry) => String(entry || '').trim())
+    .filter((entry) => entry.length > 0 && !entry.includes('REPLACE_WITH_BOOTSTRAP_PEER_ID'))
+}
+
+function buildNodeOptions () {
+  return {
+    port: parsePositiveInt(process.env.DC1_P2P_PORT, 0),
+    bootstrapList: normalizeBootstrapList(process.env.DC1_P2P_BOOTSTRAP),
+    clientMode: false,
+    localMode: parseBoolean(process.env.P2P_DISCOVERY_LOCAL_MODE, false),
+    enableMdns: parseBoolean(process.env.P2P_DISCOVERY_ENABLE_MDNS, false),
+    enableWebSocket: parseBoolean(process.env.P2P_DISCOVERY_ENABLE_WEBSOCKET, false),
+    enableRelay: parseBoolean(process.env.P2P_DISCOVERY_ENABLE_RELAY, false),
+    enableGossipsub: parseBoolean(process.env.P2P_DISCOVERY_ENABLE_GOSSIPSUB, false),
+  }
 }
 
 function loadSpec (parsed) {
@@ -76,59 +83,94 @@ function loadSpec (parsed) {
   process.exit(1)
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
+async function waitForPeers (node, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (node.getPeers().length > 0) return true
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  return false
+}
+
+async function loadRuntime () {
+  try {
+    const scaffold = await import('./dcp-discovery-scaffold.js')
+    return {
+      flavor: 'scaffold',
+      createNode: scaffold.createDiscoveryNode,
+      announce: scaffold.announceProviderEnvironment,
+      stopOnFinish: async (node) => node.stop(),
+      getAddress: scaffold.nodeAddress,
+      announceSpec: (spec) => spec,
+    }
+  } catch (error) {
+    console.warn('[announce] Falling back to legacy DHT module:', error.message)
+  }
+
+  const legacy = await import('./dc1-node.js')
+  return {
+    flavor: 'legacy',
+    createNode: legacy.createDC1Node,
+    announce: legacy.announceProvider,
+    stopOnFinish: async (node) => node.stop(),
+    getAddress: legacy.nodeAddr,
+    announceSpec: (spec) => ({
+      ...spec,
+      announced_at: new Date().toISOString(),
+    }),
+  }
+}
 
 async function main () {
   const parsed = parseArgs()
   const spec = loadSpec(parsed)
+  const nodeOptions = buildNodeOptions()
+  const runtime = await loadRuntime()
+  const timeoutMs = parsePositiveInt(process.env.DC1_P2P_TIMEOUT_MS, 15000)
+  const ttlMs = parsePositiveInt(process.env.P2P_DISCOVERY_TTL_MS, 120000)
 
-  const port = parseInt(process.env.DC1_P2P_PORT ?? '0', 10)
-  const timeoutMs = parseInt(process.env.DC1_P2P_TIMEOUT_MS ?? '15000', 10)
-  const bootstrapAddr = DEFAULT_BOOTSTRAP_ADDR
-
-  // Skip if no real bootstrap is configured (placeholder addr)
-  if (bootstrapAddr.includes('REPLACE_WITH_BOOTSTRAP_PEER_ID')) {
-    console.warn('[announce] DC1_P2P_BOOTSTRAP not set — running in local-only mode')
-    console.warn('[announce] Start bootstrap.js on VPS and set DC1_P2P_BOOTSTRAP env var')
+  if (!runtime || !runtime.createNode) {
+    throw new Error('No announcement runtime available')
   }
 
-  const bootstrapList = bootstrapAddr.includes('REPLACE_WITH_BOOTSTRAP_PEER_ID')
-    ? []
-    : [bootstrapAddr]
+  if (!nodeOptions.bootstrapList.length) {
+    console.warn('[announce] DC1_P2P_BOOTSTRAP not set — using local-only mode')
+  }
 
   console.log('[announce] Starting provider node...')
-  const node = await createDC1Node({
-    port,
-    bootstrapList,
-    clientMode: false  // providers participate in routing
-  })
+  const node = await runtime.createNode(nodeOptions)
+  console.log(`[announce] Flavor     : ${runtime.flavor}`)
+  console.log(`[announce] Peer ID    : ${node.peerId.toString()}`)
+  console.log(`[announce] Address    : ${runtime.getAddress(node)}`)
+  console.log(`[announce] Spec       : ${JSON.stringify(spec)}`)
 
-  console.log(`[announce] Peer ID : ${node.peerId.toString()}`)
-  console.log(`[announce] Address : ${nodeAddr(node)}`)
-  console.log(`[announce] Spec    : ${JSON.stringify(spec)}`)
-
-  // Wait for at least one peer if we have bootstrap peers
-  if (bootstrapList.length > 0) {
-    console.log('[announce] Waiting for peer connections...')
+  if (nodeOptions.bootstrapList.length > 0) {
     const connected = await waitForPeers(node, Math.min(timeoutMs, 8000))
     if (!connected) {
-      console.warn('[announce] No peers connected — DHT put may only be local')
+      console.warn('[announce] No peers connected before timeout')
     } else {
       console.log(`[announce] Connected to ${node.getPeers().length} peer(s)`)
     }
   }
 
-  // Announce to DHT
-  await announceProvider(node, spec)
-  console.log('[announce] DHT announcement complete')
+  if (runtime.flavor === 'scaffold') {
+    const advertised = await runtime.announce(node, runtime.announceSpec(spec), {
+      ttlMs,
+    })
+    console.log('[announce] DHT envelope:', JSON.stringify({
+      peer_id: advertised.peer_id,
+      env_cid: advertised.env_cid,
+    }))
+  } else {
+    await runtime.announce(node, runtime.announceSpec(spec))
+  }
 
-  // Graceful shutdown
-  await node.stop()
+  await runtime.stopOnFinish(node)
   console.log('[announce] Node stopped')
   process.exit(0)
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('[announce] Fatal error:', err)
   process.exit(1)
 })

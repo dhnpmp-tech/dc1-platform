@@ -1,12 +1,12 @@
 ---
 title: البدء السريع
-description: أرسل أول مهمة كمستأجر خلال أقل من 5 دقائق باستخدام curl.
+description: ابدأ مسار مستأجر عبر curl باستخدام curl بطريقة موجزة.
 order: 1
 ---
 
 ## الهدف
 
-إنهاء مسار أول مهمة خلال أقل من 5 دقائق:
+إنهاء مسار إرسال مهمة بشكل مباشر:
 
 1. التحقق من مفتاح المستأجر.
 2. إرسال مهمة.
@@ -26,7 +26,7 @@ export RENTER_KEY="dcp-renter-your-key"
 curl -s "$DCP_API/renters/me?key=$RENTER_KEY"
 ```
 
-## 3) إرسال أول مهمة
+## 3) إرسال المهمة
 
 ```bash
 JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \

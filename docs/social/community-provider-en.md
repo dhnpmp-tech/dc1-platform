@@ -1,6 +1,6 @@
 # Discord & Telegram Provider Outreach Templates
 
-*DCP — Saudi Arabia's First GPU Compute Marketplace*
+*DCP — Saudi Arabia GPU Compute Marketplace*
 *Target communities: GPU owners, gaming communities, tech expats in KSA, mining groups, AI/ML communities*
 
 ---
@@ -15,14 +15,14 @@ Hey everyone 👋
 
 Quick question — does anyone here have an NVIDIA GPU sitting idle when they're not gaming or working?
 
-I've been using **DCP** (dcp.sa) to earn SAR from my RTX 3090 while I sleep. It's Saudi Arabia's first GPU marketplace for AI compute — they pay you for running machine learning jobs on your hardware.
+I've been using **DCP** (dcp.sa) to earn from active AI compute jobs on my NVIDIA GPU. You can offer capacity when your machine is available and get compensated for workloads after completion and settlement.
 
 **How it works:**
 - Register your GPU at dcp.sa/provider/register
-- Run a lightweight background daemon
-- Earn 75% of job revenue, paid weekly to your Saudi bank account via IBAN
+- Run the lightweight background daemon
+- Earn through platform payout workflow after completed jobs
 
-My RTX 3090 makes ~150 SAR/day on 12 hours of idle time. No crypto, just SAR.
+Use planning numbers in your dashboard to estimate outcomes based on utilization and job mix. No crypto, no stablecoins.
 
 Happy to answer questions if anyone's curious 🙂
 
@@ -36,15 +36,10 @@ Happy to answer questions if anyone's curious 🙂
 
 **[Resource] Monetize your idle NVIDIA GPU in Saudi Arabia**
 
-If you have an NVIDIA card with 8GB+ VRAM, you can now earn SAR from AI compute jobs while your machine is idle — through **DCP** (dcp.sa), Saudi Arabia's first decentralized GPU marketplace.
+If you have an NVIDIA card with 8GB+ VRAM, you can earn SAR from AI compute jobs while your machine is available — through **DCP** (dcp.sa), with jobs matched by marketplace demand.
 
-**What they're paying (provider rates, you keep 75%):**
-```
-RTX 3080  →  ~81 SAR/day  (12hr idle)
-RTX 3090  →  ~150 SAR/day (12hr idle)
-RTX 4090  →  ~200 SAR/day (12hr idle)
-A100      →  ~675 SAR/day (12hr idle)
-```
+**How payouts are measured:**
+Use your dashboard and request history to estimate expected earnings for your exact utilization pattern.
 
 **Tech stack:**
 - Python daemon (`dc1_daemon.py`) runs in the background
@@ -54,11 +49,10 @@ A100      →  ~675 SAR/day (12hr idle)
 
 **Setup (Linux):**
 ```bash
-curl -fsSL https://dcp.sa/api/providers/download/daemon?key=YOUR_KEY \
-  -o dc1_daemon.py && python3 dc1_daemon.py
+curl -sL "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_KEY&os=linux" | bash
 ```
 
-Weekly SAR payouts via IBAN. Founding provider rates locked until public scale.
+Payout timing and visibility are shown in the provider wallet and payout settings after completed jobs settle.
 
 Sign up: **dcp.sa/provider/register**
 
@@ -72,9 +66,9 @@ Sign up: **dcp.sa/provider/register**
 
 Sharing something that might be useful for GPU owners in KSA:
 
-**DCP** (dcp.sa) pays Saudi Riyals for AI compute jobs on idle NVIDIA hardware. RTX 3090 owners typically earn 100–200 SAR/day during off hours.
+**DCP** (dcp.sa) pays Saudi Riyals for AI compute jobs on idle NVIDIA hardware. Use your dashboard's planning view to estimate provider outcomes by utilization and job mix.
 
-Setup is ~10 minutes. Weekly IBAN payout. Fully isolated Docker execution.
+Setup is lightweight. Jobs execute in isolated Docker containers and the host is separated from job file systems.
 
 More info: dcp.sa/provider/register
 
@@ -90,9 +84,8 @@ Gamers with RTX cards — your GPU could be earning while you're at school/work/
 
 **DCP** (Saudi GPU marketplace) pays you to run AI jobs on your NVIDIA card when you're not gaming. Your GPU stays yours, the jobs run in a sandboxed container.
 
-RTX 4090? ~200 SAR/day of passive income on idle hours. RTX 3090? ~150 SAR/day.
-
-Payout in SAR to your Saudi bank — no crypto. Takes 10 min to set up.
+Run jobs while your card is available and review payouts inside DCP.
+No crypto. Setup is quick.
 
 → dcp.sa/provider/register
 
@@ -108,10 +101,9 @@ Payout in SAR to your Saudi bank — no crypto. Takes 10 min to set up.
 
 منصة DCP (dcp.sa) تدفع لكم ريالات سعودية مقابل تشغيل مهام ذكاء اصطناعي على بطاقتكم وقت ما تكون خاملة.
 
-RTX 3090 = ~150 ريال يومياً
-RTX 4090 = ~200 ريال يومياً
+RTX 3090 and RTX 4090 owners can estimate returns in the dashboard based on live workload mix.
 
-دفع أسبوعي لحسابكم البنكي عبر IBAN. بدون عملات رقمية.
+Payout settings and settlement timing are managed through provider wallet controls.
 
 التسجيل: dcp.sa/provider/register
 

@@ -1,6 +1,8 @@
-# DC1 Provider Guide — Earn SAR with Your NVIDIA GPU
+# DCP Provider Guide — Earn SAR with your NVIDIA GPU
 
-DC1 lets you earn Saudi Riyals by connecting your NVIDIA GPU to the marketplace. Renters pay for compute; you keep 75% of every job's cost. Payments are settled to your IBAN weekly.
+DCP connects your NVIDIA GPU to active AI workloads in a Saudi-hosted marketplace. When jobs complete, your earnings are reflected in the provider wallet dashboard.
+
+For providers in Saudi Arabia, this model can improve long-run compute economics when your machine is available and demand matches. DCP also supports Arabic-first use cases by routing jobs compatible with local model choices.
 
 ---
 
@@ -40,53 +42,53 @@ curl -X POST https://api.dcp.sa/api/providers/register \
   "success": true,
   "api_key": "dc1-abc123...",
   "provider_id": 3,
-  "message": "Provider registered. Install the daemon and start heartbeating."
+    "message": "Provider registered. Install the daemon and wait for marketplace matching."
 }
 ```
 
-**Save your `api_key`.** You'll need it for the daemon configuration.
+**Save your `api_key`** and keep it secure for daemon configuration.
 
 ---
 
 ## Step 2 — Install the daemon
 
-The DC1 daemon (`dc1_daemon.py v3.4.0`) runs on your machine, polls for jobs, executes them in Docker containers, and sends heartbeats every 30 seconds.
+The DCP daemon (`dc1_daemon.py`) runs on your machine, polls for jobs, executes them in Docker containers, and sends heartbeats every 30 seconds.
 
 ### Linux / macOS (recommended)
 
 ```bash
 # One-line installer
-curl -fsSL https://api.dcp.sa/api/providers/install-script/linux | bash
+curl -sL "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_PROVIDER_KEY&os=linux" | bash
 ```
 
 Or manual install:
 
 ```bash
-# Download daemon
-curl -o dc1_daemon.py https://api.dcp.sa/api/providers/daemon-download
+# Download daemon (if you prefer manual setup)
+curl -o dc1_daemon.py "https://dcp.sa/api/dc1/providers/download/daemon?key=YOUR_PROVIDER_KEY"
 
 # Install Python dependencies
 pip3 install requests psutil GPUtil docker
 
 # Run the daemon
-DC1_API_KEY=dc1-YOUR_KEY_HERE python3 dc1_daemon.py
+DC1_API_KEY=dc1-YOUR_KEY_HERE DC1_API_URL=https://api.dcp.sa python3 dc1_daemon.py
 ```
 
 ### Windows
 
 Download the installer from the [provider download page](https://dcp.sa/provider/download):
 
-1. Download `DC1-Daemon-Installer.exe`
+1. Download the DCP Windows installer package
 2. Run as administrator
 3. Enter your API key when prompted
-4. The daemon registers as a Windows service and starts automatically
+4. The daemon runs as a managed background process on Windows and supports automatic startup when configured
 
 ### As a systemd service (Linux — production)
 
 ```ini
 # /etc/systemd/system/dc1-daemon.service
 [Unit]
-Description=DC1 GPU Daemon
+Description=DCP GPU Daemon
 After=network.target docker.service
 Requires=docker.service
 
@@ -144,18 +146,16 @@ docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 
 The daemon runs a loop every 30 seconds:
 
-1. **Heartbeat** — Reports GPU stats (utilization, VRAM, temperature) to DC1
+1. **Heartbeat** — Reports GPU stats (utilization, VRAM, temperature) to DCP
 2. **Poll for jobs** — Checks for assigned `pending` jobs
-3. **Execute** — Pulls the Docker image, runs the task script inside the container
-4. **Report result** — Sends output back to DC1 (text, image base64, endpoint URL)
-5. **Auto-update** — Downloads new daemon versions automatically when released
-
+3. **Execute** — Pulls the Docker image and runs the job payload inside the container
+4. **Report result** — Sends output back to DCP (text, image base64, endpoint URL)
 ### Daemon environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DC1_API_KEY` | — | **Required.** Your provider API key |
-| `DC1_API_URL` | `https://api.dcp.sa` | DC1 backend URL |
+| `DC1_API_URL` | `https://api.dcp.sa` | DCP backend URL |
 | `DC1_RUN_MODE` | `docker` | `docker` or `local` (for testing) |
 | `DC1_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
@@ -165,24 +165,14 @@ The daemon runs a loop every 30 seconds:
 
 | Item | Amount |
 |------|--------|
-| You earn | 75% of job cost |
-| DC1 fee | 25% of job cost |
-| LLM inference rate | 0.15 SAR/min |
-| Image generation rate | 0.20 SAR/min |
-| Training rate | 0.25 SAR/min |
-| Minimum payout | 50 SAR |
-| Payout schedule | Weekly (Sunday) |
-| Payout method | IBAN bank transfer (Saudi banks) |
+| You earn | Percentage share from completed jobs |
+| DCP fee | Platform fee is configurable by policy |
+| Payout timing | Visible in the provider wallet settings |
+| Payout method | Configured in platform withdrawal settings |
 
-### Example earnings
+### Planning earnings
 
-A provider with a 24GB RTX 4090 running continuously:
-
-- 8 × LLM inference jobs/day × 10 min avg × 0.15 SAR/min × 0.75 = **9 SAR/day**
-- 4 × image generation jobs/day × 15 min avg × 0.20 SAR/min × 0.75 = **9 SAR/day**
-- **Total: ~18 SAR/day → ~540 SAR/month** from a single GPU
-
-Providers with multiple GPUs or enterprise-class cards (A100, H100) can earn significantly more.
+Use provider dashboard tools to estimate outcomes based on your utilization, job mix, and uptime.
 
 ---
 
@@ -204,7 +194,7 @@ curl "https://api.dcp.sa/api/providers/YOUR_KEY/jobs"
 
 ## Reliability score
 
-DC1 tracks a **reliability score** (0–100) for each provider:
+DCP tracks a **reliability score** (0–100) for each provider:
 
 - Starts at 100
 - Decreases when jobs fail or time out
@@ -242,6 +232,6 @@ Keep your daemon running continuously and ensure your GPU has adequate cooling a
 
 ## Security
 
-The daemon only executes jobs that arrive from the DC1 backend with a valid HMAC signature. Your machine runs job scripts inside isolated Docker containers — no DC1 code runs outside of Docker. Providers cannot access renter API keys or personal data.
+The daemon executes jobs from the DCP backend with a valid HMAC signature. Job payloads run inside isolated Docker containers, and renter API keys are only used through request context.
 
-Never share your provider API key. If you suspect it is compromised, contact DC1 support to rotate it.
+Never share your provider API key. If you suspect it is compromised, contact DCP support to rotate it.

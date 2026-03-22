@@ -1,74 +1,66 @@
 # Earn SAR from Your Idle GPU — DCP Provider Pitch
 
-*DCP — Saudi Arabia's First Decentralized GPU Compute Marketplace*
+*DCP — Saudi Arabia GPU Compute Marketplace*
 
 ---
 
 ## Your GPU Is Sitting Idle. It Shouldn't Be.
 
-Every hour your NVIDIA GPU isn't running a job, it's earning nothing. DCP connects your hardware to AI engineers and ML researchers across Saudi Arabia who need GPU compute — and pays you in SAR for every hour your machine runs a job.
+Idle GPU time can be converted into paid AI workload time. DCP connects your hardware to jobs that fit your availability.
 
-**No crypto. No technical complexity. Just Saudi Riyals in your bank account.**
+Saudi energy conditions and local container infrastructure can make sustained AI compute economics more suitable for local teams. DCP is also positioned for Arabic AI workflows with models like ALLaM 7B, Falcon H1, JAIS 13B, and BGE-M3.
+
+**No crypto. No technical complexity.**
 
 ---
 
-## How It Works — 3 Steps
+## How It Works
 
-### Step 1 — Register (2 minutes)
-Go to **[dcp.sa/provider/register](https://dcp.sa/provider/register)**. Enter your name, email, and GPU model. You'll receive your Provider API Key instantly.
+### Step 1 — Register
+Go to **[dcp.sa/provider/register](https://dcp.sa/provider/register)**. Enter your name, email, and GPU model. Keep your Provider API Key ready for daemon setup.
 
-### Step 2 — Install the Daemon (5 minutes)
+### Step 2 — Install the Daemon
 Download and run the DCP daemon — a lightweight Python script that runs in the background. It sends a heartbeat every 30 seconds and executes jobs inside isolated Docker containers on your GPU.
 
 ```bash
 # Linux / macOS
-curl -fsSL https://dcp.sa/api/providers/download/daemon?key=YOUR_KEY -o dc1_daemon.py
-python3 dc1_daemon.py
+curl -sL "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_KEY&os=linux" | bash
 
 # Windows — run in PowerShell
-irm https://dcp.sa/api/providers/download/setup?key=YOUR_KEY^&os=windows | iex
+irm https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_KEY^&os=windows | iex
 ```
 
-### Step 3 — Go Live and Start Earning
-Your machine appears online in your provider dashboard within 2 minutes. Jobs arrive automatically when renters request your GPU specs. **You don't need to do anything else.**
+### Step 3 — Go Live
+Your machine appears online in your provider dashboard when matching sees it as available. Matching then routes compatible jobs when renter demand and compatibility allow.
 
 ---
 
 ## Earning Potential
 
-> Providers keep **75%** of all job revenue. DCP takes a 25% platform fee.
+Providers keep **75%** of settled job revenue after DCP's 25% platform fee.
 
-| GPU Model | VRAM | DCP Rate | Your Cut | Est. Daily Earnings* |
-|-----------|------|----------|----------|----------------------|
-| RTX 3080  | 10 GB | 9 SAR/hr | 6.75 SAR/hr | ~81 SAR/day |
-| RTX 3090  | 24 GB | 15 SAR/hr | 11.25 SAR/hr | ~150 SAR/day |
-| RTX 4090  | 24 GB | 22 SAR/hr | 16.50 SAR/hr | ~200 SAR/day |
-| A100      | 80 GB | 75 SAR/hr | 56.25 SAR/hr | ~675 SAR/day |
-| H100      | 80 GB | 120 SAR/hr | 90 SAR/hr | ~1,080 SAR/day |
+Earnings vary by utilization and job mix. Use these dashboard inputs to estimate outcomes:
 
-*\*Estimates based on ~12 hours of utilization per day (conservative). Full-time utilization doubles this.*
+| Factor | Why it matters |
+|--------|----------------|
+| GPU availability | Online time and how often your machine is matched |
+| Workload mix | LLM, image, or training demand affects effective rates |
+| Completion quality | Completed jobs convert to finalized payment events |
+| Regional competition | Available demand and provider density in your region |
 
-### Monthly Projections (RTX 3090, conservative estimate)
-
-| Hours/Day | Monthly Earnings |
-|-----------|-----------------|
-| 8 hrs | ~2,700 SAR |
-| 12 hrs | ~4,050 SAR |
-| 24 hrs | ~8,100 SAR |
+The dashboard shows planning scenarios, not guaranteed income.
 
 ---
 
-## DCP vs. Leaving Your GPU Idle vs. AWS
+## DCP vs. Idle GPU vs. AWS
 
-| | Your GPU Idle | AWS p3.2xlarge (V100) | DCP RTX 3090 |
-|--|---------------|----------------------|--------------|
-| Earnings | **0 SAR** | N/A (you pay AWS) | **11.25 SAR/hr** |
-| Effort | None | Complex EC2 setup | 5-min install |
-| Payout | None | None | Weekly IBAN |
-| VRAM | 24 GB unused | 16 GB | 24 GB |
-| Compliance | N/A | AWS ToS | Saudi-compliant |
+| Option | What it means for providers |
+|--------|-----------------------------|
+| Local GPU idle | No matching jobs, no payout events |
+| Public cloud credits | Strong service guarantees, but no direct local utilization income |
+| DCP | Earnings opportunity through Saudi-hosted demand matching |
 
-AWS charges renters ~$3.06/hr (~11.5 SAR) for a V100 with only 16 GB VRAM. DCP's RTX 3090 offers more VRAM at a competitive rate — while **you earn SAR instead of paying AWS**.
+DCP keeps the setup path simple and aligns with Saudi data locality while giving providers a practical way to monetize availability.
 
 ---
 
@@ -92,10 +84,9 @@ Every job runs in an ephemeral container that's destroyed after completion. Your
 
 ## Getting Paid
 
-- Earnings accumulate in real time in your **provider wallet**
+- Earnings are posted to your **provider wallet** after job completion
 - View balance and job history from your dashboard at **[dcp.sa/provider](https://dcp.sa/provider)**
-- Payouts processed **weekly** via IBAN transfer to your Saudi bank account
-- Minimum withdrawal: **50 SAR**
+- Payout timing and thresholds are visible in dashboard payout settings.
 - Currency: **SAR** — no crypto, no PayPal, no friction
 
 ---
@@ -106,7 +97,7 @@ Every job runs in an ephemeral container that's destroyed after completion. Your
 Yes. Jobs run inside isolated Docker containers. Renters get GPU compute only — no shell access, no file access, no network access beyond what the job needs.
 
 **2. What if I need my GPU back?**
-You can pause job acceptance from your dashboard at any time. In-progress jobs complete first (typically under 30 minutes), then your machine goes offline.
+You can pause job acceptance from your dashboard at any time. In-progress jobs complete first, then your machine goes offline.
 
 **3. Do I need to be a developer?**
 No. If you can run a Python script, you can run the DCP daemon. The installer handles everything on Windows.
@@ -121,16 +112,16 @@ Any NVIDIA GPU with ≥8 GB VRAM. Ubuntu 20.04+ or Windows 10/11. 100 Mbps inter
 Yes. One daemon manages all GPUs on your machine. Each GPU earns independently.
 
 **7. What happens if my internet cuts out?**
-The daemon reconnects automatically. If a job fails mid-run, it's reassigned to another provider — renters aren't charged.
+The daemon reconnects automatically. Failed jobs are handled by platform retry and settlement rules.
 
 **8. How often are payouts?**
-Weekly, directly to your Saudi bank account via IBAN. Minimum 50 SAR to trigger a payout.
+Payout frequency, payout method, and minimums are configured in your dashboard settings.
 
 **9. Are there taxes?**
 Earnings from DCP are income from a service. Consult your tax advisor. DCP provides transaction records for your records.
 
 **10. When can I set my own prices?**
-Phase 4 (coming soon) introduces provider-controlled floor pricing. Early providers who join now get **founding provider rates** locked in before public launch.
+Provider pricing controls are planned for a future phase. Current participation uses current platform pricing configuration.
 
 ---
 
@@ -140,4 +131,4 @@ Phase 4 (coming soon) introduces provider-controlled floor pricing. Early provid
 
 **Questions:** support@dcp.sa | [Hsoub.com](https://hsoub.com)
 
-*DCP is Saudi Arabia's first decentralized GPU marketplace. Operated in compliance with Saudi financial regulations.*
+*DCP is a Saudi-hosted GPU compute marketplace. Operated in compliance with Saudi financial regulations.*

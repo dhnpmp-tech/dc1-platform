@@ -246,6 +246,9 @@ app.use('/api/templates', templatesRouter);
 const containersRouter = require('./routes/containers');
 app.use('/api/containers', containersRouter);
 
+const p2pRouter = require('./routes/p2p');
+app.use('/api/p2p', p2pRouter);
+
 // Initialize Supabase sync bridge
 const supabaseSync = require('./services/supabase-sync');
 if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }

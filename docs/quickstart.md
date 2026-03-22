@@ -1,9 +1,9 @@
-# DC1 Quickstart — Submit Your First GPU Job in 5 Minutes
+# DCP Quickstart — Submit a GPU Workload
 
-DC1 is Saudi Arabia's first decentralized GPU compute marketplace. Renters submit jobs (LLM inference, image generation, training) that run on providers' NVIDIA hardware. You pay in SAR; providers earn 75%, DC1 takes 25%.
+DCP connects GPU providers and renters on a Saudi-hosted marketplace. Renters submit jobs (LLM inference, image generation, training) that run on providers' NVIDIA hardware in isolated containers.
 
 **Base URL:** `https://api.dcp.sa` (production VPS)
-**Currency:** All amounts are in **halala** (1 SAR = 100 halala) unless the field name ends in `_sar`.
+**Currency:** Amounts are in **halala** internally (1 SAR = 100 halala) unless the field name ends in `_sar`.
 
 ---
 
@@ -30,13 +30,13 @@ curl -X POST https://dcp.sa/api/dc1/renters/register \
 }
 ```
 
-**Save your `api_key`.** It is shown exactly once. You cannot recover it — you would need to re-register with a different email.
+**Save your `api_key` now**. Keep it secure, since it is only shown at generation time.
 
 ---
 
 ## Step 2 — Add balance
 
-New accounts start with 10 SAR (1,000 halala) free credit. To add more:
+Top up your renter balance to add compute credits:
 
 ```bash
 curl -X POST https://dcp.sa/api/dc1/renters/topup \
@@ -56,7 +56,7 @@ curl -X POST https://dcp.sa/api/dc1/renters/topup \
 }
 ```
 
-> Payments go through Moyasar (Saudi payment gateway). The topup endpoint returns a `checkout_url` in production; you redirect the user there to complete card payment.
+> Billing processor details and top-up UX may vary by deployment. The endpoint returns status fields that confirm the balance update or indicates the next top-up step.
 
 ---
 
@@ -88,11 +88,11 @@ curl https://dcp.sa/api/dc1/renters/available-providers
 }
 ```
 
-Use the `id` field as your `provider_id`. Choose a provider with `is_live: true` — it means their daemon sent a heartbeat in the last 2 minutes. If the model you need is in `cached_models`, it will start faster (no download required).
+Use the `id` field as your `provider_id`. Choose a provider with `is_live: true` — it means their daemon sent a heartbeat recently. If the model you need is in `cached_models`, startup can be faster after warm model loading.
 
 ---
 
-## Step 4 — Submit a GPU job
+## Step 4 — Submit a workload
 
 Pick a job type and send the request with your renter key in the `x-renter-key` header.
 
@@ -208,24 +208,25 @@ curl "https://dcp.sa/api/dc1/jobs/job-1710843200000-x7k2p/output" \
 ## Quick reference
 
 ```bash
-# Check your balance anytime
-curl "https://dcp.sa/api/dc1/renters/balance" \
-  -H "x-renter-key: dc1-renter-YOUR_KEY"
+# Check your balance in the renter profile payload
+curl "https://dcp.sa/api/dc1/renters/me?key=dc1-renter-YOUR_KEY"
 
 # List your recent jobs
 curl "https://dcp.sa/api/dc1/renters/me?key=dc1-renter-YOUR_KEY"
 ```
 
-## Cost rates
+## Cost model
 
-| Job type | Rate |
-|----------|------|
-| `llm_inference` | 0.15 SAR/min |
-| `image_generation` | 0.20 SAR/min |
-| `vllm_serve` | 0.20 SAR/min |
-| `training` | 0.25 SAR/min |
-| `rendering` | 0.20 SAR/min |
-| `custom_container` | 0.10 SAR/min |
+Rates vary based on marketplace pricing and selected provider settings.
+
+| Job type | Cost basis |
+|----------|------------|
+| `llm_inference` | Estimated at submission from provider pricing |
+| `image_generation` | Estimated at submission from provider pricing |
+| `vllm_serve` | Estimated at submission from provider pricing |
+| `training` | Estimated at submission from provider pricing |
+| `rendering` | Estimated at submission from provider pricing |
+| `custom_container` | Estimated at submission from provider pricing |
 
 Cost is **pre-deducted** based on your requested `duration_minutes`. On completion, actual elapsed time is billed and any overpayment is refunded to your balance.
 

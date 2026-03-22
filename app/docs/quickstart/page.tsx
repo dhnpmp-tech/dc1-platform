@@ -90,24 +90,24 @@ function StepCard({
 // ── Translations ──────────────────────────────────────────────────────────────
 const copy = {
   en: {
-    badge: 'QUICKSTART',
-    heading: 'Run your first GPU job in 5 minutes',
-    sub: 'From zero to a running PyTorch job on DCP. All you need is an email address.',
-    sdkHeading: 'SDK Quickstarts (Node, Python, CLI)',
-    sdkSub: 'Switch between SDK tracks and verify each setup with one command.',
+  badge: 'QUICKSTART',
+  heading: 'Run a renter workload in a few clear steps',
+  sub: 'From account setup to workload submission, with checkpoints for auth, wallet balance, provider selection, and output review.',
+  sdkHeading: 'SDK Quickstarts (Node, Python, CLI)',
+  sdkSub: 'Switch between SDK tracks and validate each setup in minutes.',
     sdkTabs: {
       node: 'Node.js',
       python: 'Python',
       cli: 'CLI',
     },
-    stepTitles: [
-      'Get your API key',
-      'Top up your balance',
-      'Browse available GPUs',
-      'Submit a job',
-      'Monitor job status',
-    ],
-    stepTimes: ['30 sec', '1 min', '30 sec', '2 min', '30 sec'],
+  stepTitles: [
+    'Get your API key',
+    'Top up your balance',
+    'Browse available GPUs',
+    'Submit a job',
+    'Monitor job status',
+  ],
+  stepTimes: ['Prepare', 'Fund', 'Select', 'Submit', 'Track'],
     s1: {
       p1: 'Register a renter account at',
       p2: 'dcp.sa/renter/register',
@@ -115,33 +115,33 @@ const copy = {
       note: 'Keep your key safe. It authenticates all API calls and is shown once.',
     },
     s2: {
-      p1: 'Add SAR to your wallet. Use the dashboard at',
+      p1: 'Fund wallet in SAR. Use the dashboard at',
       p2: 'dcp.sa/renter/billing',
       p3: ', or call the API directly:',
       note: 'Billing uses halala internally. 100 halala = 1 SAR. 10 SAR = 1,000 halala.',
     },
     s3: {
-      p1: 'Fetch the live GPU marketplace to find an available provider and its',
+      p1: 'Fetch live providers from the marketplace and note the',
       code: 'id',
-      p2: ':',
-      note: 'Note the',
+      p2: 'for the provider you choose:',
+      note: 'Save the',
       code2: 'provider.id',
-      p3: '— you need it for job submission.',
+      p3: 'for your job submit request.',
     },
     s4: {
       p1: 'Submit a PyTorch LLM inference job. Pass your renter key in the',
       code: 'x-renter-key',
       p2: 'header:',
-      note: 'Billing uses a prepay estimate before launch, then actual runtime settlement after completion.',
+      note: 'Billing uses a prepay estimate before execution, then actual runtime settlement after completion.',
     },
     s5: {
       p1: 'Poll the job endpoint until',
       code: 'status',
       p2: 'reaches',
-      code2: 'done',
+      code2: 'completed',
       p3: ', then fetch the output:',
       statuses: 'Status flow:',
-      statusFlow: 'pending → queued → running → done',
+      statusFlow: 'pending → queued → running → completed',
       logsNote: 'Logs are available at',
     },
     next: 'Next actions',
@@ -152,18 +152,18 @@ const copy = {
     ],
     toggleLang: 'عربي',
     verifyHeading: 'Verification checklist',
-    checklistHeading: 'Renter first-job checklist',
-    checklistItems: [
-      { label: 'Register renter account', href: '/renter/register' },
-      { label: 'Top up wallet', href: '/renter/billing' },
-      { label: 'Choose a GPU in marketplace', href: '/renter/marketplace' },
-      { label: 'Submit starter job', href: '/renter/playground?starter=1' },
-      { label: 'Monitor output and logs', href: '/renter/jobs' },
-    ],
-    verifyItems: [
-      'Confirm your API key starts with dcp-renter-',
-      'Ensure top-up response includes success=true and new_balance_halala',
-      'Capture one job_id from submit response before polling status',
+  checklistHeading: 'Renter onboarding checklist',
+  checklistItems: [
+    { label: 'Register renter account', href: '/renter/register' },
+    { label: 'Top up wallet', href: '/renter/billing' },
+    { label: 'Choose a GPU in marketplace', href: '/renter/marketplace' },
+    { label: 'Submit workload', href: '/renter/playground?starter=1' },
+    { label: 'Monitor output and logs', href: '/renter/jobs' },
+  ],
+  verifyItems: [
+    'Confirm your API key starts with dcp-renter-',
+    'Confirm top-up response includes success=true and new_balance_halala',
+    'Capture job_id from submit response before polling status',
     ],
     sdkCards: {
       node: {
@@ -176,11 +176,11 @@ const copy = {
       },
       python: {
         title: 'Python SDK',
-        subtitle: 'Provider registration and heartbeat automation.',
+        subtitle: 'Renter workflow helper for job submission.',
         installLabel: 'Install',
-        runLabel: 'Announce resources',
-        verifyLabel: 'Verify earnings API',
-        verifyHint: 'Expected: a JSON object with total_earned_sar and available_sar.',
+        runLabel: 'Submit + wait',
+        verifyLabel: 'Verify profile',
+        verifyHint: 'Expected: renter profile JSON with email and balance fields.',
       },
       cli: {
         title: 'CLI Quickstart',
@@ -188,16 +188,16 @@ const copy = {
         installLabel: 'Set env vars',
         runLabel: 'Submit a sample job',
         verifyLabel: 'Verify status endpoint',
-        verifyHint: 'Expected: status transitions pending/queued/running/done.',
+        verifyHint: 'Expected: status transitions pending/queued/running/completed.',
       },
     },
   },
   ar: {
-    badge: 'دليل البدء السريع',
-    heading: 'شغّل أول وظيفة GPU في 5 دقائق',
-    sub: 'من الصفر إلى وظيفة PyTorch تعمل على DCP. كل ما تحتاجه هو بريد إلكتروني.',
+  badge: 'دليل البدء السريع',
+  heading: 'شغّل حمولة GPU في خطوات واضحة',
+  sub: 'من إعداد الحساب إلى إرسال الحمولة: خطوات واضحة للمصادقة، الرصيد، اختيار مزود مناسب، ومراجعة النتيجة.',
     sdkHeading: 'أدلة SDK السريعة (Node وPython وCLI)',
-    sdkSub: 'بدّل بين المسارات وتحقق من الإعداد بأمر واحد لكل مسار.',
+    sdkSub: 'بدّل بين المسارات واختبر كل مسار خلال دقائق.',
     sdkTabs: {
       node: 'Node.js',
       python: 'Python',
@@ -210,7 +210,7 @@ const copy = {
       'أرسل وظيفة',
       'راقب حالة الوظيفة',
     ],
-    stepTimes: ['٣٠ ثانية', 'دقيقة', '٣٠ ثانية', 'دقيقتان', '٣٠ ثانية'],
+  stepTimes: ['التهيئة', 'الشحن', 'الاختيار', 'الإرسال', 'المتابعة'],
     s1: {
       p1: 'سجّل حساب مستأجر على',
       p2: 'dcp.sa/renter/register',
@@ -224,27 +224,27 @@ const copy = {
       note: 'يستخدم النظام الهللة داخليًا. ١٠٠ هللة = ١ ريال. ١٠ ريالات = ١٠٠٠ هللة.',
     },
     s3: {
-      p1: 'استرجع سوق GPU المباشر للعثور على مزود متاح والحصول على',
+      p1: 'استرجع سوق GPU المباشر للعثور على مزود مناسب وسجّل',
       code: 'id',
-      p2: ':',
+      p2: 'لتقديم طلب الوظيفة:',
       note: 'دوّن',
       code2: 'provider.id',
-      p3: '— ستحتاجه عند إرسال الوظيفة.',
+      p3: 'لاستخدامه في الإرسال.',
     },
     s4: {
       p1: 'أرسل وظيفة استدلال LLM باستخدام PyTorch. مرّر مفتاح المستأجر في ترويسة',
       code: 'x-renter-key',
       p2: ':',
-      note: 'تستخدم الفوترة تقديرًا مسبقًا قبل التشغيل ثم تسوية حسب وقت التشغيل الفعلي بعد الاكتمال.',
+      note: 'تستخدم الفوترة تقديرًا مسبقًا قبل التنفيذ ثم تسوية حسب وقت التشغيل الفعلي بعد الاكتمال.',
     },
     s5: {
       p1: 'استطلع نقطة نهاية الوظيفة حتى يصل',
       code: 'status',
       p2: 'إلى',
-      code2: 'done',
+      code2: 'completed',
       p3: '، ثم استرجع المخرجات:',
       statuses: 'تدفق الحالات:',
-      statusFlow: 'pending → queued → running → done',
+      statusFlow: 'pending → queued → running → completed',
       logsNote: 'السجلات متاحة على',
     },
     next: 'الخطوات التالية',
@@ -255,7 +255,7 @@ const copy = {
     ],
     toggleLang: 'English',
     verifyHeading: 'قائمة التحقق',
-    checklistHeading: 'قائمة المستأجر لأول وظيفة',
+    checklistHeading: 'قائمة تحقق المستأجر',
     checklistItems: [
       { label: 'سجل حساب مستأجر', href: '/renter/register' },
       { label: 'اشحن المحفظة', href: '/renter/billing' },
@@ -279,11 +279,11 @@ const copy = {
       },
       python: {
         title: 'Python SDK',
-        subtitle: 'تسجيل المزود وإرسال heartbeat تلقائيًا.',
+        subtitle: 'مسار مستأجر: إرسال وظيفتك والتحقق من الحالة عبر Python.',
         installLabel: 'التثبيت',
-        runLabel: 'إعلان الموارد',
-        verifyLabel: 'التحقق من الأرباح',
-        verifyHint: 'المتوقع: JSON يحتوي total_earned_sar و available_sar.',
+        runLabel: 'إرسال + انتظار',
+        verifyLabel: 'التحقق من الملف الشخصي',
+        verifyHint: 'المتوقع: JSON يحوي البريد الإلكتروني والرصيد.',
       },
       cli: {
         title: 'CLI Quickstart',
@@ -291,7 +291,7 @@ const copy = {
         installLabel: 'ضبط المتغيرات',
         runLabel: 'إرسال وظيفة تجريبية',
         verifyLabel: 'التحقق من الحالة',
-        verifyHint: 'المتوقع: انتقالات الحالة pending/queued/running/done.',
+        verifyHint: 'المتوقع: انتقالات الحالة pending/queued/running/completed.',
       },
     },
   },
@@ -352,7 +352,7 @@ const SUBMIT_RESPONSE = `{
 const POLL_CODE = `# Poll status
 curl https://dcp.sa/api/dc1/jobs/job-abc123
 
-# Fetch output (returns 202 while running, 200 when done)
+# Fetch output (returns 202 while running, 200 when completed)
 curl https://dcp.sa/api/dc1/jobs/job-abc123/output`
 
 const POLL_RESPONSE = `{
@@ -365,36 +365,67 @@ const POLL_RESPONSE = `{
 }`
 
 const SDK_SNIPPETS: Record<SdkKey, Omit<SdkCard, 'title' | 'subtitle' | 'installLabel' | 'runLabel' | 'verifyLabel' | 'verifyHint'>> = {
-  node: {
+    node: {
     installCode: `npm install dcp-renter-sdk`,
-    runCode: `import { DC1RenterClient } from 'dcp-renter-sdk'
+  runCode: `import { DC1RenterClient } from 'dcp-renter-sdk'
 
 const client = new DC1RenterClient({
   apiKey: process.env.DCP_RENTER_KEY!,
   baseUrl: 'https://api.dcp.sa',
 })
 
-const job = await client.submitJob({
-  provider_id: 42,
-  job_type: 'llm-inference',
-  params: { prompt: 'Explain transformer attention in 2 lines.' },
-})
+  const job = await client.submitJob({
+    provider_id: 42,
+    job_type: 'llm-inference',
+    params: { prompt: 'Explain transformer attention in 2 lines.' },
+  })
 
-const done = await client.waitForJob(job.job_id, { intervalMs: 3000, timeoutMs: 120000 })
-console.log(done.status, done.job_id)`,
+  const completedJob = await client.waitForJob(job.job_id, { intervalMs: 3000, timeoutMs: 120000 })
+  console.log(completedJob.status, completedJob.job_id)`,
     verifyCode: `const me = await client.me()
 console.log(me.email, me.balance_halala)`,
   },
   python: {
-    installCode: `pip install dc1_provider`,
-    runCode: `from dc1_provider import DC1ProviderClient
+    installCode: `pip install dcp-renter-sdk`,
+    runCode: `import os
+import time
+import requests
 
-client = DC1ProviderClient(api_key="dcp-provider-xxxx")
-spec = client.build_resource_spec()
-client.announce(spec)
-print("announced")`,
-    verifyCode: `earnings = client.get_earnings()
-print(earnings.total_earned_sar, earnings.available_sar)`,
+API_KEY = os.getenv('DCP_RENTER_KEY')
+BASE_URL = 'https://dcp.sa/api/dc1'
+
+submit_payload = {
+  'provider_id': 42,
+  'job_type': 'llm_inference',
+  'params': {
+    'model': 'meta-llama/Llama-3-8B',
+    'prompt': 'Summarize this sentence in one line.',
+  },
+}
+
+submit_resp = requests.post(
+  f'{BASE_URL}/jobs/submit',
+  headers={'x-renter-key': API_KEY},
+  json=submit_payload,
+)
+job = submit_resp.json()['job']
+
+job_id = job['job_id']
+while True:
+  status_resp = requests.get(
+    f'{BASE_URL}/jobs/{job_id}',
+    headers={'x-renter-key': API_KEY},
+  ).json()
+  if status_resp['status'] == 'completed':
+    break
+  time.sleep(3)
+
+print('job completed', job_id, status_resp['status'])`,
+    verifyCode: `me_resp = requests.get(
+  f'{BASE_URL}/renters/me',
+  headers={'x-renter-key': API_KEY},
+).json()
+print(me_resp.get('email'), me_resp.get('balance_halala'))`,
   },
   cli: {
     installCode: `export DCP_RENTER_KEY="dcp-renter-xxxx"

@@ -1,6 +1,8 @@
-# Provider Setup: First Earnings in 30 Minutes
+# Provider Setup: First Completed Job
 
-This guide is for NVIDIA GPU owners who want to join DCP as providers, run the daemon, and reach the first completed paid workload with minimal setup risk.
+This guide is for NVIDIA GPU owners who want to start with DCP as providers, run the daemon, and complete their first payout-eligible workload with minimal setup risk.
+
+DCP is tuned for Saudi operators who want SAR-native compute economics and local AI workload alignment.
 
 ## What you need before starting
 - A supported NVIDIA GPU with stable driver installation.
@@ -39,7 +41,7 @@ Before waiting for production traffic, validate readiness signals:
 - Provider is not paused.
 
 ## Step 5: Operate with uptime discipline
-Provider earnings are directly tied to completed jobs and machine availability.
+Provider earnings are tied to completed jobs and machine availability; wallet updates should be reviewed after completion events are finalized.
 
 Practical operating habits:
 - Keep daemon process supervised and auto-restart capable.
@@ -57,7 +59,7 @@ Track progress in provider dashboard metrics and earnings views as jobs complete
 - Provider account created.
 - Daemon running with valid key.
 - Heartbeat confirmed online.
-- One full job lifecycle observed (`queued` -> `running` -> `done`).
+- One full job lifecycle observed (`pending` -> `queued` -> `running` -> `completed`).
 - Earnings view updated after completion.
 
 ## CTA

@@ -1,15 +1,15 @@
 ---
 title: Provider Guide
-description: Provider onboarding in under 5 minutes: register, install daemon, verify heartbeat, and start earning.
+description: Provider onboarding guide: register, install daemon, verify heartbeat, and begin matching.
 order: 5
 ---
 
-## 5-minute provider onboarding
+## Provider onboarding checklist
 
 1. Register as provider at `/provider/register`.
-2. Copy your `dcp-provider-...` API key.
+2. Keep the API key returned during registration for daemon setup.
 3. Install daemon for your OS.
-4. Confirm heartbeat status becomes `online`.
+4. Confirm heartbeat status becomes `online` and remains stable for several poll cycles.
 5. Keep machine available to receive jobs.
 
 ## Prerequisites
@@ -54,12 +54,14 @@ Expected fields:
 
 - Job revenue split: provider `75%`, platform `25%`
 - Currency: SAR, internal precision in halala
-- Use `GET /api/dc1/providers/earnings?key=...` for available and total earnings
+- Use provider wallet and job history in your dashboard for available balance and total earnings.
+
+If you run on Saudi infrastructure, this model is often more predictable for continuous utilization than spot-heavy foreign alternatives.
 
 ## Troubleshooting quick checks
 
 1. `nvidia-smi` returns your GPU model.
-2. API key is correct (`dcp-provider-...`).
+2. API key is correct (`dc1-provider-...` or the currently returned provider key prefix).
 3. Daemon can reach `https://dcp.sa/api/dc1`.
 4. Firewall allows outbound HTTPS.
 

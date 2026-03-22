@@ -1,15 +1,15 @@
 ---
 title: دليل المستأجر
-description: إعداد المستأجر خلال أقل من 5 دقائق: الحساب، الرصيد، اختيار المزود، واستلام مخرجات أول مهمة.
+description: إعداد المستأجر: الحساب، الرصيد، اختيار المزود، واستلام مخرجات المهمة.
 order: 6
 ---
 
-## إعداد المستأجر خلال 5 دقائق
+## إعداد المستأجر
 
 1. سجّل من `/renter/register` واحفظ مفتاح `dcp-renter-...`.
 2. اشحن المحفظة من `/renter/billing`.
 3. اختر مزودًا متاحًا من `/renter/marketplace`.
-4. أرسل أول مهمة من `/renter/playground` أو عبر API.
+4. أرسل مهمة من `/renter/playground` أو عبر API.
 5. راقب الحالة واسترجع المخرجات.
 
 ## مسار سريع عبر API
@@ -26,7 +26,7 @@ curl -s "https://dcp.sa/api/dc1/renters/me?key=<RENTER_KEY>"
 curl -s "https://dcp.sa/api/dc1/renters/available-providers"
 ```
 
-### 3) إرسال أول مهمة
+### 3) إرسال مهمة
 
 ```bash
 curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \

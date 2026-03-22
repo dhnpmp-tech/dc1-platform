@@ -95,7 +95,7 @@ Owner: Copywriter / Content Strategist
 - Intro headline:
   - `Quickstart for Arabic-ready, container-based GPU compute`
 - Intro body:
-  - `This guide walks you from account setup to your first job, including model selection for Arabic AI use cases.`
+  - `This guide walks you from account setup through workload submission, including model selection for Arabic AI use cases.`
 - Note:
   - `DCP job execution runs in GPU-accelerated Docker containers.`
 
@@ -103,7 +103,7 @@ Owner: Copywriter / Content Strategist
 - Intro headline:
   - `دليل سريع لتشغيل GPU بالحاويات مع جاهزية للنماذج العربية`
 - Intro body:
-  - `يرشدك هذا الدليل من إعداد الحساب حتى أول مهمة، مع اختيار نماذج مناسبة لحالات استخدام الذكاء الاصطناعي العربي.`
+  - `يرشدك هذا الدليل من إعداد الحساب إلى تنفيذ المهام، مع اختيار نماذج مناسبة لحالات استخدام الذكاء الاصطناعي العربي.`
 - Note:
   - `تنفيذ المهام في DCP يتم عبر حاويات Docker مع تسريع GPU.`
 
@@ -148,4 +148,3 @@ Owner: Copywriter / Content Strategist
 ## Suggested Assignee Roles
 - Frontend Developer: `app/page.tsx`, `app/earn/page.tsx`, `app/docs/quickstart/page.tsx`
 - Frontend Developer or DevRel Engineer: `app/lib/i18n.tsx` key additions
-

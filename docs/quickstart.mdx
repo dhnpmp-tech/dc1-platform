@@ -1,17 +1,17 @@
 ---
 title: Quickstart
-description: Submit your first renter job in under 5 minutes using curl (non-payment flow).
+description: Submit a renter workload with curl (non-payment flow).
 order: 1
 ---
 
 ## Goal
 
-Complete a first-job flow in under 5 minutes:
+Complete a workload flow:
 
 1. Validate your renter key.
 2. Find an online provider.
 3. Submit a workload.
-4. Poll status or stream logs.
+4. Poll status until completion.
 5. Fetch final output.
 
 This guide intentionally avoids payment/top-up steps and focuses on pure compute lifecycle APIs.
@@ -47,7 +47,7 @@ Pick a `provider.id` from the response and export it:
 export PROVIDER_ID="42"
 ```
 
-## 4) Submit first job
+## 4) Submit a workload
 
 ```bash
 JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
@@ -55,7 +55,7 @@ JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
   -H "x-renter-key: $RENTER_KEY" \
   -d '{
     "provider_id": '"$PROVIDER_ID"',
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 3,
     "max_duration_seconds": 180,
     "container_spec": {
@@ -72,19 +72,26 @@ JOB_ID=$(echo "$JOB_JSON" | jq -r '.job.job_id // .job_id')
 echo "JOB_ID=$JOB_ID"
 ```
 
-## 5) Check logs (optional)
+## 5) Poll status and fetch output
 
 ```bash
-curl -N "$DCP_API/jobs/$JOB_ID/logs/stream?key=$RENTER_KEY"
-```
+while true; do
+  status=$(curl -s -H "x-renter-key: $RENTER_KEY" "$DCP_API/jobs/$JOB_ID" | jq -r '.status')
+  echo "status=$status"
+  if [ "$status" = "completed" ]; then
+    break
+  fi
+  if [ "$status" = "failed" ] || [ "$status" = "cancelled" ]; then
+    echo "Job ended before completion: $status"
+    break
+  fi
+  sleep 5
+done
 
-## 6) Poll output
-
-```bash
 curl -s "$DCP_API/jobs/$JOB_ID/output?key=$RENTER_KEY"
 ```
 
-If not finished yet, you may receive `202` until terminal state.
+Before completion, status will remain `pending`, `queued`, or `running`.
 
 ## Next
 

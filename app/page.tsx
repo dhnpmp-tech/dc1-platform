@@ -412,7 +412,7 @@ export default function HomePage() {
       <section className="py-16 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber text-center">
-            Run these models on DCP today
+            Saudi-ready AI workloads with Arabic model support
           </p>
         </div>
         <div className="relative w-full">
@@ -467,12 +467,12 @@ export default function HomePage() {
 
       {/* Usage Paths */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="text-center mb-12">
+          <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            Two Ways to Rent GPUs
+            Choose your workflow
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            Start in the browser for fast tests, then move to container jobs when you need repeatable workflows.
+            Validate quickly in-browser, then promote the same workload to container jobs for repeatable API-driven integration.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -484,15 +484,15 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Playground</h3>
+            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Browser Playground</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Rent GPUs for LLM inference and image generation directly from your browser. Pick a model, submit a prompt, and review output before scaling.
+              Verify a first workload from your browser with minimal setup. Pick a model, review output quality, and decide when it is production-ready.
             </p>
             <ul className="space-y-2 mb-8">
               {[
-                'Browser-based — no install needed',
-                'Results in seconds to minutes',
-                'Prepay estimate before run',
+                'No local install required',
+                'Routing checks workload policy and compatibility before assignment',
+                'Pre-run estimate is shown before execution',
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -501,7 +501,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/renter/register" className="btn btn-primary btn-sm">
-              Start renting GPUs
+              Try the playground
             </Link>
           </div>
 
@@ -514,13 +514,13 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Container Jobs</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Bring your own Docker image for training, fine-tuning, batch processing, or any GPU workload. Container jobs run with NVIDIA Container Toolkit support.
+              Run repeatable CUDA image workloads for training, fine-tuning, or batch jobs with API-first flow control.
             </p>
             <ul className="space-y-2 mb-8">
               {[
-                'Any Docker image with CUDA support',
-                'Container-based execution path',
-                'Submit via REST API',
+                'Any CUDA-enabled Docker image',
+                'Container-based execution with isolated workspace',
+                'Submit and track jobs via REST API',
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -613,7 +613,7 @@ export default function HomePage() {
                 step: '2',
                 title: t('landing.setup_step2_title'),
                 desc: t('landing.setup_step2_desc'),
-                code: '# Linux / macOS\ncurl -sSL https://dcp.sa/install.sh | bash',
+                code: '# Linux / macOS\ncurl -sSL "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_PROVIDER_KEY&os=linux" | bash',
               },
               {
                 step: '3',
@@ -646,15 +646,14 @@ export default function HomePage() {
             <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Windows (PowerShell)</p>
             <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`# Run as Administrator
 Invoke-WebRequest \`
-  -Uri "https://dcp.sa/install.ps1" \`
-  -OutFile install.ps1
-.\\install.ps1 \`
-  --key YOUR_PROVIDER_KEY`}</pre>
+  -Uri "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_PROVIDER_KEY&os=windows" \`
+  -OutFile setup.ps1
+.\\setup.ps1`}</pre>
             <div className="mt-4 pt-4 border-t border-dc1-border">
               <p className="text-xs text-dc1-text-muted mb-2">After install, your terminal shows:</p>
               <pre className="text-xs text-green-400 font-mono leading-relaxed">{`✓ GPU detected: RTX 4090 (24 GB)
 ✓ Daemon v3.3.0 running
-✓ Connected to DCP — ready for jobs`}</pre>
+✓ Connected to DCP — heartbeat active for compatible workload routing`}</pre>
             </div>
           </div>
         </div>
@@ -810,7 +809,7 @@ Invoke-WebRequest \`
 
 provider = DCPProvider(api_key="your-key")
 provider.register_gpu()
-provider.start()  # auto-detect, heartbeat, earn`}</pre>
+provider.start()  # initialize, heartbeat, and run assigned container workloads`}</pre>
               </div>
             </div>
           </div>
@@ -852,8 +851,8 @@ provider.start()  # auto-detect, heartbeat, earn`}</pre>
             <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Submit a job</p>
             <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://dcp.sa/api/dc1/jobs/submit \\
   -H "Content-Type: application/json" \\
+  -H "x-renter-key: dcp-renter-..." \\
   -d '{
-    "renter_key": "dcp-renter-...",
     "provider_id": 26,
     "job_type": "llm_inference",
     "model": "ALLaM-7B-Instruct",
@@ -864,7 +863,7 @@ provider.start()  # auto-detect, heartbeat, earn`}</pre>
               <pre className="text-xs text-green-400 font-mono leading-relaxed">{`{
   "jobId": "job_abc123",
   "status": "queued",
-  "estimatedStart": "< 5s"
+  "estimatedStart": "queued"
 }`}</pre>
             </div>
           </div>

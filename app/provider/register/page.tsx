@@ -439,12 +439,12 @@ export default function ProviderRegisterPage() {
 
                 <div className="mt-4 rounded-md border border-status-warning/30 bg-status-warning/5 p-4">
                   <p className="text-sm font-semibold text-dc1-text-primary mb-2">
-                    Command did not run? Check these 3 items:
+                    If install needs troubleshooting, verify these checks:
                   </p>
                   <ol className="list-decimal list-inside space-y-2 text-xs text-dc1-text-secondary font-mono">
                     <li>Endpoint reachability: {reachabilityCheckCommand}</li>
                     <li>API key validity: {keyValidationCommand}</li>
-                    <li>Daemon startup: rerun the install command, then confirm this page reaches step 3 (Connected) and step 4 (Ready).</li>
+                    <li>Daemon startup: rerun the install command, then confirm this page advances to Connected (step 3) and Ready (step 4).</li>
                   </ol>
                 </div>
               </div>
@@ -921,7 +921,7 @@ export default function ProviderRegisterPage() {
               </div>
               <h3 className="font-semibold text-dc1-text-primary mb-2">Fast Setup</h3>
               <p className="text-sm text-dc1-text-secondary">
-                Install the daemon in minutes and start earning immediately.
+                Install the daemon to join live matching and start receiving workloads as availability allows.
               </p>
             </div>
 
@@ -933,7 +933,7 @@ export default function ProviderRegisterPage() {
               </div>
               <h3 className="font-semibold text-dc1-text-primary mb-2">Earn More</h3>
               <p className="text-sm text-dc1-text-secondary">
-                Earn from completed jobs based on current marketplace pricing and utilization.
+                Earnings are calculated from completed jobs based on marketplace pricing and utilization.
               </p>
             </div>
 

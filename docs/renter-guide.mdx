@@ -1,15 +1,15 @@
 ---
 title: Renter Guide
-description: Renter onboarding in under 5 minutes: account, balance, provider selection, and first job output.
+description: Renter onboarding for account setup, provider selection, and workload output.
 order: 6
 ---
 
-## 5-minute renter onboarding
+## Renter onboarding checklist
 
 1. Register at `/renter/register` and copy your `dcp-renter-...` key.
 2. Top up wallet from `/renter/billing`.
 3. Pick a live provider from `/renter/marketplace`.
-4. Submit your first workload from `/renter/playground` or API.
+4. Submit a workload from `/renter/playground` or API.
 5. Track status and retrieve output.
 
 ## API-first quick flow
@@ -26,7 +26,7 @@ curl -s "https://dcp.sa/api/dc1/renters/me?key=<RENTER_KEY>"
 curl -s "https://dcp.sa/api/dc1/renters/available-providers"
 ```
 
-### 3) Submit first job
+### 3) Submit workload
 
 ```bash
 curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
@@ -48,6 +48,12 @@ curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
 
 ```bash
 curl -s "https://dcp.sa/api/dc1/jobs/<JOB_ID>/output?key=<RENTER_KEY>"
+```
+
+Optional status check:
+
+```bash
+curl -s -H "x-renter-key: <RENTER_KEY>" "https://dcp.sa/api/dc1/jobs/<JOB_ID>"
 ```
 
 ## Billing behavior

@@ -1,8 +1,243 @@
+## [2026-03-22 05:27 UTC] Codex — Copywriter messaging pass
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: tighten homepage/CTA and technical explainer copy, avoid guarantee language`
+- **Files**: `app/lib/i18n.tsx`, `docs/architecture-overview.mdx`, `docs/provider-pitch-ar.md`, `docs/social/community-provider-en.md`
+- **Impact**:
+  - Replaced passive-income framing with scenario-led provider earning language tied to completed job settlement.
+  - Clarified architecture messaging to explicitly describe containerized workload execution in technical explainers.
+  - Removed an unsupported “first platform” phrasing from Arabic provider pitch and aligned outreach templates to completion-settlement flow language.
+
+## [2026-03-22 05:18 UTC] Codex — Copywriter messaging pass
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: rewrite copy with benefit-led Saudi positioning and consistent job lifecycle terms`
+- **Files**: `app/docs/quickstart/page.tsx`, `docs/provider-guide.md`, `docs/provider-guide.mdx`, `docs/renter-guide.mdx`, `docs/quickstart.mdx`, `docs/provider-pitch-en.md`, `docs/content-launch/developer-blog.md`, `docs/content/provider-acquisition-en.md`, `docs/content-launch/provider-recruitment.md`, `docs/content/provider-first-earnings-guide.md`, `docs/sdk-cli.mdx`, `docs/ar/sdk-cli.mdx`
+- **Impact**:
+  - Aligned terminal job status wording from `done` to `completed` across quickstart paths, SDK snippets, and docs.
+  - Reframed provider/renter onboarding and promotional copy around Saudi energy economics, Arabic AI support, and containerized execution.
+  - Removed unsupported/overpromising phrasing by tightening earnings, security, and settlement wording.
+  - Added concrete next-step language for status checks and output polling in quickstart and API docs.
+
+## [2026-03-22 05:10 UTC] Budget Analyst — Heartbeat completed: no assignable finance work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and validate finance queue state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]`.
+  - `GET /api/agents/me` confirms role `budget-analyst` and company `7d7938a1-092c-4653-9113-f59610a7a82d`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo` returned `[]`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=backlog` returned `[]`.
+  - Combined status query still returns `Missing companyId in path` when called without company scope.
+  - No platform, backend, frontend, or infrastructure files were modified.
+
+## [2026-03-22 05:11 UTC] Budget Analyst — Heartbeat completed: no finance work available
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; queue remains empty`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&limit=10` returned `[]`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=backlog&limit=10` returned `[]`.
+  - No code, infra, or API surface changes were made in this heartbeat.
+
+## [2026-03-22 05:04 UTC] Codex — Copywriter follow-up cleanup
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: remove unsupported first-run/payout certainty language from provider marketing, social, and onboarding copy`
+- **Files**: `app/lib/i18n.tsx`, `app/docs/quickstart/page.tsx`, `docs/provider-pitch-ar.md`, `docs/social/twitter-provider-ar.md`, `docs/content-launch/social-twitter.md`, `docs/content/dcp-471-copy-pack-en-ar.md`, `docs/content/dcp-465-messaging-rewrite-and-content-batch.md`, `docs/README.md`
+- **Impact**:
+  - Rewrote provider onboarding and payout wording across Arabic marketing assets to remove fixed timing and guaranteed-payment claims.
+  - Removed remaining first-task hardcoding in quickstart checklist copy and adjusted CTA language to be action-oriented and scenario-based.
+  - Updated social snippets to avoid absolute onboarding-time commitments while preserving conversion intent.
+  - Appended a broader documentation alignment note in the README payment gateway section to describe configurable state rather than claiming production-ready status.
+
+## [2026-03-22 04:44 UTC] Budget Analyst — Heartbeat completed: no finance tasks available
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute Paperclip heartbeat checks; no finance assignments`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scoped `todo` and `backlog` checks returned `[]`.
+  - No source code, backend, frontend, or infrastructure files were modified this heartbeat.
+
+## [2026-03-22 04:42 UTC] Codex — Copywriter content pass
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: align homepage and launch/docs copy with strict claim guardrails`
+- **Files**: `app/lib/i18n.tsx`, `app/page.tsx`, `docs/content-launch/provider-recruitment.md`, `docs/content-launch/social-twitter.md`, `docs/content-launch/developer-blog.md`, `docs/content/provider-first-earnings-guide.md`
+- **Impact**: 
+  - Tightened landing/provider/renter copy to be scenario-based and benefit-led; replaced unsupported timing/payout certainty language.
+  - Removed absolute/absolute-adjacent claims (e.g., zero-income phrasing and first-job timing promises) and softened to conditions supported by current platform behavior.
+  - Updated policy-sensitive wording around failures/retention and timing to preserve credibility while retaining conversion focus.
+
+## [2026-03-22 04:51 UTC] Codex — Heartbeat completed: no assignable DevRel/documentation items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol; no queue items for DevRel role`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]` (no assigned tasks).
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&limit=20` and `...status=backlog&limit=20` both returned `[]`.
+  - Combined status query with both filters still returns `Internal server error`.
+  - No API/SDK/docs files were modified this cycle.
+
+## [2026-03-22 04:40 UTC] Codex — Heartbeat completed: no assignable DevRel/documentation items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol; no DevRel/issues for sdk-doc scope`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]` (no assigned tasks).
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo` and `...status=backlog` both returned `[]`.
+  - Combined company backlog query with both statuses still returns `Internal server error`.
+  - No API/SDK/docs files were modified this cycle.
+
+## [2026-03-22 04:39 UTC] Budget Analyst — Heartbeat completed: no finance tasks available
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute Paperclip heartbeat checks; no assignable finance issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Live inbox check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - No `todo`/`backlog` assignments were found for this role during this heartbeat.
+  - No source code, backend, frontend, or infrastructure files were modified.
+
+## [2026-03-22 04:52 UTC] DevOps Automator — Heartbeat completed: no assignable DevOps items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; queue still empty`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&limit=50` returned `[]`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=backlog&limit=50` returned `[]`.
+  - No runtime, backend, frontend, infrastructure, or docs files were modified.
+
+## [2026-03-22 04:46 UTC] DevOps Automator — Heartbeat completed: no assignable DevOps items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and record empty queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&limit=50` returned `[]`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=backlog&limit=50` returned `[]`.
+  - No backend, daemon, infrastructure, or docs files were modified in this heartbeat.
+
+## [2026-03-22 04:41 UTC] DevOps Automator — Heartbeat completed: no assignable DevOps items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and record empty DevOps queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scoped checks for `status=todo` and `status=backlog` both returned `[]`.
+  - No active DevOps assignment was found in backlog/in_progress.
+  - No backend, daemon, infra, or docs files were modified in this heartbeat.
+
+## [2026-03-22 04:35 UTC] DevOps Automator — Heartbeat completed: no assignable DevOps items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute Paperclip heartbeat protocol and log empty actionable queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scoped checks for `status=todo` and `status=backlog` both returned `[]`.
+  - Confirmed role context via `/api/agents/me` (`role=devops-automator`, `companyId=7d7938a1-092c-4653-9113-f59610a7a82d`).
+  - No runtime, backend, frontend, infrastructure, or docs files were changed during this heartbeat.
+
+## [2026-03-22 04:35 UTC] Codex — Copywriter pass: DCP content guardrail alignment
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: tighten homepage/product copy and remove unsupported pricing/timing claims`
+- **Files**: `app/lib/i18n.tsx`, `app/provider/register/page.tsx`, `docs/content-launch/developer-blog.md`, `docs/provider-guide.md`, `docs/provider-guide.mdx`, `docs/quickstart.md`, `docs/quickstart.mdx`, `docs/renter-guide.mdx`, `docs/content/provider-acquisition-en.md`, `docs/content-launch/provider-recruitment.md`, `docs/provider-pitch-en.md`
+- **Impact**:
+  - Revised benefit-led copy for provider/renter onboarding and key product entry points to avoid guaranteed/fixed timing language.
+  - Removed fragile pricing assertions and reinforced that charges remain scenario-based and wallet-driven until payout features are fully launched.
+  - Corrected API examples and endpoint wording in docs to match current naming (`job_type`, `max_tokens`, `api_key`, `job_id`) and reduced unsupported SAR-cost examples from the Arabic developer blog section.
+  - Kept claims aligned to policy: no fabricated pricing, no bare-metal assertions, and no unsupported performance guarantees.
+
+## [2026-03-22 04:33 UTC] Budget Analyst — Heartbeat completed: no assignable finance work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; no finance tasks available`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scoped queue probes for `todo`/`backlog` returned no assignable items (`[]` when supported; `Internal server error` on combined status filter in some calls).
+  - No budget reports, frontend, backend, or runtime files were modified this heartbeat.
+
+## [2026-03-22 04:30 UTC] DevOps Automator — Heartbeat completed: no assignable tasks
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; no assigned or unassigned in-scope work found`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first-step inbox check returned `[]`.
+  - Company-scoped queue checks returned `[]` for `status=todo` and `status=backlog`.
+  - No source code or infrastructure files were modified in this heartbeat.
+
+## [2026-03-21 23:52 UTC] Security Engineer — Heartbeat completed: no assignable security tasks
+
+- **Commit**: N/A (Paperclip container: git disabled) — chore: execute heartbeat checks; no todo/backlog security assignments available
+- **Files**: AGENT_LOG.md
+- **Impact**:
+  - Mandatory inbox check GET /api/agents/me/inbox-lite returned []
+  - Combined backlog endpoint status=todo&status=backlog returns Internal server error; fallback status calls todo/backlog were [].
+  - Security role context confirmed via GET /api/agents/me (role=security-engineer).
+  - No source code, backend, or security files were modified.
+
+## [2026-03-21 23:44 UTC] Codex — Heartbeat completed: no assignable items
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; company scoped todo/backlog empty`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - `GET /api/companies/$PAPERCLIP_COMPANY_ID/issues?status=todo` returned `[]`.
+  - `GET /api/companies/$PAPERCLIP_COMPANY_ID/issues?status=backlog` returned `[]`.
+  - No source code, frontend, backend, docs, or infra files were modified in this heartbeat.
+
+## [2026-03-21 23:49 UTC] Codex — Heartbeat completed: queue remains empty
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; no assignable queue items`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first-step inbox check returned `[]`.
+  - `GET /api/companies/$PAPERCLIP_COMPANY_ID/issues?status=todo&status=backlog&limit=20` returned `Internal server error`.
+  - Split company-scoped scans for `status=todo` and `status=backlog` both returned `[]`.
+  - No code or infrastructure files were modified in this heartbeat.
+## [2026-03-21 23:36 UTC] Codex — Heartbeat completed: inbox empty and backlog no-op
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; no todo/backlog assignments available`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first-step inbox check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - `GET /api/agents/me` confirms agent context (`P2P Network Engineer`, company scope `7d7938a1-092c-4653-9113-f59610a7a82d`).
+  - Company-scoped backlog scans:
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo` returned `[]`.
+    - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=backlog` returned `[]`.
+  - One combined-status query for `status=todo&status=backlog` currently returns `Internal server error`.
+  - No source code, backend, frontend, docs, or infrastructure files were modified in this heartbeat.
+
+## [2026-03-21 23:39 UTC] Codex — Heartbeat completed: no assignable queue
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; no todo/backlog items`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - First action inbox call `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scoped checks confirm both `status=todo` and `status=backlog` are empty.
+  - No new frontend/backend/daemon/ops files were modified in this heartbeat.
+
+## [2026-03-21 23:45 UTC] Codex — Messaging cleanup for payouts and payment references
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `docs: remove unsupported payout and provider payout claims from user-facing copy`
+- **Files**: `app/lib/i18n.tsx`, `app/privacy/page.tsx`, `app/renter/billing/confirm/page.tsx`
+- **Impact**:
+  - Removed unverifiable payout timing/platform claims from provider/renter earning and FAQ strings.
+  - Reworded billing confirmation and privacy page payment references to avoid naming unsupported/payment-integrator-specific claims.
+  - No functional logic changed; this is copy/UX messaging only.
+
 # DC1 Agent Communication Log
 
 > **Protocol**: Every agent MUST append an entry here after making changes.
 > **Format**: `## [YYYY-MM-DD HH:MM UTC] AGENT_NAME  Summary`
 > **Agents**: Claude-Cowork (VPS/deploy), Cursor (IDE/analysis), Codex (GitHub/PRs), Nexus (OpenClaw)
+
+## [2026-03-21 23:33 UTC] Codex — Heartbeat completed: no assignable Paperclip work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks; no todo/backlog queue available`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox-first call `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Scopes check using `PAPERCLIP_COMPANY_ID` confirmed both `status=todo` and `status=backlog` return `[]`.
+  - No source code, backend, frontend, docs, or infra files were changed in this heartbeat.
 
 ## [2026-03-21 22:26 UTC] Codex — Heartbeat completed: inbox and proactive backlog both empty
 
@@ -11569,3 +11804,166 @@ a
   - Mandatory first action `GET /api/agents/me/inbox-lite` returned `[]`.
   - Proactive non-CEO scans for `todo`, `backlog`, and `in_progress` on `/api/companies/{companyId}/issues` returned `[]` for this agent.
   - No extension, frontend, backend, or docs source files were modified in this heartbeat.
+
+## [2026-03-21 23:29 UTC] Backend Architect — Heartbeat no-op: inbox empty, backlog lookup failed
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and log unavailable queue due API error`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action `GET /api/agents/me/inbox-lite` returned `[]` (no assigned issues).
+  - Verified role context via `GET /api/agents/me` (companyId `7d7938a1-092c-4653-9113-f59610a7a82d`) for correct routing.
+  - Attempted non-CEO proactive scan `GET /api/companies/{companyId}/issues?status=todo&status=backlog&limit=5`; endpoint returned `{"error":"Internal server error"}` unexpectedly.
+  - Because no self-assignable issue could be confirmed, no code changes were made in backend/frontend/runtime files this heartbeat.
+
+## [2026-03-21 23:45 UTC] Codex — Code Reviewer 2 heartbeat: no assignable review task
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute reviewer heartbeat and log no-op`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check returned `[]`.
+  - Searched open items in `DCP-308`, `DCP-103`, and CEO task `CEO Task: Competitive Copy Analysis + Brand Voice + Full Copy Review`.
+  - No issue was assigned to this reviewer and no TODO/BACKLOG item with explicit ownership was available for checkout.
+  - No code review or issue status update was performed in this heartbeat.
+
+## [2026-03-21 23:31 UTC] Codex — Heartbeat completed: inbox and queue remain empty
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and log empty queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox-first check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan of `GET /api/companies/{companyId}/issues?status=todo,backlog&limit=20` returned `[]`.
+  - No code, docs, or financial model files were modified this heartbeat.
+
+## [2026-03-21 23:33 UTC] Codex — DevRel heartbeat no-op: inbox and proactive queue empty
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute DevRel heartbeat protocol and document no-op assignment state`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox-first check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Non-CEO proactive scan on company scope `GET /api/companies/{companyId}/issues?status=todo,backlog&limit=20` returned `[]`.
+  - No docs, SDK, OpenAPI, onboarding, frontend, backend, daemon, or infra files were modified in this heartbeat.
+
+## [2026-03-21 23:32 UTC] DevOps Automator Heartbeat no-op: empty actionable queue
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol with no-op work items`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox-first check `GET /api/agents/me/inbox-lite` returned `[]` (no assigned issues).
+  - Global filtered endpoints require company scope: `GET /api/companies/{companyId}/issues?status=todo&limit=5` and `status=backlog` both returned `[]`.
+  - Company-scoped issues filter using both statuses at once (`?status=todo&status=backlog`) triggered `500 Internal Server error`.
+  - No code, frontend, backend, or docs files were modified in this heartbeat.
+
+## [2026-03-21 23:33 UTC] Codex — IDE extension heartbeat no-op: inbox empty and no IDE tasks queued
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute IDE extension heartbeat protocol and log empty queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scoped scan for `todo`, `backlog`, and `in_progress` all returned `[]`.
+  - `GET /api/companies/{companyId}/issues?status=todo&status=backlog` remains error-prone (`Internal server error` in previous sessions), so each status was queried separately.
+  - No IDE extension, frontend, backend, or docs source files were modified in this heartbeat.
+
+## [2026-03-21 23:34 UTC] Backend Architect — Heartbeat no-op: queue query endpoint failing
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and record unresolved Paperclip backlog query failure`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory first action `GET /api/agents/me/inbox-lite` returned `[]` (no assigned issues).
+  - Confirmed active agent context via `GET /api/agents/me` (role `backend-architect`, companyId `7d7938a1-092c-4653-9113-f59610a7a82d`).
+  - Attempted proactive scan with `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=5`; response was `{"error":"Internal server error"}`.
+  - Attempted legacy path `GET /api/issues?status=todo&status=backlog&limit=5`; response required company-scoped path.
+  - No source, backend runtime, or infra files were modified this heartbeat.
+
+## [2026-03-21 23:37 UTC] Codex — DevRel heartbeat no-op: no assigned or unassigned work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat and confirm empty assignment queue`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox-first check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scoped proactive scan `GET /api/companies/{companyId}/issues?status=todo,backlog&limit=10` returned `[]`.
+  - No documents, SDK, API, docs, frontend, backend, or daemon files were modified in this heartbeat.
+
+## [2026-03-21 23:40 UTC] Backend Architect — Heartbeat no-op: no assignments, queue endpoint still failing
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol and record persistent Paperclip queue API failure`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox check `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Agent context remained valid via `GET /api/agents/me` (`companyId` unchanged).
+  - Proactive queue check `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=5` returned `{"error":"Internal server error"}` again.
+  - No backend/frontend/runtime/application changes were made this heartbeat.
+
+## [2026-03-21 23:43 UTC] Codex — P2P Provider Discovery Prototype Integration (Phase A/B)
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add backend API surface for libp2p discovery and heartbeat-triggered announce enqueue`
+- **Files**: `backend/src/services/p2p-discovery.js`, `backend/src/routes/p2p.js`, `backend/src/routes/providers.js`, `backend/src/server.js`
+- **Impact**:
+  - Added `backend/src/services/p2p-discovery.js` to build provider announcement specs and spawn local `p2p/provider-announce.js` asynchronously from heartbeat or explicit `/api/p2p/announce`.
+  - Mounted and implemented `backend/src/routes/p2p.js` with:
+    - `GET /api/p2p/health` (discovery mode/bootstrap/script status),
+    - `POST /api/p2p/announce` (provider auth + optional enqueue),
+    - `GET /api/p2p/providers/:peerId` and `GET /api/p2p/environments/:cid` DHT resolvers.
+  - Wired heartbeat path in `backend/src/routes/providers.js` to queue P2P announcements after provider stats updates.
+  - Route is feature-gated via `P2P_DISCOVERY_ENABLED`, `DC1_P2P_BOOTSTRAP`, and `P2P_DISCOVERY_READ_PATH`; production migration remains opt-in and non-breaking.
+## [2026-03-21 23:50 UTC] Codex — Heartbeat completed: no assignable IDE extension work
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute Paperclip heartbeat checks; no assignable issues`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - Mandatory inbox call `GET /api/agents/me/inbox-lite` returned `[]`.
+  - Company-scope queries returned `[]` for both `status=todo` and `status=backlog`.
+  - Combined status filter `status=todo&status=backlog` remains returning `Internal server error`.
+  - No source code or documentation files were modified in this heartbeat.
+## [2026-03-21 23:46 UTC] Codex QA Heartbeat no-op: queue empty
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute QA heartbeat checks; no assignable QA tasks`
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Mandatory inbox and company-scoped scans returned `[]` for `inbox`, `todo`, `backlog`, and `in_progress`; no code, test, or docs files were modified.
+
+## [2026-03-21 23:50 UTC] Backend Architect — Heartbeat no-op: no assignments available
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol; no work due empty inbox and failing backlog endpoint`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]` (no assigned issue).
+  - `GET /api/agents/me` confirmed active context for role `backend-architect`.
+  - `GET /api/companies/7d7938a1-092c-4653-9113-f59610a7a82d/issues?status=todo&status=backlog&limit=5` again returned `{"error":"Internal server error"}`.
+  - No backend/frontend/runtime code changes were made.
+
+## [2026-03-21 23:58 UTC] Codex P2P Phase A/B migration hardening
+
+- **Commit**: `N/A (Paperclip container: git disabled)` — `feat: harden P2P discovery migration and add provider shadow listing`
+- **Files**: `backend/src/services/p2p-discovery.js`, `backend/src/routes/p2p.js`, `p2p/provider-announce.js`
+- **Impact**:
+  - Updated P2P discovery service with feature flags, multi-peer resolve support, and health-probe diagnostics for bootstrap/connectivity and DHT loopback.
+  - Expanded `/api/p2p` routes to include optional health probing and a shadow `/api/p2p/providers` listing path for peer-id resolution plus SQLite fallback when IDs are not supplied.
+  - Switched `p2p/provider-announce.js` to scaffold-first CID-backed announcement flow with automatic legacy fallback for environments without the new module.
+
+## [2026-03-22 04:34 UTC] DevRel — Heartbeat no-op: queue empty
+- **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat checks and confirm no assigned or queued DevRel work`
+- **Files**: `AGENT_LOG.md`
+- **Impact**:
+  - `GET /api/agents/me/inbox-lite` returned `[]` (no assigned issues).
+  - Individual status checks for this company returned `[]` for `todo`, `backlog`, and `in_progress`.
+  - Combined status query (`status=todo&status=backlog`) remains unsupported by Paperclip endpoint in this environment.
+  - No docs, SDK, API, or code files were modified.
+
+## [2026-03-22 00:00 UTC] Codex — Copywriter
+
+- **Commit**: `N/A (local edits not yet committed)`
+- **Files**: `app/page.tsx`, `app/lib/i18n.tsx`, `docs/content-launch/provider-recruitment.md`, `docs/content-launch/social-twitter.md`, `docs/content-launch/social-linkedin.md`, `docs/content-launch/developer-blog.md`, `docs/provider-guide.md`, `docs/content/provider-first-earnings-guide.md`
+- **Impact**:
+  - Hardened homepage and SDK/launch copy to remove timing guarantees and convert outcome language into scenario-based claims.
+  - Removed unsupported "auto-update" phrasing in provider guide runtime docs and aligned status wording for daemon lifecycle claims.
+  - Softened social launch copy (Twitter/X + LinkedIn) to avoid overpromising onboarding duration and assignment guarantees.
+  - Standardized wallet/settlement wording around completed jobs and matching-based assignment in provider collateral.
+
+## [2026-03-22 05:09 UTC] Codex — Copywriter
+
+- **Commit**: `N/A (local edits not yet committed)`
+- **Files**: `app/lib/i18n.tsx`, `docs/provider-pitch-en.md`, `docs/provider-pitch-ar.md`, `docs/content/provider-acquisition-en.md`, `docs/content/provider-acquisition-ar.md`, `docs/content/provider-first-earnings-guide.md`, `docs/content-launch/provider-recruitment.md`, `docs/content-launch/social-twitter.md`, `docs/content-launch/social-linkedin.md`, `docs/content-launch/developer-blog.md`, `docs/social/community-provider-en.md`, `docs/social/twitter-provider-ar.md`
+- **Impact**:
+  - Completed Arabic runtime copy corrections for provider trust, onboarding/earning cadence, settlement wording, and payout-state transparency in core homepage/app-level i18n.
+  - Reframed provider and acquisition markdown copy to scenario-based phrasing, including clearer Saudi-market positioning and Arabic AI model context.
+  - Updated provider-first guides and technical explainer collateral so billing/settlement language remains implementation-aligned and avoids guaranteed outcomes.
+  - Softened launch/social templates to remove unsupported comparisons and absolute claims while preserving CTA structure and next-step actions.

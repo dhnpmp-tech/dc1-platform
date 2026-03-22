@@ -1,13 +1,13 @@
 # DC1 Platform — API Documentation
 
-DC1 is Saudi Arabia's first decentralized GPU compute marketplace. This directory contains the machine-readable API spec and developer guides.
+DCP is a Saudi-hosted GPU compute marketplace for AI workloads. This directory contains the machine-readable API spec and developer guides.
 
 ## Developer Docs
 
 | Document | Language | Description |
 |----------|----------|-------------|
-| [Quickstart](./quickstart.md) | English | Submit your first GPU job in 5 minutes |
-| [دليل البدء السريع](./quickstart-ar.md) | العربية | أرسل أول مهمة GPU في 5 دقائق |
+| [Quickstart](./quickstart.md) | English | Submit a GPU workload |
+| [دليل البدء السريع](./quickstart-ar.md) | العربية | دليل البدء السريع للحملات عبر curl |
 | [API Reference](./api-reference.md) | English | All endpoints with request/response schemas |
 | [مرجع API](./api-reference-ar.md) | العربية | جميع نقاط النهاية بالعربية |
 | [Provider Guide](./provider-guide.md) | English | Earn SAR by connecting your NVIDIA GPU |
@@ -73,7 +73,7 @@ curl -X POST https://dcp.sa/api/dc1/providers/register \
   -d '{"name":"Ahmed","email":"ahmed@example.sa","gpu_model":"RTX 3090","os":"Linux"}'
 
 # 2. Install daemon (Linux)
-curl "https://dcp.sa/api/dc1/providers/setup?key=dc1-provider-YOUR_KEY" | bash
+curl "https://dcp.sa/api/dc1/providers/download/setup?key=dc1-provider-YOUR_KEY&os=linux" | bash
 
 # 3. Check dashboard
 curl "https://dcp.sa/api/dc1/providers/me?key=dc1-provider-YOUR_KEY"
@@ -134,7 +134,7 @@ curl "https://dcp.sa/api/dc1/jobs/JOB_ID/output" \
 
 ## Payment Gateway
 
-Production payments use **Moyasar** (Saudi-first gateway — mada, Apple Pay, credit card).
+Payment gateway integration is configured through **Moyasar** when gateway credentials are enabled (mada, Apple Pay, card).
 - `POST /api/payments/topup` — initiate payment, returns `checkout_url`
 - Redirect renter to `checkout_url` to complete payment
 - Webhook at `POST /api/payments/webhook` confirms and credits balance
