@@ -1,4 +1,5 @@
 import React from 'react'
+import InteractiveTable from './InteractiveTable'
 
 interface SimpleMdxRendererProps {
   source: string
@@ -143,7 +144,7 @@ export default function SimpleMdxRenderer({ source }: SimpleMdxRendererProps) {
       continue
     }
 
-    // Markdown table support
+    // Markdown table support — renders as interactive comparison table
     if (line.trimStart().startsWith('|')) {
       const tableLines: string[] = []
       while (index < lines.length && lines[index].trim().startsWith('|')) {
@@ -162,39 +163,11 @@ export default function SimpleMdxRenderer({ source }: SimpleMdxRendererProps) {
       const dataRows = tableLines.slice(dataStart).map(parseRow)
 
       blocks.push(
-        <div key={`table-wrap-${key}`} className="overflow-x-auto my-6">
-          <table key={`table-${key++}`} className="min-w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-dc1-border">
-                {headerRow.map((cell, ci) => (
-                  <th
-                    key={`th-${key}-${ci}`}
-                    className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-dc1-amber whitespace-nowrap"
-                  >
-                    {cell}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {dataRows.map((row, ri) => (
-                <tr
-                  key={`tr-${key}-${ri}`}
-                  className="border-b border-dc1-border/40 hover:bg-dc1-surface-l2/50"
-                >
-                  {row.map((cell, ci) => (
-                    <td
-                      key={`td-${key}-${ri}-${ci}`}
-                      className="px-4 py-2 text-dc1-text-secondary whitespace-nowrap"
-                    >
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <InteractiveTable
+          key={`itable-${key++}`}
+          headers={headerRow}
+          rows={dataRows}
+        />
       )
       continue
     }
