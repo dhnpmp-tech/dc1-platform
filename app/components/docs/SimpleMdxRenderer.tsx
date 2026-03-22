@@ -36,29 +36,23 @@ function renderInlineLinks(text: string): React.ReactNode[] {
   const pattern = /\[([^\]]+)\]\(([^)]+)\)/g
   let lastIndex = 0
   let match = pattern.exec(text)
-
   while (match) {
     const [full, label, href] = match
     const start = match.index
-
     if (start > lastIndex) {
       parts.push(text.slice(lastIndex, start))
     }
-
     parts.push(
       <a key={`${href}-${start}`} href={href}>
         {label}
       </a>
     )
-
     lastIndex = start + full.length
     match = pattern.exec(text)
   }
-
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex))
   }
-
   return parts
 }
 
@@ -80,16 +74,13 @@ export default function SimpleMdxRenderer({ source }: SimpleMdxRendererProps) {
       const language = line.slice(3).trim()
       index += 1
       const codeLines: string[] = []
-
       while (index < lines.length && !lines[index].startsWith('```')) {
         codeLines.push(lines[index])
         index += 1
       }
-
       if (index < lines.length && lines[index].startsWith('```')) {
         index += 1
       }
-
       const code = codeLines.join('\n')
       blocks.push(
         <pre key={`pre-${key++}`}>
@@ -152,6 +143,62 @@ export default function SimpleMdxRenderer({ source }: SimpleMdxRendererProps) {
       continue
     }
 
+    // Markdown table support
+    if (line.trimStart().startsWith('|')) {
+      const tableLines: string[] = []
+      while (index < lines.length && lines[index].trim().startsWith('|')) {
+        tableLines.push(lines[index])
+        index += 1
+      }
+
+      const parseRow = (row: string): string[] =>
+        row.split('|').slice(1, -1).map((cell) => cell.trim())
+
+      const isSeparator = (row: string): boolean =>
+        /^\|[\s:?-]+\|/.test(row) && row.includes('---')
+
+      const headerRow = parseRow(tableLines[0])
+      const dataStart = tableLines.length > 1 && isSeparator(tableLines[1]) ? 2 : 1
+      const dataRows = tableLines.slice(dataStart).map(parseRow)
+
+      blocks.push(
+        <div key={`table-wrap-${key}`} className="overflow-x-auto my-6">
+          <table key={`table-${key++}`} className="min-w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-dc1-border">
+                {headerRow.map((cell, ci) => (
+                  <th
+                    key={`th-${key}-${ci}`}
+                    className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-dc1-amber whitespace-nowrap"
+                  >
+                    {cell}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataRows.map((row, ri) => (
+                <tr
+                  key={`tr-${key}-${ri}`}
+                  className="border-b border-dc1-border/40 hover:bg-dc1-surface-l2/50"
+                >
+                  {row.map((cell, ci) => (
+                    <td
+                      key={`td-${key}-${ri}-${ci}`}
+                      className="px-4 py-2 text-dc1-text-secondary whitespace-nowrap"
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+      continue
+    }
+
     const paragraphLines: string[] = []
     while (
       index < lines.length &&
@@ -159,12 +206,12 @@ export default function SimpleMdxRenderer({ source }: SimpleMdxRendererProps) {
       !lines[index].startsWith('#') &&
       !lines[index].startsWith('```') &&
       !lines[index].startsWith('- ') &&
+      !lines[index].trimStart().startsWith('|') &&
       !/^\d+\.\s+/.test(lines[index])
     ) {
       paragraphLines.push(lines[index])
       index += 1
     }
-
     blocks.push(<p key={`p-${key++}`}>{renderInlineLinks(paragraphLines.join(' '))}</p>)
   }
 
