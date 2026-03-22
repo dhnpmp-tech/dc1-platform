@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function SubmitJobPage() {
+function SubmitJobRedirect() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -19,5 +19,13 @@ export default function SubmitJobPage() {
         <p className="text-sm text-white/60">Redirecting to the renter playground...</p>
       </div>
     </div>
+  );
+}
+
+export default function SubmitJobPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#1a1a1a]" />}>
+      <SubmitJobRedirect />
+    </Suspense>
   );
 }
