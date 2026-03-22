@@ -117,6 +117,20 @@ function formatAge(seconds: number | null, t: (key: string) => string): string {
   return `${Math.floor(seconds / 60)}m ${t('marketplace.ago')}`
 }
 
+function getHeartbeatInterpretationKey(seconds: number | null): string {
+  if (seconds === null) return 'marketplace.trust_heartbeat_unknown'
+  if (seconds <= 60) return 'marketplace.trust_heartbeat_fresh'
+  if (seconds <= 300) return 'marketplace.trust_heartbeat_recent'
+  return 'marketplace.trust_heartbeat_stale'
+}
+
+function getReliabilityInterpretationKey(uptime: number, successRate: number): string {
+  const composite = (uptime + successRate) / 2
+  if (composite >= 90) return 'marketplace.trust_reliability_high'
+  if (composite >= 75) return 'marketplace.trust_reliability_medium'
+  return 'marketplace.trust_reliability_low'
+}
+
 function formatLastUpdated(date: Date | null): string {
   if (!date) return '—'
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -433,6 +447,8 @@ function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => stri
     ?? 15
   const imgRate = provider.cost_rates_halala_per_min?.image_generation ?? 20
   const trainRate = provider.cost_rates_halala_per_min?.training ?? 25
+  const uptime = provider.uptime_pct ?? provider.uptime_percent ?? 0
+  const successRate = provider.job_success_rate ?? 0
 
   return (
     <article
@@ -501,11 +517,11 @@ function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => stri
         )}
         <div className="flex justify-between">
           <dt>{t('marketplace.uptime')}</dt>
-          <dd className="text-dc1-text-primary font-medium">{(provider.uptime_pct ?? provider.uptime_percent ?? 0).toFixed(1)}%</dd>
+          <dd className="text-dc1-text-primary font-medium">{uptime.toFixed(1)}%</dd>
         </div>
         <div className="flex justify-between">
           <dt>{t('marketplace.success_rate')}</dt>
-          <dd className="text-dc1-text-primary font-medium">{(provider.job_success_rate ?? 0).toFixed(1)}%</dd>
+          <dd className="text-dc1-text-primary font-medium">{successRate.toFixed(1)}%</dd>
         </div>
         {provider.heartbeat_age_seconds !== null && (
           <div className="flex justify-between">
@@ -514,6 +530,11 @@ function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => stri
           </div>
         )}
       </dl>
+
+      <div className="rounded-md border border-dc1-border bg-dc1-surface-l2 px-3 py-2 mb-3 space-y-1">
+        <p className="text-xs text-dc1-text-secondary">{t(getHeartbeatInterpretationKey(provider.heartbeat_age_seconds))}</p>
+        <p className="text-xs text-dc1-text-secondary">{t(getReliabilityInterpretationKey(uptime, successRate))}</p>
+      </div>
 
       {/* Pricing */}
       <div className="bg-dc1-surface-l2 rounded-md p-3 mb-3 space-y-1 text-sm">
@@ -569,6 +590,7 @@ function GPUCard({ provider, t }: { provider: Provider; t: (key: string) => stri
           {t('marketplace.rent_now')}
         </Link>
       </div>
+      <p className="text-[11px] text-dc1-text-muted mt-2">{t('marketplace.runtime_settlement_reminder')}</p>
     </article>
   )
 }
@@ -994,6 +1016,27 @@ export default function MarketplacePage() {
               <span className="text-dc1-text-primary font-semibold">
                 {lastUpdated ? formatReliabilityTimestamp(lastUpdated) : t('marketplace.reliability_unavailable')}
               </span>
+            </p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2/60 px-4 py-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-dc1-text-secondary">
+            <p>
+              <span className="text-dc1-text-primary font-semibold">{t('marketplace.filter_gpu_model')}</span>
+              {' + '}
+              <span className="text-dc1-text-primary font-semibold">{t('marketplace.filter_min_vram')}</span>
+              {' + '}
+              <span className="text-dc1-text-primary font-semibold">{t('marketplace.task_type')}</span>
+            </p>
+            <p>
+              <span className="text-dc1-text-primary font-semibold">{t('marketplace.last_seen')}</span>
+              {' '}
+              {lastUpdated ? formatReliabilityTimestamp(lastUpdated) : t('marketplace.reliability_unavailable')}
+            </p>
+            <p>
+              <Link href="/renter/playground?starter=1" className="text-dc1-amber hover:underline">
+                {t('marketplace.use_playground')}
+              </Link>
             </p>
           </div>
         </div>

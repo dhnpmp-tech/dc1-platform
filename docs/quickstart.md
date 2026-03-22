@@ -1,6 +1,6 @@
 # DCP Quickstart — Submit a GPU Workload
 
-DCP connects GPU providers and renters on a Saudi-hosted marketplace. Renters submit jobs (LLM inference, image generation, training) that run on providers' NVIDIA hardware in isolated containers.
+DCP connects Saudi-hosted GPU providers and renters in one API-first flow. Renters submit containerized workloads (LLM inference, image generation, rendering, training, endpoint serving) on approved runtimes.
 
 **Base URL:** `https://api.dcp.sa` (production VPS)
 **Currency:** Amounts are in **halala** internally (1 SAR = 100 halala) unless the field name ends in `_sar`.
@@ -30,13 +30,13 @@ curl -X POST https://dcp.sa/api/dc1/renters/register \
 }
 ```
 
-**Save your `api_key` now**. Keep it secure, since it is only shown at generation time.
+Save your `api_key` immediately and keep it secure. The platform returns it once.
 
 ---
 
 ## Step 2 — Add balance
 
-Top up your renter balance to add compute credits:
+Top up your renter balance before submitting paid workloads:
 
 ```bash
 curl -X POST https://dcp.sa/api/dc1/renters/topup \
@@ -56,7 +56,7 @@ curl -X POST https://dcp.sa/api/dc1/renters/topup \
 }
 ```
 
-> Billing processor details and top-up UX may vary by deployment. The endpoint returns status fields that confirm the balance update or indicates the next top-up step.
+> Top-up details (checkout and payment UX) are deployment-specific. Check the returned `success`, `new_balance_*`, and any follow-up fields to confirm the update.
 
 ---
 
@@ -88,15 +88,15 @@ curl https://dcp.sa/api/dc1/renters/available-providers
 }
 ```
 
-Use the `id` field as your `provider_id`. Choose a provider with `is_live: true` — it means their daemon sent a heartbeat recently. If the model you need is in `cached_models`, startup can be faster after warm model loading.
+Use `id` as your `provider_id`. `is_live: true` indicates recent heartbeat activity. If your target model appears in `cached_models`, startup can often begin with fewer warm-load delays.
 
 ---
 
 ## Step 4 — Submit a workload
 
-Pick a job type and send the request with your renter key in the `x-renter-key` header.
+Choose a job type and send the request with your renter key in the `x-renter-key` header.
 
-### LLM Inference example
+### LLM inference example
 
 ```bash
 curl -X POST https://dcp.sa/api/dc1/jobs/submit \
@@ -115,7 +115,7 @@ curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   }'
 ```
 
-### Image Generation example
+### Image generation example
 
 ```bash
 curl -X POST https://dcp.sa/api/dc1/jobs/submit \
@@ -151,7 +151,7 @@ curl -X POST https://dcp.sa/api/dc1/jobs/submit \
 }
 ```
 
-The `cost_halala` is deducted from your balance upfront. If the job finishes sooner, you are refunded the difference.
+The `cost_halala` is reserved at submit time. If execution finishes sooner than requested, remaining balance is released automatically after settlement.
 
 ---
 
@@ -166,12 +166,12 @@ curl "https://dcp.sa/api/dc1/jobs/job-1710843200000-x7k2p" \
 
 | Status | Meaning |
 |--------|---------|
-| `pending` | Waiting for daemon to pick up |
-| `queued` | Provider busy — you are in queue |
-| `running` | Executing on GPU now |
-| `completed` | Done — result available |
-| `failed` | Execution error |
-| `cancelled` | Cancelled before start |
+| `pending` | Waiting for daemon pickup |
+| `queued` | Provider currently busy — queued locally |
+| `running` | Job executing on assigned GPU |
+| `completed` | Done and ready to fetch |
+| `failed` | Runtime or execution error |
+| `cancelled` | Cancelled before completion |
 
 ---
 
@@ -201,23 +201,23 @@ curl "https://dcp.sa/api/dc1/jobs/job-1710843200000-x7k2p/output" \
 }
 ```
 
-**Image result:** The `result.image_base64` field contains the PNG encoded as base64. Decode it with `base64 -d` or your language's base64 library.
+**Image result:** `result.image_base64` contains a PNG payload. Decode with `base64 -d` or your language base64 library.
 
 ---
 
 ## Quick reference
 
 ```bash
-# Check your balance in the renter profile payload
+# Check your balance in renter profile payload
 curl "https://dcp.sa/api/dc1/renters/me?key=dc1-renter-YOUR_KEY"
 
-# List your recent jobs
+# See recent jobs in the profile response
 curl "https://dcp.sa/api/dc1/renters/me?key=dc1-renter-YOUR_KEY"
 ```
 
 ## Cost model
 
-Rates vary based on marketplace pricing and selected provider settings.
+Rates vary by job class and provider pricing settings in the marketplace.
 
 | Job type | Cost basis |
 |----------|------------|
@@ -235,5 +235,5 @@ Cost is **pre-deducted** based on your requested `duration_minutes`. On completi
 ## Next steps
 
 - [Full API Reference](./api-reference.md) — all endpoints with request/response schemas
-- [Provider Guide](./provider-guide.md) — earn SAR by connecting your GPU
-- [SDK Guides](./sdk-guides.md) — Python and JavaScript SDKs
+- [Provider Guide](/docs/provider-guide) — earn SAR by connecting your GPU
+- [SDK Guides](/docs/sdk-guides) — Python and JavaScript SDKs

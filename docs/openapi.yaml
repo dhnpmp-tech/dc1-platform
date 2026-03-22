@@ -94,12 +94,12 @@ components:
       type: apiKey
       in: query
       name: key
-      description: Provider API key. Prefix `dcp-provider-`. Also accepted as `x-provider-key` header.
+      description: Provider API key. Prefix `dc1-provider-`. Also accepted as `x-provider-key` header.
     RenterApiKey:
       type: apiKey
       in: query
       name: key
-      description: Renter API key. Prefix `dcp-renter-`. Also accepted as `x-renter-key` header.
+      description: Renter API key. Prefix `dc1-renter-`. Also accepted as `x-renter-key` header.
     AdminToken:
       type: apiKey
       in: header
@@ -109,6 +109,7 @@ components:
   schemas:
     Error:
       type: object
+      required: [error]
       properties:
         error:
           type: string
@@ -324,8 +325,8 @@ paths:
                   example: NVIDIA RTX 3090
                 os:
                   type: string
-                  enum: [Windows, Linux, Mac]
-                  example: Linux
+                  enum: [windows, linux, mac, darwin]
+                  example: linux
                 phone:
                   type: string
                   nullable: true
@@ -333,6 +334,12 @@ paths:
                   type: object
                   nullable: true
                   description: Ocean-style resource specification (cpu_count, ram_gb, etc.)
+            example:
+              name: Ahmed Al-Rashidi
+              email: ahmed@example.sa
+              gpu_model: NVIDIA RTX 3090
+              os: linux
+              phone: "+966500000000"
       responses:
         '200':
           description: Registration successful
@@ -347,23 +354,33 @@ paths:
                     type: integer
                   api_key:
                     type: string
-                    example: dcp-provider-a1b2c3d4e5f6...
+                    example: dc1-provider-a1b2c3d4e5f6...
                   installer_url:
                     type: string
                   message:
                     type: string
+              example:
+                success: true
+                provider_id: 42
+                api_key: dc1-provider-a1b2c3d4e5f6...
+                installer_url: /api/providers/installer?key=dc1-provider-a1b2c3d4e5f6...&os=linux
+                message: Welcome Ahmed Al-Rashidi! Your API key is ready. Download the installer to get started.
         '400':
           description: Missing required fields
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                error: Missing required fields
         '409':
           description: A provider with this email already exists
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                error: A provider with this email already exists
         '429':
           description: Rate limit exceeded
           content:
@@ -465,6 +482,32 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Job'
+              example:
+                provider:
+                  id: 42
+                  name: Ahmed Al-Rashidi
+                  status: online
+                  gpu_model: NVIDIA RTX 3090
+                  gpu_vram_mib: 24576
+                  gpu_count_reported: 1
+                  gpu_compute_capability: "8.6"
+                  gpu_cuda_version: "12.2"
+                  run_mode: always-on
+                  uptime_percent: 99.2
+                  total_earnings_halala: 185000
+                  total_jobs: 92
+                  is_paused: false
+                  gpu_usage_cap_pct: 80
+                  vram_reserve_gb: 1
+                  temp_limit_c: 85
+                  gpu_metrics:
+                    utilization_pct: 41
+                    vram_used_mib: 12112
+                    temperature_c: 68
+                  today_earnings_halala: 4200
+                  week_earnings_halala: 26800
+                  active_job: null
+                recent_jobs: []
         '400':
           description: API key required
           content:
@@ -498,7 +541,7 @@ paths:
               properties:
                 api_key:
                   type: string
-                  example: dcp-provider-a1b2c3d4e5f6...
+                  example: dc1-provider-a1b2c3d4e5f6...
                 gpu_status:
                   type: object
                   description: GPU telemetry snapshot from nvidia-smi
@@ -564,11 +607,57 @@ paths:
                   update_available:
                     type: boolean
                     description: True if daemon version is below minimum required
+                  needs_update:
+                    type: boolean
+                  latest_version:
+                    type: string
                   min_version:
                     type: string
                     example: "3.3.0"
+                  approval_status:
+                    type: string
+                  approved:
+                    type: boolean
+                  preload_model:
+                    type: object
+                    nullable: true
+                    properties:
+                      model_name:
+                        type: string
+                      status:
+                        type: string
+                        enum: [downloading]
+              example:
+                success: true
+                message: Heartbeat received
+                timestamp: "2026-03-22T19:30:00.000Z"
+                needs_update: false
+                latest_version: "3.3.0"
+                update_available: false
+                min_version: "3.3.0"
+                approval_status: approved
+                approved: true
+                preload_model: null
+        '400':
+          description: Bad request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Provider not approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Heartbeat failed
           content:
             application/json:
               schema:
@@ -1089,6 +1178,18 @@ paths:
                 organization:
                   type: string
                   nullable: true
+                use_case:
+                  type: string
+                  nullable: true
+                phone:
+                  type: string
+                  nullable: true
+            example:
+              name: Fatima Al-Saud
+              email: fatima@example.sa
+              organization: Riyadh AI Lab
+              use_case: llm_inference
+              phone: "+966500000000"
       responses:
         '201':
           description: Registration successful
@@ -1103,9 +1204,20 @@ paths:
                     type: integer
                   api_key:
                     type: string
-                    example: dcp-renter-a1b2c3d4e5f6...
+                    example: dc1-renter-a1b2c3d4e5f6...
                   message:
                     type: string
+              example:
+                success: true
+                renter_id: 101
+                api_key: dc1-renter-a1b2c3d4e5f6...
+                message: Welcome Fatima Al-Saud! Save your API key — it won't be shown again.
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: Email already registered
           content:
@@ -1122,9 +1234,16 @@ paths:
       parameters:
         - in: query
           name: key
-          required: true
+          required: false
           schema:
             type: string
+          description: Renter API key via query param. Use `x-renter-key` header when possible.
+        - in: header
+          name: x-renter-key
+          required: false
+          schema:
+            type: string
+          description: Preferred renter API key header.
       responses:
         '200':
           description: Renter profile and recent jobs
@@ -1139,6 +1258,38 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Job'
+              example:
+                renter:
+                  id: 101
+                  name: Fatima Al-Saud
+                  email: fatima@example.sa
+                  organization: Riyadh AI Lab
+                  use_case: llm_inference
+                  phone: "+966500000000"
+                  webhook_url: null
+                  balance_halala: 955
+                  total_spent_halala: 12045
+                  total_jobs: 34
+                  created_at: "2026-03-22T10:12:00.000Z"
+                recent_jobs: []
+        '400':
+          description: API key required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Renter not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Failed to fetch renter data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/renters/available-providers:
     get:
@@ -1191,8 +1342,34 @@ paths:
                           type: array
                           items:
                             type: string
+                        discovery_source:
+                          type: string
+                          enum: [sqlite, dht]
+                        discovered_at:
+                          type: string
+                          nullable: true
+                        addrs:
+                          type: array
+                          items:
+                            type: string
+                        stale:
+                          type: boolean
                   total:
                     type: integer
+                  discovery_mode:
+                    type: string
+                    enum: [sqlite, shadow, p2p-primary]
+                  discovery_health:
+                    type: object
+                    properties:
+                      mode:
+                        type: string
+                      enabled:
+                        type: boolean
+                      announcement_enabled:
+                        type: boolean
+                      bootstrap_configured:
+                        type: boolean
 
   /api/renters/balance:
     get:
@@ -1353,7 +1530,8 @@ paths:
         | `rendering` | 20 |
         | `image_generation` | 20 |
         | `vllm_serve` | 20 |
-        | `custom` | 10 |
+        | `benchmark` | 10 |
+        | `custom_container` | 10 |
       security:
         - RenterApiKey: []
       requestBody:
@@ -1362,21 +1540,27 @@ paths:
           application/json:
             schema:
               type: object
-              required: [job_type]
+              required: [job_type, duration_minutes]
               properties:
+                provider_id:
+                  type: integer
+                  minimum: 1
+                  nullable: true
                 job_type:
                   type: string
-                  enum: [llm-inference, llm_inference, training, rendering, image_generation, vllm_serve, custom]
+                  enum: [image_generation, llm-inference, llm_inference, rendering, training, benchmark, custom_container, vllm_serve]
                   example: image_generation
                 duration_minutes:
-                  type: integer
+                  type: number
+                  minimum: 0.01
+                  maximum: 1440
                   default: 10
                   description: Estimated runtime. Used for pre-pay cost calculation.
-                task_spec:
+                params:
                   type: object
                   description: |
                     Job-specific parameters. For supported types, the API auto-generates
-                    the task script from these params (no custom Python needed).
+                    the task payload from these params (no raw Python task required).
 
                     **image_generation params:**
                     - `prompt` (string)
@@ -1391,6 +1575,10 @@ paths:
                     - `max_tokens` (int, 32–4096)
                     - `temperature` (float, 0.1–2.0)
                     - `model` (enum — see allowed LLM models)
+                container_spec:
+                  type: object
+                  nullable: true
+                  description: Container execution profile. `image_type` is required after normalization.
                 gpu_requirements:
                   type: object
                   nullable: true
@@ -1404,6 +1592,16 @@ paths:
                   enum: [1, 2, 3]
                   default: 2
                   description: "1=high, 2=normal, 3=low"
+            example:
+              provider_id: 42
+              job_type: llm_inference
+              duration_minutes: 3
+              max_duration_seconds: 180
+              container_spec:
+                image_type: vllm-serve
+              params:
+                model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+                prompt: Summarize DCP in three bullets.
       responses:
         '201':
           description: Job submitted
@@ -1414,24 +1612,103 @@ paths:
                 properties:
                   success:
                     type: boolean
-                  job_id:
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      job_id:
+                        type: string
+                      provider_id:
+                        type: integer
+                        nullable: true
+                      renter_id:
+                        type: integer
+                      job_type:
+                        type: string
+                      status:
+                        type: string
+                        enum: [pending, queued]
+                      submitted_at:
+                        type: string
+                        format: date-time
+                      duration_minutes:
+                        type: number
+                      cost_halala:
+                        type: integer
+                      max_duration_seconds:
+                        type: integer
+                      timeout_at:
+                        type: string
+                        nullable: true
+                      gpu_requirements:
+                        type: object
+                        nullable: true
+                      container_spec:
+                        type: object
+                      workspace_volume_name:
+                        type: string
+                      checkpoint_enabled:
+                        type: boolean
+                      task_spec_signed:
+                        type: boolean
+                      priority:
+                        type: integer
+                      pricing_class:
+                        type: string
+                      prewarm_requested:
+                        type: boolean
+                      queue_position:
+                        type: integer
+                        nullable: true
+                  queued:
+                    type: boolean
+                  message:
                     type: string
-                  status:
-                    type: string
-                    enum: [pending, queued]
-                  provider_id:
-                    type: integer
-                    nullable: true
-                  cost_halala:
-                    type: integer
-                  new_balance_halala:
-                    type: integer
+              example:
+                success: true
+                job:
+                  id: 9001
+                  job_id: job-1742671800000-ab12cd
+                  provider_id: 42
+                  renter_id: 101
+                  job_type: llm_inference
+                  model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+                  status: pending
+                  submitted_at: "2026-03-22T19:30:00.000Z"
+                  duration_minutes: 3
+                  cost_halala: 45
+                  max_duration_seconds: 180
+                  timeout_at: "2026-03-22 20:00:00.000"
+                  gpu_requirements: null
+                  container_spec:
+                    image_type: vllm-serve
+                    pricing_class: standard
+                  workspace_volume_name: dcp-job-job-1742671800000-ab12cd
+                  checkpoint_enabled: false
+                  task_spec_signed: true
+                  priority: 2
+                  pricing_class: standard
+                  prewarm_requested: false
+                  queue_position: null
         '400':
           description: Invalid request (missing job_type, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '402':
           description: Insufficient balance or zero wallet balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           description: Renter submission rate limit or quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: No providers available
 
@@ -1478,6 +1755,22 @@ paths:
           schema:
             type: string
       responses:
+        '202':
+          description: Job still running or queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  progress_phase:
+                    type: string
+                    nullable: true
+                  job_id:
+                    type: string
         '200':
           description: Job output
           content:
@@ -1485,6 +1778,20 @@ paths:
               schema:
                 type: object
                 description: Varies by job_type. For images contains `data` (base64 PNG). For text contains `response`.
+        '410':
+          description: Job failed or was cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [failed, cancelled]
+                  error:
+                    type: string
+                  job_id:
+                    type: string
         '404':
           description: Job not found or no output yet
 
@@ -1703,11 +2010,13 @@ paths:
     get:
       tags: [Jobs]
       summary: Job history for a renter
+      description: Requires `x-renter-key` header. This endpoint does not use `?key=`.
       security:
         - RenterApiKey: []
       parameters:
-        - in: query
-          name: key
+        - in: header
+          name: x-renter-key
+          required: true
           schema:
             type: string
         - in: query
@@ -1716,11 +2025,6 @@ paths:
             type: integer
             default: 20
             maximum: 100
-        - in: query
-          name: offset
-          schema:
-            type: integer
-            default: 0
       responses:
         '200':
           description: Paginated job history
@@ -2066,6 +2370,18 @@ paths:
                     type: array
                     items:
                       type: object
+        '401':
+          description: Admin access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Admin token not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/admin/providers:
     get:
@@ -2768,7 +3084,7 @@ paths:
                 api_key:
                   type: string
                   description: Provider API key
-                  example: dcp-provider-abcdef1234567890
+                  example: dc1-provider-abcdef1234567890
                 amount_sar:
                   type: number
                   format: float

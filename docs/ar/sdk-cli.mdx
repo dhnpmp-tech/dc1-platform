@@ -27,7 +27,7 @@ curl -X POST "$API_BASE/jobs/submit" \
   -H "x-renter-key: $DCP_RENTER_KEY" \
   -d '{
     "provider_id": 42,
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 5,
     "params": {
       "model": "meta-llama/Llama-3-8B",

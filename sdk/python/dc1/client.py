@@ -6,22 +6,22 @@ from .resources.jobs import JobsResource
 from .resources.providers import ProvidersResource
 from .resources.wallet import WalletResource
 
-DEFAULT_BASE_URL = 'https://dcp.sa/api/dc1'
+DEFAULT_BASE_URL = 'https://api.dcp.sa'
 
 
 class DC1Client:
     """Official Python client for the DC1 GPU compute marketplace.
 
     Args:
-        api_key: Your renter API key (starts with ``rk_`` or ``dc1-renter-``).
-        base_url: API base URL. Defaults to the production proxy at dcp.sa.
+        api_key: Your renter API key (starts with ``dc1-renter-``).
+        base_url: API base URL. Defaults to ``https://api.dcp.sa``.
         timeout: HTTP request timeout in seconds (default 30).
 
     Example::
 
         import dc1
 
-        client = dc1.DC1Client(api_key='rk_abc123')
+        client = dc1.DC1Client(api_key='dc1-renter-abc123')
 
         # Browse available GPUs
         providers = client.providers.list()

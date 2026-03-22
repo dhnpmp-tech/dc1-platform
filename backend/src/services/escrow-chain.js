@@ -83,11 +83,15 @@ class ChainEscrowService {
     );
     this.usdc = new ethers.Contract(usdcAddress, ERC20_ABI, this.txWallet);
     this.settlementProviderAddress = process.env.ESCROW_SETTLEMENT_PROVIDER_ADDRESS || this.txWallet.address;
+    const configuredRelayer = process.env.ESCROW_RELAYER_ADDRESS;
+    this.relayerAddress = ethers.isAddress(configuredRelayer || '')
+      ? configuredRelayer
+      : this.txWallet.address;
     this.usdcAddress = usdcAddress;
 
     console.log(
       `[escrow-chain] Enabled — contract=${process.env.ESCROW_CONTRACT_ADDRESS} ` +
-      `tx=${this.txWallet.address} oracle=${this.oracleWallet.address} usdc=${usdcAddress} rpc=${rpcUrl}`
+      `tx=${this.txWallet.address} oracle=${this.oracleWallet.address} relayer=${this.relayerAddress} usdc=${usdcAddress} rpc=${rpcUrl}`
     );
   }
 
@@ -169,13 +173,6 @@ class ChainEscrowService {
         return null;
       }
 
-      if (rec.provider.toLowerCase() !== this.txWallet.address.toLowerCase()) {
-        console.warn(
-          `[escrow-chain] claimLock skipped jobId=${jobId} — provider ${rec.provider} does not match signer ${this.txWallet.address}`
-        );
-        return null;
-      }
-
       const proof = await this._buildProof(jobId32, rec.provider, rec.amount);
       const tx = await this.contract.claimLock(jobId32, proof);
       const receipt = await tx.wait();
@@ -199,12 +196,6 @@ class ChainEscrowService {
       const jobId32 = this._toBytes32(jobId);
       const rec = await this.contract.getEscrow(jobId32);
       if (Number(rec.status) !== 1) {
-        return null;
-      }
-      if (rec.renter.toLowerCase() !== this.txWallet.address.toLowerCase()) {
-        console.warn(
-          `[escrow-chain] cancelExpiredLock skipped jobId=${jobId} — renter ${rec.renter} does not match signer ${this.txWallet.address}`
-        );
         return null;
       }
       const now = Math.floor(Date.now() / 1000);
@@ -261,7 +252,8 @@ class ChainEscrowService {
         txAddress: this.txWallet.address,
         oracleAddress: this.oracleWallet.address,
         usdcAddress: this.usdcAddress,
-        settlementProviderAddress: this.settlementProviderAddress
+        settlementProviderAddress: this.settlementProviderAddress,
+        relayerAddress: this.relayerAddress,
       };
     } catch (err) {
       return {
@@ -272,6 +264,7 @@ class ChainEscrowService {
         oracleAddress: this.oracleWallet.address,
         usdcAddress: this.usdcAddress,
         settlementProviderAddress: this.settlementProviderAddress,
+        relayerAddress: this.relayerAddress,
         error: err.message
       };
     }
@@ -291,6 +284,7 @@ function getChainEscrow() {
         contractAddress: null,
         network: null,
         oracleAddress: null,
+        relayerAddress: null,
       }),
     };
   }

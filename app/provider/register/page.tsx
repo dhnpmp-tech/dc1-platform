@@ -4,9 +4,15 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
+import {
+  buildProviderTroubleshootingHref,
+  buildProviderDaemonDownloadUrl,
+  buildProviderInstallCommand,
+  getProviderInstallApiBase,
+  ProviderNextActionState,
+} from '../../lib/provider-install'
 
 const API_BASE = '/api/dc1'
-const PUBLIC_API_FALLBACK = `https://dcp.sa${API_BASE}`
 
 interface RegistrationFormData {
   fullName: string
@@ -23,6 +29,8 @@ interface StatusStep {
   status: 'pending' | 'in-progress' | 'completed'
 }
 
+type SupportCategory = 'provider' | 'bug'
+
 const GPU_EARNINGS: Record<string, { rate: number; providerRate: number; label: string }> = {
   'RTX 3080': { rate: 9, providerRate: 6.75, label: 'RTX 3080 (10 GB)' },
   'RTX 3090': { rate: 15, providerRate: 11.25, label: 'RTX 3090 (24 GB)' },
@@ -31,43 +39,8 @@ const GPU_EARNINGS: Record<string, { rate: number; providerRate: number; label: 
   'H100': { rate: 120, providerRate: 90, label: 'H100 (80 GB)' },
 }
 
-type InstallTarget = 'linux' | 'windows'
-
-function normalizeApiBase(raw: string): string {
-  return raw.trim().replace(/\/+$/, '')
-}
-
-function getProviderInstallApiBase(): string {
-  const envBase = process.env.NEXT_PUBLIC_DC1_API
-  if (envBase) {
-    const normalized = normalizeApiBase(envBase)
-    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
-      return normalized
-    }
-    if (typeof window !== 'undefined' && normalized.startsWith('/')) {
-      return `${window.location.origin}${normalized}`
-    }
-  }
-
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}${API_BASE}`
-  }
-
-  return PUBLIC_API_FALLBACK
-}
-
-function buildProviderInstallCommand(target: InstallTarget, apiBase: string, key: string): string {
-  const encodedKey = encodeURIComponent(key)
-
-  if (target === 'windows') {
-    return `irm ${apiBase}/providers/download/setup?key=${encodedKey}&os=windows | iex`
-  }
-
-  return `curl -fsSL ${apiBase}/providers/download/daemon?key=${encodedKey} -o dc1_daemon.py && python3 dc1_daemon.py`
-}
-
 export default function ProviderRegisterPage() {
-  const { t } = useLanguage()
+  const { t, isRTL } = useLanguage()
   const [calcGpu, setCalcGpu] = useState('RTX 3090')
   const [calcHours, setCalcHours] = useState(12)
   const [formData, setFormData] = useState<RegistrationFormData>({
@@ -91,8 +64,26 @@ export default function ProviderRegisterPage() {
   ])
   const [showSuccess, setShowSuccess] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [nextActionState, setNextActionState] = useState<ProviderNextActionState>('waiting')
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollingKeyRef = useRef<string | null>(null)
+  const lastTrackedStateRef = useRef<ProviderNextActionState | null>(null)
+
+  const trackProviderRegisterEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = { event, source: 'provider_register', ...payload }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & {
+      dataLayer?: Array<Record<string, unknown>>
+      gtag?: (...args: unknown[]) => void
+    }
+    if (Array.isArray(win.dataLayer)) {
+      win.dataLayer.push(detail)
+    }
+    if (typeof win.gtag === 'function') {
+      win.gtag('event', event, detail)
+    }
+  }, [])
 
   const stopStatusPolling = useCallback(() => {
     if (pollingIntervalRef.current) {
@@ -175,10 +166,20 @@ export default function ProviderRegisterPage() {
       setStatusSteps((prev) =>
         prev.map((s) => (s.step === 1 ? { ...s, status: 'completed' } : s))
       )
+      setNextActionState('waiting')
+      lastTrackedStateRef.current = null
 
       setShowSuccess(true)
+      trackProviderRegisterEvent('provider_register_success', {
+        provider_id: data.provider_id,
+        gpu_model: formData.gpuModel,
+        os: formData.operatingSystem,
+      })
       startStatusPolling(data.api_key)
     } catch (err) {
+      trackProviderRegisterEvent('provider_register_failed', {
+        error: err instanceof Error ? err.message : 'unknown_error',
+      })
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsLoading(false)
@@ -204,12 +205,31 @@ export default function ProviderRegisterPage() {
 
         // Determine current step based on provider status
         let currentStep = 1 // registered
+        let nextAction: ProviderNextActionState = 'waiting'
         if (provider.status === 'online' || provider.status === 'idle') {
           currentStep = 4 // fully connected and ready
+          nextAction = 'ready'
+        } else if (provider.status === 'paused') {
+          currentStep = 3
+          nextAction = 'paused'
+        } else if (provider.status === 'offline' || provider.status === 'disconnected') {
+          currentStep = 2
+          nextAction = 'stale'
         } else if (provider.last_heartbeat) {
           currentStep = 3 // connected (sent heartbeat)
+          nextAction = 'heartbeat'
         } else if (provider.status === 'registered') {
           currentStep = 1 // just registered, waiting for daemon
+          nextAction = 'waiting'
+        }
+        setNextActionState(nextAction)
+        if (lastTrackedStateRef.current !== nextAction) {
+          lastTrackedStateRef.current = nextAction
+          trackProviderRegisterEvent('provider_onboarding_state_seen', {
+            state: nextAction,
+            provider_status: provider.status || 'unknown',
+            has_heartbeat: Boolean(provider.last_heartbeat),
+          })
         }
 
         setStatusSteps((prev) =>
@@ -236,6 +256,16 @@ export default function ProviderRegisterPage() {
   // Copy to clipboard
   const copyToClipboard = (text: string, index: number) => {
     navigator.clipboard.writeText(text)
+    trackProviderRegisterEvent('provider_register_copy_clicked', {
+      copy_target:
+        index === 0
+          ? 'api_key'
+          : index === 1
+            ? 'install_linux'
+            : index === 2
+              ? 'install_windows'
+              : 'other',
+    })
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
   }
@@ -254,8 +284,89 @@ export default function ProviderRegisterPage() {
     const installApiBase = getProviderInstallApiBase()
     const linuxInstallCommand = buildProviderInstallCommand('linux', installApiBase, apiKey)
     const windowsInstallCommand = buildProviderInstallCommand('windows', installApiBase, apiKey)
-    const reachabilityCheckCommand = `curl -I ${installApiBase}/providers/download/daemon?key=${encodeURIComponent(apiKey)}`
+    const reachabilityCheckCommand = `curl -I ${buildProviderDaemonDownloadUrl(installApiBase, apiKey)}`
     const keyValidationCommand = `curl ${installApiBase}/providers/me?key=${encodeURIComponent(apiKey)}`
+    const nextActionMap: Record<
+      ProviderNextActionState,
+      { label: string; desc: string; cta: string; href: string }
+    > = {
+      waiting: {
+        label: t('register.provider.state.waiting.label'),
+        desc: t('register.provider.state.waiting.desc'),
+        cta: t('register.provider.state.waiting.cta'),
+        href: '/docs/provider-guide',
+      },
+      heartbeat: {
+        label: t('register.provider.state.heartbeat.label'),
+        desc: t('register.provider.state.heartbeat.desc'),
+        cta: t('register.provider.state.heartbeat.cta'),
+        href: '/provider/dashboard',
+      },
+      ready: {
+        label: t('register.provider.state.ready.label'),
+        desc: t('register.provider.state.ready.desc'),
+        cta: t('register.provider.state.ready.cta'),
+        href: '/provider/dashboard',
+      },
+      paused: {
+        label: t('register.provider.state.paused.label'),
+        desc: t('register.provider.state.paused.desc'),
+        cta: t('register.provider.state.paused.cta'),
+        href: '/provider/dashboard',
+      },
+      stale: {
+        label: t('register.provider.state.stale.label'),
+        desc: t('register.provider.state.stale.desc'),
+        cta: t('register.provider.state.stale.cta'),
+        href: '/docs/provider-guide',
+      },
+    }
+    const nextAction = nextActionMap[nextActionState]
+    const supportCategoryMap: Record<ProviderNextActionState, SupportCategory> = {
+      waiting: 'provider',
+      heartbeat: 'provider',
+      ready: 'provider',
+      paused: 'provider',
+      stale: 'bug',
+    }
+    const buildSupportPrefillHref = (state: ProviderNextActionState): string =>
+      `/support?category=${supportCategoryMap[state]}&source=provider_register&flow=onboarding&provider_state=${encodeURIComponent(
+        state
+      )}&provider_id=${encodeURIComponent(providerId)}#contact-form`
+    const statusActionMatrix: Array<{
+      state: ProviderNextActionState
+      action: string
+      href: string
+    }> = [
+      {
+        state: 'waiting',
+        action: t('register.provider.status_matrix.waiting.action'),
+        href: buildProviderTroubleshootingHref('waiting'),
+      },
+      {
+        state: 'heartbeat',
+        action: t('register.provider.status_matrix.heartbeat.action'),
+        href: buildProviderTroubleshootingHref('heartbeat'),
+      },
+      {
+        state: 'stale',
+        action: t('register.provider.status_matrix.stale.action'),
+        href: buildProviderTroubleshootingHref('stale'),
+      },
+      {
+        state: 'paused',
+        action: t('register.provider.status_matrix.paused.action'),
+        href: buildProviderTroubleshootingHref('paused'),
+      },
+      {
+        state: 'ready',
+        action: t('register.provider.status_matrix.ready.action'),
+        href: buildProviderTroubleshootingHref('ready'),
+      },
+    ]
+    const supportPrefillHref = buildSupportPrefillHref(nextActionState)
+    const troubleshootingGuideHref = buildProviderTroubleshootingHref(nextActionState)
+    const showContextualSupport = nextActionState === 'stale' || nextActionState === 'paused'
 
     return (
       <>
@@ -437,16 +548,6 @@ export default function ProviderRegisterPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-md border border-status-warning/30 bg-status-warning/5 p-4">
-                  <p className="text-sm font-semibold text-dc1-text-primary mb-2">
-                    If install needs troubleshooting, verify these checks:
-                  </p>
-                  <ol className="list-decimal list-inside space-y-2 text-xs text-dc1-text-secondary font-mono">
-                    <li>Endpoint reachability: {reachabilityCheckCommand}</li>
-                    <li>API key validity: {keyValidationCommand}</li>
-                    <li>Daemon startup: rerun the install command, then confirm this page advances to Connected (step 3) and Ready (step 4).</li>
-                  </ol>
-                </div>
               </div>
 
               {/* Status Tracker */}
@@ -548,6 +649,153 @@ export default function ProviderRegisterPage() {
                 </div>
               </div>
 
+              <div className="card border-dc1-amber/20">
+                <h2 className="text-xl font-semibold text-dc1-text-primary mb-3">
+                  {t('register.provider.next_action_title')}
+                </h2>
+                <div className="rounded-lg border border-dc1-amber/25 bg-dc1-amber/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">
+                    {t('register.provider.next_action_now')}
+                  </p>
+                  <p className="text-base font-semibold text-dc1-text-primary">{nextAction.label}</p>
+                  <p className="text-sm text-dc1-text-secondary mt-1">{nextAction.desc}</p>
+                  <a
+                    href={nextAction.href}
+                    className="btn btn-primary mt-4 w-full sm:w-auto"
+                    onClick={() =>
+                      trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
+                        state: nextActionState,
+                        destination: nextAction.href,
+                        cta_type: 'primary',
+                      })
+                    }
+                  >
+                    {nextAction.cta}
+                  </a>
+                  <a
+                    href={troubleshootingGuideHref}
+                    className="inline-flex mt-3 text-sm font-medium text-dc1-amber hover:underline"
+                    onClick={() =>
+                      trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
+                        state: nextActionState,
+                        destination: troubleshootingGuideHref,
+                        cta_type: 'troubleshoot',
+                      })
+                    }
+                  >
+                    {t('register.provider.status_matrix.guide_cta')}
+                  </a>
+                  {showContextualSupport && (
+                    <a
+                      href={supportPrefillHref}
+                      className="inline-flex mt-3 text-sm font-medium text-dc1-text-primary hover:text-dc1-amber"
+                      onClick={() =>
+                        trackProviderRegisterEvent('provider_onboarding_next_action_clicked', {
+                          state: nextActionState,
+                          destination: supportPrefillHref,
+                          cta_type: 'support',
+                        })
+                      }
+                    >
+                      {t('register.provider.next_action_support_cta')}
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <details className="card border-dc1-border group">
+                <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold text-dc1-text-primary">
+                      {t('register.provider.advanced.title')}
+                    </h2>
+                    <p className="text-sm text-dc1-text-secondary">
+                      {t('register.provider.advanced.subtitle')}
+                    </p>
+                  </div>
+                  <span className="text-xs text-dc1-amber font-semibold group-open:hidden">
+                    {t('register.provider.advanced.show')}
+                  </span>
+                  <span className="text-xs text-dc1-amber font-semibold hidden group-open:inline">
+                    {t('register.provider.advanced.hide')}
+                  </span>
+                </summary>
+
+                <div className="mt-5 space-y-6">
+                  <div className="rounded-md border border-status-warning/30 bg-status-warning/5 p-4">
+                    <p className="text-sm font-semibold text-dc1-text-primary mb-2">
+                      {t('register.provider.install_checks.title')}
+                    </p>
+                    <ol className="list-decimal list-inside space-y-2 text-xs text-dc1-text-secondary font-mono">
+                      <li>{t('register.provider.install_checks.endpoint')} {reachabilityCheckCommand}</li>
+                      <li>{t('register.provider.install_checks.api_key')} {keyValidationCommand}</li>
+                      <li>{t('register.provider.install_checks.daemon')}</li>
+                    </ol>
+                  </div>
+
+                  <div>
+                    <h3 className="text-base font-semibold text-dc1-text-primary mb-2">
+                      {t('register.provider.status_matrix.title')}
+                    </h3>
+                    <p className="text-sm text-dc1-text-secondary mb-4">
+                      {t('register.provider.status_matrix.subtitle')}
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr className={`border-b border-dc1-border text-dc1-text-muted ${isRTL ? 'text-right' : 'text-left'}`}>
+                            <th className="py-2 pe-4 font-medium">{t('register.provider.status_matrix.column_status')}</th>
+                            <th className="py-2 pe-4 font-medium">{t('register.provider.status_matrix.column_action')}</th>
+                            <th className="py-2 pe-4 font-medium">{t('register.provider.status_matrix.column_guide')}</th>
+                            <th className="py-2 font-medium">{t('register.provider.status_matrix.column_support')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statusActionMatrix.map((row) => (
+                            <tr key={row.state} className="border-b border-dc1-border/60 align-top">
+                              <td className="py-3 pe-4">
+                                <span className="font-semibold text-dc1-text-primary">
+                                  {nextActionMap[row.state].label}
+                                </span>
+                              </td>
+                              <td className="py-3 pe-4 text-dc1-text-secondary">{row.action}</td>
+                              <td className="py-3">
+                                <a
+                                  href={row.href}
+                                  className="text-dc1-amber font-medium hover:underline"
+                                  onClick={() =>
+                                    trackProviderRegisterEvent('provider_onboarding_matrix_guide_clicked', {
+                                      state: row.state,
+                                      destination: row.href,
+                                    })
+                                  }
+                                >
+                                  {t('register.provider.status_matrix.guide_cta')}
+                                </a>
+                              </td>
+                              <td className="py-3">
+                                <a
+                                  href={buildSupportPrefillHref(row.state)}
+                                  className="text-dc1-text-primary font-medium hover:text-dc1-amber"
+                                  onClick={() =>
+                                    trackProviderRegisterEvent('provider_onboarding_matrix_support_clicked', {
+                                      state: row.state,
+                                      destination: 'support_prefill',
+                                    })
+                                  }
+                                >
+                                  {t('register.provider.status_matrix.support_cta')}
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
               {/* Next Steps */}
               <div className="card border-dc1-amber/20">
                 <h2 className="text-xl font-semibold text-dc1-text-primary mb-4">{t('register.provider.next_title')}</h2>
@@ -594,21 +842,6 @@ export default function ProviderRegisterPage() {
                 </ul>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <a
-                  href="/provider/dashboard"
-                  className="btn btn-primary flex-1 text-center"
-                >
-                  {t('register.provider.go_dashboard')}
-                </a>
-                <a
-                  href="/docs/provider-guide"
-                  className="btn btn-secondary flex-1 text-center"
-                >
-                  {t('register.provider.read_docs')}
-                </a>
-              </div>
             </div>
           </div>
         </main>

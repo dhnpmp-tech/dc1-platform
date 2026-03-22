@@ -13,6 +13,7 @@ const {
     providerDataExportLimiter,
 } = require('../middleware/rateLimiter');
 const { isAdminRequest } = require('../middleware/auth');
+const { getChainEscrow } = require('../services/escrow-chain');
 const { sendAlert } = require('../services/notifications');
 const {
     sendWelcomeEmail,
@@ -30,6 +31,7 @@ const {
     appendAttemptRawText,
     getAttemptLogPath,
 } = require('../services/job-execution-logs');
+const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 
 function flattenRunParams(params) {
     if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -60,6 +62,7 @@ const loginEmailLimiter = rateLimit({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SAUDI_IBAN_REGEX = /^SA\d{22}$/i;
+const ETH_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 function normalizeString(value, { maxLen = 500, trim = true } = {}) {
     if (typeof value !== 'string') return null;
@@ -204,6 +207,12 @@ async function notifyRenterJobWebhook(job, eventName, details = {}) {
         );
         if (!renter || renter.status !== 'active' || !renter.webhook_url) {
             return { sent: false, reason: 'webhook_not_configured' };
+        }
+        if (!isPublicWebhookUrl(renter.webhook_url)) {
+            return { sent: false, reason: 'webhook_url_blocked' };
+        }
+        if (!(await isResolvablePublicWebhookUrl(renter.webhook_url))) {
+            return { sent: false, reason: 'webhook_dns_blocked' };
         }
 
         const now = new Date().toISOString();
@@ -558,6 +567,7 @@ router.post('/heartbeat', (req, res) => {
             uptime,
             provider_ip,
             provider_hostname,
+            peer_id,
             cached_models,
             resource_spec,
             container_restart_count,
@@ -591,6 +601,7 @@ router.post('/heartbeat', (req, res) => {
         const daemonVersion = normalizeString(gs.daemon_version, { maxLen: 32 });
         const pythonVersion = normalizeString(gs.python_version, { maxLen: 32 });
         const osInfo = normalizeString(gs.os_info, { maxLen: 200 });
+        const peerId = normalizeString(peer_id, { maxLen: 200 });
         const providerIp = normalizeString(provider_ip, { maxLen: 64, trim: true });
         const providerHostname = normalizeString(provider_hostname, { maxLen: 255, trim: true });
         const reportedContainerRestarts =
@@ -615,7 +626,7 @@ router.post('/heartbeat', (req, res) => {
 
         // Verify API key (sync — better-sqlite3)
         const p = db.get(
-            `SELECT id, approval_status, model_preload_status, model_preload_model
+            `SELECT id, approval_status, model_preload_status, model_preload_model, p2p_peer_id
              FROM providers
              WHERE api_key = ?`,
             cleanApiKey
@@ -651,6 +662,7 @@ router.post('/heartbeat', (req, res) => {
 
         runStatement(`UPDATE providers SET
           gpu_status = ?, provider_ip = ?, provider_hostname = ?, last_heartbeat = ?, status = ?,
+          p2p_peer_id = COALESCE(?, p2p_peer_id),
           gpu_name_detected = COALESCE(?, gpu_name_detected),
           gpu_vram_mib = COALESCE(?, gpu_vram_mib),
           gpu_driver = COALESCE(?, gpu_driver),
@@ -668,6 +680,7 @@ router.post('/heartbeat', (req, res) => {
           gpu_profile_updated_at = ?
           WHERE id = ?`,
           JSON.stringify(normalizedGpuStatus || {}), providerIp || null, providerHostname || null, now, providerRuntimeStatus,
+          peerId || p.p2p_peer_id,
           resolvedGpuName, resolvedGpuVramMib, resolvedGpuDriver,
           gpuInfoVramMb != null ? gpuInfoVramMb : null,
           resolvedTotalVramMb,
@@ -990,7 +1003,7 @@ router.get('/setup-windows', async (req, res) => {
 // ============================================================================
 router.get('/me', async (req, res) => {
     try {
-        const { key } = req.query;
+        const key = req.query.key || req.headers['x-provider-key'];
         if (!key) return res.status(400).json({ error: 'API key required' });
 
         const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
@@ -1073,6 +1086,8 @@ router.get('/me', async (req, res) => {
                 run_mode: provider.run_mode || 'always-on',
                 scheduled_start: provider.scheduled_start || '23:00',
                 scheduled_end: provider.scheduled_end || '07:00',
+                wallet_address: provider.wallet_address || null,
+                wallet_address_updated_at: provider.wallet_address_updated_at || null,
                 gpu_usage_cap_pct: provider.gpu_usage_cap_pct != null ? provider.gpu_usage_cap_pct : 80,
                 vram_reserve_gb: provider.vram_reserve_gb != null ? provider.vram_reserve_gb : 1,
                 temp_limit_c: provider.temp_limit_c != null ? provider.temp_limit_c : 85,
@@ -1196,6 +1211,61 @@ router.patch('/me/gpu-profile', (req, res) => {
     } catch (error) {
         console.error('Provider GPU profile update error:', error);
         return res.status(500).json({ error: 'Failed to update GPU profile' });
+    }
+});
+
+// ============================================================================
+// PATCH /api/providers/me/wallet - Update provider EVM wallet for on-chain escrow
+// ============================================================================
+router.patch('/me/wallet', (req, res) => {
+    try {
+        const key = normalizeString(req.query.key || req.headers['x-provider-key'] || req.body?.key, { maxLen: 128, trim: false });
+        if (!key) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get(
+            'SELECT id, wallet_address FROM providers WHERE api_key = ?',
+            key
+        );
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'wallet_address')) {
+            return res.status(400).json({ error: 'wallet_address is required' });
+        }
+
+        const rawWallet = req.body.wallet_address;
+        if (rawWallet == null) {
+            return res.status(400).json({ error: 'wallet_address cannot be null' });
+        }
+
+        const walletAddress = normalizeString(rawWallet, { maxLen: 42 });
+        if (!walletAddress || !ETH_ADDRESS_REGEX.test(walletAddress)) {
+            return res.status(400).json({ error: 'Invalid Ethereum wallet address' });
+        }
+
+        const normalizedWallet = walletAddress.toLowerCase();
+        const now = new Date().toISOString();
+        const changed = provider.wallet_address?.toLowerCase() !== normalizedWallet;
+        if (changed) {
+            runStatement(
+                `UPDATE providers
+                 SET wallet_address = ?, wallet_address_updated_at = ?, updated_at = ?
+                 WHERE id = ?`,
+                normalizedWallet,
+                now,
+                now,
+                provider.id
+            );
+        }
+
+        return res.json({
+            success: true,
+            wallet_address: normalizedWallet,
+            wallet_address_updated_at: now,
+            changed,
+        });
+    } catch (error) {
+        console.error('Provider wallet update error:', error);
+        return res.status(500).json({ error: 'Failed to update provider wallet address' });
     }
 });
 
@@ -1632,7 +1702,7 @@ function providerMatchesJob(providerProfile, jobRequirements) {
 
 function buildNextPendingJob(providerId) {
     const provider = db.get(
-        `SELECT id, is_paused, last_heartbeat, resource_spec, supported_compute_types, gpu_count, gpu_count_reported,
+        `SELECT id, wallet_address, is_paused, last_heartbeat, resource_spec, supported_compute_types, gpu_count, gpu_count_reported,
                 vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb
          FROM providers
          WHERE id = ?`,
@@ -1714,6 +1784,7 @@ function buildNextPendingJob(providerId) {
         ? db.get('SELECT api_key FROM renters WHERE id = ?', job.renter_id)?.api_key
         : null;
     if (renterApiKey && Number.isFinite(Number(job.cost_halala)) && Number(job.cost_halala) > 0) {
+        const amountHalala = Number(job.cost_halala);
         runStatement(
             `INSERT OR IGNORE INTO escrow_holds (id, renter_api_key, provider_id, job_id, amount_halala, status, created_at, expires_at)
              VALUES (?, ?, ?, ?, ?, 'held', ?, ?)`,
@@ -1721,10 +1792,30 @@ function buildNextPendingJob(providerId) {
             renterApiKey,
             providerId,
             job.job_id,
-            Number(job.cost_halala),
+            amountHalala,
             now,
             escrowExpiresAt
         );
+        runStatement(`UPDATE escrow_holds SET status = 'locked' WHERE job_id = ? AND status = 'held'`, job.job_id);
+
+        const chainEscrow = getChainEscrow();
+        if (chainEscrow.isEnabled()) {
+            const expiryMs = new Date(escrowExpiresAt).getTime();
+            chainEscrow.getEscrow(job.job_id).then((record) => {
+                const chainStatus = Number(record?.status);
+                if (!record || chainStatus !== 1) {
+                    return chainEscrow.depositAndLock(
+                        job.job_id,
+                        provider?.wallet_address || null,
+                        amountHalala,
+                        expiryMs
+                    );
+                }
+                return null;
+            }).catch((err) => {
+                console.error('[escrow-chain] pre-lock check failed for job', job.job_id, ':', err.message);
+            });
+        }
     }
     runStatement(`UPDATE providers SET current_job_id = ? WHERE id = ?`, job.job_id, providerId);
 

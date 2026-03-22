@@ -1,6 +1,6 @@
 # DC1 Python SDK
 
-Official Python client for [DC1](https://dc1st.com) — Saudi Arabia's GPU compute marketplace.
+Official Python client for [DCP](https://dcp.sa) — Saudi Arabia's GPU compute marketplace.
 
 ## Installation
 
@@ -15,7 +15,7 @@ No third-party dependencies. Requires Python 3.9+.
 ```python
 import dc1
 
-client = dc1.DC1Client(api_key='rk_your_key_here')
+client = dc1.DC1Client(api_key='dc1-renter-your-key-here')
 
 # 1. Browse available GPUs
 providers = client.providers.list()
@@ -41,7 +41,7 @@ print(f'Balance: {wallet.balance_sar:.2f} SAR')
 
 ## Authentication
 
-Get your API key from the [DC1 renter dashboard](https://dc1st.com/renter). Keys look like `dc1-renter-abc123...`.
+Get your API key from the [DCP renter dashboard](https://dcp.sa/renter). Keys look like `dc1-renter-abc123...`.
 
 ```python
 client = dc1.DC1Client(api_key='dc1-renter-abc123')
@@ -54,7 +54,7 @@ client = dc1.DC1Client(api_key='dc1-renter-abc123')
 | Parameter  | Type  | Default                     | Description                      |
 |------------|-------|-----------------------------|----------------------------------|
 | `api_key`  | `str` | required                    | Your renter API key              |
-| `base_url` | `str` | `https://dcp.sa/api/dc1`    | Override to hit staging/local    |
+| `base_url` | `str` | `https://api.dcp.sa`        | Override to hit staging/local    |
 | `timeout`  | `int` | `30`                        | HTTP timeout in seconds          |
 
 ---
@@ -112,7 +112,7 @@ List all online GPU providers. No authentication required at the API level, but 
 
 #### `providers.get(provider_id) → Provider`
 
-Fetch a single provider by ID.
+Resolve a single provider by ID from the current `/api/renters/available-providers` snapshot.
 
 ---
 

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { sendJobCompleteEmail } = require('./emailService');
+const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 
 let sweepTimer = null;
 let loggedRetryMigrationHint = false;
@@ -426,6 +427,14 @@ async function processWebhookCandidates(state) {
 
     if (!renter || renter.status !== 'active' || !renter.webhook_url) {
       markWebhookDelivery(state, job.id, 0, 'skipped', 'webhook_not_configured');
+      continue;
+    }
+    if (!isPublicWebhookUrl(renter.webhook_url)) {
+      markWebhookDelivery(state, job.id, 0, 'skipped', 'webhook_url_blocked');
+      continue;
+    }
+    if (!(await isResolvablePublicWebhookUrl(renter.webhook_url))) {
+      markWebhookDelivery(state, job.id, 0, 'skipped', 'webhook_dns_blocked');
       continue;
     }
 

@@ -34,7 +34,7 @@ curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
   -H "x-renter-key: <RENTER_KEY>" \
   -d '{
     "provider_id": 42,
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 3,
     "container_spec": { "image_type": "vllm-serve" },
     "params": {

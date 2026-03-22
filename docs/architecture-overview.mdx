@@ -9,25 +9,25 @@ order: 7
 DCP runs as a three-plane architecture:
 
 1. **Control plane (Web + API)**
-: Next.js 14 on `dcp.sa` and Express API on `api.dcp.sa`.
+: Next.js 14 on `dcp.sa` and the Express API on `api.dcp.sa`.
 2. **Execution plane (Provider GPUs)**
-: `dc1_daemon.py` on provider machines polls for jobs and executes workloads in containerized environments.
+: `dc1_daemon.py` on provider machines polls for jobs, executes workloads in approved container images, and reports heartbeat state.
 3. **Data plane (SQLite + Supabase sync)**
-: SQLite is write-source for operational data, then sync workers mirror data to Supabase for low-latency reads.
+: SQLite is the write source for operational state, with a bridge that mirrors key records to Supabase for faster reads and analytics.
 
 ## Request flow (renter job)
 
 1. Renter authenticates with `x-renter-key` or `?key=`.
-2. `POST /api/jobs/submit` creates job row and reserves prepay balance (halala).
-3. Provider daemon polls `GET /api/providers/:key/jobs`.
+2. `POST /api/jobs/submit` creates a job row and places a prepay estimate in halala.
+3. Provider daemon polls `GET /api/providers/:key/jobs` for eligible work.
 4. Daemon executes workload in isolated containers and reports result to `POST /api/providers/job-result`.
-5. Backend settles billing (75% provider / 25% platform) and updates balances.
-6. Renter retrieves output from `GET /api/jobs/:id/output`.
+5. Backend runs completion-based settlement (`75%` provider / `25%` platform) once execution finishes.
+6. Renter retrieves output from `GET /api/jobs/:id/output` for completed jobs.
 
 ## Core services
 
-- **Next.js frontend**: dashboards, onboarding, docs, marketplace browsing.
-- **Express backend**: auth, routing, billing, queueing, admin controls.
+- **Next.js frontend**: dashboards, onboarding, docs, and marketplace browsing.
+- **Express backend**: auth, routing, billing, queueing, and admin controls.
 - **Provider daemon**: heartbeat every 30s, readiness checks, and secure containerized execution.
 - **Supabase sync bridge**: periodic replication for analytics and real-time UI views.
 
@@ -45,9 +45,9 @@ DCP runs as a three-plane architecture:
 ## Billing model summary
 
 - Currency: SAR, internal unit: halala.
-- Pre-pay hold at submit time.
-- Final settlement on completion/failure.
-- Revenue split: provider `75%`, DCP `25%`.
+- A prepay estimate is reserved at submit time.
+- Final settlement uses actual completed runtime; unused reserved amount is handled through balance updates.
+- Revenue split on completed fees: provider `75%`, DCP `25%`.
 
 ## Operational notes
 

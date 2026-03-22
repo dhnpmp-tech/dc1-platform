@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
+import { persistRoleIntent, readRoleIntent, RoleIntent, trackRoleIntentApplied } from './lib/role-intent'
 
 const GPU_RATES: { model: string; rate: number }[] = []
 const RELIABILITY_POLL_MS = 30_000
@@ -47,7 +48,7 @@ export default function HomePage() {
   const [liveGpuCount, setLiveGpuCount] = useState<number | null>(null)
   const [gpuFamilyCoverage, setGpuFamilyCoverage] = useState<number | null>(null)
   const [reliabilityUpdatedAt, setReliabilityUpdatedAt] = useState<Date | null>(null)
-  const [selectedIntent, setSelectedIntent] = useState<'renter' | 'provider'>('renter')
+  const [selectedIntent, setSelectedIntent] = useState<RoleIntent>('renter')
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
 
@@ -65,6 +66,21 @@ export default function HomePage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
+  }
+
+  const updateIntent = (intent: RoleIntent, source: string, selectionType: string) => {
+    const previousIntent = selectedIntent
+    setSelectedIntent(intent)
+    persistRoleIntent(intent, {
+      source,
+      previousIntent,
+      reason: previousIntent && previousIntent !== intent ? 'overridden' : 'persisted',
+    })
+    trackLandingEvent('landing_path_selected', {
+      page: 'landing',
+      selection_type: selectionType,
+      role: intent,
+    })
   }
 
   const features = [
@@ -104,6 +120,12 @@ export default function HomePage() {
   ]
 
   useEffect(() => {
+    const storedIntent = readRoleIntent()
+    if (storedIntent) {
+      setSelectedIntent(storedIntent)
+      trackRoleIntentApplied(storedIntent, { source: 'landing', destination: 'hero_paths' })
+    }
+
     const fetchReliability = async () => {
       try {
         const res = await fetch('/api/dc1/providers/available')
@@ -160,10 +182,10 @@ export default function HomePage() {
   }, [])
 
   const stats = [
-    { value: liveGpuCount !== null ? `${liveGpuCount}` : '1', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
-    { value: '75%', label: t('landing.stat_uptime'), live: false },
-    { value: 'RTX 4090 · A100 · H100', label: t('landing.stat_min_rate'), live: false },
-    { value: '7', label: t('landing.stat_platform'), live: false },
+    { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
+    { value: t('landing.stat_settlement_value'), label: t('landing.stat_settlement_label'), live: false },
+    { value: t('landing.stat_execution_value'), label: t('landing.stat_execution_label'), live: false },
+    { value: t('landing.stat_arabic_models_value'), label: t('landing.stat_arabic_models_label'), live: false },
   ]
 
   const heroPathCards =
@@ -186,24 +208,50 @@ export default function HomePage() {
             analyticsLabel: 'Install daemon / heartbeat verification',
           },
         ]
-      : [
-          {
-            role: 'renter' as const,
-            labelKey: 'landing.path_renter_label',
-            titleKey: 'landing.path_renter_playground_title',
-            descKey: 'landing.path_renter_playground_desc',
-            href: '/renter/register',
-            analyticsLabel: 'Playground (browser, no setup)',
-          },
-          {
-            role: 'renter' as const,
-            labelKey: 'landing.path_renter_label',
-            titleKey: 'landing.path_renter_container_title',
-            descKey: 'landing.path_renter_container_desc',
-            href: '/docs/quickstart',
-            analyticsLabel: 'Container Jobs (API + Docker image)',
-          },
-        ]
+      : selectedIntent === 'enterprise'
+        ? [
+            {
+              role: 'enterprise' as const,
+              labelKey: 'landing.path_enterprise_label',
+              titleKey: 'landing.path_enterprise_support_title',
+              descKey: 'landing.path_enterprise_support_desc',
+              href: '/support?category=enterprise&source=landing-intent',
+              analyticsLabel: 'Enterprise support intake',
+            },
+            {
+              role: 'enterprise' as const,
+              labelKey: 'landing.path_enterprise_label',
+              titleKey: 'landing.path_enterprise_docs_title',
+              descKey: 'landing.path_enterprise_docs_desc',
+              href: '/docs/quickstart',
+              analyticsLabel: 'Enterprise quickstart',
+            },
+          ]
+        : [
+            {
+              role: 'renter' as const,
+              labelKey: 'landing.path_renter_label',
+              titleKey: 'landing.path_renter_playground_title',
+              descKey: 'landing.path_renter_playground_desc',
+              href: '/renter/register',
+              analyticsLabel: 'Playground (browser, no setup)',
+            },
+            {
+              role: 'renter' as const,
+              labelKey: 'landing.path_renter_label',
+              titleKey: 'landing.path_renter_container_title',
+              descKey: 'landing.path_renter_container_desc',
+              href: '/docs/quickstart',
+              analyticsLabel: 'Container Jobs (API + Docker image)',
+            },
+          ]
+
+  const intentOutcomeKey =
+    selectedIntent === 'provider'
+      ? 'landing.intent_provider_outcome'
+      : selectedIntent === 'enterprise'
+        ? 'landing.intent_enterprise_outcome'
+        : 'landing.intent_renter_outcome'
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -224,17 +272,26 @@ export default function HomePage() {
             <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
               {t('landing.hero_desc')}
             </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
+              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>
+                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_energy_desc')}</p>
+              </div>
+              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_models_title')}</p>
+                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_models_desc')}</p>
+              </div>
+              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_container_title')}</p>
+                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
+              </div>
+            </div>
             <div className="max-w-4xl mx-auto w-full">
               <div className="flex flex-wrap items-center justify-center gap-3 mb-5">
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedIntent('renter')
-                    trackLandingEvent('landing_path_selected', {
-                      page: 'landing',
-                      selection_type: 'intent_chip',
-                      role: 'renter',
-                    })
+                    updateIntent('renter', 'landing_intent_chip', 'intent_chip')
                   }}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                     selectedIntent === 'renter'
@@ -247,12 +304,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedIntent('provider')
-                    trackLandingEvent('landing_path_selected', {
-                      page: 'landing',
-                      selection_type: 'intent_chip',
-                      role: 'provider',
-                    })
+                    updateIntent('provider', 'landing_intent_chip', 'intent_chip')
                   }}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                     selectedIntent === 'provider'
@@ -262,14 +314,35 @@ export default function HomePage() {
                 >
                   {t('landing.intent_provider_chip')}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateIntent('enterprise', 'landing_intent_chip', 'intent_chip')
+                  }}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    selectedIntent === 'enterprise'
+                      ? 'bg-dc1-amber text-dc1-void'
+                      : 'bg-dc1-surface-l2 border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
+                  }`}
+                >
+                  {t('landing.intent_enterprise_chip')}
+                </button>
               </div>
+              <p className="text-sm text-dc1-text-secondary mb-4">
+                {t(intentOutcomeKey)}
+              </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
                 {heroPathCards.map((card, index) => (
                   <Link
                     key={`${card.href}-${index}`}
                     href={card.href}
-                    onClick={() =>
+                    onClick={() => {
+                      persistRoleIntent(card.role, {
+                        source: 'landing_path_card',
+                        previousIntent: selectedIntent,
+                        reason: selectedIntent !== card.role ? 'overridden' : 'persisted',
+                      })
                       trackLandingEvent('landing_path_selected', {
                         page: 'landing',
                         selection_type: 'path_card',
@@ -277,7 +350,7 @@ export default function HomePage() {
                         path_label: card.analyticsLabel,
                         destination: card.href,
                       })
-                    }
+                    }}
                     className={`rounded-xl p-5 border transition-all ${
                       index === 0
                         ? 'border-dc1-amber bg-dc1-amber/10 shadow-sm'
@@ -300,9 +373,14 @@ export default function HomePage() {
                 </p>
                 <Link
                   href="/support?category=enterprise&source=landing-hero"
-                  onClick={() =>
+                  onClick={() => {
+                    persistRoleIntent('enterprise', {
+                      source: 'landing_enterprise_cta',
+                      previousIntent: selectedIntent,
+                      reason: selectedIntent !== 'enterprise' ? 'overridden' : 'persisted',
+                    })
                     trackLandingEvent('enterprise_cta_clicked', { placement: 'hero_path_chooser' })
-                  }
+                  }}
                   className="inline-flex items-center gap-2 text-sm font-semibold text-dc1-amber hover:text-dc1-amber/80 transition-colors"
                 >
                   {t('landing.enterprise_cta')}
@@ -313,17 +391,46 @@ export default function HomePage() {
               </div>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-5">
+                <div className="w-full sm:w-auto rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-2 text-xs text-dc1-text-secondary text-center">
+                  {t('landing.hero_settlement_proof')}
+                </div>
+              </div>
+              <div className="flex flex-col items-center justify-center gap-3 mt-3">
                 <Link
-                  href="/provider/register"
-                  className={`btn btn-lg w-full sm:w-auto ${
-                    selectedIntent === 'provider' ? 'btn-primary' : 'btn-secondary'
-                  }`}
+                  href={
+                    selectedIntent === 'provider'
+                      ? '/provider/register'
+                      : selectedIntent === 'enterprise'
+                        ? '/support?category=enterprise&source=landing-primary-cta'
+                        : '/renter/register'
+                  }
+                  className="btn btn-primary btn-lg w-full sm:w-auto min-w-[260px]"
                 >
-                  {t('landing.cta_provider')}
+                  {selectedIntent === 'provider'
+                    ? t('landing.cta_provider')
+                    : selectedIntent === 'enterprise'
+                      ? t('landing.cta_enterprise')
+                      : t('landing.cta_renter')}
                 </Link>
-                <Link href="/earn" className="btn btn-secondary btn-lg w-full sm:w-auto">
-                  {t('landing.earn_calc')}
-                </Link>
+                <p className="text-xs text-dc1-text-muted">
+                  {t('landing.cta_alt_prefix')}{' '}
+                  <Link
+                    href={
+                      selectedIntent === 'provider'
+                        ? '/renter/register'
+                        : selectedIntent === 'enterprise'
+                          ? '/provider/register'
+                          : '/provider/register'
+                    }
+                    className="text-dc1-amber hover:text-dc1-amber/80 font-semibold"
+                  >
+                    {selectedIntent === 'provider'
+                      ? t('landing.cta_alt_link_renter')
+                      : selectedIntent === 'enterprise'
+                        ? t('landing.cta_alt_link_provider')
+                        : t('landing.cta_alt_link_provider')}
+                  </Link>
+                </p>
               </div>
             </div>
             <p className="text-xs text-dc1-text-muted mt-4">{t('landing.hero_helper')}</p>
@@ -385,7 +492,7 @@ export default function HomePage() {
                 <div className="flex items-center justify-center gap-2">
                   <p className="text-2xl sm:text-3xl font-bold text-dc1-amber">{stat.value}</p>
                   {stat.live && (
-                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" title="Live count" />
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" title={t('landing.live_metric_badge')} />
                   )}
                 </div>
                 <p className="text-sm text-dc1-text-secondary mt-1">{stat.label}</p>
@@ -405,6 +512,7 @@ export default function HomePage() {
             <li>{t('billing.explainer.step3')}</li>
           </ul>
           <p className="mt-3 text-xs text-dc1-text-muted">{t('billing.explainer.note')}</p>
+          <p className="mt-2 text-xs text-dc1-text-muted">{t('billing.explainer.rail_status')}</p>
         </div>
       </section>
 
@@ -467,12 +575,12 @@ export default function HomePage() {
 
       {/* Usage Paths */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <div className="text-center mb-12">
+        <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
             Choose your workflow
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            Validate quickly in-browser, then promote the same workload to container jobs for repeatable API-driven integration.
+            Validate quickly in-browser, then move to API-driven container jobs for repeatable integration.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -491,7 +599,7 @@ export default function HomePage() {
             <ul className="space-y-2 mb-8">
               {[
                 'No local install required',
-                'Routing checks workload policy and compatibility before assignment',
+                'Routing checks policy and compatibility before assignment',
                 'Pre-run estimate is shown before execution',
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
@@ -514,12 +622,12 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Container Jobs</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Run repeatable CUDA image workloads for training, fine-tuning, or batch jobs with API-first flow control.
+              Run repeatable, policy-aligned container jobs for training, fine-tuning, or batch workloads using an API-first flow.
             </p>
             <ul className="space-y-2 mb-8">
               {[
-                'Any CUDA-enabled Docker image',
-                'Container-based execution with isolated workspace',
+                'Approved container runtimes from the DCP catalog',
+                'GPU-scoped execution within isolated workspaces',
                 'Submit and track jobs via REST API',
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
@@ -652,7 +760,7 @@ Invoke-WebRequest \`
             <div className="mt-4 pt-4 border-t border-dc1-border">
               <p className="text-xs text-dc1-text-muted mb-2">After install, your terminal shows:</p>
               <pre className="text-xs text-green-400 font-mono leading-relaxed">{`✓ GPU detected: RTX 4090 (24 GB)
-✓ Daemon v3.3.0 running
+✓ Daemon connected and reporting heartbeat
 ✓ Connected to DCP — heartbeat active for compatible workload routing`}</pre>
             </div>
           </div>
@@ -796,11 +904,11 @@ Invoke-WebRequest \`
               <div className="space-y-3">
                 <div>
                   <p className="text-xs text-dc1-text-muted font-mono mb-1"># Python — provider SDK</p>
-                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono">pip install dcp-provider</pre>
+                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono"># Check the latest SDK package name in /docs/sdk-guides</pre>
                 </div>
                 <div>
                   <p className="text-xs text-dc1-text-muted font-mono mb-1"># Node.js — renter SDK</p>
-                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono">npm install dcp-renter-sdk</pre>
+                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono"># Check the latest SDK package name in /docs/sdk-guides</pre>
                 </div>
               </div>
               <div className="border-t border-dc1-border pt-4">
@@ -855,15 +963,21 @@ provider.start()  # initialize, heartbeat, and run assigned container workloads`
   -d '{
     "provider_id": 26,
     "job_type": "llm_inference",
-    "model": "ALLaM-7B-Instruct",
-    "prompt": "Hello world"
+    "duration_minutes": 5,
+    "container_spec": {
+      "image_type": "vllm-serve"
+    },
+    "params": {
+      "model": "ALLaM-7B-Instruct",
+      "prompt": "Hello world"
+    }
   }'`}</pre>
             <div className="mt-4 pt-4 border-t border-dc1-border">
               <p className="text-xs text-dc1-text-muted mb-2">Response:</p>
               <pre className="text-xs text-green-400 font-mono leading-relaxed">{`{
-  "jobId": "job_abc123",
+  "job_id": "job-abc123",
   "status": "queued",
-  "estimatedStart": "queued"
+  "status_detail": "queued"
 }`}</pre>
             </div>
           </div>

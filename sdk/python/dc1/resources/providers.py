@@ -1,6 +1,7 @@
 """Providers resource."""
 from __future__ import annotations
 from ..models import Provider
+from ..exceptions import APIError
 
 
 class ProvidersResource:
@@ -26,5 +27,12 @@ class ProvidersResource:
         Returns:
             Provider object.
         """
-        data = self._http.get(f'/api/providers/{provider_id}')
-        return Provider.from_api(data)
+        providers = self.list()
+        for provider in providers:
+            if provider.id == provider_id:
+                return provider
+        raise APIError(
+            f'Provider {provider_id} not found in available providers',
+            status_code=404,
+            response={'provider_id': provider_id},
+        )

@@ -1,6 +1,6 @@
 ---
 title: مرجع API
-description: نموذج المصادقة، خريطة النقاط الأساسية، وتنسيق الأخطاء لتكاملات DCP.
+description: نموذج المصادقة، تنسيق الأخطاء، وأمثلة مطابقة لعقود التشغيل (cURL + Node + Python).
 order: 2
 ---
 
@@ -13,12 +13,7 @@ order: 2
 
 - **المزود**: ترويسة `x-provider-key` أو `?key=`
 - **المستأجر**: ترويسة `x-renter-key` أو `?key=`
-- **المدير**: ترويسة `x-admin-token`
-
-أمثلة المفاتيح:
-
-- `dcp-provider-...`
-- `dcp-renter-...`
+- **المدير**: ترويسة `x-admin-token` أو `Authorization: Bearer <token>`
 
 ## تنسيق الأخطاء
 
@@ -28,72 +23,257 @@ order: 2
 { "error": "descriptive message" }
 ```
 
-## نقاط المزود
+مثال (`400`):
 
-```text
-POST /providers/register
-GET  /providers/me?key=
-POST /providers/heartbeat
-POST /providers/pause
-POST /providers/resume
-GET  /providers/download/daemon?key=
-GET  /providers/download/setup?key=&os=windows|linux|mac
-GET  /providers/earnings?key=
+```json
+{ "error": "Missing required fields: job_type, duration_minutes" }
 ```
 
-## نقاط المستأجر
+## أمثلة النقاط الحرجة (مطابقة EN)
 
-```text
-POST /renters/register
-GET  /renters/me?key=
-GET  /renters/available-providers
-GET  /renters/me/invoices?key=&page=&limit=
-GET  /renters/me/invoices/export.csv?key=
-POST /payments/topup
-GET  /payments/history
+### 1) تسجيل مستأجر — `POST /renters/register`
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/renters/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Fatima Al-Saud",
+    "email": "fatima@example.sa",
+    "organization": "Riyadh AI Lab",
+    "use_case": "llm_inference",
+    "phone": "+966500000000"
+  }'
 ```
 
-## نقاط المهام
-
-```text
-POST /jobs/submit
-GET  /jobs/:id
-GET  /jobs/:id/output
-GET  /jobs/:id/logs
-GET  /jobs/:id/logs/stream
-GET  /jobs/queue/status
-POST /jobs/:id/retry
-POST /jobs/:id/pause
-POST /jobs/:id/resume
+```ts
+const res = await fetch('https://dcp.sa/api/dc1/renters/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    name: 'Fatima Al-Saud',
+    email: 'fatima@example.sa',
+    organization: 'Riyadh AI Lab',
+    use_case: 'llm_inference',
+    phone: '+966500000000',
+  }),
+})
+const data = await res.json()
+if (!res.ok) throw new Error(data.error)
 ```
 
-## نقاط الإدارة
+```python
+import requests
 
-```text
-GET  /admin/dashboard
-GET  /admin/providers
-GET  /admin/providers/:id
-GET  /admin/daemon-health
-GET  /admin/withdrawals
-PATCH /admin/withdrawals/:id
+res = requests.post(
+    "https://dcp.sa/api/dc1/renters/register",
+    json={
+        "name": "Fatima Al-Saud",
+        "email": "fatima@example.sa",
+        "organization": "Riyadh AI Lab",
+        "use_case": "llm_inference",
+        "phone": "+966500000000",
+    },
+    timeout=20,
+)
+res.raise_for_status()
+print(res.json())
 ```
 
-## قالب أول مهمة
+استجابة النجاح (`201`):
+
+```json
+{
+  "success": true,
+  "renter_id": 101,
+  "api_key": "dc1-renter-abc123...",
+  "message": "Welcome Fatima Al-Saud! Save your API key — it won't be shown again."
+}
+```
+
+### 2) نبض المزود — `POST /providers/heartbeat`
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/providers/heartbeat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_key": "dc1-provider-abc123...",
+    "gpu_status": {
+      "gpu_name": "NVIDIA RTX 3090",
+      "gpu_vram_mib": 24576,
+      "gpu_util_pct": 41,
+      "temp_c": 68,
+      "daemon_version": "3.3.0"
+    }
+  }'
+```
+
+```ts
+const hb = await fetch('https://dcp.sa/api/dc1/providers/heartbeat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    api_key: process.env.DC1_PROVIDER_KEY,
+    gpu_status: {
+      gpu_name: 'NVIDIA RTX 3090',
+      gpu_vram_mib: 24576,
+      gpu_util_pct: 41,
+      temp_c: 68,
+      daemon_version: '3.3.0',
+    },
+  }),
+})
+const hbData = await hb.json()
+if (!hb.ok) throw new Error(hbData.error)
+```
+
+```python
+import requests
+
+hb = requests.post(
+    "https://dcp.sa/api/dc1/providers/heartbeat",
+    json={
+        "api_key": "dc1-provider-abc123...",
+        "gpu_status": {
+            "gpu_name": "NVIDIA RTX 3090",
+            "gpu_vram_mib": 24576,
+            "gpu_util_pct": 41,
+            "temp_c": 68,
+            "daemon_version": "3.3.0",
+        },
+    },
+    timeout=20,
+)
+hb.raise_for_status()
+print(hb.json())
+```
+
+استجابة النجاح (`200`):
+
+```json
+{
+  "success": true,
+  "message": "Heartbeat received",
+  "timestamp": "2026-03-22T19:30:00.000Z",
+  "needs_update": false,
+  "latest_version": "3.3.0",
+  "update_available": false,
+  "min_version": "3.3.0",
+  "approval_status": "approved",
+  "approved": true,
+  "preload_model": null
+}
+```
+
+### 3) إرسال مهمة — `POST /jobs/submit`
 
 ```bash
 curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
   -H "Content-Type: application/json" \
-  -H "x-renter-key: <RENTER_KEY>" \
+  -H "x-renter-key: $RENTER_KEY" \
   -d '{
     "provider_id": 42,
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 3,
+    "max_duration_seconds": 180,
     "container_spec": { "image_type": "vllm-serve" },
     "params": {
       "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
       "prompt": "لخص منصة DCP في ثلاث نقاط"
     }
   }'
+```
+
+```ts
+const submit = await fetch('https://dcp.sa/api/dc1/jobs/submit', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-renter-key': process.env.DC1_RENTER_KEY!,
+  },
+  body: JSON.stringify({
+    provider_id: 42,
+    job_type: 'llm_inference',
+    duration_minutes: 3,
+    max_duration_seconds: 180,
+    container_spec: { image_type: 'vllm-serve' },
+    params: {
+      model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+      prompt: 'لخص منصة DCP في ثلاث نقاط',
+    },
+  }),
+})
+const submitted = await submit.json()
+if (!submit.ok) throw new Error(submitted.error)
+```
+
+```python
+import requests
+
+submitted = requests.post(
+    "https://dcp.sa/api/dc1/jobs/submit",
+    headers={
+        "Content-Type": "application/json",
+        "x-renter-key": "dc1-renter-abc123...",
+    },
+    json={
+        "provider_id": 42,
+        "job_type": "llm_inference",
+        "duration_minutes": 3,
+        "max_duration_seconds": 180,
+        "container_spec": {"image_type": "vllm-serve"},
+        "params": {
+            "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            "prompt": "لخص منصة DCP في ثلاث نقاط",
+        },
+    },
+    timeout=30,
+)
+submitted.raise_for_status()
+print(submitted.json())
+```
+
+استجابة النجاح (`201`) — نفس البنية في EN:
+
+```json
+{
+  "success": true,
+  "job": {
+    "id": 9001,
+    "job_id": "job-1742671800000-ab12cd",
+    "provider_id": 42,
+    "renter_id": 101,
+    "job_type": "llm_inference",
+    "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "status": "pending"
+  }
+}
+```
+
+### 4) لوحة الإدارة — `GET /admin/dashboard`
+
+```bash
+curl -s "https://dcp.sa/api/dc1/admin/dashboard" \
+  -H "x-admin-token: $DC1_ADMIN_TOKEN"
+```
+
+```ts
+const dash = await fetch('https://dcp.sa/api/dc1/admin/dashboard', {
+  headers: { 'x-admin-token': process.env.DC1_ADMIN_TOKEN! },
+})
+const dashboard = await dash.json()
+if (!dash.ok) throw new Error(dashboard.error)
+```
+
+```python
+import requests
+
+dashboard = requests.get(
+    "https://dcp.sa/api/dc1/admin/dashboard",
+    headers={"x-admin-token": "<DC1_ADMIN_TOKEN>"},
+    timeout=20,
+)
+dashboard.raise_for_status()
+print(dashboard.json())
 ```
 
 ## مصدر OpenAPI

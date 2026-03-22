@@ -143,6 +143,63 @@ function verifyMoyasarWebhook(rawBody, signatureHeader, webhookSecret) {
   }
 }
 
+function markPaymentPaidOnce(paymentId, renterId, amountHalala, nowIso, gatewayPayload) {
+  const tx = db._db.transaction(() => {
+    const paymentUpdate = runStatement(
+      `UPDATE payments
+         SET status = 'paid', confirmed_at = ?, gateway_response = ?
+       WHERE payment_id = ?
+         AND status IN ('pending', 'initiated', 'failed')`,
+      nowIso,
+      gatewayPayload,
+      paymentId
+    );
+    if (!paymentUpdate.changes) return false;
+
+    runStatement(
+      `UPDATE renters
+          SET balance_halala = balance_halala + ?, updated_at = ?
+        WHERE id = ?`,
+      amountHalala,
+      nowIso,
+      renterId
+    );
+    return true;
+  });
+  return tx();
+}
+
+function markPaymentRefundedOnce(paymentId, renterId, refundAmountHalala, nowIso, gatewayPayload) {
+  const tx = db._db.transaction(() => {
+    const paymentUpdate = runStatement(
+      `UPDATE payments
+          SET status = 'refunded',
+              refunded_at = ?,
+              refund_amount_halala = ?,
+              gateway_response = ?
+        WHERE payment_id = ?
+          AND status = 'paid'
+          AND refunded_at IS NULL`,
+      nowIso,
+      refundAmountHalala,
+      gatewayPayload,
+      paymentId
+    );
+    if (!paymentUpdate.changes) return false;
+
+    runStatement(
+      `UPDATE renters
+          SET balance_halala = MAX(0, balance_halala - ?), updated_at = ?
+        WHERE id = ?`,
+      refundAmountHalala,
+      nowIso,
+      renterId
+    );
+    return true;
+  });
+  return tx();
+}
+
 // ─── Renter auth helper ────────────────────────────────────────────────────────
 
 function getRenter(req) {
@@ -396,25 +453,33 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
     return res.json({ received: true, action: 'already_processed' });
   }
 
+  // Ignore stale/out-of-order terminal regressions.
+  if (payment.status === 'paid' && (status === 'initiated' || status === 'failed')) {
+    return res.json({ received: true, action: 'ignored_stale_status', current_status: payment.status });
+  }
+  if (payment.status === 'refunded' && status !== 'refunded') {
+    return res.json({ received: true, action: 'ignored_refunded_terminal_status' });
+  }
+
   if (status === 'paid') {
-    // Credit renter balance once (idempotent by previous status guard)
-    if (payment.status !== 'paid') {
-      runStatement(
-        `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
-        payment.amount_halala, now, payment.renter_id
-      );
-    }
-    runStatement(
-      `UPDATE payments
-       SET status = 'paid', confirmed_at = ?, gateway_response = ?
-       WHERE payment_id = ?`,
-      now, JSON.stringify(event), payment.payment_id
+    const changed = markPaymentPaidOnce(
+      payment.payment_id,
+      payment.renter_id,
+      payment.amount_halala,
+      now,
+      JSON.stringify(event)
     );
-    console.log(`[payments/webhook] Payment ${payment.payment_id} paid — credited ${payment.amount_halala} halala to renter ${payment.renter_id}`);
-    return res.json({ received: true, action: 'balance_credited', amount_halala: payment.amount_halala });
+    if (changed) {
+      console.log(`[payments/webhook] Payment ${payment.payment_id} paid — credited ${payment.amount_halala} halala to renter ${payment.renter_id}`);
+      return res.json({ received: true, action: 'balance_credited', amount_halala: payment.amount_halala });
+    }
+    return res.json({ received: true, action: 'already_processed' });
   }
 
   if (status === 'failed') {
+    if (payment.status === 'paid' || payment.status === 'refunded') {
+      return res.json({ received: true, action: 'ignored_stale_status', current_status: payment.status });
+    }
     runStatement(
       `UPDATE payments SET status = 'failed', gateway_response = ? WHERE payment_id = ?`,
       JSON.stringify(event), payment.payment_id
@@ -424,21 +489,20 @@ router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) =>
   }
 
   if (status === 'refunded') {
-    const refundAmount = event.amount_refunded || payment.amount_halala;
-    // Deduct from renter balance only if it was previously paid and not yet refunded
-    if (payment.status === 'paid' && !payment.refunded_at) {
-      const deduct = Math.min(refundAmount, payment.amount_halala);
-      runStatement(
-        `UPDATE renters SET balance_halala = MAX(0, balance_halala - ?), updated_at = ? WHERE id = ?`,
-        deduct, now, payment.renter_id
-      );
-    }
-    runStatement(
-      `UPDATE payments SET status = 'refunded', refunded_at = ?, refund_amount_halala = ?, gateway_response = ? WHERE payment_id = ?`,
-      now, refundAmount, JSON.stringify(event), payment.payment_id
+    const parsedRefundAmount = toFiniteInt(event.amount_refunded, { min: 1, max: payment.amount_halala });
+    const refundAmount = parsedRefundAmount == null ? payment.amount_halala : parsedRefundAmount;
+    const changed = markPaymentRefundedOnce(
+      payment.payment_id,
+      payment.renter_id,
+      refundAmount,
+      now,
+      JSON.stringify(event)
     );
-    console.log(`[payments/webhook] Payment ${payment.payment_id} refunded — ${refundAmount} halala`);
-    return res.json({ received: true, action: 'refund_processed' });
+    if (changed) {
+      console.log(`[payments/webhook] Payment ${payment.payment_id} refunded — ${refundAmount} halala`);
+      return res.json({ received: true, action: 'refund_processed' });
+    }
+    return res.json({ received: true, action: 'already_processed' });
   }
 
   // For non-terminal status (e.g. 'initiated'), sync status but do not mutate balance.
@@ -496,15 +560,16 @@ router.get('/verify/:paymentId', (req, res) => {
 
       // Sync local record if Moyasar reports paid
       if (payment.status === 'paid' && localPayment.status !== 'paid') {
-        runStatement(
-          `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`,
-          localPayment.amount_halala, now, renter.id
+        const changed = markPaymentPaidOnce(
+          localPayment.payment_id,
+          renter.id,
+          localPayment.amount_halala,
+          now,
+          JSON.stringify(payment)
         );
-        runStatement(
-          `UPDATE payments SET status = 'paid', confirmed_at = ?, gateway_response = ? WHERE payment_id = ?`,
-          now, JSON.stringify(payment), localPayment.payment_id
-        );
-        console.log(`[payments/verify] Late sync: payment ${localPayment.payment_id} paid — credited ${localPayment.amount_halala} halala`);
+        if (changed) {
+          console.log(`[payments/verify] Late sync: payment ${localPayment.payment_id} paid — credited ${localPayment.amount_halala} halala`);
+        }
       }
 
       res.json({

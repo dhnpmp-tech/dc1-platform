@@ -1,5 +1,6 @@
 import { HttpClient } from '../http';
 import { Provider } from '../types';
+import { APIError } from '../errors';
 
 function parseProvider(data: Record<string, unknown>): Provider {
   const vramMib = (data.vram_mib as number) ?? 0;
@@ -28,9 +29,17 @@ export class ProvidersResource {
 
   /**
    * Fetch a single provider by ID.
+   * The backend does not expose a renter-scoped `/api/providers/:id` endpoint,
+   * so this resolves from `/api/renters/available-providers`.
    */
   async get(providerId: number): Promise<Provider> {
-    const data = await this.http.get<Record<string, unknown>>(`/api/providers/${providerId}`);
-    return parseProvider(data);
+    const providers = await this.list();
+    const match = providers.find((p) => p.id === providerId);
+    if (!match) {
+      throw new APIError(`Provider ${providerId} not found in available providers`, 404, {
+        provider_id: providerId,
+      });
+    }
+    return match;
   }
 }

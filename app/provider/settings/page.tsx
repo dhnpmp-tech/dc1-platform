@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import { useLanguage } from '../../lib/i18n'
 
@@ -417,6 +418,24 @@ export default function ProviderSettingsPage() {
       <div className="space-y-8 max-w-2xl">
         <h1 className="text-3xl font-bold text-dc1-text-primary">Settings</h1>
 
+        <div className="rounded-xl border border-dc1-amber/20 bg-dc1-surface-l2 p-4">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">{t('register.provider.next_action_title')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <Link href="/provider/download" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+              {t('register.provider.state.heartbeat.label')}
+            </Link>
+            <Link href="/provider/jobs" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+              {t('register.provider.state.ready.label')}
+            </Link>
+            <Link href="/provider/earnings" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+              {t('nav.earnings')}
+            </Link>
+            <span className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-3 py-2 text-dc1-amber">
+              {t('nav.settings')}
+            </span>
+          </div>
+        </div>
+
         {/* Account Info */}
         <div className="card p-6 space-y-4">
           <h2 className="text-lg font-semibold text-dc1-text-primary">Account Information</h2>
@@ -454,23 +473,23 @@ export default function ProviderSettingsPage() {
 
         {/* Billing and Payout Summary */}
         <div className="card p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-dc1-text-primary">Billing and Payout Summary</h2>
+          <h2 className="text-lg font-semibold text-dc1-text-primary">{t('settings.settlement.title')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Payout Rail</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">Bank transfer (SAR)</p>
+              <p className="text-xs text-dc1-text-muted">{t('settings.settlement.rail_label')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('settings.settlement.rail_value')}</p>
             </div>
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Payout cadence</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">Weekly settlement</p>
+              <p className="text-xs text-dc1-text-muted">{t('settings.settlement.timing_label')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('settings.settlement.timing_value')}</p>
             </div>
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
-              <p className="text-xs text-dc1-text-muted">Minimum withdrawal</p>
-              <p className="text-sm text-dc1-text-primary font-medium mt-1">50.00 SAR</p>
+              <p className="text-xs text-dc1-text-muted">{t('settings.settlement.minimum_label')}</p>
+              <p className="text-sm text-dc1-text-primary font-medium mt-1">{t('settings.settlement.minimum_value')}</p>
             </div>
           </div>
           <p className="text-xs text-dc1-text-muted">
-            For payout history and withdrawals, use the Earnings page. Advanced payout routing is scheduled for a backend follow-up.
+            {t('settings.settlement.note')}
           </p>
         </div>
 

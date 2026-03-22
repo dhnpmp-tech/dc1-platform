@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import StatusBadge from '../../components/ui/StatusBadge'
@@ -435,6 +436,24 @@ export default function EarningsPage() {
           <button onClick={fetchAll} className="btn btn-secondary text-sm">
             Refresh
           </button>
+        </div>
+
+        <div className="rounded-xl border border-dc1-amber/20 bg-dc1-surface-l2 p-4">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">{t('register.provider.next_action_title')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+            <Link href="/provider/register" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+              1. {t('register.provider.install_title')}
+            </Link>
+            <Link href="/provider/download" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+              2. {t('register.provider.state.heartbeat.label')}
+            </Link>
+            <Link href="/provider/jobs" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
+              3. {t('register.provider.state.ready.label')}
+            </Link>
+            <span className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-3 py-2 text-dc1-amber">
+              4. {t('nav.earnings')}
+            </span>
+          </div>
         </div>
 
         {/* Summary Cards */}

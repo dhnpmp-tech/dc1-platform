@@ -36,14 +36,21 @@ cd backend
 pm2 startOrReload ecosystem.config.js
 pm2 save
 
-# 3) Verify services are healthy
+# 3) Run deterministic verification bundle (single command)
 cd /root/dc1-platform
-./infra/scripts/verify-deploy.sh
-./infra/scripts/verify-runtime-baseline.sh
+./infra/scripts/post-deploy-verify.sh --batch DCP-308 --api-base http://127.0.0.1:8083/api
 
-# 4) Run focused smoke checks
-./infra/scripts/deploy-templates.sh --api-base http://127.0.0.1:8083/api --skip-scan
+# 4) Optional targeted smoke checks by batch scope
+# See docs/qa/post-deploy-checklist.md for batch-specific checks.
 ```
+
+Verification artifacts are written to:
+
+- `infra/artifacts/post-deploy/<run_id>-<batch>/summary.txt`
+- `infra/artifacts/post-deploy/<run_id>-<batch>/summary.json`
+- per-stage logs (`verify_deploy.log`, `verify_runtime.log`, `template_smoke.log`, `platform_smoke.log`)
+
+If `post-deploy-verify.sh` exits non-zero, treat the deploy as failed and move to rollback sequence.
 
 ## Rollback Sequence (if deploy verification fails)
 
@@ -66,8 +73,7 @@ pm2 save
 
 # 4) Re-run health verification
 cd /root/dc1-platform
-./infra/scripts/verify-deploy.sh
-./infra/scripts/verify-runtime-baseline.sh
+./infra/scripts/post-deploy-verify.sh --batch rollback-verify --api-base http://127.0.0.1:8083/api
 ```
 
 ## Blocking Conditions
@@ -87,14 +93,15 @@ cd /root/dc1-platform
 ## Related Runbooks
 
 - `docs/ops/non-payment-restart-rollback.md` for non-payment restart/rollback operations with operator handoff checklist.
+- `docs/ops/dcp-559-step2-infra-evidence.md` for launch-gate Step 2 infra closure artifacts (env vars, DNS, certbot/TLS).
 
 ## Reporting Template (Paperclip comment)
 
 ```text
 Deploy window result: PASS/FAIL at <UTC>.
 Deploy commit: <sha>.
-Verify script: PASS/FAIL.
-Smoke checks: PASS/FAIL.
+Verification artifact: infra/artifacts/post-deploy/<run_id>-<batch>/summary.txt.
+Smoke checks: PASS/FAIL (+ checklist batch IDs run).
 Board blockers: <none or list>.
 Agent-fixable follow-ups: <none or list>.
 ```

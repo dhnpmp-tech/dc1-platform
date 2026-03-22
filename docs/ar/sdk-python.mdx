@@ -7,7 +7,7 @@ order: 4
 ## التثبيت
 
 ```bash
-pip install dc1_provider requests
+# راجع /docs/sdk-guides لاعتماد أسماء الحزم المحدثة
 ```
 
 ## مثال كامل
@@ -31,7 +31,7 @@ print("renter:", me.json().get("email"))
 
 # 2) إرسال مهمة
 payload = {
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 3,
     "max_duration_seconds": 180,
     "container_spec": {"image_type": "vllm-serve"},

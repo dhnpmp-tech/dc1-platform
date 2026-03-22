@@ -1,102 +1,153 @@
 ---
 title: Quickstart
-description: Submit a renter workload with curl (non-payment flow).
+description: API-first quickstart lanes for renter, provider, and admin verification.
 order: 1
 ---
 
 ## Goal
 
-Complete a workload flow:
-
-1. Validate your renter key.
-2. Find an online provider.
-3. Submit a workload.
-4. Poll status until completion.
-5. Fetch final output.
-
-This guide intentionally avoids payment/top-up steps and focuses on pure compute lifecycle APIs.
+Pick one lane and run the first deterministic success checkpoint in under 5 minutes.
 
 ## Why teams choose DCP
 
-- **Saudi energy-cost advantage**: workloads run in a structurally lower electricity-cost market for better long-run compute economics.
-- **Arabic AI model support**: production paths for **ALLaM 7B**, **Falcon H1**, **JAIS 13B**, and **BGE-M3**.
-- **Container-based execution**: bring your own container workloads with NVIDIA-accelerated Docker runtime.
+- **Saudi energy-cost advantage**: compute runs in a structurally lower electricity-cost market.
+- **Arabic AI support**: production paths for **ALLaM 7B**, **Falcon H1**, **JAIS 13B**, and **BGE-M3**.
+- **Containerized execution**: workloads run in approved Docker templates with NVIDIA runtime support.
 
-## 1) Set environment variables
+## Shared auth rules
+
+- Base URL: `https://dcp.sa/api/dc1`
+- Prefer headers for keys: `x-renter-key`, `x-provider-key`, `x-admin-token`
+- Use `?key=` only for legacy-compatible GETs like `/renters/me` and `/providers/me`
+- Errors always return JSON: `{ "error": "descriptive message" }`
+
+## Lane A: Renter (API-first)
+
+### 1) Set environment variables
 
 ```bash
 export DCP_API="https://dcp.sa/api/dc1"
-export RENTER_KEY="dcp-renter-your-key"
+export RENTER_KEY="dc1-renter-your-key"
 ```
 
-## 2) Validate account access
+### 2) First-success checkpoint: validate renter identity
 
 ```bash
 curl -s "$DCP_API/renters/me?key=$RENTER_KEY"
 ```
 
-## 3) Discover available providers
+Expected JSON shape:
+
+```json
+{
+  "renter": {
+    "id": 12,
+    "name": "Renter Name",
+    "email": "team@example.com",
+    "balance_halala": 50000,
+    "total_jobs": 3
+  },
+  "recent_jobs": []
+}
+```
+
+### 3) Continue to first job
 
 ```bash
 curl -s "$DCP_API/renters/available-providers"
 ```
 
-Pick a `provider.id` from the response and export it:
-
 ```bash
-export PROVIDER_ID="42"
-```
-
-## 4) Submit a workload
-
-```bash
-JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
+curl -s -X POST "$DCP_API/jobs/submit" \
   -H "Content-Type: application/json" \
   -H "x-renter-key: $RENTER_KEY" \
   -d '{
-    "provider_id": '"$PROVIDER_ID"',
+    "provider_id": 42,
     "job_type": "llm_inference",
     "duration_minutes": 3,
-    "max_duration_seconds": 180,
-    "container_spec": {
-      "image_type": "vllm-serve"
-    },
+    "container_spec": { "image_type": "vllm-serve" },
     "params": {
       "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
       "prompt": "Write 3 bullets about AI in Riyadh"
     }
-  }')
-
-echo "$JOB_JSON"
-JOB_ID=$(echo "$JOB_JSON" | jq -r '.job.job_id // .job_id')
-echo "JOB_ID=$JOB_ID"
+  }'
 ```
 
-## 5) Poll status and fetch output
+## Lane B: Provider (daemon-first)
+
+### 1) Set environment variables
 
 ```bash
-while true; do
-  status=$(curl -s -H "x-renter-key: $RENTER_KEY" "$DCP_API/jobs/$JOB_ID" | jq -r '.status')
-  echo "status=$status"
-  if [ "$status" = "completed" ]; then
-    break
-  fi
-  if [ "$status" = "failed" ] || [ "$status" = "cancelled" ]; then
-    echo "Job ended before completion: $status"
-    break
-  fi
-  sleep 5
-done
-
-curl -s "$DCP_API/jobs/$JOB_ID/output?key=$RENTER_KEY"
+export DCP_API="https://dcp.sa/api/dc1"
+export PROVIDER_KEY="dc1-provider-your-key"
 ```
 
-Before completion, status will remain `pending`, `queued`, or `running`.
+### 2) Install/start daemon
+
+```bash
+curl -fsSL "$DCP_API/providers/download/setup?key=$PROVIDER_KEY&os=linux" | bash
+```
+
+### 3) First-success checkpoint: provider profile is reachable
+
+```bash
+curl -s "$DCP_API/providers/me?key=$PROVIDER_KEY"
+```
+
+Expected JSON shape:
+
+```json
+{
+  "provider": {
+    "id": 34,
+    "name": "Provider Name",
+    "status": "online",
+    "daemon_version": "3.3.0",
+    "last_heartbeat": "2026-03-22T19:00:00.000Z",
+    "total_jobs": 0,
+    "total_earnings_halala": 0
+  },
+  "recent_jobs": []
+}
+```
+
+## Lane C: Admin (verification)
+
+### 1) Set environment variables
+
+```bash
+export DCP_API="https://dcp.sa/api/dc1"
+export ADMIN_TOKEN="your-admin-token"
+```
+
+### 2) First-success checkpoint: dashboard stats
+
+```bash
+curl -s "$DCP_API/admin/dashboard" \
+  -H "x-admin-token: $ADMIN_TOKEN"
+```
+
+Expected JSON shape:
+
+```json
+{
+  "stats": {
+    "total_providers": 10,
+    "online_now": 4,
+    "total_renters": 25,
+    "total_jobs": 120,
+    "total_revenue_halala": 987654
+  },
+  "gpu_breakdown": [],
+  "recent_signups": [],
+  "recent_heartbeats": []
+}
+```
 
 ## Next
 
+- [API Reference](/docs/api-reference)
 - [Renter Guide](/docs/renter-guide)
 - [Provider Guide](/docs/provider-guide)
 - [Architecture Overview](/docs/architecture-overview)
-- [API Reference](/docs/api-reference)
 - [Runtime Verification Runbook](/docs/ops/runtime-verification)

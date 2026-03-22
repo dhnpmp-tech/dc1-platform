@@ -10,47 +10,124 @@ class PlaygroundErrorBoundary extends Component<
   {
     children: ReactNode;
     title: string;
-    stackLabel: string;
-    tryAgain: string;
+    subtitle: string;
+    actionHint: string;
+    retryLabel: string;
+    reloadLabel: string;
+    supportLabel: string;
+    networkCategoryLabel: string;
+    timeoutCategoryLabel: string;
+    authCategoryLabel: string;
+    unknownCategoryLabel: string;
+    issueSuffixLabel: string;
   },
-  { hasError: boolean; error: Error | null; errorInfo: ErrorInfo | null }
+  { hasError: boolean; error: Error | null; errorInfo: ErrorInfo | null; category: 'network' | 'timeout' | 'auth' | 'unknown' }
 > {
-  constructor(props: { children: ReactNode; title: string; stackLabel: string; tryAgain: string }) {
+  constructor(props: {
+    children: ReactNode;
+    title: string;
+    subtitle: string;
+    actionHint: string;
+    retryLabel: string;
+    reloadLabel: string;
+    supportLabel: string;
+    networkCategoryLabel: string;
+    timeoutCategoryLabel: string;
+    authCategoryLabel: string;
+    unknownCategoryLabel: string;
+    issueSuffixLabel: string;
+  }) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null, errorInfo: null, category: 'unknown' };
+  }
+
+  static classifyError(error: Error): 'network' | 'timeout' | 'auth' | 'unknown' {
+    const message = error.message.toLowerCase();
+    if (message.includes('timeout') || message.includes('timed out')) return 'timeout';
+    if (message.includes('network') || message.includes('fetch') || message.includes('failed to fetch')) return 'network';
+    if (message.includes('unauthorized') || message.includes('forbidden') || message.includes('401') || message.includes('403')) return 'auth';
+    return 'unknown';
   }
 
   static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
+    return { hasError: true, error, category: PlaygroundErrorBoundary.classifyError(error) };
+  }
+
+  private trackBoundaryEvent(event: string, payload: Record<string, unknown> = {}) {
+    if (typeof window === 'undefined') return;
+    const detail = {
+      event,
+      payload: {
+        ...payload,
+        page: 'renter_playground',
+        ts: new Date().toISOString(),
+      },
+    };
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }));
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState({ errorInfo });
     console.error('PlaygroundErrorBoundary caught:', error, errorInfo);
+    this.trackBoundaryEvent('playground_render_error', {
+      category: PlaygroundErrorBoundary.classifyError(error),
+      errorName: error.name,
+      errorMessage: error.message,
+      hasComponentStack: Boolean(errorInfo.componentStack),
+    });
+  }
+
+  private resetBoundary = () => {
+    this.trackBoundaryEvent('playground_render_error_recovered', { category: this.state.category });
+    this.setState({ hasError: false, error: null, errorInfo: null, category: 'unknown' });
+  };
+
+  private reloadPage = () => {
+    this.trackBoundaryEvent('playground_render_error_reload', { category: this.state.category });
+    window.location.reload();
   }
 
   render() {
     if (this.state.hasError) {
+      const categoryLabelByType: Record<'network' | 'timeout' | 'auth' | 'unknown', string> = {
+        network: this.props.networkCategoryLabel,
+        timeout: this.props.timeoutCategoryLabel,
+        auth: this.props.authCategoryLabel,
+        unknown: this.props.unknownCategoryLabel,
+      };
+
       return (
-        <div className="min-h-screen bg-[#0d1117] text-white p-8">
+        <div className="min-h-screen bg-dc1-void text-dc1-text-primary p-8">
           <div className="max-w-2xl mx-auto">
             <h1 className="text-2xl font-bold text-red-400 mb-4">{this.props.title}</h1>
             <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-4">
-              <p className="font-mono text-sm text-red-300">{this.state.error?.message}</p>
-              <p className="font-mono text-xs text-red-300/60 mt-2">{this.state.error?.stack}</p>
+              <p className="text-sm text-red-200">{this.props.subtitle}</p>
+              <p className="text-xs text-red-300/80 mt-2">
+                {categoryLabelByType[this.state.category]} {this.props.issueSuffixLabel}
+              </p>
             </div>
-            {this.state.errorInfo && (
-              <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-4">
-                <p className="text-sm font-semibold text-yellow-300 mb-2">{this.props.stackLabel}</p>
-                <pre className="font-mono text-xs text-yellow-300/60 whitespace-pre-wrap">{this.state.errorInfo.componentStack}</pre>
-              </div>
-            )}
-            <button
-              onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
-              className="px-4 py-2 rounded-lg bg-[#00D9FF] text-[#0d1117] font-semibold text-sm"
-            >
-              {this.props.tryAgain}
-            </button>
+            <p className="text-dc1-text-muted text-sm mb-4">{this.props.actionHint}</p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={this.resetBoundary}
+                className="px-4 py-2 rounded-lg bg-[#00D9FF] text-[#0d1117] font-semibold text-sm"
+              >
+                {this.props.retryLabel}
+              </button>
+              <button
+                onClick={this.reloadPage}
+                className="px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white font-semibold text-sm hover:bg-white/20 transition"
+              >
+                {this.props.reloadLabel}
+              </button>
+              <Link
+                href="/support?category=playground-crash"
+                onClick={() => this.trackBoundaryEvent('playground_render_error_support_clicked', { category: this.state.category })}
+                className="px-4 py-2 rounded-lg bg-amber-500/15 border border-amber-400/40 text-amber-200 font-semibold text-sm hover:bg-amber-500/25 transition"
+              >
+                {this.props.supportLabel}
+              </Link>
+            </div>
           </div>
         </div>
       );
@@ -247,10 +324,18 @@ export default function GpuPlaygroundPage() {
   return (
     <PlaygroundErrorBoundary
       title={t('playground.error_boundary.title')}
-      stackLabel={t('playground.error_boundary.stack')}
-      tryAgain={t('playground.error_boundary.try_again')}
+      subtitle={t('playground.error_boundary.subtitle')}
+      actionHint={t('playground.error_boundary.action_hint')}
+      retryLabel={t('playground.error_boundary.try_again')}
+      reloadLabel={t('playground.error_boundary.reload')}
+      supportLabel={t('playground.error_boundary.contact_support')}
+      networkCategoryLabel={t('playground.error_boundary.category_network')}
+      timeoutCategoryLabel={t('playground.error_boundary.category_timeout')}
+      authCategoryLabel={t('playground.error_boundary.category_auth')}
+      unknownCategoryLabel={t('playground.error_boundary.category_unknown')}
+      issueSuffixLabel={t('playground.error_boundary.category_issue_suffix')}
     >
-      <Suspense fallback={<div className="min-h-screen bg-[#0d1117] flex items-center justify-center"><div className="animate-spin h-8 w-8 border-2 border-[#FFD700] border-t-transparent rounded-full" /></div>}>
+      <Suspense fallback={<div className="min-h-screen bg-dc1-void flex items-center justify-center"><div className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full" /></div>}>
         <GpuPlayground />
       </Suspense>
     </PlaygroundErrorBoundary>
@@ -557,12 +642,12 @@ function GpuPlayground() {
         headers: { 'x-renter-key': renterKey },
       });
       if (res.status === 402) {
-        setHistoryActionError('Insufficient balance. Top up your account and try retry again.');
+        setHistoryActionError(t('playground.history_error.insufficient_balance'));
         return;
       }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        setHistoryActionError(err.error || 'Retry failed for this job.');
+        setHistoryActionError(err.error || t('playground.history_error.retry_failed'));
         return;
       }
       const data = await res.json();
@@ -577,9 +662,9 @@ function GpuPlayground() {
         window.location.href = `/renter/jobs/${newId}`;
         return;
       }
-      setHistoryActionError('Retry was submitted, but no new job id was returned.');
+      setHistoryActionError(t('playground.history_error.retry_missing_job_id'));
     } catch {
-      setHistoryActionError('Network error while retrying this job.');
+      setHistoryActionError(t('playground.history_error.retry_network'));
     } finally {
       setRetryingHistoryJob(false);
     }
@@ -589,7 +674,7 @@ function GpuPlayground() {
     if (!viewingResult) return;
     const variantModel = viewingResult.type === 'text' ? selectVariantModel(viewingResult.model || null) : null;
     if (!variantModel) {
-      setHistoryActionError('No cheaper/faster variant is available for this job output.');
+      setHistoryActionError(t('playground.history_error.no_variant'));
       return;
     }
     setHistoryActionError('');
@@ -614,7 +699,7 @@ function GpuPlayground() {
 
   function exportViewingOutput() {
     if (!viewingResult || !viewingJobId) {
-      setHistoryActionError('Output export is only available after a completed output is loaded.');
+      setHistoryActionError(t('playground.history_error.export_requires_completed_output'));
       return;
     }
     setHistoryActionError('');
@@ -648,7 +733,7 @@ function GpuPlayground() {
       });
       return;
     }
-    setHistoryActionError('Output export is unavailable for this result.');
+    setHistoryActionError(t('playground.history_error.export_unavailable'));
   }
 
   // ── Image download helper ─────────────────────────────────────────

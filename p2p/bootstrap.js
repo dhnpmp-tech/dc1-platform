@@ -17,7 +17,7 @@
  *
  * ── After first run ───────────────────────────────────────────
  *   Copy the printed multiaddr and set it as:
- *     DC1_P2P_BOOTSTRAP env var on all provider machines
+ *     DCP_P2P_BOOTSTRAP env var on all provider machines
  *     DEFAULT_BOOTSTRAP_ADDR in dc1-node.js
  *
  * ── Stable peer ID across restarts ────────────────────────────
@@ -26,12 +26,12 @@
  *   persist it (future enhancement tracked in Phase D backlog).
  *
  * ── Environment vars ──────────────────────────────────────────
- *   DC1_P2P_BOOTSTRAP_PORT  TCP port (default: 4001)
+ *   DCP_P2P_BOOTSTRAP_PORT (or DC1_P2P_BOOTSTRAP_PORT) TCP port (default: 4001)
  */
 
 import { createDC1Node, nodeAddr } from './dc1-node.js'
 
-const PORT = parseInt(process.env.DC1_P2P_BOOTSTRAP_PORT ?? '4001', 10)
+const PORT = parseInt(process.env.DCP_P2P_BOOTSTRAP_PORT ?? process.env.DC1_P2P_BOOTSTRAP_PORT ?? '4001', 10)
 
 async function main () {
   console.log('[Bootstrap] Starting DC1 P2P bootstrap node...')
@@ -50,7 +50,7 @@ async function main () {
   console.log(`[Bootstrap] Address  : ${fullAddr}`)
   console.log('[Bootstrap] ─────────────────────────────────────────────')
   console.log('[Bootstrap]')
-  console.log('[Bootstrap] Set this as DC1_P2P_BOOTSTRAP on provider machines:')
+  console.log('[Bootstrap] Set this as DCP_P2P_BOOTSTRAP on provider machines:')
   console.log(`[Bootstrap]   ${fullAddr}`)
   console.log('[Bootstrap]')
   console.log('[Bootstrap] Also update DEFAULT_BOOTSTRAP_ADDR in p2p/dc1-node.js')

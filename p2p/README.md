@@ -146,15 +146,15 @@ pip install websockets
 python3 bootstrap_server.py
 
 # Terminal 2 — provider 1 (cheaper)
-DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
+DCP_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
   python3 provider_node.py --gpu "RTX 3090" --vram 24 --price 20.0
 
 # Terminal 3 — provider 2 (more expensive)
-DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
+DCP_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
   python3 provider_node.py --gpu "RTX 4090" --vram 24 --price 35.0
 
 # Terminal 4 — renter
-DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
+DCP_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
   python3 renter_client.py --image dcp/simulate --max-price 25.0
 ```
 
@@ -162,10 +162,10 @@ DC1_P2P_BOOTSTRAP=ws://127.0.0.1:8765 \
 
 | Variable | Default | Description |
 |---|---|---|
-| `DC1_P2P_BOOTSTRAP` | `ws://127.0.0.1:8765` | Bootstrap WS address (comma-separated for multiple) |
-| `DC1_P2P_BOOTSTRAP_PORT` | `8765` | Bootstrap listen port |
+| `DCP_P2P_BOOTSTRAP` (`DC1_P2P_BOOTSTRAP` fallback) | `ws://127.0.0.1:8765` | Bootstrap WS address (comma-separated for multiple) |
+| `DCP_P2P_BOOTSTRAP_PORT` (`DC1_P2P_BOOTSTRAP_PORT` fallback) | `8765` | Bootstrap listen port |
 | `DC1_P2P_HOST` | auto-detect | Provider's externally reachable hostname |
-| `DC1_P2P_PORT` | `8766` | Provider's direct P2P WebSocket port |
+| `DCP_P2P_PORT` (`DC1_P2P_PORT` fallback) | `8766` | Provider's direct P2P WebSocket port |
 | `DC1_RENTER_HOST` | `127.0.0.1` | Renter's externally reachable hostname |
 | `DC1_RENTER_PORT` | `8767` | Renter's result WebSocket port |
 | `DC1_BID_WINDOW_SECS` | `5` | Seconds renter waits to collect bids |
@@ -186,7 +186,7 @@ Copy the printed multiaddr (e.g. `/ip4/76.13.179.86/tcp/4001/p2p/12D3KooW...`)
 and set it as an environment variable on all provider machines:
 
 ```bash
-export DC1_P2P_BOOTSTRAP=/ip4/76.13.179.86/tcp/4001/p2p/12D3KooW...
+export DCP_P2P_BOOTSTRAP=/ip4/76.13.179.86/tcp/4001/p2p/12D3KooW...
 ```
 
 Also update `DEFAULT_BOOTSTRAP_ADDR` in `dc1-node.js`.
@@ -261,6 +261,45 @@ Run the new demo:
 cd p2p
 npm run demo:cid
 ```
+
+## Shadow-mode reliability cycle (DCP-537)
+
+To validate readiness before switching renter/provider discovery to `p2p-primary`,
+backend now exposes:
+
+```bash
+GET /api/p2p/shadow-cycle
+```
+
+This endpoint compares online SQLite providers (`p2p_peer_id` set) against DHT
+resolution results and returns a deterministic decision:
+
+- `promote-to-p2p-primary`
+- `hold-shadow`
+- `fallback-to-sqlite`
+
+Default rollout thresholds:
+
+| Metric | Promote threshold | Fallback threshold |
+|---|---:|---:|
+| Coverage (`discovered / tracked`) | `>= 95%` | `< 80%` |
+| Stale ratio (`stale / discovered`) | `<= 5%` | `> 20%` |
+| Lookup latency | `<= 3000 ms` | `> 8000 ms` |
+| Missing peers count | `<= 2` | (covered by coverage threshold) |
+
+All values are configurable via environment variables:
+
+- `P2P_SHADOW_MIN_COVERAGE_PCT`
+- `P2P_SHADOW_MAX_STALE_PCT`
+- `P2P_SHADOW_MAX_MISSING_PEERS`
+- `P2P_SHADOW_MAX_LOOKUP_LATENCY_MS`
+- `P2P_SHADOW_FALLBACK_MIN_COVERAGE_PCT`
+- `P2P_SHADOW_FALLBACK_MAX_STALE_PCT`
+- `P2P_SHADOW_FALLBACK_MAX_LOOKUP_LATENCY_MS`
+
+In `shadow` read mode, renter discovery response (`GET /api/renters/available-providers`)
+also includes `discovery_health.shadow_cycle` so the board can monitor drift without
+changing production listing behavior.
 
 ### Backend integration path
 
@@ -370,7 +409,7 @@ during local testing with < 5 nodes. **Set back to 20 for production.**
 
 | Variable | Default | Description |
 |---|---|---|
-| `DC1_P2P_BOOTSTRAP` | (placeholder) | Full multiaddr of bootstrap node |
-| `DC1_P2P_BOOTSTRAP_PORT` | `4001` | Bootstrap node TCP port |
-| `DC1_P2P_PORT` | `0` (random) | Provider node TCP port |
-| `DC1_P2P_TIMEOUT_MS` | `15000` | Max ms for DHT put in provider-announce.js |
+| `DCP_P2P_BOOTSTRAP` (`DC1_P2P_BOOTSTRAP` fallback) | (placeholder) | Full multiaddr of bootstrap node |
+| `DCP_P2P_BOOTSTRAP_PORT` (`DC1_P2P_BOOTSTRAP_PORT` fallback) | `4001` | Bootstrap node TCP port |
+| `DCP_P2P_PORT` (`DC1_P2P_PORT` fallback) | `0` (random) | Provider node TCP port |
+| `DCP_P2P_TIMEOUT_MS` (`DC1_P2P_TIMEOUT_MS` fallback) | `15000` | Max ms for DHT put in provider-announce.js |

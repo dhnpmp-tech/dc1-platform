@@ -40,7 +40,11 @@ export default function Footer() {
             <ul className="space-y-2">
               <li><Link href="/docs" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.docs')}</Link></li>
               <li><Link href="/docs/api" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.api_reference')}</Link></li>
-              <li><Link href="/support" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.support')}</Link></li>
+              <li><Link href="/support?source=footer-support" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.support')}</Link></li>
+              <li><Link href="/support?category=provider&source=footer-support-provider#contact-form" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.support_provider_install')}</Link></li>
+              <li><Link href="/support?category=bug&source=footer-support-job#contact-form" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.support_job_issue')}</Link></li>
+              <li><Link href="/support?category=billing&source=footer-support-billing#contact-form" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.support_billing')}</Link></li>
+              <li><Link href="/support?category=enterprise&source=footer-support-enterprise#contact-form" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.support_enterprise')}</Link></li>
               <li><Link href="/login" className="text-sm text-dc1-text-secondary hover:text-dc1-amber transition-colors">{t('footer.console_login')}</Link></li>
             </ul>
           </div>

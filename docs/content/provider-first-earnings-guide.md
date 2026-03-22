@@ -1,6 +1,6 @@
-# Provider Setup: First Completed Job
+# Provider Setup: First Completed Workload
 
-This guide is for NVIDIA GPU owners who want to start with DCP as providers, run the daemon, and complete their first payout-eligible workload with minimal setup risk.
+This guide is for NVIDIA GPU owners who want to start with DCP as providers, run the daemon, and complete a first workload that can settle in the wallet and earnings view.
 
 DCP is tuned for Saudi operators who want SAR-native compute economics and local AI workload alignment.
 

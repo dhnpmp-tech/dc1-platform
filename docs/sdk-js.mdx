@@ -1,42 +1,42 @@
 ---
 title: SDK JavaScript
-description: End-to-end Node.js quickstart with auth, submit, live logs, and output retrieval.
+description: Node.js integration guide with request/response parity snippets for critical DCP endpoints.
 order: 3
 ---
 
 ## Install
 
 ```bash
-npm install dc1-renter-sdk
+# Check /docs/sdk-guides for the current package name and version before install.
 ```
 
-## Run a complete job flow
+## Renter flow (me -> submit -> logs -> output)
 
 ```ts
-import { DC1RenterClient } from 'dc1-renter-sdk'
+import { DC1RenterClient } from '<SDK_PACKAGE_FROM_DOCS>'
 
 const baseUrl = 'https://api.dcp.sa'
 const apiKey = process.env.DC1_RENTER_KEY!
-
 const client = new DC1RenterClient({ apiKey, baseUrl })
 
 // 1) Validate auth
 const me = await client.me()
-console.log('renter:', me.email)
+console.log('renter:', me.renter?.email)
 
 // 2) Submit job
 const submitted = await client.submitJob({
-  job_type: 'llm-inference',
+  provider_id: 42,
+  job_type: 'llm_inference',
   duration_minutes: 3,
   max_duration_seconds: 180,
   container_spec: { image_type: 'vllm-serve' },
   params: {
     model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
-    prompt: 'Explain GPU marketplaces in 3 bullets.',
+    prompt: 'Explain DCP in 3 bullets.',
   },
 })
 
-const jobId = submitted.job_id
+const jobId = submitted.job.job_id
 console.log('job_id:', jobId)
 
 // 3) Stream logs (SSE)
@@ -69,8 +69,60 @@ const output = await outputRes.json()
 console.log('output:', output)
 ```
 
+## Parity snippets (raw fetch)
+
+### `POST /api/renters/register`
+
+```ts
+const registerRes = await fetch('https://api.dcp.sa/api/renters/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    name: 'Fatima Al-Saud',
+    email: 'fatima@example.sa',
+    organization: 'Riyadh AI Lab',
+    use_case: 'llm_inference',
+    phone: '+966500000000',
+  }),
+})
+const registerData = await registerRes.json()
+if (!registerRes.ok) throw new Error(registerData.error)
+```
+
+### `POST /api/providers/heartbeat`
+
+```ts
+const hbRes = await fetch('https://api.dcp.sa/api/providers/heartbeat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    api_key: process.env.DC1_PROVIDER_KEY,
+    gpu_status: {
+      gpu_name: 'NVIDIA RTX 3090',
+      gpu_vram_mib: 24576,
+      gpu_util_pct: 38,
+      temp_c: 67,
+      daemon_version: '3.3.0',
+    },
+  }),
+})
+const hbData = await hbRes.json()
+if (!hbRes.ok) throw new Error(hbData.error)
+```
+
+### `GET /api/admin/dashboard`
+
+```ts
+const adminRes = await fetch('https://api.dcp.sa/api/admin/dashboard', {
+  headers: { 'x-admin-token': process.env.DC1_ADMIN_TOKEN! },
+})
+const adminData = await adminRes.json()
+if (!adminRes.ok) throw new Error(adminData.error)
+console.log(adminData.stats)
+```
+
 ## Notes
 
-- `duration_minutes` and `container_spec.image_type` are required by `POST /api/jobs/submit`.
-- Log streaming endpoint: `GET /api/jobs/:job_id/logs/stream`.
-- Output endpoint: `GET /api/jobs/:job_id/output`.
+- Error payloads are always JSON: `{ error: string }`.
+- Job submit auth: `x-renter-key` header (or `?key=` / `?renter_key=` query fallback).
+- Admin auth: `x-admin-token` header (Bearer token also accepted).

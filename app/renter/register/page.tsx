@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -56,6 +56,16 @@ export default function RenterRegisterPage() {
     'Scientific Computing',
     'Other',
   ]
+  const firstJobChecklist = useMemo(
+    () => [
+      { label: t('conversion.first_job.step.register'), href: '/renter/register' },
+      { label: t('conversion.first_job.step.topup'), href: '/renter/billing' },
+      { label: t('conversion.first_job.step.choose_gpu'), href: '/renter/marketplace' },
+      { label: t('conversion.first_job.step.submit'), href: '/renter/playground?starter=1' },
+      { label: t('conversion.first_job.step.monitor'), href: '/renter/jobs' },
+    ],
+    [t]
+  )
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -141,12 +151,19 @@ export default function RenterRegisterPage() {
   }, [success, trackRegisterEvent])
 
   if (success && result) {
-    const firstJobChecklist = [
-      { label: t('conversion.first_job.step.register'), href: '/renter/register' },
-      { label: t('conversion.first_job.step.topup'), href: '/renter/billing' },
-      { label: t('conversion.first_job.step.choose_gpu'), href: '/renter/marketplace' },
-      { label: t('conversion.first_job.step.submit'), href: '/renter/playground?starter=1' },
-      { label: t('conversion.first_job.step.monitor'), href: '/renter/jobs' },
+    const supportRoutes = [
+      {
+        label: t('conversion.support.route.billing'),
+        href: '/support?category=billing&source=renter_register_success#contact-form',
+      },
+      {
+        label: t('conversion.support.route.job'),
+        href: '/support?category=bug&source=renter_register_success#contact-form',
+      },
+      {
+        label: t('conversion.support.route.account'),
+        href: '/support?category=renter&source=renter_register_success#contact-form',
+      },
     ]
 
     return (
@@ -211,12 +228,66 @@ export default function RenterRegisterPage() {
                 </ol>
               </div>
 
+              <div className={`rounded-lg border border-dc1-border bg-dc1-surface-l2 p-5 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <h3 className="text-base font-semibold text-dc1-text-primary mb-2">{t('conversion.support.title')}</h3>
+                <p className="text-sm text-dc1-text-secondary mb-3">{t('conversion.support.subtitle')}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {supportRoutes.map((route) => (
+                    <a
+                      key={route.href}
+                      href={route.href}
+                      onClick={() =>
+                        trackRegisterEvent('renter_support_route_clicked', {
+                          page: 'renter_register_success',
+                          destination: route.href,
+                        })
+                      }
+                      className="rounded-md border border-dc1-border bg-dc1-surface-l3 px-3 py-2 text-xs font-medium text-dc1-text-primary hover:border-dc1-amber hover:text-dc1-amber transition-colors"
+                    >
+                      {route.label} {t('conversion.support.cta')}
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`rounded-lg border border-dc1-amber/25 bg-dc1-amber/5 p-4 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <h3 className="text-sm font-semibold text-dc1-text-primary mb-2">{t('billing.explainer.title')}</h3>
+                <ul className="space-y-1 text-xs text-dc1-text-secondary">
+                  <li>{t('billing.explainer.step1')}</li>
+                  <li>{t('billing.explainer.step2')}</li>
+                  <li>{t('billing.explainer.step3')}</li>
+                </ul>
+                <p className="mt-2 text-xs text-dc1-text-muted">{t('billing.explainer.note')}</p>
+              </div>
+
+              <p className="text-sm text-dc1-text-secondary mb-3">
+                {t('conversion.first_job.first_result_guidance')}
+              </p>
+
               <div className="flex flex-col sm:flex-row gap-3">
-                <a href="/renter" className="btn btn-primary flex-1">
-                  {t('register.renter.go_dashboard')}
+                <a
+                  href="/renter/playground?starter=1"
+                  onClick={() =>
+                    trackRegisterEvent('register_success_primary_cta_clicked', {
+                      destination: '/renter/playground?starter=1',
+                      cta: 'start_first_job',
+                    })
+                  }
+                  className="btn btn-primary flex-1"
+                >
+                  {t('nav.playground')}
                 </a>
-                <a href="/" className="btn btn-secondary flex-1">
-                  {t('register.renter.back_home')}
+                <a
+                  href="/renter"
+                  onClick={() =>
+                    trackRegisterEvent('register_success_secondary_cta_clicked', {
+                      destination: '/renter',
+                      cta: 'go_dashboard',
+                    })
+                  }
+                  className="btn btn-secondary flex-1"
+                >
+                  {t('register.renter.go_dashboard')}
                 </a>
               </div>
             </div>
@@ -254,6 +325,23 @@ export default function RenterRegisterPage() {
             </ul>
             <p className="mt-3 text-xs text-dc1-text-muted">{t('billing.explainer.note')}</p>
             <p className="mt-2 text-xs text-dc1-text-muted">{t('billing.explainer.rail_status')}</p>
+          </div>
+        </section>
+
+        <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+          <div className={`rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5 ${isRTL ? 'text-right' : 'text-left'}`}>
+            <h2 className="text-base font-semibold text-dc1-text-primary mb-3">{t('conversion.first_job.title')}</h2>
+            <ol className="space-y-2 text-sm text-dc1-text-secondary">
+              {firstJobChecklist.map((item, index) => (
+                <li key={item.href} className={`flex items-center justify-between gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                  <span>{index + 1}. {item.label}</span>
+                  <a href={item.href} className="text-xs font-medium text-dc1-amber hover:underline">
+                    {t('common.open')}
+                  </a>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-3 text-xs text-dc1-text-muted">{t('conversion.first_job.first_result_guidance')}</p>
           </div>
         </section>
 

@@ -1,73 +1,152 @@
 ---
 title: البدء السريع
-description: ابدأ مسار مستأجر عبر curl باستخدام curl بطريقة موجزة.
+description: مسارات بدء سريعة للمستأجر والمزود والمدير مع نقاط تحقق واضحة.
 order: 1
 ---
 
 ## الهدف
 
-إنهاء مسار إرسال مهمة بشكل مباشر:
+اختر مسارًا واحدًا ونفّذ أول نقطة نجاح واضحة خلال أقل من 5 دقائق.
 
-1. التحقق من مفتاح المستأجر.
-2. إرسال مهمة.
-3. متابعة الحالة أو بث السجلات.
-4. جلب المخرجات النهائية.
+## لماذا تختار الفرق DCP
 
-## 1) ضبط متغيرات البيئة
+- **ميزة تكلفة الطاقة السعودية**: تشغيل الحوسبة في سوق كهرباء منخفض التكلفة بشكل هيكلي.
+- **دعم نماذج عربية**: مسارات تشغيل لـ **ALLaM 7B** و**Falcon H1** و**JAIS 13B** و**BGE-M3**.
+- **تنفيذ بالحاويات**: تشغيل المهام داخل قوالب Docker مع دعم NVIDIA runtime.
+
+## قواعد المصادقة المشتركة
+
+- العنوان الأساسي: `https://dcp.sa/api/dc1`
+- يفضّل استخدام الترويسات: `x-renter-key` و`x-provider-key` و`x-admin-token`
+- استخدم `?key=` فقط مع نقاط GET المتوافقة مثل `/renters/me` و`/providers/me`
+- جميع الأخطاء ترجع JSON: `{ "error": "descriptive message" }`
+
+## المسار A: المستأجر (API-first)
+
+### 1) ضبط متغيرات البيئة
 
 ```bash
 export DCP_API="https://dcp.sa/api/dc1"
-export RENTER_KEY="dcp-renter-your-key"
+export RENTER_KEY="dc1-renter-your-key"
 ```
 
-## 2) التحقق من الحساب
+### 2) نقطة النجاح الأولى: التحقق من هوية المستأجر
 
 ```bash
 curl -s "$DCP_API/renters/me?key=$RENTER_KEY"
 ```
 
-## 3) إرسال المهمة
+شكل الاستجابة المتوقع:
+
+```json
+{
+  "renter": {
+    "id": 12,
+    "name": "Renter Name",
+    "email": "team@example.com",
+    "balance_halala": 50000,
+    "total_jobs": 3
+  },
+  "recent_jobs": []
+}
+```
+
+### 3) المتابعة لأول مهمة
 
 ```bash
-JOB_JSON=$(curl -s -X POST "$DCP_API/jobs/submit" \
+curl -s "$DCP_API/renters/available-providers"
+```
+
+```bash
+curl -s -X POST "$DCP_API/jobs/submit" \
   -H "Content-Type: application/json" \
   -H "x-renter-key: $RENTER_KEY" \
   -d '{
     "provider_id": 42,
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 3,
-    "max_duration_seconds": 180,
-    "container_spec": {
-      "image_type": "vllm-serve"
-    },
+    "container_spec": { "image_type": "vllm-serve" },
     "params": {
       "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
       "prompt": "اكتب 3 نقاط عن الذكاء الاصطناعي في الرياض"
     }
-  }')
-
-echo "$JOB_JSON"
-JOB_ID=$(echo "$JOB_JSON" | jq -r '.job.job_id // .job_id')
-echo "JOB_ID=$JOB_ID"
+  }'
 ```
 
-## 4) بث السجلات (اختياري)
+## المسار B: المزود (daemon-first)
+
+### 1) ضبط متغيرات البيئة
 
 ```bash
-curl -N "$DCP_API/jobs/$JOB_ID/logs/stream?key=$RENTER_KEY"
+export DCP_API="https://dcp.sa/api/dc1"
+export PROVIDER_KEY="dc1-provider-your-key"
 ```
 
-## 5) جلب المخرجات
+### 2) تثبيت وتشغيل الـ daemon
 
 ```bash
-curl -s "$DCP_API/jobs/$JOB_ID/output?key=$RENTER_KEY"
+curl -fsSL "$DCP_API/providers/download/setup?key=$PROVIDER_KEY&os=linux" | bash
 ```
 
-إذا لم تنتهِ المهمة بعد، قد تحصل على `202` حتى الوصول للحالة النهائية.
+### 3) نقطة النجاح الأولى: ملف المزود متاح
+
+```bash
+curl -s "$DCP_API/providers/me?key=$PROVIDER_KEY"
+```
+
+شكل الاستجابة المتوقع:
+
+```json
+{
+  "provider": {
+    "id": 34,
+    "name": "Provider Name",
+    "status": "online",
+    "daemon_version": "3.3.0",
+    "last_heartbeat": "2026-03-22T19:00:00.000Z",
+    "total_jobs": 0,
+    "total_earnings_halala": 0
+  },
+  "recent_jobs": []
+}
+```
+
+## المسار C: المدير (التحقق)
+
+### 1) ضبط متغيرات البيئة
+
+```bash
+export DCP_API="https://dcp.sa/api/dc1"
+export ADMIN_TOKEN="your-admin-token"
+```
+
+### 2) نقطة النجاح الأولى: إحصاءات لوحة الإدارة
+
+```bash
+curl -s "$DCP_API/admin/dashboard" \
+  -H "x-admin-token: $ADMIN_TOKEN"
+```
+
+شكل الاستجابة المتوقع:
+
+```json
+{
+  "stats": {
+    "total_providers": 10,
+    "online_now": 4,
+    "total_renters": 25,
+    "total_jobs": 120,
+    "total_revenue_halala": 987654
+  },
+  "gpu_breakdown": [],
+  "recent_signups": [],
+  "recent_heartbeats": []
+}
+```
 
 ## التالي
 
+- [مرجع API](/docs/ar/api-reference)
 - [دليل المستأجر](/docs/ar/renter-guide)
 - [دليل المزود](/docs/ar/provider-guide)
 - [نظرة معمارية](/docs/ar/architecture-overview)
-- [مرجع API](/docs/ar/api-reference)

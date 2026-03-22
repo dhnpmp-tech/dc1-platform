@@ -229,6 +229,9 @@ app.use('/api/sync', syncRouter);
 const rentersRouter = require('./routes/renters');
 app.use('/api/renters', rentersRouter);
 
+const supportRouter = require('./routes/support');
+app.use('/api/support', supportRouter);
+
 const modelsRouter = require('./routes/models');
 app.use('/api/models', modelsRouter);
 

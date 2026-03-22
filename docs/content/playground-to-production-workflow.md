@@ -1,4 +1,4 @@
-# Playground to Production: A Practical DCP Workflow
+# From Playground to Production: A Practical DCP Workflow
 
 DCP gives teams a clear path from fast browser experimentation to repeatable API-driven container jobs. You can validate outputs in minutes, then formalize the same workload for production pipelines.
 
@@ -10,7 +10,7 @@ DCP gives teams a clear path from fast browser experimentation to repeatable API
 ## Why this workflow works
 Many teams lose time by jumping straight into infrastructure design before they confirm prompt shape, output quality, and model fit. DCP reduces that risk by splitting adoption into two stages:
 - Stage 1: quick validation in browser flows.
-- Stage 2: repeatable execution through renter APIs and container-based jobs.
+- Stage 2: repeatable execution through renter APIs and container-based jobs, with explicit settlement checks.
 
 ## Step 1: Run the first workload in Playground
 Start with the renter experience and run a small, representative workload.
@@ -45,6 +45,7 @@ Before scaling job volume, apply a lightweight operational checklist:
 - Confirm settlement behavior and balance updates after completion.
 - Add polling or status checks in your client flow.
 - Track failed jobs and retries with explicit logging.
+- Verify provider compatibility assumptions (GPU model and VRAM) before increasing concurrency.
 
 ## Suggested implementation sequence
 1. Create renter account and run first browser workflow.

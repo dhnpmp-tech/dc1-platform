@@ -28,8 +28,10 @@ export { multiaddr, CID }
 export const DCP_KAD_PROTOCOL = '/dcp/nodes/1.0.0/kad/1.0.0'
 export const DCP_ENV_PREFIX = `${DCP_KAD_PROTOCOL}/environments/`
 export const DCP_PROVIDER_PREFIX = `${DCP_KAD_PROTOCOL}/providers/`
+export const DCP_PROVIDER_INDEX_KEY = `${DCP_KAD_PROTOCOL}/providers-index/1.0.0`
 export const DCP_GOSSIP_TOPIC = '/dcp/providers/availability/1.0.0'
 export const DEFAULT_DISCOVERY_TIMEOUT_MS = 8000
+export const DEFAULT_LOCAL_DISCOVERY_TIMEOUT_MS = 2500
 export const DEFAULT_PROVIDER_TTL_MS = 120_000
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
@@ -119,6 +121,36 @@ export function providerKey(peerId) {
   return textEncoder.encode(`${DCP_PROVIDER_PREFIX}${peerId}`)
 }
 
+export function providerIndexKey() {
+  return textEncoder.encode(DCP_PROVIDER_INDEX_KEY)
+}
+
+function normalizePeerId(value) {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const normalized = value.trim()
+  return normalized.length ? normalized : null
+}
+
+function normalizePeerIdList(raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) {
+    return Array.from(new Set(raw.map(normalizePeerId).filter(Boolean)))
+  }
+  return []
+}
+
+function normalizeProviderIndexPayload(payload) {
+  if (Array.isArray(payload)) {
+    return normalizePeerIdList(payload)
+  }
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+  return normalizePeerIdList(payload.providers)
+}
+
 function asPositiveFiniteNumber(value, fallback) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -129,6 +161,19 @@ function asPositiveFiniteNumber(value, fallback) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
+}
+
+function normalizeDiscoveryTimeoutMs(value, fallback = DEFAULT_DISCOVERY_TIMEOUT_MS) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback
+  }
+  return clamp(parsed, 500, 120_000)
+}
+
+function resolveNodeDiscoveryTimeoutMs(node, explicitTimeoutMs) {
+  const nodeTimeout = node?.dcpDiscoveryTimeoutMs
+  return normalizeDiscoveryTimeoutMs(explicitTimeoutMs, normalizeDiscoveryTimeoutMs(nodeTimeout))
 }
 
 function asIsoTimestamp(value) {
@@ -212,7 +257,8 @@ async function resolveFallback(fallbackResolver, ctx) {
 }
 
 async function dhtPutJson(node, key, value, timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS) {
-  const timeout = withTimeout(timeoutMs)
+  const effectiveTimeoutMs = resolveNodeDiscoveryTimeoutMs(node, timeoutMs)
+  const timeout = withTimeout(effectiveTimeoutMs)
   try {
     for await (const event of node.services.dht.put(key, encodeJson(value), { signal: timeout.signal })) {
       if (event.name === 'QUERY_ERROR') {
@@ -230,7 +276,8 @@ async function dhtPutJson(node, key, value, timeoutMs = DEFAULT_DISCOVERY_TIMEOU
 }
 
 async function dhtGetJson(node, key, timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS) {
-  const timeout = withTimeout(timeoutMs)
+  const effectiveTimeoutMs = resolveNodeDiscoveryTimeoutMs(node, timeoutMs)
+  const timeout = withTimeout(effectiveTimeoutMs)
   try {
     for await (const event of node.services.dht.get(key, { signal: timeout.signal })) {
       if (event.name === 'VALUE') {
@@ -245,11 +292,41 @@ async function dhtGetJson(node, key, timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS) {
   }
 }
 
+async function getProviderIndex(node, options = {}) {
+  const timeoutMs = resolveNodeDiscoveryTimeoutMs(node, options.timeoutMs)
+  const payload = await dhtGetJson(node, providerIndexKey(), timeoutMs)
+  return normalizeProviderIndexPayload(payload)
+}
+
+async function updateProviderIndex(node, peerId, options = {}) {
+  const timeoutMs = resolveNodeDiscoveryTimeoutMs(node, options.timeoutMs)
+  const current = await getProviderIndex(node, { timeoutMs })
+  const normalizedPeerId = normalizePeerId(peerId)
+  if (!normalizedPeerId) {
+    return null
+  }
+
+  const providers = normalizePeerIdList(current)
+  if (!providers.includes(normalizedPeerId)) {
+    providers.push(normalizedPeerId)
+  }
+
+  const indexEnvelope = {
+    version: 1,
+    providers,
+    updated_at: new Date().toISOString()
+  }
+
+  await dhtPutJson(node, providerIndexKey(), indexEnvelope, timeoutMs)
+  return indexEnvelope
+}
+
 export async function createDiscoveryNode({
   port = 0,
   bootstrapList = [],
   clientMode = false,
   localMode = true,
+  discoveryTimeoutMs,
   enableMdns = true,
   enableWebSocket = true,
   enableRelay = true,
@@ -321,6 +398,10 @@ export async function createDiscoveryNode({
   })
 
   await node.start()
+  node.dcpDiscoveryTimeoutMs = normalizeDiscoveryTimeoutMs(
+    discoveryTimeoutMs,
+    localMode ? DEFAULT_LOCAL_DISCOVERY_TIMEOUT_MS : DEFAULT_DISCOVERY_TIMEOUT_MS
+  )
   return node
 }
 
@@ -352,6 +433,14 @@ export async function announceProviderEnvironment(node, providerEnv, options = {
     30_000,
     86_400_000
   )
+  const discoveryTimeoutMs = normalizeDiscoveryTimeoutMs(
+    options.discoveryTimeoutMs ?? providerEnv.discovery_timeout_ms,
+    resolveNodeDiscoveryTimeoutMs(node)
+  )
+  const providerPeerId =
+    typeof providerEnv.peer_id === 'string' && providerEnv.peer_id.trim().length > 0
+      ? providerEnv.peer_id.trim()
+      : node.peerId.toString()
   const envCid = await toEnvCid(normalized)
   const announcedAt = new Date().toISOString()
   const expiresAt = new Date(Date.now() + ttlMs).toISOString()
@@ -366,15 +455,16 @@ export async function announceProviderEnvironment(node, providerEnv, options = {
 
   const providerEnvelope = {
     version: 1,
-    peer_id: node.peerId.toString(),
+    peer_id: providerPeerId,
     env_cid: envCid.toString(),
     announced_at: announcedAt,
     expires_at: expiresAt,
     addrs: node.getMultiaddrs().map((address) => address.toString())
   }
 
-  await dhtPutJson(node, environmentKeyFromCid(envCid), envEnvelope)
-  await dhtPutJson(node, providerKey(node.peerId.toString()), providerEnvelope)
+  await dhtPutJson(node, environmentKeyFromCid(envCid), envEnvelope, discoveryTimeoutMs)
+  await dhtPutJson(node, providerKey(providerPeerId), providerEnvelope, discoveryTimeoutMs)
+  await updateProviderIndex(node, providerPeerId, { timeoutMs: discoveryTimeoutMs })
 
   if (node.services.pubsub) {
     await node.services.pubsub.publish(DCP_GOSSIP_TOPIC, encodeJson({
@@ -389,14 +479,19 @@ export async function announceProviderEnvironment(node, providerEnv, options = {
   return providerEnvelope
 }
 
+export async function getRegisteredProviderPeers(node, options = {}) {
+  return getProviderIndex(node, options)
+}
+
 export async function resolveProviderByPeerId(node, peerId, options = {}) {
   const {
     allowStale = false,
     maxAgeMs = DEFAULT_PROVIDER_TTL_MS,
-    fallbackResolver
+    fallbackResolver,
+    discoveryTimeoutMs
   } = options
 
-  const provider = await dhtGetJson(node, providerKey(peerId))
+  const provider = await dhtGetJson(node, providerKey(peerId), discoveryTimeoutMs)
   if (!provider || !provider.env_cid) {
     return resolveFallback(fallbackResolver, {
       peerId,
@@ -435,7 +530,7 @@ export async function resolveProviderByPeerId(node, peerId, options = {}) {
     })
   }
 
-  const env = await dhtGetJson(node, environmentKeyFromCid(envCid))
+  const env = await dhtGetJson(node, environmentKeyFromCid(envCid), discoveryTimeoutMs)
   if (!env) {
     return resolveFallback(fallbackResolver, {
       peerId,
@@ -478,7 +573,8 @@ export async function resolveEnvironmentByCid(node, cidInput, options = {}) {
   const {
     allowStale = false,
     maxAgeMs = DEFAULT_PROVIDER_TTL_MS,
-    fallbackResolver
+    fallbackResolver,
+    discoveryTimeoutMs
   } = options
 
   let cid
@@ -490,7 +586,7 @@ export async function resolveEnvironmentByCid(node, cidInput, options = {}) {
       reason: 'environment_record_invalid_cid'
     })
   }
-  const env = await dhtGetJson(node, environmentKeyFromCid(cid))
+  const env = await dhtGetJson(node, environmentKeyFromCid(cid), discoveryTimeoutMs)
   if (!env) {
     return resolveFallback(fallbackResolver, {
       cid: cid.toString(),

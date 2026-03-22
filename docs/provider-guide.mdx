@@ -7,10 +7,10 @@ order: 5
 ## Provider onboarding checklist
 
 1. Register as provider at `/provider/register`.
-2. Keep the API key returned during registration for daemon setup.
-3. Install daemon for your OS.
-4. Confirm heartbeat status becomes `online` and remains stable for several poll cycles.
-5. Keep machine available to receive jobs.
+2. Store the API key returned during registration for daemon setup.
+3. Install the daemon for your OS.
+4. Confirm heartbeat status becomes `online` and remains stable for several check cycles.
+5. Keep your machine online to receive scheduled jobs.
 
 ## Prerequisites
 
@@ -42,7 +42,7 @@ Expected fields:
 
 - `provider.status` is `online`
 - `provider.last_heartbeat` updates every 30 seconds
-- `provider.total_jobs` increments after successful executions
+- `provider.total_jobs` increments after completed jobs
 
 ## Daemon lifecycle
 
@@ -56,7 +56,7 @@ Expected fields:
 - Currency: SAR, internal precision in halala
 - Use provider wallet and job history in your dashboard for available balance and total earnings.
 
-If you run on Saudi infrastructure, this model is often more predictable for continuous utilization than spot-heavy foreign alternatives.
+If you run on Saudi infrastructure, utilization can be more predictable for steady workloads than highly volatile spot-like demand patterns.
 
 ## Troubleshooting quick checks
 

@@ -43,6 +43,7 @@ import traceback
 import shutil
 import signal
 import shlex
+import uuid
 from pathlib import Path
 from datetime import datetime
 
@@ -105,6 +106,8 @@ DISK_MIN_TEMP_MB = 500           # 500 MB minimum for /tmp scripts
 LOG_DIR = Path.home() / "dc1-provider" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path.home() / "dc1-provider"
+PEER_ID_FILE = CONFIG_DIR / "peer_id"
+UPDATE_SUPPRESSION_FILE = CONFIG_DIR / "update_suppression.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -120,8 +123,55 @@ log = logging.getLogger("dc1")
 
 _docker_available = None  # Cached Docker + NVIDIA CT check
 _current_job_id = None    # Track active job for heartbeat
+_provider_peer_id = None  # Stable peer id for P2P heartbeat announcement
 _job_lock = threading.Lock()  # Protects _current_job_id
 _bw_lock = threading.Lock()   # Protects _bandwidth_stats
+_peer_id_lock = threading.Lock()  # Protects peer id cache
+
+def _save_update_suppression(until_ts, reason=""):
+    """Persist update suppression window so rollback survives process restarts."""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "until_unix": int(until_ts),
+            "reason": str(reason or ""),
+            "updated_at": datetime.utcnow().isoformat() + "Z",
+        }
+        UPDATE_SUPPRESSION_FILE.write_text(json.dumps(payload), encoding="utf-8")
+    except Exception as e:
+        log.debug(f"Failed to persist update suppression: {e}")
+
+def _clear_update_suppression():
+    """Delete suppression marker when cooldown expires."""
+    try:
+        if UPDATE_SUPPRESSION_FILE.exists():
+            UPDATE_SUPPRESSION_FILE.unlink()
+    except Exception as e:
+        log.debug(f"Failed to clear update suppression marker: {e}")
+
+def _get_update_suppression_until():
+    """Get active update suppression unix timestamp from env/file, or 0."""
+    now = int(time.time())
+    env_value = os.environ.get("DCP_UPDATE_SUPPRESS_UNTIL", "").strip()
+    if env_value.isdigit():
+        suppress_until = int(env_value)
+        if suppress_until > now:
+            return suppress_until
+        os.environ.pop("DCP_UPDATE_SUPPRESS_UNTIL", None)
+
+    if not UPDATE_SUPPRESSION_FILE.exists():
+        return 0
+
+    try:
+        payload = json.loads(UPDATE_SUPPRESSION_FILE.read_text(encoding="utf-8") or "{}")
+        suppress_until = int(payload.get("until_unix") or 0)
+        if suppress_until > now:
+            return suppress_until
+        _clear_update_suppression()
+        return 0
+    except Exception:
+        _clear_update_suppression()
+        return 0
 
 # ─── HTTP HELPER ─────────────────────────────────────────────────────────────
 
@@ -300,6 +350,40 @@ def check_disk_space():
         log.warning(f"Disk space guard: {detail}")
         return False, detail
     return True, "OK"
+
+def _get_or_create_peer_id():
+    """Return provider peer_id persisted in provider config directory.
+
+    This is used to keep DHT keys stable across daemon restarts and heartbeat
+    cycles.
+    """
+    global _provider_peer_id
+
+    with _peer_id_lock:
+        if _provider_peer_id:
+            return _provider_peer_id
+
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        except:
+            pass
+
+        if PEER_ID_FILE.exists():
+            try:
+                candidate = PEER_ID_FILE.read_text().strip()
+            except:
+                candidate = ""
+            if candidate:
+                _provider_peer_id = candidate
+                return _provider_peer_id
+
+        candidate = f"dcp-{uuid.uuid4().hex}"
+        try:
+            PEER_ID_FILE.write_text(candidate)
+        except Exception:
+            log.warning("Failed to persist peer_id to %s", PEER_ID_FILE)
+        _provider_peer_id = candidate
+        return candidate
 
 # ─── JOB DEDUP ──────────────────────────────────────────────────────────────
 
@@ -494,6 +578,12 @@ def get_gpu_info():
 
 def check_for_update():
     """Check if a newer daemon version is available and self-update."""
+    suppress_until = _get_update_suppression_until()
+    if suppress_until > int(time.time()):
+        wait_seconds = suppress_until - int(time.time())
+        log.info(f"Update checks suppressed for {wait_seconds}s after rollback")
+        return False
+
     for endpoint in _candidate_update_endpoints():
         try:
             url = f"{endpoint}?key={API_KEY}&check_only=true"
@@ -1007,6 +1097,7 @@ def send_heartbeat():
     try:
         payload = {
             "api_key": API_KEY,
+            "peer_id": _get_or_create_peer_id(),
             "gpu_status": gpu_status,
             "gpu_info": gpu_info,
             "provider_ip": None,
@@ -2394,6 +2485,11 @@ def watchdog():
                 rollback_until = now + ROLLBACK_RECHECK_INTERVAL
                 log.info(f"[WATCHDOG] Updates suppressed for {ROLLBACK_RECHECK_INTERVAL}s. "
                           f"Will re-check for newer fixed version after that.")
+                os.environ["DCP_UPDATE_SUPPRESS_UNTIL"] = str(int(rollback_until))
+                _save_update_suppression(
+                    rollback_until,
+                    reason=f"rollback_after_update_crash_exit_{exit_code}",
+                )
                 try:
                     report_event("update_rollback",
                         f"Auto-rollback triggered: daemon crashed {elapsed}s after update. "

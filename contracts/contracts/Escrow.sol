@@ -16,10 +16,10 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *   1. Renter calls depositAndLock(jobId, provider, amount, expiry)
  *      — USDC is pulled from renter and held in this contract
  *   2. Job runs on provider hardware
- *   3. DC1 backend oracle signs job completion; provider calls claimLock(jobId, proof)
+ *   3. DC1 backend oracle signs job completion; provider/relayer/owner calls claimLock(jobId, proof)
  *      — 75% goes to provider, 25% goes to contract owner (DC1 fee)
  *   4. If the job expires unclaimed, renter calls cancelExpiredLock(jobId)
- *      — full amount returned to renter
+ *      — full amount returned to renter or relayer/oracle admin
  *
  * Payment token: USDC (6 decimals) on Base Sepolia / Base mainnet
  * Oracle:        DC1 backend signing key (set on deploy, updateable by owner)
@@ -46,6 +46,7 @@ contract Escrow is Ownable, ReentrancyGuard {
 
     /// @notice DC1 backend address that signs job-completion proofs
     address public oracle;
+    address public relayer;
 
     enum EscrowStatus {
         EMPTY,     // 0 — never used
@@ -91,6 +92,7 @@ contract Escrow is Ownable, ReentrancyGuard {
     );
 
     event OracleUpdated(address indexed oldOracle, address indexed newOracle);
+    event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
 
     // ────────────────────────────────────────────────────────────────────────
     // Constructor
@@ -105,6 +107,7 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(_oracle != address(0), "Invalid oracle address");
         usdc = IERC20(_usdc);
         oracle = _oracle;
+        relayer = msg.sender;
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -155,7 +158,10 @@ contract Escrow is Ownable, ReentrancyGuard {
         EscrowRecord storage escrow = _escrows[jobId];
 
         require(escrow.status == EscrowStatus.LOCKED, "Not locked");
-        require(msg.sender == escrow.provider, "Not provider");
+        require(
+            msg.sender == escrow.provider || msg.sender == relayer || msg.sender == owner(),
+            "Not authorized to claim"
+        );
         require(block.timestamp <= escrow.expiry, "Expired");
 
         // Verify oracle signature: sign( keccak256(jobId || provider || amount) )
@@ -186,7 +192,10 @@ contract Escrow is Ownable, ReentrancyGuard {
 
         require(escrow.status == EscrowStatus.LOCKED, "Not locked");
         require(block.timestamp > escrow.expiry, "Not expired yet");
-        require(msg.sender == escrow.renter, "Not renter");
+        require(
+            msg.sender == escrow.renter || msg.sender == relayer || msg.sender == owner(),
+            "Not authorized to cancel"
+        );
 
         escrow.status = EscrowStatus.CANCELLED;
 
@@ -216,5 +225,16 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(newOracle != address(0), "Invalid oracle address");
         emit OracleUpdated(oracle, newOracle);
         oracle = newOracle;
+    }
+
+    /**
+     * @notice Update the authorized relayer used by backend automation.
+     *         Relayer and/or owner can claim and cancel on-chain escrows.
+     * @param newRelayer New relayer address
+     */
+    function setRelayer(address newRelayer) external onlyOwner {
+        require(newRelayer != address(0), "Invalid relayer address");
+        emit RelayerUpdated(relayer, newRelayer);
+        relayer = newRelayer;
     }
 }

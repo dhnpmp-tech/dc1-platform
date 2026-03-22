@@ -17,11 +17,27 @@ function assert(condition, message) {
   }
 }
 
+async function stopNode(node, label) {
+  if (!node) return
+  const timeoutMs = 2000
+  const timed = Symbol('timeout')
+  const result = await Promise.race([
+    node.stop().then(() => 'stopped').catch(() => 'failed'),
+    sleep(timeoutMs).then(() => timed)
+  ])
+  if (result === timed) {
+    console.warn(`SMOKE WARN: ${label} stop timeout after ${timeoutMs}ms`)
+  }
+}
+
 async function main() {
+  const LOCAL_DISCOVERY_TIMEOUT_MS = 2500
+
   const providerNode = await createDiscoveryNode({
     port: 0,
     clientMode: false,
     localMode: true,
+    discoveryTimeoutMs: LOCAL_DISCOVERY_TIMEOUT_MS,
     enableMdns: false,
     enableWebSocket: false,
     enableRelay: false,
@@ -32,6 +48,7 @@ async function main() {
     port: 0,
     clientMode: true,
     localMode: true,
+    discoveryTimeoutMs: LOCAL_DISCOVERY_TIMEOUT_MS,
     enableMdns: false,
     enableWebSocket: false,
     enableRelay: false,
@@ -59,11 +76,15 @@ async function main() {
 
     await sleep(400)
 
-    const resolvedByPeer = await resolveProviderByPeerId(renterNode, providerNode.peerId.toString())
+    const resolvedByPeer = await resolveProviderByPeerId(renterNode, providerNode.peerId.toString(), {
+      discoveryTimeoutMs: LOCAL_DISCOVERY_TIMEOUT_MS
+    })
     assert(resolvedByPeer?.provider?.env_cid === announced.env_cid, 'peer lookup env_cid mismatch')
     assert(resolvedByPeer?.environment?.env?.gpu_model === 'RTX 4090', 'peer lookup gpu_model mismatch')
 
-    const resolvedByCid = await resolveEnvironmentByCid(renterNode, announced.env_cid)
+    const resolvedByCid = await resolveEnvironmentByCid(renterNode, announced.env_cid, {
+      discoveryTimeoutMs: LOCAL_DISCOVERY_TIMEOUT_MS
+    })
     assert(resolvedByCid?.env?.region === 'riyadh-sa', 'cid lookup region mismatch')
     assert(Number(resolvedByCid?.env?.vram_gb) === 24, 'cid lookup vram mismatch')
 
@@ -71,12 +92,21 @@ async function main() {
     console.log(`peer_id=${providerNode.peerId.toString()}`)
     console.log(`env_cid=${announced.env_cid}`)
   } finally {
-    await renterNode.stop()
-    await providerNode.stop()
+    await stopNode(renterNode, 'renter')
+    await stopNode(providerNode, 'provider')
   }
 }
 
-main().catch((error) => {
-  console.error(`SMOKE FAIL: ${error.message}`)
-  process.exit(1)
-})
+const HARD_TIMEOUT_MS = 25_000
+
+Promise.race([
+  main(),
+  sleep(HARD_TIMEOUT_MS).then(() => {
+    throw new Error(`smoke timeout after ${HARD_TIMEOUT_MS}ms`)
+  })
+])
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(`SMOKE FAIL: ${error.message}`)
+    process.exit(1)
+  })

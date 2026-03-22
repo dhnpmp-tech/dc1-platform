@@ -116,6 +116,7 @@ function DetailRow({ label, value, highlight, mono }: { label: string; value: st
 type StreamStatus = 'connecting' | 'live' | 'completed' | 'failed'
 
 function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string; jobStatus: string }) {
+  const { t } = useLanguage()
   const [lines, setLines] = useState<string[]>([])
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting')
   const [autoScroll, setAutoScroll] = useState(true)
@@ -185,10 +186,10 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
   }, [lines, autoScroll])
 
   const statusLabel: Record<StreamStatus, string> = {
-    connecting: 'Connecting...',
-    live: 'Live',
-    completed: 'Completed',
-    failed: 'Disconnected',
+    connecting: t('renter.job_detail.logs_status_connecting'),
+    live: t('renter.job_detail.logs_status_live'),
+    completed: t('renter.job_detail.logs_status_completed'),
+    failed: t('renter.job_detail.logs_status_disconnected'),
   }
 
   const statusColor: Record<StreamStatus, string> = {
@@ -210,7 +211,7 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
             {statusLabel[streamStatus]}
           </span>
           {lines.length > 0 && (
-            <span className="text-xs text-dc1-text-muted">· {lines.length} lines</span>
+            <span className="text-xs text-dc1-text-muted">· {lines.length} {t('renter.job_detail.logs_lines')}</span>
           )}
         </div>
         <div className="flex items-center gap-4">
@@ -221,14 +222,14 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
               onChange={e => setAutoScroll(e.target.checked)}
               className="accent-amber-500 h-4 w-4"
             />
-            Auto-scroll
+            {t('renter.job_detail.logs_auto_scroll')}
           </label>
           {(streamStatus === 'failed' || streamStatus === 'completed') && (
             <button
               onClick={() => { setLines([]); connect() }}
               className="text-sm text-dc1-amber hover:underline"
             >
-              Reconnect
+              {t('renter.job_detail.logs_reconnect')}
             </button>
           )}
         </div>
@@ -241,19 +242,21 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
           <span className="h-3 w-3 rounded-full bg-yellow-500/60" />
           <span className="h-3 w-3 rounded-full bg-green-500/60" />
           <span className="ml-2 text-xs text-dc1-text-muted font-mono">
-            job/{jobId} · stdout/stderr
+            {t('renter.job_detail.logs_terminal_prefix')} {jobId} · {t('renter.job_detail.logs_terminal_streams')}
           </span>
         </div>
         <div
           className="h-72 overflow-y-auto p-4 font-mono text-sm leading-relaxed"
           style={{ scrollbarColor: '#F5A524 #07070e' }}
           role="log"
-          aria-label="Job log output"
+          aria-label={t('renter.job_detail.logs_aria')}
           aria-live="polite"
         >
           {lines.length === 0 ? (
             <span className="text-dc1-text-muted/60 italic">
-              {streamStatus === 'connecting' ? 'Connecting to log stream...' : 'No output yet.'}
+              {streamStatus === 'connecting'
+                ? t('renter.job_detail.logs_connecting_hint')
+                : t('renter.job_detail.logs_empty_hint')}
             </span>
           ) : (
             lines.map((line, i) => (
@@ -281,7 +284,7 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
           className="text-sm text-dc1-amber hover:underline"
           download={`dcp-job-${jobId}.log`}
         >
-          Download full log ↓
+          {t('renter.job_detail.logs_download_full')}
         </a>
       </div>
     </div>
@@ -289,6 +292,7 @@ function LogStream({ jobId, apiKey, jobStatus }: { jobId: string; apiKey: string
 }
 
 function HistoryTab({ jobId, apiKey, job }: { jobId: string; apiKey: string; job: JobDetail }) {
+  const { t } = useLanguage()
   const [history, setHistory] = useState<ExecutionHistory | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -319,20 +323,20 @@ function HistoryTab({ jobId, apiKey, job }: { jobId: string; apiKey: string; job
     <div className="space-y-5">
       {/* Cost breakdown */}
       <div className="card">
-        <h2 className="section-heading mb-4">Cost Breakdown</h2>
-        <DetailRow label="Quoted Cost" value={`${quotedSAR} SAR`} />
-        <DetailRow label="Actual Cost" value={`${actualSAR} SAR`} highlight />
-        <DetailRow label="Retry Attempts" value={String(job.retry_count || 0)} />
+        <h2 className="section-heading mb-4">{t('renter.job_detail.history_cost_breakdown')}</h2>
+        <DetailRow label={t('renter.job_detail.history_quoted_cost')} value={`${quotedSAR} SAR`} />
+        <DetailRow label={t('renter.job_detail.history_actual_cost')} value={`${actualSAR} SAR`} highlight />
+        <DetailRow label={t('renter.job_detail.history_retry_attempts')} value={String(job.retry_count || 0)} />
       </div>
 
       {/* Execution attempts */}
       <div className="card">
-        <h2 className="section-heading mb-4">Execution Attempts</h2>
+        <h2 className="section-heading mb-4">{t('renter.job_detail.history_execution_attempts')}</h2>
         {executions.length === 0 ? (
           <div className="py-6 text-center">
-            <p className="text-dc1-text-muted text-sm">No execution records yet.</p>
+            <p className="text-dc1-text-muted text-sm">{t('renter.job_detail.history_empty_title')}</p>
             <p className="text-dc1-text-muted/60 text-xs mt-1">
-              Records appear after each attempt completes.
+              {t('renter.job_detail.history_empty_hint')}
             </p>
           </div>
         ) : (
@@ -353,45 +357,47 @@ function HistoryTab({ jobId, apiKey, job }: { jobId: string; apiKey: string; job
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-dc1-text-primary">
-                      Attempt #{ex.attempt_number}
+                      {t('renter.job_detail.history_attempt_label')} #{ex.attempt_number}
                     </span>
                     <span className={`text-xs font-mono px-2 py-0.5 rounded ${ex.exit_code === 0 ? 'bg-status-success/10 text-status-success' : ex.exit_code != null ? 'bg-status-error/10 text-status-error' : 'bg-dc1-surface-l1 text-dc1-text-muted'}`}>
-                      {ex.exit_code != null ? `exit ${ex.exit_code}` : 'pending'}
+                      {ex.exit_code != null
+                        ? `${t('renter.job_detail.history_exit_code_prefix')} ${ex.exit_code}`
+                        : t('renter.job_detail.history_pending')}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     <div>
-                      <div className="text-dc1-text-muted">Started</div>
+                      <div className="text-dc1-text-muted">{t('renter.job_detail.history_started')}</div>
                       <div className="text-dc1-text-secondary font-mono">
                         {ex.started_at ? new Date(ex.started_at).toLocaleTimeString() : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-dc1-text-muted">Ended</div>
+                      <div className="text-dc1-text-muted">{t('renter.job_detail.history_ended')}</div>
                       <div className="text-dc1-text-secondary font-mono">
                         {ex.ended_at ? new Date(ex.ended_at).toLocaleTimeString() : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-dc1-text-muted">Duration</div>
+                      <div className="text-dc1-text-muted">{t('renter.job_detail.history_duration')}</div>
                       <div className="text-dc1-text-secondary">{durationStr}</div>
                     </div>
                     <div>
-                      <div className="text-dc1-text-muted">GPU-s</div>
+                      <div className="text-dc1-text-muted">{t('renter.job_detail.history_gpu_seconds')}</div>
                       <div className="text-dc1-text-secondary">
                         {ex.gpu_seconds_used ? ex.gpu_seconds_used.toFixed(1) : '—'}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center justify-between pt-1">
-                    <span className="text-xs text-dc1-text-muted">Cost: {costSAR} SAR</span>
+                    <span className="text-xs text-dc1-text-muted">{t('renter.job_detail.history_cost_prefix')} {costSAR} SAR</span>
                     <a
                       href={`${API_BASE}/jobs/${encodeURIComponent(jobId)}/logs?since=0&limit=1000`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-dc1-amber hover:underline"
                     >
-                      Download logs ↓
+                      {t('renter.job_detail.history_download_logs')}
                     </a>
                   </div>
                 </div>
@@ -452,7 +458,7 @@ export default function RenterJobDetailPage() {
   const [job, setJob] = useState<JobDetail | null>(null)
   const [output, setOutput] = useState<JobOutput | null>(null)
   const [loading, setLoading] = useState(true)
-  const [renterName, setRenterName] = useState('Renter')
+  const [renterName, setRenterName] = useState(t('playground.default_renter_name'))
   const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState('')
   const [retry, setRetry] = useState<RetryState>({ open: false, loading: false, error: '', requiredHalala: null })
@@ -577,7 +583,7 @@ export default function RenterJobDetailPage() {
       }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        setRetry(r => ({ ...r, loading: false, error: err.error || 'Failed to re-submit job' }))
+        setRetry(r => ({ ...r, loading: false, error: err.error || t('renter.job_detail.retry_submit_failed') }))
         return
       }
       const data = await res.json()
@@ -593,7 +599,7 @@ export default function RenterJobDetailPage() {
         router.push(`/renter/jobs/${newId}`)
       }
     } catch {
-      setRetry(r => ({ ...r, loading: false, error: 'Network error. Please try again.' }))
+      setRetry(r => ({ ...r, loading: false, error: t('renter.job_detail.network_retry') }))
     }
   }
 
@@ -608,7 +614,7 @@ export default function RenterJobDetailPage() {
   const modelName = job
     ? (output?.model || (typeof parsedParams?.model === 'string' ? parsedParams.model : null) || job.model || '—')
     : '—'
-  const providerGpuLabel = providerGpu || 'Unavailable'
+  const providerGpuLabel = providerGpu || t('renter.job_detail.unavailable')
   const variantModel = selectVariantModel(modelName === '—' ? null : String(modelName))
   const canExportOutput = Boolean((output?.type === 'text' && output?.response) || (output?.type === 'image' && output?.image_base64))
 
@@ -627,7 +633,7 @@ export default function RenterJobDetailPage() {
 
   if (loading) {
     return (
-      <DashboardLayout navItems={navItems} role="renter" userName="Renter">
+      <DashboardLayout navItems={navItems} role="renter" userName={t('playground.default_renter_name')}>
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full" />
         </div>
@@ -686,16 +692,16 @@ export default function RenterJobDetailPage() {
       trackJobEvent('output_exported', { source: 'job_detail', job_id: job.id, format: output.format || 'png', output_type: 'image' })
       return
     }
-    setExportError('Export is unavailable until the job produces output.')
+    setExportError(t('renter.job_detail.export_unavailable'))
   }
 
   const copyTextOutput = async () => {
     if (!output?.response) return
     try {
       await navigator.clipboard.writeText(output.response)
-      setCopyFeedback('Output copied to clipboard.')
+      setCopyFeedback(t('renter.job_detail.copy_success'))
     } catch {
-      setCopyFeedback('Copy failed. Please use Export output instead.')
+      setCopyFeedback(t('renter.job_detail.copy_failed'))
     }
   }
 
@@ -721,12 +727,12 @@ export default function RenterJobDetailPage() {
         }),
       })
       if (!res.ok) {
-        setTemplateFeedback('Failed to save template. Please retry.')
+        setTemplateFeedback(t('renter.job_detail.template_save_failed'))
         return
       }
-      setTemplateFeedback('Template saved. Open Playground to reuse it.')
+      setTemplateFeedback(t('renter.job_detail.template_save_success'))
     } catch {
-      setTemplateFeedback('Failed to save template. Please retry.')
+      setTemplateFeedback(t('renter.job_detail.template_save_failed'))
     } finally {
       setTemplateSaving(false)
     }
@@ -760,7 +766,7 @@ export default function RenterJobDetailPage() {
               <button
                 onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
                 className="btn btn-primary text-sm min-h-[44px] px-4"
-                aria-label="Retry this job"
+                aria-label={t('renter.job_detail.retry_job_aria')}
               >
                 {t('renter.retry_job')}
               </button>
@@ -771,12 +777,12 @@ export default function RenterJobDetailPage() {
         {(isCompleted || isFailed) && (
           <div className={`card ${isFailed ? 'border-status-error/30 bg-status-error/5' : 'border-dc1-amber/30'}`}>
             <h2 className={`section-heading mb-2 ${isFailed ? 'text-status-error' : ''}`}>
-              {isFailed ? 'Recommended next step' : 'Next actions'}
+              {isFailed ? t('renter.job_detail.next_step_failed_title') : t('renter.job_detail.next_actions_title')}
             </h2>
             <p className="text-sm text-dc1-text-secondary mb-4">
               {isFailed
-                ? 'Open logs first to identify the failure reason, then retry with an updated configuration.'
-                : 'Keep momentum by launching a follow-up run, saving this setup, or exporting output.'}
+                ? t('renter.job_detail.next_step_failed_desc')
+                : t('renter.job_detail.next_actions_desc')}
             </p>
             <div className="flex flex-wrap gap-2">
               {isFailed ? (
@@ -785,13 +791,13 @@ export default function RenterJobDetailPage() {
                     onClick={() => setActiveTab('logs')}
                     className="btn btn-primary text-sm min-h-[40px] px-4"
                   >
-                    Review failure logs
+                    {t('renter.job_detail.review_failure_logs')}
                   </button>
                   <button
                     onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
                     className="btn btn-secondary text-sm min-h-[40px] px-4"
                   >
-                    Retry this job
+                    {t('renter.job_detail.retry_this_job')}
                   </button>
                 </>
               ) : (
@@ -800,30 +806,30 @@ export default function RenterJobDetailPage() {
                     onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
                     className="btn btn-primary text-sm min-h-[40px] px-4"
                   >
-                    Retry same params
+                    {t('renter.job_detail.retry_same_params')}
                   </button>
                   <button
                     onClick={goToVariantRun}
                     className="btn btn-secondary text-sm min-h-[40px] px-4"
                     disabled={!variantModel}
-                    title={variantModel ? `Switch to ${variantModel}` : 'No cheaper/faster variant available'}
+                    title={variantModel ? `${t('renter.job_detail.switch_to_prefix')} ${variantModel}` : t('renter.job_detail.no_variant_available')}
                   >
-                    Run similar variant
+                    {t('renter.job_detail.run_similar_variant')}
                   </button>
                   <button
                     onClick={saveAsTemplate}
                     className="btn btn-secondary text-sm min-h-[40px] px-4"
                     disabled={templateSaving}
                   >
-                    {templateSaving ? 'Saving...' : 'Save as template'}
+                    {templateSaving ? t('renter.job_detail.saving') : t('renter.job_detail.save_as_template')}
                   </button>
                   <button
                     onClick={hasTextOutput ? copyTextOutput : exportOutput}
                     className="btn btn-secondary text-sm min-h-[40px] px-4"
                     disabled={!canExportOutput}
-                    title={canExportOutput ? 'Copy or export output' : 'Output action available after completion'}
+                    title={canExportOutput ? t('renter.job_detail.copy_or_export') : t('renter.job_detail.output_action_after_completion')}
                   >
-                    {hasTextOutput ? 'Copy output' : 'Export output'}
+                    {hasTextOutput ? t('renter.job_detail.copy_output') : t('renter.job_detail.export_output')}
                   </button>
                 </>
               )}
@@ -856,26 +862,26 @@ export default function RenterJobDetailPage() {
         {activeTab === 'overview' && (
           <div className="space-y-5">
             <div className="card border-dc1-amber/30">
-              <h2 className="section-heading mb-4">Job Summary</h2>
+              <h2 className="section-heading mb-4">{t('renter.job_detail.summary_title')}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
                 <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
-                  <div className="text-dc1-text-muted text-xs">Status</div>
+                  <div className="text-dc1-text-muted text-xs">{t('renter.job_detail.summary_status')}</div>
                   <div className="text-dc1-text-primary font-semibold">{job.status}</div>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
-                  <div className="text-dc1-text-muted text-xs">Duration</div>
+                  <div className="text-dc1-text-muted text-xs">{t('renter.job_detail.summary_duration')}</div>
                   <div className="text-dc1-text-primary font-semibold">{durationStr}</div>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
-                  <div className="text-dc1-text-muted text-xs">Billed Cost</div>
+                  <div className="text-dc1-text-muted text-xs">{t('renter.job_detail.summary_billed_cost')}</div>
                   <div className="text-dc1-amber font-semibold">{cost > 0 ? `${cost.toFixed(2)} SAR` : '—'}</div>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2">
-                  <div className="text-dc1-text-muted text-xs">Model</div>
+                  <div className="text-dc1-text-muted text-xs">{t('renter.job_detail.summary_model')}</div>
                   <div className="text-dc1-text-primary font-mono text-xs break-all">{modelName}</div>
                 </div>
                 <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2 sm:col-span-2">
-                  <div className="text-dc1-text-muted text-xs">Provider GPU</div>
+                  <div className="text-dc1-text-muted text-xs">{t('renter.job_detail.summary_provider_gpu')}</div>
                   <div className="text-dc1-text-primary">{providerGpuLabel}</div>
                 </div>
               </div>
@@ -884,46 +890,46 @@ export default function RenterJobDetailPage() {
                   onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
                   className="btn btn-primary text-sm min-h-[40px] px-4"
                   disabled={!isTerminal}
-                  title={isTerminal ? 'Retry same parameters' : 'Retry is available after job completion'}
+                  title={isTerminal ? t('renter.job_detail.retry_same_parameters') : t('renter.job_detail.retry_after_completion')}
                 >
-                  Retry same params
+                  {t('renter.job_detail.retry_same_params')}
                 </button>
                 <button
                   onClick={goToVariantRun}
                   className="btn btn-secondary text-sm min-h-[40px] px-4"
                   disabled={!variantModel}
-                  title={variantModel ? `Switch to ${variantModel}` : 'No cheaper/faster variant available'}
+                  title={variantModel ? `${t('renter.job_detail.switch_to_prefix')} ${variantModel}` : t('renter.job_detail.no_variant_available')}
                 >
-                  Run cheaper/faster variant
+                  {t('renter.job_detail.run_cheaper_faster_variant')}
                 </button>
                 <button
                   onClick={exportOutput}
                   className="btn btn-secondary text-sm min-h-[40px] px-4"
                   disabled={!canExportOutput}
-                  title={canExportOutput ? 'Export current output' : 'Output export is available after completion'}
+                  title={canExportOutput ? t('renter.job_detail.export_current_output') : t('renter.job_detail.export_after_completion')}
                 >
-                  Export output
+                  {t('renter.job_detail.export_output')}
                 </button>
               </div>
               {exportError && (
                 <p className="mt-2 text-xs text-status-error">{exportError}</p>
               )}
               <p className="mt-3 text-xs text-dc1-text-muted">
-                Raw execution logs are available in the Logs tab.
+                {t('renter.job_detail.logs_tab_hint')}
               </p>
             </div>
 
             {/* Job Info */}
             <div className="card">
               <h2 className="section-heading mb-4">{t('renter.job_detail.info')}</h2>
-              <DetailRow label="Job Type" value={(job.job_type || '').replace(/_/g, ' ')} />
-              <DetailRow label="Status" value={job.status} />
-              {job.progress_phase && <DetailRow label="Progress" value={job.progress_phase.replace(/_/g, ' ')} />}
-              <DetailRow label="Submitted" value={job.submitted_at ? new Date(job.submitted_at).toLocaleString() : '—'} />
-              <DetailRow label="Started" value={job.started_at ? new Date(job.started_at).toLocaleString() : '—'} />
-              <DetailRow label="Completed" value={job.completed_at ? new Date(job.completed_at).toLocaleString() : '—'} />
-              <DetailRow label="Duration" value={durationStr} />
-              <DetailRow label="Cost" value={cost > 0 ? `${cost.toFixed(2)} SAR` : '—'} highlight />
+              <DetailRow label={t('renter.job_detail.info_job_type')} value={(job.job_type || '').replace(/_/g, ' ')} />
+              <DetailRow label={t('renter.job_detail.info_status')} value={job.status} />
+              {job.progress_phase && <DetailRow label={t('renter.job_detail.info_progress')} value={job.progress_phase.replace(/_/g, ' ')} />}
+              <DetailRow label={t('renter.job_detail.info_submitted')} value={job.submitted_at ? new Date(job.submitted_at).toLocaleString() : '—'} />
+              <DetailRow label={t('renter.job_detail.info_started')} value={job.started_at ? new Date(job.started_at).toLocaleString() : '—'} />
+              <DetailRow label={t('renter.job_detail.info_completed')} value={job.completed_at ? new Date(job.completed_at).toLocaleString() : '—'} />
+              <DetailRow label={t('renter.job_detail.info_duration')} value={durationStr} />
+              <DetailRow label={t('renter.job_detail.info_cost')} value={cost > 0 ? `${cost.toFixed(2)} SAR` : '—'} highlight />
             </div>
 
             {/* Job Parameters */}
@@ -949,23 +955,23 @@ export default function RenterJobDetailPage() {
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                         <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                           <div className="text-dc1-text-primary font-semibold">{output.tokens_generated}</div>
-                          <div className="text-dc1-text-muted">Tokens</div>
+                          <div className="text-dc1-text-muted">{t('renter.job_detail.output_tokens')}</div>
                         </div>
                         {output.tokens_per_second && (
                           <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                             <div className="text-dc1-text-primary font-semibold">{output.tokens_per_second.toFixed(1)}</div>
-                            <div className="text-dc1-text-muted">Tok/s</div>
+                            <div className="text-dc1-text-muted">{t('renter.job_detail.output_tokens_per_sec')}</div>
                           </div>
                         )}
                         {output.gen_time_s && (
                           <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                             <div className="text-dc1-text-primary font-semibold">{output.gen_time_s.toFixed(1)}s</div>
-                            <div className="text-dc1-text-muted">Gen Time</div>
+                            <div className="text-dc1-text-muted">{t('renter.job_detail.output_gen_time')}</div>
                           </div>
                         )}
                         <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                           <div className="text-dc1-text-primary font-semibold">{output.model || '—'}</div>
-                          <div className="text-dc1-text-muted">Model</div>
+                          <div className="text-dc1-text-muted">{t('renter.job_detail.summary_model')}</div>
                         </div>
                       </div>
                     )}
@@ -975,32 +981,32 @@ export default function RenterJobDetailPage() {
                   <div className="space-y-3">
                     <img
                       src={`data:image/${output.format || 'png'};base64,${output.image_base64}`}
-                      alt="Generated image"
+                      alt={t('renter.job_detail.generated_image_alt')}
                       className="rounded-lg max-w-full border border-dc1-border"
                     />
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                       {output.width && output.height && (
                         <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                           <div className="text-dc1-text-primary font-semibold">{output.width}x{output.height}</div>
-                          <div className="text-dc1-text-muted">Resolution</div>
+                          <div className="text-dc1-text-muted">{t('renter.job_detail.output_resolution')}</div>
                         </div>
                       )}
                       {output.steps && (
                         <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                           <div className="text-dc1-text-primary font-semibold">{output.steps}</div>
-                          <div className="text-dc1-text-muted">Steps</div>
+                          <div className="text-dc1-text-muted">{t('renter.job_detail.output_steps')}</div>
                         </div>
                       )}
                       {output.seed != null && (
                         <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                           <div className="text-dc1-text-primary font-semibold font-mono">{output.seed}</div>
-                          <div className="text-dc1-text-muted">Seed</div>
+                          <div className="text-dc1-text-muted">{t('renter.job_detail.output_seed')}</div>
                         </div>
                       )}
                       {output.gen_time_s && (
                         <div className="bg-dc1-surface-l2 rounded p-2 text-center">
                           <div className="text-dc1-text-primary font-semibold">{output.gen_time_s.toFixed(1)}s</div>
-                          <div className="text-dc1-text-muted">Gen Time</div>
+                          <div className="text-dc1-text-muted">{t('renter.job_detail.output_gen_time')}</div>
                         </div>
                       )}
                     </div>
@@ -1055,7 +1061,7 @@ export default function RenterJobDetailPage() {
               {t('renter.job_detail.retry_title')}
             </h2>
             <p className="text-dc1-text-secondary text-sm">
-              Retry this job? {((retry.requiredHalala || 0) / 100).toFixed(2)} SAR will be held from your balance.
+              {t('renter.job_detail.retry_confirm_prefix')} {((retry.requiredHalala || 0) / 100).toFixed(2)} SAR {t('renter.job_detail.retry_confirm_suffix')}
             </p>
             <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
                 <span className="text-dc1-text-muted">{t('table.type')}: </span>{(job.job_type || '').replace(/_/g, ' ')}
@@ -1065,9 +1071,9 @@ export default function RenterJobDetailPage() {
 
             {retry.error === 'insufficient_balance' ? (
               <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
-                Insufficient balance. Please{' '}
-                <Link href="/renter/billing" className="underline font-semibold">top up your balance</Link>{' '}
-                first.
+                {t('renter.job_detail.insufficient_balance_prefix')}{' '}
+                <Link href="/renter/billing" className="underline font-semibold">{t('renter.job_detail.top_up_balance')}</Link>{' '}
+                {t('renter.job_detail.insufficient_balance_suffix')}
               </div>
             ) : retry.error ? (
               <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">

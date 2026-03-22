@@ -185,6 +185,39 @@ export default function ProviderGuidePage() {
     { q: t('pg.faq_q4'), a: t('pg.faq_a4') },
   ]
 
+  const troubleshootingByStatus = [
+    {
+      id: 'status-waiting-install-daemon',
+      status: t('register.provider.state.waiting.label'),
+      action: t('register.provider.status_matrix.waiting.action'),
+      command: 'python3 dc1_daemon.py',
+    },
+    {
+      id: 'status-heartbeat-verify-telemetry',
+      status: t('register.provider.state.heartbeat.label'),
+      action: t('register.provider.status_matrix.heartbeat.action'),
+      command: 'curl "https://dcp.sa/api/dc1/providers/me?key=YOUR_PROVIDER_KEY"',
+    },
+    {
+      id: 'status-stale-restart-daemon',
+      status: t('register.provider.state.stale.label'),
+      action: t('register.provider.status_matrix.stale.action'),
+      command: 'curl -I "https://dcp.sa/api/dc1/providers/download/daemon?key=YOUR_PROVIDER_KEY"',
+    },
+    {
+      id: 'status-paused-resume-provider',
+      status: t('register.provider.state.paused.label'),
+      action: t('register.provider.status_matrix.paused.action'),
+      command: 'Open /provider/dashboard and select Resume',
+    },
+    {
+      id: 'status-ready-monitor-jobs',
+      status: t('register.provider.state.ready.label'),
+      action: t('register.provider.status_matrix.ready.action'),
+      command: 'Open /provider/dashboard and check jobs + earnings panels',
+    },
+  ]
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -318,6 +351,31 @@ export default function ProviderGuidePage() {
                   )}
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <h2 className="text-2xl font-bold text-dc1-text-primary mb-3">
+            {t('register.provider.status_matrix.title')}
+          </h2>
+          <p className="text-dc1-text-secondary mb-8 max-w-3xl">
+            {t('register.provider.status_matrix.subtitle')}
+          </p>
+          <div className="space-y-4">
+            {troubleshootingByStatus.map((item) => (
+              <article
+                key={item.id}
+                id={item.id}
+                className="bg-dc1-surface-l2 border border-dc1-border rounded-lg p-5 scroll-mt-24"
+              >
+                <h3 className="text-base font-semibold text-dc1-text-primary mb-2">{item.status}</h3>
+                <p className="text-sm text-dc1-text-secondary leading-relaxed mb-3">{item.action}</p>
+                <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto">
+                  {item.command}
+                </pre>
+              </article>
             ))}
           </div>
         </section>

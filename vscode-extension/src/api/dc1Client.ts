@@ -247,18 +247,60 @@ export class DC1Client {
 
   /** GET /api/providers/me?key= */
   async getProviderInfo(apiKey: string): Promise<ProviderInfo> {
-    return this.request('GET', `/api/providers/me?key=${encodeURIComponent(apiKey)}`);
+    const data = await this.request<any>('GET', `/api/providers/me?key=${encodeURIComponent(apiKey)}`);
+    const provider = (data && typeof data === 'object' && data.provider && typeof data.provider === 'object')
+      ? data.provider
+      : data;
+
+    const vramGbFromMib = typeof provider?.gpu_vram_mib === 'number' && provider.gpu_vram_mib > 0
+      ? Math.round(provider.gpu_vram_mib / 1024)
+      : null;
+    const vramGbFromMb = typeof provider?.vram_mb === 'number' && provider.vram_mb > 0
+      ? Math.round(provider.vram_mb / 1024)
+      : null;
+
+    return {
+      id: String(provider?.id ?? ''),
+      name: String(provider?.name ?? 'Provider'),
+      email: String(provider?.email ?? ''),
+      gpu_model: String(provider?.gpu_model ?? 'Unknown GPU'),
+      vram_gb: vramGbFromMib ?? vramGbFromMb,
+      gpu_count: Number(provider?.gpu_count_reported ?? provider?.gpu_count ?? 1),
+      status: String(provider?.status ?? 'offline'),
+      is_live: Boolean(provider?.is_live ?? String(provider?.status ?? '').toLowerCase() === 'online'),
+      total_jobs: Number(provider?.total_jobs ?? 0),
+      total_earnings_halala: Number(provider?.total_earnings_halala ?? 0),
+      today_earnings_halala: Number(provider?.today_earnings_halala ?? 0),
+      last_heartbeat: provider?.last_heartbeat ? String(provider.last_heartbeat) : null,
+      driver_version: provider?.gpu_driver ?? provider?.driver_version ?? null,
+      cuda_version: provider?.gpu_cuda_version ?? provider?.cuda_version ?? null,
+    };
   }
 
   /** GET /api/renters/me?key= */
   async getRenterInfo(apiKey: string): Promise<RenterInfo> {
-    return this.request('GET', `/api/renters/me?key=${encodeURIComponent(apiKey)}`);
+    const data = await this.request<any>('GET', `/api/renters/me?key=${encodeURIComponent(apiKey)}`);
+    const renter = (data && typeof data === 'object' && data.renter && typeof data.renter === 'object')
+      ? data.renter
+      : data;
+
+    return {
+      id: String(renter?.id ?? ''),
+      name: String(renter?.name ?? 'Renter'),
+      email: String(renter?.email ?? ''),
+      balance_halala: Number(renter?.balance_halala ?? 0),
+      total_jobs: Number(renter?.total_jobs ?? 0),
+      api_key: String(renter?.api_key ?? apiKey),
+    };
   }
 
   /** GET /api/renters/me?key= — returns jobs array too */
   async getMyJobs(apiKey: string): Promise<Job[]> {
-    const data = await this.request<{ jobs: Job[] }>('GET', `/api/renters/me?key=${encodeURIComponent(apiKey)}`);
-    return data.jobs || [];
+    const data = await this.request<any>('GET', `/api/renters/me?key=${encodeURIComponent(apiKey)}`);
+    const jobs = Array.isArray(data?.jobs)
+      ? data.jobs
+      : (Array.isArray(data?.recent_jobs) ? data.recent_jobs : []);
+    return jobs as Job[];
   }
 
   /** POST /api/jobs/submit */
@@ -268,7 +310,27 @@ export class DC1Client {
 
   /** GET /api/jobs/:id/output */
   async getJobOutput(apiKey: string, jobId: string): Promise<JobOutput> {
-    return this.request('GET', `/api/jobs/${jobId}/output`, { 'x-renter-key': apiKey });
+    try {
+      return await this.request('GET', `/api/jobs/${jobId}/output`, { 'x-renter-key': apiKey });
+    } catch (err) {
+      // Backend reports failed/cancelled jobs as HTTP 410 with structured JSON.
+      if (err instanceof DC1ApiError && err.statusCode === 410 && err.responseBody) {
+        try {
+          const parsed = JSON.parse(err.responseBody) as { status?: string; error?: string; progress_phase?: string };
+          return {
+            status: parsed.status || 'failed',
+            message: parsed.error || 'Job is no longer available',
+            progress_phase: parsed.progress_phase,
+          };
+        } catch {
+          return {
+            status: 'failed',
+            message: err.message,
+          };
+        }
+      }
+      throw err;
+    }
   }
 
   /** GET /api/jobs/:id/logs */

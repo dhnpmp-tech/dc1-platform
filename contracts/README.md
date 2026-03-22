@@ -15,10 +15,11 @@ Trustless payment escrow for DC1 GPU compute jobs. USDC is held on-chain while j
 | Function | Caller | Description |
 |---|---|---|
 | `depositAndLock(jobId, provider, amount, expiry)` | Renter | Pulls USDC from renter and locks it against a jobId |
-| `claimLock(jobId, proof)` | Provider | Claims after job completes; verifies DC1 oracle ECDSA signature |
-| `cancelExpiredLock(jobId)` | Renter | Reclaims full amount if job expired without a claim |
+| `claimLock(jobId, proof)` | Provider / authorized relayer / owner | Claims after job completes; verifies DC1 oracle ECDSA signature |
+| `cancelExpiredLock(jobId)` | Renter / authorized relayer / owner | Reclaims full amount if job expired without a claim |
 | `getEscrow(jobId)` | Anyone | Read-only: returns `EscrowRecord` struct |
 | `setOracle(address)` | Owner | Updates the DC1 oracle signing address |
+| `setRelayer(address)` | Owner | Updates the backend relayer/operator address used for service-initiated settlement |
 
 #### EscrowRecord struct
 
@@ -80,9 +81,10 @@ npm run test:gas
 | Suite | Tests |
 |---|---|
 | `depositAndLock` | happy path, duplicate jobId, past expiry, zero amount, zero provider |
-| `claimLock` | 75/25 split, invalid oracle sig, wrong caller, post-expiry, double-claim |
-| `cancelExpiredLock` | happy path, pre-expiry revert, wrong caller, double-cancel |
+| `claimLock` | 75/25 split, operator claim, invalid oracle sig, wrong caller, post-expiry, double-claim |
+| `cancelExpiredLock` | happy path, relayer cancel, pre-expiry revert, wrong caller, double-cancel |
 | `setOracle` | owner update, non-owner revert, zero-address revert |
+| `setRelayer` | owner update, non-owner revert, zero-address revert |
 | `getEscrow` | unknown jobId returns EMPTY |
 
 ---
@@ -139,14 +141,15 @@ Recommended backend envs:
 - `ESCROW_ORACLE_PRIVATE_KEY` (required, signs completion proof)
 - `ESCROW_TX_PRIVATE_KEY` (optional, tx sender; defaults to oracle key)
 - `ESCROW_SETTLEMENT_PROVIDER_ADDRESS` (optional fallback provider wallet when provider has no EVM wallet)
+- `ESCROW_RELAYER_ADDRESS` (optional; operator address authorized to claim/cancel when wallet addresses are routed through backend)
 - `ESCROW_USDC_ADDRESS` (optional; defaults to Base Sepolia USDC)
 - `BASE_RPC_URL` (optional; defaults to `https://sepolia.base.org`)
 
 Current launch workflow:
 
 1. Backend sender wallet funds and approves USDC, then calls `depositAndLock`.
-2. On success completion paths, backend signs proof and calls `claimLock`.
-3. On failure/timeout paths, backend attempts `cancelExpiredLock` once expiry is reached.
+2. On success completion paths, backend signs proof and calls `claimLock` (provider or relayer can submit).
+3. On failure/timeout paths, backend attempts `cancelExpiredLock` once expiry is reached (renter or relayer can submit).
 
 The current off-chain SQL escrow (DCP-32) remains the default. The on-chain path is opt-in for renters who want trustless settlement.
 

@@ -49,10 +49,14 @@ function normalizeBootstrapList (value) {
     .filter((entry) => entry.length > 0 && !entry.includes('REPLACE_WITH_BOOTSTRAP_PEER_ID'))
 }
 
+function getBootstrapEnvRaw () {
+  return process.env.DCP_P2P_BOOTSTRAP || process.env.DC1_P2P_BOOTSTRAP || ''
+}
+
 function buildNodeOptions () {
   return {
-    port: parsePositiveInt(process.env.DC1_P2P_PORT, 0),
-    bootstrapList: normalizeBootstrapList(process.env.DC1_P2P_BOOTSTRAP),
+    port: parsePositiveInt(process.env.DCP_P2P_PORT ?? process.env.DC1_P2P_PORT, 0),
+    bootstrapList: normalizeBootstrapList(getBootstrapEnvRaw()),
     clientMode: false,
     localMode: parseBoolean(process.env.P2P_DISCOVERY_LOCAL_MODE, false),
     enableMdns: parseBoolean(process.env.P2P_DISCOVERY_ENABLE_MDNS, false),
@@ -126,7 +130,7 @@ async function main () {
   const spec = loadSpec(parsed)
   const nodeOptions = buildNodeOptions()
   const runtime = await loadRuntime()
-  const timeoutMs = parsePositiveInt(process.env.DC1_P2P_TIMEOUT_MS, 15000)
+  const timeoutMs = parsePositiveInt(process.env.DCP_P2P_TIMEOUT_MS ?? process.env.DC1_P2P_TIMEOUT_MS, 15000)
   const ttlMs = parsePositiveInt(process.env.P2P_DISCOVERY_TTL_MS, 120000)
 
   if (!runtime || !runtime.createNode) {
@@ -134,7 +138,7 @@ async function main () {
   }
 
   if (!nodeOptions.bootstrapList.length) {
-    console.warn('[announce] DC1_P2P_BOOTSTRAP not set — using local-only mode')
+    console.warn('[announce] DCP_P2P_BOOTSTRAP (or DC1_P2P_BOOTSTRAP) not set — using local-only mode')
   }
 
   console.log('[announce] Starting provider node...')

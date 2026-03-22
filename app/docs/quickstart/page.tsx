@@ -91,10 +91,32 @@ function StepCard({
 const copy = {
   en: {
   badge: 'QUICKSTART',
-  heading: 'Run a renter workload in a few clear steps',
-  sub: 'From account setup to workload submission, with checkpoints for auth, wallet balance, provider selection, and output review.',
+  heading: 'Submit and validate your first renter workload in five checkpoints',
+  sub: 'From API key to output: auth, balance, compatible provider selection, submission, and completion review.',
+  roleHeading: 'Choose your role path',
+  roleSub: 'Start from the flow that matches your role. DCP keeps one consistent trust model: Saudi energy advantage, Arabic AI support, and containerized execution.',
+  roleCards: [
+    {
+      title: 'I am a renter',
+      desc: 'Follow the renter checklist and ship your first workload.',
+      cta: 'Open renter checklist',
+      href: '#renter-onboarding-checklist',
+    },
+    {
+      title: 'I am a provider',
+      desc: 'Register GPU hardware, install daemon, and move to heartbeat-ready.',
+      cta: 'Start provider onboarding',
+      href: '/provider/register',
+    },
+    {
+      title: 'I am integrating API',
+      desc: 'Use auth and endpoint contracts for production-safe integration.',
+      cta: 'Open API integration start',
+      href: '/docs/api',
+    },
+  ],
   sdkHeading: 'SDK Quickstarts (Node, Python, CLI)',
-  sdkSub: 'Switch between SDK tracks and validate each setup in minutes.',
+  sdkSub: 'Use one SDK track at a time and verify key, connectivity, and completion before scaling.',
     sdkTabs: {
       node: 'Node.js',
       python: 'Python',
@@ -111,28 +133,28 @@ const copy = {
     s1: {
       p1: 'Register a renter account at',
       p2: 'dcp.sa/renter/register',
-      p3: '. You\'ll receive a renter API key — copy it from the dashboard.',
+      p3: ". You'll receive a renter API key — copy it from the dashboard and keep it private.",
       note: 'Keep your key safe. It authenticates all API calls and is shown once.',
     },
     s2: {
       p1: 'Fund wallet in SAR. Use the dashboard at',
       p2: 'dcp.sa/renter/billing',
       p3: ', or call the API directly:',
-      note: 'Billing uses halala internally. 100 halala = 1 SAR. 10 SAR = 1,000 halala.',
+      note: 'Billing in every flow is the same: estimate hold in halala before start, runtime settlement after completion, unused hold returned automatically.',
     },
     s3: {
       p1: 'Fetch live providers from the marketplace and note the',
       code: 'id',
-      p2: 'for the provider you choose:',
+      p2: 'for the compatible provider you choose:',
       note: 'Save the',
       code2: 'provider.id',
       p3: 'for your job submit request.',
     },
     s4: {
-      p1: 'Submit a PyTorch LLM inference job. Pass your renter key in the',
+      p1: 'Submit an LLM job and pass your renter key in the',
       code: 'x-renter-key',
       p2: 'header:',
-      note: 'Billing uses a prepay estimate before execution, then actual runtime settlement after completion.',
+      note: 'DCP holds an estimate before execution and reconciles against actual runtime when the job completes.',
     },
     s5: {
       p1: 'Poll the job endpoint until',
@@ -196,6 +218,28 @@ const copy = {
   badge: 'دليل البدء السريع',
   heading: 'شغّل حمولة GPU في خطوات واضحة',
   sub: 'من إعداد الحساب إلى إرسال الحمولة: خطوات واضحة للمصادقة، الرصيد، اختيار مزود مناسب، ومراجعة النتيجة.',
+  roleHeading: 'اختر مسارك حسب الدور',
+  roleSub: 'ابدأ من المسار المناسب لدورك. DCP يحافظ على نفس ركائز الثقة: ميزة الطاقة السعودية، دعم النماذج العربية، وتشغيل عبر الحاويات.',
+  roleCards: [
+    {
+      title: 'أنا مستأجر',
+      desc: 'اتبع قائمة تحقق المستأجر وشغّل أول حمولة بسرعة.',
+      cta: 'افتح قائمة تحقق المستأجر',
+      href: '#renter-onboarding-checklist',
+    },
+    {
+      title: 'أنا مزود',
+      desc: 'سجّل العتاد، ثبّت daemon، وانتقل إلى حالة heartbeat الجاهزة.',
+      cta: 'ابدأ إعداد المزود',
+      href: '/provider/register',
+    },
+    {
+      title: 'أنا أدمج API',
+      desc: 'ابدأ بالمصادقة وخرائط النقاط النهائية لتكامل إنتاجي آمن.',
+      cta: 'افتح بداية تكامل API',
+      href: '/docs/api',
+    },
+  ],
     sdkHeading: 'أدلة SDK السريعة (Node وPython وCLI)',
     sdkSub: 'بدّل بين المسارات واختبر كل مسار خلال دقائق.',
     sdkTabs: {
@@ -221,7 +265,7 @@ const copy = {
       p1: 'أضف ريالات سعودية إلى محفظتك. استخدم لوحة التحكم على',
       p2: 'dcp.sa/renter/billing',
       p3: '، أو استدعِ API مباشرةً:',
-      note: 'يستخدم النظام الهللة داخليًا. ١٠٠ هللة = ١ ريال. ١٠ ريالات = ١٠٠٠ هللة.',
+      note: 'الفوترة موحدة في جميع المسارات: حجز تقديري بالهللة قبل التشغيل، ثم تسوية حسب وقت التشغيل الفعلي، مع إعادة الرصيد غير المستخدم تلقائيًا.',
     },
     s3: {
       p1: 'استرجع سوق GPU المباشر للعثور على مزود مناسب وسجّل',
@@ -366,8 +410,8 @@ const POLL_RESPONSE = `{
 
 const SDK_SNIPPETS: Record<SdkKey, Omit<SdkCard, 'title' | 'subtitle' | 'installLabel' | 'runLabel' | 'verifyLabel' | 'verifyHint'>> = {
     node: {
-    installCode: `npm install dcp-renter-sdk`,
-  runCode: `import { DC1RenterClient } from 'dcp-renter-sdk'
+    installCode: `# Check current SDK package names in /docs/sdk-guides before install`,
+  runCode: `import { DC1RenterClient } from '<YOUR_DCP_SDK_PACKAGE>'
 
 const client = new DC1RenterClient({
   apiKey: process.env.DCP_RENTER_KEY!,
@@ -376,7 +420,9 @@ const client = new DC1RenterClient({
 
   const job = await client.submitJob({
     provider_id: 42,
-    job_type: 'llm-inference',
+    job_type: 'llm_inference',
+    duration_minutes: 5,
+    container_spec: { image_type: 'vllm-serve' },
     params: { prompt: 'Explain transformer attention in 2 lines.' },
   })
 
@@ -386,7 +432,7 @@ const client = new DC1RenterClient({
 console.log(me.email, me.balance_halala)`,
   },
   python: {
-    installCode: `pip install dcp-renter-sdk`,
+    installCode: `# Check current SDK package names in /docs/sdk-guides before install`,
     runCode: `import os
 import time
 import requests
@@ -397,6 +443,8 @@ BASE_URL = 'https://dcp.sa/api/dc1'
 submit_payload = {
   'provider_id': 42,
   'job_type': 'llm_inference',
+  'duration_minutes': 5,
+  'container_spec': { 'image_type': 'vllm-serve' },
   'params': {
     'model': 'meta-llama/Llama-3-8B',
     'prompt': 'Summarize this sentence in one line.',
@@ -430,13 +478,14 @@ print(me_resp.get('email'), me_resp.get('balance_halala'))`,
   cli: {
     installCode: `export DCP_RENTER_KEY="dcp-renter-xxxx"
 export API_BASE="https://dcp.sa/api/dc1"`,
-    runCode: `curl -X POST "$API_BASE/jobs/submit" \\
+  runCode: `curl -X POST "$API_BASE/jobs/submit" \\
   -H "Content-Type: application/json" \\
   -H "x-renter-key: $DCP_RENTER_KEY" \\
   -d '{
     "provider_id": 42,
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 5,
+    "container_spec": { "image_type": "vllm-serve" },
     "params": { "model": "meta-llama/Llama-3-8B", "prompt": "Say hello from DCP" }
   }'`,
     verifyCode: `curl "$API_BASE/jobs/<job_id>" \\
@@ -546,6 +595,36 @@ export default function QuickstartPage() {
           </p>
         </div>
 
+        <div className="mt-6 rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6 sm:p-8">
+          <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
+            {t.roleHeading}
+          </h2>
+          <p className={`mt-2 text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>
+            {t.roleSub}
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {t.roleCards.map((card) => (
+              <div key={card.href} className="rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4">
+                <h3 className={`text-base font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>{card.title}</h3>
+                <p className={`mt-2 text-sm text-dc1-text-secondary ${isRTL ? 'text-right' : ''}`}>{card.desc}</p>
+                <Link
+                  href={card.href}
+                  className="btn btn-primary btn-sm mt-4"
+                  onClick={() =>
+                    trackQuickstartEvent('role_path_cta_clicked', {
+                      language,
+                      role_path_title: card.title,
+                      destination: card.href,
+                    })
+                  }
+                >
+                  {card.cta}
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Billing transparency */}
         <div ref={billingExplainerRef} className="mt-6 rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
           <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
@@ -557,9 +636,10 @@ export default function QuickstartPage() {
             <li>{tr('billing.explainer.step3')}</li>
           </ul>
           <p className={`mt-3 text-xs text-dc1-text-muted ${isRTL ? 'text-right' : ''}`}>{tr('billing.explainer.note')}</p>
+          <p className={`mt-2 text-xs text-dc1-text-muted ${isRTL ? 'text-right' : ''}`}>{tr('billing.explainer.rail_status')}</p>
         </div>
 
-        <div className="mt-6 rounded-xl border border-dc1-border bg-dc1-surface-l1 p-6">
+        <div id="renter-onboarding-checklist" className="mt-6 rounded-xl border border-dc1-border bg-dc1-surface-l1 p-6">
           <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>
             {tr('conversion.first_job.title')}
           </h2>

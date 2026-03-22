@@ -7,9 +7,10 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
  *
  * Covers:
  *   depositAndLock  — happy path, duplicate, past expiry, zero amount
- *   claimLock       — happy path (75/25 split), bad signer, wrong caller, expired
- *   cancelExpiredLock — happy path, not-yet-expired, wrong caller
+ *   claimLock       — happy path (75/25 split), relayer claim, bad signer, wrong caller, expired
+ *   cancelExpiredLock — happy path, relayer cancel, not-yet-expired, wrong caller
  *   setOracle       — owner update, non-owner rejection
+ *   setRelayer      — owner update, non-owner rejection
  *   getEscrow       — view returns correct struct
  */
 describe("Escrow", function () {
@@ -17,6 +18,7 @@ describe("Escrow", function () {
 
   let escrow, usdc;
   let owner, oracle, renter, provider, stranger;
+  let relayer;
 
   // Shared test job
   const JOB_ID = ethers.keccak256(ethers.toUtf8Bytes("dc1-job-001"));
@@ -45,6 +47,7 @@ describe("Escrow", function () {
     // Deploy Escrow with oracle address
     const Escrow = await ethers.getContractFactory("Escrow");
     escrow = await Escrow.deploy(await usdc.getAddress(), oracle.address);
+    relayer = owner;
 
     // Approve escrow to spend renter's USDC
     await usdc
@@ -161,6 +164,29 @@ describe("Escrow", function () {
       expect(record.status).to.equal(2); // CLAIMED
     });
 
+    it("allows relayer to claim on behalf of provider", async function () {
+      const proof = await oracleSign(JOB_ID, provider.address, AMOUNT, oracle);
+
+      const providerBalBefore = await usdc.balanceOf(provider.address);
+      const ownerBalBefore = await usdc.balanceOf(owner.address);
+
+      await expect(escrow.connect(relayer).claimLock(JOB_ID, proof))
+        .to.emit(escrow, "Claimed")
+        .withArgs(
+          JOB_ID,
+          provider.address,
+          (AMOUNT * 7500n) / 10000n,
+          (AMOUNT * 2500n) / 10000n
+        );
+
+      expect(await usdc.balanceOf(provider.address)).to.equal(
+        providerBalBefore + (AMOUNT * 7500n) / 10000n
+      );
+      expect(await usdc.balanceOf(owner.address)).to.equal(
+        ownerBalBefore + (AMOUNT * 2500n) / 10000n
+      );
+    });
+
     it("reverts with invalid oracle signature", async function () {
       // Stranger signs instead of oracle
       const badProof = await oracleSign(
@@ -174,11 +200,11 @@ describe("Escrow", function () {
       ).to.be.revertedWith("Invalid oracle proof");
     });
 
-    it("reverts if caller is not the provider", async function () {
+    it("reverts if caller is not provider/relayer/owner", async function () {
       const proof = await oracleSign(JOB_ID, provider.address, AMOUNT, oracle);
       await expect(
         escrow.connect(stranger).claimLock(JOB_ID, proof)
-      ).to.be.revertedWith("Not provider");
+      ).to.be.revertedWith("Not authorized to claim");
     });
 
     it("reverts after expiry", async function () {
@@ -227,17 +253,30 @@ describe("Escrow", function () {
       expect(record.status).to.equal(3); // CANCELLED
     });
 
+    it("allows relayer to cancel after expiry", async function () {
+      await time.increaseTo(expiry + 1);
+      const balBefore = await usdc.balanceOf(renter.address);
+
+      await expect(escrow.connect(relayer).cancelExpiredLock(JOB_ID))
+        .to.emit(escrow, "Cancelled")
+        .withArgs(JOB_ID, renter.address, AMOUNT);
+
+      expect(await usdc.balanceOf(renter.address)).to.equal(
+        balBefore + AMOUNT
+      );
+    });
+
     it("reverts before expiry", async function () {
       await expect(
         escrow.connect(renter).cancelExpiredLock(JOB_ID)
       ).to.be.revertedWith("Not expired yet");
     });
 
-    it("reverts if caller is not the renter", async function () {
+    it("reverts if caller is not renter/relayer/owner", async function () {
       await time.increaseTo(expiry + 1);
       await expect(
         escrow.connect(stranger).cancelExpiredLock(JOB_ID)
-      ).to.be.revertedWith("Not renter");
+      ).to.be.revertedWith("Not authorized to cancel");
     });
 
     it("reverts on double-cancel", async function () {
@@ -270,6 +309,30 @@ describe("Escrow", function () {
       await expect(
         escrow.connect(owner).setOracle(ethers.ZeroAddress)
       ).to.be.revertedWith("Invalid oracle address");
+    });
+  });
+
+  // ── setRelayer ────────────────────────────────────────────────────────────
+
+  describe("setRelayer", function () {
+    it("owner can update relayer address", async function () {
+      await expect(escrow.connect(owner).setRelayer(stranger.address))
+        .to.emit(escrow, "RelayerUpdated")
+        .withArgs(owner.address, stranger.address);
+
+      expect(await escrow.relayer()).to.equal(stranger.address);
+    });
+
+    it("non-owner cannot update relayer", async function () {
+      await expect(
+        escrow.connect(stranger).setRelayer(stranger.address)
+      ).to.be.revertedWithCustomError(escrow, "OwnableUnauthorizedAccount");
+    });
+
+    it("reverts on zero address", async function () {
+      await expect(
+        escrow.connect(owner).setRelayer(ethers.ZeroAddress)
+      ).to.be.revertedWith("Invalid relayer address");
     });
   });
 

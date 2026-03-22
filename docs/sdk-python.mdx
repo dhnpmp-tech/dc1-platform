@@ -1,16 +1,16 @@
 ---
 title: SDK Python
-description: End-to-end Python quickstart with auth, submit, live logs, and output retrieval.
+description: Python integration guide with request/response parity snippets for critical DCP endpoints.
 order: 4
 ---
 
 ## Install
 
 ```bash
-pip install dc1_provider requests
+# Check /docs/sdk-guides for the current package name before install.
 ```
 
-## Run a complete renter flow
+## Renter flow (me -> submit -> logs -> output)
 
 ```python
 import json
@@ -27,23 +27,24 @@ headers = {
 # 1) Validate auth
 me = requests.get(f"{BASE_URL}/api/renters/me", params={"key": RENTER_KEY}, timeout=15)
 me.raise_for_status()
-print("renter:", me.json().get("email"))
+print("renter:", me.json().get("renter", {}).get("email"))
 
 # 2) Submit job
 submit_payload = {
-    "job_type": "llm-inference",
+    "provider_id": 42,
+    "job_type": "llm_inference",
     "duration_minutes": 3,
     "max_duration_seconds": 180,
     "container_spec": {"image_type": "vllm-serve"},
     "params": {
         "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        "prompt": "Give 3 bullets on AI adoption in Saudi Arabia.",
+        "prompt": "Give 3 bullets on DCP.",
     },
 }
 
 submit = requests.post(f"{BASE_URL}/api/jobs/submit", headers=headers, json=submit_payload, timeout=30)
 submit.raise_for_status()
-job_id = submit.json()["job_id"]
+job_id = submit.json()["job"]["job_id"]
 print("job_id:", job_id)
 
 # 3) Stream logs (SSE)
@@ -65,8 +66,61 @@ output = requests.get(f"{BASE_URL}/api/jobs/{job_id}/output", params={"key": REN
 print(output.status_code, output.json())
 ```
 
+## Parity snippets (raw requests)
+
+### `POST /api/renters/register`
+
+```python
+register = requests.post(
+    "https://api.dcp.sa/api/renters/register",
+    json={
+        "name": "Fatima Al-Saud",
+        "email": "fatima@example.sa",
+        "organization": "Riyadh AI Lab",
+        "use_case": "llm_inference",
+        "phone": "+966500000000",
+    },
+    timeout=20,
+)
+register.raise_for_status()
+print(register.json())
+```
+
+### `POST /api/providers/heartbeat`
+
+```python
+heartbeat = requests.post(
+    "https://api.dcp.sa/api/providers/heartbeat",
+    json={
+        "api_key": "dc1-provider-abc123...",
+        "gpu_status": {
+            "gpu_name": "NVIDIA RTX 3090",
+            "gpu_vram_mib": 24576,
+            "gpu_util_pct": 38,
+            "temp_c": 67,
+            "daemon_version": "3.3.0",
+        },
+    },
+    timeout=20,
+)
+heartbeat.raise_for_status()
+print(heartbeat.json())
+```
+
+### `GET /api/admin/dashboard`
+
+```python
+admin = requests.get(
+    "https://api.dcp.sa/api/admin/dashboard",
+    headers={"x-admin-token": "<DC1_ADMIN_TOKEN>"},
+    timeout=20,
+)
+admin.raise_for_status()
+print(admin.json().get("stats"))
+```
+
 ## Notes
 
-- `duration_minutes` and `container_spec.image_type` are required by `POST /api/jobs/submit`.
-- Use `GET /api/jobs/:job_id/logs/stream` for live logs.
-- Use `GET /api/jobs/:job_id/output` for final result payload.
+- Error payloads are always JSON: `{ "error": "..." }`.
+- Job submit auth: `x-renter-key` header (or `?key=` / `?renter_key=` query fallback).
+- Admin auth: `x-admin-token` header (Bearer token also accepted).

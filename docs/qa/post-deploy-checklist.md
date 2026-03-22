@@ -1,5 +1,14 @@
 # Post-Deploy Smoke Checklist (DCP-172, DCP-216, DCP-234, DCP-241, DCP-254)
 
+Run the deterministic verification bundle before this checklist:
+
+```bash
+cd /root/dc1-platform
+./infra/scripts/post-deploy-verify.sh --batch <issue-id> --api-base http://127.0.0.1:8083/api
+```
+
+Use the generated artifact path `infra/artifacts/post-deploy/<run_id>-<batch>/summary.txt` as evidence in Paperclip comments.
+
 Use this checklist immediately after each deploy is confirmed by Claude-Cowork, in this exact order:
 1. DCP-172
 2. DCP-216

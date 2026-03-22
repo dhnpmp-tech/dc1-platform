@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: Auth model, core endpoint map, and error contract for DCP provider/renter/admin integrations.
+description: Auth model, core endpoint map, runtime examples, and error contract for DCP provider/renter/admin integrations.
 order: 2
 ---
 
@@ -13,41 +13,12 @@ order: 2
 
 - **Provider**: `x-provider-key` header or `?key=` query
 - **Renter**: `x-renter-key` header or `?key=` query
-- **Admin**: `x-admin-token` header
+- **Admin**: `x-admin-token` header (or `Authorization: Bearer <token>`)
 
 Key examples:
 
-- `dcp-provider-...`
-- `dcp-renter-...`
-
-## Auth hardening checklist
-
-Use this baseline in production clients and SDK wrappers:
-
-1. Prefer headers (`x-provider-key`, `x-renter-key`, `x-admin-token`) over query params.
-2. Use query params only where required by existing GET endpoints (`/providers/me?key=...`, `/renters/me?key=...`).
-3. Keep keys in server-side env vars or local CLI env vars, never in committed source.
-4. Never print full API keys in logs, screenshots, or support tickets.
-5. Rotate keys immediately if exposed and update daemon/CI secrets in one change window.
-
-Minimal secure request pattern:
-
-```bash
-curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
-  -H "Content-Type: application/json" \
-  -H "x-renter-key: $RENTER_KEY" \
-  -d '{"provider_id": 42, "job_type": "llm-inference", "duration_minutes": 2}'
-```
-
-## Non-payment compute flow (quick path)
-
-This doc update intentionally excludes payment and escrow flows. For sandbox or internal demos, the core API path is:
-
-1. Validate key (`GET /renters/me?key=...`).
-2. Discover capacity (`GET /renters/available-providers`).
-3. Submit compute (`POST /jobs/submit` with `x-renter-key`).
-4. Observe execution (`GET /jobs/:id/logs` or `/logs/stream`).
-5. Retrieve output (`GET /jobs/:id/output`).
+- `dc1-provider-...`
+- `dc1-renter-...`
 
 ## Error contract
 
@@ -57,72 +28,329 @@ All failures return JSON:
 { "error": "descriptive message" }
 ```
 
-## Provider endpoints
+Example (`400`):
 
-```text
-POST /providers/register
-GET  /providers/me?key=
-POST /providers/heartbeat
-POST /providers/pause
-POST /providers/resume
-GET  /providers/download/daemon?key=
-GET  /providers/download/setup?key=&os=windows|linux|mac
-GET  /providers/earnings?key=
+```json
+{ "error": "Missing required fields: job_type, duration_minutes" }
 ```
 
-## Renter endpoints
+## Critical endpoint parity examples
 
-```text
-POST /renters/register
-GET  /renters/me?key=
-GET  /renters/available-providers
-GET  /renters/me/invoices?key=&page=&limit=
-GET  /renters/me/invoices/export.csv?key=
-POST /payments/topup
-GET  /payments/history
+The following examples are aligned with production route contracts in `backend/src/routes/*.js` and `docs/openapi.yaml`.
+
+### 1) Renter registration — `POST /renters/register`
+
+cURL:
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/renters/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Fatima Al-Saud",
+    "email": "fatima@example.sa",
+    "organization": "Riyadh AI Lab",
+    "use_case": "llm_inference",
+    "phone": "+966500000000"
+  }'
 ```
 
-## Job endpoints
+Node.js:
 
-```text
-POST /jobs/submit
-GET  /jobs/:id
-GET  /jobs/:id/output
-GET  /jobs/:id/logs
-GET  /jobs/:id/logs/stream
-GET  /jobs/queue/status
-POST /jobs/:id/retry
-POST /jobs/:id/pause
-POST /jobs/:id/resume
+```ts
+const res = await fetch('https://dcp.sa/api/dc1/renters/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    name: 'Fatima Al-Saud',
+    email: 'fatima@example.sa',
+    organization: 'Riyadh AI Lab',
+    use_case: 'llm_inference',
+    phone: '+966500000000',
+  }),
+})
+const data = await res.json()
+if (!res.ok) throw new Error(data.error)
 ```
 
-## Admin endpoints
+Python:
 
-```text
-GET  /admin/dashboard
-GET  /admin/providers
-GET  /admin/providers/:id
-GET  /admin/daemon-health
-GET  /admin/withdrawals
-PATCH /admin/withdrawals/:id
+```python
+import requests
+
+res = requests.post(
+    "https://dcp.sa/api/dc1/renters/register",
+    json={
+        "name": "Fatima Al-Saud",
+        "email": "fatima@example.sa",
+        "organization": "Riyadh AI Lab",
+        "use_case": "llm_inference",
+        "phone": "+966500000000",
+    },
+    timeout=20,
+)
+res.raise_for_status()
+print(res.json())
 ```
 
-## First-job request template
+Success response (`201`):
+
+```json
+{
+  "success": true,
+  "renter_id": 101,
+  "api_key": "dc1-renter-abc123...",
+  "message": "Welcome Fatima Al-Saud! Save your API key — it won't be shown again."
+}
+```
+
+### 2) Provider heartbeat — `POST /providers/heartbeat`
+
+cURL:
+
+```bash
+curl -s -X POST "https://dcp.sa/api/dc1/providers/heartbeat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_key": "dc1-provider-abc123...",
+    "gpu_status": {
+      "gpu_name": "NVIDIA RTX 3090",
+      "gpu_vram_mib": 24576,
+      "gpu_util_pct": 41,
+      "temp_c": 68,
+      "daemon_version": "3.3.0",
+      "python_version": "3.11.8",
+      "os_info": "Ubuntu 22.04"
+    },
+    "provider_hostname": "gpu-host-01",
+    "cached_models": ["TinyLlama/TinyLlama-1.1B-Chat-v1.0"]
+  }'
+```
+
+Node.js:
+
+```ts
+const hb = await fetch('https://dcp.sa/api/dc1/providers/heartbeat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    api_key: process.env.DC1_PROVIDER_KEY,
+    gpu_status: {
+      gpu_name: 'NVIDIA RTX 3090',
+      gpu_vram_mib: 24576,
+      gpu_util_pct: 41,
+      temp_c: 68,
+      daemon_version: '3.3.0',
+    },
+  }),
+})
+const hbData = await hb.json()
+if (!hb.ok) throw new Error(hbData.error)
+```
+
+Python:
+
+```python
+import requests
+
+hb = requests.post(
+    "https://dcp.sa/api/dc1/providers/heartbeat",
+    json={
+        "api_key": "dc1-provider-abc123...",
+        "gpu_status": {
+            "gpu_name": "NVIDIA RTX 3090",
+            "gpu_vram_mib": 24576,
+            "gpu_util_pct": 41,
+            "temp_c": 68,
+            "daemon_version": "3.3.0",
+        },
+    },
+    timeout=20,
+)
+hb.raise_for_status()
+print(hb.json())
+```
+
+Success response (`200`):
+
+```json
+{
+  "success": true,
+  "message": "Heartbeat received",
+  "timestamp": "2026-03-22T19:30:00.000Z",
+  "needs_update": false,
+  "latest_version": "3.3.0",
+  "update_available": false,
+  "min_version": "3.3.0",
+  "approval_status": "approved",
+  "approved": true,
+  "preload_model": null
+}
+```
+
+### 3) Job submission — `POST /jobs/submit`
+
+cURL:
 
 ```bash
 curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
   -H "Content-Type: application/json" \
-  -H "x-renter-key: <RENTER_KEY>" \
+  -H "x-renter-key: $RENTER_KEY" \
   -d '{
     "provider_id": 42,
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 3,
+    "max_duration_seconds": 180,
     "container_spec": { "image_type": "vllm-serve" },
     "params": {
       "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
       "prompt": "Summarize DCP in three bullets"
     }
   }'
+```
+
+Node.js:
+
+```ts
+const submit = await fetch('https://dcp.sa/api/dc1/jobs/submit', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-renter-key': process.env.DC1_RENTER_KEY!,
+  },
+  body: JSON.stringify({
+    provider_id: 42,
+    job_type: 'llm_inference',
+    duration_minutes: 3,
+    max_duration_seconds: 180,
+    container_spec: { image_type: 'vllm-serve' },
+    params: {
+      model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+      prompt: 'Summarize DCP in three bullets',
+    },
+  }),
+})
+const submitted = await submit.json()
+if (!submit.ok) throw new Error(submitted.error)
+```
+
+Python:
+
+```python
+import requests
+
+submitted = requests.post(
+    "https://dcp.sa/api/dc1/jobs/submit",
+    headers={
+        "Content-Type": "application/json",
+        "x-renter-key": "dc1-renter-abc123...",
+    },
+    json={
+        "provider_id": 42,
+        "job_type": "llm_inference",
+        "duration_minutes": 3,
+        "max_duration_seconds": 180,
+        "container_spec": {"image_type": "vllm-serve"},
+        "params": {
+            "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            "prompt": "Summarize DCP in three bullets",
+        },
+    },
+    timeout=30,
+)
+submitted.raise_for_status()
+print(submitted.json())
+```
+
+Success response (`201`):
+
+```json
+{
+  "success": true,
+  "job": {
+    "id": 9001,
+    "job_id": "job-1742671800000-ab12cd",
+    "provider_id": 42,
+    "renter_id": 101,
+    "job_type": "llm_inference",
+    "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "status": "pending",
+    "submitted_at": "2026-03-22T19:30:00.000Z",
+    "duration_minutes": 3,
+    "cost_halala": 45,
+    "max_duration_seconds": 180,
+    "timeout_at": "2026-03-22 20:00:00.000",
+    "gpu_requirements": null,
+    "container_spec": { "image_type": "vllm-serve", "pricing_class": "standard" },
+    "workspace_volume_name": "dcp-job-job-1742671800000-ab12cd",
+    "checkpoint_enabled": false,
+    "task_spec_signed": true,
+    "priority": 2,
+    "pricing_class": "standard",
+    "prewarm_requested": false,
+    "queue_position": null
+  }
+}
+```
+
+### 4) Admin dashboard — `GET /admin/dashboard`
+
+cURL:
+
+```bash
+curl -s "https://dcp.sa/api/dc1/admin/dashboard" \
+  -H "x-admin-token: $DC1_ADMIN_TOKEN"
+```
+
+Node.js:
+
+```ts
+const dash = await fetch('https://dcp.sa/api/dc1/admin/dashboard', {
+  headers: { 'x-admin-token': process.env.DC1_ADMIN_TOKEN! },
+})
+const dashboard = await dash.json()
+if (!dash.ok) throw new Error(dashboard.error)
+```
+
+Python:
+
+```python
+import requests
+
+dashboard = requests.get(
+    "https://dcp.sa/api/dc1/admin/dashboard",
+    headers={"x-admin-token": "<DC1_ADMIN_TOKEN>"},
+    timeout=20,
+)
+dashboard.raise_for_status()
+print(dashboard.json())
+```
+
+Success response (`200`) shape:
+
+```json
+{
+  "stats": {
+    "total_providers": 120,
+    "online_now": 84,
+    "offline": 36,
+    "total_renters": 410,
+    "active_renters": 328,
+    "total_renter_balance_halala": 920000,
+    "total_jobs": 11500,
+    "completed_jobs": 10870,
+    "failed_jobs": 240,
+    "active_jobs": 390,
+    "total_revenue_halala": 5230000,
+    "total_dc1_fees_halala": 1307500,
+    "today_revenue_halala": 122000,
+    "today_dc1_fees_halala": 30500,
+    "today_jobs": 267,
+    "timestamp": "2026-03-22T19:30:00.000Z"
+  },
+  "gpu_breakdown": [],
+  "recent_signups": [],
+  "recent_heartbeats": []
+}
 ```
 
 ## OpenAPI source

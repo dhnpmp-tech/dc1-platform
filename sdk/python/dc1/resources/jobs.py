@@ -4,7 +4,7 @@ import time
 from typing import Any, Optional
 
 from ..models import Job
-from ..exceptions import JobTimeoutError
+from ..exceptions import APIError, JobTimeoutError
 
 TERMINAL_STATUSES = {'completed', 'failed', 'cancelled'}
 
@@ -43,8 +43,10 @@ class JobsResource:
             'params': params,
         }
         data = self._http.post('/api/jobs/submit', body)
-        # submit returns minimal info; enrich via get()
-        job_id = str(data.get('job_id', data.get('id', '')))
+        submitted_job = data.get('job') if isinstance(data.get('job'), dict) else data
+        job_id = str(submitted_job.get('job_id', submitted_job.get('id', data.get('job_id', data.get('id', '')))))
+        if not job_id:
+            raise APIError('Job submission succeeded but no job_id was returned', status_code=500, response=data)
         return self.get(job_id)
 
     def get(self, job_id: str) -> Job:
@@ -56,7 +58,13 @@ class JobsResource:
         Returns:
             Job object with current status and result (if completed).
         """
-        data = self._http.get(f'/api/jobs/{job_id}/output')
+        try:
+            data = self._http.get(f'/api/jobs/{job_id}/output')
+        except APIError as exc:
+            # Backend returns 410 for failed/cancelled jobs with useful terminal payload.
+            if exc.status_code == 410 and isinstance(exc.response, dict):
+                return Job.from_api(exc.response)
+            raise
         return Job.from_api(data)
 
     def wait(
@@ -98,6 +106,6 @@ class JobsResource:
         Returns:
             List of Job objects, newest first.
         """
-        data = self._http.get('/api/jobs', params={'limit': limit})
+        data = self._http.get('/api/jobs/history', params={'limit': limit})
         jobs_raw = data if isinstance(data, list) else data.get('jobs', [])
         return [Job.from_api(j) for j in jobs_raw]

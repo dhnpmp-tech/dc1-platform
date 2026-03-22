@@ -3,11 +3,31 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 
-const P2P_DISCOVERY_DIR = path.join(__dirname, '../../p2p');
+function resolveDiscoveryDir() {
+  const candidates = [
+    path.join(__dirname, '../../../p2p'),
+    path.join(__dirname, '../../p2p'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0];
+}
+
+const P2P_DISCOVERY_DIR = resolveDiscoveryDir();
 const P2P_DISCOVERY_SCRIPT = path.join(P2P_DISCOVERY_DIR, 'provider-announce.js');
 const P2P_DISCOVERY_MODULE = path.join(P2P_DISCOVERY_DIR, 'dcp-discovery-scaffold.js');
 
 const READ_MODE = (process.env.P2P_DISCOVERY_READ_PATH || 'sqlite').toLowerCase();
+const DEFAULT_SHADOW_THRESHOLDS = {
+  minCoveragePct: 95,
+  maxStalePct: 5,
+  maxMissingPeers: 2,
+  maxLookupLatencyMs: 3000,
+  fallbackMinCoveragePct: 80,
+  fallbackMaxStalePct: 20,
+  fallbackMaxLookupLatencyMs: 8000,
+};
 
 let dcpDiscoveryModule = null;
 let dcpDiscoveryModulePromise = null;
@@ -34,12 +54,16 @@ function normalizeBootstrapList(raw) {
     .filter((entry) => entry.length > 0 && !entry.includes('REPLACE_WITH_BOOTSTRAP_PEER_ID'));
 }
 
+function getBootstrapEnvRaw() {
+  return process.env.DCP_P2P_BOOTSTRAP || process.env.DC1_P2P_BOOTSTRAP || '';
+}
+
 function hasBootstrap() {
-  return normalizeBootstrapList(process.env.DC1_P2P_BOOTSTRAP).length > 0;
+  return normalizeBootstrapList(getBootstrapEnvRaw()).length > 0;
 }
 
 function getBootstrapList() {
-  return normalizeBootstrapList(process.env.DC1_P2P_BOOTSTRAP);
+  return normalizeBootstrapList(getBootstrapEnvRaw());
 }
 
 function getFeatureFlags() {
@@ -52,8 +76,133 @@ function getFeatureFlags() {
   };
 }
 
+function getShadowThresholds() {
+  return {
+    minCoveragePct: toFiniteNumber(
+      process.env.P2P_SHADOW_MIN_COVERAGE_PCT,
+      DEFAULT_SHADOW_THRESHOLDS.minCoveragePct,
+      { min: 0, max: 100 }
+    ),
+    maxStalePct: toFiniteNumber(
+      process.env.P2P_SHADOW_MAX_STALE_PCT,
+      DEFAULT_SHADOW_THRESHOLDS.maxStalePct,
+      { min: 0, max: 100 }
+    ),
+    maxMissingPeers: toPositiveInt(
+      toFiniteNumber(process.env.P2P_SHADOW_MAX_MISSING_PEERS, DEFAULT_SHADOW_THRESHOLDS.maxMissingPeers, { min: 0 }),
+      DEFAULT_SHADOW_THRESHOLDS.maxMissingPeers
+    ),
+    maxLookupLatencyMs: toPositiveInt(
+      process.env.P2P_SHADOW_MAX_LOOKUP_LATENCY_MS,
+      DEFAULT_SHADOW_THRESHOLDS.maxLookupLatencyMs
+    ),
+    fallbackMinCoveragePct: toFiniteNumber(
+      process.env.P2P_SHADOW_FALLBACK_MIN_COVERAGE_PCT,
+      DEFAULT_SHADOW_THRESHOLDS.fallbackMinCoveragePct,
+      { min: 0, max: 100 }
+    ),
+    fallbackMaxStalePct: toFiniteNumber(
+      process.env.P2P_SHADOW_FALLBACK_MAX_STALE_PCT,
+      DEFAULT_SHADOW_THRESHOLDS.fallbackMaxStalePct,
+      { min: 0, max: 100 }
+    ),
+    fallbackMaxLookupLatencyMs: toPositiveInt(
+      process.env.P2P_SHADOW_FALLBACK_MAX_LOOKUP_LATENCY_MS,
+      DEFAULT_SHADOW_THRESHOLDS.fallbackMaxLookupLatencyMs
+    ),
+  };
+}
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function roundPct(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+}
+
+function normalizeShadowCandidateIds(peerIds = []) {
+  return Array.from(new Set(toPeerIdList(peerIds)));
+}
+
+function buildShadowCycleSummary({
+  trackedPeerIds = [],
+  resolvedProviders = [],
+  lookupLatencyMs = null,
+  evaluatedAt = nowIso(),
+  thresholds = getShadowThresholds(),
+} = {}) {
+  const tracked = normalizeShadowCandidateIds(trackedPeerIds);
+  const resolvedByPeerId = new Map();
+  for (const entry of Array.isArray(resolvedProviders) ? resolvedProviders : []) {
+    const peerId = toText(entry?.peer_id, null);
+    if (!peerId || resolvedByPeerId.has(peerId)) continue;
+    resolvedByPeerId.set(peerId, entry);
+  }
+
+  let found = 0;
+  let stale = 0;
+  const missingPeerIds = [];
+  const stalePeerIds = [];
+  for (const peerId of tracked) {
+    const resolved = resolvedByPeerId.get(peerId);
+    if (resolved?.found) {
+      found += 1;
+      if (resolved.stale) {
+        stale += 1;
+        stalePeerIds.push(peerId);
+      }
+    } else {
+      missingPeerIds.push(peerId);
+    }
+  }
+
+  const trackedTotal = tracked.length;
+  const coveragePct = trackedTotal > 0 ? roundPct((found / trackedTotal) * 100) : 0;
+  const stalePct = found > 0 ? roundPct((stale / found) * 100) : 0;
+  const latencyMs = Number.isFinite(Number(lookupLatencyMs)) ? Math.round(Number(lookupLatencyMs)) : null;
+
+  const promoteChecks = {
+    coverage: coveragePct >= thresholds.minCoveragePct,
+    stale: stalePct <= thresholds.maxStalePct,
+    missing: missingPeerIds.length <= thresholds.maxMissingPeers,
+    latency: latencyMs == null ? true : latencyMs <= thresholds.maxLookupLatencyMs,
+  };
+  const promoteReady = Boolean(promoteChecks.coverage && promoteChecks.stale && promoteChecks.missing && promoteChecks.latency);
+
+  const fallbackChecks = {
+    coverage: coveragePct < thresholds.fallbackMinCoveragePct,
+    stale: stalePct > thresholds.fallbackMaxStalePct,
+    latency: latencyMs != null && latencyMs > thresholds.fallbackMaxLookupLatencyMs,
+  };
+  const fallbackTriggered = Boolean(fallbackChecks.coverage || fallbackChecks.stale || fallbackChecks.latency);
+
+  let decision = 'hold-shadow';
+  if (fallbackTriggered) decision = 'fallback-to-sqlite';
+  else if (promoteReady) decision = 'promote-to-p2p-primary';
+
+  return {
+    evaluated_at: evaluatedAt,
+    tracked_peer_ids: tracked,
+    tracked_total: trackedTotal,
+    discovered_total: found,
+    missing_total: missingPeerIds.length,
+    stale_total: stale,
+    coverage_pct: coveragePct,
+    stale_pct: stalePct,
+    lookup_latency_ms: latencyMs,
+    missing_peer_ids: missingPeerIds,
+    stale_peer_ids: stalePeerIds,
+    thresholds,
+    checks: {
+      promote: promoteChecks,
+      fallback: fallbackChecks,
+    },
+    decision,
+    promote_ready: promoteReady,
+    fallback_triggered: fallbackTriggered,
+  };
 }
 
 function waitForPeers(node, timeoutMs = 2500) {
@@ -93,6 +242,14 @@ function toPositiveInt(value, fallback = null) {
     return fallback;
   }
   return value;
+}
+
+function toFiniteNumber(value, fallback = null, { min = null, max = null } = {}) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  if (min != null && num < min) return fallback;
+  if (max != null && num > max) return fallback;
+  return num;
 }
 
 function toTags(value) {
@@ -183,7 +340,7 @@ function buildP2PAnnouncementSpec(provider, heartbeatData = {}) {
 
   const availabilityRaw = heartbeatData.available_slots ?? provider.available_slots ?? provider.gpu_count ?? gpuStatus.gpu_count;
   const availableSlots = toPositiveInt(availabilityRaw, 1) || 1;
-  const peerIdHint = toText(heartbeatData.peer_id, null);
+  const peerIdHint = toText(heartbeatData.peer_id, null) || toText(provider.p2p_peer_id, null);
 
   return {
     version: 1,
@@ -315,7 +472,9 @@ async function runNodeQuery(queryHandler, options = {}) {
   try {
     return await queryHandler(module, node);
   } finally {
-    await node.stop().catch(() => {});
+    if (node) {
+      await node.stop().catch(() => {});
+    }
   }
 }
 
@@ -326,6 +485,60 @@ async function resolveProvider(peerId, { allowStale = false, maxAgeMs = 120000, 
     maxAgeMs,
     fallbackResolver,
   }));
+}
+
+async function resolvePeersWithNode(module, node, peerIds, { allowStale = false, maxAgeMs = 120000, fallbackResolver = null }) {
+  const results = [];
+  for (const peerId of peerIds) {
+    const resolved = await module.resolveProviderByPeerId(node, peerId, {
+      allowStale,
+      maxAgeMs,
+      fallbackResolver,
+    });
+    if (!resolved || !resolved.provider) {
+      results.push({ peer_id: peerId, found: false, source: 'dht', reason: 'provider_record_missing' });
+    } else {
+      results.push({
+        peer_id: peerId,
+        found: true,
+        source: resolved.source || 'dht',
+        stale: Boolean(resolved.stale),
+        provider: resolved.provider,
+        environment: resolved.environment?.env ? resolved.environment.env : null,
+        envelope: resolved.environment || null,
+      });
+    }
+  }
+  return results;
+}
+
+async function listProviders({ allowStale = false, maxAgeMs = 120000, fallbackResolver = null } = {}) {
+  if (!['shadow', 'p2p-primary'].includes(getDiscoveryMode())) {
+    return [];
+  }
+
+  const module = await loadDiscoveryModule();
+  if (!module || typeof module.getRegisteredProviderPeers !== 'function') return [];
+
+  let node = null;
+  try {
+    node = await module.createDiscoveryNode(createNodeOptions());
+  } catch (error) {
+    console.warn('[p2p-discovery] Failed to create discovery node for provider listing:', error.message);
+    return [];
+  }
+  try {
+    const discoveredPeerIds = toPeerIdList(await module.getRegisteredProviderPeers(node));
+    if (!discoveredPeerIds.length) return [];
+
+    return resolvePeersWithNode(module, node, discoveredPeerIds, {
+      allowStale,
+      maxAgeMs,
+      fallbackResolver,
+    });
+  } finally {
+    await node.stop().catch(() => {});
+  }
 }
 
 async function resolveProviders(peerIds, { allowStale = false, maxAgeMs = 120000, fallbackResolver = null } = {}) {
@@ -341,31 +554,59 @@ async function resolveProviders(peerIds, { allowStale = false, maxAgeMs = 120000
 
   const node = await module.createDiscoveryNode(createNodeOptions());
   try {
-    const results = [];
-    for (const peerId of uniqueIds) {
-      const resolved = await module.resolveProviderByPeerId(node, peerId, {
-        allowStale,
-        maxAgeMs,
-        fallbackResolver,
-      });
-      if (!resolved || !resolved.provider) {
-        results.push({ peer_id: peerId, found: false, source: 'dht', reason: 'provider_record_missing' });
-      } else {
-        results.push({
-          peer_id: peerId,
-          found: true,
-          source: resolved.source || 'dht',
-          stale: Boolean(resolved.stale),
-          provider: resolved.provider,
-          environment: resolved.environment?.env ? resolved.environment.env : null,
-          envelope: resolved.environment || null,
-        });
-      }
-    }
-    return results;
+    return resolvePeersWithNode(module, node, uniqueIds, {
+      allowStale,
+      maxAgeMs,
+      fallbackResolver,
+    });
   } finally {
     await node.stop().catch(() => {});
   }
+}
+
+async function runShadowDiscoveryCycle(peerIds, { allowStale = false, maxAgeMs = 120000 } = {}) {
+  const mode = getDiscoveryMode();
+  const trackedPeerIds = normalizeShadowCandidateIds(peerIds);
+  const evaluatedAt = nowIso();
+  const thresholds = getShadowThresholds();
+
+  if (mode === 'sqlite') {
+    return {
+      status: 'skipped',
+      reason: 'mode_sqlite',
+      mode,
+      max_age_ms: maxAgeMs,
+      allow_stale: allowStale,
+      shadow_cycle: buildShadowCycleSummary({
+        trackedPeerIds,
+        resolvedProviders: [],
+        lookupLatencyMs: null,
+        evaluatedAt,
+        thresholds,
+      }),
+    };
+  }
+
+  const started = Date.now();
+  const resolvedProviders = await resolveProviders(trackedPeerIds, {
+    allowStale,
+    maxAgeMs,
+  });
+  const shadowCycle = buildShadowCycleSummary({
+    trackedPeerIds,
+    resolvedProviders,
+    lookupLatencyMs: Date.now() - started,
+    evaluatedAt,
+    thresholds,
+  });
+
+  return {
+    status: shadowCycle.fallback_triggered ? 'degraded' : (shadowCycle.promote_ready ? 'healthy' : 'holding'),
+    mode,
+    max_age_ms: maxAgeMs,
+    allow_stale: allowStale,
+    shadow_cycle: shadowCycle,
+  };
 }
 
 async function resolveEnvironment(cid, { allowStale = false, maxAgeMs = 120000, fallbackResolver = null } = {}) {
@@ -434,9 +675,13 @@ async function probeDiscovery({ ttlMs = 120000, bootstrapProbeMs = 3000 } = {}) 
 
 module.exports = {
   getDiscoveryStatus,
+  getShadowThresholds,
+  buildShadowCycleSummary,
+  runShadowDiscoveryCycle,
   announceFromProviderHeartbeat,
   announceFromHttpInput,
   resolveProvider,
+  listProviders,
   resolveProviders,
   resolveEnvironment,
   probeDiscovery,

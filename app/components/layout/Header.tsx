@@ -2,24 +2,78 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
-import { LanguageToggle } from '../../lib/i18n'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { LanguageToggle, useLanguage } from '../../lib/i18n'
+import { persistRoleIntent, readRoleIntent, RoleIntent, trackRoleIntentApplied } from '../../lib/role-intent'
 
-const publicNav = [
-  { label: 'Rent GPUs', href: '/renter/register' },
-  { label: 'Earn with GPUs', href: '/provider/register' },
-  { label: 'Marketplace', href: '/marketplace' },
-  { label: 'Docs', href: '/docs' },
-  { label: 'Support', href: '/support' },
-]
+interface PublicNavItem {
+  label: string
+  href: string
+  matchPath?: string
+}
 
 export default function Header() {
+  const { t } = useLanguage()
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [roleIntent, setRoleIntent] = useState<RoleIntent>('renter')
+  const hasTrackedApply = useRef(false)
 
-  const isActive = (href: string) => {
-    if (href === '/') return pathname === '/'
-    return pathname.startsWith(href)
+  useEffect(() => {
+    const storedIntent = readRoleIntent()
+    if (!storedIntent) return
+    setRoleIntent(storedIntent)
+    if (!hasTrackedApply.current) {
+      trackRoleIntentApplied(storedIntent, { source: 'header', destination: 'navigation' })
+      hasTrackedApply.current = true
+    }
+  }, [])
+
+  const applyIntent = (nextIntent: RoleIntent) => {
+    const previousIntent = roleIntent
+    setRoleIntent(nextIntent)
+    persistRoleIntent(nextIntent, {
+      source: 'header_switcher',
+      previousIntent,
+      reason: previousIntent && previousIntent !== nextIntent ? 'overridden' : 'persisted',
+    })
+  }
+
+  const docsHref =
+    roleIntent === 'provider'
+      ? '/docs/provider-guide#status-waiting-install-daemon'
+      : '/docs/quickstart#renter-onboarding-checklist'
+  const supportHref = `/support?category=${roleIntent === 'provider' ? 'provider' : roleIntent === 'enterprise' ? 'enterprise' : 'renter'}&source=header-nav#contact-form`
+
+  const publicNav: PublicNavItem[] = useMemo(
+    () => [
+      { label: t('header.nav.rent'), href: '/renter/register' },
+      { label: t('header.nav.playground'), href: '/renter/playground?starter=1', matchPath: '/renter/playground' },
+      { label: t('header.nav.container_api'), href: docsHref, matchPath: '/docs' },
+      { label: t('header.nav.enterprise'), href: supportHref, matchPath: '/support' },
+      { label: t('header.nav.earn'), href: '/provider/register' },
+    ],
+    [docsHref, supportHref, t]
+  )
+
+  const primaryHref =
+    roleIntent === 'provider'
+      ? '/provider/register'
+      : roleIntent === 'enterprise'
+        ? '/support?category=enterprise&source=header-primary-cta#contact-form'
+        : '/renter/register'
+
+  const primaryLabel =
+    roleIntent === 'provider'
+      ? t('header.primary_cta_provider')
+      : roleIntent === 'enterprise'
+        ? t('header.primary_cta_enterprise')
+        : t('header.primary_cta_renter')
+
+  const isActive = (item: PublicNavItem) => {
+    const activePath = item.matchPath || item.href.split('?')[0]
+    if (activePath === '/') return pathname === '/'
+    return pathname.startsWith(activePath)
   }
 
   return (
@@ -42,7 +96,7 @@ export default function Header() {
                 key={item.href}
                 href={item.href}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
-                  isActive(item.href)
+                  isActive(item)
                     ? 'text-dc1-amber bg-dc1-amber/10'
                     : 'text-dc1-text-secondary hover:text-dc1-text-primary hover:bg-dc1-surface-l2'
                 }`}
@@ -54,12 +108,31 @@ export default function Header() {
 
           {/* Right side: Language toggle + Auth buttons */}
           <div className="hidden md:flex items-center gap-3">
+            <div className="flex items-center gap-1 rounded-md border border-dc1-border bg-dc1-surface-l2 p-1">
+              <span className="px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-dc1-text-muted">
+                {t('header.intent.label')}
+              </span>
+              {(['renter', 'provider', 'enterprise'] as RoleIntent[]).map((intent) => (
+                <button
+                  key={intent}
+                  type="button"
+                  onClick={() => applyIntent(intent)}
+                  className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                    roleIntent === intent
+                      ? 'bg-dc1-amber text-dc1-void'
+                      : 'text-dc1-text-secondary hover:text-dc1-text-primary'
+                  }`}
+                >
+                  {t(`header.intent.${intent}`)}
+                </button>
+              ))}
+            </div>
             <LanguageToggle />
             <Link href="/login" className="btn btn-secondary btn-sm">
-              Console Login
+              {t('header.console_login')}
             </Link>
-            <Link href="/renter/register" className="btn btn-primary btn-sm">
-              Rent GPUs
+            <Link href={primaryHref} className="btn btn-primary btn-sm">
+              {primaryLabel}
             </Link>
           </div>
 
@@ -89,7 +162,7 @@ export default function Header() {
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={`px-4 py-3 rounded-md text-sm font-medium ${
-                    isActive(item.href)
+                    isActive(item)
                       ? 'text-dc1-amber bg-dc1-amber/10'
                       : 'text-dc1-text-secondary hover:text-dc1-text-primary hover:bg-dc1-surface-l2'
                   }`}
@@ -99,9 +172,28 @@ export default function Header() {
               ))}
             </nav>
             <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-dc1-border px-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-dc1-text-muted">
+                {t('header.intent.label')}
+              </p>
+              <div className="flex gap-2">
+                {(['renter', 'provider', 'enterprise'] as RoleIntent[]).map((intent) => (
+                  <button
+                    key={intent}
+                    type="button"
+                    onClick={() => applyIntent(intent)}
+                    className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                      roleIntent === intent
+                        ? 'bg-dc1-amber text-dc1-void'
+                        : 'border border-dc1-border text-dc1-text-secondary'
+                    }`}
+                  >
+                    {t(`header.intent.${intent}`)}
+                  </button>
+                ))}
+              </div>
               <LanguageToggle className="self-start" />
-              <Link href="/login" className="btn btn-secondary text-center">Console Login</Link>
-              <Link href="/renter/register" className="btn btn-primary text-center">Rent GPUs</Link>
+              <Link href="/login" className="btn btn-secondary text-center">{t('header.console_login')}</Link>
+              <Link href={primaryHref} className="btn btn-primary text-center">{primaryLabel}</Link>
             </div>
           </div>
         )}

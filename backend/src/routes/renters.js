@@ -6,7 +6,14 @@ const db = require('../db');
 const { COST_RATES } = require('./jobs');
 const { sendWelcomeEmail, sendDataExportReady } = require('../services/emailService');
 const { renterAccountDeletionLimiter, renterDataExportLimiter } = require('../middleware/rateLimiter');
+const {
+  getDiscoveryStatus,
+  resolveProviders,
+  listProviders,
+  buildShadowCycleSummary,
+} = require('../services/p2p-discovery');
 const { reconcileRenterByEmailFromSupabase } = require('../services/renter-identity-reconciliation');
+const { isPublicWebhookUrl } = require('../lib/webhook-security');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -44,6 +51,7 @@ function normalizeWebhookUrl(value) {
   if (value == null) return null;
   const normalized = normalizeString(value, { maxLen: 500 });
   if (!normalized) return null;
+  if (!isPublicWebhookUrl(normalized)) return null;
   try {
     const parsed = new URL(normalized);
     if (!['http:', 'https:'].includes(parsed.protocol)) return null;
@@ -65,6 +73,132 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
   const num = toFiniteNumber(value, { min, max });
   if (num == null || !Number.isInteger(num)) return null;
   return num;
+}
+
+function parseDiscoveryMode(rawMode) {
+  const normalized = String(rawMode || '').toLowerCase();
+  if (normalized === 'sqlite' || normalized === 'shadow' || normalized === 'p2p-primary') {
+    return normalized;
+  }
+  return null;
+}
+
+function parseBoolLike(value) {
+  const normalized = String(value || '').toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
+function parseCachedModels(rawCachedModels) {
+  if (!rawCachedModels) return [];
+  if (Array.isArray(rawCachedModels)) {
+    return rawCachedModels
+      .map((entry) => normalizeString(entry, { maxLen: 200 }))
+      .filter(Boolean);
+  }
+  try {
+    const parsed = JSON.parse(rawCachedModels);
+    return Array.isArray(parsed)
+      ? parsed.map((entry) => normalizeString(entry, { maxLen: 200 })).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function buildProviderShapeFromSQLiteRow(row, now) {
+  const heartbeatAge = row.last_heartbeat
+    ? Math.floor((now - new Date(row.last_heartbeat).getTime()) / 1000)
+    : null;
+
+  return {
+    id: row.id,
+    peer_id: row.p2p_peer_id || null,
+    name: row.name,
+    gpu_model: row.gpu_name_detected || row.gpu_model,
+    vram_gb: row.gpu_vram_mib ? Math.round(row.gpu_vram_mib / 1024) : null,
+    vram_mib: row.gpu_vram_mib,
+    gpu_count: row.gpu_count_reported || 1,
+    driver_version: row.gpu_driver,
+    compute_capability: row.gpu_compute_capability,
+    cuda_version: row.gpu_cuda_version,
+    status: row.status,
+    is_live: heartbeatAge !== null && heartbeatAge < 120,
+    location: row.location,
+    reliability_score: row.reliability_score,
+    cached_models: parseCachedModels(row.cached_models),
+    discovery_source: 'sqlite',
+    discovered_at: null,
+    stale: false,
+  };
+}
+
+function buildProviderShapeFromDHT(row, resolution, now) {
+  const env = resolution?.environment || {};
+  const providerRecord = resolution?.provider || {};
+  const envVramMb = env.vram_gb != null ? Math.round(Number(env.vram_gb) * 1024) : null;
+  const cachedModels = Array.isArray(env.tags) && env.tags.length > 0
+    ? env.tags
+    : parseCachedModels(row.cached_models);
+  const heartbeatAge = row.last_heartbeat
+    ? Math.floor((now - new Date(row.last_heartbeat).getTime()) / 1000)
+    : null;
+  const heartbeatLive = heartbeatAge !== null && heartbeatAge < 120;
+  const dhtStale = Boolean(resolution?.stale);
+
+  return {
+    id: row.id,
+    peer_id: row.p2p_peer_id || null,
+    name: row.name,
+    gpu_model: env.gpu_model || row.gpu_name_detected || row.gpu_model,
+    vram_gb: env.vram_gb != null ? env.vram_gb : (row.gpu_vram_mib ? Math.round(row.gpu_vram_mib / 1024) : null),
+    vram_mib: envVramMb != null ? envVramMb : row.gpu_vram_mib,
+    gpu_count: env.available_slots || row.gpu_count_reported || 1,
+    driver_version: env.driver_version || row.gpu_driver,
+    compute_capability: env.compute_capability || row.gpu_compute_capability || null,
+    cuda_version: env.cuda_version || row.gpu_cuda_version || null,
+    status: dhtStale ? 'degraded' : row.status || 'online',
+    is_live: heartbeatLive && !dhtStale,
+    location: env.region || row.location,
+    reliability_score: Number(env.reliability_score ?? row.reliability_score ?? 0),
+    cached_models: cachedModels,
+    discovery_source: 'dht',
+    discovered_at: providerRecord.announced_at || null,
+    addrs: providerRecord.addrs || [],
+    stale: dhtStale,
+  };
+}
+
+function buildProviderShapeFromDHTRecord(resolution) {
+  const envEnvelope = resolution?.environment || {};
+  const providerRecord = resolution?.provider || {};
+  const env = envEnvelope.env || {};
+  const envVramMb = env.vram_gb != null ? Math.round(Number(env.vram_gb) * 1024) : null;
+  const cachedModels = Array.isArray(env.tags) && env.tags.length > 0
+    ? env.tags
+    : [];
+  const dhtStale = Boolean(resolution?.stale);
+
+  return {
+    id: null,
+    peer_id: providerRecord.peer_id || null,
+    name: null,
+    gpu_model: env.gpu_model || null,
+    vram_gb: env.vram_gb != null ? env.vram_gb : null,
+    vram_mib: envVramMb,
+    gpu_count: env.available_slots || 1,
+    driver_version: env.driver_version || null,
+    compute_capability: env.compute_capability || null,
+    cuda_version: env.cuda_version || null,
+    status: dhtStale ? 'degraded' : 'online',
+    is_live: !dhtStale,
+    location: env.region || null,
+    reliability_score: Number(env.reliability_score || 0),
+    cached_models: cachedModels,
+    discovery_source: 'dht',
+    discovered_at: providerRecord.announced_at || null,
+    addrs: providerRecord.addrs || [],
+    stale: dhtStale,
+  };
 }
 
 const ROTATION_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -153,7 +287,7 @@ router.post('/register', (req, res) => {
 // GET /api/renters/me?key=API_KEY
 router.get('/me', (req, res) => {
   try {
-    const { key } = req.query;
+    const key = req.query.key || req.headers['x-renter-key'];
     if (!key) return res.status(400).json({ error: 'API key required' });
 
     const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
@@ -430,45 +564,90 @@ router.get('/me/invoices/:id/csv', (req, res) => {
 
 // GET /api/renters/available-providers
 // Public-ish endpoint for renters to see what GPUs are available
-router.get('/available-providers', (req, res) => {
+router.get('/available-providers', async (req, res) => {
   try {
+    const discoveryStatus = getDiscoveryStatus();
+    const requestedMode = parseDiscoveryMode(req.query.discovery || req.query.discovery_mode);
+    const effectiveMode = requestedMode || discoveryStatus.mode;
+    const strictP2pMode = effectiveMode === 'p2p-primary';
+    const includeP2p = effectiveMode !== 'sqlite';
+    const allowStale = parseBoolLike(req.query.allow_stale);
+    const maxAgeMs = toFiniteInt(req.query.max_age_ms, { min: 1, max: 6 * 60 * 60 * 1000 }) || 120000;
+
+    if (strictP2pMode) {
+      const resolvedProviders = await listProviders({
+        allowStale,
+        maxAgeMs,
+      });
+      return res.json({
+        providers: resolvedProviders
+          .filter((entry) => entry?.found)
+          .map((entry) => buildProviderShapeFromDHTRecord(entry)),
+        total: resolvedProviders.filter((entry) => entry?.found).length,
+        discovery_mode: effectiveMode,
+        discovery_health: {
+          mode: discoveryStatus.mode,
+          enabled: includeP2p,
+          announcement_enabled: discoveryStatus.announcement_enabled,
+          bootstrap_configured: discoveryStatus.bootstrap_configured,
+        },
+      });
+    }
+
     const providers = db.all(
       `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
               gpu_compute_capability, gpu_cuda_version, gpu_count_reported,
-              status, location, run_mode, reliability_score, cached_models, last_heartbeat
+              status, location, run_mode, reliability_score, cached_models, last_heartbeat, p2p_peer_id
        FROM providers WHERE status = 'online' AND is_paused = 0
        ORDER BY gpu_vram_mib DESC NULLS LAST`
     );
 
+    let discoveryByPeerId = new Map();
+    let discoveryLookupLatencyMs = null;
+    let trackedPeerIds = [];
+    if (includeP2p) {
+      const peerIds = providers
+        .map((provider) => normalizeString(provider.p2p_peer_id, { maxLen: 200 }))
+        .filter(Boolean);
+      trackedPeerIds = peerIds;
+      if (peerIds.length > 0) {
+        const lookupStartedAt = Date.now();
+        const resolvedProviders = await resolveProviders(peerIds, {
+          allowStale,
+          maxAgeMs,
+        });
+        discoveryLookupLatencyMs = Date.now() - lookupStartedAt;
+        for (const item of resolvedProviders) {
+          if (!item?.peer_id) continue;
+          discoveryByPeerId.set(String(item.peer_id), item);
+        }
+      }
+    }
+
     const now = Date.now();
     res.json({
-      providers: providers.map(p => {
-        let parsedCachedModels = [];
-        if (p.cached_models) {
-          try { parsedCachedModels = JSON.parse(p.cached_models); } catch {}
+      providers: providers.map((provider) => {
+        const discovery = discoveryByPeerId.get(String(provider.p2p_peer_id || ''));
+        if (includeP2p && discovery?.found && discovery.provider) {
+          return buildProviderShapeFromDHT(provider, discovery, now);
         }
-        const heartbeatAge = p.last_heartbeat
-          ? Math.floor((now - new Date(p.last_heartbeat).getTime()) / 1000)
-          : null;
-
-        return {
-          id: p.id,
-          name: p.name,
-          gpu_model: p.gpu_name_detected || p.gpu_model,
-          vram_gb: p.gpu_vram_mib ? Math.round(p.gpu_vram_mib / 1024) : null,
-          vram_mib: p.gpu_vram_mib,
-          gpu_count: p.gpu_count_reported || 1,
-          driver_version: p.gpu_driver,
-          compute_capability: p.gpu_compute_capability,
-          cuda_version: p.gpu_cuda_version,
-          status: p.status,
-          is_live: heartbeatAge !== null && heartbeatAge < 120,
-          location: p.location,
-          reliability_score: p.reliability_score,
-          cached_models: parsedCachedModels
-        };
+        return buildProviderShapeFromSQLiteRow(provider, now);
       }),
-      total: providers.length
+      total: providers.length,
+      discovery_mode: effectiveMode,
+      discovery_health: {
+        mode: discoveryStatus.mode,
+        enabled: includeP2p,
+        announcement_enabled: discoveryStatus.announcement_enabled,
+        bootstrap_configured: discoveryStatus.bootstrap_configured,
+        ...(effectiveMode === 'shadow' ? {
+          shadow_cycle: buildShadowCycleSummary({
+            trackedPeerIds,
+            resolvedProviders: Array.from(discoveryByPeerId.values()),
+            lookupLatencyMs: discoveryLookupLatencyMs,
+          }),
+        } : {}),
+      },
     });
   } catch (error) {
     console.error('Available providers error:', error);

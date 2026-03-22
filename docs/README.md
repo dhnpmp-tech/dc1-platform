@@ -12,12 +12,15 @@ DCP is a Saudi-hosted GPU compute marketplace for AI workloads. This directory c
 | [مرجع API](./api-reference-ar.md) | العربية | جميع نقاط النهاية بالعربية |
 | [Provider Guide](./provider-guide.md) | English | Earn SAR by connecting your NVIDIA GPU |
 | [SDK Guides](./sdk-guides.md) | English | Python and JavaScript code examples |
+| [Migrate from RunPod to DCP](./guides/migrate-runpod-to-dcp.md) | English | Map RunPod auth, job, and monitoring flows to DCP equivalents |
+| [Migrate from Vast.ai to DCP](./guides/migrate-vast-to-dcp.md) | English | Map Vast.ai marketplace and instance workflows to DCP job APIs |
 | [Model Cards](./model-cards.mdx) | English | Bilingual model card publishing format with benchmark interpretation and reproducible methodology |
 | [بطاقات النماذج](./ar/model-cards.mdx) | العربية | صيغة نشر بطاقات النماذج ثنائية اللغة مع تفسير القياسات |
 | [vLLM Model Catalog](./models.md) | English | Supported LLMs, VRAM requirements, and Arabic model guidance |
 | [Arabic Portfolio Serving Ops](./arabic-portfolio-serving-ops.md) | English | Tiered Arabic model prewarm policy, deployment, and rollback runbook |
 | [GPU Compatibility Matrix](./gpu-matrix.md) | English | GPU-to-model fit, batch sizing, and throughput planning |
 | [Pricing Guide](./pricing-guide.md) | English | SAR pricing bands, earnings calculator, and cloud comparison |
+| [Retail Readiness Roadmap (Q2 2026)](./roadmap/dcp-retail-readiness-2026-Q2.md) | English | 2/4/8-week retail-readiness milestones for Nemotron, Swarm Intelligence, Open Viking, and Page Agents |
 | [Container Security Baseline](./container-security.md) | English | Docker hardening controls, limits, and inspect verification checks |
 | [Launch Window Deploy Runbook](./ops/launch-window-deploy-runbook.md) | English | Operator command sequence for deploy, verify, rollback, and blocker triage |
 | [Enterprise SLA & Trust Commitments](./enterprise-trust-package/section-5-sla-trust.mdx) | English | Bronze/Silver/Gold uptime and support guarantees with trust commitments |

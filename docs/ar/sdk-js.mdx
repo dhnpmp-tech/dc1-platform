@@ -7,13 +7,13 @@ order: 3
 ## التثبيت
 
 ```bash
-npm install dc1-renter-sdk
+# راجع /docs/sdk-guides لاعتماد أسماء الحزم المحدثة
 ```
 
 ## مثال كامل
 
 ```ts
-import { DC1RenterClient } from 'dc1-renter-sdk'
+import { DC1RenterClient } from '<SDK_PACKAGE_FROM_DOCS>'
 
 const baseUrl = 'https://api.dcp.sa'
 const apiKey = process.env.DC1_RENTER_KEY!
@@ -26,7 +26,7 @@ console.log('renter:', me.email)
 
 // 2) إرسال مهمة
 const submitted = await client.submitJob({
-  job_type: 'llm-inference',
+  job_type: 'llm_inference',
   duration_minutes: 3,
   max_duration_seconds: 180,
   container_spec: { image_type: 'vllm-serve' },

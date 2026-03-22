@@ -1,5 +1,5 @@
 {
-  "name": "dcp-renter-sdk",
+  "name": "dc1-renter-sdk",
   "version": "0.1.0",
   "description": "Official TypeScript/JavaScript SDK for GPU renters on DC1 — Saudi Arabia's compute marketplace",
   "main": "dist/index.js",
@@ -36,5 +36,5 @@
     "type": "git",
     "url": "https://github.com/dhnpmp-tech/dc1-platform"
   },
-  "homepage": "https://dc1st.com/docs"
+  "homepage": "https://dcp.sa/docs"
 }

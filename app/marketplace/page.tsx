@@ -98,6 +98,20 @@ function formatAge(seconds: number | null): string {
   return `${Math.floor(seconds / 60)}m`
 }
 
+function getHeartbeatInterpretationKey(seconds: number | null): string {
+  if (seconds === null) return 'marketplace.trust_heartbeat_unknown'
+  if (seconds <= 60) return 'marketplace.trust_heartbeat_fresh'
+  if (seconds <= 300) return 'marketplace.trust_heartbeat_recent'
+  return 'marketplace.trust_heartbeat_stale'
+}
+
+function getReliabilityInterpretationKey(uptime: number | null): string {
+  if (uptime === null) return 'marketplace.trust_reliability_unknown'
+  if (uptime >= 90) return 'marketplace.trust_reliability_high'
+  if (uptime >= 75) return 'marketplace.trust_reliability_medium'
+  return 'marketplace.trust_reliability_low'
+}
+
 // ── Sign-up Overlay ────────────────────────────────────────────────
 function SignUpOverlay({ gpu, onClose }: { gpu: Provider; onClose: () => void }) {
   const { t } = useLanguage()
@@ -222,6 +236,12 @@ function ProviderCard({ provider, onClick }: { provider: Provider; onClick: () =
         )}
       </div>
 
+      <div className="rounded-md border border-dc1-border bg-dc1-surface-l1 px-3 py-2 space-y-1">
+        <p className="text-xs text-dc1-text-secondary">{t(getHeartbeatInterpretationKey(provider.heartbeat_age_seconds))}</p>
+        <p className="text-xs text-dc1-text-secondary">{t(getReliabilityInterpretationKey(uptime))}</p>
+      </div>
+      <p className="text-[11px] text-dc1-text-muted">{t('marketplace.runtime_settlement_reminder')}</p>
+
       {/* Cached models */}
       {provider.cached_models && provider.cached_models.length > 0 && (
         <div>
@@ -311,6 +331,7 @@ export default function MarketplacePage() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'price-asc' | 'vram-desc' | 'availability'>('availability')
   const [filterComputeType, setFilterComputeType] = useState<string>('all')
@@ -326,6 +347,7 @@ export default function MarketplacePage() {
         const data: PublicProvider[] = await res.json()
         if (Array.isArray(data)) {
           setProviders(data.map((p, i) => normalizePublic(p, i)))
+          setLastUpdated(new Date())
           setError(false)
           return
         }
@@ -340,6 +362,7 @@ export default function MarketplacePage() {
           ? data
           : data.providers ?? data.data ?? []
         setProviders(list)
+        setLastUpdated(new Date())
         setError(false)
       } else {
         setError(true)
@@ -428,6 +451,30 @@ export default function MarketplacePage() {
                 <Link href="/docs" className="btn btn-secondary btn-lg">
                   {t('marketplace.view_docs')}
                 </Link>
+              </div>
+              <div className="mt-5 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
+                  {t('marketplace.reliability_strip_label')}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-dc1-text-secondary">
+                  <p>
+                    <span className="text-dc1-text-primary font-semibold">{t('marketplace.filter_gpu_model')}</span>
+                    {' + '}
+                    <span className="text-dc1-text-primary font-semibold">{t('marketplace.filter_min_vram')}</span>
+                    {' + '}
+                    <span className="text-dc1-text-primary font-semibold">{t('marketplace.filter_compute_type')}</span>
+                  </p>
+                  <p>
+                    <span className="text-dc1-text-primary font-semibold">{t('marketplace.updated')}</span>
+                    {' '}
+                    {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                  </p>
+                  <p>
+                    <Link href="/renter/register" className="text-dc1-amber hover:underline">
+                      {t('marketplace.get_started')}
+                    </Link>
+                  </p>
+                </div>
               </div>
             </div>
           </div>

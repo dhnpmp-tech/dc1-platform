@@ -43,6 +43,8 @@ db.exec(`
     rejected_reason TEXT,
     api_key TEXT,
     notes TEXT,
+    wallet_address TEXT,
+    wallet_address_updated_at TEXT,
     total_earnings REAL DEFAULT 0,
     total_earnings_halala INTEGER DEFAULT 0,
     total_jobs INTEGER DEFAULT 0,
@@ -61,6 +63,13 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
+
+try {
+  db.prepare('ALTER TABLE providers ADD COLUMN wallet_address TEXT').run();
+} catch (_) {}
+try {
+  db.prepare('ALTER TABLE providers ADD COLUMN wallet_address_updated_at TEXT').run();
+} catch (_) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
@@ -764,6 +773,7 @@ const migrations = [
   // provider readiness + daemon tracking
   'ALTER TABLE providers ADD COLUMN readiness_status TEXT DEFAULT \'pending\'',
   'ALTER TABLE providers ADD COLUMN readiness_details TEXT',
+  'ALTER TABLE providers ADD COLUMN p2p_peer_id TEXT',
   'ALTER TABLE providers ADD COLUMN daemon_version TEXT',
   'ALTER TABLE providers ADD COLUMN current_job_id TEXT',
   'ALTER TABLE providers ADD COLUMN approval_status TEXT DEFAULT \'pending\'',

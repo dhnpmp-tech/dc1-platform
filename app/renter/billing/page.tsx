@@ -352,6 +352,17 @@ export default function BillingPage() {
         <StatCard label={t('billing.total_jobs')} value={String(invoices.length > 0 ? thisMonthInvoices.length : totalJobs)} accent="info" />
       </div>
 
+      <div className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-5 mb-8">
+        <h2 className="text-base font-semibold text-dc1-text-primary mb-3">{t('billing.explainer.title')}</h2>
+        <ul className="space-y-1 text-sm text-dc1-text-secondary">
+          <li>{t('billing.explainer.step1')}</li>
+          <li>{t('billing.explainer.step2')}</li>
+          <li>{t('billing.explainer.step3')}</li>
+        </ul>
+        <p className="mt-2 text-xs text-dc1-text-muted">{t('billing.explainer.note')}</p>
+        <p className="mt-1 text-xs text-dc1-text-muted">{t('billing.explainer.rail_status')}</p>
+      </div>
+
       {/* ── Compute Rates ────────────────────────────────────────── */}
       <div className="card mb-8">
         <h2 className="section-heading mb-4">{t('billing.compute_rates')}</h2>

@@ -39,9 +39,10 @@ const DC1_PROVIDER_PREFIX = '/dc1/provider/'
 
 /**
  * Default bootstrap node on the DC1 VPS.
- * Update DC1_P2P_BOOTSTRAP env var (or this const) after running bootstrap.js.
+ * Update DCP_P2P_BOOTSTRAP env var (or this const) after running bootstrap.js.
  */
 export const DEFAULT_BOOTSTRAP_ADDR =
+  process.env.DCP_P2P_BOOTSTRAP ||
   process.env.DC1_P2P_BOOTSTRAP ||
   '/ip4/76.13.179.86/tcp/4001/p2p/REPLACE_WITH_BOOTSTRAP_PEER_ID'
 

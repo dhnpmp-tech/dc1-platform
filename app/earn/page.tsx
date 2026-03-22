@@ -150,6 +150,28 @@ export default function EarnPage() {
         </div>
       </section>
 
+      {/* Prerequisites */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-14">
+        <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-8">
+          <h2 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-4">
+            {t('pg.req_title')}
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              { title: t('pg.req_gpu'), desc: t('pg.req_gpu_desc') },
+              { title: t('pg.req_os'), desc: t('pg.req_os_desc') },
+              { title: t('pg.req_internet'), desc: t('pg.req_internet_desc') },
+              { title: t('pg.req_account'), desc: t('pg.req_account_desc') },
+            ].map((item) => (
+              <div key={item.title} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <p className="text-sm font-semibold text-dc1-text-primary mb-2">{item.title}</p>
+                <p className="text-sm text-dc1-text-secondary">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Earnings Calculator */}
       <section className="bg-dc1-surface-l1 border-y border-dc1-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">

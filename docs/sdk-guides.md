@@ -4,6 +4,22 @@ DC1 provides official SDKs for Python and JavaScript. Both wrap the REST API wit
 
 > **Note:** The SDKs are in active development. To use DC1 today, call the REST API directly (examples below are functional). SDK packages will be published to PyPI (`dc1-sdk`) and npm (`dc1-renter-sdk`) in an upcoming release.
 
+## Publish Readiness Checklist (DCP-534)
+
+- [x] Node SDK submit flow parses current `POST /api/jobs/submit` shape (`{ success, job: {...} }`).
+- [x] Node/Python `jobs.get()` handle terminal failed/cancelled jobs from `GET /api/jobs/:id/output` (`410` payload).
+- [x] Python SDK uses current renter routes (`/api/jobs/history`, `/api/renters/me?key=`).
+- [x] SDK metadata/docs align with current domains (`dcp.sa`, `api.dcp.sa`) and key prefixes (`dc1-*`).
+- [x] OpenAPI examples updated for current key prefixes and submit/history contracts.
+
+Unresolved publish blockers:
+
+- npm publish credentials (`NPM_TOKEN`) are not available in this workspace.
+- PyPI publish credentials (`TWINE_USERNAME`, `TWINE_PASSWORD` or API token) are not available in this workspace.
+- Ownership/namespace verification is required before release:
+  - npm package: `dc1-renter-sdk`
+  - PyPI package: `dc1`
+
 ---
 
 ## Python SDK

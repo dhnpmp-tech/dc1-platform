@@ -460,10 +460,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // dc1.watchJobLogs — stream logs for a job ID to a named output channel
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.watchJobLogs', async (jobIdArg?: string) => {
-      const key = auth.apiKey
+      let streamKey = auth.apiKey
         || await auth.getStoredRenterKey()
         || await auth.ensureKey();
-      if (!key) { return; }
+      if (!streamKey) { return; }
 
       let jobId = jobIdArg;
       if (!jobId) {
@@ -497,7 +497,7 @@ export function activate(context: vscode.ExtensionContext): void {
         ch.appendLine(`Falling back to status polling every ${intervalMs / 1000}s...`);
         pollTimer = setInterval(async () => {
           try {
-            const output = await dc1.getJobOutput(key, id);
+            const output = await dc1.getJobOutput(streamKey!, id);
             if (output.progress_phase) {
               ch.appendLine(`Phase: ${output.progress_phase}`);
             }
@@ -521,7 +521,7 @@ export function activate(context: vscode.ExtensionContext): void {
       };
 
       const dispose = dc1.streamJobLogs(
-        key,
+        streamKey,
         id,
         (line) => {
           receivedStreamData = true;
@@ -530,7 +530,7 @@ export function activate(context: vscode.ExtensionContext): void {
         () => {
           stopPolling();
           ch.appendLine('\n--- Stream closed ---');
-          dc1.getJobOutput(key, id).then((output) => {
+          dc1.getJobOutput(streamKey!, id).then((output) => {
             const icon = output.status === 'completed' ? '✅' : '❌';
             ch.appendLine(`${icon} Job ${output.status}.`);
             if (output.result) { ch.appendLine(output.result); }
@@ -544,7 +544,8 @@ export function activate(context: vscode.ExtensionContext): void {
           if (isAuthError(err)) {
             auth.handleRenterAuthError(err, 'watching job logs').then((newKey) => {
               if (newKey) {
-                ch.appendLine('Authentication refreshed. Restart log watch for continuous streaming.');
+                streamKey = newKey;
+                ch.appendLine('Authentication refreshed. Streaming can continue with the updated key.');
               }
             });
           }

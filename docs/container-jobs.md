@@ -1,23 +1,23 @@
 # Container Jobs — Renter Guide
 
-This guide explains how to submit and manage container jobs on DCP. All compute jobs run in isolated Docker containers on provider GPU machines.
+This guide explains how to submit and manage containerized jobs on DCP. Jobs run in isolated Docker environments on provider GPU machines, using approved container runtimes.
 
 ---
 
 ## Available job types
 
-| Type | Docker image | Best for |
+| Type | Runtime image | Best for |
 |------|-------------|---------|
 | `llm_inference` | `dcp/vllm-serve:latest` | LLM chat completions, text generation |
 | `image_generation` | `dcp/sd-worker:latest` | Stable Diffusion image synthesis |
 | `training` | `dcp/training:latest` | Fine-tuning, LoRA, custom training runs |
 | `pytorch` | `dcp/pytorch-cuda:latest` | Custom PyTorch scripts, embeddings, research |
 
-The platform selects the image automatically from your `job_type` field. You cannot specify a custom image — all images are pinned and audited by DCP.
+For each `job_type`, DCP routes work to approved runtime templates from the catalog. You cannot run arbitrary images directly; only approved tags are selected for execution.
 
 ---
 
-## Setting VRAM requirements
+## Setting VRAM requirements (recommended)
 
 Specify `min_vram_gb` in your job submission to ensure the job is routed to a provider with enough GPU memory:
 
@@ -27,12 +27,15 @@ curl -X POST https://dcp.sa/api/dc1/jobs/submit \
   -H "Content-Type: application/json" \
   -d '{
     "job_type": "llm_inference",
-    "model": "mistral-7b",
-    "min_vram_gb": 16,
+    "duration_minutes": 8,
+    "container_spec": { "image_type": "vllm-serve" },
     "params": {
+      "model": "mistral-7b",
       "prompt": "Explain quantum computing in simple terms.",
       "max_tokens": 512
-    }
+    },
+    "min_vram_gb": 16,
+    "max_duration_seconds": 3600
   }'
 ```
 
@@ -46,7 +49,7 @@ VRAM guidance by model:
 | 34B quantized | 48 |
 | 70B quantized | 80 |
 
-Jobs with `min_vram_gb` that no online provider satisfies will queue until a matching provider comes online.
+Jobs with `min_vram_gb` requirements that no online provider satisfies will queue until a compatible provider comes online.
 
 ---
 
@@ -63,17 +66,18 @@ curl "https://dcp.sa/api/dc1/jobs/$JOB_ID/output" \
   -H "x-renter-key: YOUR_RENTER_KEY"
 ```
 
-Response fields:
+Response fields vary by status:
 
 | Field | Description |
 |-------|-------------|
-| `status` | `pending`, `running`, `completed`, `failed` |
-| `output` | Accumulated stdout/result text |
-| `error` | Error message if status is `failed` |
+| `status` | `pending`, `queued`, `running`, `completed`, `failed`, `cancelled` |
+| `message` | Human-readable progress while running |
+| `result` | Structured output for completed jobs |
+| `error` | Error message for failures |
 | `started_at` | ISO 8601 timestamp when container started |
 | `completed_at` | ISO 8601 timestamp when container exited |
 
-Poll every 5–10 seconds while `status` is `running`. The container auto-cleans up on exit.
+Poll every 5–10 seconds while `status` is `running` or `queued`. The workspace is ephemeral and auto-cleans on exit.
 
 ---
 
@@ -85,7 +89,7 @@ Fetch a paginated list of all your past jobs:
 curl "https://dcp.sa/api/dc1/renters/me?key=YOUR_RENTER_KEY"
 ```
 
-The `jobs` array in the response includes every job with `status`, `cost_halala`, `provider_id`, and timestamps.
+The `jobs` array in the response includes each job with `status`, `cost_halala`, `provider_id`, and timestamps.
 
 To fetch a single job record:
 
@@ -97,6 +101,7 @@ curl "https://dcp.sa/api/dc1/jobs/$JOB_ID/output" \
 ---
 
 ## Container registry — available images
+Use `GET /api/containers/registry` to inspect current approved image mappings.
 
 All DCP worker images are built from the Dockerfiles in `backend/docker-templates/` and published to the DCP private registry. You cannot pull these images directly — they are fetched by the provider daemon during job execution.
 
@@ -105,13 +110,13 @@ All DCP worker images are built from the Dockerfiles in `backend/docker-template
 | `dcp/vllm-serve:latest` | Ubuntu 22.04 | 12.x | vLLM server, OpenAI-compatible endpoint |
 | `dcp/sd-worker:latest` | Ubuntu 22.04 | 12.x | Stable Diffusion + Diffusers pipeline |
 | `dcp/training:latest` | Ubuntu 22.04 | 12.x | PyTorch + HuggingFace Trainer, LoRA support |
-| `dcp/pytorch-cuda:latest` | Ubuntu 22.04 | 12.x | Bare PyTorch environment for custom scripts |
+| `dcp/pytorch-cuda:latest` | Ubuntu 22.04 | 12.x | Controlled PyTorch environment for advanced scripts |
 
 Images are read-only inside the container. All job output writes go to the `/opt/dcp/output` mount which is returned to DCP on job completion.
 
 ---
 
-## Job isolation guarantees
+## Job isolation guarantees and workflow expectations
 
 Every container runs with:
 
@@ -121,13 +126,14 @@ Every container runs with:
 - **GPU scoped** — only the assigned GPU(s) are visible inside the container
 - **Process limit** — max 256 processes per container
 
-These guarantees protect both renters (job isolation) and providers (no malicious code execution).
+These guarantees protect both renters (isolation) and providers (no host-level side effects).
 
 ---
 
-## Pricing
 
-Jobs are charged by elapsed container runtime using live provider-side rate parameters returned during scheduling.
+## Billing behavior
+
+Jobs are quoted with a hold before execution and settled against actual completed-runtime usage. Runtime and final settlement are visible in renter balance/job history once the job ends.
 
 Billing is deducted from your renter balance in halala (100 halala = 1 SAR). Top up your balance before submitting long-running jobs:
 

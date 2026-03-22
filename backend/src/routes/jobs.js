@@ -6,6 +6,7 @@ const db = require('../db');
 const { retryJobLimiter } = require('../middleware/rateLimiter');
 const { getApiKeyFromReq, isAdminRequest, requireAdminAuth } = require('../middleware/auth');
 const { validateAndNormalizeImageRef, isApprovedImageRef } = require('../lib/container-registry');
+const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 const { getChainEscrow } = require('../services/escrow-chain');
 const {
   sendJobQueued,
@@ -72,6 +73,12 @@ async function notifyRenterJobWebhook(job, eventName, details = {}) {
     );
     if (!renter || renter.status !== 'active' || !renter.webhook_url) {
       return { sent: false, reason: 'webhook_not_configured' };
+    }
+    if (!isPublicWebhookUrl(renter.webhook_url)) {
+      return { sent: false, reason: 'webhook_url_blocked' };
+    }
+    if (!(await isResolvablePublicWebhookUrl(renter.webhook_url))) {
+      return { sent: false, reason: 'webhook_dns_blocked' };
     }
 
     const now = new Date().toISOString();
@@ -1291,41 +1298,23 @@ router.post('/submit', requireRenter, (req, res) => {
       'ok'
     );
 
-    // Hold (deduct) estimated cost from renter balance upfront
-    runStatement(
-      `UPDATE renters SET balance_halala = balance_halala - ? WHERE id = ?`,
-      cost_halala, req.renter.id
-    );
-
-    const now = new Date().toISOString();
-    const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-
-    // Job timeout: default 30 minutes, max 1 hour
-    const requestedTimeoutSeconds = toFiniteInt(max_duration_seconds, { min: 60, max: 3600 });
-    const timeout = requestedTimeoutSeconds || 1800;
-    const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
-
-    // ── Auto-generate task script from template if job_type has one ─────
+    // Validate/prepare task payload before touching renter balance.
     let finalTaskSpec = task_spec;
     let result_type = 'text'; // default result type
 
     if (JOB_TEMPLATES[job_type]) {
-      // Parse params: prefer body.params, fall back to task_spec
       let params = {};
       if (bodyParams != null && !isPlainObject(bodyParams)) {
         return res.status(400).json({ error: 'params must be an object' });
       }
       if (bodyParams && Object.keys(bodyParams).length > 0) {
-        // Renter sent params directly in request body (recommended way)
         params = { ...bodyParams };
       } else if (task_spec) {
-        // Fall back to parsing task_spec as JSON
         params = typeof task_spec === 'string' ? (() => { try { return JSON.parse(task_spec); } catch { return { prompt: task_spec }; } })() : task_spec;
       }
       if (payloadModel && !params.model) {
         params.model = payloadModel;
       }
-      // Always generate from template — raw Python is blocked at submission validation
       finalTaskSpec = JOB_TEMPLATES[job_type](params);
       result_type = job_type === 'image_generation' ? 'image' : job_type === 'vllm_serve' ? 'endpoint' : 'text';
     }
@@ -1340,45 +1329,65 @@ router.post('/submit', requireRenter, (req, res) => {
     }
     const effectiveModel = normalizeModelField(bodyParams?.model) || payloadModel;
 
-    // Stringify task_spec if it's an object, then HMAC-sign
     const taskSpecStr = finalTaskSpec ? (typeof finalTaskSpec === 'string' ? finalTaskSpec : JSON.stringify(finalTaskSpec)) : null;
     const taskSpecHmac = taskSpecStr ? signTaskSpec(taskSpecStr) : null;
+    const now = new Date().toISOString();
+    const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     const workspaceVolumeName = `dcp-job-${job_id}`;
     const checkpointEnabled = normalizedContainer.value?.enable_checkpoint === true ? 1 : 0;
+
+    // Job timeout: default 30 minutes, max 1 hour
+    const requestedTimeoutSeconds = toFiniteInt(max_duration_seconds, { min: 60, max: 3600 });
+    const timeout = requestedTimeoutSeconds || 1800;
+    const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
 
     // If provider is busy, job goes into 'queued'; otherwise 'pending' (ready for daemon)
     const initialStatus = isQueued ? 'queued' : 'pending';
 
-    const result = runStatement(
-      `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
-        cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
-        notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
-      gpu_requirements ? JSON.stringify(gpu_requirements) : null,
-      containerSpecJson,
-      taskSpecStr,
-      taskSpecHmac,
-      timeout,
-      isQueued ? null : timeoutAt, // Don't start timeout clock for queued jobs
-      null,
-      now,
-      jobPriority,
-      pricingClass,
-      prewarmRequested ? 1 : 0,
-      workspaceVolumeName,
-      checkpointEnabled
-    );
+    const createJobTx = db._db.transaction(() => {
+      runStatement(
+        `UPDATE renters
+         SET balance_halala = balance_halala - ?,
+             updated_at = ?
+         WHERE id = ?`,
+        cost_halala,
+        now,
+        req.renter.id
+      );
 
-    const job = db.get('SELECT * FROM jobs WHERE id = ?', result.lastInsertRowid);
-    runStatement(
-      `UPDATE renters
-       SET total_jobs = total_jobs + 1,
-           updated_at = ?
-       WHERE id = ?`,
-      now,
-      req.renter.id
-    );
+      const insertResult = runStatement(
+        `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
+          cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+          notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
+        gpu_requirements ? JSON.stringify(gpu_requirements) : null,
+        containerSpecJson,
+        taskSpecStr,
+        taskSpecHmac,
+        timeout,
+        isQueued ? null : timeoutAt,
+        null,
+        now,
+        jobPriority,
+        pricingClass,
+        prewarmRequested ? 1 : 0,
+        workspaceVolumeName,
+        checkpointEnabled
+      );
+
+      runStatement(
+        `UPDATE renters
+         SET total_jobs = total_jobs + 1,
+             updated_at = ?
+         WHERE id = ?`,
+        now,
+        req.renter.id
+      );
+      return insertResult.lastInsertRowid;
+    });
+    const newJobId = createJobTx();
+    const job = db.get('SELECT * FROM jobs WHERE id = ?', newJobId);
     recordLifecycleEvent(job, 'job.submitted', {
       status: initialStatus,
       source: 'renter',
@@ -1887,14 +1896,20 @@ router.post('/:job_id/result', (req, res) => {
     }
 
     const now = new Date().toISOString();
-    const actualMinutes = durationSeconds != null ? Math.ceil(durationSeconds / 60) : job.duration_minutes;
+    const actualMinutes = durationSeconds != null
+      ? Math.ceil(durationSeconds / 60)
+      : Math.max(1, Math.ceil(Number(job.duration_minutes || 1)));
     const billingRate = COST_RATES[job.job_type] || COST_RATES['default'];
-    const actualCostHalala = billingRate * actualMinutes;
+    const actualCostHalala = Math.max(0, Math.round(billingRate * actualMinutes));
     const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
+    const settlementStatus = result ? 'completed' : 'failed';
+    const settledResult = result == null
+      ? null
+      : (typeof result === 'string' ? result : JSON.stringify(result));
 
     runStatement(
       `UPDATE jobs SET
-        status = 'completed',
+        status = ?,
         result = ?,
         error = ?,
         completed_at = ?,
@@ -1904,7 +1919,8 @@ router.post('/:job_id/result', (req, res) => {
         dc1_fee_halala = ?
       WHERE id = ?`,
       [
-        result || 'completed',
+        settlementStatus,
+        settledResult,
         jobError || null,
         now,
         actualMinutes,
@@ -1915,7 +1931,7 @@ router.post('/:job_id/result', (req, res) => {
       ]
     );
     const completionEvent = result ? 'job.completed' : 'job.failed';
-    const completionStatus = result ? 'completed' : 'failed';
+    const completionStatus = settlementStatus;
     const completionError = result ? null : categorizeJobError(jobError, completionStatus);
     recordLifecycleEvent(job, completionEvent, {
       status: completionStatus,
@@ -1934,14 +1950,16 @@ router.post('/:job_id/result', (req, res) => {
       },
     });
 
-    runStatement(
-      `UPDATE providers
-       SET total_earnings = total_earnings + ?,
-           total_earnings_halala = COALESCE(total_earnings_halala, 0) + ?,
-           total_jobs = total_jobs + 1
-       WHERE id = ?`,
-      [providerEarned / 100, providerEarned, job.provider_id]
-    );
+    if (result) {
+      runStatement(
+        `UPDATE providers
+         SET total_earnings = total_earnings + ?,
+             total_earnings_halala = COALESCE(total_earnings_halala, 0) + ?,
+             total_jobs = total_jobs + 1
+         WHERE id = ?`,
+        [providerEarned / 100, providerEarned, job.provider_id]
+      );
+    }
 
     // ── Escrow settlement ──────────────────────────────────────────────────
     // Success: job produced output → release held funds to provider
@@ -3503,6 +3521,7 @@ router.get('/:job_id/output/:format', (req, res) => {
 function enforceJobTimeouts() {
   try {
     const now = new Date().toISOString();
+    const chainEscrow = getChainEscrow();
     // Include assigned/pulling states — if daemon stalls during container setup, still timeout
     const timedOut = db.all(
       `SELECT * FROM jobs WHERE status IN ('running', 'assigned', 'pulling') AND timeout_at IS NOT NULL
@@ -3544,6 +3563,10 @@ function enforceJobTimeouts() {
           now, job.job_id
         );
       } catch(e) { console.error('[timeout] Escrow release error:', e); }
+      if (chainEscrow.isEnabled()) {
+        chainEscrow.cancelExpiredLock(job.job_id)
+          .catch(err => console.error('[escrow-chain] cancelExpiredLock async error:', err.message));
+      }
       console.log(`[timeout] Job ${job.job_id} timed out (provider ${job.provider_id})`);
       const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
       fireAndForgetJobEmail('failed', updated || job, {

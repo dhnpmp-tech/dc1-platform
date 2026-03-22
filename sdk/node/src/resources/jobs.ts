@@ -1,5 +1,6 @@
 import { HttpClient } from '../http';
 import { Job, SubmitJobParams, WaitOptions, JobLog } from '../types';
+import { APIError } from '../errors';
 import { JobTimeoutError } from '../errors';
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
@@ -52,7 +53,11 @@ export class JobsResource {
       params: options.params,
     };
     const data = await this.http.post<Record<string, unknown>>('/api/jobs/submit', body);
-    const jobId = String(data.job_id ?? data.id ?? '');
+    const submittedJob = (data.job as Record<string, unknown>) ?? data;
+    const jobId = String(submittedJob.job_id ?? submittedJob.id ?? data.job_id ?? data.id ?? '');
+    if (!jobId) {
+      throw new APIError('Job submission succeeded but no job_id was returned', 500, data);
+    }
     return this.get(jobId);
   }
 
@@ -60,8 +65,15 @@ export class JobsResource {
    * Fetch current status and result of a job.
    */
   async get(jobId: string): Promise<Job> {
-    const data = await this.http.get<Record<string, unknown>>(`/api/jobs/${jobId}/output`);
-    return parseJob(data);
+    try {
+      const data = await this.http.get<Record<string, unknown>>(`/api/jobs/${jobId}/output`);
+      return parseJob(data);
+    } catch (error) {
+      if (error instanceof APIError && error.statusCode === 410) {
+        return parseJob(error.response);
+      }
+      throw error;
+    }
   }
 
   /**

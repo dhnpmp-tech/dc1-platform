@@ -19,7 +19,7 @@ curl "$API_BASE/renters/me?key=$DCP_RENTER_KEY"
 
 Expected: renter profile JSON with email and balance fields.
 
-## Submit a sample job
+## Submit a sample job (container-aware)
 
 ```bash
 curl -X POST "$API_BASE/jobs/submit" \
@@ -27,8 +27,9 @@ curl -X POST "$API_BASE/jobs/submit" \
   -H "x-renter-key: $DCP_RENTER_KEY" \
   -d '{
     "provider_id": 42,
-    "job_type": "llm-inference",
+    "job_type": "llm_inference",
     "duration_minutes": 5,
+    "container_spec": { "image_type": "vllm-serve" },
     "params": {
       "model": "meta-llama/Llama-3-8B",
       "prompt": "Return the phrase: DCP CLI smoke test"
@@ -36,7 +37,7 @@ curl -X POST "$API_BASE/jobs/submit" \
   }'
 ```
 
-Expected: response contains `job.job_id` and `status` as `queued` or `pending`.
+Expected: response contains `job.job_id`, and `status` as `queued` or `pending` while waiting for dispatch.
 
 ## Poll job status
 
@@ -44,7 +45,7 @@ Expected: response contains `job.job_id` and `status` as `queued` or `pending`.
 curl "$API_BASE/jobs/<job_id>" -H "x-renter-key: $DCP_RENTER_KEY"
 ```
 
-Status lifecycle: `pending` → `queued` → `running` → `completed`.
+Status lifecycle: `pending` → `queued` → `running` → `completed` (or `failed` / `cancelled`).
 
 ## Fetch output
 
@@ -52,4 +53,4 @@ Status lifecycle: `pending` → `queued` → `running` → `completed`.
 curl "$API_BASE/jobs/<job_id>/output?key=$DCP_RENTER_KEY"
 ```
 
-Expected: output payload with `response` and billing summary.
+Expected: output payload with `response` and final settlement-related billing fields.

@@ -5,6 +5,8 @@ const { getApiKeyFromReq } = require('../middleware/auth');
 const {
   announceFromHttpInput,
   getDiscoveryStatus,
+  runShadowDiscoveryCycle,
+  listProviders,
   resolveProvider,
   resolveProviders,
   resolveEnvironment,
@@ -196,12 +198,50 @@ router.get('/providers', lookupLimiter, async (req, res) => {
     const allowStale = parseBool(req.query.allow_stale);
     const maxAgeMs = parseIntOrDefault(req.query.max_age_ms, 120000);
     const includeMissing = parseBool(req.query.include_missing);
+    const discoverAll = parseBool(req.query.discover_all || req.query.discoverAll || req.query.all);
     const limit = parseIntOrDefault(req.query.limit, 200);
     const status = getDiscoveryStatus();
 
+    const shouldUseDhtList = (!peerIds.length) && (discoverAll || status.mode === 'p2p-primary');
+    if (shouldUseDhtList) {
+      const resolved = await listProviders({
+        allowStale,
+        maxAgeMs,
+      });
+      const providers = resolved
+        .filter((entry) => entry && (entry.found || includeMissing))
+        .map((entry) => {
+          if (!entry.found) {
+            return {
+              found: false,
+              peer_id: entry.peer_id,
+              source: entry.source || 'dht',
+              stale: false,
+            };
+          }
+          return toDhtProviderShape({
+            peer_id: entry.peer_id,
+            provider_record: entry.provider,
+            provider_environment: entry.environment,
+            stale: entry.stale,
+            source: entry.source,
+          });
+        });
+
+      return res.json({
+        source: 'dht',
+        discovery_mode: status.mode,
+        total: resolved.length,
+        providers,
+        resolved: providers.filter((entry) => entry && entry.found !== false).length,
+        missing: providers.filter((entry) => entry && entry.found === false).map((entry) => entry.peer_id),
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     if (!peerIds.length) {
       const rows = db.all(
-        `SELECT id, peer_id, name, gpu_model, gpu_name_detected, vram_gb, vram_mb AS vram_mib,
+        `SELECT id, p2p_peer_id AS peer_id, name, gpu_model, gpu_name_detected, vram_gb, gpu_vram_mib AS vram_mib,
                 gpu_driver, gpu_compute_capability, gpu_cuda_version,
                 gpu_count_reported, gpu_count, status, location, reliability_score, cached_models,
                 last_heartbeat
@@ -257,6 +297,39 @@ router.get('/providers', lookupLimiter, async (req, res) => {
   } catch (error) {
     console.error('[p2p] providers error:', error.message);
     return res.status(500).json({ error: 'P2P provider list failed' });
+  }
+});
+
+router.get('/shadow-cycle', lookupLimiter, async (req, res) => {
+  try {
+    const allowStale = parseBool(req.query.allow_stale);
+    const maxAgeMs = parseIntOrDefault(req.query.max_age_ms, 120000);
+    const limit = parseIntOrDefault(req.query.limit, 500);
+
+    const rows = db.all(
+      `SELECT p2p_peer_id
+       FROM providers
+       WHERE status = 'online'
+         AND is_paused = 0
+         AND p2p_peer_id IS NOT NULL
+         AND TRIM(p2p_peer_id) != ''
+       ORDER BY id DESC
+       LIMIT ?`,
+      Number.isFinite(limit) ? limit : 500
+    );
+    const peerIds = rows.map((row) => String(row.p2p_peer_id || '').trim()).filter(Boolean);
+    const cycle = await runShadowDiscoveryCycle(peerIds, { allowStale, maxAgeMs });
+    const status = cycle.status === 'degraded' ? 503 : 200;
+
+    return res.status(status).json({
+      service: 'dcp-p2p',
+      tracked_peers_from_sqlite: peerIds.length,
+      ...cycle,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[p2p] shadow-cycle error:', error.message);
+    return res.status(500).json({ error: 'Failed to run P2P shadow cycle' });
   }
 });
 
