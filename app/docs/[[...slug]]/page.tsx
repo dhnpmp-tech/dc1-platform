@@ -148,7 +148,7 @@ export default function DocsPage({ params }: DocsPageProps) {
             />
           </aside>
 
-          <article className="rounded-lg border border-dc1-border bg-dc1-surface-l1 p-6 sm:p-8">
+          <article className="min-w-0 overflow-hidden rounded-lg border border-dc1-border bg-dc1-surface-l1 p-6 sm:p-8">
             <nav
               className="mb-4 flex flex-wrap items-center gap-2 text-xs text-dc1-text-muted"
               aria-label="Breadcrumb"

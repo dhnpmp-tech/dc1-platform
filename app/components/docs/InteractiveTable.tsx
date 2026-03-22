@@ -322,7 +322,7 @@ export default function InteractiveTable({ headers, rows }: InteractiveTableProp
   }
 
   return (
-    <div className="my-8 space-y-4">
+    <div className="my-8 space-y-4 max-w-full">
       {/* Header toolbar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-1">
         <div className="flex items-center gap-3">
@@ -362,17 +362,17 @@ export default function InteractiveTable({ headers, rows }: InteractiveTableProp
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l1/50 shadow-xl">
-        <table className="w-full text-sm border-collapse">
+      <div className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l1/50 shadow-xl max-w-full">
+        <table className="w-full text-xs border-collapse">
           <thead>
             <tr className="bg-dc1-surface-l2/80 backdrop-blur">
-              <th className="w-10 px-2 py-3 text-center text-[10px] text-dc1-text-muted font-medium">#</th>
-              <th className="w-8 px-1 py-3" />
+              <th className="w-8 px-1 py-2 text-center text-[10px] text-dc1-text-muted font-medium">#</th>
+              <th className="w-6 px-0.5 py-2" />
               {headers.map((h, i) => (
                 <th
                   key={`th-${i}`}
                   onClick={() => handleSort(i)}
-                  className={`px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider cursor-pointer select-none whitespace-nowrap group transition-colors ${
+                  className={`px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wide cursor-pointer select-none whitespace-nowrap group transition-colors ${
                     pinnedMetric === i ? 'text-dc1-text-primary bg-dc1-amber/[0.05]' : 'text-dc1-amber hover:text-dc1-text-primary'
                   }`}
                   onDoubleClick={() => setPinnedMetric(pinnedMetric === i ? null : i)}
@@ -414,13 +414,13 @@ export default function InteractiveTable({ headers, rows }: InteractiveTableProp
                   style={isSelected ? { borderLeft: `3px solid ${selColor}` } : undefined}
                 >
                   {/* Rank */}
-                  <td className="w-10 px-2 py-2.5 text-center">
+                  <td className="w-8 px-1 py-1.5 text-center">
                     <span className={`text-xs font-mono ${badge.cls}`}>
                       {displayRank <= 3 ? badge.emoji : badge.emoji}
                     </span>
                   </td>
                   {/* Checkbox */}
-                  <td className="w-8 px-1 py-2.5 text-center">
+                  <td className="w-6 px-0.5 py-1.5 text-center">
                     <span
                       className={`
                         inline-flex w-4 h-4 items-center justify-center rounded transition-all text-[10px]
@@ -446,7 +446,7 @@ export default function InteractiveTable({ headers, rows }: InteractiveTableProp
                     return (
                       <td
                         key={`td-${originalIndex}-${ci}`}
-                        className={`px-4 py-2.5 whitespace-nowrap relative overflow-hidden ${isPinned ? 'bg-dc1-amber/[0.03]' : ''}`}
+                        className={`px-2 py-1.5 whitespace-nowrap relative overflow-hidden ${isPinned ? 'bg-dc1-amber/[0.03]' : ''}`}
                       >
                         {isNum && (
                           <div
@@ -455,7 +455,7 @@ export default function InteractiveTable({ headers, rows }: InteractiveTableProp
                           />
                         )}
                         <span className={`
-                          relative z-10 text-sm inline-flex items-center gap-1.5
+                          relative z-10 text-xs inline-flex items-center gap-1
                           ${ci === 0
                             ? 'font-medium text-dc1-text-primary'
                             : best ? 'font-semibold text-emerald-400'
