@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const db = require('../db');
+const { publicEndpointLimiter } = require('../middleware/rateLimiter');
 
 // Templates are stored as JSON files in /docker-templates at the repo root
 const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
@@ -46,7 +47,7 @@ const CATEGORY_TAG_MAP = {
 };
 
 // GET /api/templates — list all templates (optionally filter by tag or category)
-router.get('/', (req, res) => {
+router.get('/', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
   const { tag, category } = req.query;
 
@@ -72,7 +73,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/templates/whitelist — approved Docker image list for daemon validation
-router.get('/whitelist', (req, res) => {
+router.get('/whitelist', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
   const fromTemplates = templates.flatMap(t => t.approved_images || []);
   const fromImages = templates.map(t => t.image).filter(i => i && i !== 'custom');
@@ -98,7 +99,7 @@ router.get('/whitelist', (req, res) => {
 });
 
 // GET /api/templates/:id — single template with full detail
-router.get('/:id', (req, res) => {
+router.get('/:id', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
   const template = templates.find(t => t.id === req.params.id);
   if (!template) return res.status(404).json({ error: 'Template not found' });

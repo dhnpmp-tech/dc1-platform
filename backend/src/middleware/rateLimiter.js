@@ -151,6 +151,14 @@ const authenticatedEndpointLimiter = createRateLimiter({
   keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req),
 });
 
+// Model deploy limiter: 20 deploy requests per API key (or IP) per minute.
+// Applied to POST /api/models/:model_id/deploy to prevent deploy spam.
+const modelDeployLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req),
+});
+
 module.exports = {
   createRateLimiter,
   registerLimiter,
@@ -159,6 +167,7 @@ module.exports = {
   publicProvidersLimiter,
   publicEndpointLimiter,
   authenticatedEndpointLimiter,
+  modelDeployLimiter,
   containerRegistryLimiter,
   vllmCompleteLimiter,
   vllmStreamLimiter,
