@@ -882,6 +882,9 @@ const migrations = [
   'ALTER TABLE heartbeat_log ADD COLUMN model_cache_used_pct REAL DEFAULT 0',
   'ALTER TABLE withdrawal_requests ADD COLUMN updated_at TEXT',
   'ALTER TABLE withdrawal_requests ADD COLUMN is_amount_reserved INTEGER DEFAULT 1',
+  // Token tracking for vLLM inference billing — Sprint 25 Gap 1
+  'ALTER TABLE jobs ADD COLUMN prompt_tokens INTEGER',
+  'ALTER TABLE jobs ADD COLUMN completion_tokens INTEGER',
 ];
 
 migrations.forEach(sql => {

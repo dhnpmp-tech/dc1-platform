@@ -558,6 +558,23 @@ async function submitAndAwait(req) {
 
   const completedJob = waitResult.job;
   const extracted = extractCompletionText(completedJob);
+
+  // Persist actual token counts for billing traceability (Sprint 25 Gap 1)
+  const actualCompletionTokens = extracted.completion_tokens != null
+    ? extracted.completion_tokens
+    : approximateTokenCount(extracted.text);
+  try {
+    runStatement(
+      'UPDATE jobs SET prompt_tokens = ?, completion_tokens = ?, updated_at = ? WHERE job_id = ?',
+      promptTokens,
+      actualCompletionTokens,
+      new Date().toISOString(),
+      jobId
+    );
+  } catch (_) {
+    // Non-fatal — token write-back failure must not block the inference response
+  }
+
   const responsePayload = buildOpenAiResponse({
     job: completedJob,
     model: modelReq.model_id,
