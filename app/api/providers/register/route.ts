@@ -23,9 +23,15 @@ export async function POST(req: NextRequest) {
       const data = await res.json();
       return NextResponse.json(data);
     }
-    // Mock fallback
-    return NextResponse.json({ api_key: 'dc1-provider-demo-' + Date.now(), provider_id: 999 });
-  } catch {
-    return NextResponse.json({ api_key: 'dc1-provider-demo-' + Date.now(), provider_id: 999 });
+    const errorBody = await res.json().catch(() => ({}));
+    return NextResponse.json(
+      { error: errorBody.error || 'Registration failed' },
+      { status: res.status }
+    );
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'Registration service unavailable' },
+      { status: 503 }
+    );
   }
 }

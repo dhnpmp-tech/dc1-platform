@@ -15,6 +15,18 @@ const {
   adminLimiter,
 } = require('./middleware/rateLimiter');
 
+// ── Startup secrets guard ──────────────────────────────────────────────────
+// Fail fast if required secrets are missing or still set to placeholder values.
+const PLACEHOLDER_PREFIX = 'CHANGE_ME';
+const REQUIRED_SECRETS = ['DC1_ADMIN_TOKEN', 'DC1_HMAC_SECRET'];
+for (const key of REQUIRED_SECRETS) {
+  const val = process.env[key] || '';
+  if (!val || val.startsWith(PLACEHOLDER_PREFIX)) {
+    console.error(`[startup] FATAL: ${key} is missing or still set to a placeholder value. Set it in your PM2 env or OS environment before starting.`);
+    process.exit(1);
+  }
+}
+
 const app = express();
 const PORT = process.env.DC1_PROVIDER_PORT || 8083;
 const TRUST_PROXY_HOPS = Number.parseInt(process.env.TRUST_PROXY_HOPS || '0', 10);
@@ -85,6 +97,8 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   // Headless API: strict CSP — no scripts/styles needed
   res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  // HSTS — only meaningful once TLS is live on api.dcp.sa but safe to set now
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   next();
 });
 
