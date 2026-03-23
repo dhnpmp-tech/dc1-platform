@@ -144,3 +144,46 @@ Interpretation (2026-03-23 06:35 UTC):
 - Security P0 patch committed to main (`4b394c0`): operator must `git pull && pm2 restart mission-control-api`
 
 **Remaining for Step 2 close:** operator runs `bash infra/nginx/setup-https.sh api.dcp.sa admin@dcp.sa` on VPS.
+
+---
+
+## Fresh Probe Snapshot (2026-03-23 08:15 UTC)
+
+Command:
+```bash
+getent hosts api.dcp.sa
+```
+Result:
+```text
+76.13.179.86    api.dcp.sa
+```
+
+Command:
+```bash
+curl -sv --connect-timeout 5 https://api.dcp.sa/health
+```
+Result:
+```text
+* connect to 76.13.179.86 port 443 failed: Connection refused
+```
+
+Command:
+```bash
+curl -o /dev/null -w "%{http_code}" http://api.dcp.sa/health
+```
+Result:
+```text
+404 (nginx alive, no API reverse proxy on port 80)
+```
+
+Interpretation (2026-03-23 08:15 UTC):
+- DNS A record confirmed: `api.dcp.sa → 76.13.179.86` ✓
+- Port 443 still refused — certbot not run after 9+ hours of polling
+- Port 80 nginx is alive (HTTP 404), ACME challenge path accessible
+- All 11 Sprint 25 commits on main — **9 commits need `git pull && pm2 restart`** on VPS
+
+**Critical operator actions required (in order):**
+1. `cd /root/dc1-platform && git pull`
+2. `pm2 restart all` (activates auth P0, SQL fix, token billing, scoped keys, tier routing)
+3. `bash infra/nginx/setup-https.sh api.dcp.sa admin@dcp.sa` (closes Step 2 blocker)
+4. `bash infra/scripts/verify-deploy.sh` (launch gate verification)
