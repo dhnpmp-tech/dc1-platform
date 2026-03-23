@@ -694,7 +694,9 @@ describe('Job lifecycle — submit → assign → complete', () => {
     const { id: providerId } = seedProvider();
     await submitJob(renterKey, providerId);
 
-    const res = await request(app).get('/api/jobs/active');
+    const res = await request(app)
+      .get('/api/jobs/active')
+      .set('x-renter-key', renterKey);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.jobs)).toBe(true);
     expect(res.body.jobs.length).toBeGreaterThanOrEqual(1);
@@ -1071,20 +1073,18 @@ describe('custom_container job type', () => {
     expect(spec.script).toContain('torch');
   });
 
-  test('backend accepts unapproved image override (daemon validates at execution time)', async () => {
+  test('backend rejects unapproved image override (DCP-663 server-side validation)', async () => {
     const { key: renterKey } = seedRenter(50_000);
     const { id: providerId } = seedProvider();
 
-    // Backend does NOT enforce image whitelist — daemon does
+    // DCP-663: Backend now validates image_override against approved registry
     const res = await submitJob(renterKey, providerId, {
       job_type: 'custom_container',
       params: { image_override: 'attacker/exploit:latest', script: 'print("hi")' },
       duration_minutes: 5,
     });
-    expect(res.status).toBe(201); // submission accepted
-    const job = mockDb._tables.jobs.find(j => j.job_type === 'custom_container');
-    const spec = JSON.parse(job.task_spec);
-    expect(spec.image_override).toBe('attacker/exploit:latest'); // stored as-is; daemon will reject
+    expect(res.status).toBe(400); // rejected at submission
+    expect(res.body.error).toMatch(/not.*approved/i);
   });
 });
 
