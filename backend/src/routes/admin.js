@@ -3529,4 +3529,23 @@ router.get('/escrow-chain/status', async (req, res) => {
   }
 });
 
+// ─── GET /api/admin/serve-sessions/:job_id (DCP-619) ────────────────────────────
+// Returns serve_sessions record for a given job_id (used by metering smoke test)
+router.get('/serve-sessions/:job_id', (req, res) => {
+  try {
+    const { job_id } = req.params;
+    const session = db.get(
+      'SELECT id, job_id, model, total_inferences, total_tokens, total_billed_halala, last_inference_at FROM serve_sessions WHERE job_id = ?',
+      job_id
+    );
+    if (!session) {
+      return res.status(404).json({ error: 'Serve session not found' });
+    }
+    res.json({ serve_session: session });
+  } catch (error) {
+    console.error('Admin serve-sessions query error:', error);
+    res.status(500).json({ error: 'Failed to fetch serve-sessions' });
+  }
+});
+
 module.exports = router;

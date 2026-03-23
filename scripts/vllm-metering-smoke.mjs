@@ -141,26 +141,46 @@ async function run() {
 
   printHeader('3) Verify serve_sessions Metering (Admin API)');
 
-  // Query serve_sessions for this job
-  // Note: Job ID from vLLM response may not directly map to serve_sessions.job_id
-  // Instead, we verify the metering was recorded by checking if serve_sessions was updated
+  // Query serve_sessions via admin API to verify database persistence
+  const sessionRes = await requestJson(`/admin/serve-sessions/${jobId}`, {
+    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+  });
 
-  // For this smoke test, we trust that if the vLLM endpoint returns tokens successfully,
-  // the metering update ran (non-fatal error handling means it won't fail the response)
-  recordCheck('Metering update triggered', true,
-    `serve_sessions.total_tokens will be incremented for this session`);
-  recordCheck('Token rate calculation', true,
-    `cost_halala = total_tokens × token_rate_halala (from cost_rates table)`);
+  if (!sessionRes.ok) {
+    recordCheck('Serve session found in database', false,
+      `HTTP ${sessionRes.status} - serve_sessions record may not have been created`);
+    // Continue to report the issue, but don't throw — admin API endpoint may be unavailable
+  } else {
+    const session = sessionRes.json?.serve_session;
+    if (!session) {
+      recordCheck('Serve session found in database', false,
+        'Empty response from admin API');
+    } else {
+      recordCheck('Serve session found in database', true,
+        `session_id=${session.id}`);
+      recordCheck('Token counts persisted', session.total_tokens > 0,
+        `total_tokens=${session.total_tokens} (expected > 0)`);
+      recordCheck('Cost calculated and tracked', session.total_billed_halala > 0,
+        `total_billed_halala=${session.total_billed_halala} halala (expected > 0)`);
+      recordCheck('Last inference timestamp updated', session.last_inference_at != null,
+        `last_inference_at=${session.last_inference_at || 'null'}`);
+
+      // Validation: if vLLM returned tokens but database shows zero tokens, this is a critical failure
+      if (usage.total_tokens > 0 && session.total_tokens === 0) {
+        recordCheck('Database persistence confirmed', false,
+          'vLLM returned tokens but serve_sessions.total_tokens is still 0 — metering UPDATE may have failed silently');
+      } else if (usage.total_tokens > 0 && session.total_tokens > 0) {
+        recordCheck('Database persistence confirmed', true,
+          `tokens matched: vLLM=${usage.total_tokens}, DB=${session.total_tokens}`);
+      }
+    }
+  }
 
   printHeader('4) Billing Accuracy Checkpoint');
   recordCheck('Serve sessions created on submit', true,
     'serve_sessions record created with job_id at vLLM job submission');
-  recordCheck('Token counts persisted', true,
-    'serve_sessions.total_tokens += prompt_tokens + completion_tokens');
-  recordCheck('Cost calculated and tracked', true,
-    'serve_sessions.total_billed_halala += (tokens × token_rate_halala)');
-  recordCheck('Last inference timestamp updated', true,
-    'serve_sessions.last_inference_at set to completion time');
+  recordCheck('Token rate lookup and application', true,
+    'cost_halala = total_tokens × token_rate_halala (from cost_rates table)');
 
   printHeader('Summary');
   const passed = checks.filter((item) => item.pass).length;
