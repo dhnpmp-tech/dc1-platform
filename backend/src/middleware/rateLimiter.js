@@ -135,12 +135,30 @@ const adminLimiter = createRateLimiter({
   keyGenerator: (req) => `admin:${getAdminToken(req) || ipFallbackKey(req)}`,
 });
 
+// Public endpoint limiter: 100 requests per IP per minute.
+// Applied to unauthenticated access on /api/providers, /api/jobs, /api/models.
+const publicEndpointLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 100,
+  keyGenerator: (req) => ipFallbackKey(req),
+});
+
+// Authenticated endpoint limiter: 1000 requests per API key per minute.
+// Applied when a valid API key (renter, provider, or bearer token) is present.
+const authenticatedEndpointLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 1000,
+  keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req),
+});
+
 module.exports = {
   createRateLimiter,
   registerLimiter,
   jobSubmitLimiter,
   marketplaceLimiter,
   publicProvidersLimiter,
+  publicEndpointLimiter,
+  authenticatedEndpointLimiter,
   containerRegistryLimiter,
   vllmCompleteLimiter,
   vllmStreamLimiter,

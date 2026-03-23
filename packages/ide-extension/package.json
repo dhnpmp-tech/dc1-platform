@@ -1,0 +1,206 @@
+{
+  "name": "dcp-provider-cli",
+  "displayName": "DCP Provider CLI",
+  "description": "Manage your DCP provider node directly from VS Code — monitor node health, configure workspace, view earnings, and manage GPU allocation.",
+  "version": "1.0.0",
+  "publisher": "dcp-platform",
+  "homepage": "https://dcp.sa",
+  "bugs": {
+    "url": "https://github.com/dhnpmp-tech/dc1-platform/issues"
+  },
+  "galleryBanner": {
+    "color": "#050a14",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "DevOps"
+  ],
+  "keywords": [
+    "gpu",
+    "provider",
+    "compute",
+    "node",
+    "cli",
+    "dcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dhnpmp-tech/dc1-platform"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:dcp-provider.startNode",
+    "onCommand:dcp-provider.stopNode"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "DCP Provider CLI",
+      "properties": {
+        "dcp-provider.nodeApiUrl": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "Local provider node API URL"
+        },
+        "dcp-provider.workspaceRoot": {
+          "type": "string",
+          "default": "${workspaceFolder}/.dcp",
+          "description": "DCP provider workspace configuration directory"
+        },
+        "dcp-provider.enableStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show node health status in status bar"
+        },
+        "dcp-provider.healthCheckIntervalMs": {
+          "type": "number",
+          "default": 5000,
+          "description": "Health check polling interval in milliseconds"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "dcp-provider.startNode",
+        "title": "DCP Provider: Start Node",
+        "icon": "$(play)"
+      },
+      {
+        "command": "dcp-provider.stopNode",
+        "title": "DCP Provider: Stop Node",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "dcp-provider.restartNode",
+        "title": "DCP Provider: Restart Node",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dcp-provider.nodeStatus",
+        "title": "DCP Provider: Show Node Status",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "dcp-provider.configureWorkspace",
+        "title": "DCP Provider: Configure Workspace",
+        "icon": "$(settings)"
+      },
+      {
+        "command": "dcp-provider.viewEarnings",
+        "title": "DCP Provider: View Earnings",
+        "icon": "$(credit-card)"
+      },
+      {
+        "command": "dcp-provider.allocateGPU",
+        "title": "DCP Provider: Allocate GPU",
+        "icon": "$(server)"
+      },
+      {
+        "command": "dcp-provider.viewLogs",
+        "title": "DCP Provider: View Node Logs",
+        "icon": "$(output)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dcp-provider-sidebar",
+          "title": "DCP Provider",
+          "icon": "assets/sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dcp-provider-sidebar": [
+        {
+          "id": "dcp-provider.nodeView",
+          "name": "Node Status",
+          "icon": "$(server)",
+          "contextualTitle": "DCP Provider Node"
+        },
+        {
+          "id": "dcp-provider.gpuView",
+          "name": "GPU Allocation",
+          "icon": "$(chip)",
+          "contextualTitle": "GPU Resources"
+        },
+        {
+          "id": "dcp-provider.earningsView",
+          "name": "Earnings",
+          "icon": "$(credit-card)",
+          "contextualTitle": "Provider Earnings"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "dcp-provider.nodeStatus",
+          "when": "view == dcp-provider.nodeView",
+          "group": "navigation"
+        },
+        {
+          "command": "dcp-provider.startNode",
+          "when": "view == dcp-provider.nodeView",
+          "group": "navigation"
+        },
+        {
+          "command": "dcp-provider.stopNode",
+          "when": "view == dcp-provider.nodeView",
+          "group": "navigation"
+        },
+        {
+          "command": "dcp-provider.allocateGPU",
+          "when": "view == dcp-provider.gpuView",
+          "group": "navigation"
+        },
+        {
+          "command": "dcp-provider.viewEarnings",
+          "when": "view == dcp-provider.earningsView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "dcp-provider.startNode",
+        "key": "ctrl+shift+alt+s",
+        "mac": "cmd+shift+alt+s",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "dcp-provider.stopNode",
+        "key": "ctrl+shift+alt+x",
+        "mac": "cmd+shift+alt+x",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "vscode:package": "vsce package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.3.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.0"
+  },
+  "dependencies": {
+    "@vscode/vsce": "^3.7.1"
+  }
+}

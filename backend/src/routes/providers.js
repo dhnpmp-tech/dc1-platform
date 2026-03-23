@@ -12,7 +12,7 @@ const {
     providerAccountDeletionLimiter,
     providerDataExportLimiter,
 } = require('../middleware/rateLimiter');
-const { isAdminRequest } = require('../middleware/auth');
+const { isAdminRequest, getBearerToken } = require('../middleware/auth');
 const { getChainEscrow } = require('../services/escrow-chain');
 const { sendAlert } = require('../services/notifications');
 const {
@@ -3081,6 +3081,174 @@ function computeReputationTier({ uptimePct, successRate, totalJobs }) {
     if (uptimePct >= 80 && successRate >= 80) return 'reliable';
     return 'new';
 }
+
+// ============================================================================
+// GET /api/providers/active — Authenticated view of online-only providers
+// Requires: Authorization: Bearer <renter_api_key|provider_api_key>
+// Returns only "online" providers (heartbeat within the last 2 minutes).
+// Launch gate: DCP-613 noted this endpoint must require auth.
+// ============================================================================
+router.get('/active', (req, res) => {
+    const token = getBearerToken(req);
+    if (!token) {
+        return res.status(401).json({ error: 'Authorization required. Use: Authorization: Bearer <api_key>' });
+    }
+
+    // Validate token against renters or providers table
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND deleted_at IS NULL', [token]);
+    const provider = !renter && db.get('SELECT id FROM providers WHERE api_key = ? AND deleted_at IS NULL', [token]);
+    if (!renter && !provider) {
+        return res.status(401).json({ error: 'Invalid or expired API key' });
+    }
+
+    try {
+        const { COST_RATES } = require('./jobs');
+        let providers = [];
+        try {
+            providers = db.all(
+                `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
+                        gpu_vram_mb, gpu_info_json,
+                        gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
+                        status, location, run_mode, reliability_score, reputation_score,
+                        cached_models, last_heartbeat, uptime_percent, p.total_jobs, is_paused, created_at,
+                        COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
+                        COALESCE(js.completed_jobs, 0) AS completed_jobs,
+                        COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                 FROM providers p
+                 LEFT JOIN (
+                    SELECT provider_id, COUNT(*) AS heartbeats_7d
+                    FROM heartbeat_log
+                    WHERE datetime(received_at) >= datetime('now', '-7 days')
+                    GROUP BY provider_id
+                 ) hb ON hb.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
+                           SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
+                           COUNT(*) AS total_jobs_computed
+                    FROM jobs
+                    GROUP BY provider_id
+                 ) js ON js.provider_id = p.id
+                 WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
+                   AND COALESCE(p.approval_status, 'pending') = 'approved'
+                 ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
+                          (p.gpu_vram_mib IS NULL) ASC, p.gpu_vram_mib DESC`
+            );
+        } catch (queryError) {
+            console.warn('[/active] Primary query failed, using fallback:', queryError?.message || queryError);
+            providers = db.all(
+                `SELECT p.id, p.name, p.gpu_model, p.status, p.location, p.run_mode,
+                        p.last_heartbeat, p.total_jobs, p.created_at,
+                        p.gpu_name_detected, p.gpu_vram_mib, p.gpu_driver,
+                        p.gpu_vram_mb, p.gpu_compute_capability, p.gpu_cuda_version,
+                        p.gpu_count_reported, p.gpu_spec_json, p.gpu_info_json,
+                        p.reliability_score, p.reputation_score, p.cached_models,
+                        COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
+                        COALESCE(js.completed_jobs, 0) AS completed_jobs,
+                        COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                 FROM providers p
+                 LEFT JOIN (
+                    SELECT provider_id, COUNT(*) AS heartbeats_7d
+                    FROM heartbeat_log
+                    WHERE datetime(received_at) >= datetime('now', '-7 days')
+                    GROUP BY provider_id
+                 ) hb ON hb.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
+                           SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
+                           COUNT(*) AS total_jobs_computed
+                    FROM jobs
+                    GROUP BY provider_id
+                 ) js ON js.provider_id = p.id
+                 WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
+                 ORDER BY p.id DESC`
+            );
+        }
+
+        const now = Date.now();
+        const mapped = providers.reduce((acc, p) => {
+            const { status: computedStatus, heartbeat_age_seconds } =
+                computeProviderStatus(p.last_heartbeat, now);
+
+            // /active returns only fully-online providers (not degraded)
+            if (computedStatus !== 'online') return acc;
+
+            let cachedModels = [];
+            if (p.cached_models) { try { cachedModels = JSON.parse(p.cached_models); } catch {} }
+
+            let gpuSpec = null;
+            if (p.gpu_spec_json) { try { gpuSpec = JSON.parse(p.gpu_spec_json); } catch {} }
+            let gpuInfo = null;
+            if (p.gpu_info_json) { try { gpuInfo = JSON.parse(p.gpu_info_json); } catch {} }
+
+            const createdAtMs = p.created_at ? new Date(p.created_at).getTime() : NaN;
+            const daysSinceRegistration = Number.isFinite(createdAtMs)
+                ? Math.max(1 / 24, (now - createdAtMs) / (1000 * 60 * 60 * 24))
+                : 7;
+            const uptimeWindowDays = Math.min(7, daysSinceRegistration);
+            const expectedHeartbeats = Math.max(1, uptimeWindowDays * EXPECTED_HEARTBEATS_PER_DAY);
+            const uptimePct = roundTo1(Math.min(100, (Number(p.heartbeats_7d || 0) / expectedHeartbeats) * 100));
+
+            const completedJobs = Number(p.completed_jobs || 0);
+            const terminalJobs = Number(p.terminal_jobs || 0);
+            const totalJobs = Number(p.total_jobs_all || 0);
+            const jobSuccessRate = roundTo1(terminalJobs > 0 ? (completedJobs / terminalJobs) * 100 : 0);
+            const reputationTier = computeReputationTier({ uptimePct, successRate: jobSuccessRate, totalJobs });
+
+            acc.push({
+                id: p.id,
+                name: p.name,
+                gpu_model: p.gpu_name_detected || p.gpu_model,
+                vram_gb: p.gpu_vram_mib ? Math.round(p.gpu_vram_mib / 1024 * 10) / 10 : null,
+                vram_mb: p.gpu_vram_mb != null ? p.gpu_vram_mb : (p.gpu_vram_mib != null ? p.gpu_vram_mib : null),
+                vram_mib: p.gpu_vram_mib,
+                gpu_count: p.gpu_count_reported || 1,
+                driver_version: p.gpu_driver,
+                compute_capability: p.gpu_compute_capability,
+                cuda_version: p.gpu_cuda_version,
+                gpu_info: {
+                    gpu_name: gpuInfo?.gpu_name || p.gpu_name_detected || p.gpu_model || null,
+                    vram_mb: gpuInfo?.vram_mb != null
+                        ? gpuInfo.vram_mb
+                        : (p.gpu_vram_mb != null ? p.gpu_vram_mb : (p.gpu_vram_mib != null ? p.gpu_vram_mib : null)),
+                    driver_version: gpuInfo?.driver_version || p.gpu_driver || null,
+                    cuda_version: gpuInfo?.cuda_version || p.gpu_cuda_version || null,
+                },
+                gpu_spec: gpuSpec,
+                status: 'online',
+                is_live: true,
+                heartbeat_age_seconds,
+                location: p.location,
+                run_mode: p.run_mode,
+                reliability_score: p.reliability_score,
+                reputation_score: p.reputation_score ?? 100,
+                uptime_percent: uptimePct,
+                uptime_pct: uptimePct,
+                job_success_rate: jobSuccessRate,
+                total_jobs_completed: completedJobs,
+                reputation_tier: reputationTier,
+                cached_models: cachedModels,
+                cost_rates_halala_per_min: COST_RATES,
+            });
+
+            return acc;
+        }, []);
+
+        mapped.sort((a, b) => (b.reputation_score ?? 100) - (a.reputation_score ?? 100));
+
+        res.json({
+            providers: mapped,
+            total: mapped.length,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('[/active] Error:', error);
+        res.status(500).json({ error: 'Failed to fetch active providers' });
+    }
+});
 
 router.get('/available', (req, res) => {
     try {

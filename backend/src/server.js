@@ -13,7 +13,10 @@ const {
   jobSubmitLimiter,
   marketplaceLimiter,
   adminLimiter,
+  publicEndpointLimiter,
+  authenticatedEndpointLimiter,
 } = require('./middleware/rateLimiter');
+const { getBearerToken } = require('./middleware/auth');
 
 // ── Startup secrets guard ──────────────────────────────────────────────────
 // Fail fast if required secrets are missing or still set to placeholder values.
@@ -144,6 +147,27 @@ app.use('/api/providers/marketplace', marketplaceLimiter);
 
 // Admin endpoints: 30 requests per token per minute
 app.use('/api/admin', adminLimiter);
+
+// Tiered rate limiting for providers/jobs/models:
+//   - authenticated (API key or bearer token present): 1000 req/min per key
+//   - public (no credentials): 100 req/min per IP
+function hasApiCredential(req) {
+  return !!(
+    req.headers['x-renter-key'] ||
+    req.headers['x-provider-key'] ||
+    req.query.renter_key ||
+    req.query.provider_key ||
+    req.query.key ||
+    getBearerToken(req)
+  );
+}
+function tieredApiLimiter(req, res, next) {
+  if (hasApiCredential(req)) return authenticatedEndpointLimiter(req, res, next);
+  return publicEndpointLimiter(req, res, next);
+}
+app.use('/api/providers', tieredApiLimiter);
+app.use('/api/jobs', tieredApiLimiter);
+app.use('/api/models', tieredApiLimiter);
 
 // Login endpoints: 10 attempts per IP per 15 minutes
 const loginLimiter = rateLimit({
