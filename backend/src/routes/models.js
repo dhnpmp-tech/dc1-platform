@@ -844,9 +844,9 @@ router.get('/bundles/arabic-rag', publicEndpointLimiter, (req, res) => {
 
 // GET /api/models/:model_id/deploy/estimate
 // Returns deployment estimate payload for the selected model.
-router.get('/:model_id/deploy/estimate', publicEndpointLimiter, (req, res) => {
+router.get(/^/([a-zA-Z0-9._/-]+)/deploy/estimate$/, publicEndpointLimiter, (req, res) => {
   try {
-    const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
+    const modelId = normalizeString(req.params[0], { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
     if (!model) return res.status(404).json({ error: 'Model not found or inactive' });
 
@@ -865,9 +865,9 @@ router.get('/:model_id/deploy/estimate', publicEndpointLimiter, (req, res) => {
 
 // POST /api/models/:model_id/deploy
 // Authenticated deploy handoff endpoint for managed catalog UX.
-router.post('/:model_id/deploy', modelDeployLimiter, requireRenter, (req, res) => {
+router.post(/^/([a-zA-Z0-9._/-]+)/deploy$/, modelDeployLimiter, requireRenter, (req, res) => {
   try {
-    const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
+    const modelId = normalizeString(req.params[0], { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
     if (!model) return res.status(404).json({ error: 'Model not found or inactive' });
 
@@ -923,9 +923,9 @@ router.post('/:model_id/deploy', modelDeployLimiter, requireRenter, (req, res) =
 
 // GET /api/models/:model_id
 // Single-model detail payload for managed catalog consumers.
-router.get('/:model_id', publicEndpointLimiter, (req, res) => {
+router.get(/^/([a-zA-Z0-9._/-]+)$/ , publicEndpointLimiter, (req, res) => {
   try {
-    const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
+    const modelId = normalizeString(req.params[0], { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
     if (!model) return res.status(404).json({ error: 'Model not found or inactive' });
 
