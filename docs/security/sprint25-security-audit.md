@@ -121,10 +121,10 @@ When the backend is unreachable or returns an error, the UI silently receives a 
 | # | Category | Status | Finding |
 |---|----------|--------|---------|
 | A01 | Broken Access Control | ✅ OK | Scoped auth on all routes; IDOR checked |
-| A02 | Cryptographic Failures | 🔴 FAIL | C1: No TLS; H1: Hardcoded creds |
+| A02 | Cryptographic Failures | ⚠️ WARN | C1: No TLS (operator-owned); H1: Resolved — no hardcoded creds |
 | A03 | Injection | ✅ OK | Parameterized SQL throughout |
-| A04 | Insecure Design | ⚠️ WARN | M2: Fake registration response |
-| A05 | Security Misconfiguration | ⚠️ WARN | M1: Placeholder secrets in config |
+| A04 | Insecure Design | ✅ Fixed | M2: Resolved — register routes return real errors, no mock fallback |
+| A05 | Security Misconfiguration | ✅ Fixed | M1: Resolved — CHANGE_ME replaced with empty strings; startup guard in place |
 | A06 | Vulnerable Components | ℹ️ Not audited | Run `npm audit` — out of scope for this sprint |
 | A07 | Auth & Session Failures | ✅ OK | Timing-safe compare; rate-limited logins |
 | A08 | Software & Data Integrity | ✅ OK | HMAC job signing in place |
@@ -135,10 +135,10 @@ When the backend is unreachable or returns an error, the UI silently receives a 
 
 ## Priority Fix Order
 
-1. **C1 — TLS on api.dcp.sa** (launch blocker — do this first)
-2. **M1 — Startup guard for placeholder secrets** (prevents operator error)
-3. **H1 — Remove hardcoded Supabase fallback** (rotation + code fix)
-4. **M2 — Remove fake registration fallback** (correctness + security)
+1. **C1 — TLS on api.dcp.sa** ⚠️ OPEN — operator-owned, launch blocker
+2. **M1 — Placeholder secrets** ✅ FIXED — commit 4513355 (empty strings + startup guard)
+3. **H1 — Hardcoded Supabase fallback** ✅ FIXED — already using empty string fallbacks
+4. **M2 — Fake registration fallback** ✅ FIXED — register routes return real errors
 5. **Post-launch** — Add `npm audit` to CI pipeline
 
 ---
