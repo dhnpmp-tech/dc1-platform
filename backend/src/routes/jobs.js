@@ -1166,12 +1166,15 @@ router.post('/submit', requireRenter, (req, res) => {
 
       if (useScheduler) {
         // Enhanced routing with GPU type matching
+        // NOTE: gpu_type comes from gpu_requirements.gpu_type (e.g. "A100", "RTX4090"),
+        // NOT from the model field which is an ML model name (e.g. "mistralai/Mistral-7B").
+        const requestedGpuType = normalizeString(gpu_requirements?.gpu_type) || null;
         routed = getJobScheduler().findBestProviderJobRouter({
           job_type,
           min_vram_gb: minVramGb,
           globalRateHalala: globalRate,
           pricing_class: pricingClass,
-          gpu_type: normalizeModelField(requestedModel), // Pass GPU type from model field
+          gpu_type: requestedGpuType,
         });
       } else {
         // Legacy jobRouter for compatibility
