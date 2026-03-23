@@ -156,3 +156,36 @@ Read docs/FOUNDER-STRATEGIC-BRIEF.md for financial projections and competitive d
 Read infra/config/arabic-portfolio.json for the model portfolio.
 Read docs/arabic-portfolio-serving-ops.md for deployment procedures.
 Read docs/roadmap-to-production.md for the technical gap analysis.
+
+
+## ⛔ MANDATORY RULE — NO DEPLOYMENT WITHOUT FOUNDER REVIEW (2026-03-23 14:45 UTC)
+
+### THIS RULE OVERRIDES ALL OTHER DIRECTIVES. ALL AGENTS MUST COMPLY.
+
+**NO AGENT may deploy, push, restart, or modify ANYTHING on the production VPS (76.13.179.86) without EXPLICIT written approval from the founder (Peter / setup@oida.ae).**
+
+This includes but is not limited to:
+- git pull / git fetch on the VPS
+- PM2 restart / reload / delete
+- docker restart / docker exec with mutations
+- nginx reload / certbot / systemctl commands
+- Any SSH command to 76.13.179.86 that changes state
+- Running deployment scripts or CI/CD triggers
+- Database migrations on production
+
+### What you CAN do without approval:
+- READ-ONLY operations (git log, git status, docker ps, pm2 list, curl health checks)
+- Writing code, docs, tests in the local repo
+- Creating issues and comments
+- Planning and coordination
+
+### If you believe deployment is needed:
+1. Create an issue titled "DEPLOY REQUEST: [description]"
+2. List EXACTLY what will be deployed and what commands will run
+3. Tag it priority: critical
+4. WAIT for founder approval in issue comments before proceeding
+
+### Why this rule exists:
+Agents have been deploying without review, causing production outages (502s from unbuilt native modules, service restarts during active sessions). The founder must review all production changes before they go live.
+
+**VIOLATION OF THIS RULE WILL RESULT IN AGENT SUSPENSION.**
