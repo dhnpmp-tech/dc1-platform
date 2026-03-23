@@ -8,14 +8,18 @@
 
 ## Daily Burn Tracking (Launch Week Guardrails Active)
 
-### Current Metrics
+### Current Metrics (Real-Time at 11:01 UTC)
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
 | **Weekly guardrail** | 1,313 SAR | 1,313 SAR | 🟢 Green (at threshold) |
-| **Daily reference** | 190 SAR/day | 190 SAR/day | TBD (day in progress) |
+| **Daily reference** | 190 SAR/day | 190 SAR/day | 🟡 In progress |
 | **Days into launch** | 1 | 7 | — |
-| **Active providers** | 43 | 50+ (ramp target) | 🟡 On track |
-| **Production revenue** | $0 | TBD | 🟡 Awaiting renter onboarding |
+| **Registered providers** | 43 | 50+ (ramp target) | 🟡 On track |
+| **Online providers** | 0 | 20+ (beta target) | 🔴 **ALERT: No online providers** |
+| **Queued jobs** | 0 | — | 🔴 No activity |
+| **Running jobs** | 0 | — | 🔴 No activity |
+| **Production revenue** | $0 | TBD | 🔴 No revenue activity yet |
+| **API health** | ✅ OK | OK | 🟢 Healthy |
 
 ### Cost-Down Bundle Staging
 - **P1 available:** Sequential CR pooling (−78 SAR/week)
@@ -39,6 +43,13 @@
 - **Renter beta cohort:** Awaiting first onboards (0 → target 10+ this week)
 - **Escrow smart contract deployment:** Prerequisite for payment settlement
 - **E2E smoke test:** Prerequisite for production revenue
+
+### 🔴 Critical Alerts (11:01 UTC)
+**URGENT:** 43 providers registered but **0 online** — no daemon activity detected
+- Implication: No compute capacity available for renters
+- Severity: **LAUNCH BLOCKER** (blocks E2E smoke test)
+- Action required: Check provider daemon deployment / connectivity
+- Timeline impact: Delays revenue activation by hours if not resolved
 
 ### 🔴 Critical Path
 - **First renter spend:** Triggers revenue tracking activation
