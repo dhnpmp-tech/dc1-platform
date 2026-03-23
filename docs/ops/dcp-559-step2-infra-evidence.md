@@ -105,3 +105,42 @@ Interpretation:
 - [ ] DNS proof attached from VPS + external vantage
 - [ ] Certbot + TLS proof attached
 - [ ] DCP-308 Step 2 checklist text updated to point at DCP-559 evidence lane
+
+---
+
+## Fresh Probe Snapshot (2026-03-23 06:35 UTC)
+
+Command:
+```bash
+getent hosts api.dcp.sa
+```
+Result:
+```text
+76.13.179.86    api.dcp.sa
+```
+
+Command:
+```bash
+curl -sv --connect-timeout 5 https://api.dcp.sa/health
+```
+Result:
+```text
+* connect to 76.13.179.86 port 443 failed: Connection refused
+```
+
+Command:
+```bash
+curl -o /dev/null -w "%{http_code}" http://api.dcp.sa/health
+```
+Result:
+```text
+HTTP 404 (nginx/1.24.0 — server reachable, no TLS, ACME challenge path not configured)
+```
+
+Interpretation (2026-03-23 06:35 UTC):
+- DNS A record confirmed: `api.dcp.sa → 76.13.179.86` ✓
+- Port 443 still refused — certbot not run, no TLS certificate
+- Port 80 nginx is alive but returns 404 for `/health` (no reverse proxy configured yet)
+- Security P0 patch committed to main (`4b394c0`): operator must `git pull && pm2 restart mission-control-api`
+
+**Remaining for Step 2 close:** operator runs `bash infra/nginx/setup-https.sh api.dcp.sa admin@dcp.sa` on VPS.
