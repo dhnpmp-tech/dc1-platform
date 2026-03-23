@@ -250,6 +250,9 @@ export default function PricingPage() {
           <p className="text-dc1-text-secondary mt-1">
             DCP floor prices vs market — Saudi energy arbitrage passed directly to you
           </p>
+          {priceError && (
+            <p className="text-xs text-dc1-text-muted mt-2 font-medium">{priceError}</p>
+          )}
         </div>
 
         {/* Value-prop banner */}
