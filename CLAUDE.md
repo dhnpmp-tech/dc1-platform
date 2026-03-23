@@ -95,3 +95,64 @@ DCP-618, DCP-629, DCP-630 are now CANCELLED (deferred). Founder does not have a 
 
 ### 3. NVIDIA CONTAINER CONFIRMED READY
 DCP-617 is confirmed done by the founder. The NVIDIA container is operational.
+
+
+## FOUNDER DIRECTIVE — 2026-03-23 15:00 UTC — SPRINT 27 PLANNING: ARABIC MODEL ACTIVATION
+
+CEO: Plan Sprint 27 IMMEDIATELY once Sprint 26 closes. The founder has reviewed the full technical roadmap and the Arabic model portfolio. Sprint 27 focus is ACTIVATING what we already built — not building new things.
+
+### SPRINT 27 PRIORITIES (Founder-ordered)
+
+1. ACTIVATE THE TEMPLATE CATALOG (CRITICAL)
+   - All 20 docker-templates/*.json are built but NOT exposed in the production marketplace
+   - Wire them to the live marketplace UI so renters can browse and one-click deploy
+   - Includes: arabic-embeddings, arabic-reranker, nemotron-nano, nemotron-super, qwen25-7b, llama3-8b, mistral-7b, sdxl, stable-diffusion, vllm-serve, jupyter-gpu, pytorch-*, lora-finetune, qlora-finetune, ollama, custom-container, python-scientific-compute
+   - This is the #1 revenue enabler — renters cannot buy what they cannot see
+
+2. WIRE THE MODEL CATALOG API (CRITICAL)
+   - backend/src/routes/models.js exists and reads infra/config/arabic-portfolio.json
+   - The /api/models endpoints need to be connected to the marketplace frontend
+   - Renters must be able to see available models, filter by Arabic capability, VRAM requirement, pricing
+   - Show competitive pricing vs hyperscalers (the buyer economics from FOUNDER-STRATEGIC-BRIEF.md)
+
+3. DEPLOY ARABIC PORTFOLIO PRE-FETCHING (CRITICAL)
+   - infra/docker/prefetch-models.sh exists and works
+   - Deploy to first active providers so Tier A models (ALLaM 7B, Falcon H1 7B, Qwen 2.5 7B, Llama 3 8B, Mistral 7B, Nemotron Nano 4B) are pre-warmed
+   - Tier B (JAIS 13B, BGE-M3 embeddings, BGE reranker, SDXL) should follow
+   - This eliminates cold-start latency — the #1 UX complaint for GPU marketplaces
+
+4. VPS PRODUCTION DEPLOYMENT (HIGH)
+   - Pull ALL Sprint 25 + Sprint 26 commits to live VPS 76.13.179.86
+   - Restart PM2 services, verify api.dcp.sa responds
+   - This has been deferred too long — code is sitting on main but not deployed
+
+5. ARABIC RAG-AS-A-SERVICE POSITIONING (HIGH)
+   - The embeddings + reranker + LLM stack is a complete Arabic retrieval pipeline
+   - Create a "one-click Arabic RAG" template that bundles BGE-M3 + BGE-reranker + ALLaM/JAIS
+   - This is the enterprise differentiator: PDPL-compliant Arabic document processing, in-kingdom
+   - Saudi government, legal, financial services need this — nobody else offers it locally
+
+6. PROVIDER ONBOARDING ACTIVATION (HIGH)
+   - 43 registered providers, 0 active
+   - With templates activated and models pre-fetched, providers can actually serve workloads
+   - Use the provider economics from the strategic brief to pitch activation
+
+### AGENT ALLOCATION GUIDANCE
+- Every agent must have assigned Sprint 27 work
+- Frontend Developer + UI/UX: template catalog UI, model browsing, pricing display
+- Backend Architect + Founding Engineer: model API wiring, template deployment pipeline
+- ML Infra Engineer: prefetch deployment, model cache validation, benchmark runs
+- DevOps: VPS deployment, CI/CD for template updates
+- DevRel + Copywriter: Arabic RAG docs, provider activation outreach, renter onboarding guides
+- Security: template sandboxing review, API key scoping for new endpoints
+- QA: end-to-end template deployment testing, model serving smoke tests
+- UX Researcher: renter journey testing with live Arabic models
+- CEO: Sprint 27 plan, issue creation, coordination
+
+### CONTEXT
+The Arabic model angle is DC1's real differentiator. ALLaM + JAIS + Arabic RAG on local GPUs at Saudi electricity rates with PDPL compliance — no competitor offers this. Sprint 27 is about making this VISIBLE and USABLE to customers, not building more infrastructure.
+
+Read docs/FOUNDER-STRATEGIC-BRIEF.md for financial projections and competitive data.
+Read infra/config/arabic-portfolio.json for the model portfolio.
+Read docs/arabic-portfolio-serving-ops.md for deployment procedures.
+Read docs/roadmap-to-production.md for the technical gap analysis.

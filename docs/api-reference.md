@@ -41,6 +41,112 @@ Exceeded rate limits return `429 Too Many Requests` with:
 
 ---
 
+## Pricing Endpoints
+
+### GET /api/pricing/estimate
+
+Estimate the cost of a job before submission. Use this to show pricing to users.
+
+**Auth:** `?key=dcp-renter-...` or `x-renter-key` header
+
+**Query Parameters:**
+
+| Param | Type | Required | Default |
+|-------|------|----------|---------|
+| `model` | string | Yes | — |
+| `max_tokens` | number | Yes | — |
+| `fine_tuning` | boolean | No | `false` |
+| `num_images` | number | No | `1` (for image models) |
+
+**Example:**
+
+```
+GET /api/pricing/estimate?model=Nemotron-12B&max_tokens=100
+```
+
+**Response 200:**
+
+```json
+{
+  "model": "Nemotron-12B",
+  "max_tokens": 100,
+  "cost_halala": 45,
+  "cost_sar": 0.45,
+  "provider_earnings_halala": 38,
+  "provider_earnings_sar": 0.38,
+  "platform_fee_halala": 7,
+  "platform_fee_sar": 0.07,
+  "estimated_duration_seconds": 8,
+  "notes": "Price varies based on actual token usage"
+}
+```
+
+**Key Fields:**
+- `cost_halala`: Your cost (what you pay)
+- `provider_earnings_halala`: What the provider earns (85% of cost)
+- `platform_fee_halala`: DCP's cut (15% of cost)
+
+---
+
+### GET /api/pricing/models
+
+List available models with pricing tiers.
+
+**Auth:** None required
+
+**Response 200:**
+
+```json
+{
+  "models": [
+    {
+      "id": "nemotron-12b",
+      "name": "Nemotron-12B",
+      "type": "inference",
+      "price_per_1k_tokens_halala": 3,
+      "min_cost_halala": 20,
+      "provider_earnings_halala": 17,
+      "gpu_types": ["RTX 4080", "RTX 4090"],
+      "avg_tokens_per_second": 40,
+      "recommended_for": "Fast inference, cost optimization"
+    },
+    {
+      "id": "llama3-8b",
+      "name": "Llama3-8B",
+      "type": "inference",
+      "price_per_1k_tokens_halala": 5,
+      "min_cost_halala": 40,
+      "provider_earnings_halala": 34,
+      "gpu_types": ["RTX 4090", "A100"],
+      "avg_tokens_per_second": 35,
+      "recommended_for": "Quality inference, multilingual"
+    },
+    {
+      "id": "sdxl",
+      "name": "SDXL",
+      "type": "image_generation",
+      "price_per_image_halala": 150,
+      "num_images": 1,
+      "provider_earnings_halala": 128,
+      "gpu_types": ["RTX 4090", "A100"],
+      "avg_duration_seconds": 15,
+      "recommended_for": "High-quality image generation"
+    }
+  ]
+}
+```
+
+**Pricing by Model (Reference Table):**
+
+| Model | Cost | Provider Earning | GPU | Use Case |
+|-------|------|------------------|-----|----------|
+| Nemotron-12B | 30–50 halala | 25–42 halala | RTX 4080 | Fast inference, cost-optimized |
+| Llama3-8B | 60–100 halala | 51–85 halala | RTX 4090 | Quality inference, Arabic-capable |
+| Llama3-70B | 300–500 halala | 255–425 halala | A100 / H100 | Large model inference |
+| SDXL | 150–300 halala | 128–255 halala | RTX 4090 | Image generation (1024x1024) |
+
+---
+
 ## Renter Endpoints
 
 ### POST /api/renters/register
