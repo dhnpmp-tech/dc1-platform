@@ -124,13 +124,15 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_job_exec_job_id ON job_executions(job_id
 
 // ─── SERVE SESSIONS TABLE ───
 // Tracks active vLLM serving sessions exposed through DC1 proxy.
+// provider_id and port are nullable: vLLM direct-completion sessions are created
+// before a provider is assigned (job is still pending routing at INSERT time).
 db.exec(`
   CREATE TABLE IF NOT EXISTS serve_sessions (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL UNIQUE,
-    provider_id INTEGER NOT NULL,
+    provider_id INTEGER,
     model TEXT NOT NULL,
-    port INTEGER NOT NULL,
+    port INTEGER,
     provider_ip TEXT,
     endpoint_url TEXT,
     session_token TEXT,
@@ -148,6 +150,48 @@ db.exec(`
     FOREIGN KEY (job_id) REFERENCES jobs(job_id)
   )
 `);
+
+// Migration: make provider_id and port nullable for existing databases.
+// SQLite does not support DROP/ALTER COLUMN directly — we use a safe PRAGMA
+// workaround that only runs if the old NOT NULL constraint is present.
+try {
+  db.exec(`PRAGMA foreign_keys = OFF`);
+  const colInfo = db.prepare(`PRAGMA table_info(serve_sessions)`).all();
+  const providerIdCol = colInfo.find(c => c.name === 'provider_id');
+  if (providerIdCol && providerIdCol.notnull === 1) {
+    // Recreate table without NOT NULL on provider_id and port
+    db.exec(`
+      ALTER TABLE serve_sessions RENAME TO _serve_sessions_old;
+      CREATE TABLE serve_sessions (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL UNIQUE,
+        provider_id INTEGER,
+        model TEXT NOT NULL,
+        port INTEGER,
+        provider_ip TEXT,
+        endpoint_url TEXT,
+        session_token TEXT,
+        status TEXT DEFAULT 'starting' CHECK(status IN ('starting','serving','stopped','expired')),
+        started_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        stopped_at TEXT,
+        last_inference_at TEXT,
+        total_inferences INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        total_billed_halala INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY (provider_id) REFERENCES providers(id),
+        FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+      );
+      INSERT INTO serve_sessions SELECT * FROM _serve_sessions_old;
+      DROP TABLE _serve_sessions_old;
+    `);
+  }
+  db.exec(`PRAGMA foreign_keys = ON`);
+} catch (_migErr) {
+  db.exec(`PRAGMA foreign_keys = ON`);
+}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_provider ON serve_sessions(provider_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_expiry ON serve_sessions(status, expires_at)`);
 
