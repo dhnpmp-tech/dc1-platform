@@ -419,12 +419,12 @@ function SupportPageInner() {
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <h1 className="text-3xl font-bold text-dc1-text-primary mb-2">{t('support.page_title')}</h1>
         <p className="text-dc1-text-secondary mb-10">{t('support.page_subtitle')}</p>
-        <div className="mb-8 rounded-xl border border-dc1-amber/35 bg-dc1-amber/10 p-4">
+        <div className={`mb-8 rounded-xl border border-dc1-amber/35 bg-dc1-amber/10 p-4 ${isRTL ? 'text-right' : 'text-left'}`}>
           <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-1">
-            Enterprise intake
+            {t('support.enterprise_intake.badge')}
           </p>
           <p className="text-sm text-dc1-text-secondary mb-3">
-            Route your request by outcome so procurement, security, and delivery questions reach the right path faster.
+            {t('support.enterprise_intake.subtitle')}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <Link
@@ -444,10 +444,10 @@ function SupportPageInner() {
                   route: 'sla',
                 })
               }}
-              className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 hover:border-dc1-amber/40 transition-colors"
+              className={`rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 hover:border-dc1-amber/40 transition-colors ${isRTL ? 'text-right' : 'text-left'}`}
             >
-              <p className="text-sm font-semibold text-dc1-text-primary">SLA planning</p>
-              <p className="mt-1 text-xs text-dc1-text-secondary">Capacity targets, response windows, and rollout timeline.</p>
+              <p className="text-sm font-semibold text-dc1-text-primary">{t('support.enterprise_intake.route.sla.title')}</p>
+              <p className="mt-1 text-xs text-dc1-text-secondary">{t('support.enterprise_intake.route.sla.desc')}</p>
             </Link>
             <Link
               href="/support?category=enterprise&source=support-enterprise-intake&flow=security#contact-form"
@@ -466,10 +466,10 @@ function SupportPageInner() {
                   route: 'security',
                 })
               }}
-              className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 hover:border-dc1-amber/40 transition-colors"
+              className={`rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 hover:border-dc1-amber/40 transition-colors ${isRTL ? 'text-right' : 'text-left'}`}
             >
-              <p className="text-sm font-semibold text-dc1-text-primary">Security review</p>
-              <p className="mt-1 text-xs text-dc1-text-secondary">PDPL/compliance expectations, controls, and risk review scope.</p>
+              <p className="text-sm font-semibold text-dc1-text-primary">{t('support.enterprise_intake.route.security.title')}</p>
+              <p className="mt-1 text-xs text-dc1-text-secondary">{t('support.enterprise_intake.route.security.desc')}</p>
             </Link>
             <Link
               href="/support?category=enterprise&source=support-enterprise-intake&flow=onboarding#contact-form"
@@ -488,10 +488,10 @@ function SupportPageInner() {
                   route: 'support',
                 })
               }}
-              className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 hover:border-dc1-amber/40 transition-colors"
+              className={`rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 hover:border-dc1-amber/40 transition-colors ${isRTL ? 'text-right' : 'text-left'}`}
             >
-              <p className="text-sm font-semibold text-dc1-text-primary">Onboarding support</p>
-              <p className="mt-1 text-xs text-dc1-text-secondary">Pilot setup, architecture guidance, and handoff planning.</p>
+              <p className="text-sm font-semibold text-dc1-text-primary">{t('support.enterprise_intake.route.onboarding.title')}</p>
+              <p className="mt-1 text-xs text-dc1-text-secondary">{t('support.enterprise_intake.route.onboarding.desc')}</p>
             </Link>
           </div>
         </div>

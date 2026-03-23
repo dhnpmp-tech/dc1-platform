@@ -32,18 +32,8 @@ interface StatusStep {
 
 type SupportCategory = 'provider' | 'bug'
 
-const GPU_EARNINGS: Record<string, { rate: number; providerRate: number; label: string }> = {
-  'RTX 3080': { rate: 9, providerRate: 6.75, label: 'RTX 3080 (10 GB)' },
-  'RTX 3090': { rate: 15, providerRate: 11.25, label: 'RTX 3090 (24 GB)' },
-  'RTX 4090': { rate: 22, providerRate: 16.5, label: 'RTX 4090 (24 GB)' },
-  'A100': { rate: 75, providerRate: 56.25, label: 'A100 (80 GB)' },
-  'H100': { rate: 120, providerRate: 90, label: 'H100 (80 GB)' },
-}
-
 export default function ProviderRegisterPage() {
   const { t, isRTL } = useLanguage()
-  const [calcGpu, setCalcGpu] = useState('RTX 3090')
-  const [calcHours, setCalcHours] = useState(12)
   const [formData, setFormData] = useState<RegistrationFormData>({
     fullName: '',
     email: '',
@@ -1033,65 +1023,33 @@ export default function ProviderRegisterPage() {
           </div>
         </section>
 
-        {/* Earning Calculator */}
+        {/* Earnings Transparency */}
         <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="card border-dc1-amber/20">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-1">{t('register.provider.calc_title')}</h2>
-            <p className="text-dc1-text-secondary text-sm mb-6">{t('register.provider.calc_desc')}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div>
-                <label className="label mb-2 block">{t('register.provider.calc_gpu_label')}</label>
-                <select
-                  value={calcGpu}
-                  onChange={(e) => setCalcGpu(e.target.value)}
-                  className="input"
-                >
-                  {Object.entries(GPU_EARNINGS).map(([model, info]) => (
-                    <option key={model} value={model}>{info.label}</option>
-                  ))}
-                </select>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-1">How provider earnings work</h2>
+            <p className="text-dc1-text-secondary text-sm mb-6">
+              Earnings are based on completed workload demand and machine availability, not fixed guarantees.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <p className="text-sm font-semibold text-dc1-text-primary mb-2">What increases earnings</p>
+                <ul className="space-y-2 text-sm text-dc1-text-secondary">
+                  <li>Consistent daemon uptime and heartbeat health</li>
+                  <li>Fast job acceptance and completion reliability</li>
+                  <li>Popular GPU availability when demand is high</li>
+                </ul>
               </div>
-              <div>
-                <label className="label mb-2 block">{t('register.provider.calc_hours_label')}: <span className="text-dc1-amber font-semibold">{calcHours} hrs</span></label>
-                <input
-                  type="range"
-                  min={1}
-                  max={24}
-                  value={calcHours}
-                  onChange={(e) => setCalcHours(Number(e.target.value))}
-                  className="w-full accent-dc1-amber"
-                />
-                <div className="flex justify-between text-xs text-dc1-text-muted mt-1">
-                  <span>1 hr</span>
-                  <span>12 hrs</span>
-                  <span>24 hrs</span>
-                </div>
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <p className="text-sm font-semibold text-dc1-text-primary mb-2">How to validate performance</p>
+                <ul className="space-y-2 text-sm text-dc1-text-secondary">
+                  <li>Track completed jobs and realized earnings in your dashboard</li>
+                  <li>Review heartbeat status to avoid offline gaps</li>
+                  <li>Use provider docs for optimization and troubleshooting</li>
+                </ul>
               </div>
             </div>
-            {GPU_EARNINGS[calcGpu] && (
-              <div className="mt-6 grid grid-cols-3 gap-4">
-                <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
-                  <p className="text-xs text-dc1-text-secondary mb-1">{t('register.provider.calc_daily')}</p>
-                  <p className="text-2xl font-bold text-dc1-amber">
-                    {(GPU_EARNINGS[calcGpu].providerRate * calcHours).toFixed(0)} SAR
-                  </p>
-                </div>
-                <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
-                  <p className="text-xs text-dc1-text-secondary mb-1">{t('register.provider.calc_weekly')}</p>
-                  <p className="text-2xl font-bold text-dc1-amber">
-                    {(GPU_EARNINGS[calcGpu].providerRate * calcHours * 7).toFixed(0)} SAR
-                  </p>
-                </div>
-                <div className="bg-dc1-surface-l2 rounded-lg p-4 text-center">
-                  <p className="text-xs text-dc1-text-secondary mb-1">{t('register.provider.calc_monthly')}</p>
-                  <p className="text-2xl font-bold text-dc1-amber">
-                    {(GPU_EARNINGS[calcGpu].providerRate * calcHours * 30).toFixed(0)} SAR
-                  </p>
-                </div>
-              </div>
-            )}
             <p className="text-xs text-dc1-text-muted mt-4">
-              Scenario estimate only: {GPU_EARNINGS[calcGpu]?.rate} SAR/hr renter rate x 75% provider share. Actual earnings vary by demand, uptime, and accepted jobs.
+              DCP does not guarantee fixed income outcomes. Realized earnings vary by demand, uptime, and accepted jobs.
             </p>
           </div>
         </section>

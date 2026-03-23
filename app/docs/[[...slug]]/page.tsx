@@ -104,6 +104,22 @@ export default function DocsPage({ params }: DocsPageProps) {
                 <p className="mt-2 text-sm text-dc1-text-secondary">ALLaM 7B, Falcon H1, JAIS 13B, and BGE-M3 are documented as supported deployment paths.</p>
               </div>
             </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <RoleIntentLink
+                href="/docs/quickstart"
+                source="docs_start_quickstart"
+                applyDestination="docs_quickstart_cta"
+                roleAwareHrefs={{
+                  renter: '/docs/quickstart#renter-onboarding-checklist',
+                  provider: '/docs/provider-guide#status-waiting-install-daemon',
+                  enterprise: '/support?category=enterprise&source=docs-enterprise-support-quickstart',
+                }}
+                className="btn btn-primary btn-sm"
+              >
+                Start Quickstart
+              </RoleIntentLink>
+              <Link href="/docs/api-reference" className="btn btn-secondary btn-sm">View API reference</Link>
+            </div>
             <div className="mt-5 rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">Retail Readiness Status</p>
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -132,22 +148,6 @@ export default function DocsPage({ params }: DocsPageProps) {
                   Contact enterprise support
                 </Link>
               </div>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <RoleIntentLink
-                href="/docs/quickstart"
-                source="docs_start_quickstart"
-                applyDestination="docs_quickstart_cta"
-                roleAwareHrefs={{
-                  renter: '/docs/quickstart#renter-onboarding-checklist',
-                  provider: '/docs/provider-guide#status-waiting-install-daemon',
-                  enterprise: '/support?category=enterprise&source=docs-enterprise-support-quickstart',
-                }}
-                className="btn btn-primary btn-sm"
-              >
-                Start Quickstart
-              </RoleIntentLink>
-              <Link href="/docs/api-reference" className="btn btn-secondary btn-sm">View API reference</Link>
             </div>
           </section>
 

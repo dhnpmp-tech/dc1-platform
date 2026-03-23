@@ -68,22 +68,22 @@ export default function RenterRegisterPage() {
   const firstWorkloadActions = useMemo(
     () => [
       {
-        title: '1. Browse GPU marketplace',
-        description: 'Compare live providers by GPU family, uptime, and rate.',
+        title: t('conversion.first_workload.step1_title'),
+        description: t('conversion.first_workload.step1_desc'),
         href: '/renter/marketplace?source=renter_register_first_workload&step=browse_marketplace',
       },
       {
-        title: '2. Submit your first job',
-        description: 'Open the submit flow and run a first containerized workload.',
+        title: t('conversion.first_workload.step2_title'),
+        description: t('conversion.first_workload.step2_desc'),
         href: '/renter/playground?source=renter_register_first_workload&step=submit_job',
       },
       {
-        title: '3. Follow quickstart docs',
-        description: 'Use API examples and model guidance to move from test to repeatable runs.',
+        title: t('conversion.first_workload.step3_title'),
+        description: t('conversion.first_workload.step3_desc'),
         href: '/docs/quickstart?source=renter_register_first_workload&step=quickstart_docs',
       },
     ],
-    []
+    [t]
   )
   const modeChecklist = useMemo(
     () => [
@@ -401,19 +401,19 @@ export default function RenterRegisterPage() {
                   {t('nav.playground')}
                 </a>
                 <a
-                  href="/renter"
+                  href="/renter/marketplace"
                   onClick={() =>
                     trackRegisterEvent('register_success_secondary_cta_clicked', {
                       source_page: 'renter_register_success',
                       surface: 'success_actions',
-                      destination: '/renter',
+                      destination: '/renter/marketplace',
                       step: 'secondary_cta',
                       cta_type: 'go_dashboard',
                     })
                   }
                   className="btn btn-secondary flex-1"
                 >
-                  {t('register.renter.go_dashboard')}
+                  {t('nav.marketplace')}
                 </a>
               </div>
             </div>
@@ -456,10 +456,14 @@ export default function RenterRegisterPage() {
 
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
           <div className={`rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-5 ${isRTL ? 'text-right' : 'text-left'}`}>
-            <h2 className="text-base font-semibold text-dc1-text-primary mb-1">First workload in 3 steps</h2>
-            <p className="text-xs text-dc1-text-secondary mb-3">
-              Create your API key, then follow this exact sequence to launch your first workload quickly.
-            </p>
+            <h2 className="text-base font-semibold text-dc1-text-primary mb-1">{t('conversion.first_workload.title')}</h2>
+            <p className="text-xs text-dc1-text-secondary mb-3">{t('conversion.first_workload.subtitle')}</p>
+            <a
+              href="/renter/playground?source=renter_register_first_workload&step=submit_job"
+              className="btn btn-primary btn-sm w-full sm:w-auto mb-4"
+            >
+              {t('conversion.first_workload.primary_cta')}
+            </a>
             <div className="grid grid-cols-1 gap-2">
               {firstWorkloadActions.map((item) => (
                 <a key={item.href} href={item.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 hover:border-dc1-amber transition-colors">
