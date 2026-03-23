@@ -59,16 +59,82 @@ interface StatCardProps {
   value: string | number
   subtitle?: string
   helpText?: string
+  tooltip?: string
+  warning?: string
+  warningType?: 'info' | 'warning' | 'error'
 }
 
-const StatCard: React.FC<StatCardProps> = ({ label, value, subtitle, helpText }) => (
-  <div className="bg-dc1-bg-secondary rounded-lg border border-dc1-border p-6 hover:border-dc1-border-hover transition">
-    <p className="text-dc1-text-secondary text-sm font-medium">{label}</p>
-    <p className="text-2xl font-bold text-dc1-text-primary mt-2">{value}</p>
-    {subtitle && <p className="text-sm text-dc1-text-muted mt-1">{subtitle}</p>}
-    {helpText && <p className="text-xs text-dc1-text-muted mt-2 font-medium">{helpText}</p>}
-  </div>
-)
+const StatCard: React.FC<StatCardProps> = ({
+  label,
+  value,
+  subtitle,
+  helpText,
+  tooltip,
+  warning,
+  warningType = 'info',
+}) => {
+  const [showTooltip, setShowTooltip] = useState(false)
+
+  const warningBgColor = {
+    info: 'bg-blue-50',
+    warning: 'bg-yellow-50',
+    error: 'bg-red-50',
+  }
+
+  const warningBorderColor = {
+    info: 'border-blue-200',
+    warning: 'border-yellow-200',
+    error: 'border-red-200',
+  }
+
+  const warningTextColor = {
+    info: 'text-blue-700',
+    warning: 'text-yellow-700',
+    error: 'text-red-700',
+  }
+
+  return (
+    <div className="relative">
+      <div className="bg-dc1-bg-secondary rounded-lg border border-dc1-border p-6 hover:border-dc1-border-hover transition">
+        <div className="flex items-start justify-between">
+          <p className="text-dc1-text-secondary text-sm font-medium">{label}</p>
+          {tooltip && (
+            <div className="relative">
+              <button
+                className="text-dc1-text-muted hover:text-dc1-text-primary transition"
+                onMouseEnter={() => setShowTooltip(true)}
+                onMouseLeave={() => setShowTooltip(false)}
+                title={tooltip}
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+              </button>
+              {showTooltip && (
+                <div className="absolute right-0 mt-2 w-48 p-2 bg-dc1-bg-primary border border-dc1-border rounded shadow-lg z-10 text-xs text-dc1-text-secondary">
+                  {tooltip}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <p className="text-2xl font-bold text-dc1-text-primary mt-2">{value}</p>
+        {subtitle && <p className="text-sm text-dc1-text-muted mt-1">{subtitle}</p>}
+        {helpText && <p className="text-xs text-dc1-text-muted mt-2 font-medium">{helpText}</p>}
+      </div>
+      {warning && (
+        <div className={`mt-2 p-2 rounded border ${warningBgColor[warningType]} ${warningBorderColor[warningType]}`}>
+          <p className={`text-xs font-medium ${warningTextColor[warningType]}`}>
+            {warningType === 'warning' && '⚠️ '}
+            {warningType === 'error' && '❌ '}
+            {warningType === 'info' && 'ℹ️ '}
+            {warning}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function BillingPage() {
   const { t } = useLanguage()
@@ -110,24 +176,28 @@ export default function BillingPage() {
                 value="2,450 SAR"
                 subtitle="vs 1,890 SAR last month (+29%)"
                 helpText="Sum of all inference jobs this calendar month"
+                tooltip="Only billable jobs included (excludes failed/cancelled)"
               />
               <StatCard
                 label="Available Credits"
                 value="3,200 SAR"
                 subtitle="From welcome credit + top-ups"
                 helpText="Credit expires 7 days after topup unless renewed"
+                tooltip="Credits expire automatically. Manage your credits at any time."
               />
               <StatCard
                 label="Tokens Processed"
                 value="2.4M"
-                subtitle="vs 1.8M last month"
+                subtitle="vs 1.8M last month (+33%)"
                 helpText="Total input + output tokens across all models"
+                tooltip="1M tokens ≈ 750 pages of text. Input tokens usually cheaper than output."
               />
               <StatCard
                 label="Avg Cost per 1K Tokens"
                 value="0.89 SAR"
-                subtitle="Best rate: Mistral 7B"
+                subtitle="Best rate: Mistral 7B (0.80 SAR/1K)"
                 helpText="Weighted average across all models used"
+                tooltip="Calculated from: (total_spend / total_tokens) × 1000. Choose cheaper models to lower your average."
               />
             </div>
 
@@ -169,30 +239,39 @@ export default function BillingPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-dc1-border">
-                      {[...Array(5)].map((_, i) => (
-                        <tr key={i} className="hover:bg-dc1-bg-primary transition">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-secondary">
-                            03/{22 - i}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-primary font-medium">
-                            Llama 3 8B
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-secondary">
-                            45,320
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-secondary">
-                            2m 34s
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-dc1-accent-primary">
-                            40.4 SAR
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-                              ✓ Complete
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {[...Array(5)].map((_, i) => {
+                        const statuses = [
+                          { label: '✓ Complete', bg: 'bg-green-100', text: 'text-green-700' },
+                          { label: '⏳ In Progress', bg: 'bg-blue-100', text: 'text-blue-700' },
+                          { label: '✗ Failed', bg: 'bg-red-100', text: 'text-red-700' },
+                          { label: '⊘ Cancelled', bg: 'bg-orange-100', text: 'text-orange-700' },
+                        ]
+                        const status = statuses[i % statuses.length]
+                        return (
+                          <tr key={i} className="hover:bg-dc1-bg-primary transition">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-secondary">
+                              03/{22 - i}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-primary font-medium">
+                              Llama 3 8B
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-secondary">
+                              45,320
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-dc1-text-secondary">
+                              2m 34s
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-dc1-accent-primary">
+                              40.4 SAR
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              <span className={`px-3 py-1 rounded-full ${status.bg} ${status.text} text-xs font-medium`}>
+                                {status.label}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
