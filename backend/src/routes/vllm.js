@@ -600,7 +600,7 @@ async function submitAndAwait(req) {
       'UPDATE jobs SET prompt_tokens = ?, completion_tokens = ?, updated_at = ? WHERE job_id = ?',
       promptTokens,
       actualCompletionTokens,
-      new Date().toISOString(),
+      now,
       jobId
     );
   } catch (_) {

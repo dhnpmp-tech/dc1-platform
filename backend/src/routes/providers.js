@@ -1678,7 +1678,7 @@ function getProviderRoutingProfile(provider) {
     };
 }
 
-function parseJobContainerRequirements(containerSpecRaw) {
+function parseJobContainerRequirements(containerSpecRaw, prewarmCache = null) {
     let containerSpec = null;
     try { containerSpec = containerSpecRaw ? JSON.parse(containerSpecRaw) : null; } catch (_) {}
     const vramRequiredMb = toFiniteInt(containerSpec?.vram_required_mb, { min: 0, max: 1024 * 1024 }) || 0;
@@ -1689,11 +1689,16 @@ function parseJobContainerRequirements(containerSpecRaw) {
     const modelId = normalizeString(containerSpec?.model_id, { maxLen: 500 }) || null;
     let prewarmClass = 'warm';
     if (modelId) {
-        const modelRecord = db.get(
-            'SELECT prewarm_class FROM model_registry WHERE model_id = ? AND is_active = 1',
-            modelId
-        );
-        prewarmClass = normalizeString(modelRecord?.prewarm_class) || 'warm';
+        if (prewarmCache && prewarmCache.has(modelId)) {
+            prewarmClass = prewarmCache.get(modelId);
+        } else {
+            const modelRecord = db.get(
+                'SELECT prewarm_class FROM model_registry WHERE model_id = ? AND is_active = 1',
+                modelId
+            );
+            prewarmClass = normalizeString(modelRecord?.prewarm_class) || 'warm';
+            if (prewarmCache) prewarmCache.set(modelId, prewarmClass);
+        }
     }
 
     return {
@@ -1720,7 +1725,7 @@ function providerMatchesJob(providerProfile, jobRequirements) {
     // 'hot' = instant-tier (baked into image or pre-downloaded); skip providers that lack it.
     // 'warm'/'cold' = download at runtime; any provider with sufficient VRAM is acceptable.
     if (jobRequirements.prewarm_class === 'hot' && jobRequirements.model_id) {
-        if (!providerProfile.cached_models.has(jobRequirements.model_id)) {
+        if (!providerProfile.cached_models?.has(jobRequirements.model_id)) {
             return false;
         }
     }
@@ -1760,8 +1765,9 @@ function buildNextPendingJob(providerId) {
     let job = null;
     let parsedContainerSpec = null;
     const now = new Date().toISOString();
+    const prewarmCache = new Map(); // memoize model_registry lookups within this poll
     for (const candidate of candidates) {
-        const requirements = parseJobContainerRequirements(candidate.container_spec);
+        const requirements = parseJobContainerRequirements(candidate.container_spec, prewarmCache);
         if (!providerMatchesJob(providerProfile, requirements)) {
             continue;
         }
