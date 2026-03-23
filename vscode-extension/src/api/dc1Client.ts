@@ -147,6 +147,32 @@ export interface VllmCompleteRequest {
   temperature?: number;
 }
 
+export interface DockerTemplate {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  job_type: string;
+  min_vram_gb: number;
+  estimated_price_sar_per_hour: number;
+  tags: string[];
+  sort_order?: number;
+  icon?: string;
+  difficulty?: string;
+  tier?: string;
+}
+
+export interface Model {
+  model_id: string;
+  display_name: string;
+  family: string | null;
+  vram_gb: number;
+  is_arabic: boolean;
+  providers_online: number;
+  avg_price_sar_per_min: number;
+  status: 'available' | 'no_providers';
+}
+
 export interface VllmCompleteResponse {
   id: string;
   object: string;
@@ -683,6 +709,44 @@ export class DC1Client {
       payload,
       120_000
     );
+  }
+
+  /** GET /api/templates — list all docker templates */
+  async getDockerTemplates(tag?: string): Promise<{ templates: DockerTemplate[]; count: number }> {
+    const url = tag
+      ? `/api/templates?tag=${encodeURIComponent(tag)}`
+      : '/api/templates';
+    return this.request('GET', url);
+  }
+
+  /** GET /api/models — list all available models */
+  async getModels(): Promise<{ models: Model[]; count: number }> {
+    const data = await this.request<any>('GET', '/api/models');
+    const models = Array.isArray(data) ? data : (data.models || []);
+
+    // Compute is_arabic flag for each model
+    return {
+      models: models.map((m: any) => ({
+        model_id: m.model_id,
+        display_name: m.display_name,
+        family: m.family || null,
+        vram_gb: m.vram_gb || m.min_gpu_vram_gb || 0,
+        is_arabic: this.isArabicModel(m.model_id, m.family),
+        providers_online: m.providers_online || 0,
+        avg_price_sar_per_min: m.avg_price_sar_per_min || 0,
+        status: m.status || 'no_providers',
+      })),
+      count: models.length,
+    };
+  }
+
+  private isArabicModel(modelId: string, family?: string | null): boolean {
+    const arabicPatterns = [
+      'allam', 'jais', 'falcon-h1', 'falcon_h1', 'arabic',
+      'bge-m3', 'bge_m3', 'reranker-v2-m3', 'reranker_v2_m3',
+    ];
+    const haystack = `${modelId || ''} ${family || ''}`.toLowerCase();
+    return arabicPatterns.some(pattern => haystack.includes(pattern));
   }
 }
 

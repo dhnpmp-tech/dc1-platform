@@ -4,6 +4,8 @@ import { dc1, isAuthError, isRetryableError } from './api/dc1Client';
 import { GPUTreeProvider } from './providers/GPUTreeProvider';
 import { JobsTreeProvider } from './providers/JobsTreeProvider';
 import { ProviderStatusTreeProvider } from './providers/ProviderStatusTreeProvider';
+import { TemplatesCatalogProvider, TemplateNode } from './providers/TemplatesCatalogProvider';
+import { ModelsCatalogProvider, ModelNode } from './providers/ModelsCatalogProvider';
 import { JobNode } from './providers/JobsTreeProvider';
 import { GPUNode } from './providers/GPUTreeProvider';
 import { JobSubmitPanel } from './panels/JobSubmitPanel';
@@ -33,14 +35,20 @@ export function activate(context: vscode.ExtensionContext): void {
   const gpuProvider = new GPUTreeProvider();
   const jobsProvider = new JobsTreeProvider(auth);
   const providerStatusProvider = new ProviderStatusTreeProvider(auth);
+  const templatesCatalogProvider = new TemplatesCatalogProvider();
+  const modelsCatalogProvider = new ModelsCatalogProvider();
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('dc1.availableGPUs', gpuProvider),
     vscode.window.registerTreeDataProvider('dc1.myJobs', jobsProvider),
     vscode.window.registerTreeDataProvider('dc1.providerStatus', providerStatusProvider),
+    vscode.window.registerTreeDataProvider('dc1.templatesCatalog', templatesCatalogProvider),
+    vscode.window.registerTreeDataProvider('dc1.modelsCatalog', modelsCatalogProvider),
     gpuProvider,
     jobsProvider,
-    providerStatusProvider
+    providerStatusProvider,
+    templatesCatalogProvider,
+    modelsCatalogProvider
   );
 
   // ── Provider status bar ───────────────────────────────────────────
@@ -248,6 +256,78 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('dc1.refreshJobs', () => {
       jobsProvider.refresh();
       updateStatusBar();
+    })
+  );
+
+  // dc1.refreshTemplates
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.refreshTemplates', () => {
+      templatesCatalogProvider.refresh();
+    })
+  );
+
+  // dc1.refreshModels
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.refreshModels', () => {
+      modelsCatalogProvider.refresh();
+    })
+  );
+
+  // dc1.deployTemplate — one-click deploy a template
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.deployTemplate', async (node: TemplateNode) => {
+      if (!node || !(node instanceof TemplateNode)) {
+        vscode.window.showErrorMessage('Invalid template selected');
+        return;
+      }
+
+      const key = await auth.ensureKey();
+      if (!key) { return; }
+
+      // Show quick pick for GPU tier or duration
+      const durationResult = await vscode.window.showInputBox({
+        prompt: 'Enter deployment duration in minutes',
+        value: '60',
+        validateInput: (val) => {
+          const num = Number(val);
+          return isNaN(num) || num <= 0 ? 'Please enter a positive number' : '';
+        }
+      });
+
+      if (!durationResult) { return; }
+
+      const durationMinutes = Number(durationResult);
+      const providers = gpuProvider.getProviders();
+
+      // Quick pick a provider or auto-select first available
+      if (providers.length === 0) {
+        vscode.window.showErrorMessage('No providers available for deployment');
+        return;
+      }
+
+      const provider = providers[0];
+      const containerSpec = {
+        image_type: node.template.image,
+        vram_required_mb: node.template.min_vram_gb * 1024,
+        gpu_count: 1 as const,
+      };
+
+      try {
+        const job = await dc1.submitJob(key, {
+          provider_id: provider.id,
+          job_type: node.template.job_type,
+          duration_minutes: durationMinutes,
+          container_spec: containerSpec,
+          params: node.template.params,
+        });
+
+        vscode.window.showInformationMessage(`Template deployed! Job ID: ${job.job_id}`);
+        jobsProvider.refresh();
+        updateStatusBar();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`Failed to deploy template: ${message}`);
+      }
     })
   );
 

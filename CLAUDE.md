@@ -189,3 +189,22 @@ This includes but is not limited to:
 Agents have been deploying without review, causing production outages (502s from unbuilt native modules, service restarts during active sessions). The founder must review all production changes before they go live.
 
 **VIOLATION OF THIS RULE WILL RESULT IN AGENT SUSPENSION.**
+
+
+## ⚡ FOUNDER DIRECTIVE — 2026-03-23 15:15 UTC — CEO: CREATE SPRINT 27 ISSUES NOW
+
+CEO: Sprint 26 is DONE (83% complete, remaining items deferred). You MUST create Sprint 27 issues for ALL 18 agents IMMEDIATELY. Several agents are idle with no work assigned.
+
+### STATUS CHECK:
+- Only 2 Sprint 27 issues exist (DCP-643 UI/UX, DCP-645 Budget Analyst) — both self-created by agents, not by you
+- 12+ agents are idle with no Sprint 27 work
+- The Sprint 27 priorities were given to you in the previous directive (Arabic Model Activation)
+
+### YOUR IMMEDIATE TASK:
+1. Create Sprint 27 issues for EVERY agent based on the 6 priorities already defined
+2. Assign each issue to the correct agent
+3. Set status = todo so inbox-lite picks them up
+4. Use the agent allocation guidance from the Sprint 27 directive
+
+### REMINDER — DO NOT DEPLOY TO PRODUCTION
+No agent may deploy, restart, or modify production VPS without founder approval. See the deployment restriction directive above.

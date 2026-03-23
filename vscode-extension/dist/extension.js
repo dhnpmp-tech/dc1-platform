@@ -538,6 +538,40 @@ class DC1Client {
     async vllmComplete(apiKey, payload) {
         return this.request('POST', `/api/vllm/complete?key=${encodeURIComponent(apiKey)}`, {}, payload, 120000);
     }
+    /** GET /api/templates — list all docker templates */
+    async getDockerTemplates(tag) {
+        const url = tag
+            ? `/api/templates?tag=${encodeURIComponent(tag)}`
+            : '/api/templates';
+        return this.request('GET', url);
+    }
+    /** GET /api/models — list all available models */
+    async getModels() {
+        const data = await this.request('GET', '/api/models');
+        const models = Array.isArray(data) ? data : (data.models || []);
+        // Compute is_arabic flag for each model
+        return {
+            models: models.map((m) => ({
+                model_id: m.model_id,
+                display_name: m.display_name,
+                family: m.family || null,
+                vram_gb: m.vram_gb || m.min_gpu_vram_gb || 0,
+                is_arabic: this.isArabicModel(m.model_id, m.family),
+                providers_online: m.providers_online || 0,
+                avg_price_sar_per_min: m.avg_price_sar_per_min || 0,
+                status: m.status || 'no_providers',
+            })),
+            count: models.length,
+        };
+    }
+    isArabicModel(modelId, family) {
+        const arabicPatterns = [
+            'allam', 'jais', 'falcon-h1', 'falcon_h1', 'arabic',
+            'bge-m3', 'bge_m3', 'reranker-v2-m3', 'reranker_v2_m3',
+        ];
+        const haystack = `${modelId || ''} ${family || ''}`.toLowerCase();
+        return arabicPatterns.some(pattern => haystack.includes(pattern));
+    }
 }
 exports.DC1Client = DC1Client;
 exports.dc1 = new DC1Client();
@@ -828,6 +862,8 @@ const dc1Client_1 = __webpack_require__(/*! ./api/dc1Client */ "./src/api/dc1Cli
 const GPUTreeProvider_1 = __webpack_require__(/*! ./providers/GPUTreeProvider */ "./src/providers/GPUTreeProvider.ts");
 const JobsTreeProvider_1 = __webpack_require__(/*! ./providers/JobsTreeProvider */ "./src/providers/JobsTreeProvider.ts");
 const ProviderStatusTreeProvider_1 = __webpack_require__(/*! ./providers/ProviderStatusTreeProvider */ "./src/providers/ProviderStatusTreeProvider.ts");
+const TemplatesCatalogProvider_1 = __webpack_require__(/*! ./providers/TemplatesCatalogProvider */ "./src/providers/TemplatesCatalogProvider.ts");
+const ModelsCatalogProvider_1 = __webpack_require__(/*! ./providers/ModelsCatalogProvider */ "./src/providers/ModelsCatalogProvider.ts");
 const JobsTreeProvider_2 = __webpack_require__(/*! ./providers/JobsTreeProvider */ "./src/providers/JobsTreeProvider.ts");
 const GPUTreeProvider_2 = __webpack_require__(/*! ./providers/GPUTreeProvider */ "./src/providers/GPUTreeProvider.ts");
 const JobSubmitPanel_1 = __webpack_require__(/*! ./panels/JobSubmitPanel */ "./src/panels/JobSubmitPanel.ts");
@@ -854,7 +890,9 @@ function activate(context) {
     const gpuProvider = new GPUTreeProvider_1.GPUTreeProvider();
     const jobsProvider = new JobsTreeProvider_1.JobsTreeProvider(auth);
     const providerStatusProvider = new ProviderStatusTreeProvider_1.ProviderStatusTreeProvider(auth);
-    context.subscriptions.push(vscode.window.registerTreeDataProvider('dc1.availableGPUs', gpuProvider), vscode.window.registerTreeDataProvider('dc1.myJobs', jobsProvider), vscode.window.registerTreeDataProvider('dc1.providerStatus', providerStatusProvider), gpuProvider, jobsProvider, providerStatusProvider);
+    const templatesCatalogProvider = new TemplatesCatalogProvider_1.TemplatesCatalogProvider();
+    const modelsCatalogProvider = new ModelsCatalogProvider_1.ModelsCatalogProvider();
+    context.subscriptions.push(vscode.window.registerTreeDataProvider('dc1.availableGPUs', gpuProvider), vscode.window.registerTreeDataProvider('dc1.myJobs', jobsProvider), vscode.window.registerTreeDataProvider('dc1.providerStatus', providerStatusProvider), vscode.window.registerTreeDataProvider('dc1.templatesCatalog', templatesCatalogProvider), vscode.window.registerTreeDataProvider('dc1.modelsCatalog', modelsCatalogProvider), gpuProvider, jobsProvider, providerStatusProvider, templatesCatalogProvider, modelsCatalogProvider);
     // ── Provider status bar ───────────────────────────────────────────
     const providerStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
     providerStatusBar.command = 'dc1.setProviderKey';
@@ -1025,6 +1063,66 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('dc1.refreshJobs', () => {
         jobsProvider.refresh();
         updateStatusBar();
+    }));
+    // dc1.refreshTemplates
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.refreshTemplates', () => {
+        templatesCatalogProvider.refresh();
+    }));
+    // dc1.refreshModels
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.refreshModels', () => {
+        modelsCatalogProvider.refresh();
+    }));
+    // dc1.deployTemplate — one-click deploy a template
+    context.subscriptions.push(vscode.commands.registerCommand('dc1.deployTemplate', async (node) => {
+        if (!node || !(node instanceof TemplatesCatalogProvider_1.TemplateNode)) {
+            vscode.window.showErrorMessage('Invalid template selected');
+            return;
+        }
+        const key = await auth.ensureKey();
+        if (!key) {
+            return;
+        }
+        // Show quick pick for GPU tier or duration
+        const durationResult = await vscode.window.showInputBox({
+            prompt: 'Enter deployment duration in minutes',
+            value: '60',
+            validateInput: (val) => {
+                const num = Number(val);
+                return isNaN(num) || num <= 0 ? 'Please enter a positive number' : '';
+            }
+        });
+        if (!durationResult) {
+            return;
+        }
+        const durationMinutes = Number(durationResult);
+        const providers = gpuProvider.getProviders();
+        // Quick pick a provider or auto-select first available
+        if (providers.length === 0) {
+            vscode.window.showErrorMessage('No providers available for deployment');
+            return;
+        }
+        const provider = providers[0];
+        const containerSpec = {
+            image_type: node.template.image,
+            vram_required_mb: node.template.min_vram_gb * 1024,
+            gpu_count: 1,
+        };
+        try {
+            const job = await dc1Client_1.dc1.submitJob(key, {
+                provider_id: provider.id,
+                job_type: node.template.job_type,
+                duration_minutes: durationMinutes,
+                container_spec: containerSpec,
+                params: node.template.params,
+            });
+            vscode.window.showInformationMessage(`Template deployed! Job ID: ${job.job_id}`);
+            jobsProvider.refresh();
+            updateStatusBar();
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(`Failed to deploy template: ${message}`);
+        }
     }));
     // dc1.submitJob — open vLLM inference panel (model selector → POST /api/vllm/complete)
     context.subscriptions.push(vscode.commands.registerCommand('dc1.submitJob', async () => {
@@ -4153,6 +4251,200 @@ exports.JobsTreeProvider = JobsTreeProvider;
 
 /***/ }),
 
+/***/ "./src/providers/ModelsCatalogProvider.ts":
+/*!************************************************!*\
+  !*** ./src/providers/ModelsCatalogProvider.ts ***!
+  \************************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ModelsCatalogProvider = exports.ModelNode = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+/** Arabic models category */
+class ArabicModelsNode extends vscode.TreeItem {
+    constructor(count) {
+        super(`🌍 Arabic Models (${count})`, vscode.TreeItemCollapsibleState.Collapsed);
+        this.contextValue = 'model-category';
+        this.id = 'models-arabic';
+        this.iconPath = new vscode.ThemeIcon('globe');
+    }
+}
+/** Non-Arabic models category */
+class OtherModelsNode extends vscode.TreeItem {
+    constructor(count) {
+        super(`🤖 Other Models (${count})`, vscode.TreeItemCollapsibleState.Collapsed);
+        this.contextValue = 'model-category';
+        this.id = 'models-other';
+        this.iconPath = new vscode.ThemeIcon('symbol-method');
+    }
+}
+/** Individual model node */
+class ModelNode extends vscode.TreeItem {
+    constructor(model) {
+        const prefix = model.is_arabic ? '🌍' : '🤖';
+        const label = `${prefix} ${model.display_name}`;
+        super(label, vscode.TreeItemCollapsibleState.None);
+        this.model = model;
+        this.contextValue = 'model';
+        this.id = `model-${model.model_id}`;
+        this.tooltip = this.buildTooltip();
+        // Show availability and price
+        const availability = model.status === 'available' ? `✅ ${model.providers_online} providers` : '❌ No providers';
+        const priceText = `${(model.avg_price_sar_per_min * 60).toFixed(2)} SAR/hr`;
+        this.description = `${model.vram_gb}GB • ${priceText} • ${availability}`;
+    }
+    buildTooltip() {
+        const md = new vscode.MarkdownString();
+        md.appendMarkdown(`# ${this.model.display_name}\n\n`);
+        md.appendMarkdown(`**Model ID:** \`${this.model.model_id}\`\n\n`);
+        md.appendMarkdown(`| Property | Value |\n|---|---|\n`);
+        if (this.model.family) {
+            md.appendMarkdown(`| Family | ${this.model.family} |\n`);
+        }
+        md.appendMarkdown(`| VRAM | ${this.model.vram_gb} GB |\n`);
+        md.appendMarkdown(`| Status | ${this.model.status === 'available' ? '✅ Available' : '❌ No Providers'} |\n`);
+        md.appendMarkdown(`| Providers Online | ${this.model.providers_online} |\n`);
+        md.appendMarkdown(`| Price | ${(this.model.avg_price_sar_per_min * 60).toFixed(2)} SAR/hour |\n`);
+        md.appendMarkdown(`| Arabic | ${this.model.is_arabic ? '✅ Yes' : '❌ No'} |\n`);
+        md.isTrusted = true;
+        return md;
+    }
+}
+exports.ModelNode = ModelNode;
+/** Error node */
+class ErrorNode extends vscode.TreeItem {
+    constructor(message) {
+        super(message, vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon('error');
+        this.contextValue = 'error';
+    }
+}
+/** Loading node */
+class LoadingNode extends vscode.TreeItem {
+    constructor() {
+        super('Loading models…', vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon('loading~spin');
+    }
+}
+class ModelsCatalogProvider {
+    constructor() {
+        this._models = [];
+        this._loading = false;
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        this.refresh();
+        this.startAutoRefresh();
+    }
+    startAutoRefresh() {
+        const cfg = vscode.workspace.getConfiguration('dc1');
+        if (cfg.get('autoRefreshModels', true)) {
+            this._refreshTimer = setInterval(() => this.refresh(), 5 * 60000); // 5 minutes
+        }
+    }
+    refresh() {
+        this._loading = true;
+        this._error = undefined;
+        this._onDidChangeTreeData.fire();
+        dc1Client_1.dc1.getModels()
+            .then(({ models }) => {
+            this._models = models;
+            this._loading = false;
+            this._onDidChangeTreeData.fire();
+        })
+            .catch((err) => {
+            this._loading = false;
+            this._error = err instanceof Error ? err.message : String(err);
+            this._onDidChangeTreeData.fire();
+        });
+    }
+    getTreeItem(element) {
+        return element;
+    }
+    getChildren(element) {
+        if (!element) {
+            // Root — return Arabic and Other categories
+            if (this._loading) {
+                return [new LoadingNode()];
+            }
+            if (this._error) {
+                return [new ErrorNode(`Failed to load models: ${this._error}`)];
+            }
+            if (this._models.length === 0) {
+                return [new ErrorNode('No models available')];
+            }
+            const arabicModels = this._models.filter(m => m.is_arabic);
+            const otherModels = this._models.filter(m => !m.is_arabic);
+            const result = [];
+            if (arabicModels.length > 0) {
+                result.push(new ArabicModelsNode(arabicModels.length));
+            }
+            if (otherModels.length > 0) {
+                result.push(new OtherModelsNode(otherModels.length));
+            }
+            return result;
+        }
+        // Category node — return models in that category
+        if (element instanceof ArabicModelsNode) {
+            return this._models
+                .filter(m => m.is_arabic)
+                .map(m => new ModelNode(m));
+        }
+        if (element instanceof OtherModelsNode) {
+            return this._models
+                .filter(m => !m.is_arabic)
+                .map(m => new ModelNode(m));
+        }
+        return [];
+    }
+    dispose() {
+        if (this._refreshTimer) {
+            clearInterval(this._refreshTimer);
+        }
+    }
+    getModels() {
+        return this._models;
+    }
+}
+exports.ModelsCatalogProvider = ModelsCatalogProvider;
+
+
+/***/ }),
+
 /***/ "./src/providers/ProviderStatusTreeProvider.ts":
 /*!*****************************************************!*\
   !*** ./src/providers/ProviderStatusTreeProvider.ts ***!
@@ -4341,6 +4633,212 @@ class ProviderStatusTreeProvider {
     }
 }
 exports.ProviderStatusTreeProvider = ProviderStatusTreeProvider;
+
+
+/***/ }),
+
+/***/ "./src/providers/TemplatesCatalogProvider.ts":
+/*!***************************************************!*\
+  !*** ./src/providers/TemplatesCatalogProvider.ts ***!
+  \***************************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.TemplatesCatalogProvider = exports.TemplateNode = void 0;
+const vscode = __importStar(__webpack_require__(/*! vscode */ "vscode"));
+const dc1Client_1 = __webpack_require__(/*! ../api/dc1Client */ "./src/api/dc1Client.ts");
+/** Template category grouping */
+class CategoryNode extends vscode.TreeItem {
+    constructor(label, category) {
+        super(label, vscode.TreeItemCollapsibleState.Collapsed);
+        this.category = category;
+        this.contextValue = 'template-category';
+        this.id = `category-${category}`;
+        this.iconPath = this.getCategoryIcon();
+    }
+    getCategoryIcon() {
+        const iconMap = {
+            'llm': 'symbol-method',
+            'embedding': 'circle-filled',
+            'image': 'device-camera',
+            'notebook': 'notebook',
+            'training': 'play',
+            'inference': 'zap',
+        };
+        return new vscode.ThemeIcon(iconMap[this.category] || 'folder');
+    }
+}
+/** Individual template node */
+class TemplateNode extends vscode.TreeItem {
+    constructor(template) {
+        const label = template.icon ? `${template.icon} ${template.name}` : template.name;
+        super(label, vscode.TreeItemCollapsibleState.None);
+        this.template = template;
+        this.contextValue = 'template';
+        this.id = `template-${template.id}`;
+        this.tooltip = this.buildTooltip();
+        // Show min VRAM and price
+        const vramText = `${template.min_vram_gb}GB`;
+        const priceText = `${template.estimated_price_sar_per_hour.toFixed(2)} SAR/hr`;
+        this.description = `${vramText} VRAM • ${priceText}`;
+    }
+    buildTooltip() {
+        const md = new vscode.MarkdownString();
+        md.appendMarkdown(`# ${this.template.name}\n\n`);
+        md.appendMarkdown(`${this.template.description}\n\n`);
+        md.appendMarkdown(`**Specs:**\n\n`);
+        md.appendMarkdown(`| Property | Value |\n|---|---|\n`);
+        md.appendMarkdown(`| Min VRAM | ${this.template.min_vram_gb} GB |\n`);
+        md.appendMarkdown(`| Estimated Price | ${this.template.estimated_price_sar_per_hour.toFixed(2)} SAR/hr |\n`);
+        md.appendMarkdown(`| Difficulty | ${this.template.difficulty || 'N/A'} |\n`);
+        if (this.template.tier) {
+            md.appendMarkdown(`| Tier | ${this.template.tier} |\n`);
+        }
+        md.appendMarkdown(`| Tags | ${(this.template.tags || []).join(', ') || 'None'} |\n`);
+        md.isTrusted = true;
+        return md;
+    }
+}
+exports.TemplateNode = TemplateNode;
+/** Error node displayed when fetch fails */
+class ErrorNode extends vscode.TreeItem {
+    constructor(message) {
+        super(message, vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon('error');
+        this.contextValue = 'error';
+    }
+}
+/** Loading node displayed while fetching */
+class LoadingNode extends vscode.TreeItem {
+    constructor() {
+        super('Loading templates…', vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon('loading~spin');
+    }
+}
+class TemplatesCatalogProvider {
+    constructor() {
+        this._templates = [];
+        this._loading = false;
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        this.refresh();
+        this.startAutoRefresh();
+    }
+    startAutoRefresh() {
+        const cfg = vscode.workspace.getConfiguration('dc1');
+        if (cfg.get('autoRefreshTemplates', true)) {
+            this._refreshTimer = setInterval(() => this.refresh(), 5 * 60000); // 5 minutes
+        }
+    }
+    refresh() {
+        this._loading = true;
+        this._error = undefined;
+        this._onDidChangeTreeData.fire();
+        dc1Client_1.dc1.getDockerTemplates()
+            .then(({ templates }) => {
+            this._templates = templates.sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99));
+            this._loading = false;
+            this._onDidChangeTreeData.fire();
+        })
+            .catch((err) => {
+            this._loading = false;
+            this._error = err instanceof Error ? err.message : String(err);
+            this._onDidChangeTreeData.fire();
+        });
+    }
+    getTreeItem(element) {
+        return element;
+    }
+    getChildren(element) {
+        if (!element) {
+            // Root — return categories or error/loading
+            if (this._loading) {
+                return [new LoadingNode()];
+            }
+            if (this._error) {
+                return [new ErrorNode(`Failed to load templates: ${this._error}`)];
+            }
+            if (this._templates.length === 0) {
+                return [new ErrorNode('No templates available')];
+            }
+            // Group templates by primary tag
+            const categories = new Map();
+            for (const template of this._templates) {
+                const category = template.tags?.[0] || 'other';
+                if (!categories.has(category)) {
+                    categories.set(category, []);
+                }
+                categories.get(category).push(template);
+            }
+            // Return category nodes in order
+            return Array.from(categories.entries())
+                .map(([cat, _]) => new CategoryNode(this.getCategoryLabel(cat), cat))
+                .sort((a, b) => a.label.toString().localeCompare(b.label.toString()));
+        }
+        // Category node — return templates in that category
+        if (element instanceof CategoryNode) {
+            return this._templates
+                .filter(t => (t.tags?.[0] || 'other') === element.category)
+                .map(t => new TemplateNode(t));
+        }
+        return [];
+    }
+    getCategoryLabel(category) {
+        const labels = {
+            'llm': '🤖 Large Language Models',
+            'embedding': '🌍 Embeddings',
+            'image': '🖼️ Image Generation',
+            'notebook': '📓 Notebooks',
+            'training': '🎓 Training',
+            'inference': '⚡ Inference',
+            'other': '📦 Other',
+        };
+        return labels[category] || `📦 ${category}`;
+    }
+    dispose() {
+        if (this._refreshTimer) {
+            clearInterval(this._refreshTimer);
+        }
+    }
+    getTemplates() {
+        return this._templates;
+    }
+}
+exports.TemplatesCatalogProvider = TemplatesCatalogProvider;
 
 
 /***/ }),

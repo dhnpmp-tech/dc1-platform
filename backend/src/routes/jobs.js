@@ -1045,7 +1045,7 @@ function splitBilling(totalHalala) {
 }
 
 // Whitelisted job types — renters may only submit these types
-const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark', 'custom_container', 'vllm_serve']);
+const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark', 'custom_container', 'vllm_serve', 'rag-pipeline']);
 
 // Lazy-load jobRouter to avoid module-load ordering issues
 let _jobRouter;

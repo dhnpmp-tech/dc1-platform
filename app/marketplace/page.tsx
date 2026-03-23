@@ -520,6 +520,23 @@ export default function MarketplacePage() {
           </div>
         </section>
 
+        {/* Sub-nav: GPU Marketplace | Templates | Models */}
+        <section className="border-b border-dc1-border bg-dc1-surface-l1/50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex gap-1 overflow-x-auto py-2">
+              <span className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium bg-dc1-amber text-white border border-dc1-amber">
+                GPU Marketplace
+              </span>
+              <Link href="/marketplace/templates" className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium text-dc1-text-secondary border border-dc1-border hover:border-dc1-amber/40 hover:text-dc1-text-primary transition-colors">
+                🚀 Templates
+              </Link>
+              <Link href="/marketplace/models" className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium text-dc1-text-secondary border border-dc1-border hover:border-dc1-amber/40 hover:text-dc1-text-primary transition-colors">
+                🌙 Arabic Models
+              </Link>
+            </div>
+          </div>
+        </section>
+
         {/* Market rates bar */}
         {!loading && !error && <MarketRates providers={providers} />}
 

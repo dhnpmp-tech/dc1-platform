@@ -57,6 +57,16 @@
           "id": "dc1.myJobs",
           "name": "My Jobs",
           "icon": "$(play-circle)"
+        },
+        {
+          "id": "dc1.templatesCatalog",
+          "name": "Template Catalog",
+          "icon": "$(layers)"
+        },
+        {
+          "id": "dc1.modelsCatalog",
+          "name": "Model Catalog",
+          "icon": "$(symbol-method)"
         }
       ]
     },
@@ -150,6 +160,21 @@
         "command": "dc1.modelStatus",
         "title": "DCP: Model Cache Status",
         "icon": "$(database)"
+      },
+      {
+        "command": "dc1.refreshTemplates",
+        "title": "Refresh Templates",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dc1.refreshModels",
+        "title": "Refresh Models",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dc1.deployTemplate",
+        "title": "Deploy Template",
+        "icon": "$(play)"
       }
     ],
     "menus": {
@@ -178,6 +203,16 @@
           "command": "dc1.refreshJobs",
           "when": "view == dc1.myJobs",
           "group": "navigation@1"
+        },
+        {
+          "command": "dc1.refreshTemplates",
+          "when": "view == dc1.templatesCatalog",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dc1.refreshModels",
+          "when": "view == dc1.modelsCatalog",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -194,6 +229,11 @@
         {
           "command": "dc1.cancelJob",
           "when": "view == dc1.myJobs && viewItem == job_running",
+          "group": "inline"
+        },
+        {
+          "command": "dc1.deployTemplate",
+          "when": "view == dc1.templatesCatalog && viewItem == template",
           "group": "inline"
         }
       ]
@@ -222,6 +262,16 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically refresh available GPUs every 30 seconds."
+        },
+        "dc1.autoRefreshTemplates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh template catalog every 5 minutes."
+        },
+        "dc1.autoRefreshModels": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh model catalog every 5 minutes."
         }
       }
     }
