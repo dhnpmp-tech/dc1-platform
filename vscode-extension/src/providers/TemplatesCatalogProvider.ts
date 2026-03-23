@@ -46,14 +46,36 @@ export class TemplateNode extends vscode.TreeItem {
     md.appendMarkdown(`**Specs:**\n\n`);
     md.appendMarkdown(`| Property | Value |\n|---|---|\n`);
     md.appendMarkdown(`| Min VRAM | ${this.template.min_vram_gb} GB |\n`);
-    md.appendMarkdown(`| Estimated Price | ${this.template.estimated_price_sar_per_hour.toFixed(2)} SAR/hr |\n`);
     md.appendMarkdown(`| Difficulty | ${this.template.difficulty || 'N/A'} |\n`);
     if (this.template.tier) {
       md.appendMarkdown(`| Tier | ${this.template.tier} |\n`);
     }
     md.appendMarkdown(`| Tags | ${(this.template.tags || []).join(', ') || 'None'} |\n`);
+
+    // Add pricing information with estimated comparison
+    md.appendMarkdown(`\n## 💰 Pricing\n\n`);
+    const dcpPrice = this.template.estimated_price_sar_per_hour;
+    md.appendMarkdown(`**DCP:** ${dcpPrice.toFixed(2)} SAR/hour\n\n`);
+
+    // Estimate competitive pricing based on VRAM tier
+    const estimatedCompetitorPrice = this.estimateCompetitorPrice(this.template.min_vram_gb);
+    if (estimatedCompetitorPrice > dcpPrice) {
+      const savingsPercent = ((estimatedCompetitorPrice - dcpPrice) / estimatedCompetitorPrice * 100).toFixed(0);
+      md.appendMarkdown(`**Estimated vs Vast.ai:** ~${savingsPercent}% savings\n`);
+      md.appendMarkdown(`*(Actual pricing depends on model and provider)*\n`);
+    }
+
     md.isTrusted = true;
     return md;
+  }
+
+  private estimateCompetitorPrice(minVramGb: number): number {
+    // Estimate based on VRAM tier from backend COMPETITOR_PRICING_BY_VRAM_TIER
+    if (minVramGb >= 80) return 120.00;      // H100 class
+    if (minVramGb >= 40) return 36.00;       // A100/A40 class
+    if (minVramGb >= 24) return 10.00;       // RTX 4090 class
+    if (minVramGb >= 16) return 10.00;       // RTX 4080 class
+    return 6.00;                              // entry tier
   }
 }
 
