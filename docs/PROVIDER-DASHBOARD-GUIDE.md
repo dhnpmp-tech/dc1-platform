@@ -1,6 +1,6 @@
 # Provider Dashboard — Earnings & Settlement Guide
 
-**Status:** Draft (for SP25-005 deployment)
+**Status:** Ready for Sprint 26 deployment
 **Audience:** GPU providers, node operators
 **Last Updated:** 2026-03-23
 

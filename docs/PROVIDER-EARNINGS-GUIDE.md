@@ -11,9 +11,9 @@
 DCP pricing is **23.7% below hyperscalers** (Vast.ai, RunPod) due to Saudi energy arbitrage. Providers earn 70-85% of job revenue; DCP takes 15-30% platform fee.
 
 **Example Monthly Income (70% utilization):**
-- RTX 4090: $2,500–$3,200
-- RTX 4080: $1,400–$1,850
-- H100: $4,200–$5,600
+- RTX 4090: $190–$380
+- RTX 4080: $115–$240
+- H100: $1,800–$3,500
 
 See the [Strategic Brief](docs/FOUNDER-STRATEGIC-BRIEF.md) for detailed provider economics and competitive benchmarks.
 

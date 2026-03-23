@@ -1,6 +1,6 @@
 # Escrow Integration Guide — DCP Smart Contracts
 
-**Status:** Draft (awaiting BASE Sepolia deployment)
+**Status:** Complete (deployment deferred pending wallet funding — see CLAUDE.md directive)
 **Target Audience:** Providers integrating settlement, renters building escrow-backed jobs
 **Last Updated:** 2026-03-23
 

@@ -1,6 +1,6 @@
 # LLM Container Build & Deployment Guide
 
-**Status:** Draft (for NEMOTRON Container Build sprint)
+**Status:** Ready for Sprint 26 deployment
 **Audience:** Providers deploying models, infrastructure teams
 **Last Updated:** 2026-03-23
 
