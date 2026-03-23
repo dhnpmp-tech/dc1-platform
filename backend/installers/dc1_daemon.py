@@ -1057,8 +1057,75 @@ def get_model_cache_metrics():
 
 # ─── HEARTBEAT ───────────────────────────────────────────────────────────────
 
+_heartbeat_sequence = 0  # Sequence counter for P2P heartbeats
+
+def get_system_metrics():
+    """Calculate CPU and memory utilization percentages."""
+    try:
+        # CPU: average over 1 second
+        import psutil
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        memory = psutil.virtual_memory()
+        memory_percent = memory.percent
+        return {
+            "cpu": round(cpu_percent, 1),
+            "memory": round(memory_percent, 1),
+        }
+    except (ImportError, Exception):
+        return {"cpu": 0, "memory": 0}
+
+def emit_p2p_heartbeat(peer_id, gpu, gpu_status):
+    """Emit heartbeat to P2P DHT (non-blocking, fire-and-forget)."""
+    global _heartbeat_sequence
+
+    # Skip if P2P not enabled
+    if not os.environ.get("P2P_DISCOVERY_ENABLED", "").lower() == "true":
+        return
+
+    try:
+        import psutil
+        gpu_util = float(gpu.get("gpu_util_pct", 0)) if gpu else 0
+        metrics = get_system_metrics()
+        metrics["gpu"] = round(gpu_util, 1)
+
+        # Determine status based on utilization
+        status = "healthy"
+        if metrics.get("cpu", 0) > 95 or metrics.get("memory", 0) > 90:
+            status = "warning"
+        elif metrics.get("cpu", 0) > 85 or metrics.get("memory", 0) > 80:
+            status = "degraded"
+
+        # Find provider-heartbeat.js relative to daemon location
+        script_dir = Path(__file__).parent.parent.parent / "p2p"
+        script_path = script_dir / "provider-heartbeat.js"
+
+        if not script_path.exists():
+            log.debug(f"P2P heartbeat script not found: {script_path}")
+            return
+
+        # Spawn Node.js process (fire-and-forget)
+        cmd = [
+            "node", str(script_path),
+            "--peer-id", peer_id,
+            "--metrics", json.dumps(metrics),
+            "--status", status,
+            "--sequence", str(_heartbeat_sequence),
+        ]
+
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env={**os.environ},
+        )
+
+        _heartbeat_sequence += 1
+        log.debug(f"P2P heartbeat emitted (seq={_heartbeat_sequence-1})")
+    except Exception as e:
+        log.debug(f"P2P heartbeat emit failed: {e}")
+
 def send_heartbeat():
-    """Send heartbeat with GPU metrics to backend."""
+    """Send heartbeat with GPU metrics to backend and P2P network."""
     gpu = detect_gpu()
     gpu_info = get_gpu_info()
     cache_metrics = get_model_cache_metrics()
@@ -1093,11 +1160,12 @@ def send_heartbeat():
     gpu_status["model_cache_used_gb"] = cache_metrics["used_gb"]
     gpu_status["model_cache_used_percent"] = cache_metrics["used_percent"]
 
+    peer_id = _get_or_create_peer_id()
     url = f"{API_URL}/api/providers/heartbeat"
     try:
         payload = {
             "api_key": API_KEY,
-            "peer_id": _get_or_create_peer_id(),
+            "peer_id": peer_id,
             "gpu_status": gpu_status,
             "gpu_info": gpu_info,
             "provider_ip": None,
@@ -1116,6 +1184,9 @@ def send_heartbeat():
             log.warning(f"Heartbeat HTTP {code}: {resp}")
     except Exception as e:
         log.error(f"Heartbeat failed: {e}")
+
+    # Emit P2P heartbeat (non-blocking)
+    emit_p2p_heartbeat(peer_id, gpu, gpu_status)
 
 def heartbeat_loop():
     """Background thread: send heartbeat every HEARTBEAT_INTERVAL seconds."""
