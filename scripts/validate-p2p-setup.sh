@@ -13,7 +13,8 @@
 # - Verify backend P2P service status
 #
 
-set -e
+# Note: removed 'set -e' to allow all tests to run even if some fail
+# This is critical for Phase 4 validation which needs complete infrastructure report
 
 # Colors for output
 RED='\033[0;31m'
