@@ -1,5 +1,78 @@
 # DCP GPU Compute — Changelog
 
+## [0.5.0] — 2026-03-23
+
+### Added - Sprint 27 Template Catalog & Arabic RAG Deployment
+
+#### 🎛️ Template Catalog Browser
+- New **Template Catalog** tree view in DCP Explorer sidebar showing 20 docker templates
+- Templates grouped by category: LLM, Embedding, Image, Notebook, Training with emoji icons
+- Each template shows name, minimum VRAM, estimated price/hr, difficulty, and tier
+- Rich markdown tooltips with complete specs, Docker image, job type, and example usage
+- Auto-refresh every 5 minutes (configurable via `dc1.autoRefreshTemplates`)
+- **Commands:**
+  - `dc1.deployTemplate` - Right-click on template → Deploy with duration prompt
+  - `dc1.refreshTemplates` - Manual refresh button in tree header
+
+#### 🧠 Model Catalog View
+- New **Model Catalog** tree view showing available models grouped by Arabic capability
+- Arabic models marked with 🌍 emoji for quick identification
+- Each model shows: availability status (✅/❌), VRAM requirement, price/hour, provider count
+- Rich tooltips with model family, context window, use cases, and Arabic detection
+- Auto-refresh every 5 minutes (configurable via `dc1.autoRefreshModels`)
+- **Commands:**
+  - `dc1.refreshModels` - Manual refresh button in tree header
+
+#### 🚀 One-Click Deployment
+- **Arabic RAG Quick-Start:** `dc1.startArabicRagSession`
+  - Deploy complete Arabic RAG bundle (embeddings + reranker + LLM) with one command
+  - Duration input dialog (default 120 minutes)
+  - Progress notification with output channel showing job ID and cost
+  - Auto-integrates with job monitoring
+
+#### 💰 Competitive Pricing Display
+- **Model Catalog Pricing:** Tooltips show DCP vs Vast.ai/RunPod/AWS comparison
+  - Price differential for each competitor (SAR/hour)
+  - Savings percentage vs Vast.ai baseline
+  - Data from `/api/models` competitor_prices field
+
+- **Template Catalog Pricing:** Estimated savings based on VRAM tier
+  - Shows DCP price and estimated Vast.ai competitor price
+  - Displays estimated savings percentage
+  - Helps renters understand cost advantages during discovery
+
+#### 🔍 Template Search & VRAM Filtering
+- **Search Templates:** Fuzzy search by template name or description (case-insensitive)
+  - Available via `dc1.searchTemplates` command or tree header button
+
+- **Filter by VRAM:** Quick-pick menu for hardware-based filtering
+  - Options: All, 4 GB+, 8 GB+, 16 GB+, 24 GB+, 40 GB+, 80 GB+
+  - Via `dc1.filterTemplatesByVram` command or tree header button
+
+- **Clear Filters:** Reset all search and VRAM filters
+  - Via `dc1.clearTemplateFilters` command or tree header button
+
+### Changed
+- Extended TypeScript API client with template and model fetching
+- Added CompetitorPricing interface for pricing comparisons
+- Enhanced Model interface with Arabic detection and competitor pricing fields
+- Extended DockerTemplate interface with params field for deployment
+
+### Fixed
+- Fixed Timer type compatibility (NodeJS.Timer → NodeJS.Timeout) in catalog providers
+- Resolved TypeScript compilation warnings in new providers
+- Added proper error/loading states for template and model tree views
+
+### New Configuration Options
+- `dc1.autoRefreshTemplates` (boolean, default: true) - Auto-refresh template catalog every 5 minutes
+- `dc1.autoRefreshModels` (boolean, default: true) - Auto-refresh model catalog every 5 minutes
+
+### Dependencies
+- No new external dependencies; uses existing VS Code API
+- Compatible with VS Code 1.85.0 and later
+
+---
+
 ## [0.4.1] — 2026-03-21
 
 ### Fixed
