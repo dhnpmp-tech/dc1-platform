@@ -123,8 +123,8 @@ export default function EarningsProjections({ isLoading = false, error }: Earnin
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="h-64 bg-dc1-surface-l1 rounded-lg animate-pulse" />
-        <div className="grid grid-cols-3 gap-4">
+        <div className="h-48 sm:h-64 bg-dc1-surface-l1 rounded-lg animate-pulse" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-32 bg-dc1-surface-l1 rounded-lg animate-pulse" />
           ))}
@@ -153,7 +153,7 @@ export default function EarningsProjections({ isLoading = false, error }: Earnin
           <button
             key={gpu}
             onClick={() => setSelectedGpu(gpu)}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+            className={`px-3 py-2 sm:px-4 rounded-lg font-medium text-sm sm:text-base transition-all ${
               selectedGpu === gpu
                 ? 'bg-dc1-amber text-dc1-surface-l2 shadow-md'
                 : 'bg-dc1-surface-l1 text-dc1-text-primary border border-dc1-border hover:border-dc1-border-light'
@@ -185,21 +185,21 @@ export default function EarningsProjections({ isLoading = false, error }: Earnin
 
       {/* Content Section */}
       {selectedMetric === 'profit' && (
-        <div className="bg-dc1-surface-l1 rounded-lg p-6 overflow-x-auto">
-          <table className={`w-full text-sm ${isRTL ? 'text-right' : 'text-left'}`}>
+        <div className="bg-dc1-surface-l1 rounded-lg p-3 sm:p-6 overflow-x-auto">
+          <table className={`w-full text-xs sm:text-sm ${isRTL ? 'text-right' : 'text-left'}`}>
             <thead>
               <tr className="border-b border-dc1-border">
-                <th className="pb-3 font-semibold text-dc1-text-secondary">
+                <th className="pb-2 sm:pb-3 font-semibold text-dc1-text-secondary">
                   {isRTL ? 'المنطقة' : 'Region'}
                 </th>
-                <th className="pb-3 font-semibold text-dc1-text-secondary px-3">
-                  {isRTL ? 'تكلفة الكهرباء/ساعة' : 'Electricity/hr'}
+                <th className="pb-2 sm:pb-3 font-semibold text-dc1-text-secondary px-1 sm:px-3">
+                  {isRTL ? 'كهر/س' : 'El/hr'}
                 </th>
-                <th className="pb-3 font-semibold text-dc1-text-secondary px-3">
+                <th className="pb-2 sm:pb-3 font-semibold text-dc1-text-secondary px-1 sm:px-3 hidden sm:table-cell">
                   {isRTL ? 'التكلفة الشهرية' : 'Monthly Cost'}
                 </th>
-                <th className="pb-3 font-semibold text-status-success px-3">
-                  {isRTL ? 'الربح الشهري' : 'Monthly Profit'}
+                <th className="pb-2 sm:pb-3 font-semibold text-status-success px-1 sm:px-3">
+                  {isRTL ? 'الربح' : 'Profit'}
                 </th>
               </tr>
             </thead>
@@ -212,10 +212,10 @@ export default function EarningsProjections({ isLoading = false, error }: Earnin
                 { name: isRTL ? 'السعودية (CCSEZ)' : 'Saudi CCSEZ', data: currentGpu.saudiCCSEZ },
               ].map(region => (
                 <tr key={region.name} className="hover:bg-dc1-surface-l2 transition-colors">
-                  <td className="py-3 font-medium">{region.name}</td>
-                  <td className="py-3 px-3 text-dc1-text-secondary">{region.data.electricityHr}</td>
-                  <td className="py-3 px-3 text-dc1-text-secondary">{region.data.monthlyElec}</td>
-                  <td className="py-3 px-3 text-status-success font-semibold">{region.data.monthlyProfit}</td>
+                  <td className="py-2 sm:py-3 font-medium text-xs sm:text-sm">{region.name}</td>
+                  <td className="py-2 sm:py-3 px-1 sm:px-3 text-dc1-text-secondary text-xs">{region.data.electricityHr}</td>
+                  <td className="py-2 sm:py-3 px-1 sm:px-3 text-dc1-text-secondary hidden sm:table-cell text-xs">{region.data.monthlyElec}</td>
+                  <td className="py-2 sm:py-3 px-1 sm:px-3 text-status-success font-semibold text-xs sm:text-sm">{region.data.monthlyProfit}</td>
                 </tr>
               ))}
             </tbody>
@@ -242,31 +242,31 @@ export default function EarningsProjections({ isLoading = false, error }: Earnin
       )}
 
       {selectedMetric === 'comparison' && (
-        <div className="bg-dc1-surface-l1 rounded-lg p-6 overflow-x-auto">
-          <table className={`w-full text-sm ${isRTL ? 'text-right' : 'text-left'}`}>
+        <div className="bg-dc1-surface-l1 rounded-lg p-3 sm:p-6 overflow-x-auto">
+          <table className={`w-full text-xs sm:text-sm ${isRTL ? 'text-right' : 'text-left'}`}>
             <thead>
               <tr className="border-b border-dc1-border">
-                <th className="pb-3 font-semibold text-dc1-text-secondary">
-                  {isRTL ? 'منصة السعر' : 'Price Platform'}
+                <th className="pb-2 sm:pb-3 font-semibold text-dc1-text-secondary">
+                  {isRTL ? 'المنصة' : 'Platform'}
                 </th>
-                <th className="pb-3 font-semibold text-dc1-text-secondary px-3">
+                <th className="pb-2 sm:pb-3 font-semibold text-dc1-text-secondary px-1 sm:px-3">
                   {isRTL ? 'السعر' : 'Price'}
                 </th>
-                <th className="pb-3 font-semibold text-status-success px-3">
-                  {isRTL ? 'خصم المشتري' : 'Buyer Discount'}
+                <th className="pb-2 sm:pb-3 font-semibold text-status-success px-1 sm:px-3">
+                  {isRTL ? 'الخصم' : 'Discount'}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dc1-border">
               {[
-                { name: 'Vast.ai Typical', price: currentGpu.vastTypical, discount: '-' },
-                { name: 'RunPod Community', price: currentGpu.runpodComm, discount: '-' },
-                { name: 'DCP Floor Price', price: currentGpu.dcpFloor, discount: currentGpu.buyerDiscount },
+                { name: 'Vast.ai', price: currentGpu.vastTypical, discount: '-' },
+                { name: 'RunPod', price: currentGpu.runpodComm, discount: '-' },
+                { name: 'DCP Floor', price: currentGpu.dcpFloor, discount: currentGpu.buyerDiscount },
               ].map(row => (
                 <tr key={row.name} className="hover:bg-dc1-surface-l2 transition-colors">
-                  <td className="py-3 font-medium">{row.name}</td>
-                  <td className="py-3 px-3 text-dc1-amber font-semibold">{row.price}</td>
-                  <td className={`py-3 px-3 font-semibold ${row.discount === '-' ? '' : 'text-status-success'}`}>
+                  <td className="py-2 sm:py-3 font-medium text-xs sm:text-sm">{row.name}</td>
+                  <td className="py-2 sm:py-3 px-1 sm:px-3 text-dc1-amber font-semibold text-xs sm:text-sm">{row.price}</td>
+                  <td className={`py-2 sm:py-3 px-1 sm:px-3 font-semibold text-xs sm:text-sm ${row.discount === '-' ? '' : 'text-status-success'}`}>
                     {row.discount}
                   </td>
                 </tr>
@@ -275,8 +275,8 @@ export default function EarningsProjections({ isLoading = false, error }: Earnin
           </table>
           <p className={`text-xs text-dc1-text-secondary mt-4 ${isRTL ? 'text-right' : 'text-left'}`}>
             {isRTL
-              ? 'أسعار DCP الأرضية توفر للمشترين 8-38٪ أقل من أي منصة منافسة'
-              : 'DCP floor prices offer buyers 8-38% less than any competing marketplace'}
+              ? 'أسعار DCP أقل 8-38٪ من المنافسين'
+              : 'DCP prices 8-38% below competitors'}
           </p>
         </div>
       )}
