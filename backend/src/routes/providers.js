@@ -3068,7 +3068,7 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3080,7 +3080,7 @@ router.get('/available', (req, res) => {
                     SELECT provider_id,
                            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
                            SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
-                           COUNT(*) AS total_jobs
+                           COUNT(*) AS total_jobs_computed
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
@@ -3102,7 +3102,7 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3114,7 +3114,7 @@ router.get('/available', (req, res) => {
                     SELECT provider_id,
                            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
                            SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
-                           COUNT(*) AS total_jobs
+                           COUNT(*) AS total_jobs_computed
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
@@ -3233,7 +3233,7 @@ router.get('/marketplace', (req, res) => {
                     COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                     COALESCE(js.completed_jobs, 0) AS completed_jobs,
                     COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                    COALESCE(js.total_jobs, 0) AS total_jobs_all
+                    COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
              FROM providers p
              LEFT JOIN gpu_pricing gp
                ON LOWER(TRIM(gp.gpu_model)) = LOWER(TRIM(COALESCE(p.gpu_name_detected, p.gpu_model)))
@@ -3247,7 +3247,7 @@ router.get('/marketplace', (req, res) => {
                 SELECT provider_id,
                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_jobs,
                        SUM(CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END) AS terminal_jobs,
-                       COUNT(*) AS total_jobs
+                       COUNT(*) AS total_jobs_computed
                 FROM jobs
                 GROUP BY provider_id
              ) js ON js.provider_id = p.id
