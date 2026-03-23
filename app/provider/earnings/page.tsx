@@ -6,6 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import StatusBadge from '../../components/ui/StatusBadge'
+import EarningsProjections from '../components/EarningsProjections'
 import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
@@ -572,6 +573,11 @@ export default function EarningsPage() {
                 </div>
               </div>
             )}
+
+            {/* Earnings Projections */}
+            <div className="card">
+              <EarningsProjections />
+            </div>
           </div>
         )}
 
