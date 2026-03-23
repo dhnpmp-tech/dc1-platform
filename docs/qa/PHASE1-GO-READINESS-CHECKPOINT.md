@@ -74,6 +74,31 @@
 - Arabic Support: Full arabic-portfolio.json integration
 - Status: Production-ready
 
+### Post-Deploy Smoke Checklist
+**File:** `docs/qa/post-deploy-checklist.md`
+**Checks:** 5 batch items (DCP-172, DCP-216, DCP-234, DCP-241, DCP-254)
+**Execution Time:** ~8 minutes
+
+**Validates:**
+- ✅ DCP-172: API docs page, auth enforcement, rate limiting, monitoring health
+- ✅ DCP-216: Marketplace UI, billing confirmation, renter guide, marketplace API
+- ✅ DCP-234: Admin features, VS Code integration, installer, legal compliance
+- ✅ DCP-241: Infrastructure monitoring, alerting, log aggregation
+- ✅ DCP-254: Payment processing, billing integration, transaction handling
+
+**Batch Execution:**
+```bash
+./infra/scripts/post-deploy-verify.sh --batch <issue-id> --api-base https://api.dcp.sa
+```
+
+**Success Criteria:**
+- All endpoints respond with expected status codes
+- Authentication properly enforced on protected routes
+- Rate limiting triggers and recovers correctly
+- No 500 errors on any core endpoints
+- UI pages render without client errors
+- Monitoring processes running healthily
+
 ---
 
 ## Test Infrastructure Status
@@ -120,20 +145,25 @@
 
 ### Phase 1B: QA Test Execution (QA Engineer)
 **Trigger:** DCP-524 DONE signal
-**Duration:** ~1 minute
+**Duration:** ~10 minutes total
 **Actions:**
-1. Run template-catalog-e2e.mjs
-2. Run model-catalog-smoke.mjs
-3. Capture results
-4. Post GO/NO-GO decision
+1. Run template-catalog-e2e.mjs (~30 seconds)
+2. Run model-catalog-smoke.mjs (~30 seconds)
+3. Execute post-deploy smoke checklist (DCP-172, DCP-216, DCP-234, DCP-241, DCP-254) (~8 minutes)
+4. Capture all results
+5. Post comprehensive GO/NO-GO decision
 
 **Success Criteria:**
 - Both test suites pass without errors
 - All 23+ checks pass
 - API responses conform to spec
+- Post-deploy checklist all green (API docs, auth, marketplace, billing, admin)
+- No 401/403/404/429 errors on core endpoints
+- Rate limiting properly enforced and recovers
+- Monitoring systems healthy
 
 ### Phase 1C: Template Activation (Product/CEO)
-**Trigger:** QA GO signal
+**Trigger:** QA GO signal (all checks passed)
 **Expected Outcome:** Renters can browse and deploy templates
 
 ### Phase 2: Inference Benchmarks & Arabic RAG (QA Engineer)
