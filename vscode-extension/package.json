@@ -180,6 +180,21 @@
         "command": "dc1.startArabicRagSession",
         "title": "DCP: Start Arabic RAG Session",
         "icon": "$(symbol-method)"
+      },
+      {
+        "command": "dc1.searchTemplates",
+        "title": "DCP: Search Templates",
+        "icon": "$(search)"
+      },
+      {
+        "command": "dc1.filterTemplatesByVram",
+        "title": "DCP: Filter Templates by VRAM",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "dc1.clearTemplateFilters",
+        "title": "DCP: Clear Template Filters",
+        "icon": "$(clear-all)"
       }
     ],
     "menus": {
@@ -213,6 +228,21 @@
           "command": "dc1.refreshTemplates",
           "when": "view == dc1.templatesCatalog",
           "group": "navigation@1"
+        },
+        {
+          "command": "dc1.searchTemplates",
+          "when": "view == dc1.templatesCatalog",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dc1.filterTemplatesByVram",
+          "when": "view == dc1.templatesCatalog",
+          "group": "navigation@3"
+        },
+        {
+          "command": "dc1.clearTemplateFilters",
+          "when": "view == dc1.templatesCatalog",
+          "group": "navigation@4"
         },
         {
           "command": "dc1.refreshModels",

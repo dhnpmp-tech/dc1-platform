@@ -406,6 +406,59 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // dc1.searchTemplates — search templates by name/description
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.searchTemplates', async () => {
+      const searchText = await vscode.window.showInputBox({
+        prompt: 'Search templates by name or description',
+        placeHolder: 'e.g., "llama", "embedding", "image"',
+      });
+
+      if (searchText !== undefined) {
+        if (searchText.trim()) {
+          templatesCatalogProvider.setSearchFilter(searchText);
+          vscode.window.showInformationMessage(`Searching for: "${searchText}"`);
+        } else {
+          templatesCatalogProvider.clearFilters();
+          vscode.window.showInformationMessage('Search cleared');
+        }
+      }
+    })
+  );
+
+  // dc1.filterTemplatesByVram — filter templates by minimum VRAM
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.filterTemplatesByVram', async () => {
+      const vramOptions = [
+        { label: 'All (no filter)', value: null },
+        { label: '4 GB+', value: 4 },
+        { label: '8 GB+', value: 8 },
+        { label: '16 GB+', value: 16 },
+        { label: '24 GB+', value: 24 },
+        { label: '40 GB+', value: 40 },
+        { label: '80 GB+', value: 80 },
+      ];
+
+      const selected = await vscode.window.showQuickPick(vramOptions, {
+        placeHolder: 'Filter by minimum VRAM requirement',
+      });
+
+      if (selected) {
+        templatesCatalogProvider.setMinVramFilter(selected.value);
+        const label = selected.label === 'All (no filter)' ? 'all templates' : selected.label;
+        vscode.window.showInformationMessage(`Showing templates with ${label}`);
+      }
+    })
+  );
+
+  // dc1.clearTemplateFilters — clear all filters
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.clearTemplateFilters', async () => {
+      templatesCatalogProvider.clearFilters();
+      vscode.window.showInformationMessage('All filters cleared');
+    })
+  );
+
   // dc1.submitJob — open vLLM inference panel (model selector → POST /api/vllm/complete)
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.submitJob', async () => {

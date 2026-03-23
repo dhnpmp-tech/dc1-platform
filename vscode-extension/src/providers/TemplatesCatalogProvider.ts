@@ -101,6 +101,8 @@ export class TemplatesCatalogProvider implements vscode.TreeDataProvider<vscode.
   private _loading = false;
   private _error: string | undefined;
   private _refreshTimer: NodeJS.Timeout | undefined;
+  private _searchFilter = '';
+  private _minVramFilter: number | null = null;
 
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -108,6 +110,54 @@ export class TemplatesCatalogProvider implements vscode.TreeDataProvider<vscode.
   constructor() {
     this.refresh();
     this.startAutoRefresh();
+  }
+
+  /** Set search filter text (fuzzy search on name/description) */
+  setSearchFilter(text: string): void {
+    this._searchFilter = text.toLowerCase();
+    this._onDidChangeTreeData.fire();
+  }
+
+  /** Set minimum VRAM filter */
+  setMinVramFilter(minVram: number | null): void {
+    this._minVramFilter = minVram;
+    this._onDidChangeTreeData.fire();
+  }
+
+  /** Clear all filters */
+  clearFilters(): void {
+    this._searchFilter = '';
+    this._minVramFilter = null;
+    this._onDidChangeTreeData.fire();
+  }
+
+  private getFilteredTemplates(): DockerTemplate[] {
+    return this._templates.filter(t => {
+      // Search filter (fuzzy match on name and description)
+      if (this._searchFilter) {
+        const searchText = `${t.name} ${t.description}`.toLowerCase();
+        if (!this.fuzzyMatch(searchText, this._searchFilter)) {
+          return false;
+        }
+      }
+
+      // VRAM filter
+      if (this._minVramFilter !== null && t.min_vram_gb < this._minVramFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  private fuzzyMatch(text: string, pattern: string): boolean {
+    let patternIdx = 0;
+    for (let i = 0; i < text.length && patternIdx < pattern.length; i++) {
+      if (text[i] === pattern[patternIdx]) {
+        patternIdx++;
+      }
+    }
+    return patternIdx === pattern.length;
   }
 
   private startAutoRefresh(): void {
@@ -150,13 +200,17 @@ export class TemplatesCatalogProvider implements vscode.TreeDataProvider<vscode.
         return [new ErrorNode(`Failed to load templates: ${this._error}`)];
       }
 
-      if (this._templates.length === 0) {
-        return [new ErrorNode('No templates available')];
+      const filtered = this.getFilteredTemplates();
+      if (filtered.length === 0) {
+        if (this._templates.length === 0) {
+          return [new ErrorNode('No templates available')];
+        }
+        return [new ErrorNode('No templates match your filters')];
       }
 
-      // Group templates by primary tag
+      // Group filtered templates by primary tag
       const categories = new Map<string, DockerTemplate[]>();
-      for (const template of this._templates) {
+      for (const template of filtered) {
         const category = template.tags?.[0] || 'other';
         if (!categories.has(category)) {
           categories.set(category, []);
@@ -175,7 +229,7 @@ export class TemplatesCatalogProvider implements vscode.TreeDataProvider<vscode.
 
     // Category node — return templates in that category
     if (element instanceof CategoryNode) {
-      return this._templates
+      return this.getFilteredTemplates()
         .filter(t => (t.tags?.[0] || 'other') === element.category)
         .map(t => new TemplateNode(t));
     }
