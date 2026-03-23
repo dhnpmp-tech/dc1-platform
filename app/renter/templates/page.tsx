@@ -60,6 +60,9 @@ interface JobTemplate {
   model: string
   params: Record<string, string | number | boolean>
   tags: string[]
+  vramGb: number
+  tier: 'Instant' | 'Cached' | 'On-demand'
+  estimatedLoadTimeSeconds: number
 }
 
 const TEMPLATES: JobTemplate[] = [
@@ -78,6 +81,9 @@ const TEMPLATES: JobTemplate[] = [
       temperature: 0.7,
     },
     tags: ['LLM', 'Chat', 'Mistral'],
+    vramGb: 16,
+    tier: 'Cached',
+    estimatedLoadTimeSeconds: 10,
   },
   {
     id: 'llm-llama',
@@ -94,6 +100,9 @@ const TEMPLATES: JobTemplate[] = [
       temperature: 0.3,
     },
     tags: ['LLM', 'Llama', 'Coding'],
+    vramGb: 16,
+    tier: 'Cached',
+    estimatedLoadTimeSeconds: 10,
   },
   {
     id: 'image-sdxl',
@@ -113,6 +122,9 @@ const TEMPLATES: JobTemplate[] = [
       height: 1024,
     },
     tags: ['Image', 'SDXL', 'Art'],
+    vramGb: 8,
+    tier: 'Cached',
+    estimatedLoadTimeSeconds: 10,
   },
   {
     id: 'image-sd15',
@@ -131,6 +143,9 @@ const TEMPLATES: JobTemplate[] = [
       height: 512,
     },
     tags: ['Image', 'SD 1.5', 'Fast'],
+    vramGb: 8,
+    tier: 'Cached',
+    estimatedLoadTimeSeconds: 10,
   },
   {
     id: 'embed-sentence',
@@ -146,6 +161,9 @@ const TEMPLATES: JobTemplate[] = [
       batch_size: 32,
     },
     tags: ['Embeddings', 'NLP', 'RAG'],
+    vramGb: 4,
+    tier: 'Instant',
+    estimatedLoadTimeSeconds: 5,
   },
   {
     id: 'finetune-lora',
@@ -165,6 +183,9 @@ const TEMPLATES: JobTemplate[] = [
       batch_size: 4,
     },
     tags: ['Training', 'LoRA', 'Fine-tune'],
+    vramGb: 24,
+    tier: 'Cached',
+    estimatedLoadTimeSeconds: 15,
   },
   {
     id: 'vllm-serve',
@@ -181,6 +202,9 @@ const TEMPLATES: JobTemplate[] = [
       tensor_parallel_size: 1,
     },
     tags: ['vLLM', 'Serving', 'API'],
+    vramGb: 16,
+    tier: 'Cached',
+    estimatedLoadTimeSeconds: 10,
   },
   {
     id: 'render-blender',
@@ -199,6 +223,9 @@ const TEMPLATES: JobTemplate[] = [
       output_format: 'PNG',
     },
     tags: ['Rendering', 'Blender', '3D'],
+    vramGb: 12,
+    tier: 'Cached',
+    estimatedLoadTimeSeconds: 20,
   },
 ]
 
@@ -228,6 +255,18 @@ function buildPlaygroundQuery(template: JobTemplate): string {
     model: template.model,
   })
   return `/renter/playground?${params.toString()}`
+}
+
+function formatLoadTime(seconds: number): string {
+  if (seconds < 60) return `~${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  return `~${minutes}m`
+}
+
+function getTierBadgeColor(tier: string): string {
+  if (tier === 'Instant') return 'bg-status-success/15 text-status-success border-status-success/30'
+  if (tier === 'Cached') return 'bg-status-info/15 text-status-info border-status-info/30'
+  return 'bg-status-warning/15 text-status-warning border-status-warning/30'
 }
 
 export default function TemplatesPage() {
@@ -323,7 +362,7 @@ export default function TemplatesPage() {
                   </div>
                 </div>
 
-                {/* Model + Cost */}
+                {/* Model + Cost + Specs */}
                 <div className="flex flex-wrap gap-3 text-xs mb-3">
                   <div className="flex items-center gap-1.5 text-dc1-text-secondary">
                     <svg className="w-3.5 h-3.5 text-dc1-amber shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -345,6 +384,19 @@ export default function TemplatesPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span>~{template.estimatedMinutes}m</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-dc1-text-secondary">{template.vramGb}GB</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-medium ${getTierBadgeColor(template.tier)}`}>
+                    <span>{template.tier}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-dc1-text-secondary">
+                    <span className="text-dc1-text-muted">Load:</span>
+                    <span className="font-medium text-dc1-text-primary">{formatLoadTime(template.estimatedLoadTimeSeconds)}</span>
                   </div>
                 </div>
 

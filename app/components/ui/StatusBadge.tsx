@@ -1,6 +1,6 @@
 'use client'
 
-type StatusType = 'online' | 'offline' | 'active' | 'inactive' | 'pending' | 'running' | 'completed' | 'failed' | 'paused' | 'warning'
+type StatusType = 'online' | 'offline' | 'degraded' | 'active' | 'inactive' | 'pending' | 'running' | 'completed' | 'failed' | 'paused' | 'warning'
 
 interface StatusBadgeProps {
   status: StatusType
@@ -17,6 +17,7 @@ const statusConfig: Record<StatusType, { dot: string; bg: string; text: string; 
   pending:   { dot: 'bg-status-warning', bg: 'bg-status-warning/10', text: 'text-status-warning', defaultLabel: 'Pending' },
   warning:   { dot: 'bg-status-warning', bg: 'bg-status-warning/10', text: 'text-status-warning', defaultLabel: 'Warning' },
   paused:    { dot: 'bg-status-warning', bg: 'bg-status-warning/10', text: 'text-status-warning', defaultLabel: 'Paused' },
+  degraded:  { dot: 'bg-status-warning', bg: 'bg-status-warning/10', text: 'text-status-warning', defaultLabel: 'Degraded' },
   offline:   { dot: 'bg-status-error',   bg: 'bg-status-error/10',   text: 'text-status-error',   defaultLabel: 'Offline' },
   inactive:  { dot: 'bg-dc1-text-muted', bg: 'bg-dc1-text-muted/10', text: 'text-dc1-text-muted', defaultLabel: 'Inactive' },
   failed:    { dot: 'bg-status-error',   bg: 'bg-status-error/10',   text: 'text-status-error',   defaultLabel: 'Failed' },
@@ -32,7 +33,7 @@ export default function StatusBadge({ status, label, size = 'md', pulse = true }
     }`}>
       <span className={`rounded-full ${config.dot} ${
         size === 'sm' ? 'w-1.5 h-1.5' : 'w-2 h-2'
-      } ${pulse && (status === 'online' || status === 'running' || status === 'active') ? 'animate-pulse' : ''}`} />
+      } ${pulse && (status === 'online' || status === 'running' || status === 'active' || status === 'degraded') ? 'animate-pulse' : ''}`} />
       {displayLabel}
     </span>
   )

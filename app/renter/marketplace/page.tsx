@@ -148,6 +148,28 @@ function formatReliabilityTimestamp(date: Date | null): string {
   })
 }
 
+function getProviderHealthStatus(provider: Provider): 'online' | 'degraded' | 'offline' {
+  if (!provider.is_live) return 'offline'
+
+  // Check heartbeat staleness (>5 min indicates degradation)
+  if (provider.heartbeat_age_seconds && provider.heartbeat_age_seconds > 300) {
+    return 'degraded'
+  }
+
+  // Check job success rate (below 75% is degraded)
+  if (provider.job_success_rate !== null && provider.job_success_rate < 75) {
+    return 'degraded'
+  }
+
+  // Check uptime (below 80% indicates issues)
+  const uptime = provider.uptime_pct ?? provider.uptime_percent ?? 100
+  if (uptime < 80) {
+    return 'degraded'
+  }
+
+  return 'online'
+}
+
 function extractGpuFamily(gpuModel: string | null | undefined): string {
   const model = String(gpuModel || '').toUpperCase()
   if (!model) return 'Unknown'
@@ -474,7 +496,7 @@ function GPUCard({
             {reputationTierLabel(provider.reputation_tier, t)}
           </span>
         </div>
-        <StatusBadge status={provider.is_live ? 'online' : 'offline'} size="sm" pulse={provider.is_live} />
+        <StatusBadge status={getProviderHealthStatus(provider)} size="sm" pulse={true} />
       </div>
 
       {/* Specs grid */}

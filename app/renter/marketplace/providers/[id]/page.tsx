@@ -73,6 +73,28 @@ function reputationLabel(tier: Provider['reputation_tier']): string {
   return 'New Provider'
 }
 
+function getProviderHealthStatus(provider: Provider): 'online' | 'degraded' | 'offline' {
+  if (!provider.is_live) return 'offline'
+
+  // Check heartbeat staleness (>5 min indicates degradation)
+  if (provider.heartbeat_age_seconds && provider.heartbeat_age_seconds > 300) {
+    return 'degraded'
+  }
+
+  // Check job success rate (below 75% is degraded)
+  if (provider.job_success_rate !== null && provider.job_success_rate < 75) {
+    return 'degraded'
+  }
+
+  // Check uptime (below 80% indicates issues)
+  const uptime = provider.uptime_pct ?? provider.uptime_percent ?? 100
+  if (uptime < 80) {
+    return 'degraded'
+  }
+
+  return 'online'
+}
+
 // ── Icons ──────────────────────────────────────────────────────────
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -232,9 +254,9 @@ export default function ProviderProfilePage() {
               {provider.gpu_model || 'Unknown GPU'}
             </h1>
             <StatusBadge
-              status={provider.is_live ? 'online' : 'offline'}
+              status={getProviderHealthStatus(provider)}
               size="sm"
-              pulse={provider.is_live}
+              pulse={true}
             />
             {provider.is_live && (
               <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-status-success/15 text-status-success border border-status-success/30">
