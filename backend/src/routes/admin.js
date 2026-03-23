@@ -2019,19 +2019,21 @@ router.post('/bulk/providers', (req, res) => {
     const { ids, action } = req.body;
     const safeIds = normalizeIdArray(ids);
     if (!safeIds) return res.status(400).json({ error: 'ids array required (positive integers)' });
-    if (!['suspend', 'unsuspend'].includes(action)) return res.status(400).json({ error: 'action must be suspend or unsuspend' });
+    if (!['suspend', 'unsuspend', 'approve'].includes(action)) return res.status(400).json({ error: 'action must be suspend, unsuspend, or approve' });
 
     const now = new Date().toISOString();
     let success = 0, failed = 0;
 
     for (const id of safeIds) {
       try {
-        const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', id);
+        const provider = db.get('SELECT id, name, status, approval_status FROM providers WHERE id = ?', id);
         if (!provider) { failed++; continue; }
         if (action === 'suspend') {
           db.prepare('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?').run('suspended', now, id);
-        } else {
+        } else if (action === 'unsuspend') {
           db.prepare('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?').run('offline', now, id);
+        } else if (action === 'approve') {
+          db.prepare('UPDATE providers SET approval_status = ?, approved_at = ?, rejected_reason = NULL, updated_at = ? WHERE id = ?').run('approved', now, now, id);
         }
         try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run(
           `bulk_provider_${action}`, 'provider', id, `Bulk ${action}: "${provider.name}"`, now); } catch(e) {}
