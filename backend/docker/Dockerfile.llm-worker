@@ -1,29 +1,46 @@
-# DC1 LLM Inference Worker — Text Generation
-# Pre-installs transformers + bitsandbytes for quantized inference
+# DC1 LLM Inference Worker — vLLM serving (OpenAI-compatible)
+# Instant tier: pre-bakes Nemotron-Mini-4B-Instruct (~8 GB) into the image
+# Cached tier: all other models resolved from /opt/dcp/model-cache volume at runtime
 ARG BASE_IMAGE=dc1/base-worker:latest
 FROM ${BASE_IMAGE}
 
 USER root
 
-# LLM inference dependencies
+# vLLM + HuggingFace tooling
 RUN pip3 install --no-cache-dir \
+    vllm \
     transformers \
     accelerate \
-    bitsandbytes \
     sentencepiece \
     protobuf \
-    scipy
+    huggingface_hub
 
-# Pre-download Phi-2 model weights (~5.5 GB) — default model for LLM inference
-RUN python3 -c "\
-from transformers import AutoModelForCausalLM, AutoTokenizer; \
-AutoTokenizer.from_pretrained('microsoft/phi-2', trust_remote_code=True); \
-AutoModelForCausalLM.from_pretrained('microsoft/phi-2', trust_remote_code=True); \
-print('Phi-2 cached.')"
+# Instant tier: pre-bake Nemotron-Mini-4B-Instruct weights (~8 GB)
+# Providers with 8 GB+ VRAM get zero-download cold start for this model.
+# Build with --build-arg SKIP_MODEL_PREBAKE=1 to skip (CI or slim builds).
+ARG SKIP_MODEL_PREBAKE=0
+ARG PREBAKE_MODEL=nvidia/Nemotron-Mini-4B-Instruct
+ENV HF_HOME=/opt/dcp/model-cache/hf
+RUN if [ "$SKIP_MODEL_PREBAKE" != "1" ]; then \
+      python3 -c "\
+from huggingface_hub import snapshot_download; \
+import os; \
+snapshot_download( \
+    repo_id=os.environ.get('PREBAKE_MODEL', 'nvidia/Nemotron-Mini-4B-Instruct'), \
+    cache_dir='/opt/dcp/model-cache/hf', \
+    local_dir_use_symlinks=False, \
+    resume_download=True \
+); \
+print('Instant-tier model pre-baked.')"; \
+    else \
+      echo "SKIP_MODEL_PREBAKE=1 — skipping weight pre-bake"; \
+    fi
 
 USER dcp:dcp
 
 LABEL dc1.worker.type="llm-inference"
-LABEL dc1.worker.version="1.0"
+LABEL dc1.worker.version="2.0"
+LABEL dc1.worker.engine="vllm"
+LABEL dc1.worker.instant-model="nvidia/Nemotron-Mini-4B-Instruct"
 
 CMD ["python", "/dc1/job/task.py"]

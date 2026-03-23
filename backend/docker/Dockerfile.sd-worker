@@ -1,32 +1,46 @@
-# DC1 Stable Diffusion Worker — Image Generation
-# Pre-installs diffusers + accelerate so jobs start fast
+# DC1 Stable Diffusion Worker — SDXL Image Generation (1024×1024)
+# Instant tier: pre-bakes SDXL base UNet (~6.5 GB) into the image
+# Cached tier: refiner and alternative checkpoints resolved from volume at runtime
 ARG BASE_IMAGE=dc1/base-worker:latest
 FROM ${BASE_IMAGE}
 
 USER root
 
-# Stable Diffusion dependencies
+# Diffusion inference dependencies
 RUN pip3 install --no-cache-dir \
     diffusers[torch] \
     transformers \
     accelerate \
     safetensors \
     scipy \
-    ftfy
+    ftfy \
+    huggingface_hub
 
-# Pre-download SD 2.1 base model weights (~2.5 GB)
-# This makes first job start in seconds instead of minutes
-RUN python3 -c "\
-from diffusers import StableDiffusionPipeline; \
-StableDiffusionPipeline.from_pretrained( \
-    'stabilityai/stable-diffusion-2-1-base', \
-    torch_dtype='auto' \
-); print('SD 2.1 base cached.')"
+# Instant tier: pre-bake SDXL base weights (~6.5 GB)
+# Enables 1024×1024 generation without download delay after first build.
+# Build with --build-arg SKIP_MODEL_PREBAKE=1 to skip (CI or slim builds).
+ARG SKIP_MODEL_PREBAKE=0
+ARG PREBAKE_MODEL=stabilityai/stable-diffusion-xl-base-1.0
+ENV HF_HOME=/opt/dcp/model-cache/hf
+RUN if [ "$SKIP_MODEL_PREBAKE" != "1" ]; then \
+      python3 -c "\
+from huggingface_hub import snapshot_download; \
+import os; \
+snapshot_download( \
+    repo_id=os.environ.get('PREBAKE_MODEL', 'stabilityai/stable-diffusion-xl-base-1.0'), \
+    cache_dir='/opt/dcp/model-cache/hf', \
+    local_dir_use_symlinks=False, \
+    resume_download=True \
+); \
+print('Instant-tier SDXL pre-baked.')"; \
+    else \
+      echo "SKIP_MODEL_PREBAKE=1 — skipping SDXL pre-bake"; \
+    fi
 
 USER dcp:dcp
 
-# Label for DC1 daemon image selection
 LABEL dc1.worker.type="image_generation"
-LABEL dc1.worker.version="1.0"
+LABEL dc1.worker.version="2.0"
+LABEL dc1.worker.instant-model="stabilityai/stable-diffusion-xl-base-1.0"
 
 CMD ["python", "/dc1/job/task.py"]
