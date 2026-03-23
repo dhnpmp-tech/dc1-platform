@@ -163,6 +163,12 @@ export interface DockerTemplate {
   params?: Record<string, unknown>;
 }
 
+export interface CompetitorPricing {
+  vast_ai: number;
+  runpod: number;
+  aws: number;
+}
+
 export interface Model {
   model_id: string;
   display_name: string;
@@ -172,6 +178,8 @@ export interface Model {
   providers_online: number;
   avg_price_sar_per_min: number;
   status: 'available' | 'no_providers';
+  competitor_prices?: CompetitorPricing;
+  savings_pct?: number;
 }
 
 export interface VllmCompleteResponse {
@@ -725,7 +733,7 @@ export class DC1Client {
     const data = await this.request<any>('GET', '/api/models');
     const models = Array.isArray(data) ? data : (data.models || []);
 
-    // Compute is_arabic flag for each model
+    // Compute is_arabic flag and map pricing data for each model
     return {
       models: models.map((m: any) => ({
         model_id: m.model_id,
@@ -736,6 +744,12 @@ export class DC1Client {
         providers_online: m.providers_online || 0,
         avg_price_sar_per_min: m.avg_price_sar_per_min || 0,
         status: m.status || 'no_providers',
+        competitor_prices: m.competitor_prices ? {
+          vast_ai: m.competitor_prices.vast_ai || 0,
+          runpod: m.competitor_prices.runpod || 0,
+          aws: m.competitor_prices.aws || 0,
+        } : undefined,
+        savings_pct: m.savings_pct || 0,
       })),
       count: models.length,
     };

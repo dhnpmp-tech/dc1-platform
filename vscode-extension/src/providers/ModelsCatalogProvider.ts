@@ -49,8 +49,40 @@ export class ModelNode extends vscode.TreeItem {
     md.appendMarkdown(`| VRAM | ${this.model.vram_gb} GB |\n`);
     md.appendMarkdown(`| Status | ${this.model.status === 'available' ? '✅ Available' : '❌ No Providers'} |\n`);
     md.appendMarkdown(`| Providers Online | ${this.model.providers_online} |\n`);
-    md.appendMarkdown(`| Price | ${(this.model.avg_price_sar_per_min * 60).toFixed(2)} SAR/hour |\n`);
+
+    const dcpHrPrice = (this.model.avg_price_sar_per_min * 60).toFixed(2);
+    md.appendMarkdown(`| DCP Price | ${dcpHrPrice} SAR/hour |\n`);
     md.appendMarkdown(`| Arabic | ${this.model.is_arabic ? '✅ Yes' : '❌ No'} |\n`);
+
+    // Add pricing comparison if available
+    if (this.model.competitor_prices && this.model.savings_pct !== undefined) {
+      md.appendMarkdown(`\n## 💰 Pricing Comparison\n\n`);
+      md.appendMarkdown(`| Provider | Price (SAR/hr) | vs DCP |\n|---|---|---|\n`);
+      md.appendMarkdown(`| **DCP** | **${dcpHrPrice}** | **baseline** |\n`);
+
+      const vastPrice = this.model.competitor_prices.vast_ai;
+      if (vastPrice > 0) {
+        const savings = ((vastPrice - parseFloat(dcpHrPrice)) / vastPrice * 100).toFixed(0);
+        md.appendMarkdown(`| Vast.ai | ${vastPrice.toFixed(2)} | +${savings}% |\n`);
+      }
+
+      const runpodPrice = this.model.competitor_prices.runpod;
+      if (runpodPrice > 0) {
+        const savings = ((runpodPrice - parseFloat(dcpHrPrice)) / runpodPrice * 100).toFixed(0);
+        md.appendMarkdown(`| RunPod | ${runpodPrice.toFixed(2)} | +${savings}% |\n`);
+      }
+
+      const awsPrice = this.model.competitor_prices.aws;
+      if (awsPrice > 0) {
+        const savings = ((awsPrice - parseFloat(dcpHrPrice)) / awsPrice * 100).toFixed(0);
+        md.appendMarkdown(`| AWS | ${awsPrice.toFixed(2)} | +${savings}% |\n`);
+      }
+
+      if (this.model.savings_pct > 0) {
+        md.appendMarkdown(`\n**Average savings: ${this.model.savings_pct}% vs Vast.ai**\n`);
+      }
+    }
+
     md.isTrusted = true;
     return md;
   }
