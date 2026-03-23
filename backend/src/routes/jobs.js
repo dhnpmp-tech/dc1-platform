@@ -1054,6 +1054,13 @@ function getJobRouter() {
   return _jobRouter;
 }
 
+// Lazy-load jobScheduler for enhanced resource matching
+let _jobScheduler;
+function getJobScheduler() {
+  if (!_jobScheduler) _jobScheduler = require('../services/jobScheduler');
+  return _jobScheduler;
+}
+
 // POST /api/jobs/submit — requires renter auth
 // provider_id is optional: omit to auto-route to best GPU-fit provider (DCP-205)
 router.post('/submit', requireRenter, (req, res) => {
@@ -1152,12 +1159,29 @@ router.post('/submit', requireRenter, (req, res) => {
       // Auto-routing: pick best available provider matching VRAM + uptime criteria
       const minVramGb = toFiniteNumber(gpu_requirements?.min_vram_gb, { min: 0, max: 1024 }) || 0;
       const globalRate = COST_RATES[job_type] || COST_RATES['default'];
-      const routed = getJobRouter().findBestProvider({
-        job_type,
-        min_vram_gb: minVramGb,
-        globalRateHalala: globalRate,
-        pricing_class: pricingClass,
-      });
+
+      // Use enhanced jobScheduler for GPU type matching support, with jobRouter fallback
+      const useScheduler = process.env.USE_JOB_SCHEDULER !== 'false'; // default true
+      let routed;
+
+      if (useScheduler) {
+        // Enhanced routing with GPU type matching
+        routed = getJobScheduler().findBestProviderJobRouter({
+          job_type,
+          min_vram_gb: minVramGb,
+          globalRateHalala: globalRate,
+          pricing_class: pricingClass,
+          gpu_type: normalizeModelField(requestedModel), // Pass GPU type from model field
+        });
+      } else {
+        // Legacy jobRouter for compatibility
+        routed = getJobRouter().findBestProvider({
+          job_type,
+          min_vram_gb: minVramGb,
+          globalRateHalala: globalRate,
+          pricing_class: pricingClass,
+        });
+      }
 
       if (routed) {
         provider = db.get('SELECT * FROM providers WHERE id = ?', routed.provider.id);

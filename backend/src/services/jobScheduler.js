@@ -118,7 +118,7 @@ function matchMemoryRequirement(jobMinVramGb = 0, providerVramGb = 0) {
 
 /**
  * Score a provider for a given job (higher = better).
- * Considers status, uptime, price, GPU match quality, and VRAM headroom.
+ * Considers status, uptime, price, GPU match quality, VRAM headroom, and pricing class.
  *
  * @param {object} provider - Provider record from database
  * @param {object} jobRequirements - Job requirements { min_vram_gb, gpu_type, pricing_class, priority }
@@ -164,6 +164,15 @@ function scoreProvider(provider, jobRequirements, globalRateHalala = 10) {
   const uptime = Math.max(0, provider.uptime_percent || 0);
   const uptimeScore = (uptime / 100) * 1500; // linear: 0-1500
 
+  // Pricing class score (0-500) — priority tier gets bonus if preloaded
+  let pricingClassScore = 0;
+  if (String(pricingClass).toLowerCase() === 'priority') {
+    const modelPreloadStatus = String(provider.model_preload_status || '').toLowerCase();
+    if (modelPreloadStatus === 'ready') {
+      pricingClassScore = 500; // bonus for priority class with preload
+    }
+  }
+
   // Price score (0-1000) — cheaper is better
   const effectivePrice = provider.price_per_min_halala != null
     ? provider.price_per_min_halala
@@ -176,7 +185,7 @@ function scoreProvider(provider, jobRequirements, globalRateHalala = 10) {
   const priceScore = ((maxPrice - normalizedPrice) / (maxPrice - minPrice)) * 1000;
 
   // Combine scores
-  const totalScore = statusScore + gpuScore + vramScore + uptimeScore + priceScore;
+  const totalScore = statusScore + gpuScore + vramScore + uptimeScore + pricingClassScore + priceScore;
 
   return Math.round(totalScore);
 }
@@ -332,10 +341,56 @@ function getSchedulingReport(job, limit = 5, globalRateHalala = 10) {
   };
 }
 
+/**
+ * Drop-in replacement for jobRouter.findBestProvider() with enhanced GPU matching.
+ * Maintains API compatibility while adding sophisticated resource matching.
+ *
+ * @param {object} opts - Options matching jobRouter interface
+ * @param {string} opts.job_type - Job type for logging
+ * @param {number} [opts.min_vram_gb=0] - Minimum VRAM required
+ * @param {number} [opts.globalRateHalala=10] - Fallback cost rate
+ * @param {string} [opts.pricing_class='standard'] - Pricing tier (priority/standard/economy)
+ * @param {string} [opts.gpu_type] - Optional GPU type requirement
+ * @returns {{ provider: object, effective_price_halala: number }|null}
+ */
+function findBestProviderJobRouter(opts) {
+  const {
+    job_type,
+    min_vram_gb = 0,
+    globalRateHalala = 10,
+    pricing_class = 'standard',
+    gpu_type = null,
+  } = opts;
+
+  const jobReqs = {
+    min_vram_gb,
+    gpu_type,
+    pricing_class,
+  };
+
+  const best = findBestProvider(jobReqs, globalRateHalala);
+
+  if (!best) return null;
+
+  // Log using jobRouter format for compatibility
+  console.log(
+    `[jobScheduler] job_type=${job_type} pricing_class=${pricing_class} min_vram=${min_vram_gb}GB → ` +
+    `provider #${best.provider.id} (${best.provider.name}) status=${best.matchDetails.provider_status} ` +
+    `uptime=${best.provider.uptime_percent || 0}% price=${best.matchDetails.effective_price_halala}h/min ` +
+    `vram=${best.matchDetails.provider_vram_gb.toFixed(1)}GB`
+  );
+
+  return {
+    provider: best.provider,
+    effective_price_halala: best.matchDetails.effective_price_halala,
+  };
+}
+
 module.exports = {
   // Core functions
   findMatchingProviders,
   findBestProvider,
+  findBestProviderJobRouter, // Drop-in replacement for jobRouter
   scheduleMultipleJobs,
   getSchedulingReport,
 
