@@ -1196,6 +1196,24 @@ router.post('/submit', requireRenter, (req, res) => {
       }
     }
 
+    // Validate cached-model tier (Sprint 25 Gap 5)
+    // If prewarm was requested, verify provider has model cached before routing
+    if (prewarmRequested && provider && model) {
+      let cachedModels = [];
+      try {
+        cachedModels = JSON.parse(provider.cached_models || '[]');
+      } catch (_) {
+        cachedModels = [];
+      }
+      // Check if the requested model is in the provider's cached models
+      if (!Array.isArray(cachedModels) || !cachedModels.includes(model)) {
+        console.log(`[jobs/submit] Prewarm requested for model '${model}' but not cached on provider #${provider_id}. Queueing instead.`);
+        // Don't assign to this provider if model isn't cached
+        provider_id = null;
+        routedMatchFound = false;
+      }
+    }
+
     // Check if provider is busy (has a running or pending job)
     let busyJob = null;
     if (provider_id != null) {
