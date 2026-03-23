@@ -44,13 +44,13 @@ describe('Provider lifecycle E2E', () => {
       .send({
         provider_id: providerId,
         job_type: 'training',
-        duration_minutes: 60, // 25 halala/min = 1500 halala total
+        duration_minutes: 60, // 7 halala/min = 420 halala total
       });
 
     expect(submitRes.status).toBe(201);
     expect(submitRes.body.success).toBe(true);
     expect(submitRes.body.job.status).toBe('pending');
-    expect(submitRes.body.job.cost_halala).toBe(1500);
+    expect(submitRes.body.job.cost_halala).toBe(420);
     const jobId = submitRes.body.job.job_id;
 
     // 4) Daemon picks up assigned job
@@ -70,13 +70,13 @@ describe('Provider lifecycle E2E', () => {
 
     expect(resultRes.status).toBe(200);
     expect(resultRes.body.success).toBe(true);
-    expect(resultRes.body.billing.actual_cost_halala).toBe(1500);
-    expect(resultRes.body.billing.provider_earned_halala).toBe(1125);
-    expect(resultRes.body.billing.dc1_fee_halala).toBe(375);
+    expect(resultRes.body.billing.actual_cost_halala).toBe(420);
+    expect(resultRes.body.billing.provider_earned_halala).toBe(315);
+    expect(resultRes.body.billing.dc1_fee_halala).toBe(105);
 
     const completedJob = db.get('SELECT status, provider_earned_halala FROM jobs WHERE job_id = ?', jobId);
     expect(completedJob.status).toBe('completed');
-    expect(completedJob.provider_earned_halala).toBe(1125);
+    expect(completedJob.provider_earned_halala).toBe(315);
 
     // 6) Verify provider earnings are now claimable
     const meRes = await request(app).get(`/api/providers/me?key=${providerKey}`);
@@ -88,8 +88,8 @@ describe('Provider lifecycle E2E', () => {
       .get('/api/providers/earnings')
       .set('x-provider-key', providerKey);
     expect(earningsRes.status).toBe(200);
-    expect(earningsRes.body.claimable_earnings_halala).toBe(1125);
-    expect(earningsRes.body.available_halala).toBeGreaterThanOrEqual(1125);
+    expect(earningsRes.body.claimable_earnings_halala).toBe(315);
+    expect(earningsRes.body.available_halala).toBeGreaterThanOrEqual(315);
 
     // 7) Provider requests withdrawal
     const withdrawRes = await request(app)

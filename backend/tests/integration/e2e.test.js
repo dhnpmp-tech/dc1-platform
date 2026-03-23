@@ -58,7 +58,7 @@ describe('E2E integration: register -> job -> payment', () => {
     expect(submitRes.status).toBe(201);
     expect(submitRes.body.success).toBe(true);
     expect(submitRes.body.job.status).toBe('pending');
-    expect(submitRes.body.job.cost_halala).toBe(1500); // 25 halala/min * 60
+    expect(submitRes.body.job.cost_halala).toBe(420); // 7 halala/min * 60
 
     const jobId = submitRes.body.job.job_id;
 
@@ -77,17 +77,17 @@ describe('E2E integration: register -> job -> payment', () => {
 
     expect(resultRes.status).toBe(200);
     expect(resultRes.body.success).toBe(true);
-    expect(resultRes.body.billing.actual_cost_halala).toBe(1500);
-    expect(resultRes.body.billing.provider_earned_halala).toBe(1125);
-    expect(resultRes.body.billing.dc1_fee_halala).toBe(375);
+    expect(resultRes.body.billing.actual_cost_halala).toBe(420);
+    expect(resultRes.body.billing.provider_earned_halala).toBe(315);
+    expect(resultRes.body.billing.dc1_fee_halala).toBe(105);
 
     const provider = db.get(
       'SELECT total_jobs, claimable_earnings_halala, total_earnings_halala FROM providers WHERE id = ?',
       providerReg.providerId
     );
     expect(provider.total_jobs).toBe(1);
-    expect(provider.claimable_earnings_halala).toBe(1125);
-    expect(provider.total_earnings_halala).toBe(1125);
+    expect(provider.claimable_earnings_halala).toBe(315);
+    expect(provider.total_earnings_halala).toBe(315);
   });
 
   test('renter registration + submit charges renter balance', async () => {
@@ -119,7 +119,7 @@ describe('E2E integration: register -> job -> payment', () => {
     const billed = submitRes.body.job.cost_halala;
     const after = db.get('SELECT balance_halala, total_jobs FROM renters WHERE id = ?', renterReg.renterId);
 
-    expect(billed).toBe(150); // 15 halala/min * 10
+    expect(billed).toBe(90); // 9 halala/min * 10
     expect(after.balance_halala).toBe(before.balance_halala - billed);
     expect(after.total_jobs).toBeGreaterThanOrEqual(1);
   });

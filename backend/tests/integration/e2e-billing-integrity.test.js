@@ -66,13 +66,13 @@ describe('E2E Billing Integrity — 75/25 halala split', () => {
   it('billing matches actual job cost from cost calculator', () => {
     const { calculateCostHalala } = require('../../src/routes/jobs');
     
-    // llm-inference at 15 halala/min × 10 min = 150 halala
+    // llm-inference at 9 halala/min × 10 min = 90 halala
     const cost = calculateCostHalala('llm-inference', 10);
-    expect(cost).toBe(150);
-    
+    expect(cost).toBe(90);
+
     const { providerShare, dc1Share } = splitBilling(cost);
-    expect(providerShare).toBe(112); // floor(150 * 0.75) = 112
-    expect(dc1Share).toBe(38);       // 150 - 112 = 38
-    expect(providerShare + dc1Share).toBe(150);
+    expect(providerShare).toBe(67); // floor(90 * 0.75) = 67
+    expect(dc1Share).toBe(23);      // 90 - 67 = 23
+    expect(providerShare + dc1Share).toBe(90);
   });
 });

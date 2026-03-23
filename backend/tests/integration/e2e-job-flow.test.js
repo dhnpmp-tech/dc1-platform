@@ -40,13 +40,13 @@ describe('E2E Job Flow', () => {
     expect(jobRes.status).toBe(201);
     expect(jobRes.body.success).toBe(true);
     expect(jobRes.body.job.status).toBe('pending');
-    expect(jobRes.body.job.cost_halala).toBe(150); // 15 halala/min × 10 min
+    expect(jobRes.body.job.cost_halala).toBe(90); // 9 halala/min × 10 min
 
     const jobId = jobRes.body.job.job_id;
 
     // Verify balance was deducted at submit (pre-pay)
     const renterAfterSubmit = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId);
-    expect(renterAfterSubmit.balance_halala).toBe(50_000 - 150);
+    expect(renterAfterSubmit.balance_halala).toBe(50_000 - 90);
 
     // 4. Provider daemon picks up job (GET /assigned)
     const assignedRes = await request(app).get(`/api/jobs/assigned?key=${providerKey}`);

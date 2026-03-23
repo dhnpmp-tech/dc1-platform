@@ -512,7 +512,7 @@ describe('Job Submission — POST /api/jobs/submit', () => {
     const { key: renterKey } = seedRenter(1); // 1 halala — not enough
     const { id: providerId } = seedProvider();
 
-    const res = await submitJob(renterKey, providerId); // 5 min × 15 hal/min = 75 hal needed
+    const res = await submitJob(renterKey, providerId); // 5 min × 9 hal/min = 45 hal needed
     expect(res.status).toBe(402);
     expect(res.body.error).toMatch(/insufficient balance/i);
     expect(res.body.shortfall_halala).toBeGreaterThan(0);
@@ -553,9 +553,9 @@ describe('Job Submission — POST /api/jobs/submit', () => {
 
     await submitJob(renterKey, providerId, { duration_minutes: 5 });
 
-    // llm_inference: 15 hal/min × 5 min = 75 hal deducted
+    // llm_inference: 9 hal/min × 5 min = 45 hal deducted
     const renter = mockDb._tables.renters.find(r => r.id === renterId);
-    expect(renter.balance_halala).toBe(initBalance - 75);
+    expect(renter.balance_halala).toBe(initBalance - 45);
   });
 
   test('second job to same busy provider is queued (not pending)', async () => {
@@ -781,7 +781,7 @@ describe('Transient failure retry logic — POST /api/jobs/:job_id/result', () =
     const jobId = submitRes.body.job.job_id;
 
     const afterSubmit = mockDb._tables.renters.find(r => r.id === renterId).balance_halala;
-    expect(afterSubmit).toBe(initBalance - 75); // 15 hal/min × 5 min
+    expect(afterSubmit).toBe(initBalance - 45); // 9 hal/min × 5 min
 
     await request(app).get(`/api/jobs/assigned?key=${providerKey}`);
 
@@ -1094,9 +1094,9 @@ describe('custom_container job type', () => {
 
 describe('Billing accuracy — 75/25 split', () => {
   const cases = [
-    { type: 'llm_inference',    rate: 15, mins: 5 },
-    { type: 'image_generation', rate: 20, mins: 5 },
-    { type: 'vllm_serve',       rate: 20, mins: 10 },
+    { type: 'llm_inference',    rate: 9,  mins: 5 },
+    { type: 'image_generation', rate: 10, mins: 5 },
+    { type: 'vllm_serve',       rate: 9,  mins: 10 },
   ];
 
   for (const { type, rate, mins } of cases) {

@@ -614,7 +614,7 @@ describe('Escrow integration with payment flow', () => {
     const balanceAfterTopup = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId).balance_halala;
     expect(balanceAfterTopup).toBe(500);
 
-    // Submit 1-minute llm_inference job (cost = 15 halala/min × 1 min = 15 halala)
+    // Submit 1-minute llm_inference job (cost = 9 halala/min × 1 min = 9 halala)
     const submitRes = await request(app)
       .post('/api/jobs/submit')
       .set('x-renter-key', renterKey)
@@ -622,10 +622,10 @@ describe('Escrow integration with payment flow', () => {
               params: { prompt: 'test', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' } });
 
     expect(submitRes.status).toBe(201);
-    expect(submitRes.body.job.cost_halala).toBe(15);
+    expect(submitRes.body.job.cost_halala).toBe(9);
 
     const balanceAfterSubmit = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId).balance_halala;
-    expect(balanceAfterSubmit).toBe(500 - 15); // 485
+    expect(balanceAfterSubmit).toBe(500 - 9); // 491
   });
 
   it('webhook credits balance → sufficient for job → job submitted successfully', async () => {
@@ -671,7 +671,7 @@ describe('Escrow integration with payment flow', () => {
     const jobId = submitRes.body.job.job_id;
 
     const balanceAfterSubmit = db.get('SELECT balance_halala FROM renters WHERE id = ?', renterId).balance_halala;
-    expect(balanceAfterSubmit).toBe(50_000 - 75); // 15 hal/min × 5 min = 75
+    expect(balanceAfterSubmit).toBe(50_000 - 45); // 9 hal/min × 5 min = 45
 
     // Provider picks up
     await request(app).get(`/api/jobs/assigned?key=${providerKey}`);
