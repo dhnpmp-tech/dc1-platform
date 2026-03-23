@@ -139,9 +139,12 @@ const StatCard: React.FC<StatCardProps> = ({
 export default function BillingPage() {
   const { t } = useLanguage()
   const [loading, setLoading] = useState(true)
+  const [hasUsage, setHasUsage] = useState(true)
 
   useEffect(() => {
     setLoading(false)
+    // Check if there's actual usage data - in production, this would come from API
+    // For now, we'll show placeholder data
   }, [])
 
   const navItems = [
@@ -213,6 +216,20 @@ export default function BillingPage() {
                 <div className="px-6 py-12 text-center text-dc1-text-muted">
                   <p>Loading usage data...</p>
                 </div>
+              ) : !hasUsage ? (
+                <div className="px-6 py-12 text-center">
+                  <p className="text-2xl mb-3">🚀</p>
+                  <p className="text-dc1-text-primary font-semibold">No inference jobs yet</p>
+                  <p className="text-dc1-text-secondary mt-2">
+                    You haven't submitted any jobs this month. Get started with a simple inference request:
+                  </p>
+                  <Link
+                    href="/renter/jobs"
+                    className="mt-4 inline-block text-dc1-accent-primary hover:underline font-medium"
+                  >
+                    View Quickstart Guide →
+                  </Link>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
@@ -278,26 +295,50 @@ export default function BillingPage() {
               )}
             </div>
 
-            {/* CTA Buttons */}
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="#topup"
-                className="px-4 py-2 bg-dc1-accent-primary text-white rounded-lg hover:opacity-90 transition font-medium"
-              >
-                Add Credits
-              </Link>
-              <Link
-                href="/renter/settings"
-                className="px-4 py-2 border border-dc1-border text-dc1-text-primary rounded-lg hover:bg-dc1-bg-secondary transition font-medium"
-              >
-                View API Keys
-              </Link>
-              <button
-                onClick={() => alert('CSV export coming soon')}
-                className="px-4 py-2 border border-dc1-border text-dc1-text-primary rounded-lg hover:bg-dc1-bg-secondary transition font-medium"
-              >
-                Download Invoice
-              </button>
+            {/* CTA Buttons & Quick Actions */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Primary Action */}
+              <div className="bg-dc1-accent-primary bg-opacity-10 border border-dc1-accent-primary rounded-lg p-4">
+                <p className="text-sm font-semibold text-dc1-accent-primary mb-2">💳 Add Funds</p>
+                <p className="text-sm text-dc1-text-secondary mb-3">
+                  Top up your account to continue running inference jobs
+                </p>
+                <Link
+                  href="#topup"
+                  className="inline-block px-4 py-2 bg-dc1-accent-primary text-white rounded-lg hover:opacity-90 transition font-medium text-sm"
+                >
+                  Add Credits Now
+                </Link>
+              </div>
+
+              {/* Secondary Action */}
+              <div className="bg-dc1-bg-secondary border border-dc1-border rounded-lg p-4">
+                <p className="text-sm font-semibold text-dc1-text-primary mb-2">🔑 API Integration</p>
+                <p className="text-sm text-dc1-text-secondary mb-3">
+                  Manage your API keys and integrate DCP into your application
+                </p>
+                <Link
+                  href="/renter/settings"
+                  className="inline-block px-4 py-2 border border-dc1-border text-dc1-text-primary rounded-lg hover:bg-dc1-border transition font-medium text-sm"
+                >
+                  Manage Keys
+                </Link>
+              </div>
+
+              {/* Tertiary Action */}
+              <div className="bg-dc1-bg-secondary border border-dc1-border rounded-lg p-4">
+                <p className="text-sm font-semibold text-dc1-text-primary mb-2">📄 Invoices</p>
+                <p className="text-sm text-dc1-text-secondary mb-3">
+                  Download invoices and billing reports for accounting
+                </p>
+                <button
+                  disabled
+                  title="Coming in next update"
+                  className="inline-block px-4 py-2 border border-dc1-border text-dc1-text-muted rounded-lg opacity-50 cursor-not-allowed font-medium text-sm"
+                >
+                  Export Reports
+                </button>
+              </div>
             </div>
 
           </div>
