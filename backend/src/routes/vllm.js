@@ -50,6 +50,37 @@ function requireRenter(req, res, next) {
   const key = getRenterKey(req);
   if (!key) return res.status(401).json({ error: 'Renter API key required (?key= or x-renter-key)' });
 
+  // Sprint 25 Gap 2: check scoped sub-keys first (renter_api_keys table)
+  const now = new Date().toISOString();
+  const scopedKey = db.get(
+    `SELECT k.id, k.renter_id, k.scopes, k.expires_at, k.revoked_at,
+            r.id AS r_id, r.api_key, r.balance_halala, r.status
+     FROM renter_api_keys k
+     JOIN renters r ON r.id = k.renter_id
+     WHERE k.key = ? AND r.status = 'active' AND k.revoked_at IS NULL`,
+    key
+  );
+
+  if (scopedKey) {
+    if (scopedKey.expires_at && scopedKey.expires_at < now) {
+      return res.status(403).json({ error: 'API key has expired' });
+    }
+    let scopes = [];
+    try { scopes = JSON.parse(scopedKey.scopes || '[]'); } catch (_) {}
+    if (!scopes.includes('inference') && !scopes.includes('admin')) {
+      return res.status(403).json({ error: 'API key does not have inference scope' });
+    }
+    // Touch last_used_at (best-effort, non-blocking)
+    try {
+      db.prepare('UPDATE renter_api_keys SET last_used_at = ? WHERE id = ?').run(now, scopedKey.id);
+    } catch (_) {}
+    req.renter = { id: scopedKey.r_id, api_key: scopedKey.api_key, balance_halala: scopedKey.balance_halala, status: scopedKey.status };
+    req.renterKey = key;
+    req.renterKeyScopes = scopes;
+    return next();
+  }
+
+  // Fall back to master key (renters.api_key) — full access
   const renter = db.get(
     'SELECT id, api_key, balance_halala, status FROM renters WHERE api_key = ? AND status = ?',
     key,
@@ -59,6 +90,7 @@ function requireRenter(req, res, next) {
 
   req.renter = renter;
   req.renterKey = key;
+  req.renterKeyScopes = ['admin'];
   return next();
 }
 

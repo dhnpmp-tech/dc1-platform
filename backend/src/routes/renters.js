@@ -889,6 +889,113 @@ router.post(['/me/rotate-key', '/rotate-key'], (req, res) => {
   }
 });
 
+// ─── SCOPED API KEY MANAGEMENT — Sprint 25 Gap 2 ─────────────────────────────
+// Master key (renters.api_key) always has full access.
+// Sub-keys in renter_api_keys have explicit scope grants.
+// Valid scopes: "inference" (submit vLLM jobs), "billing" (view balance), "admin" (all)
+const VALID_KEY_SCOPES = new Set(['inference', 'billing', 'admin']);
+const MAX_SCOPED_KEYS_PER_RENTER = 20;
+
+// POST /api/renters/me/keys — create a scoped sub-key
+router.post('/me/keys', (req, res) => {
+  try {
+    const masterKey = req.headers['x-renter-key'] || req.query.key;
+    if (!masterKey) return res.status(401).json({ error: 'Master API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', masterKey, 'active');
+    if (!renter) return res.status(403).json({ error: 'Invalid or inactive master API key' });
+
+    const rawScopes = req.body?.scopes;
+    const scopes = Array.isArray(rawScopes) ? rawScopes.filter(s => VALID_KEY_SCOPES.has(s)) : ['inference'];
+    if (scopes.length === 0) {
+      return res.status(400).json({ error: `Invalid scopes. Valid values: ${[...VALID_KEY_SCOPES].join(', ')}` });
+    }
+
+    const label = typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 80) : null;
+    const rawExpiry = req.body?.expires_at;
+    const expiresAt = rawExpiry && !isNaN(Date.parse(rawExpiry)) ? new Date(rawExpiry).toISOString() : null;
+
+    const activeCount = db.get(
+      'SELECT COUNT(*) AS c FROM renter_api_keys WHERE renter_id = ? AND revoked_at IS NULL',
+      renter.id
+    );
+    if (Number(activeCount?.c || 0) >= MAX_SCOPED_KEYS_PER_RENTER) {
+      return res.status(429).json({ error: `Maximum ${MAX_SCOPED_KEYS_PER_RENTER} active sub-keys per account` });
+    }
+
+    const id = crypto.randomUUID();
+    const key = `dc1-sk-${crypto.randomBytes(20).toString('hex')}`;
+    const now = new Date().toISOString();
+    runStatement(
+      'INSERT INTO renter_api_keys (id, renter_id, key, label, scopes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      id, renter.id, key, label, JSON.stringify(scopes), expiresAt, now
+    );
+
+    return res.status(201).json({ id, key, label, scopes, expires_at: expiresAt, created_at: now });
+  } catch (error) {
+    console.error('Scoped key create error:', error);
+    return res.status(500).json({ error: 'Failed to create API key' });
+  }
+});
+
+// GET /api/renters/me/keys — list active scoped sub-keys
+router.get('/me/keys', (req, res) => {
+  try {
+    const masterKey = req.headers['x-renter-key'] || req.query.key;
+    if (!masterKey) return res.status(401).json({ error: 'Master API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', masterKey, 'active');
+    if (!renter) return res.status(403).json({ error: 'Invalid or inactive master API key' });
+
+    const keys = db.all(
+      `SELECT id, label, scopes, expires_at, last_used_at, created_at,
+              CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END AS revoked
+       FROM renter_api_keys
+       WHERE renter_id = ?
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      renter.id
+    ).map(k => ({
+      id: k.id,
+      label: k.label,
+      scopes: (() => { try { return JSON.parse(k.scopes); } catch (_) { return []; } })(),
+      expires_at: k.expires_at,
+      last_used_at: k.last_used_at,
+      created_at: k.created_at,
+      revoked: Boolean(k.revoked),
+    }));
+
+    return res.json({ keys });
+  } catch (error) {
+    console.error('Scoped key list error:', error);
+    return res.status(500).json({ error: 'Failed to list API keys' });
+  }
+});
+
+// DELETE /api/renters/me/keys/:keyId — revoke a scoped sub-key
+router.delete('/me/keys/:keyId', (req, res) => {
+  try {
+    const masterKey = req.headers['x-renter-key'] || req.query.key;
+    if (!masterKey) return res.status(401).json({ error: 'Master API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', masterKey, 'active');
+    if (!renter) return res.status(403).json({ error: 'Invalid or inactive master API key' });
+
+    const keyId = req.params.keyId;
+    if (!keyId) return res.status(400).json({ error: 'Key ID required' });
+
+    const now = new Date().toISOString();
+    const result = runStatement(
+      'UPDATE renter_api_keys SET revoked_at = ? WHERE id = ? AND renter_id = ? AND revoked_at IS NULL',
+      now, keyId, renter.id
+    );
+    if ((result?.changes || 0) === 0) {
+      return res.status(404).json({ error: 'Key not found or already revoked' });
+    }
+    return res.json({ success: true, revoked_at: now });
+  } catch (error) {
+    console.error('Scoped key revoke error:', error);
+    return res.status(500).json({ error: 'Failed to revoke API key' });
+  }
+});
+
 // GET /api/renters/me/data-export — PDPL right to access/export
 // Alias kept for backwards compatibility: /api/renters/me/export
 router.get(['/me/data-export', '/me/export'], renterDataExportLimiter, (req, res) => {

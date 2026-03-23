@@ -947,6 +947,27 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_api_key_rotations_account_time ON api_key_rotations(account_type, account_id, rotated_at DESC)`);
 
+// ─── SCOPED RENTER API KEYS TABLE ─── Sprint 25 Gap 2
+// Sub-keys with explicit scope grants; master renters.api_key retains full access.
+// scopes: JSON array of allowed operations, e.g. ["inference", "billing"]
+// Valid scopes: "inference" (submit vLLM jobs), "billing" (view balance/payments), "admin" (all)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS renter_api_keys (
+    id TEXT PRIMARY KEY,
+    renter_id INTEGER NOT NULL,
+    key TEXT NOT NULL UNIQUE,
+    label TEXT,
+    scopes TEXT NOT NULL DEFAULT '["inference"]',
+    expires_at TEXT,
+    revoked_at TEXT,
+    last_used_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (renter_id) REFERENCES renters(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_key ON renter_api_keys(key)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_renter ON renter_api_keys(renter_id, revoked_at)`);
+
 // ─── IMAGE SECURITY TABLES ───
 // Trivy scan evidence + approved image digest pinning for container execution policy.
 db.exec(`
