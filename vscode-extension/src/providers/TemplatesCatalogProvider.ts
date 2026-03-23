@@ -78,7 +78,7 @@ export class TemplatesCatalogProvider implements vscode.TreeDataProvider<vscode.
   private _templates: DockerTemplate[] = [];
   private _loading = false;
   private _error: string | undefined;
-  private _refreshTimer: NodeJS.Timer | undefined;
+  private _refreshTimer: NodeJS.Timeout | undefined;
 
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;

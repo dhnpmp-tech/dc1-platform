@@ -77,7 +77,7 @@ export class ModelsCatalogProvider implements vscode.TreeDataProvider<vscode.Tre
   private _models: Model[] = [];
   private _loading = false;
   private _error: string | undefined;
-  private _refreshTimer: NodeJS.Timer | undefined;
+  private _refreshTimer: NodeJS.Timeout | undefined;
 
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;

@@ -160,6 +160,7 @@ export interface DockerTemplate {
   icon?: string;
   difficulty?: string;
   tier?: string;
+  params?: Record<string, unknown>;
 }
 
 export interface Model {
