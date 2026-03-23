@@ -1146,6 +1146,22 @@ router.post('/submit', requireRenter, (req, res) => {
       return res.status(400).json({ error: `Invalid job_type. Allowed: ${[...ALLOWED_JOB_TYPES].join(', ')}` });
     }
 
+    // DCP-SEC-001: Reject Jupyter jobs with default or missing NOTEBOOK_TOKEN (HIGH)
+    // 'dc1jupyter' is publicly visible in the repo; any attacker can authenticate
+    // to a renter notebook and execute arbitrary code / exfiltrate data from the GPU.
+    const isJupyterJob = resolvedTemplate?.id === 'jupyter-gpu'
+      || (job_type === 'training' && bodyParams?.script_type === 'jupyter');
+    if (isJupyterJob) {
+      const notebookToken = bodyParams?.NOTEBOOK_TOKEN;
+      const WEAK_TOKENS = new Set(['dc1jupyter', '', 'jupyter', 'password', 'token']);
+      if (!notebookToken || WEAK_TOKENS.has(String(notebookToken).trim())) {
+        return res.status(400).json({
+          error: 'NOTEBOOK_TOKEN must be a unique, non-default value. Generate a random token (e.g. a UUID) and pass it as params.NOTEBOOK_TOKEN.',
+          code: 'WEAK_NOTEBOOK_TOKEN',
+        });
+      }
+    }
+
     // Block raw Python task_spec from renters — all execution must go through templates
     // Raw Python means arbitrary code execution on provider hardware
     if (looksLikeRawPythonTaskSpec(task_spec)) {

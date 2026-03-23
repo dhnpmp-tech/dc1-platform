@@ -5,12 +5,11 @@
   "image": "dc1/general-worker:latest",
   "job_type": "training",
   "env_vars": [
-    { "key": "NOTEBOOK_TOKEN", "label": "Notebook Access Token", "default": "dc1jupyter", "required": false },
+    { "key": "NOTEBOOK_TOKEN", "label": "Notebook Access Token", "default": "", "required": true },
     { "key": "PORT", "label": "Port", "default": "8888", "required": false }
   ],
   "params": {
-    "script_type": "jupyter",
-    "token": "dc1jupyter"
+    "script_type": "jupyter"
   },
   "min_vram_gb": 4,
   "estimated_price_sar_per_hour": 9.0,
