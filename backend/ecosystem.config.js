@@ -117,6 +117,20 @@ module.exports = {
       env: {
         NODE_ENV: 'production'
       }
+    },
+    {
+      name: 'dcp-log-rotation-cron',
+      script: '/bin/bash',
+      args: '-lc "/root/dc1-platform/scripts/rotate-logs.sh"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '0 4 * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production'
+      }
     }
   ]
 };
