@@ -3660,6 +3660,61 @@ router.post('/test', requireAdminAuth, (req, res) => {
   }
 });
 
+// ============================================================================
+// GET /api/jobs/scheduler/health - Admin scheduler health metrics
+// ============================================================================
+router.get('/scheduler/health', requireAdminAuth, (req, res) => {
+  try {
+    const now = new Date();
+    const stats = {
+      timestamp: now.toISOString(),
+      queued: db.all('SELECT COUNT(*) as count FROM jobs WHERE status = ?', 'queued')?.[0]?.count || 0,
+      pending: db.all('SELECT COUNT(*) as count FROM jobs WHERE status = ?', 'pending')?.[0]?.count || 0,
+      assigned: db.all('SELECT COUNT(*) as count FROM jobs WHERE status = ?', 'assigned')?.[0]?.count || 0,
+      running: db.all('SELECT COUNT(*) as count FROM jobs WHERE status = ?', 'running')?.[0]?.count || 0,
+      providers_online: db.all(
+        `SELECT COUNT(*) as count FROM providers WHERE last_heartbeat > datetime('now', '-2 minutes')`
+      )?.[0]?.count || 0,
+      providers_degraded: db.all(
+        `SELECT COUNT(*) as count FROM providers WHERE last_heartbeat BETWEEN datetime('now', '-10 minutes') AND datetime('now', '-2 minutes')`
+      )?.[0]?.count || 0,
+      providers_offline: db.all(
+        `SELECT COUNT(*) as count FROM providers WHERE last_heartbeat < datetime('now', '-10 minutes') OR last_heartbeat IS NULL`
+      )?.[0]?.count || 0,
+    };
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Scheduler health check error:', error);
+    res.status(500).json({ error: 'Failed to fetch scheduler health metrics' });
+  }
+});
+
+// ============================================================================
+// GET /api/jobs/scheduler/diagnostics/:job_id - Admin scheduler diagnostics
+// ============================================================================
+router.get('/scheduler/diagnostics/:job_id', requireAdminAuth, (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const getJobScheduler = () => require('../services/jobScheduler');
+    const scheduler = getJobScheduler();
+    const report = scheduler.getSchedulingReport(job, 10); // Top 10 candidate providers
+
+    res.json({
+      job_id: job.job_id,
+      status: job.status,
+      provider_id: job.provider_id,
+      gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
+      scheduling_analysis: report
+    });
+  } catch (error) {
+    console.error('Scheduler diagnostics error:', error);
+    res.status(500).json({ error: 'Failed to generate scheduler diagnostics' });
+  }
+});
+
 module.exports = router;
 module.exports.calculateCostHalala = calculateCostHalala;
 module.exports.COST_RATES = COST_RATES;
