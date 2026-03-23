@@ -521,7 +521,7 @@ async function submitAndAwait(req) {
       throw new Error('INSUFFICIENT_BALANCE_OR_CONCURRENT_UPDATE');
     }
 
-    return db.prepare(
+    const jobInsert = db.prepare(
       `INSERT INTO jobs (
         job_id,
         provider_id,
@@ -557,6 +557,30 @@ async function submitAndAwait(req) {
       now,
       8
     );
+
+    // Create serve_sessions record for metering (Sprint 25 Gap 1)
+    // This tracks token usage and billing for this vLLM inference session
+    const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour expiry
+    try {
+      db.prepare(
+        `INSERT INTO serve_sessions (
+          id, job_id, provider_id, model, port, status, started_at, expires_at,
+          total_inferences, total_tokens, total_billed_halala, created_at, updated_at
+        ) VALUES (?, ?, NULL, ?, 0, 'serving', ?, ?, 0, 0, 0, ?, ?)`
+      ).run(
+        `session-${jobId}`,
+        jobId,
+        modelReq.model_id,
+        now,
+        expiresAt,
+        now,
+        now
+      );
+    } catch (_) {
+      // Non-fatal — serve_sessions creation failure should not block job creation
+    }
+
+    return jobInsert;
   });
 
   let insert;
@@ -595,6 +619,8 @@ async function submitAndAwait(req) {
   const actualCompletionTokens = extracted.completion_tokens != null
     ? extracted.completion_tokens
     : approximateTokenCount(extracted.text);
+  const totalTokensActual = promptTokens + actualCompletionTokens;
+
   try {
     runStatement(
       'UPDATE jobs SET prompt_tokens = ?, completion_tokens = ?, updated_at = ? WHERE job_id = ?',
@@ -605,6 +631,38 @@ async function submitAndAwait(req) {
     );
   } catch (_) {
     // Non-fatal — token write-back failure must not block the inference response
+  }
+
+  // Update serve_sessions metering (Sprint 25 Gap 1 — per-token billing)
+  try {
+    // Get token rate for this model
+    const rateRecord = db.get(
+      'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+      modelReq.model_id
+    ) || db.get(
+      'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+      '__default__'
+    );
+
+    const tokenRateHalala = rateRecord?.token_rate_halala || 1;
+    const inferenceCostHalala = Math.max(1, totalTokensActual * tokenRateHalala);
+
+    // Update serve_sessions with metering data
+    runStatement(
+      `UPDATE serve_sessions SET
+         total_inferences = total_inferences + 1,
+         total_tokens = total_tokens + ?,
+         total_billed_halala = total_billed_halala + ?,
+         last_inference_at = ?
+       WHERE job_id = ?`,
+      totalTokensActual,
+      inferenceCostHalala,
+      now,
+      jobId
+    );
+  } catch (_) {
+    // Non-fatal — metering update failure must not block the inference response
+    // (billing audit will catch missing serve_sessions updates)
   }
 
   const responsePayload = buildOpenAiResponse({
