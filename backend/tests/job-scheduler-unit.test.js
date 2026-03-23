@@ -395,6 +395,31 @@ test('exports heartbeat thresholds', () => {
   assert.strictEqual(scheduler.HEARTBEAT_DEGRADED_THRESHOLD_S, 600);
 });
 
+// ─── GPU TYPE REGRESSION GUARDS ───
+
+test('matchGpuType - ML model name as gpu_type never matches real GPU (regression 66a4c60)', () => {
+  // HuggingFace model names (e.g. "meta-llama/Llama-3-8b-instruct") must NOT be
+  // used as gpu_type — they will never match any real provider GPU, causing all
+  // providers to be silently disqualified. jobs.js now uses gpu_requirements.gpu_type
+  // (hardware filter) instead of normalizeModelField(requestedModel) (ML model name).
+  const match = scheduler.matchGpuType('meta-llama/Llama-3-8b-instruct', 'RTX 4090');
+  assert.strictEqual(match.matched, false);
+  assert.strictEqual(match.reason, 'no_match');
+});
+
+test('matchGpuType - null gpu_type accepts any provider GPU (no hardware filter)', () => {
+  // When callers omit gpu_requirements.gpu_type, jobs.js passes null, meaning
+  // any provider with sufficient VRAM is acceptable — hardware-agnostic job.
+  const match = scheduler.matchGpuType(null, 'RTX 4090');
+  assert.strictEqual(match.matched, true);
+  assert.strictEqual(match.reason, 'no_requirement');
+});
+
+test('matchGpuType - another ML model name with slashes does not match GPU', () => {
+  const match = scheduler.matchGpuType('mistralai/Mistral-7B-Instruct-v0.3', 'A100');
+  assert.strictEqual(match.matched, false);
+});
+
 // ─── COMPLEX SCORING SCENARIOS ───
 
 test('scoring scenario - multiple factors combined', () => {
