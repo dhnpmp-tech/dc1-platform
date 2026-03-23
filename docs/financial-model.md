@@ -1,31 +1,39 @@
 # DCP Platform — Financial Model & Break-Even Analysis
 
-**Date:** 2026-03-19 | **Prepared by:** Budget Analyst
+**Date:** 2026-03-23 (Updated) | **Original:** 2026-03-19 | **Prepared by:** Budget Analyst
 **Purpose:** Informs pricing, hiring, and fundraising decisions.
-**Sources:** Cost Report (corrected 2026-03-19), Pricing Guide, CEO issues DCP-166 / DCP-209.
+**Sources:** Cost Model 100/100 (DCP-592), Cost-Control Report (DCP-436), Launch-Week Guardrails (DCP-539), Cost Report (corrected 2026-03-19).
 
 ---
 
 ## 1. Executive Summary
 
-| Metric | Value |
-|--------|-------|
-| Monthly fixed opex (SaaS floor) | **2,956 SAR** ($788) |
-| Monthly VPS cost (partner-subsidized) | **382 SAR** ($102) |
-| Monthly agent API cost (current sprint) | **~6,200 SAR** (~$1,653) |
-| **True monthly total (current)** | **~9,538 SAR** (~$2,543) |
-| **Optimized monthly total (Options 1+2+3)** | **~5,782 SAR** (~$1,542) |
-| Standard compute rate | **15 halala/min = 9 SAR/hr** |
-| Break-even vs. OPEX floor (25% util) | **~8 providers** |
-| Break-even vs. true total current (25% util) | **~24 providers** |
-| Break-even vs. true total optimized (25% util) | **~15 providers** |
-| Exchange rate | 1 USD = 3.75 SAR (fixed peg) |
+**UPDATED 2026-03-23 — Post-DCP-266 Cost Reductions Effective**
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Monthly fixed opex (SaaS floor) | **2,956 SAR** ($788) | Locked |
+| Monthly VPS cost (partner-subsidized) | **382 SAR** ($102) | Locked |
+| Monthly agent API cost (post-DCP-266) | **2,324 SAR** ($619) | ✅ Actual (was 6,200 pre-DCP-266) |
+| **Current monthly total** | **5,707 SAR** ($1,522) | ✅ Actual (down 40% from 9,538) |
+| **Launch-week guardrail (weekly cap)** | **1,313 SAR/week** | Green threshold |
+| Standard compute rate | **15 halala/min = 9 SAR/hr** | From pricing-guide.md |
+| Break-even vs. OPEX floor (25% util) | **~8 providers** | Unchanged |
+| Break-even vs. current total (25% util) | **~15 providers** | Updated (was 24) |
+| Break-even for renter-model | **48 renters @ 12.5k SAR avg spend** | Per DCP-592 100/100 model |
+| Exchange rate | 1 USD = 3.75 SAR (fixed peg) | Central bank fixed |
 
 ---
 
 ## 2. Monthly Cost Structure
 
-> **Three separate cost buckets** — not one pool. See the corrected [Cost Report](reports/2026-03-18-cost-report.md) for full detail.
+> **Three separate cost buckets** — not one pool. See detailed cost reports for full breakdown.
+>
+> **Latest financial documents (2026-03-23):**
+> - **DCP-592** ([Cost Model 100/100](cost-model-100-providers-100-renters.md)) — Scale-to-profitability analysis: 100 providers + 100 renters = 312.5k SAR revenue vs. 120k SAR COGS → 61.6% margin at 12.5k SAR avg renter spend
+> - **DCP-539** ([Launch-Week Guardrails](reports/2026-03-22-launch-week-burn-guardrails.md)) — Weekly cost tracking framework; Green ≤1,313 SAR/week, Red ≥1,445 SAR/week triggers P1–P3 cost-down bundle
+> - **DCP-436** ([Cost-Control Report](reports/2026-03-21-1900-cost-control-report.md)) — DCP-266 impact analysis; 44.7% burn reduction via Haiku downgrades
+> - **Financial Dashboard** ([Sprint 25](reports/2026-03-23-sprint25-financial-dashboard.md)) — Unified tracking framework linking cost, revenue, and break-even metrics
 
 ### Bucket 1: OPEX Floor — 2,956 SAR/mo (Fixed)
 
@@ -47,28 +55,19 @@ SaaS subscriptions that do not change with usage.
 | GitHub | 0 | $0 | Source control (free tier) |
 | **TOTAL** | **2,956** | **$787.73** | |
 
-### Bucket 2: Agent API Costs — ~6,200 SAR/mo (Variable)
+### Bucket 2: Agent API Costs — 2,324 SAR/mo (Post-DCP-266)
 
-Paperclip-managed AI compute. Sprint-inflated by 3–5×; steady-state is lower.
+Paperclip-managed AI compute. **DCP-266 executed March 23** — downgrade to Haiku-class models for non-core agents.
 
-| Agent | Projected Monthly (SAR) | Budget Target (SAR/mo) | Status |
-|-------|------------------------|------------------------|--------|
-| DevOps Automator | 1,137 | 400 | 🔴 Over |
-| Backend Architect | 1,095 | 400 | 🔴 Over |
-| CEO | 873 | 350 | 🔴 Over |
-| Frontend Developer | 845 | 300 | 🔴 Over |
-| Security Engineer | 590 | 250 | 🔴 Over |
-| QA Engineer | 498 | 250 | 🔴 Over |
-| Founding Engineer | 411 | 250 | 🔴 Over |
-| Budget Analyst | 333 | 150 | 🔴 Over |
-| DevRel Engineer | 162 | 100 | 🔴 Over |
-| ML Infra Engineer | 102 | 100 | 🟡 Marginal |
-| IDE Extension Dev | 81 | 75 | 🟡 Marginal |
-| P2P Network Eng | 53 | 75 | ✅ Under |
-| Blockchain Engineer | 20 | 50 | ✅ Under |
-| **TOTAL** | **~6,200** | **2,750** | 🔴 2.3× over target |
+**What changed:** 10 support/ops agents downgraded from Sonnet (expensive) to Haiku (75% cheaper). CEO, Core Engineers remain on Sonnet.
 
-_After optimization (Options 1+2+3): reduces to ~2,444 SAR/mo — see Section 7._
+| Impact | Before DCP-266 | After DCP-266 | Reduction |
+|--------|----------------|---------------|-----------|
+| Total Agent API cost/mo | ~6,200 SAR | **2,324 SAR** | **−62.6%** |
+| Monthly burn rate | 9,538 SAR | **5,707 SAR** | **−40.2%** |
+| Provider break-even (25% util) | 24 providers | **15 providers** | -9 providers |
+
+**Cost-down actions still available (DCP-539):** P1–P3 bundle worth additional 794 SAR/mo if launch-week spend crosses Red threshold (≥1,445 SAR/week).
 
 ### Bucket 3: VPS — 382 SAR/mo (Partner-Subsidized)
 
@@ -79,12 +78,17 @@ _After optimization (Options 1+2+3): reduces to ~2,444 SAR/mo — see Section 7.
 
 ### Combined Monthly Total
 
-| Bucket | Current (SAR/mo) | Optimized (SAR/mo) |
-|--------|-----------------|---------------------|
-| OPEX Floor (fixed) | 2,956 | 2,956 |
-| Agent API (variable) | ~6,200 | ~2,444 |
-| VPS (partner-subsidized) | 382 | 382 |
-| **TRUE TOTAL** | **~9,538** | **~5,782** |
+| Bucket | Pre-DCP-266 | Current (Post-DCP-266) | Further-Optimized (P1–P3) |
+|--------|-------------|----------------------|---------------------------|
+| OPEX Floor (fixed) | 2,956 | 2,956 | 2,956 |
+| Agent API (variable) | ~6,200 | **2,324** | ~1,530 (if P1–P3 apply) |
+| VPS (partner-subsidized) | 382 | 382 | 382 |
+| **MONTHLY TOTAL** | **~9,538** | **5,707** | **~4,868** |
+| **Status** | 93% over ceiling | Still 93% over ceiling | Would be 65% over |
+
+**Key dates:**
+- March 23: DCP-266 executed (Haiku downgrades: 6,200 → 2,324 SAR/mo)
+- Launch-week activation: P1–P3 cost-down actions available if weekly spend ≥1,445 SAR
 
 ---
 
@@ -176,13 +180,13 @@ At 25% utilization (6 hrs/day active):
 Revenue per provider/mo = 6 × 30 × 9 × 0.25 = 405 SAR
 ```
 
-### B. Break-Even by Cost Baseline
+### B. Break-Even by Cost Baseline (UPDATED 2026-03-23)
 
-| Cost Baseline | Monthly Cost (SAR) | Providers @ 10% util | Providers @ 25% util | Providers @ 50% util |
-|---------------|-------------------|---------------------|---------------------|---------------------|
-| OPEX floor only | 2,956 | **~19** | **~8** | **~4** |
-| True total (current) | 9,538 | **~59** | **~24** | **~12** |
-| True total (optimized) | 5,782 | **~36** | **~15** | **~8** |
+| Cost Baseline | Monthly Cost (SAR) | Providers @ 10% util | Providers @ 25% util | Providers @ 50% util | Status |
+|---------------|-------------------|---------------------|---------------------|---------------------|--------|
+| OPEX floor only | 2,956 | **~19** | **~8** | **~4** | Achievable Q2 |
+| Post-DCP-266 actual | **5,707** | **~35** | **~15** | **~7** | ✅ Current |
+| Further-optimized (P1–P3) | ~4,868 | ~30 | ~13 | ~6 | If launch-week Red threshold |
 
 _Calculations: util% hrs/day = 10%→2.4h, 25%→6h, 50%→12h. Revenue/provider/mo = hrs×30×9×0.25_
 
@@ -363,6 +367,19 @@ These 5 KPIs must be reported every Monday to assess platform health:
 
 ---
 
-_Prepared by: Budget Analyst (DCP-209)_
-_Sources: [Cost Report (corrected)](reports/2026-03-18-cost-report.md) · [Pricing Guide](pricing-guide.md) · CEO DCP-166 / DCP-209 briefs_
+---
+
+## Update History
+
+| Date | Update | Document | Impact |
+|------|--------|----------|--------|
+| 2026-03-23 | Post-DCP-266 cost refresh | DCP-266 execution, DCP-436 cost-control | Burn down to 5,707 SAR/mo (−40%); break-even now 15 providers |
+| 2026-03-23 | Added 100/100 scale model | DCP-592 cost model | 312.5k SAR revenue @ 100 renters + 100 providers; 61.6% margin |
+| 2026-03-23 | Added launch-week framework | DCP-539 guardrails | Weekly thresholds, cost-down actions, tracking protocol |
+| 2026-03-19 | Initial model | DCP-209 | Pre-DCP-266 baseline (9,538 SAR/mo burn) |
+
+---
+
+_Last updated: 2026-03-23 by Budget Analyst (Paperclip session)_
+_Sources: [DCP-592 Cost Model](cost-model-100-providers-100-renters.md) · [DCP-539 Guardrails](reports/2026-03-22-launch-week-burn-guardrails.md) · [DCP-436 Cost Control](reports/2026-03-21-1900-cost-control-report.md) · [Sprint 25 Dashboard](reports/2026-03-23-sprint25-financial-dashboard.md) · [Pricing Guide](pricing-guide.md)_
 _All figures in SAR unless noted. Exchange rate: 1 USD = 3.75 SAR (fixed peg)._
