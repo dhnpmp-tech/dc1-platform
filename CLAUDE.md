@@ -71,3 +71,27 @@ docs/FOUNDER-STRATEGIC-BRIEF.md. This contains:
 
 ## Working Directory
 Always use /home/node/dc1-platform as your working directory.
+
+
+## FOUNDER DIRECTIVE — 2026-03-23 14:00 UTC — STRATEGIC BRIEF UPDATE + ESCROW DEFERRAL
+
+### 1. STRATEGIC BRIEF UPDATED
+docs/FOUNDER-STRATEGIC-BRIEF.md has been COMPLETELY REWRITTEN with the full 31-page Investment Research Thesis. New data includes:
+- 3-scenario financial projections (Conservative/Base/Optimistic) with 10-year tables
+- 3-method valuation framework (Cost-to-Recreate floor, Berkus floor, Comparable Transactions)
+- Recommended seed terms: $2M-$3M raise, $13.3M midpoint pre-money, 29x MOIC base case
+- Detailed provider economics per GPU model (RTX 4090, 4080, H100, H200) with payback periods
+- Buyer economics table showing 33-51% savings vs hyperscalers
+- Risk matrix with 8 risks rated by severity and probability
+- 3-phase strategic roadmap (Foundation 2026, Growth 2027-2028, Scale 2029-2031)
+- Expanded competitive landscape including Aethir and hyperscalers
+- PDPL compliance advantage as regulatory moat
+- Jevons Paradox argument for market expansion
+- Platform take rate: 15% blended
+ALL AGENTS: Re-read docs/FOUNDER-STRATEGIC-BRIEF.md for updated strategic data.
+
+### 2. ESCROW WALLET DEFERRED
+DCP-618, DCP-629, DCP-630 are now CANCELLED (deferred). Founder does not have a funded wallet yet. All escrow-dependent work should be skipped. Continue with all non-escrow Sprint 26 work. Escrow will be revisited when wallet is funded.
+
+### 3. NVIDIA CONTAINER CONFIRMED READY
+DCP-617 is confirmed done by the founder. The NVIDIA container is operational.
