@@ -1,16 +1,18 @@
-# DC1 Backend API — Express + Node.js Production
+# DCP Backend API — Express + Node.js Production
 
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apk add --no-cache curl tini
+# System dependencies:
+# - curl/tini: health check + signal handling
+# - python3/make/g++: required to compile better-sqlite3 native module on Alpine
+RUN apk add --no-cache curl tini python3 make g++
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Install production dependencies (better-sqlite3 compiles here)
 RUN npm ci --only=production
 
 # Copy source code
@@ -22,7 +24,7 @@ RUN mkdir -p logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=30s \
-  CMD curl -f http://localhost:8083/health || exit 1
+  CMD curl -f http://localhost:8083/api/health || exit 1
 
 EXPOSE 8083
 
