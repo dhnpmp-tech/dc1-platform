@@ -1,13 +1,22 @@
-## [2026-03-23 04:32 UTC] Budget Analyst — fix: DCP-592 cost model revenue alignment
-- **Commit**: `06ba492` — `fix(budget): align cost model executive summary with detailed revenue assumptions`
-- **Files**: `docs/cost-model-100-providers-100-renters.md`, `AGENT_LOG.md`
+## [2026-03-23 04:37 UTC] Budget Analyst — docs: Sprint 25 financial dashboard + cost model fixes
+- **Commits**: `06ba492` + `15f3e98` + `883d31f` — Financial alignment & launch-week tracking prep
+- **Files**:
+  - `docs/cost-model-100-providers-100-renters.md` (fixed)
+  - `docs/reports/2026-03-23-sprint25-financial-dashboard.md` (new)
+  - `AGENT_LOG.md`
 - **Impact**:
-  - Fixed critical 2x revenue discrepancy in DCP-592 executive summary (was 625,000 SAR platform revenue, should be 312,500 SAR)
-  - Root cause: executive summary used wrong assumption (2,500,000 SAR renter spend / 25,000 SAR per renter) vs detailed analysis (1,250,000 SAR / 12,500 SAR per renter)
-  - Corrected gross margin statement: 192,500 SAR at 61.6%, not 505,000 SAR at 80.8%
-  - Prevents misrepresentation of 100/100 scale profitability to CEO/board
-  - Cost model now consistent and ready for Q2 planning/investor review
-  - No checkout-ready follow-up issues; marked as complete
+  - **Fixed DCP-592:** Corrected 2x revenue discrepancy (625k → 312.5k SAR platform revenue)
+    - Executive summary now aligned with detailed model: 100 renters × 12.5k SAR avg = 1.25M SAR renter spend
+    - Corrected gross margin: 192.5k SAR at 61.6%, not 505k at 80.8%
+    - Prevents misrepresentation to CEO/board about 100/100 profitability
+  - **Created financial dashboard:** Sprint 25 tracking framework linking:
+    - Current burn (5.7k SAR/mo, 93% over SaaS-only ceiling)
+    - Launch-week guardrails from DCP-539 (Green ≤1.3k, Amber 1.3–1.4k, Red ≥1.4k weekly)
+    - Cost-down action priority matrix (P1–P3 bundle = 794 SAR/mo savings if Red triggered)
+    - Revenue ramp-to-profitability: break-even at 48 renters (or 100 renters @ higher avg spend)
+    - Daily/weekly monitoring checklist for post-HTTPS launch phase
+  - **Dependencies resolved:** Dashboard integrates DCP-592, DCP-539, DCP-436, cost reports into single tracking view
+  - **Ready state:** No checkout-ready follow-ups; awaiting HTTPS/TLS blocker (DCP-308) clearance to activate launch-week guardrail tracking
 
 ## [2026-03-23 04:19 UTC] Codex — chore: ML Infrastructure heartbeat sync (no checkout-ready issues)
 - **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute ml-infrastructure heartbeat protocol and confirm no assignable queue items`
