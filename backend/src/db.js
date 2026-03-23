@@ -189,16 +189,16 @@ db.exec(`
   )
 `);
 const DCP_FLOOR_PRICES = [
-  { gpu: 'RTX 3090',  usd_per_hr: 0.105 },  // $0.105/hr × 100 = 10,500 halala/hour
-  { gpu: 'RTX 4080',  usd_per_hr: 0.131 },  // $0.131/hr × 100 = 13,100 halala/hour
-  { gpu: 'RTX 4090',  usd_per_hr: 0.267 },  // $0.267/hr × 100 = 26,700 halala/hour
-  { gpu: 'RTX 5090',  usd_per_hr: 0.394 },  // $0.394/hr × 100 = 39,400 halala/hour
-  { gpu: 'A100 SXM',  usd_per_hr: 0.786 },  // $0.786/hr × 100 = 78,600 halala/hour
-  { gpu: 'H100 SXM',  usd_per_hr: 1.421 }, // $1.421/hr × 100 = 142,100 halala/hour
+  { gpu: 'RTX 3090',  usd_per_hr: 0.105 },  // $0.105/hr × 100,000 = 10,500 halala/hour
+  { gpu: 'RTX 4080',  usd_per_hr: 0.131 },  // $0.131/hr × 100,000 = 13,100 halala/hour
+  { gpu: 'RTX 4090',  usd_per_hr: 0.267 },  // $0.267/hr × 100,000 = 26,700 halala/hour
+  { gpu: 'RTX 5090',  usd_per_hr: 0.394 },  // $0.394/hr × 100,000 = 39,400 halala/hour
+  { gpu: 'A100 SXM',  usd_per_hr: 0.786 },  // $0.786/hr × 100,000 = 78,600 halala/hour
+  { gpu: 'H100 SXM',  usd_per_hr: 1.421 }, // $1.421/hr × 100,000 = 142,100 halala/hour
 ];
 try {
   DCP_FLOOR_PRICES.forEach(({ gpu, usd_per_hr }) => {
-    const halala_per_hour = Math.round(usd_per_hr * 100);
+    const halala_per_hour = Math.round(usd_per_hr * 100_000);
     db.prepare(
       `INSERT OR IGNORE INTO gpu_pricing (gpu_model, rate_halala, updated_at)
        VALUES (?, ?, CURRENT_TIMESTAMP)`
