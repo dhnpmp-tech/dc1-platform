@@ -154,9 +154,10 @@ export default function AdminDashboard() {
   }, [activeTab, isAuthed, fetchPricing])
 
   useEffect(() => {
-    if (!(activeTab === 'health' && isAuthed)) return
+    if (!isAuthed) return
+    if (activeTab !== 'overview' && activeTab !== 'health') return
     fetchMetrics()
-    const interval = setInterval(fetchMetrics, 30000)
+    const interval = setInterval(fetchMetrics, 60000)
     return () => clearInterval(interval)
   }, [activeTab, isAuthed, fetchMetrics])
 
@@ -255,6 +256,17 @@ export default function AdminDashboard() {
 
   const totalGpus = gpuBreakdown.reduce((sum: number, g: any) => sum + g.count, 0)
 
+  // KPI computations
+  const gmv = (stats?.total_revenue_halala || 0) / 100
+  const mrr = (metrics?.revenue.this_month_halala || 0) / 100
+  const totalRenters = stats?.total_renters || 0
+  const arpu = totalRenters > 0 ? gmv / totalRenters : 0
+  const breakevenTarget = 5357 // SAR/month from strategic brief
+  const breakevenPct = breakevenTarget > 0 ? Math.min((mrr / breakevenTarget) * 100, 100) : 0
+  const totalProviders = stats?.total_providers || 0
+  const onlineProviders = stats?.online_now || 0
+  const activationPct = totalProviders > 0 ? Math.min((onlineProviders / totalProviders) * 100, 100) : 0
+
   const tabClass = (tab: 'overview' | 'pricing' | 'health') =>
     `px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
       activeTab === tab
@@ -329,6 +341,80 @@ export default function AdminDashboard() {
               <StatCard label={t('admin.dc1_fees')} value={`${((stats?.total_dc1_fees_halala || 0) / 100).toFixed(2)} ${t('common.sar')}`} accent="amber" />
               <StatCard label={t('admin.today_revenue')} value={`${((stats?.today_revenue_halala || 0) / 100).toFixed(2)} ${t('common.sar')}`} accent="info" />
               <StatCard label={t('provider.jobs_completed')} value={String(stats?.completed_jobs || 0)} accent="default" />
+            </div>
+
+            {/* KPI Dashboard */}
+            <div className="card mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="section-heading">KPI Dashboard</h2>
+                {metricsLoading && (
+                  <span className="text-xs text-dc1-text-muted">Updating…</span>
+                )}
+              </div>
+
+              {/* Top KPI metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <StatCard
+                  label="GMV (Total)"
+                  value={`SAR ${gmv.toLocaleString('en-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  accent="success"
+                />
+                <StatCard
+                  label="MRR (This Month)"
+                  value={`SAR ${mrr.toLocaleString('en-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  accent="amber"
+                />
+                <StatCard
+                  label="ARPU"
+                  value={arpu > 0 ? `SAR ${arpu.toLocaleString('en-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                  accent="info"
+                />
+              </div>
+
+              {/* Break-even progress bar */}
+              <div className="mb-5">
+                <div className="flex items-center justify-between text-sm mb-2">
+                  <span className="text-dc1-text-secondary font-medium">Break-even Progress</span>
+                  <span className="text-dc1-text-secondary font-mono">
+                    SAR {mrr.toLocaleString('en-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / SAR 5,357
+                  </span>
+                </div>
+                <div className="w-full bg-dc1-surface-l2 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="h-3 rounded-full transition-all duration-700"
+                    style={{
+                      width: `${breakevenPct}%`,
+                      background: breakevenPct >= 100
+                        ? 'var(--color-status-success, #10b981)'
+                        : breakevenPct >= 50
+                          ? '#f59e0b'
+                          : '#00f0ff',
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-dc1-text-muted mt-1">
+                  {breakevenPct.toFixed(1)}% of SAR 5,357/month break-even target
+                </p>
+              </div>
+
+              {/* Provider activation rate */}
+              <div>
+                <div className="flex items-center justify-between text-sm mb-2">
+                  <span className="text-dc1-text-secondary font-medium">Provider Activation Rate</span>
+                  <span className="text-dc1-text-secondary font-mono">
+                    {onlineProviders} / {totalProviders} active
+                  </span>
+                </div>
+                <div className="w-full bg-dc1-surface-l2 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="bg-status-success h-3 rounded-full transition-all duration-700"
+                    style={{ width: `${activationPct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-dc1-text-muted mt-1">
+                  {activationPct.toFixed(1)}% activation rate (target: 60%)
+                </p>
+              </div>
             </div>
 
             {/* GPU Fleet */}
