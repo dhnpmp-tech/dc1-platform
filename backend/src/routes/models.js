@@ -15,6 +15,42 @@ const TIER_RANK = {
   tier_c: 3,
 };
 
+// Competitor pricing (SAR/hr) by minimum VRAM tier. Derived from strategic brief data.
+// DCP price is computed dynamically from the model's halala/min rate.
+const COMPETITOR_PRICING_BY_VRAM_TIER = [
+  { minVram: 80, vast_ai: 120.00, runpod: 160.00, aws: 480.00 },  // H100 class
+  { minVram: 40, vast_ai: 36.00,  runpod: 48.00,  aws: 144.00 },  // A100/A40 class
+  { minVram: 24, vast_ai: 10.00,  runpod: 14.00,  aws: 48.00  },  // RTX 4090 class
+  { minVram: 16, vast_ai: 10.00,  runpod: 14.00,  aws: 36.00  },  // RTX 4080 class
+  { minVram: 0,  vast_ai: 6.00,   runpod: 8.00,   aws: 24.00  },  // entry tier
+];
+
+// Arabic-capable model families and id fragments (case-insensitive)
+const ARABIC_MODEL_PATTERNS = [
+  'allam', 'jais', 'falcon-h1', 'falcon_h1', 'arabic',
+  'bge-m3', 'bge_m3', 'reranker-v2-m3', 'reranker_v2_m3',
+];
+
+// Map model_id fragments to docker-template ids
+const MODEL_TO_TEMPLATE_MAP = {
+  'allam': 'arabic-llm',
+  'jais': 'arabic-llm',
+  'falcon-h1': 'arabic-llm',
+  'qwen25': 'qwen25-7b',
+  'qwen2.5': 'qwen25-7b',
+  'llama-3-8b': 'llama3-8b',
+  'llama-3.1-8b': 'llama3-8b',
+  'mistral-7b': 'mistral-7b',
+  'nemotron-mini': 'nemotron-nano',
+  'nemotron-nano': 'nemotron-nano',
+  'nemotron-70b': 'nemotron-super',
+  'nemotron-super': 'nemotron-super',
+  'bge-m3': 'arabic-embeddings',
+  'bge-reranker': 'arabic-reranker',
+  'stable-diffusion-xl': 'sdxl',
+  'sdxl': 'sdxl',
+};
+
 function toNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
@@ -163,6 +199,54 @@ function estimateColdStartMs(model) {
   return 3200 + (minVram * 280);
 }
 
+function inferArabicCapability(modelId, family) {
+  const haystack = `${modelId || ''} ${family || ''}`.toLowerCase();
+  return ARABIC_MODEL_PATTERNS.some((pattern) => haystack.includes(pattern));
+}
+
+function inferTask(useCases, family) {
+  if (Array.isArray(useCases) && useCases.length > 0) return useCases;
+  const f = (family || '').toLowerCase();
+  if (f.includes('embed') || f.includes('bge')) return ['embed'];
+  if (f.includes('rerank')) return ['rerank'];
+  if (f.includes('diffusion') || f.includes('sdxl')) return ['image'];
+  return ['chat', 'instruct'];
+}
+
+function inferTemplateId(modelId) {
+  if (!modelId) return null;
+  const key = modelId.toLowerCase();
+  for (const [fragment, templateId] of Object.entries(MODEL_TO_TEMPLATE_MAP)) {
+    if (key.includes(fragment)) return templateId;
+  }
+  return null;
+}
+
+function inferPrefetchStatus(portfolio, availabilityStatus) {
+  if (!portfolio) return 'unavailable';
+  const prewarmClass = (portfolio.prewarm_class || '').toLowerCase();
+  if (prewarmClass === 'hot') return 'available';
+  if (prewarmClass === 'warm') return availabilityStatus === 'available' ? 'available' : 'pending';
+  return 'unavailable';
+}
+
+function buildCompetitorPricing(minVramGb, dcpSarPerHour) {
+  const tier = COMPETITOR_PRICING_BY_VRAM_TIER.find((t) => minVramGb >= t.minVram)
+    || COMPETITOR_PRICING_BY_VRAM_TIER[COMPETITOR_PRICING_BY_VRAM_TIER.length - 1];
+  const vastPrice = tier.vast_ai;
+  const savingsPct = vastPrice > 0
+    ? toFixedNumber(((vastPrice - dcpSarPerHour) / vastPrice) * 100, 0)
+    : 0;
+  return {
+    competitor_prices: {
+      vast_ai: vastPrice,
+      runpod: tier.runpod,
+      aws: tier.aws,
+    },
+    savings_pct: Math.max(0, savingsPct),
+  };
+}
+
 function getRenterKey(req) {
   const header = normalizeString(req.headers['x-renter-key'], { maxLen: 128, trim: false });
   const query = normalizeString(req.query.key, { maxLen: 128, trim: false });
@@ -295,11 +379,18 @@ function buildModelPayload(row, freshProviders, portfolioIndex) {
 
   const avgPriceSar = toNumber(row.avg_price_sar_per_min);
   const portfolio = resolvePortfolioMeta(row.model_id, portfolioIndex);
+  const availabilityStatus = capableFreshProviders.length > 0 ? 'available' : 'no_providers';
+
+  const defaultSarPerHour = toFixedNumber((defaultPriceHalalaPerMin * 60) / 100.0, 2);
+  const { competitor_prices, savings_pct } = buildCompetitorPricing(minVramGb, defaultSarPerHour);
 
   const payload = {
     model_id: row.model_id,
     display_name: row.display_name,
     family: row.family,
+    arabic: inferArabicCapability(row.model_id, row.family),
+    arabic_capability: inferArabicCapability(row.model_id, row.family),
+    task: inferTask(useCases, row.family),
     vram_gb: toNumber(row.vram_gb) || minVramGb,
     quantization: row.quantization,
     context_window: toInt(row.context_window, { min: 1, max: 10 * 1024 * 1024 }) || 4096,
@@ -309,17 +400,22 @@ function buildModelPayload(row, freshProviders, portfolioIndex) {
     availability: {
       providers_online: capableFreshProviders.length,
       providers_warm: warmFreshProviders.length,
-      status: capableFreshProviders.length > 0 ? 'available' : 'no_providers',
+      status: availabilityStatus,
     },
     pricing: {
       default_halala_per_min: defaultPriceHalalaPerMin,
       default_sar_per_min: toFixedNumber(defaultPriceHalalaPerMin / 100.0, 2),
+      default_sar_per_hour: defaultSarPerHour,
       avg_sar_per_min: Number.isFinite(avgPriceSar) ? avgPriceSar : toFixedNumber(defaultPriceHalalaPerMin / 100.0, 2),
       min_halala_per_min: fallbackMinHalala,
       max_halala_per_min: fallbackMaxHalala,
       min_sar_per_min: toFixedNumber(fallbackMinHalala / 100.0, 2),
       max_sar_per_min: toFixedNumber(fallbackMaxHalala / 100.0, 2),
+      competitor_prices,
+      savings_pct,
     },
+    template_id: inferTemplateId(row.model_id),
+    prefetch_status: inferPrefetchStatus(portfolio, availabilityStatus),
     estimated_cold_start_ms: estimateColdStartMs({
       benchmark,
       min_gpu_vram_gb: minVramGb,
@@ -672,6 +768,74 @@ router.get('/compare', (req, res) => {
   } catch (error) {
     console.error('Model compare error:', error);
     return res.status(500).json({ error: 'Failed to compare models' });
+  }
+});
+
+// GET /api/models/bundles/arabic-rag
+// Returns the complete Arabic RAG bundle config: BGE-M3 + reranker + ALLaM/JAIS.
+// Used by the one-click Arabic RAG template to resolve all required model components.
+router.get('/bundles/arabic-rag', (req, res) => {
+  try {
+    const models = getCatalogModels();
+    const findModel = (...candidates) => {
+      for (const id of candidates) {
+        const match = models.find((m) => m.model_id === id);
+        if (match) return match;
+      }
+      return null;
+    };
+
+    const embedder = findModel('bge-m3-embedding', 'bge-m3', 'BAAI/bge-m3');
+    const reranker = findModel('reranker-v2-m3', 'bge-reranker-v2-m3', 'BAAI/bge-reranker-v2-m3');
+    const llm = findModel('allam-7b-instruct', 'jais-13b-chat', 'qwen25-7b-instruct', 'llama-3-8b-instruct');
+
+    const bundle = {
+      bundle_id: 'arabic-rag',
+      display_name: 'Arabic RAG-as-a-Service',
+      description: 'Complete Arabic retrieval-augmented generation pipeline. PDPL-compliant, in-Kingdom processing.',
+      template_id: 'arabic-rag-complete',
+      components: {
+        embedder: embedder ? {
+          model_id: embedder.model_id,
+          display_name: embedder.display_name,
+          role: 'embedder',
+          hf_repo: 'BAAI/bge-m3',
+          task: ['embed'],
+          min_vram_gb: embedder.min_gpu_vram_gb,
+          status: embedder.availability.status,
+          prefetch_status: embedder.prefetch_status,
+        } : { model_id: 'bge-m3-embedding', role: 'embedder', hf_repo: 'BAAI/bge-m3', status: 'no_providers' },
+        reranker: reranker ? {
+          model_id: reranker.model_id,
+          display_name: reranker.display_name,
+          role: 'reranker',
+          hf_repo: 'BAAI/bge-reranker-v2-m3',
+          task: ['rerank'],
+          min_vram_gb: reranker.min_gpu_vram_gb,
+          status: reranker.availability.status,
+          prefetch_status: reranker.prefetch_status,
+        } : { model_id: 'reranker-v2-m3', role: 'reranker', hf_repo: 'BAAI/bge-reranker-v2-m3', status: 'no_providers' },
+        llm: llm ? {
+          model_id: llm.model_id,
+          display_name: llm.display_name,
+          role: 'generator',
+          task: llm.task,
+          arabic: llm.arabic,
+          min_vram_gb: llm.min_gpu_vram_gb,
+          status: llm.availability.status,
+          prefetch_status: llm.prefetch_status,
+          pricing: llm.pricing,
+        } : { model_id: 'allam-7b-instruct', role: 'generator', status: 'no_providers' },
+      },
+      use_cases: ['arabic-rag', 'document-processing', 'enterprise-search', 'pdpl-compliant'],
+      total_min_vram_gb: (embedder?.min_gpu_vram_gb || 8) + (reranker?.min_gpu_vram_gb || 8) + (llm?.min_gpu_vram_gb || 16),
+      ready: [embedder, reranker, llm].every((m) => m?.availability?.status === 'available'),
+    };
+
+    return res.json({ generated_at: new Date().toISOString(), bundle });
+  } catch (error) {
+    console.error('Arabic RAG bundle error:', error);
+    return res.status(500).json({ error: 'Failed to fetch Arabic RAG bundle' });
   }
 });
 

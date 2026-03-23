@@ -36,13 +36,36 @@ function loadTemplates() {
   }
 }
 
-// GET /api/templates — list all templates (optionally filter by tag)
+// Category → tag mappings for the ?category= filter
+const CATEGORY_TAG_MAP = {
+  llm:       ['llm', 'inference', 'chat', 'instruct', 'arabic'],
+  embedding: ['embedding', 'embed', 'rag'],
+  image:     ['image', 'diffusion', 'sdxl', 'stable-diffusion'],
+  notebook:  ['notebook', 'jupyter', 'python', 'scientific'],
+  training:  ['training', 'finetune', 'lora', 'qlora'],
+};
+
+// GET /api/templates — list all templates (optionally filter by tag or category)
 router.get('/', (req, res) => {
   const templates = loadTemplates();
-  const { tag } = req.query;
-  const filtered = tag
-    ? templates.filter(t => Array.isArray(t.tags) && t.tags.includes(tag))
-    : templates;
+  const { tag, category } = req.query;
+
+  let filtered = templates;
+  if (tag) {
+    filtered = filtered.filter(t => Array.isArray(t.tags) && t.tags.includes(tag));
+  }
+  if (category) {
+    const catKey = String(category).toLowerCase();
+    const catTags = CATEGORY_TAG_MAP[catKey];
+    if (catTags) {
+      filtered = filtered.filter(t =>
+        // Match on template category field directly, or by tag intersection
+        t.category === catKey ||
+        (Array.isArray(t.tags) && catTags.some(ct => t.tags.includes(ct)))
+      );
+    }
+  }
+
   // Strip approved_images from list response (security — returned only on whitelist endpoint)
   const safe = filtered.map(({ approved_images: _ai, ...t }) => t);
   res.json({ templates: safe, count: safe.length });
