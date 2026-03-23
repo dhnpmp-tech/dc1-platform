@@ -7,6 +7,9 @@
     "demo": "node demo.js",
     "demo:cid": "node demo-cid-discovery.js",
     "smoke:cid": "node smoke-cid-discovery.js",
+    "test": "node test-heartbeat.js",
+    "test:heartbeat": "node test-heartbeat.js",
+    "test:integration": "node test-integration.js",
     "bootstrap": "node bootstrap.js"
   },
   "dependencies": {

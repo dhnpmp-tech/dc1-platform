@@ -77,18 +77,55 @@ DCP provider data stays within the DCP network.
 | File | Role |
 |---|---|
 | `dc1-node.js` | Core libp2p node factory + DHT helper functions |
+| `dcp-discovery-scaffold.js` | Modern discovery API with CID-based compute environments |
 | `bootstrap.js` | Stable routing-only node to run on VPS (PM2) |
 | `provider-announce.js` | CLI tool called by `dc1_daemon.py` to write spec to DHT |
+| `heartbeat-protocol.js` | Node liveness tracking via periodic heartbeat announcements |
 | `demo.js` | Self-contained two-node demo — no VPS needed |
+| `test-heartbeat.js` | Heartbeat protocol unit tests |
+| `NAT-TRAVERSAL.md` | Circuit Relay v2, NAT hole-punching, and heartbeat integration guide |
 | `package.json` | Isolated package (`"type": "module"`) |
+
+## Heartbeat Protocol (New in Sprint 25)
+
+Providers emit periodic heartbeats (every 30 seconds) to track node liveness and health:
+
+```javascript
+import { createHeartbeatEmitter } from './heartbeat-protocol.js'
+
+const emitter = createHeartbeatEmitter(node, peerId, {
+  getMetrics: async () => ({
+    cpu_utilization: 45,
+    memory_utilization: 60,
+    gpu_utilization: 80,
+  }),
+  getStatus: () => 'healthy', // or 'degraded', 'warning'
+  intervalMs: 30000,
+})
+```
+
+Renters monitor provider health:
+
+```javascript
+import { resolveHeartbeats, summarizeHeartbeatHealth } from './heartbeat-protocol.js'
+
+const results = await resolveHeartbeats(node, providerPeerIds)
+const health = summarizeHeartbeatHealth(results)
+// { healthy: [...], degraded: [...], offline: [...], total: N }
+```
+
+For detailed NAT traversal and production deployment guidance, see [NAT-TRAVERSAL.md](./NAT-TRAVERSAL.md).
 
 ## Quick start
 
 ```bash
 cd p2p
 
+# Run heartbeat protocol tests (all pass locally)
+npm test
+
 # Run the discovery demo (no VPS needed):
-node demo.js
+npm run demo
 
 # Run CID publish+discover flow:
 npm run demo:cid
