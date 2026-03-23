@@ -142,9 +142,17 @@ P2P_DISCOVERY_ENABLE_MDNS=true            # Local LAN discovery (Phase 2+)
 
 | Item | Status | Phase | Details |
 |------|--------|-------|---------|
-| DHT bootstrap node running | ✅ Ready | 1 | `p2p/bootstrap.js` can be deployed |
-| Relay server deployment | ⏳ Optional | 2 | Circuit Relay v2 for NATed providers (not Phase 1 blocker) |
+| DHT bootstrap node deployment | ⏳ PENDING | 1 | Run `p2p/bootstrap.js` on VPS, capture peer ID, update `p2p/dc1-node.js` |
+| Bootstrap peer ID configuration | ⏳ PENDING | 1 | Replace placeholder in line 47 with actual peer ID from deployment |
+| Relay server deployment | ⏳ Optional | 1.5 | Circuit Relay v2 for NATed providers (Phase 1.5, not blocking launch) |
 | Monitor relay connection count | ⏳ Optional | 2 | For production scaling |
+
+**Bootstrap Node Task (DCP-P2P-001):**
+- **Effort:** 15 minutes
+- **Owner:** DevOps / Operator (requires VPS access)
+- **Steps:** See `docs/P2P-BOOTSTRAP-DEPLOYMENT.md`
+- **Blocker Status:** NOT BLOCKING Phase 1 (env var override works)
+- **Priority:** Medium-High (clean infrastructure for Phase 2+)
 
 ### For Renters / Dashboard
 
