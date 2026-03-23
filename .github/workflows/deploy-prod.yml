@@ -1,15 +1,7 @@
 name: Deploy to Production
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'app/**'
-      - 'backend/**'
-      - 'Dockerfile.frontend'
-      - 'backend/Dockerfile'
-      - 'docker-compose.prod.yml'
-      - 'package.json'
+  # Deploy is MANUAL ONLY — triggered by the Founder, not by agents or automated pushes
   workflow_dispatch:
     inputs:
       environment:
