@@ -1,0 +1,17 @@
+{
+  "name": "dc1-health-monitor",
+  "version": "1.0.0",
+  "description": "DC1 Production Health Check & Monitoring Service",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js"
+  },
+  "keywords": [
+    "healthcheck",
+    "monitoring",
+    "metrics"
+  ],
+  "author": "DC1 Team",
+  "license": "Proprietary"
+}
