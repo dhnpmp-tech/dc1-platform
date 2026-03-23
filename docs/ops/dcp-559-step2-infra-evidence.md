@@ -202,3 +202,18 @@ Direct probes to VPS (bypassing nginx):
 | 80 | nginx (no proxy) | ✅ nginx default page |
 
 **Key finding:** DCP API is live and healthy on port 8083 but running pre-sprint code. The 14 commits from this sprint cycle are NOT yet active. Only `git pull + pm2 restart` and `setup-https.sh` stand between current state and launch GO.
+
+---
+
+## External Port Connectivity Test (2026-03-23 08:35 UTC)
+
+Probed from external network (not VPS localhost) — confirms no firewall blocks:
+
+| Port | Service | External Reachable | Response |
+|---|---|---|---|
+| 8083 | dc1-provider-onboarding (DCP API) | ✅ Yes | `{"status":"ok"}` |
+| 8081 | mission-control-api (Paperclip) | ✅ Yes | `{"status":"ok","agents":13,"tasks":257}` |
+| 8084 | dc1-mission-control | ✅ Yes | `{"status":"ok","service":"DC1 Mission Control"}` |
+| 443 | HTTPS / nginx+certbot | ❌ Refused | certbot not run |
+
+**DCP-524 requirement met:** End-to-end external network access confirmed for all API services. No firewall blocks on ports 8081, 8083, 8084. HTTPS (port 443) is the only remaining blocker.
