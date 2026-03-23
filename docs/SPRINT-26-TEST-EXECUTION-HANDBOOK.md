@@ -13,12 +13,12 @@
 |-------|-----------|-----------|-------|----------|--------------|
 | Metering | 6 | `scripts/vllm-metering-smoke.mjs` | QA Eng | 5 min | 6/6 pass |
 | Pricing | 6 | `backend/tests/integration/pricing-api.test.js` | QA Eng | 2 min | 6/6 pass |
-| Escrow | 4 | Integration test suite | Smart Contracts | 5 min | 4/4 pass |
+| Escrow | [DEFERRED] | — | — | — | Awaits funded wallet |
 | VPS | 4 | `scripts/vps-health.sh` + checks | DevOps | 5 min | 4/4 pass |
 | Provider Onboarding | 5 | Manual flow + checks | QA Eng | 10 min | 5+ providers |
 | E2E Master | 12 | `scripts/phase1-e2e-smoke.mjs` | QA Eng | 10 min | 12/12 pass |
 
-**Total Estimated Runtime:** 40 minutes
+**Total Estimated Runtime:** 35 minutes (escrow deferred, not blocking MVP)
 
 ---
 
@@ -153,27 +153,17 @@ npm run test:integration -- pricing-api.test.js --testNamePattern="Public Pricin
 
 ---
 
-#### Test 3: Escrow Integration (09:40-09:50, Smart Contracts)
+#### Test 3: Escrow Integration [DEFERRED]
 
-```bash
-# Run escrow/settlement tests
-npm run test:integration -- escrow.test.js
+**Status:** Deferred pending funded wallet (founder directive 2026-03-23 14:00 UTC)
 
-# Expected: E1-E4 tests pass
-```
+**Note:** Escrow is not critical for Phase 1 MVP. Testing will resume once wallet is funded.
 
-**Record Pass/Fail:**
-- [ ] E1: Escrow hold created
-- [ ] E2: Escrow hold released
-- [ ] E3: On-chain settlement works
-- [ ] E4: Failed job refund works
-- [ ] All 4/4 tests passed
-
-**If Fail:** Escalate to Smart Contracts Engineer immediately
+Skipped for Day 5 execution. Proceed to Test 4 (VPS Health).
 
 ---
 
-#### Test 4: VPS & Container Health (09:50-10:00, DevOps)
+#### Test 4: VPS & Container Health (09:37-09:42, DevOps)
 
 ```bash
 # D1: Container image available
@@ -206,7 +196,7 @@ ssh root@76.13.179.86 pm2 status
 
 ### Phase 3: Integration Testing (10:00-11:30)
 
-#### Test 5: Provider Onboarding Flow (10:00-10:15, QA)
+#### Test 5: Provider Onboarding Flow (09:42-09:52, QA)
 
 ```bash
 # Run provider onboarding tests manually
@@ -247,7 +237,7 @@ curl https://api.dcp.sa/api/admin/providers \
 
 ---
 
-#### Test 6: E2E Master Smoke Test (10:15-10:30, QA)
+#### Test 6: E2E Master Smoke Test (09:52-10:02, QA)
 
 ```bash
 # This is the main integration test
@@ -323,7 +313,7 @@ Create report with:
 
 ✓ Metering: 11/11 checks pass (including silent failure detection)
 ✓ Pricing: 11/11 tests pass (RTX 4090 at 26,700 confirmed)
-✓ Escrow: 4/4 tests pass (settlement working)
+⏸️ Escrow: [DEFERRED] — not blocking MVP launch
 ✓ VPS: 4/4 health checks pass (services online, HTTPS working)
 ✓ Provider: 5+ providers onboarded (from O tests)
 ✓ E2E: 12/12 checks pass (complete pipeline validated)
@@ -337,11 +327,12 @@ Create report with:
 
 ✗ Metering test fails (M4 silent failure detection fails)
 ✗ Pricing API unavailable or incorrect
-✗ Escrow settlement fails (E3 on-chain)
 ✗ VPS unhealthy or services offline
 ✗ Fewer than 5 providers onboarded
 ✗ E2E test fails any critical check
 ✗ Database inconsistencies detected
+
+**Note:** Escrow settlement (E3 on-chain) is deferred, not a launch blocker
 
 **Decision:** ❌ **NO-GO** → Fix issues and retest Day 5 afternoon or delay to Day 6
 

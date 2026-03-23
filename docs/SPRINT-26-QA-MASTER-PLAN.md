@@ -66,11 +66,12 @@ Day 5 (2026-03-27):
 - 09:00: Infrastructure check
 - 09:30: Metering API tests
 - 10:00: Pricing integration tests
-- 10:30: Escrow settlement tests
-- 11:00: Provider onboarding tests
-- 11:30: E2E master smoke test
-- 12:00: Analysis and decision
+- 10:30: Provider onboarding tests
+- 11:00: E2E master smoke test
+- 11:30: Analysis and decision
 ```
+
+**Note:** Escrow settlement tests (SP26-002) deferred — escrow deployment awaits funded wallet (founder directive 2026-03-23 14:00 UTC)
 
 ---
 
@@ -146,10 +147,10 @@ Day 6 Morning (2026-03-28):
 - RTX 4090 at 26,700 halala (23.7% below Vast.ai)
 - No authentication required (as intended)
 
-✅ **Escrow Settlement**
-- Holds created on job submit
-- Holds released on completion
-- On-chain settlement working (Base Sepolia)
+⏸️ **Escrow Settlement [DEFERRED]**
+- Awaits funded wallet (not critical for Phase 1 MVP)
+- Will be tested once wallet is available
+- Not a blocker for Phase 1 launch go/no-go decision
 
 ✅ **Provider Onboarding**
 - 5+ providers registered and online
@@ -180,11 +181,10 @@ Day 6 Morning (2026-03-28):
 SP26-001: Nemotron Container Build
 └─ Test D1: Container image available & working ✓
 
-SP26-002: Base Sepolia Escrow Deployment
-├─ Test E1: Escrow hold created on job submit ✓
-├─ Test E2: Hold released after completion ✓
-├─ Test E3: On-chain settlement (Sepolia) ✓
-└─ Test E4: Failed job refund ✓
+SP26-002: Base Sepolia Escrow Deployment [DEFERRED]
+└─ Awaits funded wallet (not yet available)
+   - Test E1-E4 tests will run after wallet funding
+   - Escrow not critical path for Phase 1 MVP
 
 SP26-003: Per-Token Metering Verification ✅ COMPLETE
 ├─ Admin endpoint for serve_sessions queries ✓
@@ -221,7 +221,7 @@ SP26-006: Pricing Engine ✅ COMPLETE
 ```
 Infrastructure:
 [ ] SP26-001 containers built and pushed
-[ ] SP26-002 escrow deployed to Base Sepolia
+[DEFERRED] SP26-002 escrow deployed (awaits funded wallet)
 [ ] SP26-003 metering verified working
 [ ] SP26-004 VPS running latest code
 [ ] SP26-005 provider registration enabled
@@ -280,7 +280,7 @@ Afternoon: Go/No-Go Decision
 
 ✅ All DCP-619 tests pass (metering working, persistence 100%)
 ✅ All SP26-006 tests pass (pricing accurate, API responsive)
-✅ All escrow tests pass (settlement working)
+⏸️ Escrow tests [DEFERRED] — awaits funded wallet, not blocking MVP
 ✅ All provider onboarding tests pass (5+ online)
 ✅ E2E smoke test: 12/12 passes (full pipeline validated)
 ✅ Load testing: All scenarios meet baselines

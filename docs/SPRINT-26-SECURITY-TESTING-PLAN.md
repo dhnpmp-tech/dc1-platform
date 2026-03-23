@@ -192,15 +192,19 @@ Test: Sessions properly managed
 
 ### Category 5: Business Logic Security (CRITICAL)
 
-**Test E1: Escrow Hold Lifecycle**
+**Test E1: Escrow Hold Lifecycle [DEFERRED]**
+
+**Status:** Deferred pending funded wallet (founder directive 2026-03-23 14:00 UTC)
 
 ```
-Test: Escrow holds properly managed
+Planned Test: Escrow holds properly managed
 ├─ Hold created at job submit → amount = cost_estimate ✓
 ├─ Hold verified before job starts (double-spend check) ✓
 ├─ Hold released after job completion ✓
 ├─ Hold released without charge if job fails ✓
 └─ No double-holds for same job
+
+Note: Will be tested after wallet is funded
 ```
 
 **Test E2: Job Completion Verification**

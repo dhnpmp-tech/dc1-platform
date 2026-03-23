@@ -197,11 +197,15 @@ Test P6: Admin Can Update Prices
 
 ---
 
-### Suite 3: Escrow & Settlement Integration (CRITICAL)
+### Suite 3: Escrow & Settlement Integration [DEFERRED]
 
-**Depends On:** SP26-002 deployed
+**Status:** Deferred pending funded wallet (founder directive 2026-03-23 14:00 UTC)
 
-**Test Cases:**
+**Depends On:** SP26-002 escrow deployment (awaits funded wallet)
+
+**Note:** Not critical for Phase 1 MVP. Will be tested after wallet is funded.
+
+**Planned Test Cases (will run post-wallet-funding):**
 
 ```
 Test E1: Escrow Hold Created on Job Submit
@@ -233,7 +237,7 @@ Test E4: Failed Job Escrow Release
   Expected: No charge for failed job
 ```
 
-**Success Criteria:**
+**Success Criteria (post-wallet-funding):**
 - ✅ All E1-E4 pass
 - ✅ Escrow prevents double-spend
 - ✅ On-chain settlement works
