@@ -208,3 +208,66 @@ CEO: Sprint 26 is DONE (83% complete, remaining items deferred). You MUST create
 
 ### REMINDER — DO NOT DEPLOY TO PRODUCTION
 No agent may deploy, restart, or modify production VPS without founder approval. See the deployment restriction directive above.
+
+
+## ⚡ FOUNDER QUESTIONS — 2026-03-23 16:20 UTC — CEO MUST ANSWER
+
+CEO: The founder is asking you directly. Answer these questions by creating an issue titled "S27: CEO — Founder Q&A: Direction, Roadmap & Launch Gaps" assigned to yourself. Write your answers in the issue description. Be specific and honest.
+
+### QUESTION 1: Do you have a clear direction?
+- Where exactly are we going? What is the product we are launching?
+- Is it a GPU marketplace? An Arabic AI platform? An inference API? All three?
+- What is the ONE thing that matters most right now?
+
+### QUESTION 2: What is on the roadmap?
+- Give me a concrete list of what is planned, in priority order
+- For each item: what is it, who is doing it, when will it be done
+- What is Sprint 27 vs Sprint 28 vs Q2 2026?
+
+### QUESTION 3: What is left to make this a launch-ready product?
+- Be brutally honest: what is ACTUALLY blocking us from going live with real paying customers?
+- Not docs, not plans, not tests — what real engineering work remains?
+- We have 43 registered providers but 0 online. What specifically needs to happen to fix that?
+- Can a real renter sign up TODAY, pick a model, deploy it, and pay for it? If not, what is missing?
+
+### QUESTION 4: What are the real blockers?
+- The launch readiness brief says READY but we have 0 providers online and 0 revenue
+- Are we fooling ourselves with docs and reports while the actual product does not work end-to-end?
+- What is the honest gap between where we are and a REAL launch?
+
+### FORMAT:
+Create the issue with your full answers. Do not delegate this — answer personally. The founder will read it on Telegram.
+
+
+## ⛔ MANDATORY RULE — NO COMMITS WITHOUT CODE REVIEW (2026-03-23 16:30 UTC)
+
+### THIS RULE IS MANDATORY FOR ALL AGENTS. NO EXCEPTIONS.
+
+**NO AGENT may commit directly to the main branch.** All work must go through a review process.
+
+### NEW WORKFLOW (effective immediately):
+1. Create a feature branch for your work: `git checkout -b <agent-name>/<issue-id>`
+2. Commit your changes to the feature branch
+3. When done, update your issue status to `in_review`
+4. Wait for Code Reviewer 1 or Code Reviewer 2 to review
+5. Only Code Reviewers may merge to main after review
+6. Code Reviewers: review for quality, no placeholder code, no empty docs, no redundant files
+
+### WHAT IS NOT ACCEPTABLE:
+- Committing directly to main (git commit on main branch)
+- Self-merging your own work without review
+- Committing docs-only changes that restate what other docs already say
+- Committing placeholder or stub files with no real content
+- Committing monitoring scripts that have no actual system to monitor
+
+### WHY THIS RULE EXISTS:
+53 commits went to main in the last 2 hours with no review. Many are redundant docs, status reports restating the same information, and readiness checklists for systems that are not yet deployed. This creates noise and makes it impossible for the founder to track real progress. Quality over quantity.
+
+### CODE REVIEWERS: Your new standing orders:
+- Reject docs that duplicate existing docs
+- Reject code that is not functional or testable
+- Reject commits that are just status updates disguised as code
+- Only approve work that adds REAL value: working code, genuine fixes, or essential new documentation
+- Merge approved work to main with a single merge commit
+
+**VIOLATION: Any agent committing directly to main will be suspended.**
