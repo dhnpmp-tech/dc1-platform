@@ -796,14 +796,24 @@ function getQueuePosition(job) {
 }
 
 // Cost rates in halala per minute by job type
+// Corrected DCP-668: aligned with strategic brief floor prices (March 2026)
+// RTX 4090 standard tier target: ~$0.267/hr floor; DCP charges ~$1.30/hr at 15% take rate
 const COST_RATES = {
-  'llm-inference': 15,    // 15 halala/min
-  'llm_inference': 15,    // alias
-  'training': 25,         // 25 halala/min
-  'rendering': 20,        // 20 halala/min
-  'image_generation': 20, // 20 halala/min
-  'vllm_serve': 20,       // 20 halala/min (~12 SAR/hr) — long-running LLM serving
-  'default': 10           // 10 halala/min
+  'llm-inference': 9,      // 9 halala/min (~$1.30/hr) — standard GPU tier
+  'llm_inference': 9,      // alias
+  'training': 7,           // 7 halala/min (~$1.01/hr) — volume discount for long runs
+  'rendering': 10,         // 10 halala/min (~$1.44/hr)
+  'image_generation': 10,  // 10 halala/min (~$1.44/hr)
+  'vllm_serve': 9,         // 9 halala/min — long-running LLM serving
+  'default': 6             // 6 halala/min (~$0.86/hr) — economy/dev compute
+};
+
+// Pricing class surcharge multipliers (applied on top of base COST_RATES)
+// 'priority' enables guaranteed <30s queue wait; 'economy' accepts lower priority
+const PRICING_CLASS_MULTIPLIERS = {
+  'priority': 1.20,  // +20% surcharge for priority queue
+  'standard': 1.00,  // baseline — no surcharge
+  'economy': 0.90,   // -10% discount for best-effort / lower priority
 };
 
 // ── Job template scripts ────────────────────────────────────────────────────
@@ -1050,9 +1060,10 @@ const JOB_TEMPLATES = {
   'vllm_serve': generateVllmServeSpec,
 };
 
-function calculateCostHalala(jobType, durationMinutes) {
+function calculateCostHalala(jobType, durationMinutes, pricingClass) {
   const rate = COST_RATES[jobType] || COST_RATES['default'];
-  return Math.round(rate * durationMinutes);
+  const multiplier = PRICING_CLASS_MULTIPLIERS[normalizePricingClass(pricingClass)] ?? 1.0;
+  return Math.round(rate * durationMinutes * multiplier);
 }
 
 // Floor-plus-remainder: guarantees provider + dc1 === total exactly
@@ -1275,7 +1286,7 @@ router.post('/submit', requireRenter, (req, res) => {
       }
     }
 
-    const cost_halala = calculateCostHalala(job_type, durationMinutes);
+    const cost_halala = calculateCostHalala(job_type, durationMinutes, pricingClass);
 
     // Balance must be positive before any submission is accepted.
     if (req.renter.balance_halala <= 0) {
@@ -1629,7 +1640,7 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
 
     const parsedDuration = toFiniteNumber(sourceJob.duration_minutes, { min: 0.01, max: 1440 });
     const durationMinutes = parsedDuration != null ? parsedDuration : 1;
-    const quotedCostHalala = calculateCostHalala(sourceJob.job_type, durationMinutes);
+    const quotedCostHalala = calculateCostHalala(sourceJob.job_type, durationMinutes, sourceJob.pricing_class);
 
     const renter = db.get(
       'SELECT id, balance_halala FROM renters WHERE id = ? AND status = ?',
@@ -2010,8 +2021,7 @@ router.post('/:job_id/result', (req, res) => {
     const actualMinutes = durationSeconds != null
       ? Math.ceil(durationSeconds / 60)
       : Math.max(1, Math.ceil(Number(job.duration_minutes || 1)));
-    const billingRate = COST_RATES[job.job_type] || COST_RATES['default'];
-    const actualCostHalala = Math.max(0, Math.round(billingRate * actualMinutes));
+    const actualCostHalala = Math.max(0, calculateCostHalala(job.job_type, actualMinutes, job.pricing_class));
     const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
     const settlementStatus = result ? 'completed' : 'failed';
     const settledResult = result == null
@@ -2626,8 +2636,7 @@ router.post('/:job_id/complete', (req, res) => {
     const actualMinutes = startedAt
       ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 60000))
       : (job.duration_minutes || 1);
-    const rate = COST_RATES[job.job_type] || COST_RATES['default'];
-    const actual_cost_halala = Math.round(rate * actualMinutes);
+    const actual_cost_halala = calculateCostHalala(job.job_type, actualMinutes, job.pricing_class);
     const { provider: provider_earned, dc1: dc1_fee } = splitBilling(actual_cost_halala);
 
     runStatement(
@@ -3794,6 +3803,7 @@ router.get('/scheduler/diagnostics/:job_id', requireAdminAuth, (req, res) => {
 module.exports = router;
 module.exports.calculateCostHalala = calculateCostHalala;
 module.exports.COST_RATES = COST_RATES;
+module.exports.PRICING_CLASS_MULTIPLIERS = PRICING_CLASS_MULTIPLIERS;
 module.exports.enforceJobTimeouts = enforceJobTimeouts;
 module.exports.signTaskSpec = signTaskSpec;
 module.exports.HMAC_SECRET = HMAC_SECRET;
