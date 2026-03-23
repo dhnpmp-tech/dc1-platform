@@ -66,7 +66,7 @@ module.exports = {
       cwd: '/root/dc1-platform/backend',
       instances: 1,
       autorestart: false,
-      cron_restart: '*/10 * * * *',
+      cron_restart: '*/5 * * * *',
       watch: false,
       max_memory_restart: '100M',
       env: {
