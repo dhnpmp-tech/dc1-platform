@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import { useLanguage } from '../../lib/i18n'
+
+const API_BASE = '/api/dc1'
 
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -271,9 +273,31 @@ function getTierBadgeColor(tier: string): string {
 
 export default function TemplatesPage() {
   const { t } = useLanguage()
+  const [templates, setTemplates] = useState<JobTemplate[]>([])
+  const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState<Category>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // Fetch docker-templates from API
+  useEffect(() => {
+    async function fetchTemplates() {
+      try {
+        const res = await fetch(`${API_BASE}/templates`)
+        if (res.ok) {
+          const data = await res.json()
+          setTemplates(Array.isArray(data?.templates) ? data.templates : [])
+        }
+      } catch (err) {
+        console.error('Failed to load templates:', err)
+        // Fallback to hardcoded templates on error
+        setTemplates(TEMPLATES)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchTemplates()
+  }, [])
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
@@ -285,7 +309,7 @@ export default function TemplatesPage() {
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
 
-  const filtered = TEMPLATES.filter(
+  const filtered = templates.filter(
     (t) => activeCategory === 'all' || t.category === activeCategory
   )
 
@@ -329,7 +353,7 @@ export default function TemplatesPage() {
               {CATEGORY_LABELS[cat]}
               {cat !== 'all' && (
                 <span className="ml-1.5 text-xs opacity-70">
-                  ({TEMPLATES.filter((t) => t.category === cat).length})
+                  ({templates.filter((t) => t.category === cat).length})
                 </span>
               )}
             </button>
@@ -337,6 +361,19 @@ export default function TemplatesPage() {
         </div>
 
         {/* Templates Grid */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div
+              className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full"
+              aria-label={t('common.loading')}
+              role="status"
+            />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="card text-center py-12">
+            <p className="text-dc1-text-secondary mb-2">{t('templates.no_templates')}</p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {filtered.map((template) => {
             const isExpanded = expandedId === template.id
@@ -468,6 +505,7 @@ export default function TemplatesPage() {
             )
           })}
         </div>
+        )}
 
         {/* Footer CTA */}
         <div className="card text-center py-8">
