@@ -59,10 +59,10 @@ contract Escrow is Ownable, ReentrancyGuard, EIP712 {
 
     struct EscrowRecord {
         address renter;
+        EscrowStatus status; // packed with renter (21 bytes) — saves 1 storage slot vs trailing position
         address provider;
         uint256 amount;
         uint256 expiry;
-        EscrowStatus status;
     }
 
     /// @dev jobId → escrow record
