@@ -198,7 +198,7 @@ export default function PricingPage() {
           // Update DCP floor price from API
           const updatedTiers = GPU_TIERS.map(tier => {
             const apiPrice = data.pricing.find(
-              p => p.gpu_model === tier.gpu
+              (p: { gpu_model: string; rate_halala_per_hour: number }) => p.gpu_model === tier.gpu
             )
             if (apiPrice) {
               // Convert halala/hour to USD/hour for display
