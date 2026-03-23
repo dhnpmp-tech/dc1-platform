@@ -19,6 +19,7 @@ interface PricingDisplayProps {
   modelId?: string
   vramGb?: number
   pricePerHour?: number
+  onPriceEstimate?: (totalPrice: number) => void
 }
 
 // Buyer economics from FOUNDER-STRATEGIC-BRIEF.md
@@ -210,9 +211,15 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
   )
 }
 
-export default function PricingDisplay({ modelId, vramGb, pricePerHour }: PricingDisplayProps) {
+export default function PricingDisplay({ modelId, vramGb, pricePerHour, onPriceEstimate }: PricingDisplayProps) {
   const { t } = useLanguage()
   const [estimatedPrice, setEstimatedPrice] = useState(0)
+
+  useEffect(() => {
+    if (onPriceEstimate && estimatedPrice > 0) {
+      onPriceEstimate(estimatedPrice)
+    }
+  }, [estimatedPrice, onPriceEstimate])
 
   const gpuType = vramGb && vramGb >= 80 ? 'H100' : vramGb && vramGb >= 48 ? 'A100' : 'RTX4090'
   const competitorPrices = COMPETITIVE_PRICING[gpuType] || []
