@@ -1430,6 +1430,23 @@ router.post('/submit', requireRenter, (req, res) => {
       if (payloadModel && !params.model) {
         params.model = payloadModel;
       }
+
+      // DCP-SEC-003: Validate image_override for custom_container jobs against the approved registry.
+      // Without this check a renter could run arbitrary Docker images on provider hardware.
+      if (job_type === 'custom_container' && params.image_override) {
+        const imgValidation = validateAndNormalizeImageRef(params.image_override);
+        if (imgValidation.error) {
+          return res.status(400).json({ error: `params.image_override: ${imgValidation.error}` });
+        }
+        if (!isApprovedImageRef(db, imgValidation.value)) {
+          return res.status(400).json({
+            error: 'params.image_override is not in the approved image registry. Use GET /api/containers/registry for allowed images.',
+            code: 'IMAGE_NOT_APPROVED',
+          });
+        }
+        params.image_override = imgValidation.value; // normalised form
+      }
+
       finalTaskSpec = JOB_TEMPLATES[job_type](params);
       result_type = job_type === 'image_generation' ? 'image' : job_type === 'vllm_serve' ? 'endpoint' : 'text';
     }
