@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import { useLanguage } from '../../lib/i18n'
+import { getApiBase } from '../../../lib/api'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
 const HomeIcon = () => (
@@ -174,6 +175,57 @@ export default function PricingPage() {
   const { t } = useLanguage()
   const [filterCategory, setFilterCategory] = useState<FilterCategory>('all')
   const [highlightRow, setHighlightRow] = useState<string | null>(null)
+  const [gpuTiers, setGpuTiers] = useState<GpuTier[]>(GPU_TIERS)
+  const [priceLoading, setPriceLoading] = useState(true)
+  const [priceError, setPriceError] = useState<string | null>(null)
+
+  // Fetch pricing data from API on mount
+  useEffect(() => {
+    const fetchPricing = async () => {
+      try {
+        setPriceLoading(true)
+        const apiBase = getApiBase()
+        const res = await fetch(`${apiBase}/renters/pricing`)
+
+        if (!res.ok) {
+          throw new Error(`API error: ${res.status}`)
+        }
+
+        const data = await res.json()
+
+        if (data.success && data.pricing && Array.isArray(data.pricing)) {
+          // Map API prices back to GPU_TIERS format
+          // Update DCP floor price from API
+          const updatedTiers = GPU_TIERS.map(tier => {
+            const apiPrice = data.pricing.find(
+              p => p.gpu_model === tier.gpu
+            )
+            if (apiPrice) {
+              // Convert halala/hour to USD/hour for display
+              const dcpFloorUsd = apiPrice.rate_halala_per_hour / 100
+              return {
+                ...tier,
+                dcpFloor: dcpFloorUsd,
+                discountVsVast: parseFloat((((tier.vastTypical - dcpFloorUsd) / tier.vastTypical) * 100).toFixed(1)),
+              }
+            }
+            return tier
+          })
+
+          setGpuTiers(updatedTiers)
+          setPriceError(null)
+        }
+      } catch (err) {
+        console.warn('Failed to fetch pricing from API, using cached data:', err)
+        setPriceError('Using cached pricing. API unavailable.')
+        setGpuTiers(GPU_TIERS)
+      } finally {
+        setPriceLoading(false)
+      }
+    }
+
+    fetchPricing()
+  }, [])
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -186,7 +238,7 @@ export default function PricingPage() {
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
 
-  const filtered = GPU_TIERS.filter(g => filterCategory === 'all' || g.category === filterCategory)
+  const filtered = gpuTiers.filter(g => filterCategory === 'all' || g.category === filterCategory)
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName="Renter">
@@ -389,7 +441,7 @@ export default function PricingPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {JOB_TEMPLATES.map(tmpl => {
-              const tier = GPU_TIERS.find(g => g.gpu === tmpl.recommendedGpu)
+              const tier = gpuTiers.find(g => g.gpu === tmpl.recommendedGpu)
               const estimatedCost = tier ? tier.dcpFloor * tmpl.estimatedHours : 0
               const marketCost = tier ? tier.vastTypical * tmpl.estimatedHours : 0
               const saving = marketCost - estimatedCost

@@ -655,6 +655,45 @@ router.get('/available-providers', async (req, res) => {
   }
 });
 
+// === GET /api/renters/pricing - Public GPU pricing ===
+// Returns DCP floor prices for all GPU models. No authentication required.
+// Useful for buyers to see market pricing and cost estimations.
+router.get('/pricing', (req, res) => {
+  try {
+    const prices = db.prepare(
+      `SELECT gpu_model, rate_halala, updated_at
+       FROM gpu_pricing
+       ORDER BY rate_halala ASC`
+    ).all();
+
+    if (!prices || prices.length === 0) {
+      return res.status(503).json({
+        error: 'Pricing data not available',
+        message: 'GPU pricing table is empty. Contact admin.',
+      });
+    }
+
+    // Transform database format to API response
+    const pricing = prices.map(p => ({
+      gpu_model: p.gpu_model,
+      rate_halala_per_hour: p.rate_halala,
+      rate_sar_per_hour: (p.rate_halala / 100).toFixed(2),
+      updated_at: p.updated_at,
+    }));
+
+    res.json({
+      success: true,
+      pricing,
+      count: pricing.length,
+      timestamp: new Date().toISOString(),
+      note: 'DCP floor prices - Saudi energy arbitrage passed directly to you',
+    });
+  } catch (error) {
+    console.error('Pricing API error:', error);
+    res.status(500).json({ error: 'Failed to fetch GPU pricing' });
+  }
+});
+
 // POST /api/renters/topup — Add balance to renter account
 // In production this would be connected to a payment gateway (Stripe/Tap).
 // For Gate 1 we accept direct top-up with amount_halala.

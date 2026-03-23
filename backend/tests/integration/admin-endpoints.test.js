@@ -245,3 +245,99 @@ describe('Admin API — GET /api/admin/escrow', () => {
     }
   });
 });
+
+// =============================================================================
+// GET /api/admin/serve-sessions/:job_id (DCP-619)
+// =============================================================================
+
+describe('Admin API — GET /api/admin/serve-sessions/:job_id', () => {
+  it('returns 404 when serve_session not found', async () => {
+    const res = await request(app)
+      .get('/api/admin/serve-sessions/nonexistent-job-id')
+      .set('x-admin-token', ADMIN_TOKEN);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it('returns serve_session record when found', async () => {
+    // Create a serve_sessions record directly in DB
+    const jobId = `test-job-${Date.now()}`;
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO serve_sessions (
+        id, job_id, model, status, started_at, expires_at,
+        total_inferences, total_tokens, total_billed_halala, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      `session-${jobId}`,
+      jobId,
+      'test-model',
+      'serving',
+      now,
+      new Date(Date.now() + 3600000).toISOString(),
+      0,
+      0,
+      0,
+      now,
+      now
+    );
+
+    const res = await request(app)
+      .get(`/api/admin/serve-sessions/${jobId}`)
+      .set('x-admin-token', ADMIN_TOKEN);
+
+    expect(res.status).toBe(200);
+    expect(res.body.serve_session).toBeDefined();
+    expect(res.body.serve_session.job_id).toBe(jobId);
+    expect(res.body.serve_session.model).toBe('test-model');
+    expect(res.body.serve_session.total_inferences).toBe(0);
+  });
+
+  it('includes metering fields in response (tokens, cost, timestamp)', async () => {
+    const jobId = `metered-job-${Date.now()}`;
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO serve_sessions (
+        id, job_id, model, status, started_at, expires_at,
+        total_inferences, total_tokens, total_billed_halala, last_inference_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      `session-${jobId}`,
+      jobId,
+      'nemotron-mini',
+      'serving',
+      now,
+      new Date(Date.now() + 3600000).toISOString(),
+      1,
+      150,
+      42,
+      now,
+      now,
+      now
+    );
+
+    const res = await request(app)
+      .get(`/api/admin/serve-sessions/${jobId}`)
+      .set('x-admin-token', ADMIN_TOKEN);
+
+    expect(res.status).toBe(200);
+    const session = res.body.serve_session;
+    expect(session.total_tokens).toBe(150);
+    expect(session.total_billed_halala).toBe(42);
+    expect(session.last_inference_at).toBe(now);
+    expect(session.total_inferences).toBe(1);
+  });
+
+  it('requires admin token (returns 401 without auth)', async () => {
+    const res = await request(app)
+      .get('/api/admin/serve-sessions/test-job-id');
+    expect(res.status).toBe(401);
+  });
+
+  it('requires valid admin token (returns 401 with invalid token)', async () => {
+    const res = await request(app)
+      .get('/api/admin/serve-sessions/test-job-id')
+      .set('x-admin-token', 'invalid-token');
+    expect(res.status).toBe(401);
+  });
+});
