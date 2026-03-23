@@ -175,6 +175,11 @@
         "command": "dc1.deployTemplate",
         "title": "Deploy Template",
         "icon": "$(play)"
+      },
+      {
+        "command": "dc1.startArabicRagSession",
+        "title": "DCP: Start Arabic RAG Session",
+        "icon": "$(symbol-method)"
       }
     ],
     "menus": {

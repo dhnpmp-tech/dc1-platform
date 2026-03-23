@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
 const { execFileSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
@@ -48,9 +49,25 @@ if (!process.env.DC1_HMAC_SECRET) {
   console.warn('[SECURITY] DC1_HMAC_SECRET not set — using random fallback. Set this env var in production.');
 }
 const HMAC_SECRET = process.env.DC1_HMAC_SECRET || crypto.randomBytes(32).toString('hex');
+
+// Docker templates directory — loaded on-demand for templateId resolution
+const DOCKER_TEMPLATES_DIR = require('path').join(__dirname, '../../../docker-templates');
+function loadDockerTemplate(templateId) {
+  if (!templateId || typeof templateId !== 'string') return null;
+  // Sanitize: only allow alphanumeric, hyphens, underscores
+  if (!/^[a-zA-Z0-9_-]+$/.test(templateId)) return null;
+  const templatePath = require('path').join(DOCKER_TEMPLATES_DIR, `${templateId}.json`);
+  try {
+    return JSON.parse(fs.readFileSync(templatePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 const JOB_COLUMNS = new Set((db.all("PRAGMA table_info('jobs')") || []).map((row) => row.name));
 const HAS_RETRY_REASON = JOB_COLUMNS.has('retry_reason');
 const HAS_RETRIED_FROM_JOB_ID = JOB_COLUMNS.has('retried_from_job_id');
+const HAS_TEMPLATE_ID = JOB_COLUMNS.has('template_id');
 const DEFAULT_JOB_PRIORITY = 2;
 const MIN_JOB_PRIORITY = 0;
 const MAX_JOB_PRIORITY = 10;
@@ -1067,10 +1084,10 @@ router.post('/submit', requireRenter, (req, res) => {
   try {
     const {
       provider_id: reqProviderId,
-      job_type,
+      template_id: reqTemplateId,
       duration_minutes,
-      gpu_requirements,
-      container_spec,
+      gpu_requirements: reqGpuRequirements,
+      container_spec: reqContainerSpec,
       task_spec,
       params: bodyParams,
       max_duration_seconds,
@@ -1079,13 +1096,31 @@ router.post('/submit', requireRenter, (req, res) => {
       pricing_class: requestedPricingClass,
       prewarm_requested: requestedPrewarm,
     } = req.body;
+
+    // Resolve docker template if templateId provided — overrides job_type, min_vram, image defaults
+    let resolvedTemplate = null;
+    if (reqTemplateId) {
+      resolvedTemplate = loadDockerTemplate(reqTemplateId);
+      if (!resolvedTemplate) {
+        return res.status(404).json({ error: `Template '${reqTemplateId}' not found` });
+      }
+    }
+
+    const job_type = req.body.job_type || resolvedTemplate?.job_type;
+    const gpu_requirements = reqGpuRequirements || (resolvedTemplate?.min_vram_gb
+      ? { min_vram_gb: resolvedTemplate.min_vram_gb }
+      : undefined);
+    const container_spec = reqContainerSpec || (resolvedTemplate?.image && resolvedTemplate.image !== 'custom'
+      ? { image_override: resolvedTemplate.image }
+      : undefined);
+
     const jobPriority = parsePriority(reqPriority);
     const payloadModel = normalizeModelField(requestedModel);
     const durationMinutes = toFiniteNumber(duration_minutes, { min: 0.01, max: 1440 });
     const requestedProviderId = reqProviderId == null ? null : toFiniteInt(reqProviderId, { min: 1 });
 
     if (!job_type || durationMinutes == null) {
-      return res.status(400).json({ error: 'Missing required fields: job_type, duration_minutes' });
+      return res.status(400).json({ error: 'Missing required fields: job_type (or templateId), duration_minutes' });
     }
 
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
@@ -1408,26 +1443,49 @@ router.post('/submit', requireRenter, (req, res) => {
         req.renter.id
       );
 
-      const insertResult = runStatement(
-        `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
-          cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
-          notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
-        gpu_requirements ? JSON.stringify(gpu_requirements) : null,
-        containerSpecJson,
-        taskSpecStr,
-        taskSpecHmac,
-        timeout,
-        isQueued ? null : timeoutAt,
-        null,
-        now,
-        jobPriority,
-        pricingClass,
-        prewarmRequested ? 1 : 0,
-        workspaceVolumeName,
-        checkpointEnabled
-      );
+      const templateIdValue = resolvedTemplate?.id || reqTemplateId || null;
+      const insertResult = HAS_TEMPLATE_ID
+        ? runStatement(
+            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
+              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
+            gpu_requirements ? JSON.stringify(gpu_requirements) : null,
+            containerSpecJson,
+            taskSpecStr,
+            taskSpecHmac,
+            timeout,
+            isQueued ? null : timeoutAt,
+            null,
+            now,
+            jobPriority,
+            pricingClass,
+            prewarmRequested ? 1 : 0,
+            workspaceVolumeName,
+            checkpointEnabled,
+            templateIdValue
+          )
+        : runStatement(
+            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
+              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
+            gpu_requirements ? JSON.stringify(gpu_requirements) : null,
+            containerSpecJson,
+            taskSpecStr,
+            taskSpecHmac,
+            timeout,
+            isQueued ? null : timeoutAt,
+            null,
+            now,
+            jobPriority,
+            pricingClass,
+            prewarmRequested ? 1 : 0,
+            workspaceVolumeName,
+            checkpointEnabled
+          );
 
       runStatement(
         `UPDATE renters

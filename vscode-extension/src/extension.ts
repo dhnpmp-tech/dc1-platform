@@ -331,6 +331,81 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // dc1.startArabicRagSession — one-click deploy of Arabic RAG bundle
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.startArabicRagSession', async () => {
+      const key = await auth.ensureKey();
+      if (!key) { return; }
+
+      // Find or create the Arabic RAG template reference
+      const templates = templatesCatalogProvider.getTemplates();
+      const arabicRagTemplate = templates.find(t => t.id === 'arabic-rag-complete');
+
+      if (!arabicRagTemplate) {
+        vscode.window.showErrorMessage('Arabic RAG template not available');
+        return;
+      }
+
+      // Ask for duration
+      const durationResult = await vscode.window.showInputBox({
+        prompt: 'Enter deployment duration in minutes',
+        value: '120',
+        validateInput: (val) => {
+          const num = Number(val);
+          return isNaN(num) || num <= 0 ? 'Please enter a positive number' : '';
+        }
+      });
+
+      if (!durationResult) { return; }
+
+      const durationMinutes = Number(durationResult);
+      const providers = gpuProvider.getProviders();
+
+      if (providers.length === 0) {
+        vscode.window.showErrorMessage('No providers available for deployment');
+        return;
+      }
+
+      const provider = providers[0];
+      const containerSpec = {
+        image_type: arabicRagTemplate.image,
+        vram_required_mb: arabicRagTemplate.min_vram_gb * 1024,
+        gpu_count: 1 as const,
+      };
+
+      try {
+        vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Deploying Arabic RAG…' },
+          async () => {
+            const job = await dc1.submitJob(key, {
+              provider_id: provider.id,
+              job_type: arabicRagTemplate.job_type,
+              duration_minutes: durationMinutes,
+              container_spec: containerSpec,
+              params: arabicRagTemplate.params,
+            });
+
+            const outputChannel = vscode.window.createOutputChannel('DCP Arabic RAG');
+            outputChannel.show();
+            outputChannel.appendLine(`Arabic RAG deployment started!`);
+            outputChannel.appendLine(`Job ID: ${job.job_id}`);
+            outputChannel.appendLine(`Status: ${job.status}`);
+            outputChannel.appendLine(`Cost: ${job.cost_halala / 100} SAR`);
+            outputChannel.appendLine('');
+            outputChannel.appendLine('The RAG endpoint will be available once the job completes.');
+            outputChannel.appendLine('Check the "My Jobs" view to monitor deployment progress.');
+
+            jobsProvider.refresh();
+            updateStatusBar();
+          }
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`Failed to deploy Arabic RAG: ${message}`);
+      }
+    })
+  );
+
   // dc1.submitJob — open vLLM inference panel (model selector → POST /api/vllm/complete)
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.submitJob', async () => {
