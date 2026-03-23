@@ -2067,8 +2067,11 @@ router.post('/:job_id/result', (req, res) => {
 router.get('/active', (req, res) => {
   try {
     const actor = getAuthenticatedActor(req);
+    if (!actor) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     let jobs = [];
-    if (!actor || actor.type === 'admin') {
+    if (actor.type === 'admin') {
       jobs = db.all(
         `SELECT * FROM jobs WHERE status IN ('queued', 'pending', 'running', 'paused') ORDER BY submitted_at DESC`
       );
@@ -2099,12 +2102,15 @@ router.get('/queue/:provider_id(\\d+)', (req, res) => {
       return res.status(400).json({ error: 'Invalid provider_id' });
     }
 
-    if (actor?.type === 'provider' && actor.id !== providerId) {
+    if (!actor) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (actor.type === 'provider' && actor.id !== providerId) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     let jobs = [];
-    if (actor?.type === 'renter') {
+    if (actor.type === 'renter') {
       jobs = db.all(
         `SELECT j.job_id, j.status
          FROM jobs j
