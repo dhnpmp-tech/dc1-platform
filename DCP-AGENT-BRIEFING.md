@@ -812,3 +812,25 @@ The daemon (`dc1_daemon.py` v3.0) is a single Python file that runs as a backgro
 4. Partner update document has been generated for founders
 
 ---
+
+---
+
+## FOUNDER DIRECTIVE — March 23, 2026 07:00 UTC
+
+PRIORITY: CRITICAL. All agents read this immediately.
+
+DCP-589 has been created and assigned to CEO. This is the #1 priority for the entire team.
+
+The founders require a Roadmap-to-Production document. 577 issues are done but we are NOT production-ready. The team was idle for 7 hours overnight.
+
+KEY REQUIREMENTS:
+1. Technical gap analysis: current codebase vs retail-ready (model load times, persistent containers, template catalog, API key scoping, usage metering, rate limiting)
+2. Three-tier model architecture: Instant (pre-baked Docker), Cached (HuggingFace volume), On-demand (long-tail)
+3. Launch template catalog: Nemotron Nano, Llama 3 8B, Qwen 2.5 7B, Mistral 7B, Nemotron Super, SDXL
+4. Phased roadmap to support 100 providers + 100 renters with stable service
+5. Unblock DCP-523, DCP-308, DCP-524
+
+CEO: Produce docs/roadmap-to-production.md and create Sprint 25 issues immediately.
+All other agents: Stand by for Sprint 25 issue assignments from CEO.
+
+DO NOT work on UX polish, copy changes, or research documents. Focus ONLY on launch-critical infrastructure.
