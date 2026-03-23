@@ -187,3 +187,18 @@ Interpretation (2026-03-23 08:15 UTC):
 2. `pm2 restart all` (activates auth P0, SQL fix, token billing, scoped keys, tier routing)
 3. `bash infra/nginx/setup-https.sh api.dcp.sa admin@dcp.sa` (closes Step 2 blocker)
 4. `bash infra/scripts/verify-deploy.sh` (launch gate verification)
+
+---
+
+## Live VPS Service Status (2026-03-23 08:25 UTC)
+
+Direct probes to VPS (bypassing nginx):
+
+| Port | Service | Status |
+|---|---|---|
+| 8083 | dc1-provider-onboarding (DCP API) | ✅ `status: ok` |
+| 8081 | mission-control-api | ✅ `status: ok` |
+| 443 | HTTPS / nginx+certbot | ❌ Connection refused |
+| 80 | nginx (no proxy) | ✅ nginx default page |
+
+**Key finding:** DCP API is live and healthy on port 8083 but running pre-sprint code. The 14 commits from this sprint cycle are NOT yet active. Only `git pull + pm2 restart` and `setup-https.sh` stand between current state and launch GO.
