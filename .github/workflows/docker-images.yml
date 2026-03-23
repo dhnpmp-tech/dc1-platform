@@ -5,14 +5,28 @@ on:
     branches: [main]
     paths:
       - 'backend/docker/**'
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      build_tier:
+        description: 'Build tier: slim (no prebake) or instant (full prebake, slow)'
+        required: true
+        default: 'slim'
+        type: choice
+        options: [slim, instant]
+  schedule:
+    # Nightly instant-tier build at 02:00 UTC — bakes model weights into images
+    - cron: '0 2 * * *'
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/dc1
 
 jobs:
-  build-and-push:
+  # ─── SLIM BUILD (CI / main branch push) ─────────────────────────────────────
+  # Fast build: no model weights baked in. Providers download models at runtime.
+  # Triggered on every push to main that touches backend/docker/.
+  build-slim:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_tier == 'slim')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,21 +58,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build & push sd-worker
-        uses: docker/build-push-action@v5
-        with:
-          context: backend/docker
-          file: backend/docker/Dockerfile.sd-worker
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-sd-worker:latest
-            ${{ env.IMAGE_PREFIX }}-sd-worker:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base-worker:latest
-
-      - name: Build & push llm-worker
+      - name: Build & push llm-worker (slim — no model prebake)
         uses: docker/build-push-action@v5
         with:
           context: backend/docker
@@ -66,15 +66,121 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}-llm-worker:latest
+            ${{ env.IMAGE_PREFIX }}-llm-worker:slim
             ${{ env.IMAGE_PREFIX }}-llm-worker:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base-worker:latest
+            SKIP_MODEL_PREBAKE=1
 
-      - name: List built images
+      - name: Build & push sd-worker (slim — no model prebake)
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/docker
+          file: backend/docker/Dockerfile.sd-worker
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-sd-worker:latest
+            ${{ env.IMAGE_PREFIX }}-sd-worker:slim
+            ${{ env.IMAGE_PREFIX }}-sd-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base-worker:latest
+            SKIP_MODEL_PREBAKE=1
+
+      - name: Build & push general-worker
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/docker
+          file: backend/docker/Dockerfile.general-worker
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-general-worker:latest
+            ${{ env.IMAGE_PREFIX }}-general-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base-worker:latest
+
+      - name: Summary
         run: |
-          echo "Built images:"
-          echo "  ${{ env.IMAGE_PREFIX }}-base-worker:latest"
-          echo "  ${{ env.IMAGE_PREFIX }}-sd-worker:latest"
-          echo "  ${{ env.IMAGE_PREFIX }}-llm-worker:latest"
+          echo "## Slim worker images built" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tag |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| llm-worker | slim (no prebake — models downloaded at runtime) |" >> $GITHUB_STEP_SUMMARY
+          echo "| sd-worker | slim (no prebake — SDXL downloaded at runtime) |" >> $GITHUB_STEP_SUMMARY
+          echo "| general-worker | latest |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "For instant-tier images with weights baked in, see the nightly build." >> $GITHUB_STEP_SUMMARY
+
+  # ─── INSTANT-TIER BUILD (nightly / manual) ──────────────────────────────────
+  # Slow build: bakes model weights into images for zero-download cold start.
+  # llm-worker: Nemotron-Mini-4B-Instruct (~8 GB)
+  # sd-worker:  stable-diffusion-xl-base-1.0 (~6.5 GB)
+  # Requires HF_TOKEN secret for gated/org models.
+  build-instant:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.build_tier == 'instant')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull base-worker (from slim build)
+        run: docker pull ${{ env.IMAGE_PREFIX }}-base-worker:latest
+
+      - name: Build & push llm-worker (instant — Nemotron-Mini-4B pre-baked)
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/docker
+          file: backend/docker/Dockerfile.llm-worker
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-llm-worker:instant
+          # No GHA cache — image is too large and cache would thrash nightly
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base-worker:latest
+            SKIP_MODEL_PREBAKE=0
+            PREBAKE_MODEL=nvidia/Nemotron-Mini-4B-Instruct
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+      - name: Build & push sd-worker (instant — SDXL pre-baked)
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/docker
+          file: backend/docker/Dockerfile.sd-worker
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-sd-worker:instant
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base-worker:latest
+            SKIP_MODEL_PREBAKE=0
+            PREBAKE_MODEL=stabilityai/stable-diffusion-xl-base-1.0
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Instant-tier worker images built" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tag | Baked model |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| llm-worker | instant | nvidia/Nemotron-Mini-4B-Instruct (~8 GB) |" >> $GITHUB_STEP_SUMMARY
+          echo "| sd-worker | instant | stabilityai/stable-diffusion-xl-base-1.0 (~6.5 GB) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Providers: pull \`:instant\` tag for zero-download cold start." >> $GITHUB_STEP_SUMMARY
