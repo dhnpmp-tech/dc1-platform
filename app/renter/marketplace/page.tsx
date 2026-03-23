@@ -281,6 +281,39 @@ function formatMilliseconds(value: number | null | undefined): string {
   return `${(value / 1000).toFixed(1)} s`
 }
 
+function calculatePricingComparison(dcPriceSarPerMin: number): {
+  vastaiComparison: { marketRange: string; savings: string; savingsPercent: number }
+  runpodComparison: { marketRange: string; savings: string; savingsPercent: number }
+} {
+  // Market data from FOUNDER-STRATEGIC-BRIEF.md
+  // Vast.ai: $0.10-$2.50/hr = 0.0017-0.0417 SAR/min (at 1 USD = 3.75 SAR)
+  // RunPod: $0.20-$3.50/hr = 0.0033-0.0583 SAR/min
+
+  const vastaiLowSarPerMin = 0.10 * 3.75 / 60  // ~0.006 SAR/min
+  const vastaiHighSarPerMin = 2.50 * 3.75 / 60 // ~0.156 SAR/min
+  const runpodLowSarPerMin = 0.20 * 3.75 / 60  // ~0.0125 SAR/min
+  const runpodHighSarPerMin = 3.50 * 3.75 / 60 // ~0.219 SAR/min
+
+  const vastaiMidpoint = (vastaiLowSarPerMin + vastaiHighSarPerMin) / 2
+  const runpodMidpoint = (runpodLowSarPerMin + runpodHighSarPerMin) / 2
+
+  const vastaiSavingsPercent = Math.round(((vastaiMidpoint - dcPriceSarPerMin) / vastaiMidpoint) * 100)
+  const runpodSavingsPercent = Math.round(((runpodMidpoint - dcPriceSarPerMin) / runpodMidpoint) * 100)
+
+  return {
+    vastaiComparison: {
+      marketRange: `$${(vastaiLowSarPerMin * 60 / 3.75).toFixed(2)}-${(vastaiHighSarPerMin * 60 / 3.75).toFixed(2)}/hr`,
+      savings: `${(vastaiMidpoint - dcPriceSarPerMin).toFixed(3)} SAR/min`,
+      savingsPercent: Math.max(0, vastaiSavingsPercent),
+    },
+    runpodComparison: {
+      marketRange: `$${(runpodLowSarPerMin * 60 / 3.75).toFixed(2)}-${(runpodHighSarPerMin * 60 / 3.75).toFixed(2)}/hr`,
+      savings: `${(runpodMidpoint - dcPriceSarPerMin).toFixed(3)} SAR/min`,
+      savingsPercent: Math.max(0, runpodSavingsPercent),
+    },
+  }
+}
+
 // ── Icons ──────────────────────────────────────────────────────────
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -706,7 +739,7 @@ function ModelCard({
         </div>
         <div className="flex justify-between">
           <dt>{t('marketplace.avg_price')}</dt>
-          <dd className="text-dc1-amber font-semibold">{model.avg_price_sar_per_min.toFixed(2)} {t('marketplace.sar_min')}</dd>
+          <dd className="text-dc1-amber font-semibold">{model.avg_price_sar_per_min.toFixed(3)} {t('marketplace.sar_min')}</dd>
         </div>
         <div className="flex justify-between">
           <dt>{t('marketplace.cold_start')}</dt>
@@ -733,6 +766,34 @@ function ModelCard({
             {benchmarkSummary}
           </p>
         )}
+      </div>
+
+      <div className="mt-3 rounded-md border border-status-success/20 bg-status-success/5 p-3 text-xs">
+        <p className="text-status-success font-semibold mb-2">Pricing Advantage</p>
+        <div className="space-y-1.5 text-dc1-text-secondary">
+          <div className="flex justify-between">
+            <span>vs Vast.ai</span>
+            <span className="text-status-success font-medium">
+              {(() => {
+                const comp = calculatePricingComparison(model.avg_price_sar_per_min)
+                return comp.vastaiComparison.savingsPercent > 0
+                  ? `${comp.vastaiComparison.savingsPercent}% lower`
+                  : 'Competitive'
+              })()}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span>vs RunPod</span>
+            <span className="text-status-success font-medium">
+              {(() => {
+                const comp = calculatePricingComparison(model.avg_price_sar_per_min)
+                return comp.runpodComparison.savingsPercent > 0
+                  ? `${comp.runpodComparison.savingsPercent}% lower`
+                  : 'Competitive'
+              })()}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="mt-3 mb-4 flex flex-wrap gap-1">
