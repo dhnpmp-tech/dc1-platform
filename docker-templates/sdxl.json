@@ -1,0 +1,59 @@
+{
+  "id": "sdxl",
+  "name": "Stable Diffusion XL (SDXL)",
+  "description": "Stability AI SDXL — high-resolution 1024×1024 image generation. Significantly higher quality than SD 1.x/2.x. Supports text-to-image, img2img, and inpainting.",
+  "image": "dc1/sd-worker:latest",
+  "job_type": "image_generation",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Model ID (HuggingFace)", "default": "stabilityai/stable-diffusion-xl-base-1.0", "required": true },
+    { "key": "REFINER_MODEL_ID", "label": "Refiner model (optional)", "default": "stabilityai/stable-diffusion-xl-refiner-1.0", "required": false },
+    { "key": "STEPS", "label": "Diffusion steps", "default": "30", "required": false },
+    { "key": "WIDTH", "label": "Image width (px)", "default": "1024", "required": false },
+    { "key": "HEIGHT", "label": "Image height (px)", "default": "1024", "required": false },
+    { "key": "GUIDANCE_SCALE", "label": "CFG guidance scale", "default": "7.5", "required": false }
+  ],
+  "params": {
+    "prompt": "A futuristic Riyadh skyline at sunset, photorealistic, 8K",
+    "negative_prompt": "blur, low quality, watermark",
+    "model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "steps": 30,
+    "width": 1024,
+    "height": 1024,
+    "guidance_scale": 7.5
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "hot",
+    "behavior": "Hot cache — SDXL base + optional refiner UNet kept pinned. ~12 GB combined. Enables sub-30 s cold restart after first pull."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "image_generation",
+      "duration_minutes": 15,
+      "params": {
+        "prompt": "An abstract visualization of GPU compute in Saudi Arabia, golden tones, cinematic",
+        "negative_prompt": "blurry, low quality, text, watermark",
+        "model": "stabilityai/stable-diffusion-xl-base-1.0",
+        "steps": 30,
+        "width": 1024,
+        "height": 1024,
+        "guidance_scale": 7.5
+      }
+    },
+    "output": {
+      "type": "image",
+      "model": "stabilityai/stable-diffusion-xl-base-1.0",
+      "output_file": "output.png",
+      "resolution": "1024x1024",
+      "status": "completed"
+    }
+  },
+  "min_vram_gb": 8,
+  "estimated_price_sar_per_hour": 12.0,
+  "tags": ["image-gen", "diffusion", "sdxl", "creative", "art", "1024px"],
+  "sort_order": 7,
+  "icon": "🎨",
+  "difficulty": "easy",
+  "tier": "cached",
+  "tier_notes": "Cached tier — SDXL base model (~6.5 GB) cached hot on provider. Full 1024×1024 resolution at standard quality settings."
+}

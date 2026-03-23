@@ -1,0 +1,51 @@
+{
+  "id": "llama3-8b",
+  "name": "Llama 3 8B Instruct",
+  "description": "Meta Llama 3 8B Instruct — fast, capable LLM for chat, summarization, and reasoning. OpenAI-compatible serving via vLLM. Fits in 16 GB VRAM.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Model ID (HuggingFace)", "default": "meta-llama/Meta-Llama-3-8B-Instruct", "required": true },
+    { "key": "MAX_MODEL_LEN", "label": "Max context length (tokens)", "default": "8192", "required": false },
+    { "key": "DTYPE", "label": "Weight dtype", "default": "float16", "required": false },
+    { "key": "MAX_TOKENS", "label": "Max output tokens", "default": "512", "required": false },
+    { "key": "TEMPERATURE", "label": "Sampling temperature", "default": "0.7", "required": false }
+  ],
+  "params": {
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "prompt": "You are a helpful assistant. Explain GPU compute marketplaces in 3 sentences.",
+    "max_tokens": 512,
+    "temperature": 0.7
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "hot",
+    "behavior": "Hot cache — weight shards and tokenizer kept pinned on disk for instant cold-start. No download delay after first pull (~15 GB)."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "llm-inference",
+      "duration_minutes": 60,
+      "params": {
+        "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "prompt": "Explain the Vision 2030 plan for Saudi Arabia.",
+        "max_tokens": 1024,
+        "temperature": 0.7
+      }
+    },
+    "output": {
+      "type": "text",
+      "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+      "status": "completed",
+      "tokens_generated": 1024
+    }
+  },
+  "min_vram_gb": 16,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["llm", "inference", "llama", "meta", "openai-compatible", "arabic"],
+  "sort_order": 3,
+  "icon": "🦙",
+  "difficulty": "easy",
+  "tier": "cached",
+  "tier_notes": "Cached tier — HuggingFace weights pulled on first run and kept hot on provider disk. Cold start ~2 min on first run, ~10 s thereafter."
+}
