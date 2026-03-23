@@ -76,6 +76,15 @@ function getFeatureFlags() {
   };
 }
 
+function isNodeModuleInstalled(packageName) {
+  try {
+    require.resolve(packageName, { paths: [P2P_DISCOVERY_DIR] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getShadowThresholds() {
   return {
     minCoveragePct: toFiniteNumber(
@@ -426,6 +435,13 @@ function announceFromHttpInput(provider, payload) {
 
 function getDiscoveryStatus() {
   const featureFlags = getFeatureFlags();
+  const optionalPackages = {
+    websocket: isNodeModuleInstalled('@libp2p/websockets'),
+    mdns: isNodeModuleInstalled('@libp2p/mdns'),
+    relay: isNodeModuleInstalled('@libp2p/circuit-relay-v2'),
+    gossipsub: isNodeModuleInstalled('@chainsafe/libp2p-gossipsub'),
+  };
+
   return {
     mode: getDiscoveryMode(),
     announcement_enabled: isAnnouncementEnabled(),
@@ -442,6 +458,13 @@ function getDiscoveryStatus() {
       relay: featureFlags.relay,
       mdns: featureFlags.mdns,
       gossipsub: featureFlags.gossipsub,
+    },
+    optional_packages: optionalPackages,
+    optional_features_ready: {
+      websocket: featureFlags.websocket && optionalPackages.websocket,
+      mdns: featureFlags.mdns && optionalPackages.mdns,
+      relay: featureFlags.relay && optionalPackages.relay,
+      gossipsub: featureFlags.gossipsub && optionalPackages.gossipsub,
     },
   };
 }
