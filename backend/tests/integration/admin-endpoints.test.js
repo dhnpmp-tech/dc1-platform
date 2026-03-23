@@ -41,11 +41,12 @@ const ADMIN_TOKEN = process.env.DC1_ADMIN_TOKEN;
 let app;
 
 function cleanDb() {
-  try { db.run('DELETE FROM escrow_holds'); }   catch (_) {}
-  try { db.run('DELETE FROM heartbeat_log'); }  catch (_) {}
-  try { db.run('DELETE FROM jobs'); }           catch (_) {}
-  try { db.run('DELETE FROM renters'); }        catch (_) {}
-  try { db.run('DELETE FROM providers'); }      catch (_) {}
+  try { db.run('DELETE FROM serve_sessions'); }  catch (_) {}
+  try { db.run('DELETE FROM escrow_holds'); }    catch (_) {}
+  try { db.run('DELETE FROM heartbeat_log'); }   catch (_) {}
+  try { db.run('DELETE FROM jobs'); }            catch (_) {}
+  try { db.run('DELETE FROM renters'); }         catch (_) {}
+  try { db.run('DELETE FROM providers'); }       catch (_) {}
 }
 
 async function seedRenter(balanceHalala = 10_000) {
@@ -260,8 +261,16 @@ describe('Admin API — GET /api/admin/serve-sessions/:job_id', () => {
   });
 
   it('returns serve_session record when found', async () => {
-    // Create a serve_sessions record directly in DB
-    const jobId = `test-job-${Date.now()}`;
+    // Seed provider + renter, then submit a job to get a valid job_id
+    const { key: renterKey } = await seedRenter(100_000);
+    const { id: providerId } = await seedProvider();
+    const jobRes = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({ provider_id: providerId, job_type: 'vllm_serve', duration_minutes: 60,
+              params: { model: 'test-model' } });
+    expect(jobRes.status).toBe(201);
+    const jobId = jobRes.body.job.job_id;
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO serve_sessions (
@@ -294,7 +303,16 @@ describe('Admin API — GET /api/admin/serve-sessions/:job_id', () => {
   });
 
   it('includes metering fields in response (tokens, cost, timestamp)', async () => {
-    const jobId = `metered-job-${Date.now()}`;
+    // Seed provider + renter, then submit a job to get a valid job_id
+    const { key: renterKey } = await seedRenter(100_000);
+    const { id: providerId } = await seedProvider();
+    const jobRes = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', renterKey)
+      .send({ provider_id: providerId, job_type: 'vllm_serve', duration_minutes: 60,
+              params: { model: 'nemotron-mini' } });
+    expect(jobRes.status).toBe(201);
+    const jobId = jobRes.body.job.job_id;
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO serve_sessions (

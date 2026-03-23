@@ -96,7 +96,7 @@ describe('Provider lifecycle E2E', () => {
       .post('/api/providers/withdraw')
       .send({
         api_key: providerKey,
-        amount_sar: 10,
+        amount_sar: 3,
         payout_method: 'bank_transfer',
         payout_details: { iban: 'SA4420000001234567891234', bank_name: 'Test Bank' },
       });
@@ -108,7 +108,7 @@ describe('Provider lifecycle E2E', () => {
 
     const wd = db.get('SELECT amount_sar, status FROM withdrawals WHERE withdrawal_id = ?', withdrawRes.body.withdrawal_id);
     expect(wd).toBeDefined();
-    expect(wd.amount_sar).toBe(10);
+    expect(wd.amount_sar).toBe(3);
     expect(wd.status).toBe('pending');
   });
 });

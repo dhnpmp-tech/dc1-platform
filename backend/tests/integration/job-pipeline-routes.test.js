@@ -1136,20 +1136,24 @@ describe('Billing accuracy — 75/25 split', () => {
 describe('GET /api/jobs/queue/:provider_id', () => {
   test('returns queued and pending jobs for a provider', async () => {
     const { key: renterKey } = seedRenter(200_000);
-    const { id: providerId } = seedProvider();
+    const { id: providerId, key: providerKey } = seedProvider();
 
     await submitJob(renterKey, providerId);
     await submitJob(renterKey, providerId); // queued
 
-    const res = await request(app).get(`/api/jobs/queue/${providerId}`);
+    const res = await request(app)
+      .get(`/api/jobs/queue/${providerId}`)
+      .set('x-provider-key', providerKey);
     expect(res.status).toBe(200);
     expect(res.body.total).toBeGreaterThanOrEqual(1);
   });
 
   test('returns empty queue for a provider with no active jobs', async () => {
-    const { id: providerId } = seedProvider();
+    const { id: providerId, key: providerKey } = seedProvider();
 
-    const res = await request(app).get(`/api/jobs/queue/${providerId}`);
+    const res = await request(app)
+      .get(`/api/jobs/queue/${providerId}`)
+      .set('x-provider-key', providerKey);
     expect(res.status).toBe(200);
     expect(res.body.queue).toEqual([]);
     expect(res.body.total).toBe(0);
