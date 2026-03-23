@@ -2060,12 +2060,12 @@ router.post('/job-result', (req, res) => {
 
         runStatement(
             `UPDATE jobs SET status = ?, result = ?, error = ?, completed_at = ?,
-             actual_duration_minutes = ?, actual_cost_halala = ?,
+             actual_duration_minutes = ?, duration_seconds = ?, actual_cost_halala = ?,
              provider_earned_halala = ?, dc1_fee_halala = ?,
              restart_count = ?, last_error = ?
              WHERE id = ?`,
             newStatus, typeof result === 'string' ? result : JSON.stringify(result || {}), lastError, now,
-            actualMinutes, actualCostHalala, providerEarned, dc1Fee, restartCount, lastError, job.id
+            actualMinutes, Math.round(elapsedSeconds), actualCostHalala, providerEarned, dc1Fee, restartCount, lastError, job.id
         );
 
         // Update provider stats
