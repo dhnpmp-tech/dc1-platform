@@ -157,8 +157,24 @@ export class AuthManager {
     return this._providerKey;
   }
 
+  get providerApiKey(): string | undefined {
+    return this._providerKey;
+  }
+
   get isProviderAuthenticated(): boolean {
     return !!this._providerKey;
+  }
+
+  async getStoredProviderKey(): Promise<string | undefined> {
+    if (this._providerKey?.trim()) {
+      return this._providerKey.trim();
+    }
+    const secretKey = (await this.secrets.get(PROVIDER_SECRET_KEY))?.trim();
+    if (secretKey) {
+      this._providerKey = secretKey;
+      return secretKey;
+    }
+    return undefined;
   }
 
   async setProviderKey(key: string): Promise<void> {

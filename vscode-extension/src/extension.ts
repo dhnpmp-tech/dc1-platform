@@ -11,6 +11,7 @@ import { VllmSubmitPanel } from './panels/VllmSubmitPanel';
 import { WalletPanel } from './panels/WalletPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { ModelStatusPanel } from './panels/ModelStatusPanel';
+import { ProviderEarningsPanel } from './panels/ProviderEarningsPanel';
 import { Provider, Job } from './api/dc1Client';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -63,7 +64,25 @@ export function activate(context: vscode.ExtensionContext): void {
   auth.onDidChangeProviderKey(() => {
     updateProviderStatusBar();
     providerStatusProvider.refresh();
+    updateProviderEarningsBar();
   });
+
+  // ── Provider earnings status bar ────────────────────────────────────
+  const providerEarningsBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  providerEarningsBar.command = 'dc1.providerEarnings';
+  context.subscriptions.push(providerEarningsBar);
+
+  function updateProviderEarningsBar(): void {
+    if (auth.isProviderAuthenticated) {
+      providerEarningsBar.text = '$(trending-up) DCP Earnings';
+      providerEarningsBar.tooltip = 'View provider earnings & pricing comparison';
+      providerEarningsBar.show();
+    } else {
+      providerEarningsBar.hide();
+    }
+  }
+
+  updateProviderEarningsBar();
 
   // ── Renter budget status bar ──────────────────────────────────────
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -609,6 +628,29 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('dc1.modelStatus', () => {
       ModelStatusPanel.show(context.extensionUri);
+    })
+  );
+
+  // dc1.providerEarnings — provider earnings dashboard with pricing comparison
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dc1.providerEarnings', async () => {
+      const key = await auth.getStoredProviderKey();
+      if (!key && !auth.isProviderAuthenticated) {
+        const action = await vscode.window.showWarningMessage(
+          'DCP: Set your provider API key to view earnings.',
+          'Set Key in Settings',
+          'Set Key via Command'
+        );
+        if (action === 'Set Key in Settings') {
+          vscode.commands.executeCommand('workbench.action.openSettings', 'dc1.providerApiKey');
+          return;
+        } else if (action === 'Set Key via Command') {
+          await auth.promptAndSaveProvider();
+        } else {
+          return;
+        }
+      }
+      ProviderEarningsPanel.show(context.extensionUri, auth);
     })
   );
 
