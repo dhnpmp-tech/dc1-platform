@@ -56,7 +56,7 @@ interface ModelBrowsingProps {
 }
 
 export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
-  const { language, t } = useLanguage()
+  const { language, t, dir } = useLanguage()
   const [models, setModels] = useState<Model[]>([])
   const [modelCards, setModelCards] = useState<Map<string, ModelCardFeed>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -178,25 +178,25 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+      <div className="p-4 bg-status-error/10 border border-status-error/20 rounded-lg text-status-error">
         {t('marketplace.error_loading_models') || 'Error loading models:'} {error}
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir={dir}>
       {/* Filters and Sort */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Tier Filter */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
             {t('marketplace.tier') || 'Tier'}
           </label>
           <select
             value={filters.tier || ''}
             onChange={e => setFilters({ ...filters, tier: e.target.value || null })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="input w-full text-sm"
           >
             <option value="">{t('marketplace.all') || 'All'}</option>
             <option value="tier_a">Tier A</option>
@@ -207,13 +207,13 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
 
         {/* Min VRAM Filter */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
             {t('marketplace.min_vram') || 'Min VRAM (GB)'}
           </label>
           <select
             value={filters.minVram}
             onChange={e => setFilters({ ...filters, minVram: parseInt(e.target.value) })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="input w-full text-sm"
           >
             {vramOptions.map(vram => (
               <option key={vram} value={vram}>
@@ -225,13 +225,13 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
 
         {/* Compute Type Filter */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
             {t('marketplace.compute_type') || 'Compute Type'}
           </label>
           <select
             value={filters.computeType || ''}
             onChange={e => setFilters({ ...filters, computeType: e.target.value || null })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="input w-full text-sm"
           >
             <option value="">{t('marketplace.all') || 'All'}</option>
             {computeTypes.map(type => (
@@ -244,15 +244,15 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
 
         {/* Arabic Capability */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
             {t('marketplace.language') || 'Language'}
           </label>
           <button
             onClick={() => setFilters({ ...filters, arabicCapability: !filters.arabicCapability })}
-            className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition ${
+            className={`btn w-full text-sm ${
               filters.arabicCapability
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                ? 'btn-primary'
+                : 'btn-secondary'
             }`}
           >
             {t('marketplace.arabic_only') || 'Arabic'}
@@ -261,13 +261,13 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
 
         {/* Sort */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
             {t('marketplace.sort_by') || 'Sort By'}
           </label>
           <select
             value={sortBy}
             onChange={e => setSortBy(e.target.value as SortOption)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="input w-full text-sm"
           >
             <option value="availability">{t('marketplace.sort_availability') || 'Availability'}</option>
             <option value="price-asc">{t('marketplace.sort_price_low') || 'Price (Low)'}</option>
@@ -283,7 +283,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
         {filteredAndSorted.map(model => (
           <div
             key={model.model_id}
-            className="p-4 border border-gray-200 rounded-lg hover:shadow-lg transition hover:border-blue-300"
+            className="p-4 border border-dc1-border rounded-lg hover:shadow-lg transition hover:border-dc1-amber/30"
           >
             {/* Header */}
             <div className="mb-3">
@@ -337,11 +337,11 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
             {/* Status */}
             <div className="mb-3">
               {model.status === 'available' ? (
-                <span className="inline-block px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
+                <span className="inline-block px-2 py-1 bg-status-success/10 text-status-success border border-status-success/20 rounded text-xs font-medium">
                   {t('marketplace.available') || 'Available'}
                 </span>
               ) : (
-                <span className="inline-block px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
+                <span className="inline-block px-2 py-1 bg-status-error/10 text-status-error border border-status-error/20 rounded text-xs font-medium">
                   {t('marketplace.no_providers') || 'No Providers'}
                 </span>
               )}
@@ -351,7 +351,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
             <button
               onClick={() => handleSelectModel(model)}
               disabled={model.status !== 'available'}
-              className="w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="btn btn-primary w-full text-sm disabled:cursor-not-allowed"
             >
               {t('marketplace.deploy_model') || 'Deploy Model'}
             </button>
