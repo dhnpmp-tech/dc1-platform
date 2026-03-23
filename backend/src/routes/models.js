@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const db = require('../db');
+const { publicEndpointLimiter, modelDeployLimiter } = require('../middleware/rateLimiter');
 
 const PROVIDER_FRESHNESS_MS = 10 * 60 * 1000;
 const DEFAULT_DEPLOY_DURATION_MINUTES = 60;
@@ -477,6 +478,8 @@ function toLegacyListItem(model) {
     status: model.availability.status,
     tier: model.portfolio?.tier || null,
     prewarm_class: model.portfolio?.prewarm_class || null,
+    competitor_prices: model.pricing.competitor_prices || null,
+    savings_pct: model.pricing.savings_pct || null,
   };
 }
 
@@ -610,7 +613,7 @@ function buildDeploySubmitPayload(model, options = {}) {
 
 // GET /api/models
 // Public model registry with live provider availability and averaged pricing.
-router.get('/', (req, res) => {
+router.get('/', publicEndpointLimiter, (req, res) => {
   try {
     const models = getCatalogModels().map(toLegacyListItem);
     return res.json(models);
@@ -622,7 +625,7 @@ router.get('/', (req, res) => {
 
 // GET /api/models/benchmarks
 // Data feed for model benchmarking: latency, Arabic quality, cost/1K, VRAM, cold start.
-router.get('/benchmarks', (req, res) => {
+router.get('/benchmarks', publicEndpointLimiter, (req, res) => {
   try {
     const models = getCatalogModels().map(toBenchmarksEntry);
     return res.json({
@@ -638,7 +641,7 @@ router.get('/benchmarks', (req, res) => {
 
 // GET /api/models/cards
 // Bilingual model cards enriched with benchmark metrics for renter UX.
-router.get('/cards', (req, res) => {
+router.get('/cards', publicEndpointLimiter, (req, res) => {
   try {
     const cards = getCatalogModels().map(toCardEntry);
     return res.json({
@@ -654,7 +657,7 @@ router.get('/cards', (req, res) => {
 
 // GET /api/models/catalog
 // Managed model catalog payload used by comparison/deploy UX.
-router.get('/catalog', (req, res) => {
+router.get('/catalog', publicEndpointLimiter, (req, res) => {
   try {
     const models = getCatalogModels();
     return res.json({
@@ -670,7 +673,7 @@ router.get('/catalog', (req, res) => {
 
 // GET /api/models/portfolio-readiness
 // Tier-grouped launch readiness feed focused on prewarm-critical Tier A.
-router.get('/portfolio-readiness', (req, res) => {
+router.get('/portfolio-readiness', publicEndpointLimiter, (req, res) => {
   try {
     const models = getCatalogModels()
       .filter((model) => model.portfolio && ['tier_a', 'tier_b'].includes(model.portfolio.tier))
@@ -729,7 +732,7 @@ router.get('/portfolio-readiness', (req, res) => {
 
 // GET /api/models/compare?ids=id1,id2,id3
 // Fetches comparable model payloads in one call for side-by-side UI.
-router.get('/compare', (req, res) => {
+router.get('/compare', publicEndpointLimiter, (req, res) => {
   try {
     const ids = parseCompareIds(req);
     if (ids.length < 2) {
@@ -774,7 +777,7 @@ router.get('/compare', (req, res) => {
 // GET /api/models/bundles/arabic-rag
 // Returns the complete Arabic RAG bundle config: BGE-M3 + reranker + ALLaM/JAIS.
 // Used by the one-click Arabic RAG template to resolve all required model components.
-router.get('/bundles/arabic-rag', (req, res) => {
+router.get('/bundles/arabic-rag', publicEndpointLimiter, (req, res) => {
   try {
     const models = getCatalogModels();
     const findModel = (...candidates) => {
@@ -841,7 +844,7 @@ router.get('/bundles/arabic-rag', (req, res) => {
 
 // GET /api/models/:model_id/deploy/estimate
 // Returns deployment estimate payload for the selected model.
-router.get('/:model_id/deploy/estimate', (req, res) => {
+router.get('/:model_id/deploy/estimate', publicEndpointLimiter, (req, res) => {
   try {
     const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
@@ -862,7 +865,7 @@ router.get('/:model_id/deploy/estimate', (req, res) => {
 
 // POST /api/models/:model_id/deploy
 // Authenticated deploy handoff endpoint for managed catalog UX.
-router.post('/:model_id/deploy', requireRenter, (req, res) => {
+router.post('/:model_id/deploy', modelDeployLimiter, requireRenter, (req, res) => {
   try {
     const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
@@ -920,7 +923,7 @@ router.post('/:model_id/deploy', requireRenter, (req, res) => {
 
 // GET /api/models/:model_id
 // Single-model detail payload for managed catalog consumers.
-router.get('/:model_id', (req, res) => {
+router.get('/:model_id', publicEndpointLimiter, (req, res) => {
   try {
     const modelId = normalizeString(req.params.model_id, { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
