@@ -6,7 +6,6 @@ import { useLanguage } from '../../lib/i18n'
 interface CompetitorPricing {
   provider: string
   price_sar_per_hour: number
-  color: string
 }
 
 interface CostEstimatorProps {
@@ -54,25 +53,43 @@ const BUYER_ECONOMICS = [
   },
 ]
 
-// Competitive pricing comparison (example data)
+// Corrected competitive pricing from FOUNDER-STRATEGIC-BRIEF.md
+// USD → SAR at 1 USD = 3.75 SAR
+// RTX 4090: DCP $0.267/hr (23.7% below Vast.ai)
+// H100: DCP $1.85/hr vs AWS $4.70/hr (61% cheaper)
 const COMPETITIVE_PRICING: { [key: string]: CompetitorPricing[] } = {
-  'A100': [
-    { provider: 'DC1', price_sar_per_hour: 24, color: 'bg-green-100 text-green-700' },
-    { provider: 'Vast.ai', price_sar_per_hour: 36, color: 'bg-gray-100 text-gray-700' },
-    { provider: 'RunPod', price_sar_per_hour: 48, color: 'bg-gray-100 text-gray-700' },
-    { provider: 'AWS', price_sar_per_hour: 144, color: 'bg-red-100 text-red-700' },
+  RTX4090: [
+    { provider: 'DC1', price_sar_per_hour: 1.00 },
+    { provider: 'Vast.ai', price_sar_per_hour: 1.31 },
+    { provider: 'RunPod', price_sar_per_hour: 1.50 },
   ],
-  'H100': [
-    { provider: 'DC1', price_sar_per_hour: 80, color: 'bg-green-100 text-green-700' },
-    { provider: 'Vast.ai', price_sar_per_hour: 120, color: 'bg-gray-100 text-gray-700' },
-    { provider: 'RunPod', price_sar_per_hour: 160, color: 'bg-gray-100 text-gray-700' },
-    { provider: 'AWS', price_sar_per_hour: 480, color: 'bg-red-100 text-red-700' },
+  A100: [
+    { provider: 'DC1', price_sar_per_hour: 4.69 },
+    { provider: 'Vast.ai', price_sar_per_hour: 7.88 },
+    { provider: 'RunPod', price_sar_per_hour: 9.38 },
+    { provider: 'AWS', price_sar_per_hour: 11.63 },
   ],
-  'RTX4090': [
-    { provider: 'DC1', price_sar_per_hour: 6, color: 'bg-green-100 text-green-700' },
-    { provider: 'Vast.ai', price_sar_per_hour: 10, color: 'bg-gray-100 text-gray-700' },
-    { provider: 'RunPod', price_sar_per_hour: 14, color: 'bg-gray-100 text-gray-700' },
+  H100: [
+    { provider: 'DC1', price_sar_per_hour: 6.94 },
+    { provider: 'Vast.ai', price_sar_per_hour: 12.00 },
+    { provider: 'RunPod', price_sar_per_hour: 14.25 },
+    { provider: 'AWS', price_sar_per_hour: 17.63 },
   ],
+}
+
+// SAR/hr by GPU class — based on corrected backend rates (DCP-668)
+// 6 halala/min economy (RTX 4090), 9 halala/min LLM standard (A100/H100)
+const GPU_RATE_SAR_PER_HOUR: { [key: string]: number } = {
+  RTX4090: 3.60,  // 6 halala/min × 60 / 100
+  A100: 5.40,     // 9 halala/min × 60 / 100
+  H100: 5.40,     // 9 halala/min × 60 / 100
+}
+
+function getGpuType(vramGb?: number): string {
+  if (!vramGb) return 'RTX4090'
+  if (vramGb >= 80) return 'H100'
+  if (vramGb >= 48) return 'A100'
+  return 'RTX4090'
 }
 
 function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps) {
@@ -82,11 +99,11 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
   const [tokens, setTokens] = useState(1000)
   const [estimateMode, setEstimateMode] = useState<'duration' | 'tokens'>('duration')
 
-  // Example pricing: 1 SAR per hour base, scaled by VRAM
-  const basePrice = vramGb ? (vramGb / 8) * 1.5 : 1.5
-  const costPerHour = basePrice
+  const gpuType = getGpuType(vramGb)
+  const costPerHour = GPU_RATE_SAR_PER_HOUR[gpuType]
   const costPerMin = costPerHour / 60
-  const costPer1KTokens = vramGb ? 0.01 * (vramGb / 8) : 0.01
+  // Per-token cost at DCP floor: $0.267/hr RTX4090 → ~SAR 1.65/1M tokens at 45 tok/sec
+  const costPer1KTokens = gpuType === 'RTX4090' ? 0.00165 : gpuType === 'A100' ? 0.003 : 0.005
 
   const totalDurationMinutes = hours * 60 + minutes
   const durationCost = totalDurationMinutes * costPerMin
@@ -100,8 +117,8 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
   }, [estimatedTotal, onPriceEstimate])
 
   return (
-    <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
-      <h4 className="font-semibold text-gray-900 mb-3">{t('marketplace.cost_estimator') || 'Cost Estimator'}</h4>
+    <div className="p-4 border border-dc1-border rounded-lg bg-dc1-surface">
+      <h4 className="font-semibold text-dc1-text-primary mb-3">{t('marketplace.cost_estimator') || 'Cost Estimator'}</h4>
 
       {/* Mode Toggle */}
       <div className="mb-4 flex gap-2">
@@ -109,8 +126,8 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
           onClick={() => setEstimateMode('duration')}
           className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${
             estimateMode === 'duration'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white border border-gray-300 text-gray-700'
+              ? 'btn btn-primary'
+              : 'btn btn-secondary'
           }`}
         >
           {t('marketplace.by_duration') || 'By Duration'}
@@ -119,8 +136,8 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
           onClick={() => setEstimateMode('tokens')}
           className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${
             estimateMode === 'tokens'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white border border-gray-300 text-gray-700'
+              ? 'btn btn-primary'
+              : 'btn btn-secondary'
           }`}
         >
           {t('marketplace.by_tokens') || 'By Tokens'}
@@ -131,7 +148,7 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
       {estimateMode === 'duration' && (
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-dc1-text-secondary mb-1">
               {t('marketplace.hours') || 'Hours'}
             </label>
             <input
@@ -140,11 +157,11 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
               max="168"
               value={hours}
               onChange={e => setHours(Math.max(0, parseInt(e.target.value) || 0))}
-              className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+              className="input w-full"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-dc1-text-secondary mb-1">
               {t('marketplace.minutes') || 'Minutes'}
             </label>
             <input
@@ -153,7 +170,7 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
               max="59"
               value={minutes}
               onChange={e => setMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-              className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+              className="input w-full"
             />
           </div>
         </div>
@@ -162,7 +179,7 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
       {/* Token Mode */}
       {estimateMode === 'tokens' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-dc1-text-secondary mb-1">
             {t('marketplace.num_tokens') || 'Number of Tokens'}
           </label>
           <input
@@ -171,7 +188,7 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
             max="1000000"
             value={tokens}
             onChange={e => setTokens(Math.max(1, parseInt(e.target.value) || 1000))}
-            className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+            className="input w-full"
           />
         </div>
       )}
@@ -180,11 +197,11 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
       <div className="mt-3 space-y-2 text-xs">
         {estimateMode === 'duration' && (
           <>
-            <div className="flex justify-between text-gray-600">
+            <div className="flex justify-between text-dc1-text-secondary">
               <span>{t('marketplace.per_hour') || 'Per hour'}:</span>
               <span>SAR {costPerHour.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-gray-600">
+            <div className="flex justify-between text-dc1-text-secondary">
               <span>{t('marketplace.duration') || 'Duration'}:</span>
               <span>
                 {hours > 0 && `${hours}h `}
@@ -195,17 +212,17 @@ function CostEstimator({ modelId, vramGb, onPriceEstimate }: CostEstimatorProps)
           </>
         )}
         {estimateMode === 'tokens' && (
-          <div className="flex justify-between text-gray-600">
+          <div className="flex justify-between text-dc1-text-secondary">
             <span>{t('marketplace.per_1k_tokens') || 'Per 1K tokens'}:</span>
-            <span>SAR {costPer1KTokens.toFixed(4)}</span>
+            <span>SAR {costPer1KTokens.toFixed(5)}</span>
           </div>
         )}
       </div>
 
       {/* Total */}
-      <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between">
-        <span className="font-semibold text-gray-900">{t('marketplace.estimated_total') || 'Estimated Total'}:</span>
-        <span className="text-lg font-bold text-green-600">SAR {estimatedTotal.toFixed(2)}</span>
+      <div className="mt-3 pt-3 border-t border-dc1-border flex justify-between">
+        <span className="font-semibold text-dc1-text-primary">{t('marketplace.estimated_total') || 'Estimated Total'}:</span>
+        <span className="text-lg font-bold text-status-success">SAR {estimatedTotal.toFixed(2)}</span>
       </div>
     </div>
   )
@@ -221,30 +238,62 @@ export default function PricingDisplay({ modelId, vramGb, pricePerHour, onPriceE
     }
   }, [estimatedPrice, onPriceEstimate])
 
-  const gpuType = vramGb && vramGb >= 80 ? 'H100' : vramGb && vramGb >= 48 ? 'A100' : 'RTX4090'
+  const gpuType = getGpuType(vramGb)
   const competitorPrices = COMPETITIVE_PRICING[gpuType] || []
+  const dcpPrice = competitorPrices.find(p => p.provider === 'DC1')
+  const awsPrice = competitorPrices.find(p => p.provider === 'AWS')
+  const vastPrice = competitorPrices.find(p => p.provider === 'Vast.ai')
+  const benchmarkPrice = awsPrice || vastPrice
+  const savingsVsBenchmark = dcpPrice && benchmarkPrice
+    ? Math.round((1 - dcpPrice.price_sar_per_hour / benchmarkPrice.price_sar_per_hour) * 100)
+    : null
 
   return (
     <div className="space-y-6">
+      {/* Savings Banner */}
+      {savingsVsBenchmark && (
+        <div className="p-3 bg-status-success/10 border border-status-success/20 rounded-lg flex items-center gap-3">
+          <span className="text-2xl font-black text-status-success">{savingsVsBenchmark}%</span>
+          <div>
+            <p className="font-semibold text-dc1-text-primary text-sm">
+              {t('marketplace.cheaper_than') || 'cheaper than'} {benchmarkPrice?.provider}
+            </p>
+            <p className="text-xs text-dc1-text-secondary">
+              {t('marketplace.saudi_energy_arbitrage') || 'Saudi energy arbitrage — 33–51% savings vs hyperscalers'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Competitive Pricing */}
       {competitorPrices.length > 0 && (
-        <div className="p-4 border border-gray-200 rounded-lg">
-          <h3 className="font-semibold text-gray-900 mb-4">
+        <div className="p-4 border border-dc1-border rounded-lg">
+          <h3 className="font-semibold text-dc1-text-primary mb-4">
             {t('marketplace.competitive_pricing') || 'Market Comparison'} ({gpuType})
           </h3>
           <div className="space-y-2">
             {competitorPrices.map(comp => {
-              const discount = comp.provider === 'DC1'
-                ? ((competitorPrices[1]?.price_sar_per_hour - comp.price_sar_per_hour) / competitorPrices[1]?.price_sar_per_hour * 100).toFixed(0)
+              const isDcp = comp.provider === 'DC1'
+              const savingsPct = isDcp && benchmarkPrice
+                ? Math.round((1 - comp.price_sar_per_hour / benchmarkPrice.price_sar_per_hour) * 100)
                 : null
               return (
-                <div key={comp.provider} className="flex items-center justify-between p-2 rounded">
-                  <span className="font-medium text-gray-900">{comp.provider}</span>
+                <div
+                  key={comp.provider}
+                  className={`flex items-center justify-between p-2 rounded ${
+                    isDcp ? 'bg-status-success/10 border border-status-success/20' : 'bg-dc1-surface'
+                  }`}
+                >
+                  <span className={`font-medium ${isDcp ? 'text-status-success' : 'text-dc1-text-primary'}`}>
+                    {comp.provider}
+                  </span>
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold">SAR {comp.price_sar_per_hour}</span>
-                    {discount && (
-                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm font-medium">
-                        Save {discount}%
+                    <span className="text-lg font-bold text-dc1-text-primary">
+                      SAR {comp.price_sar_per_hour.toFixed(2)}/hr
+                    </span>
+                    {savingsPct && (
+                      <span className="px-2 py-1 bg-status-success/10 text-status-success border border-status-success/20 rounded text-sm font-medium">
+                        Save {savingsPct}%
                       </span>
                     )}
                   </div>
@@ -263,25 +312,25 @@ export default function PricingDisplay({ modelId, vramGb, pricePerHour, onPriceE
       />
 
       {/* Buyer Economics */}
-      <div className="p-4 border border-gray-200 rounded-lg">
-        <h3 className="font-semibold text-gray-900 mb-4">
+      <div className="p-4 border border-dc1-border rounded-lg">
+        <h3 className="font-semibold text-dc1-text-primary mb-4">
           {t('marketplace.buyer_economics') || 'Annual Savings Examples'}
         </h3>
         <div className="space-y-3">
           {BUYER_ECONOMICS.map(scenario => (
-            <div key={scenario.scenario} className="p-3 bg-blue-50 rounded-lg">
+            <div key={scenario.scenario} className="p-3 bg-dc1-surface rounded-lg border border-dc1-border">
               <div className="flex items-center justify-between mb-2">
-                <h4 className="font-medium text-gray-900">{scenario.scenario}</h4>
-                <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm font-bold">
+                <h4 className="font-medium text-dc1-text-primary">{scenario.scenario}</h4>
+                <span className="px-2 py-1 bg-status-success/10 text-status-success border border-status-success/20 rounded text-sm font-bold">
                   {scenario.savingsPercent}% {t('marketplace.savings') || 'Save'}
                 </span>
               </div>
-              <div className="space-y-1 text-xs text-gray-600">
+              <div className="space-y-1 text-xs text-dc1-text-secondary">
                 <div className="flex justify-between">
                   <span>{t('marketplace.hyperscaler') || 'Hyperscaler'}: SAR {scenario.hyperscalerYear.toLocaleString()}/yr</span>
                   <span>{t('marketplace.dcp') || 'DC1'}: SAR {scenario.dcpYear.toLocaleString()}/yr</span>
                 </div>
-                <div className="text-green-600 font-medium">
+                <div className="text-status-success font-medium">
                   {t('marketplace.annual_savings') || 'Annual Savings'}: SAR {scenario.savings.toLocaleString()}
                 </div>
               </div>
@@ -291,9 +340,9 @@ export default function PricingDisplay({ modelId, vramGb, pricePerHour, onPriceE
       </div>
 
       {/* Info Box */}
-      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm text-gray-700">
-          💡 {t('marketplace.pricing_info') || 'Pricing is real-time based on provider costs and market conditions. DC1 offers 33-51% savings vs hyperscalers through energy arbitrage in Saudi Arabia.'}
+      <div className="p-4 bg-dc1-surface border border-dc1-border rounded-lg">
+        <p className="text-sm text-dc1-text-secondary">
+          {t('marketplace.pricing_info') || 'Pricing is real-time based on provider costs and market conditions. DC1 offers 33–51% savings vs hyperscalers through energy arbitrage in Saudi Arabia.'}
         </p>
       </div>
     </div>
