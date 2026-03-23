@@ -84,7 +84,7 @@ test.describe('Job Submission Flow', () => {
     // Fill minimal job form
     const durationInput = page.locator('input[placeholder*="duration" i], input[placeholder*="time" i], input[type="number"]').first();
     if (await durationInput.isVisible()) {
-      await fillInput(page, 'input[placeholder*="duration" i], input[placeholder*="time" i], '10');
+      await fillInput(page, 'input[placeholder*="duration" i], input[placeholder*="time" i]', '10');
     }
 
     // Submit job
