@@ -5,11 +5,12 @@ import DashboardSidebar, { NavItem } from './DashboardSidebar'
 interface DashboardLayoutProps {
   children: React.ReactNode
   navItems: NavItem[]
-  role: 'provider' | 'renter' | 'admin'
+  role?: 'provider' | 'renter' | 'admin'
   userName?: string
+  pageTitle?: string
 }
 
-export default function DashboardLayout({ children, navItems, role, userName }: DashboardLayoutProps) {
+export default function DashboardLayout({ children, navItems, role = 'renter', userName, pageTitle }: DashboardLayoutProps) {
   return (
     <div className="flex min-h-screen">
       <DashboardSidebar navItems={navItems} role={role} userName={userName} />
