@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { LanguageToggle, useLanguage } from '../../lib/i18n'
+import { clearSession } from '../../lib/auth'
 
 export interface NavItem {
   label: string
@@ -99,15 +100,16 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
             </div>
           </div>
         )}
-        <Link
-          href="/"
+        <button
+          type="button"
+          onClick={async () => { await clearSession(); window.location.href = '/' }}
           className="flex items-center gap-2 text-sm text-dc1-text-muted hover:text-dc1-text-secondary transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
           {!collapsed && <span>{t('common.sign_out')}</span>}
-        </Link>
+        </button>
       </div>
     </>
   )

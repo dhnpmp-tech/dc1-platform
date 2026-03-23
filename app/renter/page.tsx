@@ -7,6 +7,7 @@ import DashboardLayout from '../components/layout/DashboardLayout'
 import StatCard from '../components/ui/StatCard'
 import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../lib/i18n'
+import { clearSession } from '../lib/auth'
 
 const API_BASE = '/api/dc1'
 
@@ -232,8 +233,8 @@ export default function RenterDashboard() {
     }
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('dc1_renter_key')
+  const handleLogout = async () => {
+    await clearSession()
     setRenter(null)
     setAuthReason('missing_credentials')
     window.location.href = '/'

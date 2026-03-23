@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage } from '../lib/i18n'
+import { setSession } from '../lib/auth'
 
 const API_BASE = '/api/dc1'
 
@@ -141,11 +142,11 @@ function LoginPageInner() {
       if (!data.success || !data.api_key) throw new Error(t('login.error.verification_failed'))
       if (role === 'renter') {
         localStorage.setItem('dc1_renter_key', data.api_key)
-        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'renter', userName: data.renter?.name, email: data.renter?.email }))
+        await setSession({ role: 'renter', userName: data.renter?.name, email: data.renter?.email })
         router.push(getRenterPostLoginRedirect())
       } else {
         localStorage.setItem('dc1_provider_key', data.api_key)
-        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'provider', userName: data.provider?.name, email: data.provider?.email }))
+        await setSession({ role: 'provider', userName: data.provider?.name, email: data.provider?.email })
         router.push('/provider')
       }
     } catch (err) {
@@ -163,7 +164,7 @@ function LoginPageInner() {
         const data = await res.json()
         if (!data.renter) throw new Error(t('login.error.renter_not_found'))
         localStorage.setItem('dc1_renter_key', apiKey.trim())
-        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'renter', userName: data.renter.name, email: data.renter.email }))
+        await setSession({ role: 'renter', userName: data.renter.name, email: data.renter.email })
         router.push(getRenterPostLoginRedirect())
       } else if (role === 'provider') {
         const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey.trim())}`)
@@ -171,13 +172,13 @@ function LoginPageInner() {
         const data = await res.json()
         if (!data.provider) throw new Error(t('login.error.provider_not_found'))
         localStorage.setItem('dc1_provider_key', apiKey.trim())
-        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'provider', userName: data.provider.name, email: data.provider.email }))
+        await setSession({ role: 'provider', userName: data.provider.name, email: data.provider.email })
         router.push('/provider')
       } else if (role === 'admin') {
         const res = await fetch(`${API_BASE}/admin/dashboard`, { headers: { 'x-admin-token': apiKey.trim() } })
         if (!res.ok) throw new Error(normalizeAuthError(res.status, t('login.error.invalid_admin_key'), t('auth.error.invalid_credentials')))
         localStorage.setItem('dc1_admin_token', apiKey.trim())
-        localStorage.setItem('dc1_user_data', JSON.stringify({ role: 'admin', userName: 'Admin' }))
+        await setSession({ role: 'admin', userName: 'Admin' })
         router.push('/admin')
       }
     } catch (err) {
