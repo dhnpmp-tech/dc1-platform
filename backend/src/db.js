@@ -885,6 +885,8 @@ const migrations = [
   // Token tracking for vLLM inference billing — Sprint 25 Gap 1
   'ALTER TABLE jobs ADD COLUMN prompt_tokens INTEGER',
   'ALTER TABLE jobs ADD COLUMN completion_tokens INTEGER',
+  // Model cache tier for provider job routing — Sprint 25 Gap 5
+  "ALTER TABLE model_registry ADD COLUMN prewarm_class TEXT DEFAULT 'warm'",
 ];
 
 migrations.forEach(sql => {

@@ -1667,10 +1667,14 @@ function getProviderRoutingProfile(provider) {
         }
     }
 
+    const cachedModelsRaw = safeJsonParse(provider.cached_models);
+    const cachedModels = new Set(Array.isArray(cachedModelsRaw) ? cachedModelsRaw : []);
+
     return {
         vram_mb: Number(vramMb || 0),
         gpu_count: Number(gpuCount || 1),
         supported_compute_types: supported,
+        cached_models: cachedModels,
     };
 }
 
@@ -1680,11 +1684,25 @@ function parseJobContainerRequirements(containerSpecRaw) {
     const vramRequiredMb = toFiniteInt(containerSpec?.vram_required_mb, { min: 0, max: 1024 * 1024 }) || 0;
     const gpuCount = toFiniteInt(containerSpec?.gpu_count, { min: 1, max: 64 }) || 1;
     const computeType = normalizeComputeType(containerSpec?.compute_type);
+
+    // Sprint 25 Gap 5: tier-aware routing — look up model's prewarm_class
+    const modelId = normalizeString(containerSpec?.model_id, { maxLen: 500 }) || null;
+    let prewarmClass = 'warm';
+    if (modelId) {
+        const modelRecord = db.get(
+            'SELECT prewarm_class FROM model_registry WHERE model_id = ? AND is_active = 1',
+            modelId
+        );
+        prewarmClass = normalizeString(modelRecord?.prewarm_class) || 'warm';
+    }
+
     return {
         vram_required_mb: vramRequiredMb,
         gpu_count: gpuCount,
         compute_type: computeType,
         container_spec: containerSpec,
+        model_id: modelId,
+        prewarm_class: prewarmClass,
     };
 }
 
@@ -1698,13 +1716,21 @@ function providerMatchesJob(providerProfile, jobRequirements) {
     if (providerProfile.gpu_count < jobRequirements.gpu_count) {
         return false;
     }
+    // Sprint 25 Gap 5: hot-tier models must already be cached on the provider.
+    // 'hot' = instant-tier (baked into image or pre-downloaded); skip providers that lack it.
+    // 'warm'/'cold' = download at runtime; any provider with sufficient VRAM is acceptable.
+    if (jobRequirements.prewarm_class === 'hot' && jobRequirements.model_id) {
+        if (!providerProfile.cached_models.has(jobRequirements.model_id)) {
+            return false;
+        }
+    }
     return true;
 }
 
 function buildNextPendingJob(providerId) {
     const provider = db.get(
         `SELECT id, wallet_address, is_paused, last_heartbeat, resource_spec, supported_compute_types, gpu_count, gpu_count_reported,
-                vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb
+                vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb, cached_models
          FROM providers
          WHERE id = ?`,
         providerId
