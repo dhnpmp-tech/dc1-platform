@@ -6,6 +6,7 @@ const path = require('path');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const paymentsRouter = require('./routes/payments');
 const { startJobSweep, getSweepMetrics, startProviderOfflineSweep } = require('./services/jobSweep');
+const { startProviderHealthWorker } = require('./workers/providerHealthWorker');
 const { runControlPlaneCycle } = require('./services/controlPlane');
 const { sendAlert } = require('./services/notifications');
 const {
@@ -17,6 +18,7 @@ const {
   authenticatedEndpointLimiter,
   heartbeatProviderLimiter,
   authLimiter,
+  createAdminIpAllowlist,
 } = require('./middleware/rateLimiter');
 const { getBearerToken } = require('./middleware/auth');
 
@@ -222,6 +224,9 @@ app.use('/api/jobs/submit', jobSubmitLimiter);
 app.use('/api/providers/marketplace', marketplaceLimiter);
 
 // Admin endpoints: 30 requests per token per minute
+// IP allowlist: when ADMIN_IP_ALLOWLIST env var is set, restrict access to listed IPs
+const adminIpAllowlistMiddleware = createAdminIpAllowlist();
+if (adminIpAllowlistMiddleware) app.use('/api/admin', adminIpAllowlistMiddleware);
 app.use('/api/admin', adminLimiter);
 
 // Tiered rate limiting for providers/jobs/models:
