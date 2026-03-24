@@ -3866,6 +3866,76 @@ router.get('/escrow-chain/status', async (req, res) => {
   }
 });
 
+// ─── GET /api/admin/export/jobs — CSV/JSON export for Budget Analyst (DCP-898) ──
+// Query params:
+//   from     ISO date — filter jobs created_at >= this value
+//   to       ISO date — filter jobs created_at <= this value
+//   format   "csv" (default) or "json"
+//
+// Token columns (input_tokens, output_tokens) are sourced from serve_sessions
+// where available. The platform does not yet split tokens into input/output;
+// input_tokens carries the aggregate total from serve_sessions, output_tokens is 0.
+router.get('/export/jobs', requireAdminAuth, (req, res) => {
+  try {
+    const { from, to, format = 'csv' } = req.query;
+
+    const params = [];
+    let where = '1=1';
+    if (from && !isNaN(Date.parse(from))) {
+      where += ' AND j.created_at >= ?';
+      params.push(new Date(from).toISOString());
+    }
+    if (to && !isNaN(Date.parse(to))) {
+      where += ' AND j.created_at <= ?';
+      params.push(new Date(to).toISOString());
+    }
+
+    const rows = db.all(
+      `SELECT
+         j.job_id,
+         j.renter_id,
+         j.provider_id,
+         j.template_id,
+         j.status,
+         j.started_at,
+         j.completed_at,
+         COALESCE(ss.total_tokens, 0) AS input_tokens,
+         0                            AS output_tokens,
+         j.cost_halala
+       FROM jobs j
+       LEFT JOIN serve_sessions ss ON ss.job_id = j.job_id
+       WHERE ${where}
+       ORDER BY j.created_at ASC`,
+      ...params
+    );
+
+    if (format === 'json') {
+      return res.json({ count: rows.length, jobs: rows });
+    }
+
+    const CSV_COLS = ['job_id','renter_id','provider_id','template_id','status',
+                      'started_at','completed_at','input_tokens','output_tokens','cost_halala'];
+    const escape = (v) => {
+      if (v == null) return '';
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [CSV_COLS.join(',')];
+    for (const row of rows) {
+      lines.push(CSV_COLS.map(c => escape(row[c])).join(','));
+    }
+    const csv = lines.join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="dcp-jobs-export.csv"');
+    return res.send(csv);
+  } catch (error) {
+    console.error('[admin/export/jobs] Error:', error);
+    res.status(500).json({ error: 'Failed to export jobs' });
+  }
+});
+
 // ─── GET /api/admin/serve-sessions/:job_id (DCP-619) ────────────────────────────
 // Returns serve_sessions record for a given job_id (used by metering smoke test)
 router.get('/serve-sessions/:job_id', (req, res) => {
