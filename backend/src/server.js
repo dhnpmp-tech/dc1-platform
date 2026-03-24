@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const paymentsRouter = require('./routes/payments');
-const { startJobSweep, getSweepMetrics } = require('./services/jobSweep');
+const { startJobSweep, getSweepMetrics, startProviderOfflineSweep } = require('./services/jobSweep');
 const { runControlPlaneCycle } = require('./services/controlPlane');
 const { sendAlert } = require('./services/notifications');
 const {
@@ -373,6 +373,8 @@ const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);
 const sweepIntervalMs = Number.isFinite(sweepIntervalMsRaw) && sweepIntervalMsRaw > 0 ? sweepIntervalMsRaw : 30000;
 startJobSweep(db, sweepIntervalMs);
+const providerOfflineSweepMs = Number.parseInt(process.env.PROVIDER_OFFLINE_SWEEP_INTERVAL_MS || '60000', 10);
+startProviderOfflineSweep(db, Number.isFinite(providerOfflineSweepMs) && providerOfflineSweepMs > 0 ? providerOfflineSweepMs : 60000);
 
 const controlPlaneIntervalMsRaw = Number.parseInt(process.env.CONTROL_PLANE_INTERVAL_MS || '60000', 10);
 const controlPlaneIntervalMs = Number.isFinite(controlPlaneIntervalMsRaw) && controlPlaneIntervalMsRaw > 0
