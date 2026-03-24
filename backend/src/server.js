@@ -296,6 +296,10 @@ app.use('/api/providers', tieredApiLimiter);
 app.use('/api/jobs', tieredApiLimiter);
 app.use('/api/models', tieredApiLimiter);
 app.use('/api/templates', tieredApiLimiter);
+// Renter endpoints: authenticated 1000/min per key, public 200/min per IP (DCP-894)
+// Closes rate-limit gap on GET /api/renters/jobs (DCP-892) and other /api/renters/* routes.
+// More specific per-path limiters (topupLimiter, webhookRegistrationLimiter) are unaffected.
+app.use('/api/renters', tieredApiLimiter);
 
 // Auth endpoints (if added in future): 10 per IP per minute
 app.use('/api/auth', authLimiter);
