@@ -68,6 +68,7 @@ router.get('/', publicEndpointLimiter, (req, res) => {
     }
   }
 
+  // Strip approved_images from list response (security -- returned only on whitelist endpoint)
   const safe = filtered.map(({ approved_images: _ai, ...t }) => t);
   res.json({ templates: safe, count: safe.length });
 });
@@ -103,6 +104,7 @@ router.get('/:id', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
   const template = templates.find(t => t.id === req.params.id);
   if (!template) return res.status(404).json({ error: 'Template not found' });
+  // Strip approved_images from direct response too -- daemon uses /whitelist
   const { approved_images: _ai, ...safe } = template;
   res.json(safe);
 });
@@ -152,7 +154,7 @@ function findAvailableProvider(minVramGb) {
 // POST /api/templates/:id/deploy -- one-click deploy; requires renter auth
 // Body: { duration_minutes?, pricing_class?, params? }
 // Returns 201: { jobId, status, estimatedStart, gpuTier, totalCost, template, provider, message }
-// Errors: 401 no auth | 402 insufficient balance | 404 template not found | 503 no GPU available
+// Errors: 401 no auth | 403 invalid key | 402 insufficient balance | 404 not found | 503 no GPU
 router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
   try {
     // 1. Authenticate renter
