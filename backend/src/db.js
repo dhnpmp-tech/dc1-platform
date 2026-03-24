@@ -1507,6 +1507,27 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_job_templates_renter ON job_templates(re
 // Index for renter job history queries (DCP-695)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_renter_id ON jobs(renter_id, created_at DESC)`);
 
+// ─── PROVIDER API KEYS TABLE ─── (DCP-760)
+// Scoped long-lived credentials for unattended GPU provider nodes.
+// Raw keys are never stored — only SHA-256 hashes.
+// Key format: dcp_prov_<32 base62 chars>
+// key_prefix: dcp_prov_<first 8 base62 chars> — stored plaintext for O(prefix) lookup.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_api_keys (
+    id TEXT PRIMARY KEY,
+    provider_id INTEGER NOT NULL,
+    key_hash TEXT NOT NULL,
+    key_prefix TEXT NOT NULL,
+    label TEXT,
+    last_used_at TEXT,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_prov_api_keys_prefix ON provider_api_keys(key_prefix, revoked_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_prov_api_keys_provider ON provider_api_keys(provider_id, revoked_at)`);
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 function flatParams(params) {
