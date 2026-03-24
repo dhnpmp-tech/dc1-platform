@@ -387,7 +387,20 @@ export default function RenterDashboard() {
               {t('common.view_all')}
             </Link>
           </div>
-          {jobs.length > 0 ? (
+          {jobsLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="animate-pulse card flex items-center gap-4 p-4">
+                  <div className="h-8 w-8 rounded-full bg-dc1-surface-l3 shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-dc1-surface-l3 rounded w-1/2" />
+                    <div className="h-3 bg-dc1-surface-l3 rounded w-1/3" />
+                  </div>
+                  <div className="h-6 bg-dc1-surface-l3 rounded-full w-20 shrink-0" />
+                </div>
+              ))}
+            </div>
+          ) : jobs.length > 0 ? (
             <div className="space-y-3">
               {jobs.slice(0, 3).map(job => (
                 <JobCard

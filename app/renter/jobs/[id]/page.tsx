@@ -863,8 +863,16 @@ export default function RenterJobDetailPage() {
       <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
         <div className="space-y-4">
           <Link href="/renter/jobs" className="text-dc1-amber text-sm hover:underline">&larr; {t('renter.job_detail.back_to_jobs')}</Link>
-          <div className="card p-8 text-center">
+          <div className="card p-8 text-center space-y-4">
             <p className="text-dc1-text-secondary">{error || t('renter.job_detail.not_found')}</p>
+            {error && (
+              <button
+                onClick={() => { setError(''); setLoading(true); window.location.reload() }}
+                className="btn btn-secondary btn-sm"
+              >
+                Retry
+              </button>
+            )}
           </div>
         </div>
       </DashboardLayout>

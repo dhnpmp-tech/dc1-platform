@@ -44,6 +44,7 @@ export default function ProvidersPage() {
   const [rejectTarget, setRejectTarget] = useState<any | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [gpuFilter, setGpuFilter] = useState('all')
+  const [fetchError, setFetchError] = useState(false)
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -55,6 +56,7 @@ export default function ProvidersPage() {
   }, [])
 
   const fetchProviders = async () => {
+    setFetchError(false)
     try {
       const res = await fetch(`${API_BASE}/admin/providers`, { headers: { 'x-admin-token': token! } })
       if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return }
@@ -62,6 +64,7 @@ export default function ProvidersPage() {
       setData(json)
     } catch (err) {
       console.error(err)
+      setFetchError(true)
     } finally { setLoading(false) }
   }
 
@@ -234,7 +237,18 @@ export default function ProvidersPage() {
       )}
 
       {loading ? (
-        <div className="text-dc1-text-secondary">Loading providers...</div>
+        <div className="space-y-2">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="animate-pulse bg-dc1-surface-l2 rounded-lg h-14 border border-dc1-border" />
+          ))}
+        </div>
+      ) : fetchError ? (
+        <div className="text-center py-16 card">
+          <p className="text-dc1-text-secondary mb-4">Could not load providers. Check your connection or admin credentials.</p>
+          <button onClick={fetchProviders} className="btn btn-secondary btn-sm">
+            Retry
+          </button>
+        </div>
       ) : (
         <div className="card">
           <div className="table-container">
