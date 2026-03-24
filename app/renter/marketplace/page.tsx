@@ -111,6 +111,21 @@ function getDefaultRateSarHr(rates: CostRates | null): number {
   return (getDefaultRate(rates) * 60) / 100
 }
 
+// GPU tier A/B/C: A = datacenter (H100/A100), B = prosumer (RTX 4090/L40), C = consumer
+function getGpuTier(gpuModel: string | null): 'A' | 'B' | 'C' {
+  if (!gpuModel) return 'C'
+  const m = gpuModel.toUpperCase()
+  if (m.includes('H200') || m.includes('H100') || m.includes('A100')) return 'A'
+  if (m.includes('RTX 4090') || m.includes('RTX4090') || m.includes('L40') || m.includes('A6000')) return 'B'
+  return 'C'
+}
+
+function gpuTierBadgeClass(tier: 'A' | 'B' | 'C'): string {
+  if (tier === 'A') return 'bg-dc1-amber/20 text-dc1-amber border-dc1-amber/40'
+  if (tier === 'B') return 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+  return 'bg-dc1-surface-l2 text-dc1-text-secondary border-dc1-border'
+}
+
 function formatAge(seconds: number | null, t: (key: string) => string): string {
   if (seconds === null) return t('marketplace.unknown')
   if (seconds < 60) return `${seconds}s ${t('marketplace.ago')}`
@@ -495,6 +510,114 @@ function FilterSidebar({
   )
 }
 
+// ── Deploy Cost Preview Modal ───────────────────────────────────────
+function DeployCostModal({
+  provider,
+  t,
+  onClose,
+  onConfirm,
+}: {
+  provider: Provider
+  t: (key: string) => string
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const [hours, setHours] = useState(1)
+  const tier = getGpuTier(provider.gpu_model)
+  const llmRate = provider.cost_rates_halala_per_min?.['llm-inference']
+    ?? provider.cost_rates_halala_per_min?.llm_inference
+    ?? 15
+  const ratePerMin = llmRate / 100 // SAR per minute
+  const estimatedCost = (ratePerMin * hours * 60).toFixed(2)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-dc1-void/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-dc1-surface-l1 border border-dc1-border rounded-2xl p-6 max-w-sm w-full shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold text-dc1-text-primary">{provider.gpu_model || t('marketplace.unknown')}</h3>
+            <p className="text-xs text-dc1-text-muted mt-0.5">{provider.name}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${gpuTierBadgeClass(tier)}`}>
+              Tier {tier}
+            </span>
+            <button onClick={onClose} className="text-dc1-text-muted hover:text-dc1-text-primary text-lg leading-none">×</button>
+          </div>
+        </div>
+
+        {/* Tier explanation */}
+        <div className="mb-4 rounded-lg bg-dc1-surface-l2 px-3 py-2 text-xs text-dc1-text-secondary">
+          {tier === 'A' && 'Tier A — Datacenter GPU (H100/A100). Highest performance, suitable for large model inference and training.'}
+          {tier === 'B' && 'Tier B — Prosumer GPU (RTX 4090/L40). Great price-performance for mid-size model inference.'}
+          {tier === 'C' && 'Tier C — Consumer GPU. Cost-effective for smaller models and development workloads.'}
+        </div>
+
+        {/* Rate */}
+        <div className="mb-4 rounded-lg bg-dc1-surface-l2 px-3 py-2.5 space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-dc1-text-secondary">Rate</span>
+            <span className="text-dc1-amber font-semibold">{halalaPriceToSarHr(llmRate)} SAR/hr</span>
+          </div>
+          {provider.vram_gb && (
+            <div className="flex justify-between">
+              <span className="text-dc1-text-secondary">VRAM</span>
+              <span className="text-dc1-text-primary">{provider.vram_gb} GB</span>
+            </div>
+          )}
+        </div>
+
+        {/* Duration picker */}
+        <div className="mb-4">
+          <label className="block text-xs text-dc1-text-muted mb-1.5">Estimated duration</label>
+          <div className="flex items-center gap-2">
+            {[1, 2, 4, 8].map(h => (
+              <button
+                key={h}
+                onClick={() => setHours(h)}
+                className={`flex-1 py-1.5 rounded text-sm font-medium border transition-colors ${
+                  hours === h
+                    ? 'bg-dc1-amber text-dc1-void border-dc1-amber'
+                    : 'bg-dc1-surface-l2 text-dc1-text-secondary border-dc1-border hover:border-dc1-amber/40'
+                }`}
+              >
+                {h}h
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Estimated cost */}
+        <div className="mb-5 rounded-xl border border-dc1-amber/30 bg-dc1-amber/5 px-4 py-3 text-center">
+          <p className="text-xs text-dc1-text-muted mb-0.5">Estimated cost for {hours}h</p>
+          <p className="text-2xl font-bold text-dc1-amber">{estimatedCost} <span className="text-base font-normal">SAR</span></p>
+          <p className="text-[11px] text-dc1-text-muted mt-1">Billed per minute — you only pay for actual runtime</p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2 rounded-lg bg-dc1-amber text-dc1-void font-semibold text-sm hover:bg-dc1-amber/90 transition-colors"
+          >
+            Confirm &amp; Deploy
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── GPU Card ───────────────────────────────────────────────────────
 function GPUCard({
   provider,
@@ -505,6 +628,7 @@ function GPUCard({
   t: (key: string) => string
   onCtaClick: (payload: { surface: string; destination: string; step: string }) => void
 }) {
+  const [showDeployModal, setShowDeployModal] = useState(false)
   const llmRate = provider.cost_rates_halala_per_min?.['llm-inference']
     ?? provider.cost_rates_halala_per_min?.llm_inference
     ?? 15
@@ -512,8 +636,10 @@ function GPUCard({
   const trainRate = provider.cost_rates_halala_per_min?.training ?? 25
   const uptime = provider.uptime_pct ?? provider.uptime_percent ?? 0
   const successRate = provider.job_success_rate ?? 0
+  const gpuTier = getGpuTier(provider.gpu_model)
 
   return (
+    <>
     <article
       className="card hover:border-dc1-amber/30 transition-colors flex flex-col"
       aria-label={`${t('marketplace.gpu_count')}: ${provider.gpu_model}`}
@@ -525,9 +651,14 @@ function GPUCard({
             {provider.gpu_model || t('marketplace.unknown')}
           </h3>
           <p className="text-xs text-dc1-text-muted mt-0.5 truncate">{provider.name}</p>
-          <span className={`inline-flex mt-2 text-[10px] font-bold tracking-wide px-2 py-0.5 rounded border ${reputationTierBadgeClass(provider.reputation_tier)}`}>
-            {reputationTierLabel(provider.reputation_tier, t)}
-          </span>
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <span className={`inline-flex text-[10px] font-bold tracking-wide px-2 py-0.5 rounded border ${reputationTierBadgeClass(provider.reputation_tier)}`}>
+              {reputationTierLabel(provider.reputation_tier, t)}
+            </span>
+            <span className={`inline-flex text-[10px] font-bold tracking-wide px-2 py-0.5 rounded border ${gpuTierBadgeClass(gpuTier)}`}>
+              Tier {gpuTier}
+            </span>
+          </div>
         </div>
         <StatusBadge status={getProviderHealthStatus(provider)} size="sm" pulse={true} />
       </div>
@@ -653,22 +784,34 @@ function GPUCard({
         >
           {t('marketplace.view_profile')}
         </Link>
-        <Link
-          href={`/renter/playground?provider=${provider.id}`}
-          onClick={() =>
+        <button
+          onClick={() => {
             onCtaClick({
               surface: 'gpu_card',
               destination: `/renter/playground?provider=${provider.id}`,
               step: 'rent_now',
             })
-          }
+            setShowDeployModal(true)
+          }}
           className="btn btn-primary text-sm flex-1 text-center"
         >
           {t('marketplace.rent_now')}
-        </Link>
+        </button>
       </div>
       <p className="text-[11px] text-dc1-text-muted mt-2">{t('marketplace.runtime_settlement_reminder')}</p>
     </article>
+    {showDeployModal && (
+      <DeployCostModal
+        provider={provider}
+        t={t}
+        onClose={() => setShowDeployModal(false)}
+        onConfirm={() => {
+          setShowDeployModal(false)
+          window.location.href = `/renter/playground?provider=${provider.id}`
+        }}
+      />
+    )}
+    </>
   )
 }
 

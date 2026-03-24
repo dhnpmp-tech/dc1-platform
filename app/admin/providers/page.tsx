@@ -77,6 +77,20 @@ export default function ProvidersPage() {
     finally { setActionLoading(null) }
   }
 
+  // Unified activate/deactivate via PATCH /api/admin/providers/:id/status
+  const handleSetStatus = async (id: number, status: 'active' | 'suspended') => {
+    setActionLoading(id)
+    try {
+      await fetch(`${API_BASE}/admin/providers/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'x-admin-token': token!, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      await fetchProviders()
+    } catch (err) { console.error(err) }
+    finally { setActionLoading(null) }
+  }
+
   const handleApproval = async (id: number, action: 'approve' | 'reject', reason?: string) => {
     setActionLoading(id)
     try {
@@ -278,7 +292,7 @@ export default function ProvidersPage() {
                     <td className="text-sm">{p.total_earnings ? `${(p.total_earnings / 100).toFixed(2)} SAR` : '—'}</td>
                     <td className="text-xs text-dc1-text-secondary">{p.minutes_since_heartbeat !== null ? `${p.minutes_since_heartbeat}m ago` : 'Never'}</td>
                     <td>
-                      <div className="flex gap-2 items-center">
+                      <div className="flex gap-1.5 items-center flex-wrap">
                         {(p.approval_status || 'pending') === 'pending' && (
                           <>
                             <button
@@ -297,21 +311,24 @@ export default function ProvidersPage() {
                             </button>
                           </>
                         )}
+                        {/* One-click activate / deactivate via PATCH /status */}
                         {p.status === 'suspended' ? (
                           <button
-                            onClick={() => handleSuspend(p.id, 'unsuspend')}
+                            onClick={() => handleSetStatus(p.id, 'active')}
                             disabled={actionLoading === p.id}
-                            className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50"
+                            title="Activate provider — clears suspension and marks as available"
+                            className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 font-medium"
                           >
-                            {actionLoading === p.id ? '...' : 'Reactivate'}
+                            {actionLoading === p.id ? '...' : 'Activate'}
                           </button>
                         ) : (
                           <button
-                            onClick={() => handleSuspend(p.id, 'suspend')}
+                            onClick={() => handleSetStatus(p.id, 'suspended')}
                             disabled={actionLoading === p.id}
+                            title="Deactivate provider — suspends from job pool"
                             className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50"
                           >
-                            {actionLoading === p.id ? '...' : 'Suspend'}
+                            {actionLoading === p.id ? '...' : 'Deactivate'}
                           </button>
                         )}
                       </div>
