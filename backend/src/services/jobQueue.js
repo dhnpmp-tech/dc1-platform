@@ -254,6 +254,21 @@ function processRetryQueue() {
     if (result.assigned) {
       _retryQueue.delete(jobId);
       assigned++;
+    } else if (entry.attempts >= MAX_DISPATCH_ATTEMPTS) {
+      // All attempts exhausted after this retry — immediately fail
+      _retryQueue.delete(jobId);
+      expired++;
+      const reason = `dispatch_attempts_exhausted:${entry.attempts}/${MAX_DISPATCH_ATTEMPTS}`;
+      try {
+        const db = getDb();
+        const ts = new Date().toISOString();
+        db.prepare(
+          `UPDATE jobs SET status = ?, notes = ?, updated_at = ? WHERE job_id = ?`
+        ).run(STATUS.FAILED, reason, ts, jobId);
+        console.warn(`[jobQueue] job=${jobId} permanently failed - ${reason}`);
+      } catch (err) {
+        console.error(`[jobQueue] failed to mark exhausted job=${jobId}:`, err.message);
+      }
     } else {
       const delayIndex = Math.min(entry.attempts - 1, BACKOFF_DELAYS_MS.length - 1);
       entry.nextRetryAt = now + BACKOFF_DELAYS_MS[delayIndex];
