@@ -172,3 +172,79 @@ Not a security issue, but should be corrected.
 2. **Add `requireAdminAuth` to `GET /api/network/topology`** — MEDIUM
 3. **Fix NaN limit handling in `GET /api/network/providers`** — LOW (but easy)
 4. **Fix SUBSTR averaging in topology query** — LOW
+
+---
+
+## DCP-822 — Rate Limiting Verification (Core Endpoints)
+
+**Auditor:** Security Engineer (DCP-822)
+**Date:** 2026-03-24
+**Scope:** Verify rate limiting is applied to the four highest-risk public/semi-public endpoints
+
+### 1. `POST /api/providers/register`
+
+**Verdict: ✅ PASS**
+
+Applied limiter: `registerLimiter` (server.js line 213)
+- Window: 10 minutes
+- Max: 5 requests
+- Key: IP address
+
+**Assessment:** Tight registration throttle prevents mass account creation from a single IP. Appropriate for launch.
+
+**Minor:** An attacker with many IPs (e.g., cloud proxies) can still register many accounts. No email verification step was observed — new providers are registered with any email string. Recommend adding email OTP verification on registration (as already implemented for `login-email` flow).
+
+---
+
+### 2. `GET /api/models`
+
+**Verdict: ✅ PASS**
+
+Applied via `tieredApiLimiter` (server.js line 251: `app.use('/api/models', tieredApiLimiter)`):
+- With API key: `authenticatedEndpointLimiter` — 1000 req/min per key
+- Without API key: `publicEndpointLimiter` — 200 req/15min per IP
+
+**Assessment:** Two-tier approach is correct. Unauthenticated scrapers are limited to 200 req / 15 min per IP, sufficient to prevent high-frequency competitive pricing scrapes. Authenticated renters get a generous allowance for normal browsing.
+
+**Minor:** The `catalogLimiter` (also 200/15min) and `publicEndpointLimiter` (200/15min) are functionally identical — minor redundancy. No action needed.
+
+---
+
+### 3. `POST /api/jobs/submit` and `POST /api/jobs`
+
+**Verdict: ✅ PASS**
+
+Applied limiter: `jobSubmitLimiter` (server.js line 221)
+- Window: 1 minute
+- Max: 30 requests
+- Key: IP address
+
+Additionally, the entire `/api/jobs` path is covered by `tieredApiLimiter` (server.js line 250).
+
+**Assessment:** 30 job submissions per minute per IP is reasonable. Covered by the existing DCP-795 rate limiting audit (RL-4: consider keying on renter API key in addition to IP for multi-tenant environments behind NAT).
+
+---
+
+### 4. `POST /api/providers/:id/heartbeat`
+
+**Verdict: ✅ PASS**
+
+Applied limiter: `heartbeatProviderLimiter` (server.js line 218)
+- Window: 1 minute
+- Max: 60 requests
+- Key: Provider API key (falls back to IP)
+
+**Assessment:** Keyed per provider API key — excellent design. A single provider cannot flood the heartbeat endpoint even if they run multiple daemon instances. The 60/min limit allows 1 heartbeat per second, far above the daemon's normal 1 per 30 seconds.
+
+---
+
+### Rate Limiting Verification Summary
+
+| Endpoint | Limiter | Window | Max | Key | Verdict |
+|---|---|---|---|---|---|
+| `POST /api/providers/register` | `registerLimiter` | 10 min | 5 | IP | ✅ PASS |
+| `GET /api/models` | `tieredApiLimiter` | 15 min / 1 min | 200 / 1000 | IP / API key | ✅ PASS |
+| `POST /api/jobs/submit` | `jobSubmitLimiter` | 1 min | 30 | IP | ✅ PASS |
+| `POST /api/providers/:id/heartbeat` | `heartbeatProviderLimiter` | 1 min | 60 | Provider key | ✅ PASS |
+
+**All four target endpoints have appropriate rate limiting in place.** The prior DCP-795 audit identified three gaps (`benchmark-submit`, `providers/available`, `providers/installer`) that remain open — see `rate-limiting-audit.md` for details and remediation guidance.
