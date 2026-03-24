@@ -2587,7 +2587,7 @@ router.get('/history', (req, res) => {
     const renterKey = req.headers['x-renter-key'];
     if (!renterKey) return res.status(401).json({ error: 'Renter API key required' });
 
-    const renter = db.get('SELECT * FROM renters WHERE api_key = ?', renterKey);
+    const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', renterKey, 'active');
     if (!renter) return res.status(401).json({ error: 'Invalid renter key' });
 
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
