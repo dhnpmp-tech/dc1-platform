@@ -4234,6 +4234,12 @@ function ensureAvailableGpuTiersColumn() {
     } catch (_) { /* Column already exists */ }
 }
 
+function ensureGpuTierColumn() {
+    try {
+        db.prepare('ALTER TABLE providers ADD COLUMN gpu_tier TEXT').run();
+    } catch (_) { /* Column already exists */ }
+}
+
 function ensureProviderBenchmarksTable() {
     db.prepare(`
         CREATE TABLE IF NOT EXISTS provider_benchmarks (
@@ -4366,6 +4372,7 @@ router.post('/:id/benchmark-submit', function(req, res) {
         const tpsNum = parseFloat(tokens_per_sec) || null;
 
         ensureProviderBenchmarksTable();
+        ensureGpuTierColumn();
         db.prepare(
             'INSERT INTO provider_benchmarks (provider_id, gpu_model, vram_gb, tflops, bandwidth_gbps, tokens_per_sec, tier, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(provider.id, gpuModelClean, vramNum, tflopsNum, bwNum, tpsNum, computedTier, now);
