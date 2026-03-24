@@ -385,6 +385,9 @@ app.use('/api/p2p', p2pRouter);
 const webhooksRouter = require('./routes/webhooks');
 app.use('/api/webhooks', webhooksRouter);
 
+const networkRouter = require('./routes/network');
+app.use('/api/network', networkRouter);
+
 // Initialize Supabase sync bridge
 
 const settlementRouter = require('./routes/settlement');
