@@ -199,6 +199,14 @@ const providerActivateLimiter = createRateLimiter({
   keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req),
 });
 
+// Template deploy limiter: 10 deploys per renter key (or IP) per minute (DCP-SEC-012).
+// Stricter than modelDeployLimiter — template deploys deduct balance immediately.
+const templateDeployLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req),
+});
+
 module.exports = {
   createRateLimiter,
   createAdminIpAllowlist,
@@ -210,6 +218,7 @@ module.exports = {
   catalogLimiter,
   authenticatedEndpointLimiter,
   modelDeployLimiter,
+  templateDeployLimiter,
   containerRegistryLimiter,
   vllmCompleteLimiter,
   vllmStreamLimiter,

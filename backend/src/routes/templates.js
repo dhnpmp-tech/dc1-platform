@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
-const { publicEndpointLimiter } = require('../middleware/rateLimiter');
+const { publicEndpointLimiter, templateDeployLimiter } = require('../middleware/rateLimiter');
 const { getApiKeyFromReq } = require('../middleware/auth');
 const pricingService = require('../services/pricingService');
 const { GPU_RATE_TABLE } = require('../config/pricing');
@@ -163,7 +163,7 @@ function findAvailableProvider(minVramGb) {
 // Body: { duration_minutes?, pricing_class?, params? }
 // Returns 201: { jobId, status, estimatedStart, gpuTier, totalCost, template, provider, message }
 // Errors: 401 no auth | 403 invalid key | 402 insufficient balance | 404 not found | 503 no GPU
-router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
+router.post('/:id/deploy', publicEndpointLimiter, templateDeployLimiter, (req, res) => {
   try {
     // 1. Authenticate renter
     const key = getApiKeyFromReq(req, {
@@ -197,7 +197,15 @@ router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
     const pricing_class = PRICING_CLASS_MULTIPLIERS[req.body.pricing_class] !== undefined
       ? req.body.pricing_class
       : 'standard';
-    const extraParams = (req.body.params && typeof req.body.params === 'object') ? req.body.params : {};
+    // DCP-SEC-011: strip dangerous keys from renter-supplied params before merging into task_spec.
+    // image_override / image / script / entrypoint / cmd must never be renter-controlled —
+    // the template locks the container image. For custom-container, image is set via the
+    // approved whitelist at job submission (jobs.js DCP-SEC-003), not here.
+    const BLOCKED_EXTRA_PARAM_KEYS = new Set(['image_override', 'image', 'script', 'entrypoint', 'cmd']);
+    const rawExtraParams = (req.body.params && typeof req.body.params === 'object') ? req.body.params : {};
+    const extraParams = Object.fromEntries(
+      Object.entries(rawExtraParams).filter(([k]) => !BLOCKED_EXTRA_PARAM_KEYS.has(k))
+    );
 
     // 4. Calculate estimated cost using template's min_vram_gb for tier selection (DCP-762)
     // gpuModel resolved after provider lookup in step 6; recalculated then for snapshot accuracy.
