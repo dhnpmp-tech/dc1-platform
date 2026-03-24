@@ -15,10 +15,8 @@ class StatusItem extends vscode.TreeItem {
 }
 
 export class NodeStatusProvider implements vscode.TreeDataProvider<StatusItem> {
-  private onDidChangeTreeData: vscode.EventEmitter<StatusItem | undefined | null | void> =
-    new vscode.EventEmitter<StatusItem | undefined | null | void>();
-  readonly onDidChangeTreeDataEvent: vscode.Event<StatusItem | undefined | null | void> =
-    this.onDidChangeTreeData.event;
+  private _onDidChangeTreeData = new vscode.EventEmitter<StatusItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private providerAPI: ProviderAPI;
   private config: WorkspaceConfig;
@@ -74,6 +72,6 @@ export class NodeStatusProvider implements vscode.TreeDataProvider<StatusItem> {
   }
 
   refresh(): void {
-    this.onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire();
   }
 }
