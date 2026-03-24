@@ -135,21 +135,6 @@ const adminLimiter = createRateLimiter({
   keyGenerator: (req) => `admin:${getAdminToken(req) || ipFallbackKey(req)}`,
 });
 
-// Provider heartbeat: 60 per provider key per minute (daemon sends every 30s = 2/min normally).
-// Keyed by provider key so each provider has its own bucket; falls back to IP.
-const heartbeatProviderLimiter = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 60,
-  keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req),
-});
-
-// Auth endpoints: 10 per IP per minute.
-const authLimiter = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => ipFallbackKey(req),
-});
-
 // Public endpoint limiter: 100 requests per IP per minute.
 // Applied to unauthenticated access on /api/providers, /api/jobs, /api/models.
 const publicEndpointLimiter = createRateLimiter({
@@ -192,6 +177,4 @@ module.exports = {
   renterDataExportLimiter,
   providerDataExportLimiter,
   adminLimiter,
-  heartbeatProviderLimiter,
-  authLimiter,
 };
