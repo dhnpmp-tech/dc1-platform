@@ -1254,6 +1254,8 @@ router.get('/metrics', (req, res) => {
       },
       providers: {
         online: onlineProviders?.count || 0,
+        active: onlineProviders?.count || 0,   // alias for KPI dashboard
+        registered: totalProviders?.count || 0, // alias for KPI dashboard
         total_registered: totalProviders?.count || 0,
         pending_approval: pendingApproval?.count || 0,
         avg_heartbeat_age_seconds: Math.max(0, Math.round(heartbeatAge?.avg_age_seconds || 0)),
