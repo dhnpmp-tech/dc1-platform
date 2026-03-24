@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { LanguageWrapper } from './lib/i18n'
 import CookieConsent from './components/ui/CookieConsent'
+import LanguagePreferenceModal from './components/ui/LanguagePreferenceModal'
 
 export const metadata: Metadata = {
   title: 'DCP — GPU Compute Marketplace',
@@ -28,6 +29,7 @@ export default function RootLayout({
         <LanguageWrapper>
           {children}
           <CookieConsent />
+          <LanguagePreferenceModal />
         </LanguageWrapper>
       </body>
     </html>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage } from '../lib/i18n'
+import FeaturedArabicModels from '../components/marketplace/FeaturedArabicModels'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface CostRates {
@@ -536,6 +537,9 @@ export default function MarketplacePage() {
             </div>
           </div>
         </section>
+
+        {/* Featured Arabic Models */}
+        <FeaturedArabicModels />
 
         {/* Market rates bar */}
         {!loading && !error && <MarketRates providers={providers} />}
