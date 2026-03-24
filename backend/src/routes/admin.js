@@ -3589,4 +3589,73 @@ router.get('/serve-sessions/:job_id', (req, res) => {
   }
 });
 
+// ─── GET /api/admin/billing/reconcile (DCP-798) ──────────────────────────────
+// Daily billing reconciliation: all jobs for a given UTC date with cost details.
+// Used by Budget Analyst and founder to verify billing integrity.
+//
+// Query params:
+//   date (optional) — YYYY-MM-DD; defaults to today UTC
+//
+// Response: { date, summary: { total_jobs, completed_jobs, failed_jobs,
+//   total_cost_halala, total_cost_sar, total_tokens_used }, jobs: [...] }
+router.get('/billing/reconcile', (req, res) => {
+  try {
+    const rawDate = typeof req.query.date === 'string' ? req.query.date.trim() : null;
+    const dateStr = rawDate || new Date().toISOString().slice(0, 10);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({
+        error: 'Invalid date parameter. Expected format: YYYY-MM-DD',
+      });
+    }
+
+    const dayStart = `${dateStr}T00:00:00.000Z`;
+    const dayEnd   = `${dateStr}T23:59:59.999Z`;
+
+    const jobs = db.all(
+      `SELECT
+         j.job_id,
+         j.renter_id,
+         r.email                                              AS renter_email,
+         COALESCE(ss.total_tokens, 0)                        AS tokens_used,
+         COALESCE(j.actual_cost_halala, 0)                   AS cost_halala,
+         ROUND(COALESCE(j.actual_cost_halala, 0) / 100.0, 2) AS cost_sar,
+         COALESCE(j.provider_earned_halala, 0)               AS provider_earned_halala,
+         COALESCE(j.dc1_fee_halala, 0)                       AS dc1_fee_halala,
+         j.status,
+         j.job_type,
+         j.completed_at
+       FROM jobs j
+       LEFT JOIN renters r         ON r.id       = j.renter_id
+       LEFT JOIN serve_sessions ss ON ss.job_id  = j.job_id
+       WHERE j.created_at >= ?
+         AND j.created_at <= ?
+       ORDER BY j.created_at ASC`,
+      dayStart,
+      dayEnd
+    );
+
+    const totalCostHalala = jobs.reduce((sum, j) => sum + (j.cost_halala || 0), 0);
+    const totalTokens     = jobs.reduce((sum, j) => sum + (j.tokens_used || 0), 0);
+    const completedCount  = jobs.filter(j => j.status === 'completed').length;
+    const failedCount     = jobs.filter(j => j.status === 'failed').length;
+
+    res.json({
+      date: dateStr,
+      summary: {
+        total_jobs:        jobs.length,
+        completed_jobs:    completedCount,
+        failed_jobs:       failedCount,
+        total_cost_halala: totalCostHalala,
+        total_cost_sar:    (totalCostHalala / 100).toFixed(2),
+        total_tokens_used: totalTokens,
+      },
+      jobs,
+    });
+  } catch (error) {
+    console.error('Admin billing reconcile error:', error);
+    res.status(500).json({ error: 'Failed to run billing reconciliation' });
+  }
+});
+
 module.exports = router;
