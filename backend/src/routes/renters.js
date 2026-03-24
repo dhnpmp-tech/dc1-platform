@@ -1234,6 +1234,63 @@ router.delete('/me', renterAccountDeletionLimiter, (req, res) => {
   }
 });
 
+// GET /api/renters/me/jobs?key=API_KEY&page=0&limit=20&status= (DCP-695)
+router.get('/me/jobs', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(401).json({ error: 'Invalid API key' });
+
+    const page = Math.max(parseInt(req.query.page) || 0, 0);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = page * limit;
+    const statusFilter = req.query.status;
+
+    const conditions = ['j.renter_id = ?'];
+    const params = [renter.id];
+
+    if (statusFilter && ['completed', 'failed', 'running', 'pending', 'queued'].includes(statusFilter)) {
+      conditions.push('j.status = ?');
+      params.push(statusFilter);
+    }
+
+    const where = conditions.join(' AND ');
+
+    const total = db.get(`SELECT COUNT(*) as count FROM jobs j WHERE ${where}`, ...params);
+    const jobs = db.all(
+      `SELECT j.id, j.job_id, j.job_type, j.model, j.status,
+              COALESCE(j.actual_cost_halala, j.cost_halala, 0) as cost_halala,
+              j.submitted_at, j.started_at, j.completed_at,
+              COALESCE(j.actual_duration_minutes, j.duration_minutes) as duration_minutes,
+              p.gpu_model as provider_gpu
+       FROM jobs j
+       LEFT JOIN providers p ON p.id = j.provider_id
+       WHERE ${where}
+       ORDER BY COALESCE(j.created_at, j.submitted_at) DESC
+       LIMIT ? OFFSET ?`,
+      ...params, limit, offset
+    );
+
+    res.json({
+      jobs: jobs.map(j => ({
+        ...j,
+        cost_sar: (j.cost_halala / 100).toFixed(4),
+      })),
+      pagination: {
+        page,
+        limit,
+        total: total?.count || 0,
+        pages: Math.ceil((total?.count || 0) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Renter jobs list error:', error);
+    res.status(500).json({ error: 'Failed to fetch jobs' });
+  }
+});
+
 // GET /api/renters/me/jobs/export?key=&format=csv&from_date=YYYY-MM-DD&to_date=YYYY-MM-DD&status=
 router.get('/me/jobs/export', (req, res) => {
   try {
