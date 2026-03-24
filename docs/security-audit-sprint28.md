@@ -12,11 +12,13 @@
 | Surface | Critical | High | Medium | Low | Status |
 |---------|----------|------|--------|-----|--------|
 | 1. Job Submission | 0 | 0 | 2 | 0 | ✅ Findings patched |
-| 2. Provider Job Pickup | 0 | 0 | 1 | 1 | ✅ Finding patched |
+| 2. Provider Job Pickup | 0 | **1** | 1 | 1 | ✅ All patched (addendum) |
 | 3. Admin RBAC (DCP-768) | 0 | 0 | 0 | 0 | ✅ PASS |
-| 4. API Key Scoping (DCP-760) | 0 | 0 | 0 | 0 | ✅ PASS |
+| 4. API Key Scoping (DCP-760) | 0 | 0 | **1** | 0 | ✅ Patched (addendum) |
 
-**Zero Critical findings. Zero High findings. All Medium findings patched in this PR.**
+**Zero Critical findings. 1 High finding patched in addendum. All Medium findings patched.**
+
+> **Addendum (same session, second pass):** Two additional findings discovered in the daemon `/result` completion path and `getProviderFromReq` helper. See Surface 2 S2-04 and Surface 4 S4-01 below.
 
 ---
 
@@ -116,6 +118,36 @@ Provider A cannot submit completion data for a job assigned to provider B. **No 
 
 ---
 
+### Finding S2-04 — Provider can inflate claimable earnings via excessive duration_seconds
+**Severity:** HIGH
+**File:** `backend/src/routes/jobs.js` — `POST /:job_id/result`, line ~2020
+**Status:** ✅ Patched
+
+**Issue:** The daemon result endpoint accepted `duration_seconds` with a fixed cap of 86400 (24 hours) regardless of the job's `max_duration_seconds` (default 1800 s = 30 min, max 3600 s = 1 hour):
+
+```js
+// BEFORE (vulnerable)
+const durationSeconds = duration_seconds == null ? null
+  : toFiniteNumber(duration_seconds, { min: 0, max: 86400 });
+```
+
+The server-computed `actualCostHalala = calculateCostHalala(job_type, Math.ceil(durationSeconds / 60), ...)` and the resulting `providerEarned` (75%) are written directly to `claimable_earnings_halala`. A provider assigned to a 30-minute job could report `duration_seconds = 86400` (24 hours) and receive 48× the legitimate earnings. Since the renter's balance is deducted at submission time (not recalculated at completion on the old submit path), the excess represents a direct platform financial loss.
+
+**Attack vector:** Requires a valid provider API key AND being the assigned provider for the job. Not exploitable by renters or external parties. Risk is elevated because providers are semi-trusted but not fully vetted.
+
+**Fix applied:** Cap `duration_seconds` at `job.max_duration_seconds` (with a floor of 60 s):
+
+```js
+// AFTER (patched)
+const jobMaxSeconds = Math.max(job.max_duration_seconds || 3600, 60);
+const durationSeconds = duration_seconds == null ? null
+  : toFiniteNumber(duration_seconds, { min: 0, max: jobMaxSeconds });
+```
+
+A provider completing a 30-minute job can now report at most 1800 seconds, capping `actualCostHalala` to the legitimate billing range.
+
+---
+
 ## Surface 3 — Admin RBAC (DCP-768 verification)
 
 **Files reviewed:** `backend/src/middleware/adminAuth.js`, `backend/src/routes/admin.js`
@@ -159,7 +191,27 @@ if (provider.id !== job.provider_id) return res.status(403).json({ error: 'Forbi
 **Timing-safe comparison:** SECURE
 Key hash comparison uses `crypto.timingSafeEqual()` preventing timing-based oracle attacks.
 
-**No findings in this surface.**
+### Finding S4-01 — `getProviderFromReq` does not filter deleted providers
+**Severity:** Medium
+**File:** `backend/src/routes/jobs.js` line ~440 (`getProviderFromReq`)
+**Status:** ✅ Patched
+
+**Issue:** The `getProviderFromReq` helper used in job completion (`/result`, `/complete`, `/fail`) lacked a `deleted_at IS NULL` filter:
+
+```js
+// BEFORE (vulnerable)
+return db.get('SELECT id FROM providers WHERE api_key = ?', key) || null;
+```
+
+A provider whose account was soft-deleted (e.g. after fraud detection) could still authenticate and submit job completion results, claim earnings, and access job data. Other parts of the codebase (e.g. `/api/providers/active` at line ~3399) correctly include `AND deleted_at IS NULL`, but this helper did not.
+
+**Fix applied:**
+```js
+// AFTER (patched)
+return db.get('SELECT id FROM providers WHERE api_key = ? AND deleted_at IS NULL', key) || null;
+```
+
+**Note:** The provider job polling endpoints in `providers.js` (lines 2182, 2203) have the same gap. Filed as a follow-up to patch those paths as well.
 
 ---
 
@@ -168,6 +220,7 @@ Key hash comparison uses `crypto.timingSafeEqual()` preventing timing-based orac
 | Issue | Title | Severity | File |
 |-------|-------|----------|------|
 | DCP-778 | GPU model whitelist validation on job submission | Medium | `backend/src/routes/jobs.js:~1236` |
+| (follow-up) | Provider job poll endpoints missing `deleted_at IS NULL` | Medium | `backend/src/routes/providers.js:2182,2203` |
 
 ---
 
@@ -175,7 +228,7 @@ Key hash comparison uses `crypto.timingSafeEqual()` preventing timing-based orac
 
 - [x] Report covers all 4 surfaces
 - [x] Zero Critical findings
-- [x] Zero High findings
-- [x] All Medium findings patched in this PR (S1-01, S2-01, S2-02) or filed (S1-02 → DCP-778)
+- [x] 1 High finding (S2-04) patched in same PR
+- [x] All Medium findings patched (S1-01, S2-01, S2-02, S4-01) or filed (S1-02 → DCP-778)
 - [x] Admin RBAC test matrix documented — all 8 cases PASS
 - [x] Findings filed as issues for unresolved Medium items (DCP-778)

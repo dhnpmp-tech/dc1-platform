@@ -437,7 +437,8 @@ function getProviderFromReq(req) {
     bodyNames: ['api_key'],
   });
   if (!key) return null;
-  return db.get('SELECT id FROM providers WHERE api_key = ?', key) || null;
+  // SEC: exclude deleted providers so revoked accounts cannot submit job results
+  return db.get('SELECT id FROM providers WHERE api_key = ? AND deleted_at IS NULL', key) || null;
 }
 
 function canReadJob(req, job) {
@@ -2017,9 +2018,12 @@ router.post('/:job_id/result', (req, res) => {
     }
 
     const { result, error: jobError, duration_seconds, gpu_util_peak, transient } = req.body;
-    const durationSeconds = duration_seconds == null ? null : toFiniteNumber(duration_seconds, { min: 0, max: 86400 });
+    // SEC: cap duration_seconds at the job's own max_duration_seconds to prevent
+    // a provider from inflating claimable earnings by reporting excessive runtime.
+    const jobMaxSeconds = Math.max(job.max_duration_seconds || 3600, 60);
+    const durationSeconds = duration_seconds == null ? null : toFiniteNumber(duration_seconds, { min: 0, max: jobMaxSeconds });
     if (duration_seconds != null && durationSeconds == null) {
-      return res.status(400).json({ error: 'duration_seconds must be a finite number' });
+      return res.status(400).json({ error: `duration_seconds must be a finite number between 0 and ${jobMaxSeconds}` });
     }
 
     // ── Transient failure retry logic ──────────────────────────────────────
