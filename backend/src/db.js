@@ -950,6 +950,9 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER',
   // Template-based job submission — Sprint 27
   'ALTER TABLE jobs ADD COLUMN template_id TEXT',
+  // Provider benchmark tier columns — DCP-753 (benchmark-submit route requires these)
+  'ALTER TABLE providers ADD COLUMN gpu_tier TEXT',
+  'ALTER TABLE providers ADD COLUMN available_gpu_tiers TEXT',
 ];
 
 migrations.forEach(sql => {
