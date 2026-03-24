@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const db = require('../db');
-const { publicEndpointLimiter, modelDeployLimiter } = require('../middleware/rateLimiter');
+const { publicEndpointLimiter, modelDeployLimiter, modelCatalogLimiter } = require('../middleware/rateLimiter');
 const { GPU_RATE_TABLE, SAR_USD_RATE } = require('../config/pricing');
 
 const PROVIDER_FRESHNESS_MS = 10 * 60 * 1000;
@@ -667,7 +667,7 @@ function applyQueryFilters(models, query) {
 // GET /api/models
 // Public model registry with live provider availability and averaged pricing.
 // Query params: arabic_capable, min_vram_gb, category
-router.get('/', publicEndpointLimiter, (req, res) => {
+router.get('/', modelCatalogLimiter, (req, res) => {
   try {
     const all = getCatalogModels();
     const filtered = applyQueryFilters(all, req.query || {});

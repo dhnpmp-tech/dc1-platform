@@ -4,7 +4,7 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
-const { retryJobLimiter } = require('../middleware/rateLimiter');
+const { retryJobLimiter, jobCreateLimiter } = require('../middleware/rateLimiter');
 const { getApiKeyFromReq, isAdminRequest, requireAdminAuth } = require('../middleware/auth');
 const { validateAndNormalizeImageRef, isApprovedImageRef } = require('../lib/container-registry');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
@@ -4107,7 +4107,7 @@ router.get('/', requireRenter, (req, res) => {
  * Credits are reserved (not immediately debited); actual debit happens on
  * PATCH /complete; hold is released on PATCH /fail.
  */
-router.post('/', requireRenter, async (req, res) => {
+router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
   try {
     const {
       job_type,
