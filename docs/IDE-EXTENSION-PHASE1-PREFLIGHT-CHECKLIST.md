@@ -51,12 +51,12 @@ curl -k https://api.dcp.sa/api/templates | wc -l
 
 **Model Catalog Endpoint:**
 ```bash
-curl -k https://api.dcp.sa/api/models | grep -c "name"
+curl -k https://api.dcp.sa/api/models | grep -o '"display_name"' | wc -l
 # Expected: 11 models
 ```
 - [ ] All 11 Tier A models present
 - [ ] Pricing data included (prices field)
-- [ ] Arabic flags correct (arabic: true/false)
+- [ ] Arabic flags correct (tier="tier_a", use_cases includes "arabic")
 - [ ] No empty fields for critical data
 
 **Jobs Endpoint:**
