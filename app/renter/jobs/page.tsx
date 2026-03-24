@@ -73,6 +73,35 @@ interface SaveTplState {
   saved: boolean
 }
 
+type StatusFilter = 'all' | 'running' | 'queued' | 'completed' | 'failed'
+
+const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'running', label: 'Running' },
+  { value: 'queued', label: 'Queued' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'failed', label: 'Failed' },
+]
+
+function getTemplateName(job: Job): string {
+  if (job.params) {
+    try {
+      const p = JSON.parse(job.params)
+      if (p.template_id) return String(p.template_id).replace(/-/g, ' ')
+      if (p.template_name) return String(p.template_name)
+      if (p.model) return String(p.model).split('/').pop() ?? ''
+    } catch { /* noop */ }
+  }
+  if (job.container_spec) {
+    try {
+      const c = JSON.parse(job.container_spec)
+      if (c.image_type) return String(c.image_type).replace(/-/g, ' ')
+      if (c.image) return String(c.image).split('/').pop()?.split(':')[0] ?? ''
+    } catch { /* noop */ }
+  }
+  return (job.job_type || 'GPU Job').replace(/_/g, ' ')
+}
+
 export default function RenterJobsPage() {
   const router = useRouter()
   const { t } = useLanguage()
@@ -80,6 +109,7 @@ export default function RenterJobsPage() {
   const [loading, setLoading] = useState(true)
   const [renterName, setRenterName] = useState('Renter')
   const [totalSpent, setTotalSpent] = useState(0)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [retry, setRetry] = useState<RetryState>({ job: null, loading: false, error: '', requiredHalala: null })
   const [exportingCsv, setExportingCsv] = useState(false)
   const [saveTpl, setSaveTpl] = useState<SaveTplState>({ job: null, name: '', saving: false, saved: false })
@@ -237,6 +267,9 @@ export default function RenterJobsPage() {
   const completedJobs = jobs.filter(j => j.status === 'completed').length
   const failedJobs = jobs.filter(j => j.status === 'failed').length
   const retryHoldSar = ((retry.requiredHalala || 0) / 100).toFixed(2)
+  const filteredJobs = statusFilter === 'all'
+    ? jobs
+    : jobs.filter(j => j.status === statusFilter)
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
@@ -285,48 +318,57 @@ export default function RenterJobsPage() {
           </div>
         </div>
 
+        {/* Status Filter Pills */}
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+          {STATUS_FILTER_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setStatusFilter(opt.value)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                statusFilter === opt.value
+                  ? 'bg-dc1-amber text-dc1-surface-l1 border-dc1-amber'
+                  : 'bg-transparent text-dc1-text-secondary border-dc1-border hover:border-dc1-amber/50 hover:text-dc1-text-primary'
+              }`}
+            >
+              {opt.label}
+              {opt.value !== 'all' && (
+                <span className="ml-1.5 text-xs opacity-70">
+                  ({jobs.filter(j => j.status === opt.value).length})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* Jobs Table */}
         <div className="table-container">
           <table className="table">
             <thead>
               <tr>
                 <th>{t('table.job_id')}</th>
-                <th>{t('table.type')}</th>
+                <th>Template</th>
                 <th>{t('billing.submitted')}</th>
-                <th>{t('table.completed')}</th>
+                <th>Duration</th>
                 <th>{t('table.status')}</th>
-                <th>{t('table.cost')}</th>
+                <th>Cost (SAR)</th>
                 <th className="sr-only">{t('table.action')}</th>
               </tr>
             </thead>
             <tbody>
-              {jobs.length > 0 ? (
-                jobs.map(j => {
+              {filteredJobs.length > 0 ? (
+                filteredJobs.map(j => {
                   const duration = j.completed_at && j.submitted_at
                     ? Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
                     : 0
                   return (
-                    <tr key={j.id}>
+                    <tr key={j.id} className="cursor-pointer hover:bg-dc1-surface-l2/50 transition-colors" onClick={() => router.push(`/renter/jobs/${j.id}`)}>
                       <td className="font-mono text-sm">
-                        <Link href={`/renter/jobs/${j.id}`} className="text-dc1-amber hover:underline">
-                          {(j.job_id || `#${j.id}`).slice(0, 16)}
+                        <Link href={`/renter/jobs/${j.id}`} className="text-dc1-amber hover:underline" onClick={e => e.stopPropagation()}>
+                          {(j.job_id || `#${j.id}`).slice(0, 12)}
                         </Link>
                       </td>
                       <td className="text-sm">
-                        <div className="flex flex-col gap-1">
-                          <span>{(j.job_type || '').replace(/_/g, ' ')}</span>
-                          {j.container_spec && (() => {
-                            try {
-                              const spec = JSON.parse(j.container_spec)
-                              if (spec.image_type) return (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-dc1-amber/15 text-dc1-amber border border-dc1-amber/25 w-fit font-mono">
-                                  {spec.image_type}
-                                </span>
-                              )
-                            } catch { /* skip */ }
-                            return null
-                          })()}
-                        </div>
+                        <span className="capitalize">{getTemplateName(j)}</span>
                       </td>
                       <td className="text-sm text-dc1-text-secondary">
                         {j.submitted_at
@@ -344,7 +386,7 @@ export default function RenterJobsPage() {
                           ? `${(j.actual_cost_halala / 100).toFixed(2)} SAR`
                           : '—'}
                       </td>
-                      <td>
+                      <td onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
                           {j.status === 'failed' && (
                             <button
@@ -373,9 +415,26 @@ export default function RenterJobsPage() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-dc1-text-secondary">
-                    {t('common.no_jobs_yet')}.{' '}
-                    <a href="/renter/playground" className="text-dc1-amber hover:underline">{t('renter.open_playground')}</a>
+                  <td colSpan={7} className="text-center py-14">
+                    {statusFilter !== 'all' ? (
+                      <div className="space-y-2">
+                        <p className="text-dc1-text-secondary">No {statusFilter} jobs found.</p>
+                        <button onClick={() => setStatusFilter('all')} className="text-dc1-amber hover:underline text-sm">
+                          Show all jobs
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-dc1-text-secondary text-lg">No jobs yet.</p>
+                        <p className="text-dc1-text-muted text-sm">Browse templates to get started.</p>
+                        <a
+                          href="/marketplace/templates"
+                          className="inline-block mt-2 btn btn-primary px-6 py-2.5 text-sm"
+                        >
+                          Browse Templates →
+                        </a>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
