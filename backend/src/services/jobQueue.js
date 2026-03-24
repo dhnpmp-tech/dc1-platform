@@ -33,6 +33,13 @@ function getScheduler() {
   return _scheduler;
 }
 
+// Lazy-load jobEventEmitter (so unit tests can stub/reset it independently)
+let _jobEventEmitter;
+function getEmitter() {
+  if (!_jobEventEmitter) _jobEventEmitter = require('../utils/jobEventEmitter');
+  return _jobEventEmitter;
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** How often the retry loop fires (ms). */
@@ -134,6 +141,17 @@ function tryAssign(jobId, requirements) {
     `gpu=${match.provider.gpu_model || 'unknown'} ` +
     `pricing_class=${pricing_class}`
   );
+
+  // Notify connected SSE clients that a provider was assigned
+  try {
+    const job = getDb().get(`SELECT * FROM jobs WHERE job_id = ?`, jobId);
+    if (job) {
+      const emitter = getEmitter();
+      emitter.emit(jobId, 'provider_assigned', emitter.buildPayload(job, 'provider_assigned'));
+    }
+  } catch (emitErr) {
+    console.warn(`[jobQueue] SSE emit failed for provider_assigned job=${jobId}:`, emitErr.message);
+  }
 
   return { assigned: true, provider: match.provider, reason: 'assigned' };
 }
@@ -322,6 +340,21 @@ function handleProviderEvent(eventData) {
     _retryQueue.delete(jobId);
 
     console.info(`[jobQueue] event=${event} job=${jobId} → status=${newStatus}`);
+
+    // Notify connected SSE clients about the status change
+    try {
+      const emitter = getEmitter();
+      const sseEvent = emitter.statusToSseEvent(newStatus);
+      if (sseEvent) {
+        const updatedJob = db.get(`SELECT * FROM jobs WHERE job_id = ?`, jobId);
+        if (updatedJob) {
+          emitter.emit(jobId, sseEvent, emitter.buildPayload(updatedJob, sseEvent));
+        }
+      }
+    } catch (emitErr) {
+      console.warn(`[jobQueue] SSE emit failed for event=${event} job=${jobId}:`, emitErr.message);
+    }
+
     return { updated: true, jobId, newStatus, reason: 'status_updated' };
 
   } catch (err) {
@@ -367,6 +400,7 @@ module.exports = {
     _retryQueue.clear();
     _db = null;
     _scheduler = null;
+    _jobEventEmitter = null;
     if (_retryTimer !== null) {
       clearInterval(_retryTimer);
       _retryTimer = null;

@@ -8,6 +8,7 @@ import StatCard from '../components/ui/StatCard'
 import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../lib/i18n'
 import { clearSession } from '../lib/auth'
+import OnboardingWizard, { isOnboarded } from '../components/OnboardingWizard'
 
 const API_BASE = '/api/dc1'
 
@@ -96,10 +97,12 @@ export default function RenterDashboard() {
   const [authChecking, setAuthChecking] = useState(true)
   const [authReason, setAuthReason] = useState<'missing_credentials' | 'invalid_credentials' | 'expired_session' | null>(null)
   const [bannerDismissed, setBannerDismissed] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setBannerDismissed(!!sessionStorage.getItem('dcp_low_balance_dismissed'))
+      if (!isOnboarded()) setShowOnboarding(true)
     }
   }, [])
 
@@ -268,6 +271,10 @@ export default function RenterDashboard() {
 
   // ── Main Dashboard ───────────────────────────────────────────────
   return (
+    <>
+    {showOnboarding && (
+      <OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+    )}
     <DashboardLayout navItems={navItems} role="renter" userName={renter.name}>
       <div className="space-y-8">
         {/* Low Balance Banner */}
@@ -430,5 +437,6 @@ export default function RenterDashboard() {
         </section>
       </div>
     </DashboardLayout>
+    </>
   )
 }

@@ -943,6 +943,147 @@ router.post('/:id/heartbeat', (req, res) => {
 });
 
 // ============================================================================
+// POST /api/providers/:id/benchmark - Provider GPU benchmark submission (DCP-723)
+// Body: { gpu_model, vram_gb, tflops, bandwidth_gbps, tokens_per_sec, tier }
+// Auth: x-provider-key header or Authorization: Bearer <api_key>
+// Purpose: Store GPU benchmark results and assign provider to tier (A/B/C)
+// ============================================================================
+router.post('/:id/benchmark', (req, res) => {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+        if (!apiKey) return res.status(401).json({ error: 'API key required' });
+
+        // Verify provider and API key
+        const provider = db.get(
+            'SELECT id, approval_status FROM providers WHERE id = ? AND api_key = ?',
+            providerId, apiKey
+        );
+        if (!provider) return res.status(401).json({ error: 'Invalid provider ID or API key' });
+
+        // Validate benchmark data
+        const { gpu_model, vram_gb, tflops, bandwidth_gbps, tokens_per_sec, tier } = req.body;
+
+        if (!gpu_model || typeof gpu_model !== 'string') {
+            return res.status(400).json({ error: 'gpu_model required (string)' });
+        }
+
+        const vramNum = parseFloat(vram_gb);
+        const tflopsNum = parseFloat(tflops);
+        const bwNum = parseFloat(bandwidth_gbps);
+        const tpsNum = parseFloat(tokens_per_sec);
+
+        if (isNaN(vramNum) || vramNum < 1 || vramNum > 1000) {
+            return res.status(400).json({ error: 'vram_gb must be between 1 and 1000' });
+        }
+        if (isNaN(tflopsNum) || tflopsNum < 1 || tflopsNum > 10000) {
+            return res.status(400).json({ error: 'tflops must be between 1 and 10000' });
+        }
+        if (isNaN(bwNum) || bwNum < 1 || bwNum > 100000) {
+            return res.status(400).json({ error: 'bandwidth_gbps must be between 1 and 100000' });
+        }
+        if (isNaN(tpsNum) || tpsNum < 1 || tpsNum > 100000) {
+            return res.status(400).json({ error: 'tokens_per_sec must be between 1 and 100000' });
+        }
+
+        // Determine tier if not provided
+        let computedTier = tier;
+        if (!computedTier) {
+            // Auto-assign based on TFLOPS and VRAM
+            if (tflopsNum >= 900 && vramNum >= 40) {
+                computedTier = 'A'; // Enterprise tier (H100/H200)
+            } else if (tflopsNum >= 200 && vramNum >= 20) {
+                computedTier = 'B'; // High-end consumer (RTX 4090/4080)
+            } else {
+                computedTier = 'C'; // Standard tier
+            }
+        } else if (!['A', 'B', 'C'].includes(String(computedTier))) {
+            return res.status(400).json({ error: 'tier must be A, B, or C' });
+        }
+
+        const now = new Date().toISOString();
+        const gpuModelClean = normalizeString(gpu_model, { maxLen: 255 });
+
+        // Store benchmark result
+        try {
+            db.prepare(`
+                INSERT INTO provider_benchmarks
+                (provider_id, gpu_model, vram_gb, tflops, bandwidth_gbps, tokens_per_sec, tier, submitted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+                provider.id,
+                gpuModelClean,
+                vramNum,
+                tflopsNum,
+                bwNum,
+                tpsNum,
+                computedTier,
+                now
+            );
+        } catch (dbError) {
+            // Table might not exist yet - create it
+            if (dbError.message.includes('no such table')) {
+                db.prepare(`
+                    CREATE TABLE IF NOT EXISTS provider_benchmarks (
+                        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+                        provider_id TEXT NOT NULL,
+                        gpu_model TEXT NOT NULL,
+                        vram_gb REAL NOT NULL,
+                        tflops REAL NOT NULL,
+                        bandwidth_gbps REAL NOT NULL,
+                        tokens_per_sec REAL NOT NULL,
+                        tier TEXT NOT NULL,
+                        submitted_at TEXT NOT NULL,
+                        FOREIGN KEY (provider_id) REFERENCES providers(id)
+                    )
+                `).run();
+
+                // Retry insert
+                db.prepare(`
+                    INSERT INTO provider_benchmarks
+                    (provider_id, gpu_model, vram_gb, tflops, bandwidth_gbps, tokens_per_sec, tier, submitted_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                `).run(
+                    provider.id,
+                    gpuModelClean,
+                    vramNum,
+                    tflopsNum,
+                    bwNum,
+                    tpsNum,
+                    computedTier,
+                    now
+                );
+            } else {
+                throw dbError;
+            }
+        }
+
+        // Update provider with GPU tier
+        runStatement(
+            'UPDATE providers SET gpu_tier = ?, updated_at = ? WHERE id = ?',
+            computedTier, now, provider.id
+        );
+
+        return res.json({
+            success: true,
+            provider_id: provider.id,
+            gpu_model: gpuModelClean,
+            tier: computedTier,
+            timestamp: now,
+            message: `Benchmark recorded. Provider assigned to tier ${computedTier}`
+        });
+    } catch (error) {
+        console.error('[providers/:id/benchmark]', error);
+        return res.status(500).json({ error: 'Benchmark submission failed', details: error.message });
+    }
+});
+
+// ============================================================================
 // POST /api/providers/daemon-event - Log daemon events (crashes, job results, etc.)
 // ============================================================================
 router.post('/daemon-event', (req, res) => {
@@ -4008,6 +4149,57 @@ router.delete('/me', providerAccountDeletionLimiter, (req, res) => {
     } catch (error) {
         console.error('Provider delete error:', error);
         return res.status(500).json({ error: 'Account deletion failed' });
+    }
+});
+
+// ─── Provider Health API ───────────────────────────────────────────────────────
+// GET /api/providers/:id/health — health check history for a single provider
+// Accessible by admin or the provider itself (via api_key).
+// GET /api/providers/online — list of currently online providers (admin + job dispatcher)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const { getProviderHealthStatus, getOnlineProviders } = require('../workers/providerHealthWorker');
+
+router.get('/online', (req, res) => {
+    if (!isAdminRequest(req)) {
+        return res.status(403).json({ error: 'Admin access required' });
+    }
+    try {
+        const providers = getOnlineProviders(db);
+        return res.json({
+            count: providers.length,
+            providers,
+            generated_at: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('Provider online list error:', error);
+        return res.status(500).json({ error: 'Failed to list online providers' });
+    }
+});
+
+router.get('/:id/health', (req, res) => {
+    try {
+        const providerId = Number.parseInt(req.params.id, 10);
+        if (!Number.isFinite(providerId) || providerId < 1) {
+            return res.status(400).json({ error: 'Invalid provider id' });
+        }
+
+        // Allow admin or the provider itself
+        const isAdmin = isAdminRequest(req);
+        if (!isAdmin) {
+            const apiKey = getBearerToken(req) || req.body?.api_key || req.query?.api_key;
+            if (!apiKey) return res.status(401).json({ error: 'Authentication required' });
+            const provider = db.get('SELECT id FROM providers WHERE id = ? AND api_key = ?', providerId, apiKey);
+            if (!provider) return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const health = getProviderHealthStatus(db, providerId);
+        if (!health) return res.status(404).json({ error: 'Provider not found' });
+
+        return res.json(health);
+    } catch (error) {
+        console.error('Provider health endpoint error:', error);
+        return res.status(500).json({ error: 'Failed to fetch provider health' });
     }
 });
 
