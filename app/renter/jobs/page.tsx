@@ -6,6 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 import { useLanguage } from '../../lib/i18n'
+import { NoJobsYet } from '../../components/EmptyStates'
 
 const API_BASE = '/api/dc1'
 
@@ -373,9 +374,8 @@ export default function RenterJobsPage() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-dc1-text-secondary">
-                    {t('common.no_jobs_yet')}.{' '}
-                    <a href="/renter/playground" className="text-dc1-amber hover:underline">{t('renter.open_playground')}</a>
+                  <td colSpan={7}>
+                    <NoJobsYet />
                   </td>
                 </tr>
               )}

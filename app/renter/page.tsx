@@ -9,6 +9,7 @@ import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../lib/i18n'
 import { clearSession } from '../lib/auth'
 import OnboardingWizard, { isOnboarded } from '../components/OnboardingWizard'
+import OnboardingChecklist from '../components/OnboardingChecklist'
 
 const API_BASE = '/api/dc1'
 
@@ -336,6 +337,12 @@ export default function RenterDashboard() {
           <StatCard label={t('dashboard.jobs_run')} value={totalJobs.toString()} accent="default" />
           <StatCard label={t('dashboard.online_gpus')} value={onlineGPUs.toString()} accent="success" />
         </div>
+
+        {/* Onboarding Checklist — shown to new renters until all steps complete */}
+        <OnboardingChecklist
+          balanceHalala={renter.balance_halala}
+          totalJobs={renter.total_jobs}
+        />
 
         {/* Available GPUs */}
         <section>

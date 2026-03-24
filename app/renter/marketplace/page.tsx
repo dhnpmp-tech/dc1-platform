@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 import { useLanguage } from '../../lib/i18n'
+import { NoProvidersAvailable } from '../../components/EmptyStates'
 
 const API_BASE = '/api/dc1'
 
@@ -1652,8 +1653,8 @@ export default function MarketplacePage() {
                 />
               </div>
             ) : models.length === 0 ? (
-              <div className="card text-center py-12">
-                <p className="text-dc1-text-secondary mb-2">{t('marketplace.no_providers_for_model')}</p>
+              <div className="card">
+                <NoProvidersAvailable providerCount={0} />
               </div>
             ) : filteredModels.length === 0 ? (
               <div className="card text-center py-12">

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import { useLanguage } from '../../lib/i18n'
 import { getApiBase } from '../../../lib/api'
+import { EmptyWallet } from '../../components/EmptyStates'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
 const HomeIcon = () => (
@@ -140,11 +141,24 @@ export default function BillingPage() {
   const { t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [hasUsage, setHasUsage] = useState(true)
+  const [balanceHalala, setBalanceHalala] = useState<number | null>(null)
 
   useEffect(() => {
-    setLoading(false)
-    // Check if there's actual usage data - in production, this would come from API
-    // For now, we'll show placeholder data
+    const apiKey = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
+    if (apiKey) {
+      fetch(`/api/dc1/renters/me?key=${encodeURIComponent(apiKey)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.renter) {
+            setBalanceHalala(data.renter.balance_halala ?? 0)
+            setHasUsage((data.renter.total_jobs ?? 0) > 0)
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false))
+    } else {
+      setLoading(false)
+    }
   }, [])
 
   const navItems = [
@@ -171,6 +185,13 @@ export default function BillingPage() {
                 Track your compute spending, API usage, and credits
               </p>
             </div>
+
+            {/* Empty wallet banner */}
+            {!loading && balanceHalala === 0 && (
+              <div className="bg-dc1-surface-l1 border border-dc1-amber/30 rounded-xl overflow-hidden">
+                <EmptyWallet balanceHalala={0} requiredHalala={1000} />
+              </div>
+            )}
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
