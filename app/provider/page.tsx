@@ -468,7 +468,7 @@ export default function ProviderDashboard() {
           </div>
         </div>
 
-        {/* Provider activation onboarding — DCP-679 3-screen flow (DCP-792) */}
+        {/* Provider activation onboarding — DCP-679 3-screen flow */}
         {providerData.status === 'offline' && providerData.jobsCompleted === 0 && !providerData.lastHeartbeat && (
           <ProviderActivationCard
             providerId={providerData.id}
@@ -480,7 +480,7 @@ export default function ProviderDashboard() {
               })
             }}
           />
-        )}}
+        )}
 
         {latestDaemon && (
           daemonNeedsUpdate ? (

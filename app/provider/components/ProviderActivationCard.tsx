@@ -5,18 +5,23 @@ import { useEffect, useMemo, useState } from 'react'
 const API_BASE = '/api/dc1'
 
 /**
- * ProviderActivationCard — DCP-679 3-screen provider activation flow
- * Screen 1: CTA card  | Screen 2: Install wizard  | Screen 3: Connected confirmation
- * DCP-792
+ * ProviderActivationCard — 3-screen provider activation onboarding flow
+ *
+ * Screen 1: Dashboard CTA card   — "Activate your GPU — earn $X/mo"
+ * Screen 2: 3-step install wizard — OS select → install command → paste API key
+ * Screen 3: Connected confirmation — celebrates first heartbeat
+ *
+ * DCP-679 UX spec / DCP-792 implementation
  */
 
 interface ProviderActivationCardProps {
   providerId: string
   apiKey: string
+  /** Called when the provider completes onboarding and wants to go to the dashboard */
   onComplete: () => void
 }
 
-type Platform = 'linux' | 'windows' | 'macos'
+type Platform = 'windows' | 'linux' | 'macos'
 type WizardStep = 1 | 2 | 3
 
 const PLATFORM_OPTIONS: Array<{ id: Platform; label: string; emoji: string }> = [
@@ -24,14 +29,18 @@ const PLATFORM_OPTIONS: Array<{ id: Platform; label: string; emoji: string }> = 
   { id: 'windows', label: 'Windows', emoji: '🪟' },
   { id: 'macos',   label: 'macOS',   emoji: '🍎' },
 ]
+
+// Monthly earnings estimates at 70% utilisation (SAR)
 const EARNINGS_ESTIMATES = [
   { label: 'RTX 4090',  sarPerMonth: '4,500 – 7,875' },
   { label: 'H100',      sarPerMonth: '10,500 – 15,750' },
   { label: 'A100 40GB', sarPerMonth: '7,500 – 11,250' },
 ]
-const DISMISSED_KEY = 'provider_activation_dismissed'
-const COMPLETE_KEY  = 'provider_activation_complete'
 
+const ACTIVATION_CARD_DISMISSED_KEY = 'provider_activation_dismissed'
+const ACTIVATION_COMPLETE_KEY = 'provider_activation_complete'
+
+// ── Screen 1: CTA card ────────────────────────────────────────────────────────
 function ActivationCTACard({ onStart, onDismiss }: { onStart: () => void; onDismiss: () => void }) {
   return (
     <div className="rounded-xl border border-dc1-amber/30 bg-gradient-to-br from-dc1-amber/5 to-transparent p-6">
@@ -41,22 +50,33 @@ function ActivationCTACard({ onStart, onDismiss }: { onStart: () => void; onDism
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
           </svg>
         </div>
+
         <div className="flex-1">
-          <h3 className="text-lg font-bold text-dc1-text-primary mb-1">Activate your GPU — start earning now</h3>
+          <h3 className="text-lg font-bold text-dc1-text-primary mb-1">
+            Activate your GPU — start earning now
+          </h3>
           <p className="text-sm text-dc1-text-secondary mb-4">
             Install the DCP daemon and connect your GPU to the marketplace. Setup takes under 5 minutes.
             Saudi providers earn SAR 4,500–15,750/month at 70% utilisation.
           </p>
           <div className="flex flex-wrap gap-3">
-            <button onClick={onStart} className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-dc1-void hover:brightness-110 transition-all min-h-[44px]">
+            <button
+              onClick={onStart}
+              className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-dc1-void hover:brightness-110 transition-all min-h-[44px]"
+            >
               Activate now →
             </button>
-            <button onClick={onDismiss} className="rounded-lg border border-dc1-border px-5 py-2.5 text-sm font-semibold text-dc1-text-secondary hover:text-dc1-text-primary hover:border-dc1-amber/40 transition-colors min-h-[44px]">
+            <button
+              onClick={onDismiss}
+              className="rounded-lg border border-dc1-border px-5 py-2.5 text-sm font-semibold text-dc1-text-secondary hover:text-dc1-text-primary hover:border-dc1-amber/40 transition-colors min-h-[44px]"
+            >
               Remind me later
             </button>
           </div>
         </div>
       </div>
+
+      {/* Earnings preview */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 pt-5 border-t border-dc1-border">
         {EARNINGS_ESTIMATES.map(tier => (
           <div key={tier.label} className="rounded-lg bg-dc1-surface-l2 border border-dc1-border px-4 py-3">
@@ -70,8 +90,17 @@ function ActivationCTACard({ onStart, onDismiss }: { onStart: () => void; onDism
   )
 }
 
-function ActivationWizard({ providerId, apiKey, onComplete, onBack }: {
-  providerId: string; apiKey: string; onComplete: () => void; onBack: () => void
+// ── Screen 2: 3-step install wizard (modal overlay) ───────────────────────────
+function ActivationWizard({
+  providerId,
+  apiKey,
+  onComplete,
+  onBack,
+}: {
+  providerId: string
+  apiKey: string
+  onComplete: () => void
+  onBack: () => void
 }) {
   const [step, setStep] = useState<WizardStep>(1)
   const [platform, setPlatform] = useState<Platform>('linux')
@@ -79,75 +108,170 @@ function ActivationWizard({ providerId, apiKey, onComplete, onBack }: {
   const [heartbeatDetected, setHeartbeatDetected] = useState(false)
 
   const installCommand = useMemo(() => {
-    if (platform === 'windows') return `powershell -c "iwr https://api.dcp.sa/api/providers/download/installer -OutF setup.ps1; .\\setup.ps1 ${apiKey}"`
+    if (platform === 'windows') {
+      return `powershell -c "iwr https://api.dcp.sa/api/providers/download/installer -OutF setup.ps1; .\\setup.ps1 ${apiKey}"`
+    }
     return `curl -fsSL https://api.dcp.sa/api/providers/install.sh | bash -s ${apiKey}`
   }, [apiKey, platform])
 
+  // Poll for first heartbeat while on step 2
   useEffect(() => {
     if (step !== 2 || heartbeatDetected || !apiKey) return
+
     let cancelled = false
+
     const poll = async () => {
       try {
         const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey)}`)
         if (!res.ok) return
         const data = await res.json()
-        const hb = (data?.provider || {}).last_heartbeat || (data?.provider || {}).last_heartbeat_at || null
-        if (!cancelled && hb) { setHeartbeatDetected(true); setTimeout(() => { if (!cancelled) setStep(3) }, 900) }
-      } catch { /* transient */ }
+        const provider = data?.provider || {}
+        const lastHeartbeat = provider.last_heartbeat || provider.last_heartbeat_at || null
+        if (!cancelled && lastHeartbeat) {
+          setHeartbeatDetected(true)
+          setTimeout(() => {
+            if (!cancelled) setStep(3)
+          }, 900)
+        }
+      } catch {
+        // transient errors expected during first-run setup
+      }
     }
-    poll(); const iv = setInterval(poll, 5000)
-    return () => { cancelled = true; clearInterval(iv) }
+
+    poll()
+    const interval = setInterval(poll, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [apiKey, heartbeatDetected, step])
 
-  useEffect(() => { if (!copied) return; const t = setTimeout(() => setCopied(false), 1500); return () => clearTimeout(t) }, [copied])
-  const copyCommand = async () => { try { await navigator.clipboard.writeText(installCommand); setCopied(true) } catch { setCopied(false) } }
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(t)
+  }, [copied])
+
+  const copyCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(installCommand)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  const STEP_LABELS = ['Select OS', 'Install & Connect', 'Verify']
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="relative w-full max-w-2xl rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6 shadow-2xl">
-        <button type="button" onClick={onBack} className="absolute right-4 top-4 text-dc1-text-muted hover:text-dc1-text-primary" aria-label="Close">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        {/* Close */}
+        <button
+          type="button"
+          onClick={onBack}
+          className="absolute right-4 top-4 text-dc1-text-muted hover:text-dc1-text-primary"
+          aria-label="Close"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
-        <div className="mb-4 pe-8">
+
+        {/* Header */}
+        <div className="mb-4">
           <h2 className="text-xl font-bold text-dc1-text-primary">Activate your GPU node</h2>
-          <p className="text-sm text-dc1-text-secondary mt-1">Step {step} of 3</p>
-        </div>
-        <div className="mb-6 h-2 overflow-hidden rounded-full bg-dc1-surface-l3">
-          <div className="h-full bg-gradient-to-r from-dc1-amber to-status-success transition-all duration-500" style={{ width: `${(step / 3) * 100}%` }} />
+          <p className="text-sm text-dc1-text-secondary mt-1">
+            Step {step} of 3 — {STEP_LABELS[step - 1]}
+          </p>
         </div>
 
+        {/* Progress bar */}
+        <div className="mb-6 h-2 overflow-hidden rounded-full bg-dc1-surface-l3">
+          <div
+            className="h-full bg-gradient-to-r from-dc1-amber to-status-success transition-all duration-500"
+            style={{ width: `${(step / 3) * 100}%` }}
+          />
+        </div>
+
+        {/* Step 1: OS selection + install command */}
         {step === 1 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold text-dc1-text-primary mb-1">Choose your operating system</h3>
-              <p className="text-sm text-dc1-text-secondary">Run the install command on the machine with your GPU attached.</p>
+              <p className="text-sm text-dc1-text-secondary">
+                Run the install command on the machine with your GPU attached.
+              </p>
             </div>
+
             <div className="flex flex-wrap gap-2">
               {PLATFORM_OPTIONS.map(opt => (
-                <button key={opt.id} type="button" onClick={() => setPlatform(opt.id)} className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors min-h-[44px] ${platform === opt.id ? 'border-dc1-amber bg-dc1-amber/20 text-dc1-amber' : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'}`}>
-                  <span>{opt.emoji}</span>{opt.label}
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setPlatform(opt.id)}
+                  className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors min-h-[44px] ${
+                    platform === opt.id
+                      ? 'border-dc1-amber bg-dc1-amber/20 text-dc1-amber'
+                      : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
+                  }`}
+                >
+                  <span>{opt.emoji}</span>
+                  {opt.label}
                 </button>
               ))}
             </div>
+
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
               <p className="mb-2 text-xs uppercase tracking-wide text-dc1-text-muted">Install command</p>
-              <code className="block whitespace-pre-wrap break-all text-sm text-dc1-text-primary font-mono leading-relaxed">{installCommand}</code>
+              <code className="block whitespace-pre-wrap break-all text-sm text-dc1-text-primary font-mono leading-relaxed">
+                {installCommand}
+              </code>
             </div>
+
             <div className="flex items-center justify-between gap-3">
-              <button type="button" onClick={copyCommand} className="flex items-center gap-2 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2.5 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3 min-h-[44px] transition-colors">
-                {copied ? <><svg className="w-4 h-4 text-status-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Copied!</> : <>Copy command</>}
+              <button
+                type="button"
+                onClick={copyCommand}
+                className="flex items-center gap-2 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2.5 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3 min-h-[44px] transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <svg className="w-4 h-4 text-status-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Copy command
+                  </>
+                )}
               </button>
-              <button type="button" onClick={() => setStep(2)} className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all">I ran the command →</button>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all"
+              >
+                I ran the command →
+              </button>
             </div>
           </div>
         )}
 
+        {/* Step 2: Waiting for connection */}
         {step === 2 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold text-dc1-text-primary mb-1">Waiting for your GPU to connect</h3>
-              <p className="text-sm text-dc1-text-secondary">The daemon sends its first heartbeat automatically (30–60 seconds).</p>
+              <p className="text-sm text-dc1-text-secondary">
+                The daemon will send its first heartbeat automatically. This usually takes 30–60 seconds after installation.
+              </p>
             </div>
+
             {!heartbeatDetected ? (
               <div className="flex items-center gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-dc1-amber border-t-transparent shrink-0" />
@@ -159,27 +283,59 @@ function ActivationWizard({ providerId, apiKey, onComplete, onBack }: {
                 <p className="text-sm font-semibold text-status-success">Heartbeat received! Your GPU is online.</p>
               </div>
             )}
-            <p className="text-xs text-dc1-text-muted">API key: <code className="font-mono bg-dc1-surface-l3 px-1.5 py-0.5 rounded text-dc1-text-secondary">{apiKey.slice(0, 8)}…</code></p>
+
+            <p className="text-xs text-dc1-text-muted">
+              Your API key: <code className="font-mono bg-dc1-surface-l3 px-1.5 py-0.5 rounded text-dc1-text-secondary">{apiKey.slice(0, 8)}…</code>
+            </p>
+
             <div className="flex items-center justify-between gap-3">
-              <button type="button" onClick={() => setStep(1)} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2.5 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3 min-h-[44px] transition-colors">← Back</button>
-              {heartbeatDetected && <button type="button" onClick={() => setStep(3)} className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all">Continue →</button>}
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2.5 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3 min-h-[44px] transition-colors"
+              >
+                ← Back
+              </button>
+              {heartbeatDetected && (
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all"
+                >
+                  Continue →
+                </button>
+              )}
             </div>
           </div>
         )}
 
+        {/* Step 3: Confirmation */}
         {step === 3 && (
           <div className="space-y-5">
             <div className="rounded-xl border border-status-success/40 bg-status-success/10 p-5 text-center">
               <div className="text-5xl mb-3">🎉</div>
               <h3 className="text-lg font-bold text-dc1-text-primary mb-2">Your GPU is live!</h3>
-              <p className="text-sm text-dc1-text-secondary">Your node is now active and accepting jobs. You will start earning when renters submit workloads.</p>
+              <p className="text-sm text-dc1-text-secondary">
+                Your node is now active and accepting jobs from the DCP marketplace.
+                You will start earning as soon as a renter submits a matching workload.
+              </p>
             </div>
+
             <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
               <p className="text-xs text-dc1-text-muted mb-2 uppercase tracking-wide">Share your referral link</p>
-              <p className="text-sm font-mono text-dc1-text-primary break-all">dcp.sa/earn?ref={providerId}</p>
+              <p className="text-sm font-mono text-dc1-text-primary break-all">
+                dcp.sa/earn?ref={providerId}
+              </p>
             </div>
-            <div className="flex justify-end">
-              <button type="button" onClick={onComplete} className="rounded-lg bg-dc1-amber px-6 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all">Go to dashboard →</button>
+
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={onComplete}
+                className="rounded-lg bg-dc1-amber px-6 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all"
+              >
+                Go to dashboard →
+              </button>
             </div>
           </div>
         )}
@@ -188,22 +344,44 @@ function ActivationWizard({ providerId, apiKey, onComplete, onBack }: {
   )
 }
 
+// ── Main export: orchestrates the 3-screen flow ───────────────────────────────
 export default function ProviderActivationCard({ providerId, apiKey, onComplete }: ProviderActivationCardProps) {
   const [screen, setScreen] = useState<'cta' | 'wizard' | 'hidden'>(() => {
     if (typeof window === 'undefined') return 'cta'
-    if (localStorage.getItem(COMPLETE_KEY) === 'true') return 'hidden'
-    if (localStorage.getItem(DISMISSED_KEY) === 'true') return 'hidden'
+    if (localStorage.getItem(ACTIVATION_COMPLETE_KEY) === 'true') return 'hidden'
+    if (localStorage.getItem(ACTIVATION_CARD_DISMISSED_KEY) === 'true') return 'hidden'
     return 'cta'
   })
 
-  const handleDismiss = () => { localStorage.setItem(DISMISSED_KEY, 'true'); setScreen('hidden') }
-  const handleComplete = () => { localStorage.setItem(COMPLETE_KEY, 'true'); setScreen('hidden'); onComplete() }
+  const handleDismiss = () => {
+    localStorage.setItem(ACTIVATION_CARD_DISMISSED_KEY, 'true')
+    setScreen('hidden')
+  }
+
+  const handleComplete = () => {
+    localStorage.setItem(ACTIVATION_COMPLETE_KEY, 'true')
+    setScreen('hidden')
+    onComplete()
+  }
 
   if (screen === 'hidden') return null
+
   return (
     <>
-      {screen === 'cta' && <ActivationCTACard onStart={() => setScreen('wizard')} onDismiss={handleDismiss} />}
-      {screen === 'wizard' && <ActivationWizard providerId={providerId} apiKey={apiKey} onComplete={handleComplete} onBack={() => setScreen('cta')} />}
+      {screen === 'cta' && (
+        <ActivationCTACard
+          onStart={() => setScreen('wizard')}
+          onDismiss={handleDismiss}
+        />
+      )}
+      {screen === 'wizard' && (
+        <ActivationWizard
+          providerId={providerId}
+          apiKey={apiKey}
+          onComplete={handleComplete}
+          onBack={() => setScreen('cta')}
+        />
+      )}
     </>
   )
 }

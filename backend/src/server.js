@@ -401,6 +401,9 @@ app.use('/api/fallback', fallbackRouter);
 const payoutsRouter = require('./routes/payouts');
 app.use('/api', payoutsRouter);
 
+const ragRouter = require('./routes/rag');
+app.use('/api/rag', ragRouter);
+
 const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);
 const sweepIntervalMs = Number.isFinite(sweepIntervalMsRaw) && sweepIntervalMsRaw > 0 ? sweepIntervalMsRaw : 30000;
