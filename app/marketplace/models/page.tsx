@@ -4,8 +4,29 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
+import ProviderAvailabilityBadge from '../../components/marketplace/ProviderAvailabilityBadge'
 
 const API_BASE = '/api/dc1'
+
+// Known Arabic names for specific models (displayed as subtitle)
+const ARABIC_MODEL_NAMES: Record<string, string> = {
+  'allam-7b-instruct': 'عَلَّام — نموذج عربي متقدم',
+  'allam-7b': 'عَلَّام',
+  'jais-13b': 'جيس — نموذج عربي',
+  'jais-13b-chat': 'جيس',
+  'falcon-h1-7b': 'فالكون H1',
+  'qwen2.5-7b-instruct': 'كيوين ٢.٥',
+  'qwen25-7b': 'كيوين ٢.٥',
+}
+
+function getArabicSubtitle(modelId: string): string | null {
+  const key = modelId.toLowerCase()
+  for (const [id, name] of Object.entries(ARABIC_MODEL_NAMES)) {
+    if (key.includes(id)) return name
+  }
+  // Generic fallback for any other Arabic model
+  return null
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface ModelListItem {
@@ -108,11 +129,13 @@ function SkeletonCard() {
 // ── Model Card ────────────────────────────────────────────────────────────────
 function ModelCard({ model }: { model: ModelListItem }) {
   const arabic = isArabicModel(model)
+  const arabicSubtitle = arabic ? getArabicSubtitle(model.model_id) : null
   const tierBadge = getTierBadge(model.tier)
   const prewarmBadge = getPrewarmBadge(model.prewarm_class)
   const taskType = getTaskType(model)
   const priceHr = model.avg_price_sar_per_min ? (model.avg_price_sar_per_min * 60).toFixed(2) : null
   const vram = model.min_gpu_vram_gb ?? model.vram_gb
+  const providersOnline = model.providers_online ?? 0
 
   const deployHref = `/renter/register?model=${encodeURIComponent(model.model_id)}&source=marketplace_models`
 
@@ -124,7 +147,13 @@ function ModelCard({ model }: { model: ModelListItem }) {
           <h3 className="text-sm font-bold text-dc1-text-primary group-hover:text-dc1-amber transition-colors leading-tight truncate">
             {model.display_name}
           </h3>
-          <p className="text-xs text-dc1-text-muted font-mono mt-0.5 truncate">{model.model_id}</p>
+          {arabicSubtitle ? (
+            <p className="text-xs text-dc1-amber/70 mt-0.5 font-medium" dir="rtl" lang="ar">
+              {arabicSubtitle}
+            </p>
+          ) : (
+            <p className="text-xs text-dc1-text-muted font-mono mt-0.5 truncate">{model.model_id}</p>
+          )}
         </div>
         {arabic && (
           <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full border font-medium bg-dc1-amber/10 text-dc1-amber border-dc1-amber/20">
@@ -166,6 +195,9 @@ function ModelCard({ model }: { model: ModelListItem }) {
         </div>
       )}
 
+      {/* Provider availability badge */}
+      <ProviderAvailabilityBadge count={providersOnline} showOfflineMessage />
+
       {/* Specs + Pricing */}
       <div className="bg-dc1-surface-l1 rounded-lg px-3 py-2.5 grid grid-cols-2 gap-2 text-xs">
         {vram && (
@@ -180,16 +212,8 @@ function ModelCard({ model }: { model: ModelListItem }) {
             <p className="font-semibold text-dc1-text-primary">{(model.context_window / 1000).toFixed(0)}K tokens</p>
           </div>
         )}
-        {model.providers_online !== undefined && (
-          <div>
-            <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">Providers</p>
-            <p className={`font-semibold ${(model.providers_online ?? 0) > 0 ? 'text-status-success' : 'text-dc1-text-muted'}`}>
-              {model.providers_online ?? 0} online
-            </p>
-          </div>
-        )}
         {priceHr !== null && (
-          <div>
+          <div className="col-span-2">
             <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">DCP Price</p>
             <p className="font-extrabold text-dc1-amber">{priceHr} <span className="text-[9px] font-normal text-dc1-text-muted">SAR/hr</span></p>
           </div>
@@ -256,6 +280,7 @@ export default function MarketplaceModelsPage() {
   const [filterTask, setFilterTask] = useState<TaskFilter>('all')
   const [filterVram, setFilterVram] = useState('')
   const [filterTier, setFilterTier] = useState<'all' | 'tier_a' | 'tier_b'>('all')
+  const [liveProviderCount, setLiveProviderCount] = useState<number | null>(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/models`)
@@ -266,6 +291,12 @@ export default function MarketplaceModelsPage() {
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false))
+
+    // Fetch live provider count independently — non-blocking
+    fetch(`${API_BASE}/providers/online`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.count != null) setLiveProviderCount(data.count) })
+      .catch(() => {/* silently ignore — badge still works from model data */})
   }, [])
 
   const filtered = useMemo(() => {
@@ -327,6 +358,13 @@ export default function MarketplaceModelsPage() {
                 <span className="text-status-success font-bold">Save 33–51%</span>
                 <span className="text-dc1-text-secondary">vs AWS Bedrock</span>
               </div>
+              {liveProviderCount !== null && (
+                <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
+                  <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${liveProviderCount > 0 ? 'bg-status-success animate-pulse' : 'bg-dc1-text-muted/40'}`} />
+                  <span className={`font-bold ${liveProviderCount > 0 ? 'text-status-success' : 'text-dc1-text-muted'}`}>{liveProviderCount}</span>
+                  <span className="text-dc1-text-secondary">providers live now</span>
+                </div>
+              )}
             </div>
           </div>
         </section>
