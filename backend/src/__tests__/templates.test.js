@@ -177,6 +177,26 @@ describe('GET /api/templates', () => {
     }
   });
 
+  it('includes arabic_capable boolean on every template (DCP-829)', async () => {
+    const res = await request(app).get('/api/templates');
+    expect(res.status).toBe(200);
+    for (const t of res.body.templates) {
+      expect(typeof t.arabic_capable).toBe('boolean');
+      const hasArabicTag = Array.isArray(t.tags) && t.tags.includes('arabic');
+      expect(t.arabic_capable).toBe(hasArabicTag);
+    }
+  });
+
+  it('includes canonical category string on every template (DCP-829)', async () => {
+    const res = await request(app).get('/api/templates');
+    expect(res.status).toBe(200);
+    const VALID_CATEGORIES = ['llm', 'embedding', 'image', 'notebook', 'training', 'other'];
+    for (const t of res.body.templates) {
+      expect(typeof t.category).toBe('string');
+      expect(VALID_CATEGORIES).toContain(t.category);
+    }
+  });
+
   it('filters by category=llm', async () => {
     const res = await request(app).get('/api/templates?category=llm');
     expect(res.status).toBe(200);
@@ -206,6 +226,14 @@ describe('GET /api/templates/:id', () => {
     expect(res.body.id).toBe('llama3-8b');
     expect(res.body.min_vram_gb).toBeGreaterThan(0);
     expect(res.body.estimated_price_sar_per_hour).toBeGreaterThan(0);
+  });
+
+  it('includes arabic_capable and category on single template (DCP-829)', async () => {
+    const res = await request(app).get('/api/templates/llama3-8b');
+    expect(res.status).toBe(200);
+    // llama3-8b has 'arabic' in tags → arabic_capable=true, category='llm'
+    expect(res.body.arabic_capable).toBe(true);
+    expect(res.body.category).toBe('llm');
   });
 
   it('returns 404 for unknown template', async () => {

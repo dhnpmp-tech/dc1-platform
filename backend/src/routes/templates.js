@@ -70,9 +70,12 @@ router.get('/', publicEndpointLimiter, (req, res) => {
     }
   }
 
-  // Strip approved_images from list response; attach floor pricing per template (DCP-762)
+  // Strip approved_images from list response; attach floor pricing + derived metadata (DCP-829)
   const safe = filtered.map(({ approved_images: _ai, ...t }) => ({
-    ...t, pricing: buildTemplatePricing(t),
+    ...t,
+    arabic_capable: Array.isArray(t.tags) && t.tags.includes('arabic'),
+    category: deriveCategory(t),
+    pricing: buildTemplatePricing(t),
   }));
   res.json({ templates: safe, count: safe.length });
 });
@@ -110,8 +113,25 @@ router.get('/:id', publicEndpointLimiter, (req, res) => {
   if (!template) return res.status(404).json({ error: 'Template not found' });
   // Strip approved_images from direct response too -- daemon uses /whitelist
   const { approved_images: _ai, ...safe } = template;
-  res.json({ ...safe, pricing: buildTemplatePricing(safe) });
+  res.json({
+    ...safe,
+    arabic_capable: Array.isArray(safe.tags) && safe.tags.includes('arabic'),
+    category: deriveCategory(safe),
+    pricing: buildTemplatePricing(safe),
+  });
 });
+
+// Derive canonical category string from template tags (DCP-829).
+// Returns one of: 'llm' | 'embedding' | 'image' | 'notebook' | 'training' | 'other'
+function deriveCategory(template) {
+  const tags = Array.isArray(template.tags) ? template.tags : [];
+  if (tags.some(t => ['llm', 'inference', 'chat', 'instruct'].includes(t))) return 'llm';
+  if (tags.some(t => ['embedding', 'embed', 'rag'].includes(t))) return 'embedding';
+  if (tags.some(t => ['image', 'diffusion', 'sdxl', 'stable-diffusion'].includes(t))) return 'image';
+  if (tags.some(t => ['notebook', 'jupyter', 'scientific'].includes(t))) return 'notebook';
+  if (tags.some(t => ['training', 'finetune', 'lora', 'qlora'].includes(t))) return 'training';
+  return 'other';
+}
 
 // Pricing sourced from config/pricing.js via pricingService (DCP-762).
 function calcDeployCostHalala(jobType, durationMinutes, pricingClass, gpuModel) {
