@@ -1,5 +1,10 @@
-import OnboardingWizard from '../components/OnboardingWizard'
+import { Suspense } from 'react'
+import RenterOnboardingFlow from '../components/RenterOnboardingFlow'
 
 export default function OnboardingPage() {
-  return <OnboardingWizard fullPage />
+  return (
+    <Suspense>
+      <RenterOnboardingFlow />
+    </Suspense>
+  )
 }
