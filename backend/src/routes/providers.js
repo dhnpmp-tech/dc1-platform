@@ -11,6 +11,7 @@ const {
     publicProvidersLimiter,
     providerAccountDeletionLimiter,
     providerDataExportLimiter,
+    heartbeatProviderLimiter,
 } = require('../middleware/rateLimiter');
 const { isAdminRequest, getBearerToken } = require('../middleware/auth');
 const { getChainEscrow } = require('../services/escrow-chain');
@@ -594,7 +595,7 @@ function computeReputationScore(providerId) {
 //   2–10 min since last heartbeat → status: "degraded"  (yellow, still bookable)
 //   > 10 min since last heartbeat → status: "offline"   (excluded from marketplace)
 // ============================================================================
-router.post('/heartbeat', (req, res) => {
+router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
     // HMAC-SHA256 signature validation — prevents spoofed provider status updates.
     // Daemons set X-DC1-Signature: sha256=<hex> using DC1_HMAC_SECRET.
     const hmacResult = verifyHeartbeatHmac(req);
@@ -679,7 +680,7 @@ router.post('/heartbeat', (req, res) => {
         const p = db.get(
             `SELECT id, approval_status, model_preload_status, model_preload_model, p2p_peer_id
              FROM providers
-             WHERE api_key = ?`,
+             WHERE api_key = ? AND deleted_at IS NULL`,
             cleanApiKey
         );
         if (!p) return res.status(401).json({ error: 'Invalid API key' });
