@@ -27,8 +27,12 @@ const app = Fastify({ logger: true });
 
 // ── Plugins ────────────────────────────────────────────────────────────────
 // JWT authentication — hard fail if JWT_SECRET missing (validated above)
+// F1 fix: pin algorithm to HS256 to prevent alg:none / algorithm confusion attacks
+// F2 fix: enforce 24h expiry so stolen tokens cannot be used indefinitely
 app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET!,
+  sign: { expiresIn: '24h' },
+  verify: { algorithms: ['HS256'] },
 });
 
 // Audit logging middleware (must be registered before routes)
