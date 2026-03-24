@@ -9,6 +9,7 @@ const { GPU_RATE_TABLE, SAR_USD_RATE } = require('../config/pricing');
 const PROVIDER_FRESHNESS_MS = 10 * 60 * 1000;
 const DEFAULT_DEPLOY_DURATION_MINUTES = 60;
 const DEPLOY_IMAGE = 'dcp/vllm-serve:latest';
+const DOCKER_TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
 const ARABIC_PORTFOLIO_FILE = process.env.DCP_ARABIC_PORTFOLIO_FILE
   || path.join(__dirname, '../../../infra/config/arabic-portfolio.json');
 const TIER_RANK = {
@@ -428,6 +429,10 @@ function buildModelPayload(row, freshProviders, portfolioIndex) {
       savings_pct,
     },
     template_id: inferTemplateId(row.model_id),
+    template_available: (() => {
+      const tid = inferTemplateId(row.model_id);
+      return tid != null && fs.existsSync(path.join(DOCKER_TEMPLATES_DIR, `${tid}.json`));
+    })(),
     prefetch_status: inferPrefetchStatus(portfolio, availabilityStatus),
     estimated_cold_start_ms: estimateColdStartMs({
       benchmark,
@@ -625,17 +630,23 @@ function buildDeploySubmitPayload(model, options = {}) {
 
 // applyQueryFilters — shared filter logic for list and catalog endpoints.
 // Supported query params:
-//   arabic_capable=true   — only models with Arabic capability
-//   min_vram_gb=N         — only models requiring <= N GB VRAM (renter GPU fits model)
-//   category=llm|embedding|image|training  — filter by task type
+//   arabic_capable=true                      — Arabic-capable models only
+//   category=arabic|llm|embedding|image|training  — category filter; arabic = arabic_capable alias
+//   min_vram_gb=N | vram_min=N               — models fitting within N GB VRAM (vram_min is alias)
+//   capability=arabic_text|embeddings|reranker|chat|image  — fine-grained capability filter
 function applyQueryFilters(models, query) {
   let result = models;
 
-  if (String(query.arabic_capable || '').toLowerCase() === 'true') {
+  // Arabic filter: arabic_capable=true OR category=arabic
+  const categoryRaw = normalizeString(query.category, { maxLen: 32 });
+  const isArabicCategory = categoryRaw && categoryRaw.toLowerCase() === 'arabic';
+  if (String(query.arabic_capable || '').toLowerCase() === 'true' || isArabicCategory) {
     result = result.filter((m) => m.arabic || m.arabic_capability);
   }
 
-  const minVram = toInt(query.min_vram_gb, { min: 1, max: 1024 });
+  // VRAM filter: min_vram_gb=N or vram_min=N (alias)
+  const minVram = toInt(query.min_vram_gb, { min: 1, max: 1024 })
+    ?? toInt(query.vram_min, { min: 1, max: 1024 });
   if (minVram != null) {
     result = result.filter((m) => {
       const vramNeeded = toInt(m.min_gpu_vram_gb, { min: 1, max: 1024 }) || 1;
@@ -643,9 +654,9 @@ function applyQueryFilters(models, query) {
     });
   }
 
-  const category = normalizeString(query.category, { maxLen: 32 });
-  if (category) {
-    const cat = category.toLowerCase();
+  // Category / task filter (skip 'arabic' — already handled above)
+  if (categoryRaw && !isArabicCategory) {
+    const cat = categoryRaw.toLowerCase();
     const CATEGORY_TASK_MAP = {
       llm: ['chat', 'instruct'],
       embedding: ['embed'],
@@ -658,6 +669,22 @@ function applyQueryFilters(models, query) {
         const tasks = Array.isArray(m.task) ? m.task : [];
         return tasks.some((t) => allowedTasks.includes(String(t).toLowerCase()));
       });
+    }
+  }
+
+  // Capability filter: capability=arabic_text|embeddings|reranker|chat|image
+  const capability = normalizeString(query.capability, { maxLen: 32 });
+  if (capability) {
+    const CAPABILITY_MAP = {
+      arabic_text: (m) => m.arabic || m.arabic_capability,
+      embeddings: (m) => Array.isArray(m.task) && m.task.some((t) => String(t).toLowerCase().includes('embed')),
+      reranker: (m) => Array.isArray(m.task) && m.task.some((t) => String(t).toLowerCase().includes('rerank')),
+      chat: (m) => Array.isArray(m.task) && m.task.some((t) => ['chat', 'instruct'].includes(String(t).toLowerCase())),
+      image: (m) => Array.isArray(m.task) && m.task.some((t) => String(t).toLowerCase().includes('image')),
+    };
+    const capFn = CAPABILITY_MAP[capability.toLowerCase()];
+    if (capFn) {
+      result = result.filter(capFn);
     }
   }
 
