@@ -105,6 +105,23 @@ module.exports = {
       }
     },
     {
+      // Provider health monitoring cron — 3-strike deactivation + auto-reactivation.
+      name: 'dcp-provider-health-cron',
+      script: '/bin/sh',
+      args: '-lc "node /root/dc1-platform/backend/src/workers/providerHealthWorker.js >> /root/dc1-platform/backend/logs/provider-health.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '*/5 * * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production',
+        PROVIDER_ALIVE_THRESHOLD_SECS: '300',
+        PROVIDER_HEALTH_FAILURE_THRESHOLD: '3'
+      }
+    },
+    {
       name: 'dcp-db-backup-cron',
       script: '/bin/bash',
       args: '-lc "/root/dc1-platform/scripts/backup-db.sh"',

@@ -4011,6 +4011,47 @@ router.delete('/me', providerAccountDeletionLimiter, (req, res) => {
     }
 });
 
+// ─── Provider Health API ───────────────────────────────────────────────────────
+// GET /api/providers/online  — list of currently online providers (admin only)
+// GET /api/providers/:id/health — health check history (admin or provider itself)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const { getProviderHealthStatus, getOnlineProviders } = require('../workers/providerHealthWorker');
+
+router.get('/online', (req, res) => {
+    if (!isAdminRequest(req)) {
+        return res.status(403).json({ error: 'Admin access required' });
+    }
+    try {
+        const providers = getOnlineProviders(db);
+        return res.json({ count: providers.length, providers, generated_at: new Date().toISOString() });
+    } catch (error) {
+        console.error('Provider online list error:', error);
+        return res.status(500).json({ error: 'Failed to list online providers' });
+    }
+});
+
+router.get('/:id/health', (req, res) => {
+    try {
+        const providerId = Number.parseInt(req.params.id, 10);
+        if (!Number.isFinite(providerId) || providerId < 1) {
+            return res.status(400).json({ error: 'Invalid provider id' });
+        }
+        if (!isAdminRequest(req)) {
+            const apiKey = getBearerToken(req) || req.body?.api_key || req.query?.api_key;
+            if (!apiKey) return res.status(401).json({ error: 'Authentication required' });
+            const p = db.get('SELECT id FROM providers WHERE id = ? AND api_key = ?', providerId, apiKey);
+            if (!p) return res.status(403).json({ error: 'Access denied' });
+        }
+        const health = getProviderHealthStatus(db, providerId);
+        if (!health) return res.status(404).json({ error: 'Provider not found' });
+        return res.json(health);
+    } catch (error) {
+        console.error('Provider health endpoint error:', error);
+        return res.status(500).json({ error: 'Failed to fetch provider health' });
+    }
+});
+
 module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
