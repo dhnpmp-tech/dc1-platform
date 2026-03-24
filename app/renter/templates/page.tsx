@@ -246,6 +246,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   embedding: 'text-status-info bg-status-info-bg border-status-info/20',
 }
 
+function getCategoryForTemplate(t: Record<string, unknown>): string {
+  const tags = ((t.tags as string[]) ?? []).map((x: string) => x.toLowerCase())
+  const id = (t.id as string)?.toLowerCase() ?? ''
+  if (tags.includes('training') || id.includes('finetune') || id.includes('lora') || id.includes('qlora')) return 'training'
+  if (tags.includes('embedding') || tags.includes('rag') || id.includes('embed') || id.includes('rerank')) return 'embedding'
+  if (tags.includes('image') || id.includes('sdxl') || id.includes('stable-diffusion')) return 'image'
+  if (tags.includes('llm') || tags.includes('inference') || id.includes('llm') || id.includes('vllm') || id.includes('ollama')) return 'inference'
+  return 'inference'
+}
+
 function estimatedCost(minutes: number, rateHalalaPerMin: number): string {
   const halala = minutes * rateHalalaPerMin
   return (halala / 100).toFixed(2)
@@ -279,14 +289,45 @@ export default function TemplatesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  // Fetch docker-templates from API
+  // Fetch docker-templates from API and normalize snake_case API fields to camelCase JobTemplate shape
   useEffect(() => {
     async function fetchTemplates() {
       try {
         const res = await fetch(`${API_BASE}/templates`)
         if (res.ok) {
           const data = await res.json()
-          setTemplates(Array.isArray(data?.templates) ? data.templates : [])
+          const raw: Record<string, unknown>[] = Array.isArray(data?.templates) ? data.templates : []
+          const normalized: JobTemplate[] = raw.map((t) => {
+            const vramGb = (t.min_vram_gb as number) ?? (t.vramGb as number) ?? 8
+            const priceHr = (t.estimated_price_sar_per_hour as number) ?? 5
+            // Convert SAR/hr to halala/min for cost display compatibility
+            const rateHalalaPerMin = Math.round((priceHr * 100) / 60)
+            const rawTier = (t.tier as string) ?? 'standard'
+            const tier = rawTier === 'instant' ? 'Instant' : rawTier === 'cached' ? 'Cached' : 'On-demand'
+            const rawCategory = getCategoryForTemplate(t)
+            const category: JobTemplate['category'] =
+              rawCategory === 'embedding' ? 'embedding' :
+              rawCategory === 'image' ? 'generation' :
+              rawCategory === 'training' ? 'training' : 'inference'
+            const params = (t.params as Record<string, string | number | boolean>) ?? {}
+            const model = (params.model as string) ?? (t.model as string) ?? (t.image as string) ?? 'unknown'
+            return {
+              id: t.id as string,
+              name: t.name as string,
+              description: t.description as string,
+              category,
+              jobType: (t.job_type as string) ?? (t.jobType as string) ?? 'llm-inference',
+              estimatedMinutes: (t.estimatedMinutes as number) ?? 5,
+              rateHalalaPerMin,
+              model,
+              params,
+              tags: (t.tags as string[]) ?? [],
+              vramGb,
+              tier,
+              estimatedLoadTimeSeconds: (t.estimatedLoadTimeSeconds as number) ?? 30,
+            }
+          })
+          setTemplates(normalized)
         }
       } catch (err) {
         console.error('Failed to load templates:', err)
