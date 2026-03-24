@@ -950,6 +950,8 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER',
   // Template-based job submission — Sprint 27
   'ALTER TABLE jobs ADD COLUMN template_id TEXT',
+  // GPU-model-aware rate snapshot at job dispatch time — DCP-762
+  'ALTER TABLE jobs ADD COLUMN gpu_rate_snapshot TEXT',
 ];
 
 migrations.forEach(sql => {
@@ -1564,6 +1566,7 @@ module.exports = {
   get: (sql, ...params) => db.prepare(sql).get(...flatParams(params)),
   all: (sql, ...params) => db.prepare(sql).all(...flatParams(params)),
   prepare: (sql) => db.prepare(sql),
+  transaction: (fn) => db.transaction(fn),
   close: () => db.close(),
   _db: db
 };

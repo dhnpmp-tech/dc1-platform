@@ -11,6 +11,7 @@ const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/web
 const { validateBody } = require('../middleware/validate');
 const { jobSubmitSchema } = require('../schemas/jobs.schema');
 const { getChainEscrow } = require('../services/escrow-chain');
+const pricingService = require('../services/pricingService');
 const {
   sendJobQueued,
   sendJobStarted,
@@ -798,26 +799,8 @@ function getQueuePosition(job) {
   return (ahead?.cnt || 0) + 1;
 }
 
-// Cost rates in halala per minute by job type
-// Corrected DCP-668: aligned with strategic brief floor prices (March 2026)
-// RTX 4090 standard tier target: ~$0.267/hr floor; DCP charges ~$1.30/hr at 15% take rate
-const COST_RATES = {
-  'llm-inference': 9,      // 9 halala/min (~$1.30/hr) — standard GPU tier
-  'llm_inference': 9,      // alias
-  'training': 7,           // 7 halala/min (~$1.01/hr) — volume discount for long runs
-  'rendering': 10,         // 10 halala/min (~$1.44/hr)
-  'image_generation': 10,  // 10 halala/min (~$1.44/hr)
-  'vllm_serve': 9,         // 9 halala/min — long-running LLM serving
-  'default': 6             // 6 halala/min (~$0.86/hr) — economy/dev compute
-};
-
-// Pricing class surcharge multipliers (applied on top of base COST_RATES)
-// 'priority' enables guaranteed <30s queue wait; 'economy' accepts lower priority
-const PRICING_CLASS_MULTIPLIERS = {
-  'priority': 1.20,  // +20% surcharge for priority queue
-  'standard': 1.00,  // baseline — no surcharge
-  'economy': 0.90,   // -10% discount for best-effort / lower priority
-};
+// Cost rates and multipliers sourced from config/pricing.js (DCP-762).
+const { JOB_TYPE_RATES_HALALA_PER_MIN: COST_RATES, PRICING_CLASS_MULTIPLIERS } = require('../config/pricing');
 
 // ── Job template scripts ────────────────────────────────────────────────────
 // These auto-generate Python task_spec scripts for known job types so renters
@@ -1063,10 +1046,10 @@ const JOB_TEMPLATES = {
   'vllm_serve': generateVllmServeSpec,
 };
 
-function calculateCostHalala(jobType, durationMinutes, pricingClass) {
-  const rate = COST_RATES[jobType] || COST_RATES['default'];
-  const multiplier = PRICING_CLASS_MULTIPLIERS[normalizePricingClass(pricingClass)] ?? 1.0;
-  return Math.round(rate * durationMinutes * multiplier);
+function calculateCostHalala(jobType, durationMinutes, pricingClass, gpuModel) {
+  return pricingService.calculateCostHalala(
+    gpuModel || null, durationMinutes, normalizePricingClass(pricingClass), jobType
+  );
 }
 
 // Floor-plus-remainder: guarantees provider + dc1 === total exactly
@@ -1305,7 +1288,11 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       }
     }
 
-    const cost_halala = calculateCostHalala(job_type, durationMinutes, pricingClass);
+    const gpuModel = provider?.gpu_model || gpu_requirements?.gpu_type || null;
+    const cost_halala = calculateCostHalala(job_type, durationMinutes, pricingClass, gpuModel);
+    const gpuRateSnapshot = pricingService.estimateCost(
+      gpuModel, durationMinutes * 60, normalizePricingClass(pricingClass), job_type
+    ).gpu_rate_snapshot;
 
     // Balance must be positive before any submission is accepted.
     if (req.renter.balance_halala <= 0) {
