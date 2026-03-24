@@ -34,7 +34,7 @@ export default function JobsPage() {
   useEffect(() => {
     if (!token) { router.push('/login'); return }
     fetchJobs()
-    const interval = setInterval(fetchJobs, 30000)
+    const interval = setInterval(fetchJobs, 5_000) // 5s for real-time job queue updates
     return () => clearInterval(interval)
   }, [])
 

@@ -166,9 +166,25 @@ export default function RentersPage() {
   }
 
   const renters = data?.renters || []
+  const now = Date.now()
+  const MS_7D = 7 * 24 * 60 * 60 * 1000
+  const MS_30D = 30 * 24 * 60 * 60 * 1000
+
   const filtered = renters.filter((r: any) => {
     if (filter === 'active' && r.status !== 'active') return false
     if (filter === 'suspended' && r.status !== 'suspended') return false
+    if (filter === 'active_7d') {
+      const last = r.last_active_at || r.updated_at
+      if (!last || now - new Date(last).getTime() > MS_7D) return false
+    }
+    if (filter === 'active_30d') {
+      const last = r.last_active_at || r.updated_at
+      if (!last || now - new Date(last).getTime() > MS_30D) return false
+    }
+    if (filter === 'churned') {
+      const last = r.last_active_at || r.updated_at
+      if (last && now - new Date(last).getTime() <= MS_30D) return false
+    }
     if (search && !r.name?.toLowerCase().includes(search.toLowerCase()) && !r.email?.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
@@ -197,18 +213,25 @@ export default function RentersPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
-          <div className="flex gap-2">
-            {['all', 'active', 'suspended'].map(f => (
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'active', label: 'Active' },
+              { key: 'active_7d', label: 'Active 7d' },
+              { key: 'active_30d', label: 'Active 30d' },
+              { key: 'churned', label: 'Churned' },
+              { key: 'suspended', label: 'Suspended' },
+            ].map(({ key, label }) => (
               <button
-                key={f}
-                onClick={() => setFilter(f)}
+                key={key}
+                onClick={() => setFilter(key)}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                  filter === f
+                  filter === key
                     ? 'bg-dc1-amber text-black'
                     : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
                 }`}
               >
-                {f === 'all' ? t('admin.jobs.filter.all') : f === 'active' ? t('admin.renters.active') : t('admin.renters.suspended')}
+                {label}
               </button>
             ))}
           </div>
@@ -257,6 +280,7 @@ export default function RentersPage() {
                   <th>{t('admin.renters.balance')}</th>
                   <th>{t('admin.renters.jobs')}</th>
                   <th>{t('admin.renters.spent')}</th>
+                  <th>Last Active</th>
                   <th>{t('table.status')}</th>
                   <th>{t('admin.jobs.actions')}</th>
                 </tr>
@@ -278,6 +302,13 @@ export default function RentersPage() {
                     <td className="text-sm text-dc1-amber">{r.balance_halala !== null && r.balance_halala !== undefined ? `${(r.balance_halala / 100).toFixed(2)} ${t('common.sar')}` : '—'}</td>
                     <td className="text-sm">{r.total_jobs || 0}</td>
                     <td className="text-sm">{r.total_spent_halala != null && r.total_spent_halala !== undefined ? `${(r.total_spent_halala / 100).toFixed(2)} ${t('common.sar')}` : t('admin.renters.na')}</td>
+                    <td className="text-sm text-dc1-text-muted">
+                      {r.last_active_at
+                        ? new Date(r.last_active_at).toLocaleDateString()
+                        : r.updated_at
+                        ? new Date(r.updated_at).toLocaleDateString()
+                        : '—'}
+                    </td>
                     <td>
                       <StatusBadge status={r.status === 'suspended' ? 'warning' : 'online'}
                         label={r.status === 'suspended' ? t('admin.renters.suspended') : t('admin.renters.active')} />

@@ -147,29 +147,51 @@ export default function ProvidersPage() {
 
       {/* Filters */}
       <div className="card mb-6">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            className="input flex-1"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <div className="flex gap-2">
-            {['all', 'pending_approval', 'online', 'offline', 'suspended'].map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                  filter === f
-                    ? 'bg-dc1-amber text-black'
-                    : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
-                }`}
-              >
-                {f === 'pending_approval' ? 'Pending Approval' : f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              className="input flex-1"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-2">
+              {['all', 'pending_approval', 'online', 'offline', 'suspended'].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                    filter === f
+                      ? 'bg-dc1-amber text-black'
+                      : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'
+                  }`}
+                >
+                  {f === 'pending_approval' ? 'Pending Approval' : f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
+          {gpuModels.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-dc1-text-muted">GPU model:</span>
+              <button
+                onClick={() => setGpuFilter('all')}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${gpuFilter === 'all' ? 'bg-dc1-amber text-black' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'}`}
+              >
+                All
+              </button>
+              {gpuModels.map((model: string) => (
+                <button
+                  key={model}
+                  onClick={() => setGpuFilter(model)}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${gpuFilter === model ? 'bg-dc1-amber text-black' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:text-dc1-text-primary'}`}
+                >
+                  {model}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
