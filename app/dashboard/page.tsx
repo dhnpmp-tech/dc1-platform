@@ -6,8 +6,7 @@ import Link from 'next/link'
 
 import DashboardLayout from '../components/layout/DashboardLayout'
 import StatCard from '../components/ui/StatCard'
-import BalanceCard from '../components/BalanceCard'
-import SpendingChart from '../components/SpendingChart'
+import SpendingAnalyticsCard from '../components/SpendingAnalyticsCard'
 import JobCard, { type Job } from '../components/JobCard'
 import QuickRedeployModal, { type Job as ModalJob } from '../components/modals/QuickRedeployModal'
 import { useLanguage } from '../lib/i18n'
@@ -109,7 +108,7 @@ export default function RenterDashboardPage() {
     { label: 'Dashboard', href: '/dashboard', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
     { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
-    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.jobs'), href: '/dashboard/jobs', icon: <JobsIcon /> },
     { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
     { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
@@ -232,17 +231,13 @@ export default function RenterDashboardPage() {
           </Link>
         </div>
 
-        {/* Balance + spending chart */}
+        {/* Spending analytics card */}
         {profile && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2">
-              <BalanceCard balanceHalala={profile.balance_halala ?? 0} totalSpentHalala={profile.total_spent_halala ?? 0} />
-            </div>
-            <div className="card p-5">
-              <h2 className="text-sm font-semibold text-dc1-text-primary mb-4">Spending (7d)</h2>
-              <SpendingChart data={dailySpend} days={7} />
-            </div>
-          </div>
+          <SpendingAnalyticsCard
+            balanceHalala={profile.balance_halala ?? 0}
+            monthSpendHalala={monthSpendHalala}
+            dailySpend={dailySpend}
+          />
         )}
 
         {/* Stat cards */}
