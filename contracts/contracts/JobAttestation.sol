@@ -144,6 +144,13 @@ contract JobAttestation is Ownable, ReentrancyGuard, EIP712 {
 
     event ChallengeWindowUpdated(uint256 oldWindow, uint256 newWindow);
 
+    event JobVerified(
+        bytes32 indexed jobId,
+        address indexed provider,
+        uint256 tokenCount,
+        uint256 verifiedAt
+    );
+
     // ────────────────────────────────────────────────────────────────────────
     // Constructor
     // ────────────────────────────────────────────────────────────────────────
@@ -370,6 +377,29 @@ contract JobAttestation is Ownable, ReentrancyGuard, EIP712 {
     // ────────────────────────────────────────────────────────────────────────
     // Admin
     // ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Record on-chain that a job was verified by the DC1 platform.
+     *         Creates a tamper-proof audit trail of job completion without
+     *         requiring the full attestation/dispute flow.  The full
+     *         staking/slashing mechanic will be added in a later sprint.
+     *
+     * @param jobId      Job identifier (must have been deposited)
+     * @param provider   Provider wallet — must match the job record
+     * @param tokenCount Verified token count from platform metering
+     */
+    function verifyJob(
+        bytes32 jobId,
+        address provider,
+        uint256 tokenCount
+    ) external onlyOwner {
+        JobRecord storage rec = _jobs[jobId];
+        require(rec.status != JobStatus.EMPTY, "Job does not exist");
+        require(rec.provider == provider,       "Provider mismatch");
+        require(tokenCount > 0,                 "Token count must be > 0");
+
+        emit JobVerified(jobId, provider, tokenCount, block.timestamp);
+    }
 
     /**
      * @notice Update the challenge window duration. Only callable by owner.
