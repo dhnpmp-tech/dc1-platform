@@ -3946,6 +3946,260 @@ router.get('/scheduler/diagnostics/:job_id', requireAdminAuth, (req, res) => {
   }
 });
 
+// ── DCP-758: Job Dispatch Service routes ──────────────────────────────────────
+let _jobDispatchService;
+function getDispatchService() {
+  if (!_jobDispatchService) _jobDispatchService = require('../services/jobDispatchService');
+  return _jobDispatchService;
+}
+
+/**
+ * POST /api/jobs
+ * Simplified job submission using the credit-hold dispatch pipeline.
+ * Credits are reserved (not immediately debited); actual debit happens on
+ * PATCH /complete; hold is released on PATCH /fail.
+ */
+router.post('/', requireRenter, async (req, res) => {
+  try {
+    const {
+      job_type,
+      duration_minutes,
+      gpu_requirements,
+      params: bodyParams,
+      pricing_class: requestedPricingClass,
+      model: requestedModel,
+      provider_id: reqProviderId,
+      template_id: reqTemplateId,
+    } = req.body;
+
+    let resolvedTemplate = null;
+    if (reqTemplateId) {
+      resolvedTemplate = loadDockerTemplate(reqTemplateId);
+      if (!resolvedTemplate) {
+        return res.status(404).json({ error: `Template '${reqTemplateId}' not found` });
+      }
+    }
+
+    const effectiveJobType = job_type || resolvedTemplate?.job_type;
+    const durationMinutes = toFiniteNumber(duration_minutes, { min: 0.01, max: 1440 });
+
+    if (!effectiveJobType || durationMinutes == null) {
+      return res.status(400).json({
+        error: 'Missing required fields: job_type (or template_id), duration_minutes',
+      });
+    }
+    if (!ALLOWED_JOB_TYPES.has(effectiveJobType)) {
+      return res.status(400).json({
+        error: `Invalid job_type. Allowed: ${[...ALLOWED_JOB_TYPES].join(', ')}`,
+      });
+    }
+
+    const pricingClass = normalizePricingClass(requestedPricingClass || 'standard');
+    const estimatedCostHalala = calculateCostHalala(effectiveJobType, durationMinutes, pricingClass);
+    const payloadModel = normalizeModelField(requestedModel);
+    const minVramGb = toFiniteNumber(gpu_requirements?.min_vram_gb, { min: 0, max: 1024 }) || 0;
+    const gpuType = normalizeString(gpu_requirements?.gpu_type) || null;
+    const requestedProviderId = reqProviderId == null ? null : toFiniteInt(reqProviderId, { min: 1 });
+
+    if (req.renter.balance_halala < estimatedCostHalala) {
+      return res.status(402).json({
+        error: 'Insufficient balance',
+        balance_halala: req.renter.balance_halala,
+        required_halala: estimatedCostHalala,
+        shortfall_halala: estimatedCostHalala - req.renter.balance_halala,
+      });
+    }
+
+    const now = new Date().toISOString();
+    const job_id = 'job-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+
+    db.prepare(
+      `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at,
+        duration_minutes, cost_halala, gpu_requirements, created_at, pricing_class)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
+    ).run(
+      job_id, requestedProviderId, req.renter.id, effectiveJobType, payloadModel,
+      now, durationMinutes, estimatedCostHalala,
+      gpu_requirements ? JSON.stringify(gpu_requirements) : null, now, pricingClass
+    );
+    db.prepare(
+      `UPDATE renters SET total_jobs = total_jobs + 1, updated_at = ? WHERE id = ?`
+    ).run(now, req.renter.id);
+
+    const requirements = {
+      min_vram_gb: minVramGb,
+      gpu_type: gpuType,
+      job_type: effectiveJobType,
+      pricing_class: pricingClass,
+    };
+
+    const dispatchResult = await getDispatchService().dispatch(
+      req.renter.id, job_id, estimatedCostHalala, requirements
+    );
+
+    const job = db.get('SELECT * FROM jobs WHERE job_id = ?', job_id);
+    return res.status(201).json({
+      success: true,
+      job: {
+        job_id: job.job_id,
+        job_type: job.job_type,
+        model: job.model,
+        status: job.status,
+        cost_halala: job.cost_halala,
+        duration_minutes: job.duration_minutes,
+        pricing_class: job.pricing_class,
+        submitted_at: job.submitted_at,
+        provider_id: job.provider_id,
+        renter_id: job.renter_id,
+      },
+      dispatch: {
+        assigned: dispatchResult.assigned,
+        queued: dispatchResult.queued,
+        hold_id: dispatchResult.holdId,
+        provider: dispatchResult.provider
+          ? { id: dispatchResult.provider.id, name: dispatchResult.provider.name }
+          : null,
+      },
+    });
+  } catch (err) {
+    if (err.code === 'INSUFFICIENT_CREDITS') {
+      return res.status(402).json({
+        error: 'Insufficient credits',
+        available_halala: err.available,
+        required_halala: err.required,
+        shortfall_halala: err.shortfall,
+      });
+    }
+    console.error('[POST /api/jobs] dispatch error:', err);
+    res.status(500).json({ error: 'Job dispatch failed' });
+  }
+});
+
+/**
+ * PATCH /api/jobs/:id/complete
+ * Provider or admin signals completion. Settles the credit hold:
+ * actual cost debited from renter balance, excess hold freed.
+ */
+router.patch('/:job_id/complete', async (req, res) => {
+  try {
+    const job = db.get(
+      'SELECT * FROM jobs WHERE id = ? OR job_id = ?',
+      req.params.job_id, req.params.job_id
+    );
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (!isAdmin(req)) {
+      const provider = getProviderFromReq(req);
+      if (!provider || provider.id !== job.provider_id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    if (['completed', 'cancelled'].includes(job.status)) {
+      return res.status(400).json({ error: `Job already in terminal state: ${job.status}` });
+    }
+
+    const now = new Date().toISOString();
+    const startedAt = job.started_at || job.submitted_at;
+    const actualMinutes = startedAt
+      ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 60000))
+      : (job.duration_minutes || 1);
+    const actualCostHalala = calculateCostHalala(job.job_type, actualMinutes, job.pricing_class);
+    const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
+
+    runStatement(
+      `UPDATE jobs SET status = 'completed', completed_at = ?,
+        actual_duration_minutes = ?, actual_cost_halala = ?,
+        provider_earned_halala = ?, dc1_fee_halala = ?
+       WHERE id = ?`,
+      now, actualMinutes, actualCostHalala, providerEarned, dc1Fee, job.id
+    );
+
+    if (job.provider_id) {
+      runStatement(
+        `UPDATE providers SET total_jobs = total_jobs + 1,
+          total_earnings = total_earnings + ?,
+          claimable_earnings_halala = claimable_earnings_halala + ?
+         WHERE id = ?`,
+        providerEarned / 100, providerEarned, job.provider_id
+      );
+    }
+
+    const settlement = await getDispatchService().completeJob(job.job_id, actualCostHalala);
+
+    recordLifecycleEvent(job, 'job.completed', {
+      status: 'completed', source: 'patch_complete',
+      message: 'Job completed via PATCH /complete',
+      payload: { actual_duration_minutes: actualMinutes, actual_cost_halala: actualCostHalala },
+    });
+
+    return res.json({
+      success: true, job_id: job.job_id, status: 'completed',
+      billing: {
+        actual_duration_minutes: actualMinutes,
+        actual_cost_halala: actualCostHalala,
+        provider_earned_halala: providerEarned,
+        dc1_fee_halala: dc1Fee,
+      },
+      settlement,
+    });
+  } catch (err) {
+    console.error('[PATCH /api/jobs/:id/complete] error:', err);
+    res.status(500).json({ error: 'Failed to complete job' });
+  }
+});
+
+/**
+ * PATCH /api/jobs/:id/fail
+ * Provider or admin signals failure. Releases credit hold —
+ * the renter is not charged for failed jobs.
+ */
+router.patch('/:job_id/fail', async (req, res) => {
+  try {
+    const job = db.get(
+      'SELECT * FROM jobs WHERE id = ? OR job_id = ?',
+      req.params.job_id, req.params.job_id
+    );
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (!isAdmin(req)) {
+      const provider = getProviderFromReq(req);
+      if (!provider || provider.id !== job.provider_id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    if (['completed', 'cancelled', 'failed'].includes(job.status)) {
+      return res.status(400).json({ error: `Job already in terminal state: ${job.status}` });
+    }
+
+    const now = new Date().toISOString();
+    const reason = req.body?.reason || 'provider_reported_failure';
+
+    runStatement(
+      `UPDATE jobs SET status = 'failed', completed_at = ?, notes = ? WHERE id = ?`,
+      now, reason, job.id
+    );
+
+    const release = await getDispatchService().failJob(job.job_id);
+
+    recordLifecycleEvent(job, 'job.failed', {
+      status: 'failed', source: 'patch_fail',
+      message: 'Job failed via PATCH /fail',
+      payload: { reason },
+    });
+
+    return res.json({
+      success: true, job_id: job.job_id, status: 'failed', reason,
+      credit_hold_released: release.released,
+      released_halala: release.releasedHalala,
+    });
+  } catch (err) {
+    console.error('[PATCH /api/jobs/:id/fail] error:', err);
+    res.status(500).json({ error: 'Failed to mark job as failed' });
+  }
+});
+
 module.exports = router;
 module.exports.calculateCostHalala = calculateCostHalala;
 module.exports.COST_RATES = COST_RATES;
