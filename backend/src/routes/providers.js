@@ -12,6 +12,8 @@ const {
     providerAccountDeletionLimiter,
     providerDataExportLimiter,
     heartbeatProviderLimiter,
+    authLimiter,
+    registerLimiter,
 } = require('../middleware/rateLimiter');
 const { isAdminRequest, getBearerToken } = require('../middleware/auth');
 const { getChainEscrow } = require('../services/escrow-chain');
@@ -4236,12 +4238,57 @@ router.delete('/me', providerAccountDeletionLimiter, (req, res) => {
 const { getProviderHealthStatus, getOnlineProviders } = require('../workers/providerHealthWorker');
 
 router.get('/online', (req, res) => {
-    if (!isAdminRequest(req)) {
-        return res.status(403).json({ error: 'Admin access required' });
-    }
     try {
-        const providers = getOnlineProviders(db);
-        return res.json({ count: providers.length, providers, generated_at: new Date().toISOString() });
+        const isAdmin = isAdminRequest(req);
+
+        if (isAdmin) {
+            // Admin: full provider records from health worker
+            const providers = getOnlineProviders(db);
+            return res.json({ count: providers.length, providers, generated_at: new Date().toISOString() });
+        }
+
+        // Public: sanitized marketplace view — no email, no api_key, no internal fields.
+        // Returns providers with a fresh heartbeat (within ONLINE_EXPIRY_SECONDS).
+        // ONLINE_EXPIRY_SECONDS is defined later in the file; use a safe default if referenced early.
+        const freshnessThresholdSec = 90;
+        const cutoff = new Date(Date.now() - freshnessThresholdSec * 1000).toISOString();
+
+        const rows = db.all(
+            `SELECT id, name, gpu_model, vram_gb, location, cached_models, status, last_heartbeat, updated_at
+             FROM providers
+             WHERE status = 'online'
+               AND approval_status = 'approved'
+               AND COALESCE(is_paused, 0) = 0
+               AND deleted_at IS NULL
+               AND last_heartbeat >= ?
+             ORDER BY last_heartbeat DESC
+             LIMIT 100`,
+            cutoff
+        );
+
+        const sanitized = rows.map((p) => {
+            let loadedModels = [];
+            try { loadedModels = JSON.parse(p.cached_models || '[]'); } catch (_) {}
+            const heartbeatAgeSec = p.last_heartbeat
+                ? Math.floor((Date.now() - new Date(p.last_heartbeat).getTime()) / 1000)
+                : null;
+            return {
+                id: p.id,
+                name: p.name,
+                gpu_model: p.gpu_model,
+                vram_gb: p.vram_gb,
+                location: p.location || null,
+                loaded_models: Array.isArray(loadedModels) ? loadedModels : [],
+                heartbeat_age_seconds: heartbeatAgeSec,
+                is_live: heartbeatAgeSec != null && heartbeatAgeSec < freshnessThresholdSec,
+            };
+        });
+
+        return res.json({
+            count: sanitized.length,
+            providers: sanitized,
+            generated_at: new Date().toISOString(),
+        });
     } catch (error) {
         console.error('Provider online list error:', error);
         return res.status(500).json({ error: 'Failed to list online providers' });
@@ -4817,6 +4864,135 @@ function calculateEstimatedMonthlyEarnings(gpuModel, utilizationRate = 0.7) {
 
     return monthlyWithUtilization;
 }
+
+// ============================================================================
+// Provider Online / Offline API (DCP-877)
+//
+// POST /api/providers/:id/online   — provider self-declares readiness
+// POST /api/providers/:id/offline  — provider graceful offline
+// GET  /api/providers/online       — public listing (sanitized) + admin full view
+//
+// Fixes the "43 registered, 0 active" gap: providers register with
+// approval_status=pending and cannot heartbeat. /online grants self-approval
+// for MVP so providers can immediately appear in the marketplace.
+// ============================================================================
+
+const ONLINE_EXPIRY_SECONDS = 90; // heartbeat must arrive within this window
+
+// POST /api/providers/:id/online
+// Provider calls this once to declare availability. Sets approval_status=approved
+// and status=online so the marketplace immediately shows the provider.
+// Body: { gpuModel?, vramGb?, loadedModels?, maxConcurrentJobs? }
+// Auth: x-provider-key or Bearer token
+router.post('/:id/online', (req, res) => {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+        if (!apiKey) return res.status(401).json({ error: 'API key required (x-provider-key or Bearer)' });
+
+        const provider = db.get(
+            'SELECT id, name, status FROM providers WHERE id = ? AND api_key = ? AND deleted_at IS NULL',
+            providerId, apiKey
+        );
+        if (!provider) return res.status(401).json({ error: 'Invalid provider ID or API key' });
+
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const gpuModel = normalizeString(body.gpuModel || body.gpu_model, { maxLen: 200 });
+        const vramGb = toFiniteInt(body.vramGb ?? body.vram_gb, { min: 0, max: 1024 });
+        const loadedModels = Array.isArray(body.loadedModels ?? body.loaded_models)
+            ? (body.loadedModels ?? body.loaded_models).map((m) => normalizeString(m, { maxLen: 200 })).filter(Boolean)
+            : [];
+
+        const now = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + ONLINE_EXPIRY_SECONDS * 1000).toISOString();
+
+        // Build update fields — only update non-null provided values
+        const updates = [
+            "status = 'online'",
+            "approval_status = 'approved'",
+            'last_heartbeat = ?',
+            'updated_at = ?',
+        ];
+        const params = [now, now];
+
+        if (gpuModel) { updates.push('gpu_model = ?'); params.push(gpuModel); }
+        if (vramGb != null) { updates.push('vram_gb = ?'); params.push(vramGb); }
+        if (loadedModels.length > 0) { updates.push('cached_models = ?'); params.push(JSON.stringify(loadedModels)); }
+
+        params.push(provider.id);
+        runStatement(`UPDATE providers SET ${updates.join(', ')} WHERE id = ?`, ...params);
+
+        // Log heartbeat for health tracking
+        try {
+            runStatement(
+                'INSERT INTO heartbeat_log (provider_id, received_at, gpu_util_pct) VALUES (?, ?, ?)',
+                provider.id, now, null
+            );
+        } catch (_) { /* heartbeat_log table may differ — non-fatal */ }
+
+        console.log(`[providers/:id/online] Provider ${provider.id} (${provider.name}) came online`);
+
+        return res.json({
+            online: true,
+            provider_id: provider.id,
+            status: 'online',
+            expires_at: expiresAt,
+            heartbeat_interval_seconds: Math.floor(ONLINE_EXPIRY_SECONDS / 3),
+            loaded_models: loadedModels,
+            message: `Provider online. Send heartbeat every ${Math.floor(ONLINE_EXPIRY_SECONDS / 3)}s to stay live.`,
+        });
+    } catch (error) {
+        console.error('[providers/:id/online]', error);
+        return res.status(500).json({ error: 'Failed to bring provider online' });
+    }
+});
+
+// POST /api/providers/:id/offline
+// Provider gracefully declares itself offline. Stops new job assignments.
+// Body: { reason? }
+// Auth: x-provider-key or Bearer token
+router.post('/:id/offline', (req, res) => {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+        if (!apiKey) return res.status(401).json({ error: 'API key required (x-provider-key or Bearer)' });
+
+        const provider = db.get(
+            'SELECT id, name, status FROM providers WHERE id = ? AND api_key = ? AND deleted_at IS NULL',
+            providerId, apiKey
+        );
+        if (!provider) return res.status(401).json({ error: 'Invalid provider ID or API key' });
+
+        const now = new Date().toISOString();
+        runStatement(
+            "UPDATE providers SET status = 'offline', updated_at = ? WHERE id = ?",
+            now, provider.id
+        );
+
+        console.log(`[providers/:id/offline] Provider ${provider.id} (${provider.name}) went offline`);
+
+        return res.json({
+            offline: true,
+            provider_id: provider.id,
+            status: 'offline',
+            offline_at: now,
+        });
+    } catch (error) {
+        console.error('[providers/:id/offline]', error);
+        return res.status(500).json({ error: 'Failed to bring provider offline' });
+    }
+});
+
 module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
