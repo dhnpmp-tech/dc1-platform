@@ -952,6 +952,8 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN template_id TEXT',
   // GPU-model-aware rate snapshot at job dispatch time — DCP-762
   'ALTER TABLE jobs ADD COLUMN gpu_rate_snapshot TEXT',
+  // Job billing lifecycle phase — DCP-911
+  "ALTER TABLE jobs ADD COLUMN lifecycle_status TEXT DEFAULT 'pending'",
 ];
 
 migrations.forEach(sql => {
@@ -1621,6 +1623,34 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_webhook_deliveries_webhook ON renter_webhook_deliveries(webhook_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_webhook_deliveries_job ON renter_webhook_deliveries(job_id)`);
+
+// ─── BILLING RECORDS TABLE ─── DCP-911
+db.exec(`
+  CREATE TABLE IF NOT EXISTS billing_records (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL UNIQUE,
+    renter_id INTEGER,
+    provider_id INTEGER,
+    model_id TEXT,
+    token_count INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    gross_cost_halala INTEGER NOT NULL DEFAULT 0,
+    platform_fee_halala INTEGER NOT NULL DEFAULT 0,
+    provider_earning_halala INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'SAR',
+    status TEXT NOT NULL DEFAULT 'pending_release'
+      CHECK(status IN ('pending_release', 'released', 'disputed', 'refunded')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME,
+    FOREIGN KEY (job_id) REFERENCES jobs(job_id),
+    FOREIGN KEY (renter_id) REFERENCES renters(id),
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_billing_records_job ON billing_records(job_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_billing_records_provider ON billing_records(provider_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_billing_records_renter ON billing_records(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_billing_records_status ON billing_records(status, created_at DESC)`);
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap

@@ -4022,4 +4022,54 @@ router.get('/serve-sessions/:job_id', (req, res) => {
   }
 });
 
+// ─── GET /api/admin/billing/summary — DCP-911 ─────────────────────────────────
+// Aggregated billing summary from billing_records. Returns totals + 30-day daily.
+router.get('/billing/summary', (req, res) => {
+  try {
+    const allTime = db.get(`
+      SELECT COUNT(*) as total_jobs,
+             COALESCE(SUM(gross_cost_halala), 0) as total_gross_halala,
+             COALESCE(SUM(platform_fee_halala), 0) as total_platform_fees_halala,
+             COALESCE(SUM(provider_earning_halala), 0) as total_provider_earnings_halala
+      FROM billing_records
+    `) || {};
+
+    const byStatus = db.all(`
+      SELECT status, COUNT(*) as count, COALESCE(SUM(gross_cost_halala), 0) as gross_halala
+      FROM billing_records GROUP BY status
+    `) || [];
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const daily = db.all(`
+      SELECT DATE(created_at) as day,
+             COUNT(*) as total_jobs,
+             COALESCE(SUM(gross_cost_halala), 0) as gross_halala,
+             COALESCE(SUM(platform_fee_halala), 0) as platform_fees_halala,
+             COALESCE(SUM(provider_earning_halala), 0) as provider_earnings_halala
+      FROM billing_records
+      WHERE created_at >= ?
+      GROUP BY DATE(created_at)
+      ORDER BY day DESC
+    `, thirtyDaysAgo) || [];
+
+    return res.json({
+      all_time: {
+        total_jobs: allTime.total_jobs || 0,
+        total_gross_halala: allTime.total_gross_halala || 0,
+        total_gross_sar: (allTime.total_gross_halala || 0) / 100,
+        total_platform_fees_halala: allTime.total_platform_fees_halala || 0,
+        total_platform_fees_sar: (allTime.total_platform_fees_halala || 0) / 100,
+        total_provider_earnings_halala: allTime.total_provider_earnings_halala || 0,
+        total_provider_earnings_sar: (allTime.total_provider_earnings_halala || 0) / 100,
+        platform_fee_rate: 0.15,
+      },
+      by_status: byStatus,
+      last_30_days: daily,
+    });
+  } catch (error) {
+    console.error('[admin/billing/summary]', error);
+    return res.status(500).json({ error: 'Failed to fetch billing summary' });
+  }
+});
+
 module.exports = router;

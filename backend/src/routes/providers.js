@@ -2547,6 +2547,102 @@ router.post('/job-result', (req, res) => {
 });
 
 // ============================================================================
+// POST /api/providers/:id/jobs/:jobId/complete — DCP-911
+// RESTful job completion. Provider reports inference done.
+// Body: { tokenCount, durationMs, modelId }
+// Creates billing_record (15% platform / 85% provider), sets lifecycle_status='billed'.
+// ============================================================================
+router.post('/:id/jobs/:jobId/complete', (req, res) => {
+    try {
+        const providerId = toFiniteInt(req.params.id, { min: 1 });
+        if (!providerId) return res.status(400).json({ error: 'Invalid provider id' });
+
+        const apiKey = getBearerToken(req) || normalizeString(req.body?.api_key, { maxLen: 128, trim: false });
+        if (!apiKey) return res.status(401).json({ error: 'Missing API key' });
+
+        const provider = db.get(
+            'SELECT id, cost_per_gpu_second_halala FROM providers WHERE api_key = ? AND id = ?',
+            apiKey, providerId
+        );
+        if (!provider) return res.status(401).json({ error: 'Invalid API key or provider mismatch' });
+
+        const cleanJobId = normalizeString(req.params.jobId, { maxLen: 80 });
+        if (!cleanJobId) return res.status(400).json({ error: 'Invalid job id' });
+
+        const job = db.get('SELECT * FROM jobs WHERE job_id = ? AND provider_id = ?', cleanJobId, provider.id);
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+
+        if (job.lifecycle_status === 'billed') {
+            const record = db.get('SELECT * FROM billing_records WHERE job_id = ?', cleanJobId);
+            return res.json({ success: true, already_billed: true, billing_record: record });
+        }
+
+        const tokenCount = toFiniteInt(req.body?.tokenCount, { min: 0 }) ?? 0;
+        const durationMs = toFiniteInt(req.body?.durationMs, { min: 0 }) ?? 0;
+        const modelId = normalizeString(req.body?.modelId, { maxLen: 200 }) || job.model || null;
+
+        const PLATFORM_FEE_RATE = 0.15;
+        let grossCostHalala = 0;
+
+        if (job.actual_cost_halala != null && job.actual_cost_halala > 0) {
+            grossCostHalala = job.actual_cost_halala;
+        } else if (tokenCount > 0) {
+            const rateRow = db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ?', modelId || '');
+            grossCostHalala = tokenCount * (rateRow?.token_rate_halala ?? 1);
+        } else if (durationMs > 0) {
+            const elapsedSec = durationMs / 1000;
+            const fallbackRate = (COST_RATES[job.job_type] || COST_RATES['default']) / 60;
+            const providerRate = toFiniteNumber(provider.cost_per_gpu_second_halala, { min: 0 });
+            grossCostHalala = Math.max(0, Math.round(elapsedSec * (providerRate ?? fallbackRate)));
+        }
+
+        const platformFeeHalala = Math.round(grossCostHalala * PLATFORM_FEE_RATE);
+        const providerEarningHalala = grossCostHalala - platformFeeHalala;
+        const now = new Date().toISOString();
+        const recordId = require('crypto').randomUUID
+            ? require('crypto').randomUUID()
+            : require('crypto').randomBytes(16).toString('hex');
+
+        const settle = db.transaction(() => {
+            db.prepare(`
+                INSERT INTO billing_records
+                  (id, job_id, renter_id, provider_id, model_id, token_count, duration_ms,
+                   gross_cost_halala, platform_fee_halala, provider_earning_halala,
+                   currency, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SAR', 'pending_release', ?)
+            `).run(
+                recordId, cleanJobId, job.renter_id || null, provider.id,
+                modelId, tokenCount, durationMs,
+                grossCostHalala, platformFeeHalala, providerEarningHalala, now
+            );
+            db.prepare(
+                `UPDATE jobs SET lifecycle_status = 'billed', updated_at = ? WHERE job_id = ?`
+            ).run(now, cleanJobId);
+            if (!(job.actual_cost_halala > 0)) {
+                db.prepare(
+                    `UPDATE providers SET claimable_earnings_halala = claimable_earnings_halala + ? WHERE id = ?`
+                ).run(providerEarningHalala, provider.id);
+            }
+        });
+        settle();
+
+        return res.json({
+            success: true,
+            job_id: cleanJobId,
+            billing_record_id: recordId,
+            gross_cost_halala: grossCostHalala,
+            platform_fee_halala: platformFeeHalala,
+            provider_earning_halala: providerEarningHalala,
+            platform_fee_rate: PLATFORM_FEE_RATE,
+            lifecycle_status: 'billed',
+        });
+    } catch (error) {
+        console.error('[providers/:id/jobs/:jobId/complete]', error);
+        return res.status(500).json({ error: 'Job completion failed' });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/download/daemon - Serve dc1-daemon.py with injected key
 // ============================================================================
 router.get('/download/daemon', (req, res) => {
