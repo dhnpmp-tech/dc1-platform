@@ -133,7 +133,7 @@ function getPayoutHistory(db, providerId, { limit = 20, offset = 0 } = {}) {
 
   const rows = db.prepare(`
     SELECT id, provider_id, amount_usd, amount_sar, amount_halala,
-           status, requested_at, processed_at, payment_ref
+           status, requested_at, processed_at, payment_ref, escrow_tx_hash
     FROM payout_requests
     WHERE provider_id = ?
     ORDER BY requested_at DESC
