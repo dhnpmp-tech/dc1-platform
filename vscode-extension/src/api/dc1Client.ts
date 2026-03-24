@@ -755,6 +755,61 @@ export class DC1Client {
     };
   }
 
+  /** GET /health — check API health status */
+  async getHealth(): Promise<{ status: string; timestamp?: string }> {
+    try {
+      return await this.request('GET', '/health', {}, undefined, 5_000);
+    } catch (err) {
+      // If /health doesn't exist, try /api/health as fallback
+      try {
+        return await this.request('GET', '/api/health', {}, undefined, 5_000);
+      } catch {
+        throw err; // Throw original error
+      }
+    }
+  }
+
+  /** Get diagnostic information */
+  async getDiagnostics(apiKey?: string): Promise<{
+    apiEndpoint: string;
+    healthStatus: string;
+    modelsAvailable: number;
+    providersOnline: number;
+    extensionVersion: string;
+    error?: string;
+  }> {
+    const extensionVersion = '0.4.0';
+    const result: any = {
+      apiEndpoint: this.apiBase,
+      extensionVersion,
+    };
+
+    try {
+      const health = await this.getHealth();
+      result.healthStatus = health.status || 'ok';
+    } catch (err) {
+      result.healthStatus = 'unreachable';
+      result.error = err instanceof Error ? err.message : String(err);
+      return result;
+    }
+
+    try {
+      const models = await this.getModels();
+      result.modelsAvailable = models.count;
+    } catch {
+      result.modelsAvailable = 0;
+    }
+
+    try {
+      const providers = await this.getAvailableProviders();
+      result.providersOnline = providers.providers.filter((p: Provider) => p.is_live).length;
+    } catch {
+      result.providersOnline = 0;
+    }
+
+    return result;
+  }
+
   private isArabicModel(modelId: string, family?: string | null): boolean {
     const arabicPatterns = [
       'allam', 'jais', 'falcon-h1', 'falcon_h1', 'arabic',
