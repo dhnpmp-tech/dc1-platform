@@ -50,6 +50,7 @@ function normalizeEmail(value) {
   return normalized;
 }
 
+// DCP-885: enforce HTTPS-only (http:// rejected to prevent SSRF via plaintext HTTP channels)
 function normalizeWebhookUrl(value) {
   if (value == null) return null;
   const normalized = normalizeString(value, { maxLen: 500 });
@@ -57,7 +58,7 @@ function normalizeWebhookUrl(value) {
   if (!isPublicWebhookUrl(normalized)) return null;
   try {
     const parsed = new URL(normalized);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    if (parsed.protocol !== 'https:') return null;
     return parsed.toString();
   } catch {
     return null;
@@ -375,7 +376,7 @@ router.patch('/settings', (req, res) => {
     const clearWebhook = rawWebhookUrl === null || rawWebhookUrl === undefined || String(rawWebhookUrl).trim() === '';
     const webhookUrl = clearWebhook ? null : normalizeWebhookUrl(rawWebhookUrl);
     if (!clearWebhook && !webhookUrl) {
-      return res.status(400).json({ error: 'webhook_url must be a valid http/https URL' });
+      return res.status(400).json({ error: 'webhook_url must be a valid HTTPS URL pointing to a public host' });
     }
 
     runStatement(
@@ -1644,8 +1645,16 @@ function requireRenterOwner(req, res, next) {
  * POST /api/renters/:id/topup
  * Self-serve renter credit top-up (placeholder payment — no gateway yet).
  * Body: { amount_sar: number, payment_ref?: string }
+ *
+ * SECURITY (DCP-885): This endpoint adds balance without payment gateway verification.
+ * It MUST only be enabled in non-production environments. Gate: ALLOW_SANDBOX_TOPUP=true.
+ * In production, renters must top up via the Moyasar payment flow (/api/payments/topup).
  */
 router.post('/:id/topup', requireRenterOwner, (req, res) => {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SANDBOX_TOPUP !== 'true') {
+    return res.status(403).json({ error: 'Direct top-up disabled in production. Use the payment flow.' });
+  }
+
   const { amount_sar, payment_ref } = req.body || {};
   const renter = req.renter;
 
@@ -1732,25 +1741,21 @@ router.get('/:id/transactions', requireRenterOwner, (req, res) => {
 /**
  * POST /api/renters/:id/webhooks
  * Register a webhook endpoint for job lifecycle events.
- * Body: { url: string (https only), secret: string (16+ chars), events?: string[] }
+ * Body: { url: string (https only, port 443, public IP), secret: string (16+ chars), events?: string[] }
+ *
+ * SSRF prevention: validateWebhookUrl middleware enforces HTTPS-only, port 443,
+ * blocks RFC-1918/loopback/link-local addresses, and performs a live DNS resolution check.
  */
-router.post('/:id/webhooks', requireRenterOwner, (req, res) => {
+router.post('/:id/webhooks', requireRenterOwner, validateWebhookUrl('url'), (req, res) => {
   const { url, secret, events } = req.body || {};
   const renter = req.renter;
 
-  // Validate URL — must be HTTPS
+  // URL is pre-validated by validateWebhookUrl middleware (SSRF-safe HTTPS URL on port 443)
   if (typeof url !== 'string' || !url.trim()) {
     return res.status(400).json({ error: 'url is required' });
   }
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(url.trim());
-  } catch {
-    return res.status(400).json({ error: 'url is not a valid URL' });
-  }
-  if (parsedUrl.protocol !== 'https:') {
-    return res.status(400).json({ error: 'url must use HTTPS' });
-  }
+  // Use the middleware-normalised URL (trimmed, canonical) when available
+  const parsedUrl = req.validatedWebhookUrl ? new URL(req.validatedWebhookUrl) : new URL(url.trim());
 
   // Validate secret — must be 16+ chars
   if (typeof secret !== 'string' || secret.length < 16) {
@@ -1945,98 +1950,10 @@ router.get('/:id/ledger', requireAdminAuth, (req, res) => {
   }
 });
 
-/**
- * POST /api/renters/:id/webhooks (DCP-863)
- * Register or update a webhook URL for a renter.
- *
- * Auth: renter API key (x-renter-key header) — must match the renter identified by :id.
- * Body: { url: string }   — must be a valid, publicly reachable HTTPS URL on port 443.
- *
- * SSRF prevention: the URL is validated by validateWebhookUrl middleware before storage.
- * Enforces HTTPS-only, port 443, and rejects all RFC-1918 / loopback / link-local addresses
- * plus a live DNS resolution check.
- */
-router.post('/:id/webhooks', validateWebhookUrl('url'), async (req, res) => {
-  try {
-    const key = req.headers['x-renter-key'] || req.query.key;
-    if (!key) {
-      return res.status(401).json({ error: 'API key required (x-renter-key header or key query)' });
-    }
-
-    const renterId = parseInt(req.params.id, 10);
-    if (!Number.isFinite(renterId) || renterId <= 0) {
-      return res.status(400).json({ error: 'Invalid renter id' });
-    }
-
-    const renter = db.get('SELECT id, status FROM renters WHERE api_key = ? AND id = ? AND status = ?', key, renterId, 'active');
-    if (!renter) {
-      return res.status(403).json({ error: 'Forbidden — API key does not match the requested renter id' });
-    }
-
-    const { url } = req.body || {};
-    if (!url) {
-      return res.status(400).json({ error: 'url is required in the request body' });
-    }
-
-    // req.validatedWebhookUrl is set by validateWebhookUrl middleware
-    const webhookUrl = req.validatedWebhookUrl;
-    if (!webhookUrl) {
-      // Middleware should have rejected invalid URLs; this is a safety fallback
-      return res.status(400).json({ error: 'webhook URL validation did not complete — ensure url is valid' });
-    }
-
-    runStatement(
-      'UPDATE renters SET webhook_url = ?, updated_at = ? WHERE id = ?',
-      webhookUrl,
-      new Date().toISOString(),
-      renter.id
-    );
-
-    return res.status(201).json({
-      success: true,
-      renter_id: renter.id,
-      webhook_url: webhookUrl,
-    });
-  } catch (err) {
-    console.error('[renters] POST /:id/webhooks error:', err);
-    return res.status(500).json({ error: 'Failed to register webhook' });
-  }
-});
-
-/**
- * DELETE /api/renters/:id/webhooks (DCP-863)
- * Remove the registered webhook URL for a renter.
- *
- * Auth: renter API key (x-renter-key header) — must match the renter identified by :id.
- */
-router.delete('/:id/webhooks', (req, res) => {
-  try {
-    const key = req.headers['x-renter-key'] || req.query.key;
-    if (!key) {
-      return res.status(401).json({ error: 'API key required (x-renter-key header or key query)' });
-    }
-
-    const renterId = parseInt(req.params.id, 10);
-    if (!Number.isFinite(renterId) || renterId <= 0) {
-      return res.status(400).json({ error: 'Invalid renter id' });
-    }
-
-    const renter = db.get('SELECT id, status FROM renters WHERE api_key = ? AND id = ? AND status = ?', key, renterId, 'active');
-    if (!renter) {
-      return res.status(403).json({ error: 'Forbidden — API key does not match the requested renter id' });
-    }
-
-    runStatement(
-      'UPDATE renters SET webhook_url = NULL, updated_at = ? WHERE id = ?',
-      new Date().toISOString(),
-      renter.id
-    );
-
-    return res.json({ success: true, renter_id: renter.id, webhook_url: null });
-  } catch (err) {
-    console.error('[renters] DELETE /:id/webhooks error:', err);
-    return res.status(500).json({ error: 'Failed to remove webhook' });
-  }
-});
+// NOTE (DCP-885): The duplicate POST /:id/webhooks route that was added in DCP-863 has been
+// removed. Express uses the first registered route handler for a given path; the route above
+// at line ~1737 (with requireRenterOwner + validateWebhookUrl) is the canonical handler.
+// The DCP-863 version was dead code that could never be reached. SSRF protection is now
+// applied to the existing route via the validateWebhookUrl middleware added in DCP-885.
 
 module.exports = router;
