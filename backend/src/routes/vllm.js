@@ -43,6 +43,12 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
 function getRenterKey(req) {
   const header = normalizeString(req.headers['x-renter-key'], { maxLen: 128, trim: false });
   const query = normalizeString(req.query.key, { maxLen: 128, trim: false });
+  // Accept Authorization: Bearer dcp_<token> as an alternative to x-renter-key
+  const authHeader = req.headers['authorization'];
+  if (!header && !query && typeof authHeader === 'string') {
+    const match = authHeader.match(/^Bearer\s+(dcp_[A-Za-z0-9]+)$/i);
+    if (match) return match[1];
+  }
   return header || query || null;
 }
 

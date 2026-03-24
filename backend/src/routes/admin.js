@@ -679,6 +679,8 @@ router.get('/providers', (req, res) => {
     else if (statusFilter === 'registered') { where += ` AND last_heartbeat IS NULL`; }
     else if (statusFilter === 'suspended') { where += ` AND status = 'suspended'`; }
     else if (statusFilter === 'pending_approval') { where += ` AND COALESCE(approval_status, 'pending') = 'pending'`; }
+    const gpuModelFilter = (req.query.gpu_model || '').trim();
+    if (gpuModelFilter) { where += ` AND LOWER(gpu_model) = LOWER(?)`; wParams.push(gpuModelFilter); }
 
     const countRow = db.get(`SELECT COUNT(*) as total FROM providers WHERE ${where}`, ...wParams);
     const total = countRow?.total || 0;
@@ -1957,6 +1959,41 @@ router.post('/providers/:id/unsuspend', (req, res) => {
 });
 
 // ============================================================================
+// PATCH /api/admin/providers/:id/status — unified suspend/reactivate
+// Body: { status: 'suspended' | 'active', reason?: string }
+// ============================================================================
+router.patch('/providers/:id/status', (req, res) => {
+  try {
+    const provider = db.get('SELECT id, name, status FROM providers WHERE id = ?', req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const { status, reason } = req.body || {};
+    if (!['suspended', 'active'].includes(status)) {
+      return res.status(400).json({ error: 'status must be "suspended" or "active"' });
+    }
+
+    const now = new Date().toISOString();
+    const reasonStr = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+    const detail = (status === 'suspended' ? `Suspended` : `Reactivated`) +
+      ` provider "${provider.name}"` + (reasonStr ? ` — reason: ${reasonStr}` : '');
+
+    if (status === 'suspended') {
+      db.prepare('UPDATE providers SET status = ?, is_paused = 1, updated_at = ? WHERE id = ?').run('suspended', now, provider.id);
+      try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('provider_suspended', 'provider', provider.id, detail, now); } catch (_) {}
+    } else {
+      // 'active' — clear suspension; online state is driven by heartbeat, so base status is 'offline'
+      db.prepare('UPDATE providers SET status = ?, is_paused = 0, updated_at = ? WHERE id = ?').run('offline', now, provider.id);
+      try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('provider_reactivated', 'provider', provider.id, detail, now); } catch (_) {}
+    }
+
+    return res.json({ success: true, provider_id: provider.id, status, reason: reasonStr || null, updated_at: now });
+  } catch (error) {
+    console.error('Provider status PATCH error:', error);
+    res.status(500).json({ error: 'Failed to update provider status' });
+  }
+});
+
+// ============================================================================
 // POST /api/admin/renters/:id/suspend - Suspend renter
 // ============================================================================
 router.post('/renters/:id/suspend', (req, res) => {
@@ -2146,7 +2183,7 @@ router.post('/bulk/renters', (req, res) => {
 // ============================================================================
 router.get('/jobs', (req, res) => {
   try {
-    const { status, type, provider_id, renter_id } = req.query;
+    const { status, type, provider_id, renter_id, date_from, date_to } = req.query;
     const page = Math.max(parseInt(req.query.page) || 0, 0);
     const limit = Math.min(parseInt(req.query.limit) || 50, 500);
     const search = (req.query.search || '').trim().toLowerCase();
@@ -2157,6 +2194,8 @@ router.get('/jobs', (req, res) => {
     if (type) { where += ' AND j.job_type = ?'; params.push(type); }
     if (provider_id) { where += ' AND j.provider_id = ?'; params.push(provider_id); }
     if (renter_id) { where += ' AND j.renter_id = ?'; params.push(renter_id); }
+    if (date_from && !isNaN(Date.parse(date_from))) { where += ' AND j.created_at >= ?'; params.push(new Date(date_from).toISOString()); }
+    if (date_to && !isNaN(Date.parse(date_to))) { where += ' AND j.created_at <= ?'; params.push(new Date(date_to).toISOString()); }
     if (search) {
       where += ` AND (LOWER(j.job_id) LIKE ? OR LOWER(p.name) LIKE ? OR LOWER(r.name) LIKE ?)`;
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);

@@ -1037,6 +1037,110 @@ router.delete('/me/keys/:keyId', (req, res) => {
   }
 });
 
+// ============================================================================
+// Renter API Key Management — /api/renters/:id/keys
+// Generates dcp_-prefixed sub-keys usable as Bearer tokens on inference endpoints.
+// Auth: master API key via x-renter-key header (must match :id).
+// ============================================================================
+
+const RENTER_KEY_PERMISSIONS = new Set(['inference', 'jobs.read', 'balance.read']);
+const MAX_DCP_KEYS_PER_RENTER = 20;
+
+// POST /api/renters/:id/keys — create a dcp_ API key
+router.post('/:id/keys', requireRenterOwner, (req, res) => {
+  try {
+    const renter = req.renter;
+
+    const rawPerms = req.body?.permissions;
+    const permissions = Array.isArray(rawPerms)
+      ? rawPerms.filter(p => RENTER_KEY_PERMISSIONS.has(p))
+      : ['inference'];
+    if (permissions.length === 0) {
+      return res.status(400).json({
+        error: `Invalid permissions. Valid values: ${[...RENTER_KEY_PERMISSIONS].join(', ')}`,
+      });
+    }
+
+    const label = typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 80) : null;
+
+    const activeCount = db.get(
+      `SELECT COUNT(*) AS c FROM renter_api_keys WHERE renter_id = ? AND revoked_at IS NULL AND key LIKE 'dcp_%'`,
+      renter.id
+    );
+    if (Number(activeCount?.c || 0) >= MAX_DCP_KEYS_PER_RENTER) {
+      return res.status(429).json({ error: `Maximum ${MAX_DCP_KEYS_PER_RENTER} active API keys per account` });
+    }
+
+    const keyId = crypto.randomUUID();
+    const key = `dcp_${crypto.randomBytes(32).toString('hex')}`;
+    const now = new Date().toISOString();
+
+    runStatement(
+      'INSERT INTO renter_api_keys (id, renter_id, key, label, scopes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      keyId, renter.id, key, label, JSON.stringify(permissions), null, now
+    );
+
+    return res.status(201).json({ keyId, key, label, permissions, created_at: now });
+  } catch (error) {
+    console.error('DCP key create error:', error);
+    return res.status(500).json({ error: 'Failed to create API key' });
+  }
+});
+
+// GET /api/renters/:id/keys — list dcp_ API keys (secret never returned; shows last 4 chars)
+router.get('/:id/keys', requireRenterOwner, (req, res) => {
+  try {
+    const renter = req.renter;
+
+    const keys = db.all(
+      `SELECT id, label, scopes, key, expires_at, last_used_at, created_at,
+              CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END AS revoked
+       FROM renter_api_keys
+       WHERE renter_id = ? AND key LIKE 'dcp_%'
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      renter.id
+    ).map(k => ({
+      keyId: k.id,
+      label: k.label,
+      permissions: (() => { try { return JSON.parse(k.scopes); } catch (_) { return []; } })(),
+      key_hint: `dcp_...${k.key.slice(-4)}`,
+      expires_at: k.expires_at,
+      last_used_at: k.last_used_at,
+      created_at: k.created_at,
+      revoked: Boolean(k.revoked),
+    }));
+
+    return res.json({ keys });
+  } catch (error) {
+    console.error('DCP key list error:', error);
+    return res.status(500).json({ error: 'Failed to list API keys' });
+  }
+});
+
+// DELETE /api/renters/:id/keys/:keyId — revoke a dcp_ API key
+router.delete('/:id/keys/:keyId', requireRenterOwner, (req, res) => {
+  try {
+    const renter = req.renter;
+    const keyId = req.params.keyId;
+    if (!keyId) return res.status(400).json({ error: 'Key ID required' });
+
+    const now = new Date().toISOString();
+    const result = runStatement(
+      `UPDATE renter_api_keys SET revoked_at = ?
+       WHERE id = ? AND renter_id = ? AND revoked_at IS NULL AND key LIKE 'dcp_%'`,
+      now, keyId, renter.id
+    );
+    if ((result?.changes || 0) === 0) {
+      return res.status(404).json({ error: 'Key not found or already revoked' });
+    }
+    return res.json({ success: true, revoked_at: now });
+  } catch (error) {
+    console.error('DCP key revoke error:', error);
+    return res.status(500).json({ error: 'Failed to revoke API key' });
+  }
+});
+
 // GET /api/renters/me/data-export — PDPL right to access/export
 // Alias kept for backwards compatibility: /api/renters/me/export
 router.get(['/me/data-export', '/me/export'], renterDataExportLimiter, (req, res) => {
