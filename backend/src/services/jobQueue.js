@@ -40,6 +40,13 @@ function getEmitter() {
   return _jobEventEmitter;
 }
 
+// Lazy-load renterWebhookService (so unit tests can stub it independently)
+let _renterWebhookService;
+function getWebhookService() {
+  if (!_renterWebhookService) _renterWebhookService = require('./renterWebhookService');
+  return _renterWebhookService;
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** How often the retry loop fires (ms). */
@@ -349,6 +356,16 @@ function handleProviderEvent(eventData) {
         const updatedJob = db.get(`SELECT * FROM jobs WHERE job_id = ?`, jobId);
         if (updatedJob) {
           emitter.emit(jobId, sseEvent, emitter.buildPayload(updatedJob, sseEvent));
+
+          // Fire renter webhooks on terminal job events (async, non-blocking)
+          if (newStatus === STATUS.DONE || newStatus === STATUS.FAILED) {
+            try {
+              const terminalStatus = newStatus === STATUS.DONE ? 'completed' : 'failed';
+              getWebhookService().fireJobWebhooks(db, updatedJob, terminalStatus);
+            } catch (whErr) {
+              console.warn(`[jobQueue] webhook fire failed for job=${jobId}:`, whErr.message);
+            }
+          }
         }
       }
     } catch (emitErr) {
@@ -401,6 +418,7 @@ module.exports = {
     _db = null;
     _scheduler = null;
     _jobEventEmitter = null;
+    _renterWebhookService = null;
     if (_retryTimer !== null) {
       clearInterval(_retryTimer);
       _retryTimer = null;
