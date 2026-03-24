@@ -88,13 +88,8 @@ const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '3.3.0').trim();
 const MIN_DAEMON_VERSION = (process.env.MIN_DAEMON_VERSION || LATEST_DAEMON_VERSION).trim();
 const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
 const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');
-const loginEmailLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    message: { error: 'Too many login attempts. Try again in 15 minutes.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
+// Auth rate limiting: use the centralized authLimiter (5/IP/15min — brute force protection, DCP-855).
+const loginEmailLimiter = authLimiter;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SAUDI_IBAN_REGEX = /^SA\d{22}$/i;
@@ -296,7 +291,7 @@ async function notifyRenterJobWebhook(job, eventName, details = {}) {
 // ============================================================================
 // POST /api/providers/register - Register new provider
 // ============================================================================
-router.post('/register', validateBody(providerRegisterSchema), async (req, res) => {
+router.post('/register', registerLimiter, validateBody(providerRegisterSchema), async (req, res) => {
     try {
         const { name, email, gpu_model, os, phone, resource_spec } = req.body;
         const cleanName = normalizeString(name, { maxLen: 120 });
@@ -897,7 +892,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
 // Body: { gpu_utilization, vram_used_mb, jobs_active, timestamp }
 // Auth: x-provider-key header or Authorization: Bearer <api_key>
 // ============================================================================
-router.post('/:id/heartbeat', (req, res) => {
+router.post('/:id/heartbeat', heartbeatProviderLimiter, (req, res) => {
     try {
         const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
         if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
