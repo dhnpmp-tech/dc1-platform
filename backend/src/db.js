@@ -1551,6 +1551,7 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_prov_api_keys_prefix ON provider_api_keys(key_prefix, revoked_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_prov_api_keys_provider ON provider_api_keys(provider_id, revoked_at)`);
 
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 function flatParams(params) {
