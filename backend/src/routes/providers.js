@@ -4607,3 +4607,226 @@ module.exports.__private = {
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,
 };
+
+// ============================================================================
+// GET /api/providers/self-test — Provider readiness validation (DCP-802)
+// ============================================================================
+// Purpose: Provider calls this endpoint to validate they are ready to go live.
+// Auth: Bearer <provider-key> (API key in Authorization header)
+// Returns: readiness status, individual checks, and actionable next_step
+router.get('/self-test', (req, res) => {
+    try {
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+        if (!apiKey) {
+            return res.status(401).json({
+                ready: false,
+                checks: {
+                    key_valid: false,
+                    gpu_detected: false,
+                    docker_accessible: false,
+                    network_reachable: false,
+                    vram_available_gb: 0,
+                },
+                next_step: 'missing_key',
+            });
+        }
+
+        const provider = db.get(
+            'SELECT id, gpu_model, vram_mb, last_heartbeat, status FROM providers WHERE api_key = ? AND deleted_at IS NULL',
+            apiKey
+        );
+
+        if (!provider) {
+            return res.status(401).json({
+                ready: false,
+                checks: {
+                    key_valid: false,
+                    gpu_detected: false,
+                    docker_accessible: false,
+                    network_reachable: false,
+                    vram_available_gb: 0,
+                },
+                next_step: 'invalid_key',
+            });
+        }
+
+        // Check if GPU is detected (recorded in provider profile)
+        const gpuDetected = !!(provider.gpu_model && provider.vram_mb);
+
+        // Check if docker is accessible (has recent heartbeat activity)
+        const dockerAccessible = !!provider.last_heartbeat;
+
+        // Check if network is reachable (provider has been online recently)
+        const lastHeartbeatTime = provider.last_heartbeat ? new Date(provider.last_heartbeat) : null;
+        const minutesSinceHeartbeat = lastHeartbeatTime
+            ? (Date.now() - lastHeartbeatTime.getTime()) / (1000 * 60)
+            : null;
+        const networkReachable = minutesSinceHeartbeat != null && minutesSinceHeartbeat < 5;
+
+        // Convert VRAM to GB
+        const vramGb = provider.vram_mb ? Math.round(provider.vram_mb / 1024 * 10) / 10 : 0;
+
+        // Determine overall readiness and next step
+        const allReady = gpuDetected && dockerAccessible && networkReachable && vramGb >= 4;
+
+        let nextStep = 'activate';
+        if (!gpuDetected) {
+            nextStep = 'fix_gpu';
+        } else if (!dockerAccessible) {
+            nextStep = 'fix_docker';
+        } else if (!networkReachable) {
+            nextStep = 'fix_network';
+        }
+
+        res.json({
+            ready: allReady,
+            checks: {
+                key_valid: true,
+                gpu_detected: gpuDetected,
+                docker_accessible: dockerAccessible,
+                network_reachable: networkReachable,
+                vram_available_gb: vramGb,
+            },
+            next_step: nextStep,
+            provider_id: provider.id,
+            gpu_model: provider.gpu_model || null,
+            status: provider.status,
+        });
+    } catch (error) {
+        console.error('[providers/self-test GET]', error);
+        res.status(500).json({ error: 'Self-test check failed', details: error.message });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/activate — Provider activation for go-live (DCP-802)
+// ============================================================================
+// Purpose: Provider activates themselves after passing self-test
+// Auth: Bearer <provider-key> (API key in Authorization header)
+// Returns: activation status, provider info, and earnings estimate
+router.post('/activate', (req, res) => {
+    try {
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+        if (!apiKey) {
+            return res.status(401).json({
+                success: false,
+                activated: false,
+                reason: 'API key required',
+            });
+        }
+
+        const provider = db.get(
+            'SELECT id, gpu_model, vram_mb, status FROM providers WHERE api_key = ? AND deleted_at IS NULL',
+            apiKey
+        );
+
+        if (!provider) {
+            return res.status(401).json({
+                success: false,
+                activated: false,
+                reason: 'Invalid API key',
+            });
+        }
+
+        // Check if already online
+        if (provider.status === 'online') {
+            return res.status(200).json({
+                success: true,
+                activated: false,
+                reason: 'Provider already online',
+                provider_id: provider.id,
+                status: 'online',
+            });
+        }
+
+        // Validate minimum requirements for activation
+        const vramGb = provider.vram_mb ? provider.vram_mb / 1024 : 0;
+        if (!provider.gpu_model || vramGb < 4) {
+            return res.status(422).json({
+                success: false,
+                activated: false,
+                reason: 'Insufficient hardware: GPU model or VRAM < 4GB',
+                provider_id: provider.id,
+            });
+        }
+
+        // Set provider status to 'online' and trigger heartbeat subscription
+        const now = new Date().toISOString();
+        runStatement(
+            'UPDATE providers SET status = ?, updated_at = ? WHERE id = ?',
+            'online', now, provider.id
+        );
+
+        // Estimate monthly earnings based on GPU model and DCP pricing
+        const estimatedMonthlyEarnings = calculateEstimatedMonthlyEarnings(provider.gpu_model, 0.7);
+
+        res.json({
+            success: true,
+            activated: true,
+            provider_id: provider.id,
+            status: 'online',
+            gpu_model: provider.gpu_model,
+            vram_available_gb: Math.round(vramGb * 10) / 10,
+            estimated_monthly_earnings_halala: estimatedMonthlyEarnings,
+            message: `Provider ${provider.id} is now online and ready to accept jobs.`,
+            next_steps: [
+                `Pull available job types from /api/providers/${provider.id}/jobs`,
+                'Subscribe to heartbeat notifications',
+                'Monitor earnings and job queue',
+            ],
+        });
+    } catch (error) {
+        console.error('[providers/activate POST]', error);
+        res.status(500).json({
+            success: false,
+            error: 'Activation failed',
+            details: error.message,
+        });
+    }
+});
+
+// Helper function to estimate monthly earnings based on GPU model
+function calculateEstimatedMonthlyEarnings(gpuModel, utilizationRate = 0.7) {
+    // Pricing data from FOUNDER-STRATEGIC-BRIEF
+    // RTX 4090 = $0.267/hr = 26.7 halalas/hour
+    const pricePerHourHalala = {
+        'RTX 4090': 26.7,
+        'RTX 4080': 18.9,
+        'RTX 3090': 13.4,
+        'H100': 53.4,
+        'H200': 66.75,
+        'A100': 40.05,
+        'L40S': 26.7,
+    };
+
+    const gpuNormalized = gpuModel ? gpuModel.toUpperCase() : '';
+    let baseHourlyHalala = pricePerHourHalala['RTX 4090'];
+
+    for (const [modelKey, price] of Object.entries(pricePerHourHalala)) {
+        if (gpuNormalized.includes(modelKey)) {
+            baseHourlyHalala = price;
+            break;
+        }
+    }
+
+    const hoursPerMonth = 30 * 24;
+    const monthlyBeforeUtilization = baseHourlyHalala * hoursPerMonth;
+    const monthlyWithUtilization = Math.round(monthlyBeforeUtilization * utilizationRate);
+
+    return monthlyWithUtilization;
+}
+module.exports = router;
+module.exports.__private = {
+    discoverComputeTypesFromResourceSpec,
+    inferVramGb,
+    activateProviderById,
+    _providerEventEmitter,
+    ACTIVATION_MIN_VRAM_GB,
+    ACTIVATION_MIN_TFLOPS,
+};
