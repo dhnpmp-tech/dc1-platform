@@ -138,6 +138,42 @@
   direction: rtl;
 }
 
+/* RTL fix: code blocks, pre, and mono-font elements stay LTR
+   so model names, IDs, and API keys never visually reverse */
+[dir="rtl"] pre,
+[dir="rtl"] code {
+  direction: ltr;
+  unicode-bidi: embed;
+  text-align: left;
+}
+
+/* RTL fix: text inputs right-aligned for Arabic entry */
+[dir="rtl"] input[type="text"],
+[dir="rtl"] input[type="search"],
+[dir="rtl"] textarea {
+  text-align: right;
+}
+
+/* RTL fix: numbers, emails, URLs stay LTR even in RTL mode */
+[dir="rtl"] input[type="number"],
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="url"],
+[dir="rtl"] input[type="tel"] {
+  direction: ltr;
+  text-align: right;
+}
+
+/* RTL fix: modal close button shifts to left side */
+[dir="rtl"] .modal-close {
+  right: auto;
+  left: 1rem;
+}
+
+/* RTL fix: button groups reverse order so primary is still on logical end */
+[dir="rtl"] .btn-group {
+  flex-direction: row-reverse;
+}
+
 @layer components {
   /* Button base styles */
   .btn {

@@ -1,6 +1,7 @@
 'use client'
 
 import DashboardSidebar, { NavItem } from './DashboardSidebar'
+import { useLanguage } from '../../lib/i18n'
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -10,9 +11,10 @@ interface DashboardLayoutProps {
   pageTitle?: string
 }
 
-export default function DashboardLayout({ children, navItems, role = 'renter', userName, pageTitle }: DashboardLayoutProps) {
+export default function DashboardLayout({ children, navItems, role = 'renter', userName }: DashboardLayoutProps) {
+  const { dir, language } = useLanguage()
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen" dir={dir} lang={language}>
       <DashboardSidebar navItems={navItems} role={role} userName={userName} />
       <main className="flex-1 lg:ml-0 mt-14 lg:mt-0">
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
