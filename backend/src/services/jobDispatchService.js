@@ -122,6 +122,14 @@ function getAvailableBalance(db, renterId) {
 async function dispatch(renterId, jobId, estimatedCostHalala, requirements = {}) {
   const db = getDb();
 
+  // DCP-777: Guard against negative costs which would add credits instead of holding them.
+  if (typeof estimatedCostHalala !== 'number' || estimatedCostHalala < 0) {
+    throw Object.assign(
+      new Error('estimatedCostHalala must be a non-negative number'),
+      { code: 'INVALID_COST' }
+    );
+  }
+
   // ── 1. Credit check ───────────────────────────────────────────────────────
   const balance = getAvailableBalance(db, renterId);
   if (balance.available < estimatedCostHalala) {
@@ -137,10 +145,12 @@ async function dispatch(renterId, jobId, estimatedCostHalala, requirements = {})
   }
 
   // ── 2. Place credit hold ──────────────────────────────────────────────────
-  // Idempotent: if a hold already exists for this job, reuse it.
+  // Idempotent: if a hold already exists for this renter+job, reuse it.
+  // DCP-777: include renter_id to prevent hold reuse across renters (defense-in-depth).
   const existingHold = db.get(
-    `SELECT * FROM credit_holds WHERE job_id = ? AND status = 'held'`,
-    jobId
+    `SELECT * FROM credit_holds WHERE job_id = ? AND renter_id = ? AND status = 'held'`,
+    jobId,
+    renterId
   );
 
   let holdId;

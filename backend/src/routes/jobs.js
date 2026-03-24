@@ -438,7 +438,8 @@ function getProviderFromReq(req) {
     bodyNames: ['api_key'],
   });
   if (!key) return null;
-  return db.get('SELECT id FROM providers WHERE api_key = ?', key) || null;
+  // SEC: exclude deleted providers so revoked accounts cannot submit job results
+  return db.get('SELECT id FROM providers WHERE api_key = ? AND deleted_at IS NULL', key) || null;
 }
 
 function canReadJob(req, job) {
@@ -1467,22 +1468,52 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
     const initialStatus = isQueued ? 'queued' : 'pending';
 
     const createJobTx = createTransaction(() => {
-      runStatement(
+      // DCP-777: Atomic balance guard — AND balance_halala >= ? ensures the deduction
+      // fails (changes=0) if funds were already spent by a concurrent request.
+      // Defense-in-depth for future async refactors of this path.
+      const deductResult = runStatement(
         `UPDATE renters
          SET balance_halala = balance_halala - ?,
              updated_at = ?
-         WHERE id = ?`,
+         WHERE id = ? AND balance_halala >= ?`,
         cost_halala,
         now,
-        req.renter.id
+        req.renter.id,
+        cost_halala
       );
+      if (deductResult.changes === 0) {
+        throw Object.assign(new Error('Insufficient balance at commit time'), { code: 'INSUFFICIENT_BALANCE_AT_COMMIT' });
+      }
 
       const templateIdValue = resolvedTemplate?.id || reqTemplateId || null;
+      const gpuRateSnapshotJson = gpuRateSnapshot ? JSON.stringify(gpuRateSnapshot) : null;
       const insertResult = HAS_TEMPLATE_ID
         ? runStatement(
             `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
               cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
-              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id)
+              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id, gpu_rate_snapshot)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
+            gpu_requirements ? JSON.stringify(gpu_requirements) : null,
+            containerSpecJson,
+            taskSpecStr,
+            taskSpecHmac,
+            timeout,
+            isQueued ? null : timeoutAt,
+            null,
+            now,
+            jobPriority,
+            pricingClass,
+            prewarmRequested ? 1 : 0,
+            workspaceVolumeName,
+            checkpointEnabled,
+            templateIdValue,
+            gpuRateSnapshotJson
+          )
+        : runStatement(
+            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
+              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, gpu_rate_snapshot)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
             gpu_requirements ? JSON.stringify(gpu_requirements) : null,
@@ -1498,27 +1529,7 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
             prewarmRequested ? 1 : 0,
             workspaceVolumeName,
             checkpointEnabled,
-            templateIdValue
-          )
-        : runStatement(
-            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
-              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
-              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
-            gpu_requirements ? JSON.stringify(gpu_requirements) : null,
-            containerSpecJson,
-            taskSpecStr,
-            taskSpecHmac,
-            timeout,
-            isQueued ? null : timeoutAt,
-            null,
-            now,
-            jobPriority,
-            pricingClass,
-            prewarmRequested ? 1 : 0,
-            workspaceVolumeName,
-            checkpointEnabled
+            gpuRateSnapshotJson
           );
 
       runStatement(
@@ -1746,13 +1757,18 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
     const escrowExpiresAt = new Date(Date.now() + (timeout + 1800) * 1000).toISOString();
 
     const createRetryJobTx = createTransaction(() => {
-      runStatement(
+      // DCP-777: Same atomic balance guard as main submit path.
+      const deductResult = runStatement(
         `UPDATE renters
          SET balance_halala = balance_halala - ?
-         WHERE id = ?`,
+         WHERE id = ? AND balance_halala >= ?`,
         quotedCostHalala,
-        renter.id
+        renter.id,
+        quotedCostHalala
       );
+      if (deductResult.changes === 0) {
+        throw Object.assign(new Error('Insufficient balance at commit time'), { code: 'INSUFFICIENT_BALANCE_AT_COMMIT' });
+      }
 
       const insertSql = HAS_RETRIED_FROM_JOB_ID
         ? `INSERT INTO jobs (
@@ -1989,9 +2005,12 @@ router.post('/:job_id/result', (req, res) => {
     }
 
     const { result, error: jobError, duration_seconds, gpu_util_peak, transient } = req.body;
-    const durationSeconds = duration_seconds == null ? null : toFiniteNumber(duration_seconds, { min: 0, max: 86400 });
+    // SEC: cap duration_seconds at the job's own max_duration_seconds to prevent
+    // a provider from inflating claimable earnings by reporting excessive runtime.
+    const jobMaxSeconds = Math.max(job.max_duration_seconds || 3600, 60);
+    const durationSeconds = duration_seconds == null ? null : toFiniteNumber(duration_seconds, { min: 0, max: jobMaxSeconds });
     if (duration_seconds != null && durationSeconds == null) {
-      return res.status(400).json({ error: 'duration_seconds must be a finite number' });
+      return res.status(400).json({ error: `duration_seconds must be a finite number between 0 and ${jobMaxSeconds}` });
     }
 
     // ── Transient failure retry logic ──────────────────────────────────────
