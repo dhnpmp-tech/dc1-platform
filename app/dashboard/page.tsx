@@ -6,6 +6,7 @@ import Link from 'next/link'
 
 import DashboardLayout from '../components/layout/DashboardLayout'
 import StatCard from '../components/ui/StatCard'
+import SpendingCard from '../components/ui/SpendingCard'
 import SpendingAnalyticsCard from '../components/SpendingAnalyticsCard'
 import JobCard, { type Job } from '../components/JobCard'
 import QuickRedeployModal, { type Job as ModalJob } from '../components/modals/QuickRedeployModal'
@@ -24,6 +25,14 @@ interface DailySpend {
   day: string
   total_halala: number
   job_count: number
+}
+
+// DCP-917 spending summary shape
+interface SpendingSummary {
+  total_jobs_this_month: number
+  total_spent_halala: number
+  total_tokens_used: number
+  last_30_days: Array<{ date: string; spent_halala: number; job_count: number }>
 }
 
 const HomeIcon = () => (
@@ -96,6 +105,7 @@ export default function RenterDashboardPage() {
   const [profile, setProfile] = useState<RenterProfile | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
   const [dailySpend, setDailySpend] = useState<DailySpend[]>([])
+  const [spending, setSpending] = useState<SpendingSummary | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [loadingJobs, setLoadingJobs] = useState(true)
   const [error, setError] = useState('')
@@ -118,10 +128,11 @@ export default function RenterDashboardPage() {
     setLoadingProfile(true)
     setLoadingJobs(true)
 
-    const [profileRes, jobsRes, analyticsRes] = await Promise.allSettled([
+    const [profileRes, jobsRes, analyticsRes, spendingRes] = await Promise.allSettled([
       fetch(`${API_BASE}/renters/me`, { headers: { 'X-Renter-Key': key } }),
       fetch(`${API_BASE}/jobs/history`, { headers: { 'X-Renter-Key': key } }),
       fetch(`${API_BASE}/renters/me/analytics?period=30d`, { headers: { 'X-Renter-Key': key } }),
+      fetch(`${API_BASE}/renters/me/spending`, { headers: { 'X-Renter-Key': key } }),
     ])
 
     if (profileRes.status === 'fulfilled') {
@@ -149,6 +160,11 @@ export default function RenterDashboardPage() {
     if (analyticsRes.status === 'fulfilled' && analyticsRes.value.ok) {
       const data = await analyticsRes.value.json()
       setDailySpend(data.daily_spend ?? [])
+    }
+
+    if (spendingRes.status === 'fulfilled' && spendingRes.value.ok) {
+      const data = await spendingRes.value.json()
+      setSpending(data)
     }
   }, [router])
 
@@ -237,6 +253,16 @@ export default function RenterDashboardPage() {
             balanceHalala={profile.balance_halala ?? 0}
             monthSpendHalala={monthSpendHalala}
             dailySpend={dailySpend}
+          />
+        )}
+
+        {/* DCP-918: 30-day spending summary card */}
+        {spending && (
+          <SpendingCard
+            totalSpentHalala={spending.total_spent_halala}
+            totalJobs={spending.total_jobs_this_month}
+            totalTokens={spending.total_tokens_used}
+            last30Days={spending.last_30_days}
           />
         )}
 
