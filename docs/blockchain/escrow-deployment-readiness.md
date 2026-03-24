@@ -1,9 +1,9 @@
 # Escrow Deployment Readiness Checklist
 
-**Version:** 2026-03-23
+**Version:** 2026-03-24
 **Author:** Blockchain Engineer
 **Status:** READY — waiting on founder wallet funding
-**Related:** DCP-654, contracts/BASE_SEPOLIA_LAUNCH_CHECKLIST.md, contracts/contracts/Escrow.sol
+**Related:** DCP-654, DCP-810, contracts/BASE_SEPOLIA_LAUNCH_CHECKLIST.md, contracts/contracts/Escrow.sol
 
 ---
 
