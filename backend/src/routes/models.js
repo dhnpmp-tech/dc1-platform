@@ -4,6 +4,7 @@ const path = require('path');
 const router = express.Router();
 const db = require('../db');
 const { publicEndpointLimiter, modelDeployLimiter } = require('../middleware/rateLimiter');
+const { GPU_RATE_TABLE, SAR_USD_RATE } = require('../config/pricing');
 
 const PROVIDER_FRESHNESS_MS = 10 * 60 * 1000;
 const DEFAULT_DEPLOY_DURATION_MINUTES = 60;
