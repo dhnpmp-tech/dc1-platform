@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import { useLanguage } from '../../lib/i18n'
@@ -67,6 +67,161 @@ interface JobTemplate {
   estimatedLoadTimeSeconds: number
 }
 
+// ── One-click Deploy Modal ─────────────────────────────────────────────────────
+const DURATION_OPTIONS = [
+  { minutes: 30, label: '30 min' },
+  { minutes: 60, label: '1 hour' },
+  { minutes: 120, label: '2 hours' },
+  { minutes: 240, label: '4 hours' },
+]
+
+interface DeployResult {
+  jobId?: string
+  error?: string
+  hint?: string
+}
+
+function DeployModal({ template, onClose }: { template: JobTemplate | null; onClose: () => void }) {
+  const [duration, setDuration] = useState(60)
+  const [deploying, setDeploying] = useState(false)
+  const [result, setResult] = useState<DeployResult | null>(null)
+
+  const costSar = template ? ((duration * template.rateHalalaPerMin) / 100).toFixed(2) : '0.00'
+
+  const handleDeploy = useCallback(async () => {
+    if (!template) return
+    const renterKey = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
+    if (!renterKey) {
+      setResult({ error: 'Not signed in. Please sign in to deploy.' })
+      return
+    }
+    setDeploying(true)
+    setResult(null)
+    try {
+      const res = await fetch(`${API_BASE}/templates/${template.id}/deploy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-renter-key': renterKey },
+        body: JSON.stringify({ duration_minutes: duration }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResult({ jobId: data.jobId || data.job_id || 'submitted' })
+      } else {
+        setResult({ error: data.error || 'Deploy failed', hint: data.message || data.hint })
+      }
+    } catch {
+      setResult({ error: 'Network error — please try again.' })
+    } finally {
+      setDeploying(false)
+    }
+  }, [template, duration])
+
+  if (!template) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-dc1-surface-l2 border border-dc1-border rounded-2xl w-full max-w-md p-6 flex flex-col gap-4 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-bold text-dc1-text-primary">{template.name}</h2>
+            <p className="text-xs text-dc1-text-muted mt-0.5">{template.jobType}</p>
+          </div>
+          <button onClick={onClose} className="text-dc1-text-muted hover:text-dc1-text-primary transition-colors">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {!result ? (
+          <>
+            {/* Duration selector */}
+            <div>
+              <label className="block text-sm font-medium text-dc1-text-secondary mb-2">Duration</label>
+              <div className="grid grid-cols-4 gap-2">
+                {DURATION_OPTIONS.map(opt => (
+                  <button
+                    key={opt.minutes}
+                    onClick={() => setDuration(opt.minutes)}
+                    className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      duration === opt.minutes
+                        ? 'bg-dc1-amber text-white border-dc1-amber'
+                        : 'bg-dc1-surface-l3 text-dc1-text-secondary border-dc1-border hover:border-dc1-amber/40'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cost estimate */}
+            <div className="bg-dc1-surface-l1 rounded-lg px-4 py-3 flex items-center justify-between">
+              <div className="text-sm text-dc1-text-secondary">
+                <span className="text-dc1-text-muted">VRAM needed:</span>{' '}
+                <span className="font-medium text-dc1-text-primary">{template.vramGb} GB</span>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-extrabold text-dc1-amber leading-none">
+                  {costSar}{' '}
+                  <span className="text-xs font-normal text-dc1-text-secondary">SAR</span>
+                </p>
+                <p className="text-[10px] text-dc1-text-muted mt-0.5">estimated total</p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleDeploy}
+              disabled={deploying}
+              className="btn btn-primary w-full text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {deploying ? 'Deploying…' : 'Confirm Deploy'}
+            </button>
+          </>
+        ) : result.jobId ? (
+          <div className="text-center py-4">
+            <div className="text-3xl mb-3">✅</div>
+            <p className="text-dc1-text-primary font-semibold mb-1">Job submitted!</p>
+            <p className="text-xs text-dc1-text-muted mb-4">
+              Job ID: <span className="font-mono">{result.jobId}</span>
+            </p>
+            <div className="flex gap-2 justify-center">
+              <Link href="/renter/jobs" className="btn btn-primary btn-sm" onClick={onClose}>
+                View Jobs
+              </Link>
+              <button onClick={onClose} className="btn btn-secondary btn-sm">
+                Close
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <div className="text-3xl mb-3">⚠️</div>
+            <p className="text-status-error font-semibold mb-1">{result.error}</p>
+            {result.hint && <p className="text-xs text-dc1-text-muted mb-4">{result.hint}</p>}
+            <div className="flex gap-2 justify-center">
+              <button onClick={() => setResult(null)} className="btn btn-primary btn-sm">
+                Try Again
+              </button>
+              <button onClick={onClose} className="btn btn-secondary btn-sm">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Hardcoded fallback templates (used if API is unreachable) ──────────────────
 const TEMPLATES: JobTemplate[] = [
   {
     id: 'llm-chat',
@@ -288,6 +443,8 @@ export default function TemplatesPage() {
   const [activeCategory, setActiveCategory] = useState<Category>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [filterArabic, setFilterArabic] = useState(false)
+  const [deployTarget, setDeployTarget] = useState<JobTemplate | null>(null)
 
   // Fetch docker-templates from API and normalize snake_case API fields to camelCase JobTemplate shape
   useEffect(() => {
@@ -306,9 +463,13 @@ export default function TemplatesPage() {
             const tier = rawTier === 'instant' ? 'Instant' : rawTier === 'cached' ? 'Cached' : 'On-demand'
             const rawCategory = getCategoryForTemplate(t)
             const category: JobTemplate['category'] =
-              rawCategory === 'embedding' ? 'embedding' :
-              rawCategory === 'image' ? 'generation' :
-              rawCategory === 'training' ? 'training' : 'inference'
+              rawCategory === 'embedding'
+                ? 'embedding'
+                : rawCategory === 'image'
+                  ? 'generation'
+                  : rawCategory === 'training'
+                    ? 'training'
+                    : 'inference'
             const params = (t.params as Record<string, string | number | boolean>) ?? {}
             const model = (params.model as string) ?? (t.model as string) ?? (t.image as string) ?? 'unknown'
             return {
@@ -339,6 +500,7 @@ export default function TemplatesPage() {
     }
     fetchTemplates()
   }, [])
+
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
@@ -350,15 +512,17 @@ export default function TemplatesPage() {
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
 
-  const filtered = templates.filter(
-    (t) => activeCategory === 'all' || t.category === activeCategory
-  )
+  const filtered = templates.filter((t) => {
+    if (activeCategory !== 'all' && t.category !== activeCategory) return false
+    if (filterArabic && !t.tags.some(tag => tag.toLowerCase().includes('arabic'))) return false
+    return true
+  })
 
   const handleCopyParams = (template: JobTemplate) => {
     const payload = JSON.stringify(
       { job_type: template.jobType, model: template.model, params: template.params },
       null,
-      2
+      2,
     )
     navigator.clipboard.writeText(payload).then(() => {
       setCopiedId(template.id)
@@ -368,17 +532,17 @@ export default function TemplatesPage() {
 
   return (
     <DashboardLayout navItems={navItems} role="renter">
+      <DeployModal template={deployTarget} onClose={() => setDeployTarget(null)} />
+
       <div className="space-y-6">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-dc1-text-primary mb-1">{t('templates.title')}</h1>
-          <p className="text-dc1-text-secondary text-sm">
-            {t('templates.subtitle')}
-          </p>
+          <p className="text-dc1-text-secondary text-sm">{t('templates.subtitle')}</p>
         </div>
 
-        {/* Category Filter */}
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Template categories">
+        {/* Category Filter + Arabic toggle */}
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Template categories">
           {(Object.keys(CATEGORY_LABELS) as Category[]).map((cat) => (
             <button
               key={cat}
@@ -399,6 +563,15 @@ export default function TemplatesPage() {
               )}
             </button>
           ))}
+          <label className="flex items-center gap-2 text-sm text-dc1-text-secondary cursor-pointer select-none ml-2 border-l border-dc1-border pl-4">
+            <input
+              type="checkbox"
+              checked={filterArabic}
+              onChange={e => setFilterArabic(e.target.checked)}
+              className="rounded"
+            />
+            🌙 Arabic only
+          </label>
         </div>
 
         {/* Templates Grid */}
@@ -415,137 +588,150 @@ export default function TemplatesPage() {
             <p className="text-dc1-text-secondary mb-2">{t('templates.no_templates')}</p>
           </div>
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filtered.map((template) => {
-            const isExpanded = expandedId === template.id
-            const isCopied = copiedId === template.id
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {filtered.map((template) => {
+              const isExpanded = expandedId === template.id
+              const isCopied = copiedId === template.id
+              const hasArabic = template.tags.some(tag => tag.toLowerCase().includes('arabic'))
 
-            return (
-              <div
-                key={template.id}
-                className="card flex flex-col hover:border-dc1-amber/20 transition-colors"
-                role="article"
-                aria-label={template.name}
-              >
-                {/* Card Header */}
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <h3 className="text-base font-semibold text-dc1-text-primary">{template.name}</h3>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${CATEGORY_COLORS[template.category]}`}>
-                        {CATEGORY_LABELS[template.category]}
+              return (
+                <div
+                  key={template.id}
+                  className="card flex flex-col hover:border-dc1-amber/20 transition-colors"
+                  role="article"
+                  aria-label={template.name}
+                >
+                  {/* Card Header */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h3 className="text-base font-semibold text-dc1-text-primary">{template.name}</h3>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${CATEGORY_COLORS[template.category]}`}>
+                          {CATEGORY_LABELS[template.category]}
+                        </span>
+                        {hasArabic && (
+                          <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-dc1-amber/10 text-dc1-amber border-dc1-amber/20">
+                            🌙 Arabic
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-dc1-text-secondary leading-relaxed">{template.description}</p>
+                    </div>
+                  </div>
+
+                  {/* Model + Cost + Specs */}
+                  <div className="flex flex-wrap gap-3 text-xs mb-3">
+                    <div className="flex items-center gap-1.5 text-dc1-text-secondary">
+                      <svg className="w-3.5 h-3.5 text-dc1-amber shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+                      </svg>
+                      <span className="font-mono text-dc1-text-primary truncate max-w-[200px]">{template.model.split('/').pop()}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-dc1-text-secondary">
+                      <svg className="w-3.5 h-3.5 text-dc1-amber shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>
+                        ~<span className="text-dc1-amber font-semibold">{estimatedCost(template.estimatedMinutes, template.rateHalalaPerMin)} SAR</span>
+                        {' '}estimated
                       </span>
                     </div>
-                    <p className="text-sm text-dc1-text-secondary leading-relaxed">{template.description}</p>
-                  </div>
-                </div>
-
-                {/* Model + Cost + Specs */}
-                <div className="flex flex-wrap gap-3 text-xs mb-3">
-                  <div className="flex items-center gap-1.5 text-dc1-text-secondary">
-                    <svg className="w-3.5 h-3.5 text-dc1-amber shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
-                    </svg>
-                    <span className="font-mono text-dc1-text-primary truncate max-w-[200px]">{template.model.split('/').pop()}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-dc1-text-secondary">
-                    <svg className="w-3.5 h-3.5 text-dc1-amber shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>
-                      ~<span className="text-dc1-amber font-semibold">{estimatedCost(template.estimatedMinutes, template.rateHalalaPerMin)} SAR</span>
-                      {' '}estimated
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-dc1-text-secondary">
-                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>~{template.estimatedMinutes}m</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span className="text-dc1-text-secondary">{template.vramGb}GB</span>
-                  </div>
-                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-medium ${getTierBadgeColor(template.tier)}`}>
-                    <span>{template.tier}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-dc1-text-secondary">
-                    <span className="text-dc1-text-muted">Load:</span>
-                    <span className="font-medium text-dc1-text-primary">{formatLoadTime(template.estimatedLoadTimeSeconds)}</span>
-                  </div>
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1 mb-4">
-                  {template.tags.map((tag) => (
-                    <span key={tag} className="text-xs px-2 py-0.5 rounded bg-dc1-surface-l2 text-dc1-text-muted border border-dc1-border">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Expandable Params */}
-                <div className="mb-4">
-                  <button
-                    onClick={() => setExpandedId(isExpanded ? null : template.id)}
-                    className="flex items-center gap-1.5 text-xs text-dc1-text-secondary hover:text-dc1-text-primary transition-colors"
-                    aria-expanded={isExpanded}
-                    aria-controls={`params-${template.id}`}
-                  >
-                    <svg
-                      className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    {isExpanded ? 'Hide' : 'Show'} default parameters
-                  </button>
-                  {isExpanded && (
-                    <div
-                      id={`params-${template.id}`}
-                      className="mt-2 bg-dc1-surface-l1 rounded-md p-3 overflow-x-auto"
-                    >
-                      <pre className="text-xs text-dc1-text-secondary font-mono whitespace-pre-wrap">
-                        {JSON.stringify(template.params, null, 2)}
-                      </pre>
+                    <div className="flex items-center gap-1.5 text-dc1-text-secondary">
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>~{template.estimatedMinutes}m</span>
                     </div>
-                  )}
-                </div>
+                    <div className="flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="text-dc1-text-secondary">{template.vramGb}GB</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-medium ${getTierBadgeColor(template.tier)}`}>
+                      <span>{template.tier}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-dc1-text-secondary">
+                      <span className="text-dc1-text-muted">Load:</span>
+                      <span className="font-medium text-dc1-text-primary">{formatLoadTime(template.estimatedLoadTimeSeconds)}</span>
+                    </div>
+                  </div>
 
-                {/* Actions */}
-                <div className="flex gap-2 mt-auto">
-                  <Link
-                    href={buildPlaygroundQuery(template)}
-                    className="btn btn-primary flex-1 text-center text-sm"
-                  >
-                    Use Template
-                  </Link>
-                  <button
-                    onClick={() => handleCopyParams(template)}
-                    className="btn btn-secondary text-sm px-3"
-                    aria-label="Copy parameters as JSON"
-                    title="Copy parameters as JSON"
-                  >
-                    {isCopied ? (
-                      <svg className="w-4 h-4 text-status-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  {/* Tags */}
+                  <div className="flex flex-wrap gap-1 mb-4">
+                    {template.tags.map((tag) => (
+                      <span key={tag} className="text-xs px-2 py-0.5 rounded bg-dc1-surface-l2 text-dc1-text-muted border border-dc1-border">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Expandable Params */}
+                  <div className="mb-4">
+                    <button
+                      onClick={() => setExpandedId(isExpanded ? null : template.id)}
+                      className="flex items-center gap-1.5 text-xs text-dc1-text-secondary hover:text-dc1-text-primary transition-colors"
+                      aria-expanded={isExpanded}
+                      aria-controls={`params-${template.id}`}
+                    >
+                      <svg
+                        className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                      {isExpanded ? 'Hide' : 'Show'} default parameters
+                    </button>
+                    {isExpanded && (
+                      <div
+                        id={`params-${template.id}`}
+                        className="mt-2 bg-dc1-surface-l1 rounded-md p-3 overflow-x-auto"
+                      >
+                        <pre className="text-xs text-dc1-text-secondary font-mono whitespace-pre-wrap">
+                          {JSON.stringify(template.params, null, 2)}
+                        </pre>
+                      </div>
                     )}
-                  </button>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2 mt-auto">
+                    <button
+                      onClick={() => setDeployTarget(template)}
+                      className="btn btn-primary flex-1 text-sm"
+                    >
+                      Deploy Now
+                    </button>
+                    <Link
+                      href={buildPlaygroundQuery(template)}
+                      className="btn btn-secondary text-sm px-3 text-center"
+                      title="Open in Playground"
+                    >
+                      Playground
+                    </Link>
+                    <button
+                      onClick={() => handleCopyParams(template)}
+                      className="btn btn-secondary text-sm px-3"
+                      aria-label="Copy parameters as JSON"
+                      title="Copy parameters as JSON"
+                    >
+                      {isCopied ? (
+                        <svg className="w-4 h-4 text-status-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
         )}
 
         {/* Footer CTA */}
