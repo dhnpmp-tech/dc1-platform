@@ -43,6 +43,7 @@ export default function ProvidersPage() {
   const [bulkLoading, setBulkLoading] = useState(false)
   const [rejectTarget, setRejectTarget] = useState<any | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [gpuFilter, setGpuFilter] = useState('all')
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
@@ -130,6 +131,8 @@ export default function ProvidersPage() {
     if (search && !p.name?.toLowerCase().includes(search.toLowerCase()) && !p.email?.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
+
+  const gpuModels = Array.from(new Set(providers.map((p: any) => p.gpu_model).filter(Boolean))) as string[]
 
   const formatTime = (iso: string) => {
     if (!iso) return 'Never'
