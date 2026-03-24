@@ -916,10 +916,14 @@ router.post('/:id/heartbeat', (req, res) => {
                 return res.status(403).json({ error: 'Provider not approved' });
             }
         }
-        const { gpu_utilization, vram_used_mb, jobs_active } = req.body;
+        // Accept both legacy field names and REST aliases (DCP-782)
+        const { gpu_utilization, vram_used_mb, jobs_active,
+                vram_used, jobs_running, uptime_seconds } = req.body;
         const gpuUtil = toFiniteNumber(gpu_utilization, { min: 0, max: 100 });
-        const vramUsedMb = toFiniteInt(vram_used_mb, { min: 0, max: 1024 * 1024 });
-        const jobsActive = toFiniteInt(jobs_active, { min: 0, max: 10000 });
+        // vram_used (MB) is alias for vram_used_mb
+        const vramUsedMb = toFiniteInt(vram_used_mb ?? vram_used, { min: 0, max: 1024 * 1024 });
+        // jobs_running is alias for jobs_active
+        const jobsActive = toFiniteInt(jobs_active ?? jobs_running, { min: 0, max: 10000 });
         const now = new Date().toISOString();
         runStatement(
             "UPDATE providers SET last_heartbeat = ?, status = 'online', updated_at = ? WHERE id = ?",
@@ -937,10 +941,63 @@ router.post('/:id/heartbeat', (req, res) => {
             'INSERT INTO heartbeat_log (provider_id, received_at, gpu_util_pct) VALUES (?, ?, ?)',
             provider.id, now, gpuUtil ?? null
         );
-        return res.json({ success: true, provider_id: provider.id, status: 'online', timestamp: now });
+        const uptimeSec = toFiniteInt(uptime_seconds, { min: 0 });
+        return res.json({
+            success: true,
+            provider_id: provider.id,
+            status: 'online',
+            timestamp: now,
+            ...(uptimeSec != null && { uptime_seconds: uptimeSec }),
+        });
     } catch (error) {
         console.error('[providers/:id/heartbeat]', error);
         return res.status(500).json({ error: 'Heartbeat failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/:id/liveness - Provider liveness check (DCP-782)
+// Returns last heartbeat timestamp and online/stale/offline status.
+// Thresholds: online (<30s), stale (30-90s), offline (>90s)
+// Auth: public - read-only status info
+// ============================================================================
+const LIVENESS_ONLINE_S = 30;
+const LIVENESS_STALE_S  = 90;
+
+router.get('/:id/liveness', (req, res) => {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+
+        const provider = db.get(
+            'SELECT id, name, gpu_model, last_heartbeat FROM providers WHERE id = ?',
+            providerId
+        );
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const now = Date.now();
+        let liveness_status = 'offline';
+        let heartbeat_age_seconds = null;
+
+        if (provider.last_heartbeat) {
+            const ageMs = now - new Date(provider.last_heartbeat).getTime();
+            heartbeat_age_seconds = Math.floor(ageMs / 1000);
+            if (heartbeat_age_seconds < LIVENESS_ONLINE_S) {
+                liveness_status = 'online';
+            } else if (heartbeat_age_seconds < LIVENESS_STALE_S) {
+                liveness_status = 'stale';
+            }
+        }
+
+        return res.json({
+            provider_id: provider.id,
+            liveness_status,
+            last_heartbeat: provider.last_heartbeat || null,
+            heartbeat_age_seconds,
+        });
+    } catch (error) {
+        console.error('[providers/:id/liveness]', error);
+        return res.status(500).json({ error: 'Failed to fetch liveness status' });
     }
 });
 
