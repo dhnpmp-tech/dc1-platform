@@ -1054,9 +1054,11 @@ function calculateCostHalala(jobType, durationMinutes, pricingClass, gpuModel) {
 }
 
 // Floor-plus-remainder: guarantees provider + dc1 === total exactly
+// Platform takes 15%, provider receives 85% (DCP-915 fix: was incorrectly 25%/75%)
+const PLATFORM_FEE_RATE = 15; // integer percent — avoids floating-point precision loss
 function splitBilling(totalHalala) {
-  const provider = Math.floor(totalHalala * 0.75);
-  return { provider, dc1: totalHalala - provider };
+  const dc1 = Math.floor(totalHalala * PLATFORM_FEE_RATE / 100);
+  return { provider: totalHalala - dc1, dc1 };
 }
 
 // Whitelisted job types — renters may only submit these types
