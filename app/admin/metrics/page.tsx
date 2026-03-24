@@ -146,20 +146,19 @@ export default function AdminMetricsPage() {
             </h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <StatCard
-                title="Online Now"
+                label="Online Now"
                 value={String(metrics.providers.online)}
-                subtitle={`of ${metrics.providers.total_registered} registered`}
               />
               <StatCard
-                title="Total Registered"
+                label="Total Registered"
                 value={String(metrics.providers.total_registered)}
               />
               <StatCard
-                title="Pending Approval"
+                label="Pending Approval"
                 value={String(metrics.providers.pending_approval)}
               />
               <StatCard
-                title="Avg Heartbeat Age"
+                label="Avg Heartbeat Age"
                 value={metrics.providers.avg_heartbeat_age_seconds != null
                   ? `${Math.round(metrics.providers.avg_heartbeat_age_seconds)}s`
                   : '—'}
@@ -174,19 +173,19 @@ export default function AdminMetricsPage() {
             </h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <StatCard
-                title="Pending"
+                label="Pending"
                 value={String(metrics.queue.pending_jobs)}
               />
               <StatCard
-                title="Running"
+                label="Running"
                 value={String(metrics.queue.running_jobs)}
               />
               <StatCard
-                title="Failed (last 1h)"
+                label="Failed (last 1h)"
                 value={String(metrics.queue.failed_last_1h)}
               />
               <StatCard
-                title="Avg Wait"
+                label="Avg Wait"
                 value={metrics.queue.avg_wait_seconds != null
                   ? `${Math.round(metrics.queue.avg_wait_seconds)}s`
                   : '—'}
@@ -201,15 +200,15 @@ export default function AdminMetricsPage() {
             </h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <StatCard
-                title="Total Registered"
+                label="Total Registered"
                 value={String(metrics.renters.total_registered)}
               />
               <StatCard
-                title="Active (24h)"
+                label="Active (24h)"
                 value={String(metrics.renters.active_last_24h)}
               />
               <StatCard
-                title="Total Balance"
+                label="Total Balance"
                 value={formatSAR(metrics.renters.total_balance_halala)}
               />
             </div>
@@ -222,15 +221,15 @@ export default function AdminMetricsPage() {
             </h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <StatCard
-                title="Today"
+                label="Today"
                 value={formatSAR(metrics.revenue.today_halala)}
               />
               <StatCard
-                title="This Week"
+                label="This Week"
                 value={formatSAR(metrics.revenue.this_week_halala)}
               />
               <StatCard
-                title="This Month"
+                label="This Month"
                 value={formatSAR(metrics.revenue.this_month_halala)}
               />
             </div>
@@ -243,15 +242,15 @@ export default function AdminMetricsPage() {
             </h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <StatCard
-                title="Uptime"
+                label="Uptime"
                 value={formatUptime(metrics.system.uptime_seconds)}
               />
               <StatCard
-                title="DB Size"
+                label="DB Size"
                 value={formatBytes(metrics.system.db_size_bytes)}
               />
               <StatCard
-                title="Node Version"
+                label="Node Version"
                 value={metrics.system.node_version || '—'}
               />
             </div>
