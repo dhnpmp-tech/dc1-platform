@@ -12,6 +12,13 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
  *   setOracle       — owner update, non-owner rejection
  *   setRelayer      — owner update, non-owner rejection
  *   getEscrow       — view returns correct struct
+ *
+ * DCP-916 Edge Cases:
+ *   - claimLock after cancel (release after cancellation)
+ *   - cancelExpiredLock after claim (cancellation after release)
+ *   - non-existent job reverts
+ *   - large-amount fee calculation
+ *   - only renter/relayer/owner can cancel
  */
 describe("Escrow", function () {
   // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -354,6 +361,144 @@ describe("Escrow", function () {
       const record = await escrow.getEscrow(unknownId);
       expect(record.status).to.equal(0); // EMPTY
       expect(record.amount).to.equal(0);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // DCP-916 Edge Cases (security audit coverage)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  describe("Edge cases — DCP-916", function () {
+    let expiry;
+
+    beforeEach(async function () {
+      expiry = (await time.latest()) + ONE_HOUR;
+      await escrow
+        .connect(renter)
+        .depositAndLock(JOB_ID, provider.address, AMOUNT, expiry);
+    });
+
+    // ── Release after cancellation (analogous to "release after dispute") ──────
+    it("claimLock reverts on already-cancelled escrow (release after cancellation)", async function () {
+      // Cancel first
+      await time.increaseTo(expiry + 1);
+      await escrow.connect(renter).cancelExpiredLock(JOB_ID);
+      expect((await escrow.getEscrow(JOB_ID)).status).to.equal(3); // CANCELLED
+
+      // Attempting to claim a CANCELLED escrow must revert
+      const proof = await oracleSign(JOB_ID, provider.address, AMOUNT, oracle);
+      await expect(
+        escrow.connect(provider).claimLock(JOB_ID, proof)
+      ).to.be.revertedWith("Not locked");
+    });
+
+    // ── Cancellation after release (analogous to "dispute after release") ──────
+    it("cancelExpiredLock reverts on already-claimed escrow (cancellation after release)", async function () {
+      // Claim first
+      const proof = await oracleSign(JOB_ID, provider.address, AMOUNT, oracle);
+      await escrow.connect(provider).claimLock(JOB_ID, proof);
+      expect((await escrow.getEscrow(JOB_ID)).status).to.equal(2); // CLAIMED
+
+      // Attempting to cancel a CLAIMED escrow must revert even after time passes
+      await time.increase(ONE_HOUR + 1);
+      await expect(
+        escrow.connect(renter).cancelExpiredLock(JOB_ID)
+      ).to.be.revertedWith("Not locked");
+    });
+
+    // ── Non-existent job: claimLock reverts ─────────────────────────────────────
+    it("claimLock reverts on non-existent job (EMPTY status - Not locked)", async function () {
+      const unknownJobId = ethers.keccak256(
+        ethers.toUtf8Bytes("completely-unknown-job-id")
+      );
+      const proof = await oracleSign(
+        unknownJobId,
+        provider.address,
+        AMOUNT,
+        oracle
+      );
+      await expect(
+        escrow.connect(provider).claimLock(unknownJobId, proof)
+      ).to.be.revertedWith("Not locked");
+    });
+
+    // ── Non-existent job: cancelExpiredLock reverts ─────────────────────────────
+    it("cancelExpiredLock reverts on non-existent job (EMPTY status - Not locked)", async function () {
+      const unknownJobId = ethers.keccak256(
+        ethers.toUtf8Bytes("another-unknown-job-id")
+      );
+      await time.increase(ONE_HOUR + 1);
+      await expect(
+        escrow.connect(renter).cancelExpiredLock(unknownJobId)
+      ).to.be.revertedWith("Not locked");
+    });
+
+    // ── Fee calculation correctness with large USDC amounts ─────────────────────
+    it("fee split is correct for large USDC amount (1 million USDC)", async function () {
+      const largeAmount = ethers.parseUnits("1000000", 6); // 1M USDC
+      const largeJobId = ethers.keccak256(
+        ethers.toUtf8Bytes("large-job-overflow-test")
+      );
+      const largeExpiry = (await time.latest()) + ONE_HOUR;
+
+      await usdc.mint(renter.address, largeAmount);
+      await escrow
+        .connect(renter)
+        .depositAndLock(
+          largeJobId,
+          provider.address,
+          largeAmount,
+          largeExpiry
+        );
+
+      const expectedFee = (largeAmount * 2500n) / 10000n; // 250,000 USDC
+      const expectedProviderAmount = largeAmount - expectedFee; // 750,000 USDC
+
+      const proof = await oracleSign(
+        largeJobId,
+        provider.address,
+        largeAmount,
+        oracle
+      );
+
+      const providerBalBefore = await usdc.balanceOf(provider.address);
+      const ownerBalBefore = await usdc.balanceOf(owner.address);
+
+      await expect(escrow.connect(provider).claimLock(largeJobId, proof))
+        .to.emit(escrow, "Claimed")
+        .withArgs(
+          largeJobId,
+          provider.address,
+          expectedProviderAmount,
+          expectedFee
+        );
+
+      expect(await usdc.balanceOf(provider.address)).to.equal(
+        providerBalBefore + expectedProviderAmount
+      );
+      expect(await usdc.balanceOf(owner.address)).to.equal(
+        ownerBalBefore + expectedFee
+      );
+    });
+
+    // ── Only renter (or relayer/owner) can cancel ───────────────────────────────
+    it("only renter, relayer, or owner can cancel an expired lock", async function () {
+      await time.increaseTo(expiry + 1);
+
+      // Stranger cannot cancel
+      await expect(
+        escrow.connect(stranger).cancelExpiredLock(JOB_ID)
+      ).to.be.revertedWith("Not authorized to cancel");
+
+      // Provider also cannot cancel (not renter/relayer/owner)
+      await expect(
+        escrow.connect(provider).cancelExpiredLock(JOB_ID)
+      ).to.be.revertedWith("Not authorized to cancel");
+
+      // Renter can cancel
+      await expect(escrow.connect(renter).cancelExpiredLock(JOB_ID))
+        .to.emit(escrow, "Cancelled")
+        .withArgs(JOB_ID, renter.address, AMOUNT);
     });
   });
 });
