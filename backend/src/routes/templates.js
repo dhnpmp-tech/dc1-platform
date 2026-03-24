@@ -1,9 +1,11 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
 const { publicEndpointLimiter } = require('../middleware/rateLimiter');
+const { getApiKeyFromReq } = require('../middleware/auth');
 
 // Templates are stored as JSON files in /docker-templates at the repo root
 const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
@@ -37,7 +39,7 @@ function loadTemplates() {
   }
 }
 
-// Category → tag mappings for the ?category= filter
+// Category -> tag mappings for the ?category= filter
 const CATEGORY_TAG_MAP = {
   llm:       ['llm', 'inference', 'chat', 'instruct', 'arabic'],
   embedding: ['embedding', 'embed', 'rag'],
@@ -46,7 +48,7 @@ const CATEGORY_TAG_MAP = {
   training:  ['training', 'finetune', 'lora', 'qlora'],
 };
 
-// GET /api/templates — list all templates (optionally filter by tag or category)
+// GET /api/templates -- list all templates (optionally filter by tag or category)
 router.get('/', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
   const { tag, category } = req.query;
@@ -60,19 +62,17 @@ router.get('/', publicEndpointLimiter, (req, res) => {
     const catTags = CATEGORY_TAG_MAP[catKey];
     if (catTags) {
       filtered = filtered.filter(t =>
-        // Match on template category field directly, or by tag intersection
         t.category === catKey ||
         (Array.isArray(t.tags) && catTags.some(ct => t.tags.includes(ct)))
       );
     }
   }
 
-  // Strip approved_images from list response (security — returned only on whitelist endpoint)
   const safe = filtered.map(({ approved_images: _ai, ...t }) => t);
   res.json({ templates: safe, count: safe.length });
 });
 
-// GET /api/templates/whitelist — approved Docker image list for daemon validation
+// GET /api/templates/whitelist -- approved Docker image list for daemon validation
 router.get('/whitelist', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
   const fromTemplates = templates.flatMap(t => t.approved_images || []);
@@ -98,14 +98,205 @@ router.get('/whitelist', publicEndpointLimiter, (req, res) => {
   res.json({ approved_images: all });
 });
 
-// GET /api/templates/:id — single template with full detail
+// GET /api/templates/:id -- single template with full detail
 router.get('/:id', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
   const template = templates.find(t => t.id === req.params.id);
   if (!template) return res.status(404).json({ error: 'Template not found' });
-  // Strip approved_images from direct response too — daemon uses /whitelist
   const { approved_images: _ai, ...safe } = template;
   res.json(safe);
+});
+
+// Pricing constants (aligned with jobs.js COST_RATES -- DCP-668)
+// Halala per minute by job_type. 100 halala = 1 SAR.
+const DEPLOY_COST_RATES = {
+  'llm-inference':    9,
+  'llm_inference':    9,
+  'training':         7,
+  'rendering':        10,
+  'image_generation': 10,
+  'vllm_serve':       9,
+  'rag-pipeline':     15,
+  'custom_container': 7,
+  'default':          6,
+};
+const DEPLOY_PRICING_MULTIPLIERS = { priority: 1.20, standard: 1.00, economy: 0.90 };
+
+function calcDeployCostHalala(jobType, durationMinutes, pricingClass) {
+  const base = DEPLOY_COST_RATES[jobType] || DEPLOY_COST_RATES['default'];
+  const mult = DEPLOY_PRICING_MULTIPLIERS[pricingClass] || 1.0;
+  return Math.ceil(base * durationMinutes * mult);
+}
+
+// Find best idle provider matching minVramGb. Returns provider row or null.
+function findAvailableProvider(minVramGb) {
+  const minVramMib = (minVramGb || 0) * 1024;
+  const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  return db.get(
+    `SELECT id, name, gpu_model, vram_gb, gpu_vram_mib FROM providers
+     WHERE status = 'active'
+       AND last_heartbeat >= ?
+       AND COALESCE(gpu_vram_mib, vram_gb * 1024, 0) >= ?
+       AND NOT EXISTS (
+         SELECT 1 FROM jobs j
+         WHERE j.provider_id = providers.id
+           AND j.status IN ('assigned', 'pulling', 'running', 'pending')
+       )
+     ORDER BY last_heartbeat DESC
+     LIMIT 1`,
+    tenMinAgo,
+    minVramMib
+  );
+}
+
+// POST /api/templates/:id/deploy -- one-click deploy; requires renter auth
+// Body: { duration_minutes?, pricing_class?, params? }
+// Returns 201: { jobId, status, estimatedStart, gpuTier, totalCost, template, provider, message }
+// Errors: 401 no auth | 402 insufficient balance | 404 template not found | 503 no GPU available
+router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
+  try {
+    // 1. Authenticate renter
+    const key = getApiKeyFromReq(req, {
+      headerName: 'x-renter-key',
+      queryNames: ['renter_key', 'key'],
+    });
+    if (!key) {
+      return res.status(401).json({
+        error: 'Renter API key required (x-renter-key header or renter_key query)',
+      });
+    }
+    const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) {
+      return res.status(403).json({ error: 'Invalid or inactive renter API key' });
+    }
+
+    // 2. Validate template
+    const templates = loadTemplates();
+    const template = templates.find(t => t.id === req.params.id);
+    if (!template) {
+      return res.status(404).json({ error: `Template '${req.params.id}' not found` });
+    }
+
+    // 3. Parse and validate request body
+    const rawDuration = req.body.duration_minutes;
+    const duration_minutes = rawDuration !== undefined ? Number(rawDuration) : 60;
+    if (!Number.isFinite(duration_minutes) || duration_minutes <= 0 || duration_minutes > 1440) {
+      return res.status(400).json({ error: 'duration_minutes must be between 1 and 1440' });
+    }
+    const pricing_class = DEPLOY_PRICING_MULTIPLIERS[req.body.pricing_class] !== undefined
+      ? req.body.pricing_class
+      : 'standard';
+    const extraParams = (req.body.params && typeof req.body.params === 'object') ? req.body.params : {};
+
+    // 4. Calculate estimated cost
+    const cost_halala = calcDeployCostHalala(template.job_type, duration_minutes, pricing_class);
+
+    // 5. Balance checks
+    if (renter.balance_halala <= 0) {
+      return res.status(402).json({
+        error: 'Balance is zero. Please top up your wallet before deploying.',
+        balance_halala: renter.balance_halala,
+        required_halala: cost_halala,
+      });
+    }
+    if (renter.balance_halala < cost_halala) {
+      return res.status(402).json({
+        error: 'Insufficient balance',
+        balance_halala: renter.balance_halala,
+        required_halala: cost_halala,
+        shortfall_halala: cost_halala - renter.balance_halala,
+        message: `Top up at least ${Math.ceil((cost_halala - renter.balance_halala) / 100)} SAR to deploy this template. POST /api/renters/topup`,
+      });
+    }
+
+    // 6. Find an available GPU provider matching template VRAM requirements
+    const provider = findAvailableProvider(template.min_vram_gb || 0);
+    if (!provider) {
+      return res.status(503).json({
+        error: 'No GPU provider currently available for this template',
+        required_vram_gb: template.min_vram_gb || 0,
+        hint: 'Retry shortly or use POST /api/jobs/submit with queued fallback.',
+      });
+    }
+
+    // 7. Create job record (deduct balance atomically)
+    const now = new Date().toISOString();
+    const job_id = 'job-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+    const containerSpec = JSON.stringify({
+      image_override: (template.image && template.image !== 'custom') ? template.image : undefined,
+      pricing_class,
+    });
+    const taskSpec = JSON.stringify({
+      job_type: template.job_type,
+      template_id: template.id,
+      params: { ...((template.params) || {}), ...extraParams },
+    });
+    const gpuReqs = template.min_vram_gb ? JSON.stringify({ min_vram_gb: template.min_vram_gb }) : null;
+    const timeoutSec = 1800;
+    const timeoutAt = new Date(Date.now() + timeoutSec * 1000).toISOString();
+
+    const JOB_COLS = new Set((db.all("PRAGMA table_info('jobs')") || []).map(r => r.name));
+    const hasTemplateId = JOB_COLS.has('template_id');
+
+    const insertSql = hasTemplateId
+      ? `INSERT INTO jobs
+           (job_id, provider_id, renter_id, job_type, status, submitted_at,
+            duration_minutes, cost_halala, gpu_requirements, container_spec, task_spec,
+            max_duration_seconds, timeout_at, created_at, priority, pricing_class,
+            prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      : `INSERT INTO jobs
+           (job_id, provider_id, renter_id, job_type, status, submitted_at,
+            duration_minutes, cost_halala, gpu_requirements, container_spec, task_spec,
+            max_duration_seconds, timeout_at, created_at, priority, pricing_class,
+            prewarm_requested, workspace_volume_name, checkpoint_enabled)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+
+    const insertVals = [
+      job_id, provider.id, renter.id, template.job_type, 'pending', now,
+      duration_minutes, cost_halala, gpuReqs, containerSpec, taskSpec,
+      timeoutSec, timeoutAt, now, 2, pricing_class,
+      0, `dcp-job-${job_id}`, 0,
+      ...(hasTemplateId ? [template.id] : []),
+    ];
+
+    const doInsert = () => {
+      db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ?')
+        .run(cost_halala, now, renter.id);
+      const result = db.prepare(insertSql).run(insertVals);
+      db.prepare('UPDATE renters SET total_jobs = total_jobs + 1, updated_at = ? WHERE id = ?')
+        .run(now, renter.id);
+      return result.lastInsertRowid;
+    };
+
+    if (typeof db._db?.transaction === 'function') {
+      db._db.transaction(doInsert)();
+    } else {
+      doInsert();
+    }
+
+    // 8. Build response
+    const gpuTier = provider.gpu_model
+      || (Math.round((provider.gpu_vram_mib || (provider.vram_gb || 0) * 1024) / 1024) + 'GB GPU');
+    const estimatedStart = new Date(Date.now() + 30 * 1000).toISOString();
+
+    return res.status(201).json({
+      jobId: job_id,
+      status: 'pending',
+      estimatedStart,
+      gpuTier,
+      totalCost: {
+        halala: cost_halala,
+        sar: (cost_halala / 100).toFixed(2),
+      },
+      template: { id: template.id, name: template.name },
+      provider: { id: provider.id, name: provider.name },
+      message: `Job created and assigned to provider "${provider.name}". Expected start in ~30 seconds.`,
+    });
+  } catch (err) {
+    console.error('[templates/deploy] error:', err.message, err.stack);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 module.exports = router;
