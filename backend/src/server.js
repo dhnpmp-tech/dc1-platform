@@ -621,6 +621,10 @@ console.log('[timeout] Job timeout enforcement started (every 30s)');
 const { startLoop: startFallbackLoop } = require('./services/fallback-loop');
 startFallbackLoop();
 
+// Start provider liveness monitor — marks providers offline on missed heartbeats (DCP-804)
+const providerLivenessMonitor = require('./services/providerLivenessMonitor');
+providerLivenessMonitor.start();
+
 // Start data retention cleanup (runs daily at 2:00 AM UTC — DCP-59)
 const cleanup = require('./services/cleanup');
 cleanup.schedule();

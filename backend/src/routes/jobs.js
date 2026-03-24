@@ -2773,6 +2773,34 @@ router.get('/:job_id/stream', (req, res) => {
   }
 });
 
+// GET /api/jobs/:job_id/status — DCP-779 live polling endpoint
+const PROVIDER_STALE_MS = 90 * 1000;
+
+router.get('/:job_id/status', (req, res) => {
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+    const session = db.get('SELECT total_tokens FROM serve_sessions WHERE job_id = ?', job.job_id);
+    const tokens_generated = session ? (session.total_tokens ?? 0) : 0;
+    const startedAt = job.started_at ? new Date(job.started_at) : null;
+    const elapsed_seconds = startedAt ? Math.round((Date.now() - startedAt.getTime()) / 1000) : null;
+    const costHalala = job.actual_cost_halala ?? job.cost_halala ?? null;
+    const estimated_cost_usd = jobEventEmitter.halalaToCostUsd(costHalala);
+    let provider_online = false;
+    if (job.provider_id) {
+      const prov = db.get('SELECT last_heartbeat FROM providers WHERE id = ?', job.provider_id);
+      if (prov && prov.last_heartbeat) {
+        provider_online = (Date.now() - new Date(prov.last_heartbeat).getTime()) < PROVIDER_STALE_MS;
+      }
+    }
+    return res.json({ job_id: job.job_id, status: job.status, tokens_generated, elapsed_seconds, estimated_cost_usd, provider_online });
+  } catch (err) {
+    console.error('[jobs/:job_id/status]', err);
+    return res.status(500).json({ error: 'Failed to fetch job status' });
+  }
+});
+
 // GET /api/jobs/:job_id
 router.get('/:job_id', (req, res) => {
   try {
