@@ -301,3 +301,49 @@ Or: enforce that remaining stake is either 0 (full exit) or >= MIN_STAKE.
 - EIP-712 typed data signing is correctly implemented in Escrow and JobAttestation.
 - This review is based on static analysis only. A full audit should include fuzz testing (Foundry invariant tests), formal verification of the fee arithmetic, and testnet deployment validation.
 - Contract code modification is Blockchain Engineer scope (DCP-899 team). This report is read-only analysis.
+
+---
+
+## Addendum: Escrow Event Bridge Security Review (DCP-903 / DCP-906)
+
+**Reviewed:** `backend/src/services/escrowListener.js`
+**Date:** 2026-03-24
+
+The escrow event bridge polls the Base Sepolia contract for on-chain events (`Claimed`, `Cancelled`, `PaymentReleased`, `DisputeRaised`) and reconciles them with the off-chain SQLite ledger.
+
+### Input Validation on Blockchain Event Data — PASS ✅
+
+All event data is decoded via `contract.interface.parseLog(log)` (ethers.js ABI decoder). This validates that the raw log data conforms to the contract ABI before any field access. Malformed or non-conforming logs throw and are caught by the per-handler `try/catch`, logging an error without crashing the process. No raw log fields are passed directly to SQLite — all are extracted via named ABI arguments (`parsed.args[0]`, etc.) and converted to strings before use in parameterized queries.
+
+### Replay Attack Protection — FINDING EB-M01 (Medium)
+
+The listener uses a block cursor (`escrow_listener_cursor.last_block`) persisted in SQLite. On restart, processing resumes from `last_block + 1`, preventing block-level replay.
+
+However, there is **no transaction-hash deduplication** within a block. If the cursor is reset (e.g., admin manually sets `last_block = 0`, or a database restore), all historical events will be reprocessed. The following handlers have non-idempotent writes:
+
+- **`handlePaymentReleased`:** Calls `INSERT INTO payout_requests` without checking for an existing row matching `(provider_id, escrow_tx_hash)`. A cursor reset creates duplicate payout requests for the same on-chain transaction.
+- **`handleDisputeRaised`:** Calls `INSERT INTO admin_alerts` unconditionally. Cursor reset creates duplicate dispute alerts.
+
+`handleClaimed` is safe — it only updates rows `WHERE escrow_tx_hash IS NULL`, so re-processing is idempotent.
+
+**Recommendation:** Add `ON CONFLICT DO NOTHING` or a prior `SELECT` check keyed on `escrow_tx_hash` before inserting in `handlePaymentReleased` and `handleDisputeRaised`. This makes all handlers idempotent and safe against cursor resets.
+
+**Risk:** Medium — a cursor reset (requires database or admin access) causes duplicate payouts to be queued for admin approval. The human admin review step before disbursement acts as a compensating control.
+
+### Authorization on Event Handlers — PASS ✅
+
+Event handlers are triggered only by logs fetched from `ESCROW_CONTRACT_ADDRESS` via the configured RPC endpoint. The trust model is: data from the configured contract on the configured chain is authentic. This is correct for a blockchain listener.
+
+**Finding EB-L01 (Low):** The `BASE_RPC_URL` defaults to `https://sepolia.base.org` (unauthenticated public endpoint). A production deployment should use an authenticated RPC provider (Alchemy, Infura, QuickNode) with an API key to:
+- Prevent rate-limiting by the public node
+- Ensure data integrity (public nodes can be unreliable)
+- Reduce exposure to potential MITM on HTTP-level responses (though HTTPS mitigates most risk)
+
+**Recommendation:** Set `BASE_RPC_URL=https://base-sepolia.g.alchemy.com/v2/<API_KEY>` in production VPS env.
+
+### Summary of Bridge Findings
+
+| ID | Severity | Finding |
+|---|---|---|
+| EB-M01 | Medium | `handlePaymentReleased` and `handleDisputeRaised` are non-idempotent — cursor reset causes duplicate DB writes |
+| EB-L01 | Low | Default RPC URL is public/unauthenticated — use authenticated provider in production |
