@@ -213,11 +213,14 @@ app.use((req, res, next) => {
 app.use('/api/providers/register', registerLimiter);
 app.use('/api/renters/register', registerLimiter);
 
+// Provider activation: 3 per provider key per hour (DCP-805)
+app.use('/api/providers/:id/activate', providerActivateLimiter);
+
 // Heartbeat: 60 per provider key per minute (keyed per provider, not per IP).
 // Daemon sends every 30s = 2/min normally; 60/min leaves headroom for burst recovery.
 app.use('/api/providers/heartbeat', heartbeatProviderLimiter);
 
-// Job submission: 10 requests per API key per minute
+// Job submission: 20 per renter key per minute (DCP-805)
 app.use('/api/jobs/submit', jobSubmitLimiter);
 
 // Marketplace listing: 60 requests per API key per minute

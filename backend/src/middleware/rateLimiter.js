@@ -73,11 +73,11 @@ const registerLimiter = createRateLimiter({
   keyGenerator: (req) => ipFallbackKey(req),
 });
 
-// Job submission: 30 per IP per minute (spec: 30 req/min per IP).
+// Job submission: 20 per renter key per minute (DCP-805 spec). Falls back to IP.
 const jobSubmitLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 30,
-  keyGenerator: (req) => ipFallbackKey(req),
+  max: 20,
+  keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req),
 });
 
 const marketplaceLimiter = createRateLimiter({
@@ -192,6 +192,13 @@ const modelDeployLimiter = createRateLimiter({
   keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req),
 });
 
+// Provider activation: 3 per provider key per hour (DCP-805). Prevents activation abuse.
+const providerActivateLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req),
+});
+
 module.exports = {
   createRateLimiter,
   createAdminIpAllowlist,
@@ -214,4 +221,5 @@ module.exports = {
   adminLimiter,
   heartbeatProviderLimiter,
   authLimiter,
+  providerActivateLimiter,
 };
