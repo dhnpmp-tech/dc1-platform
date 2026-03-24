@@ -11,6 +11,10 @@ const nextConfig = {
       },
       // Model catalog API — used by ModelBrowsing and marketplace components
       {
+        source: '/api/models',
+        destination: `${backendUrl}/api/models`,
+      },
+      {
         source: '/api/models/:path*',
         destination: `${backendUrl}/api/models/:path*`,
       },
