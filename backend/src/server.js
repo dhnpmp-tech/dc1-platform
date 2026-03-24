@@ -18,6 +18,8 @@ const {
   authenticatedEndpointLimiter,
   heartbeatProviderLimiter,
   authLimiter,
+  providerActivateLimiter,
+  webhookRegistrationLimiter,
   createAdminIpAllowlist,
 } = require('./middleware/rateLimiter');
 const { getBearerToken } = require('./middleware/auth');
@@ -213,8 +215,11 @@ app.use((req, res, next) => {
 app.use('/api/providers/register', registerLimiter);
 app.use('/api/renters/register', registerLimiter);
 
-// Provider activation: 3 per provider key per hour (DCP-805)
+// Provider activation: 3 per provider key per hour (DCP-875)
 app.use('/api/providers/:id/activate', providerActivateLimiter);
+
+// Renter webhook registration: 10 per renter key per hour (DCP-875)
+app.use('/api/renters/:id/webhooks', webhookRegistrationLimiter);
 
 // Heartbeat: 60 per provider key per minute (keyed per provider, not per IP).
 // Daemon sends every 30s = 2/min normally; 60/min leaves headroom for burst recovery.
