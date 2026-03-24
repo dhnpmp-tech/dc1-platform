@@ -15,6 +15,8 @@ const {
   adminLimiter,
   publicEndpointLimiter,
   authenticatedEndpointLimiter,
+  heartbeatProviderLimiter,
+  authLimiter,
 } = require('./middleware/rateLimiter');
 const { getBearerToken } = require('./middleware/auth');
 
@@ -131,21 +133,79 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Auth Security: API Key in Query Params ──────────────────────────────
+// Log and reject requests that pass API credentials via URL query parameters.
+// Credentials in URLs appear in server logs, browser history, and HTTP referrer headers.
+// Providers (daemon) still use query params on some endpoints — only renter-facing
+// endpoints are enforced here. Provider routes remain backward-compatible.
+const RENTER_KEY_QUERY_NAMES = ['renter_key'];
+const PROVIDER_KEY_QUERY_NAMES = ['provider_key'];
+const SHARED_KEY_QUERY_NAME = 'key';
+
+function detectQueryParamKeys(req) {
+  const hasRenterKey = RENTER_KEY_QUERY_NAMES.some(n => req.query[n]);
+  const hasProviderKey = PROVIDER_KEY_QUERY_NAMES.some(n => req.query[n]);
+  const hasSharedKey = !!req.query[SHARED_KEY_QUERY_NAME];
+  return { hasRenterKey, hasProviderKey, hasSharedKey, any: hasRenterKey || hasProviderKey || hasSharedKey };
+}
+
+// Reject API keys in query params on renter-facing endpoints where the frontend
+// was already fixed (DCP-712). Provider heartbeat/daemon routes are excluded.
+function rejectRenterQueryParamKey(req, res, next) {
+  const { hasRenterKey, hasSharedKey } = detectQueryParamKeys(req);
+  if (hasRenterKey || hasSharedKey) {
+    console.warn(
+      `[security] API key in URL query params rejected: ${req.method} ${req.path} ip=${req.ip || 'unknown'}`
+    );
+    return res.status(400).json({
+      error: 'API keys must be sent via header (X-Renter-Key), not URL query parameters. This prevents credential exposure in server logs and browser history.',
+      hint: 'Set the "X-Renter-Key" request header instead of a ?key= or ?renter_key= query parameter.',
+    });
+  }
+  next();
+}
+
+// Log all API key credential usage in query params (non-blocking, for audit trail)
+app.use((req, _res, next) => {
+  const detected = detectQueryParamKeys(req);
+  if (detected.any) {
+    console.warn(
+      `[security] Credential in URL query params detected: ${req.method} ${req.path} ip=${req.ip || 'unknown'}`
+    );
+  }
+  next();
+});
+
+// Apply strict rejection on renter-facing routes (frontend already migrated)
+app.use('/api/renters/me', rejectRenterQueryParamKey);
+app.use('/api/renters/analytics', rejectRenterQueryParamKey);
+app.use('/api/renters/export', rejectRenterQueryParamKey);
+
+// ── Auth Failure Logging ────────────────────────────────────────────────
+// Wrap res.status to detect 401/403 and emit an audit log entry.
+app.use((req, res, next) => {
+  const originalStatus = res.status.bind(res);
+  res.status = function authAuditStatus(code) {
+    if (code === 401 || code === 403) {
+      const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+      const hasAuthHeader = !!(req.headers?.authorization || req.headers?.['x-renter-key'] || req.headers?.['x-provider-key'] || req.headers?.['x-admin-token']);
+      console.warn(
+        `[auth] Failed auth: status=${code} method=${req.method} path=${req.path} ip=${ip} has_header=${hasAuthHeader}`
+      );
+    }
+    return originalStatus(code);
+  };
+  next();
+});
+
 // ── Rate Limiting ───────────────────────────────────────────────────────
 // Registration: 5 attempts per IP per 10 minutes
 app.use('/api/providers/register', registerLimiter);
 app.use('/api/renters/register', registerLimiter);
 
-// Heartbeat: 4 per minute per IP (daemon sends every 30s = 2/min normally)
-const heartbeatLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 4,
-  keyGenerator: (req) => ipRateKey(req),
-  message: { error: 'Heartbeat rate limit exceeded. Normal interval is 30s.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/providers/heartbeat', heartbeatLimiter);
+// Heartbeat: 60 per provider key per minute (keyed per provider, not per IP).
+// Daemon sends every 30s = 2/min normally; 60/min leaves headroom for burst recovery.
+app.use('/api/providers/heartbeat', heartbeatProviderLimiter);
 
 // Job submission: 10 requests per API key per minute
 app.use('/api/jobs/submit', jobSubmitLimiter);
@@ -176,6 +236,10 @@ function tieredApiLimiter(req, res, next) {
 app.use('/api/providers', tieredApiLimiter);
 app.use('/api/jobs', tieredApiLimiter);
 app.use('/api/models', tieredApiLimiter);
+app.use('/api/templates', tieredApiLimiter);
+
+// Auth endpoints (if added in future): 10 per IP per minute
+app.use('/api/auth', authLimiter);
 
 // Login endpoints: 10 attempts per IP per 15 minutes
 const loginLimiter = rateLimit({
