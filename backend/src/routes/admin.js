@@ -883,6 +883,73 @@ router.get('/providers/health', (req, res) => {
   }
 });
 
+// === GET /api/admin/providers/status - Live provider status for admin dashboard (DCP-907) ===
+// Returns all providers with: id, name, isOnline, lastSeen, gpuUtil, modelLoaded
+// Auth: DC1_ADMIN_TOKEN required
+router.get('/providers/status', requireAdminAuth, (req, res) => {
+  try {
+    const nowMs = Date.now();
+    const ONLINE_THRESHOLD_MS = 90 * 1000; // 90s — provider considered online if heartbeat within this window
+
+    const providers = db.all(
+      `SELECT p.id, p.name, p.email, p.gpu_model, p.status, p.last_heartbeat,
+              p.cached_models, p.vram_gb, p.vram_mb, p.gpu_vram_mb,
+              t.gpu_util_pct, t.vram_used_gb, t.active_jobs
+       FROM providers p
+       LEFT JOIN (
+         SELECT t2.provider_id, t2.gpu_util_pct, t2.vram_used_gb, t2.active_jobs
+         FROM provider_gpu_telemetry t2
+         INNER JOIN (
+           SELECT provider_id, MAX(recorded_at) AS max_at
+           FROM provider_gpu_telemetry GROUP BY provider_id
+         ) m ON m.provider_id = t2.provider_id AND m.max_at = t2.recorded_at
+       ) t ON t.provider_id = p.id
+       WHERE p.deleted_at IS NULL
+       ORDER BY p.last_heartbeat DESC NULLS LAST`
+    );
+
+    const rows = providers.map((p) => {
+      const heartbeatMs = p.last_heartbeat ? Date.parse(p.last_heartbeat) : NaN;
+      const ageMs = Number.isFinite(heartbeatMs) ? nowMs - heartbeatMs : null;
+      const isOnline = ageMs != null && ageMs < ONLINE_THRESHOLD_MS;
+
+      let modelLoaded = null;
+      try {
+        const parsed = JSON.parse(p.cached_models || '[]');
+        modelLoaded = Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : null;
+      } catch (_) {}
+
+      return {
+        id: p.id,
+        name: p.name || null,
+        email: p.email || null,
+        gpu_model: p.gpu_model || null,
+        is_online: isOnline,
+        last_seen: p.last_heartbeat || null,
+        heartbeat_age_seconds: ageMs != null ? Math.floor(ageMs / 1000) : null,
+        gpu_util_pct: p.gpu_util_pct != null ? Number(Number(p.gpu_util_pct).toFixed(1)) : null,
+        vram_used_gb: p.vram_used_gb != null ? Number(Number(p.vram_used_gb).toFixed(2)) : null,
+        vram_total_gb: p.vram_gb || (p.vram_mb ? Number((p.vram_mb / 1024).toFixed(2)) : null) || (p.gpu_vram_mb ? Number((p.gpu_vram_mb / 1024).toFixed(2)) : null) || null,
+        model_loaded: modelLoaded,
+        active_jobs: p.active_jobs != null ? Number(p.active_jobs) : 0,
+      };
+    });
+
+    const onlineCount = rows.filter((r) => r.is_online).length;
+
+    return res.json({
+      total: rows.length,
+      online: onlineCount,
+      offline: rows.length - onlineCount,
+      providers: rows,
+      generated_at: new Date(nowMs).toISOString(),
+    });
+  } catch (error) {
+    console.error('Admin providers status error:', error);
+    return res.status(500).json({ error: 'Failed to fetch provider status' });
+  }
+});
+
 // === GET /api/admin/providers/metrics - Aggregated provider + job metrics ===
 router.get('/providers/metrics', requireAdminAuth, (req, res) => {
   try {

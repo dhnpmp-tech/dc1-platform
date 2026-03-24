@@ -207,16 +207,25 @@ function resolveModelRequirements(modelId) {
   };
 }
 
-function getCapableProviderCount(minVramMb) {
+function getCapableProviders(minVramMb) {
   const providers = db.all(
-    `SELECT id, status, is_paused, last_heartbeat, supported_compute_types,
-            vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb
-     FROM providers
-     WHERE status = 'online' AND COALESCE(is_paused, 0) = 0`
+    `SELECT p.id, p.status, p.is_paused, p.last_heartbeat, p.supported_compute_types,
+            p.vram_mb, p.gpu_vram_mb, p.gpu_vram_mib, p.vram_gb,
+            t.gpu_util_pct
+     FROM providers p
+     LEFT JOIN (
+       SELECT t2.provider_id, t2.gpu_util_pct
+       FROM provider_gpu_telemetry t2
+       INNER JOIN (
+         SELECT provider_id, MAX(recorded_at) AS max_at
+         FROM provider_gpu_telemetry GROUP BY provider_id
+       ) m ON m.provider_id = t2.provider_id AND m.max_at = t2.recorded_at
+     ) t ON t.provider_id = p.id
+     WHERE p.status = 'online' AND COALESCE(p.is_paused, 0) = 0 AND p.deleted_at IS NULL`
   );
 
   const nowMs = Date.now();
-  let count = 0;
+  const capable = [];
   for (const provider of providers) {
     const heartbeatMs = provider.last_heartbeat ? Date.parse(provider.last_heartbeat) : NaN;
     if (Number.isFinite(heartbeatMs) && (nowMs - heartbeatMs) > PROVIDER_HEARTBEAT_STALE_MS) continue;
@@ -227,10 +236,23 @@ function getCapableProviderCount(minVramMb) {
     const providerVramMb = resolveProviderVramMb(provider);
     if (providerVramMb < minVramMb) continue;
 
-    count += 1;
+    capable.push(provider);
   }
 
-  return count;
+  return capable;
+}
+
+function getCapableProviderCount(minVramMb) {
+  return getCapableProviders(minVramMb).length;
+}
+
+// Pick best available provider by lowest GPU utilization (DCP-907 job assignment queue)
+function assignProvider(minVramMb) {
+  const capable = getCapableProviders(minVramMb);
+  if (capable.length === 0) return null;
+  // Sort ascending by gpu_util_pct (nulls treated as 0 — prefer providers that haven't reported util)
+  capable.sort((a, b) => (a.gpu_util_pct ?? 0) - (b.gpu_util_pct ?? 0));
+  return capable[0];
 }
 
 function buildRuntimeDiagnostics({ modelId, minVramGb, jobId = null }) {
@@ -457,8 +479,9 @@ async function submitAndAwait(req) {
 
   const modelReq = resolveModelRequirements(model);
   const minVramMb = modelReq.min_vram_gb * 1024;
-  const capableProviders = getCapableProviderCount(minVramMb);
-  if (capableProviders < 1) {
+  // Assign provider upfront (DCP-907 job assignment queue — lowest GPU utilization wins)
+  const assignedProvider = assignProvider(minVramMb);
+  if (!assignedProvider) {
     const diagnostics = buildRuntimeDiagnostics({
       modelId: modelReq.model_id,
       minVramGb: modelReq.min_vram_gb,
@@ -546,9 +569,10 @@ async function submitAndAwait(req) {
         created_at,
         updated_at,
         priority
-      ) VALUES (?, NULL, ?, 'vllm', ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, 'vllm', ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       jobId,
+      assignedProvider.id,  // DCP-907: assign to the lowest-utilization capable provider
       req.renter.id,
       modelReq.model_id,
       now,
@@ -565,17 +589,18 @@ async function submitAndAwait(req) {
     );
 
     // Create serve_sessions record for metering (Sprint 25 Gap 1)
-    // This tracks token usage and billing for this vLLM inference session
+    // provider_id is now set at job creation (DCP-907 job assignment queue)
     const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour expiry
     try {
       db.prepare(
         `INSERT INTO serve_sessions (
           id, job_id, provider_id, model, port, status, started_at, expires_at,
           total_inferences, total_tokens, total_billed_halala, created_at, updated_at
-        ) VALUES (?, ?, NULL, ?, 0, 'serving', ?, ?, 0, 0, 0, ?, ?)`
+        ) VALUES (?, ?, ?, ?, 0, 'serving', ?, ?, 0, 0, 0, ?, ?)`
       ).run(
         `session-${jobId}`,
         jobId,
+        assignedProvider.id,  // DCP-907: set provider_id immediately at session creation
         modelReq.model_id,
         now,
         expiresAt,

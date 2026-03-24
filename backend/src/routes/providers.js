@@ -898,18 +898,33 @@ router.post('/:id/heartbeat', heartbeatProviderLimiter, (req, res) => {
         }
         // Accept legacy field names, REST aliases (DCP-782), and canonical metric names (DCP-892)
         const { gpu_utilization, gpu_utilization_pct, vram_used_mb, active_jobs, jobs_active,
-                vram_used, jobs_running, uptime_seconds } = req.body;
+                vram_used, jobs_running, uptime_seconds, model_loaded, vram_total, vram_total_mb } = req.body;
         // gpu_utilization_pct is the canonical name (DCP-892); gpu_utilization is the legacy alias
         const gpuUtil = toFiniteNumber(gpu_utilization_pct ?? gpu_utilization, { min: 0, max: 100 });
         // vram_used (MB) is alias for vram_used_mb
         const vramUsedMb = toFiniteInt(vram_used_mb ?? vram_used, { min: 0, max: 1024 * 1024 });
+        // vram_total: total VRAM capacity in MB (vram_total_mb is alias)
+        const vramTotalMb = toFiniteInt(vram_total_mb ?? vram_total, { min: 0, max: 1024 * 1024 });
         // active_jobs (DCP-892 canonical), jobs_active and jobs_running are legacy aliases
         const jobsActive = toFiniteInt(active_jobs ?? jobs_active ?? jobs_running, { min: 0, max: 10000 });
+        // model_loaded: currently loaded model identifier (DCP-907)
+        const modelLoaded = normalizeString(model_loaded, { maxLen: 200 }) || null;
         const now = new Date().toISOString();
-        runStatement(
-            "UPDATE providers SET last_heartbeat = ?, status = 'online', updated_at = ? WHERE id = ?",
-            now, now, provider.id
-        );
+
+        // Build provider update — include vram_total and model_loaded when provided (DCP-907)
+        const heartbeatUpdates = ["last_heartbeat = ?", "status = 'online'", "updated_at = ?"];
+        const heartbeatParams = [now, now];
+        if (vramTotalMb != null) {
+            heartbeatUpdates.push('vram_mb = ?');
+            heartbeatParams.push(vramTotalMb);
+        }
+        if (modelLoaded !== null) {
+            heartbeatUpdates.push('cached_models = ?');
+            heartbeatParams.push(JSON.stringify([modelLoaded]));
+        }
+        heartbeatParams.push(provider.id);
+        runStatement(`UPDATE providers SET ${heartbeatUpdates.join(', ')} WHERE id = ?`, ...heartbeatParams);
+
         db.prepare(
             'INSERT INTO provider_gpu_telemetry (provider_id, gpu_util_pct, vram_used_gb, active_jobs) VALUES (?, ?, ?, ?)'
         ).run(
@@ -933,6 +948,7 @@ router.post('/:id/heartbeat', heartbeatProviderLimiter, (req, res) => {
             status: 'online',
             timestamp: now,
             ...(uptimeSec != null && { uptime_seconds: uptimeSec }),
+            ...(modelLoaded !== null && { model_loaded: modelLoaded }),
         });
     } catch (error) {
         console.error('[providers/:id/heartbeat]', error);
