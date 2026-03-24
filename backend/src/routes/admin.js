@@ -4072,4 +4072,78 @@ router.get('/billing/summary', (req, res) => {
   }
 });
 
+// ─── GET /api/admin/revenue/summary — DCP-917 ──────────────────────────────
+// All-time platform revenue totals + 30-day daily + top providers + top models
+
+router.get('/revenue/summary', requireAdminAuth, (req, res) => {
+  try {
+    const allTime = db.get(`
+      SELECT
+        COUNT(*)                          AS total_jobs,
+        COALESCE(SUM(gross_cost_halala),0)        AS total_gross_halala,
+        COALESCE(SUM(platform_fee_halala),0)      AS total_platform_fees_halala,
+        COALESCE(SUM(provider_earning_halala),0)  AS total_provider_earnings_halala
+      FROM billing_records
+    `);
+
+    const daily = db.all(`
+      SELECT
+        DATE(created_at) AS date,
+        COUNT(*)                          AS jobs,
+        COALESCE(SUM(gross_cost_halala),0)        AS gross_halala,
+        COALESCE(SUM(platform_fee_halala),0)      AS platform_fee_halala,
+        COALESCE(SUM(provider_earning_halala),0)  AS provider_earning_halala
+      FROM billing_records
+      WHERE created_at >= DATE('now', '-30 days')
+      GROUP BY DATE(created_at)
+      ORDER BY date DESC
+    `);
+
+    const topProviders = db.all(`
+      SELECT
+        br.provider_id,
+        p.name AS provider_name,
+        COUNT(*)                                    AS jobs,
+        COALESCE(SUM(br.provider_earning_halala),0) AS total_earning_halala
+      FROM billing_records br
+      LEFT JOIN providers p ON p.id = br.provider_id
+      GROUP BY br.provider_id
+      ORDER BY total_earning_halala DESC
+      LIMIT 5
+    `);
+
+    const topModels = db.all(`
+      SELECT
+        model_id,
+        COUNT(*)                     AS jobs,
+        COALESCE(SUM(token_count),0) AS total_tokens,
+        COALESCE(SUM(gross_cost_halala),0) AS gross_halala
+      FROM billing_records
+      WHERE model_id IS NOT NULL
+      GROUP BY model_id
+      ORDER BY total_tokens DESC
+      LIMIT 5
+    `);
+
+    return res.json({
+      all_time: {
+        total_jobs:                     allTime.total_jobs || 0,
+        total_gross_halala:             allTime.total_gross_halala || 0,
+        total_gross_sar:                (allTime.total_gross_halala || 0) / 100,
+        total_platform_fees_halala:     allTime.total_platform_fees_halala || 0,
+        total_platform_fees_sar:        (allTime.total_platform_fees_halala || 0) / 100,
+        total_provider_earnings_halala: allTime.total_provider_earnings_halala || 0,
+        total_provider_earnings_sar:    (allTime.total_provider_earnings_halala || 0) / 100,
+        platform_fee_rate:              0.15,
+      },
+      top_providers: topProviders,
+      top_models:    topModels,
+      last_30_days:  daily,
+    });
+  } catch (error) {
+    console.error('[admin/revenue/summary]', error);
+    return res.status(500).json({ error: 'Failed to fetch revenue summary' });
+  }
+});
+
 module.exports = router;

@@ -1529,6 +1529,109 @@ router.get('/me/jobs/export', (req, res) => {
   }
 });
 
+// ─── DCP-917: Renter dashboard API ──────────────────────────────────────────
+
+// GET /api/renters/me/jobs/:jobId — single job detail with billing record
+router.get('/me/jobs/:jobId', (req, res) => {
+  try {
+    const renterKey = req.headers['x-renter-key'] || req.query.key;
+    if (!renterKey) return res.status(401).json({ error: 'API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', renterKey, 'active');
+    if (!renter) return res.status(401).json({ error: 'Invalid API key' });
+
+    const { jobId } = req.params;
+    const job = db.get(`
+      SELECT j.*,
+             p.name AS provider_name,
+             br.id             AS billing_id,
+             br.gross_cost_halala,
+             br.platform_fee_halala,
+             br.provider_earning_halala,
+             br.currency,
+             br.status         AS billing_status,
+             br.token_count,
+             br.duration_ms
+      FROM jobs j
+      LEFT JOIN providers p  ON p.id = j.provider_id
+      LEFT JOIN billing_records br ON br.job_id = j.job_id
+      WHERE j.job_id = ? AND j.renter_id = ?
+    `, jobId, renter.id);
+
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    return res.json({ job });
+  } catch (error) {
+    console.error('[renters/me/jobs/:jobId]', error);
+    return res.status(500).json({ error: 'Failed to fetch job' });
+  }
+});
+
+// GET /api/renters/me/spending — monthly totals + 30-day daily breakdown
+router.get('/me/spending', (req, res) => {
+  try {
+    const renterKey = req.headers['x-renter-key'] || req.query.key;
+    if (!renterKey) return res.status(401).json({ error: 'API key required' });
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', renterKey, 'active');
+    if (!renter) return res.status(401).json({ error: 'Invalid API key' });
+
+    const monthly = db.all(`
+      SELECT
+        strftime('%Y-%m', j.created_at)          AS month,
+        COUNT(*)                                  AS jobs,
+        COALESCE(SUM(
+          COALESCE(br.gross_cost_halala, j.actual_cost_halala, j.cost_halala, 0)
+        ), 0)                                     AS total_halala
+      FROM jobs j
+      LEFT JOIN billing_records br ON br.job_id = j.job_id
+      WHERE j.renter_id = ?
+        AND j.status = 'completed'
+      GROUP BY strftime('%Y-%m', j.created_at)
+      ORDER BY month DESC
+      LIMIT 12
+    `, renter.id);
+
+    const daily = db.all(`
+      SELECT
+        DATE(j.created_at)                        AS date,
+        COUNT(*)                                  AS jobs,
+        COALESCE(SUM(
+          COALESCE(br.gross_cost_halala, j.actual_cost_halala, j.cost_halala, 0)
+        ), 0)                                     AS total_halala
+      FROM jobs j
+      LEFT JOIN billing_records br ON br.job_id = j.job_id
+      WHERE j.renter_id = ?
+        AND j.status = 'completed'
+        AND j.created_at >= DATE('now', '-30 days')
+      GROUP BY DATE(j.created_at)
+      ORDER BY date DESC
+    `, renter.id);
+
+    const allTime = db.get(`
+      SELECT
+        COUNT(*)                                  AS total_jobs,
+        COALESCE(SUM(
+          COALESCE(br.gross_cost_halala, j.actual_cost_halala, j.cost_halala, 0)
+        ), 0)                                     AS total_halala
+      FROM jobs j
+      LEFT JOIN billing_records br ON br.job_id = j.job_id
+      WHERE j.renter_id = ?
+        AND j.status = 'completed'
+    `, renter.id);
+
+    return res.json({
+      all_time: {
+        total_jobs:   allTime.total_jobs   || 0,
+        total_halala: allTime.total_halala || 0,
+        total_sar:    (allTime.total_halala || 0) / 100,
+      },
+      monthly,
+      last_30_days: daily,
+    });
+  } catch (error) {
+    console.error('[renters/me/spending]', error);
+    return res.status(500).json({ error: 'Failed to fetch spending' });
+  }
+});
+
 // ─── JOB TEMPLATES ─── (DCP-304)
 
 // GET /api/renters/me/templates?key=
