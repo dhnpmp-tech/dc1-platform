@@ -108,6 +108,14 @@ const authenticatedEndpointLimiter = createRateLimiter({ windowMs: 60*1000, max:
 // Model deploy: 20 per API key per minute
 const modelDeployLimiter = createRateLimiter({ windowMs: 60*1000, max: 20, keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req) });
 
+// Provider activation: 3 per provider key per hour (DCP-875)
+// Prevents repeated activation probing; daemon activates once on startup.
+const providerActivateLimiter = createRateLimiter({ windowMs: 60*60*1000, max: 3, keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req) });
+
+// Renter webhook registration: 10 per renter key per hour (DCP-863/DCP-875)
+// Webhook URLs are validated for SSRF — limit prevents rapid URL rotation attempts.
+const webhookRegistrationLimiter = createRateLimiter({ windowMs: 60*60*1000, max: 10, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
+
 module.exports = {
   createRateLimiter, createAdminIpAllowlist,
   registerLimiter, jobSubmitLimiter, jobCreateLimiter,
@@ -118,4 +126,5 @@ module.exports = {
   renterAccountDeletionLimiter, providerAccountDeletionLimiter,
   renterDataExportLimiter, providerDataExportLimiter,
   adminLimiter, heartbeatProviderLimiter, authLimiter,
+  providerActivateLimiter, webhookRegistrationLimiter,
 };
