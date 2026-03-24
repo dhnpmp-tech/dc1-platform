@@ -27,6 +27,7 @@ const {
   normalizePricingClass,
   calculateControlPlaneSignals,
 } = require('../services/controlPlane');
+const analytics = require('../services/analyticsService');
 const jobEventEmitter = require('../utils/jobEventEmitter');
 
 function flattenRunParams(params) {
@@ -1684,6 +1685,12 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       queue_position,
       estimated_duration_minutes: Number(durationMinutes || 0),
     });
+
+    // Analytics: renter_deployment_start
+    analytics.renter.deploymentStart(job.renter_id, job.job_id, job.model || effectiveModel, {
+      job_type: job.job_type,
+      pricing_class: pricingClass,
+    }).catch(() => {});
   } catch (error) {
     console.error('Job submit error:', error);
     res.status(500).json({ error: 'Job submission failed' });
@@ -2241,6 +2248,24 @@ router.post('/:job_id/result', (req, res) => {
       retry_attempts: Number(updated?.retry_count || 0),
       last_error: normalizeString(jobError || updated?.error, { maxLen: 1000 }),
     });
+
+    // Analytics: renter_deployment_complete / renter_deployment_error
+    if (result) {
+      analytics.renter.deploymentComplete(
+        job.renter_id,
+        job.job_id,
+        job.model || job.job_type,
+        durationSeconds != null ? durationSeconds * 1000 : null,
+        { cost_halala: actualCostHalala }
+      ).catch(() => {});
+    } else {
+      analytics.renter.deploymentError(
+        job.renter_id,
+        job.job_id,
+        'execution_failed',
+        normalizeString(jobError || updated?.error, { maxLen: 200 })
+      ).catch(() => {});
+    }
 
     res.json({
       success: true,
