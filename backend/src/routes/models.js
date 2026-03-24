@@ -611,12 +611,55 @@ function buildDeploySubmitPayload(model, options = {}) {
   return body;
 }
 
+// applyQueryFilters — shared filter logic for list and catalog endpoints.
+// Supported query params:
+//   arabic_capable=true   — only models with Arabic capability
+//   min_vram_gb=N         — only models requiring <= N GB VRAM (renter GPU fits model)
+//   category=llm|embedding|image|training  — filter by task type
+function applyQueryFilters(models, query) {
+  let result = models;
+
+  if (String(query.arabic_capable || '').toLowerCase() === 'true') {
+    result = result.filter((m) => m.arabic || m.arabic_capability);
+  }
+
+  const minVram = toInt(query.min_vram_gb, { min: 1, max: 1024 });
+  if (minVram != null) {
+    result = result.filter((m) => {
+      const vramNeeded = toInt(m.min_gpu_vram_gb, { min: 1, max: 1024 }) || 1;
+      return vramNeeded <= minVram;
+    });
+  }
+
+  const category = normalizeString(query.category, { maxLen: 32 });
+  if (category) {
+    const cat = category.toLowerCase();
+    const CATEGORY_TASK_MAP = {
+      llm: ['chat', 'instruct'],
+      embedding: ['embed'],
+      image: ['image'],
+      training: ['train'],
+    };
+    const allowedTasks = CATEGORY_TASK_MAP[cat];
+    if (allowedTasks) {
+      result = result.filter((m) => {
+        const tasks = Array.isArray(m.task) ? m.task : [];
+        return tasks.some((t) => allowedTasks.includes(String(t).toLowerCase()));
+      });
+    }
+  }
+
+  return result;
+}
+
 // GET /api/models
 // Public model registry with live provider availability and averaged pricing.
+// Query params: arabic_capable, min_vram_gb, category
 router.get('/', publicEndpointLimiter, (req, res) => {
   try {
-    const models = getCatalogModels().map(toLegacyListItem);
-    return res.json(models);
+    const all = getCatalogModels();
+    const filtered = applyQueryFilters(all, req.query || {});
+    return res.json(filtered.map(toLegacyListItem));
   } catch (error) {
     console.error('Model registry error:', error);
     return res.status(500).json({ error: 'Failed to fetch model registry' });
@@ -657,9 +700,11 @@ router.get('/cards', publicEndpointLimiter, (req, res) => {
 
 // GET /api/models/catalog
 // Managed model catalog payload used by comparison/deploy UX.
+// Query params: arabic_capable, min_vram_gb, category
 router.get('/catalog', publicEndpointLimiter, (req, res) => {
   try {
-    const models = getCatalogModels();
+    const all = getCatalogModels();
+    const models = applyQueryFilters(all, req.query || {});
     return res.json({
       generated_at: new Date().toISOString(),
       total_models: models.length,
@@ -844,7 +889,7 @@ router.get('/bundles/arabic-rag', publicEndpointLimiter, (req, res) => {
 
 // GET /api/models/:model_id/deploy/estimate
 // Returns deployment estimate payload for the selected model.
-router.get(/^/([a-zA-Z0-9._/-]+)/deploy/estimate$/, publicEndpointLimiter, (req, res) => {
+router.get(/^\/([a-zA-Z0-9._/-]+)\/deploy\/estimate$/, publicEndpointLimiter, (req, res) => {
   try {
     const modelId = normalizeString(req.params[0], { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
@@ -865,7 +910,7 @@ router.get(/^/([a-zA-Z0-9._/-]+)/deploy/estimate$/, publicEndpointLimiter, (req,
 
 // POST /api/models/:model_id/deploy
 // Authenticated deploy handoff endpoint for managed catalog UX.
-router.post(/^/([a-zA-Z0-9._/-]+)/deploy$/, modelDeployLimiter, requireRenter, (req, res) => {
+router.post(/^\/([a-zA-Z0-9._/-]+)\/deploy$/, modelDeployLimiter, requireRenter, (req, res) => {
   try {
     const modelId = normalizeString(req.params[0], { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;
@@ -923,7 +968,7 @@ router.post(/^/([a-zA-Z0-9._/-]+)/deploy$/, modelDeployLimiter, requireRenter, (
 
 // GET /api/models/:model_id
 // Single-model detail payload for managed catalog consumers.
-router.get(/^/([a-zA-Z0-9._/-]+)$/ , publicEndpointLimiter, (req, res) => {
+router.get(/^\/([a-zA-Z0-9._/-]+)$/, publicEndpointLimiter, (req, res) => {
   try {
     const modelId = normalizeString(req.params[0], { maxLen: 200, trim: false });
     const model = modelId ? getModelById(modelId) : null;

@@ -58,17 +58,10 @@ export default function MarketplaceFlow({ onDeploySubmit }: MarketplaceFlowProps
     setDeployError(null)
 
     try {
-      // Call deploy estimate endpoint
+      // GET /api/models/:model_id/deploy/estimate — read-only, params via query string
+      const encodedId = encodeURIComponent(selectedItem.data.model_id)
       const response = await fetch(
-        `/api/models/${selectedItem.data.model_id}/deploy/estimate`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            duration_minutes: 60, // default 1 hour
-            // Additional params can be added here
-          }),
-        }
+        `/api/models/${encodedId}/deploy/estimate?duration_minutes=60`
       )
 
       if (!response.ok) {
