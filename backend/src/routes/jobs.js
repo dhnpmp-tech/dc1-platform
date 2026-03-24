@@ -3940,6 +3940,66 @@ function getDispatchService() {
   return _jobDispatchService;
 }
 
+// ============================================================================
+// GET /api/jobs — Paginated renter job history (DCP-782)
+// Query params: limit (default 50, max 200), offset (default 0)
+// Returns: job_id, template_name, gpu_model, started_at, ended_at, duration_seconds,
+//          tokens_used, cost_sar
+// Auth: x-renter-key — renter can only see their own jobs
+// ============================================================================
+router.get('/', requireRenter, (req, res) => {
+  try {
+    const limit = Math.min(toFiniteInt(req.query.limit, { min: 1, max: 200 }) ?? 50, 200);
+    const offset = toFiniteInt(req.query.offset, { min: 0 }) ?? 0;
+
+    const jobs = db.all(
+      `SELECT j.id, j.job_id, j.job_type, j.template_id, j.status,
+              j.submitted_at, j.started_at, j.completed_at AS ended_at,
+              j.duration_seconds, j.actual_duration_minutes,
+              j.prompt_tokens, j.completion_tokens,
+              j.actual_cost_halala, j.cost_halala,
+              j.refunded_at,
+              p.gpu_model
+       FROM jobs j
+       LEFT JOIN providers p ON j.provider_id = p.id
+       WHERE j.renter_id = ?
+       ORDER BY j.submitted_at DESC
+       LIMIT ? OFFSET ?`,
+      req.renter.id, limit, offset
+    );
+
+    const total = (db.get('SELECT COUNT(*) AS cnt FROM jobs WHERE renter_id = ?', req.renter.id) || {}).cnt || 0;
+
+    res.json({
+      total,
+      limit,
+      offset,
+      jobs: jobs.map(j => {
+        const costHalala = j.actual_cost_halala ?? j.cost_halala ?? 0;
+        const tokensUsed = (j.prompt_tokens || 0) + (j.completion_tokens || 0);
+        return {
+          id: j.id,
+          job_id: j.job_id,
+          job_type: j.job_type,
+          template_name: j.template_id || null,
+          gpu_model: j.gpu_model || null,
+          status: j.status,
+          submitted_at: j.submitted_at,
+          started_at: j.started_at,
+          ended_at: j.ended_at,
+          duration_seconds: j.duration_seconds ?? (j.actual_duration_minutes != null ? j.actual_duration_minutes * 60 : null),
+          tokens_used: tokensUsed || null,
+          cost_sar: (costHalala / 100).toFixed(2),
+          refunded: !!j.refunded_at,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error('[GET /api/jobs]', error);
+    res.status(500).json({ error: 'Failed to fetch job history' });
+  }
+});
+
 /**
  * POST /api/jobs
  * Simplified job submission using the credit-hold dispatch pipeline.

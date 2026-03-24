@@ -467,6 +467,50 @@ export default function ProviderDashboard() {
           </div>
         </div>
 
+        {/* Idle activation CTA — shown when provider is not yet live */}
+        {providerData.status === 'offline' && providerData.jobsCompleted === 0 && !providerData.lastHeartbeat && (
+          <div className="rounded-xl border border-dc1-amber/30 bg-gradient-to-br from-dc1-amber/5 to-transparent p-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-dc1-amber/10 border border-dc1-amber/20">
+                <svg className="h-7 w-7 text-dc1-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-dc1-text-primary mb-1">Your GPU node is not active yet</h3>
+                <p className="text-sm text-dc1-text-secondary mb-4">
+                  Install the DCP daemon and connect your GPU to start earning. Setup takes under 5 minutes.
+                  Internet cafes and server farms in Saudi Arabia earn SAR 4,500–15,750/month at 70% utilisation.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setShowWizard(true)}
+                    className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-dc1-void hover:bg-dc1-amber-hover transition-colors"
+                  >
+                    Activate your node →
+                  </button>
+                  <Link href="/provider/activate" className="rounded-lg border border-dc1-border px-5 py-2.5 text-sm font-semibold text-dc1-text-primary hover:border-dc1-amber/40 transition-colors">
+                    Run GPU benchmark
+                  </Link>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 pt-5 border-t border-dc1-border">
+              {[
+                { label: 'RTX 4090 (24 GB)', sarPerMonth: '4,500 – 7,875 SAR' },
+                { label: 'H100 (80 GB)', sarPerMonth: '10,500 – 15,750 SAR' },
+                { label: 'A100 (40 GB)', sarPerMonth: '7,500 – 11,250 SAR' },
+              ].map(tier => (
+                <div key={tier.label} className="rounded-lg bg-dc1-surface-l2 border border-dc1-border px-4 py-3">
+                  <p className="text-xs text-dc1-text-muted">{tier.label}</p>
+                  <p className="text-sm font-bold text-dc1-amber mt-0.5">{tier.sarPerMonth}</p>
+                  <p className="text-[10px] text-dc1-text-muted mt-0.5">est. / month · 70% utilisation</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {latestDaemon && (
           daemonNeedsUpdate ? (
             <div className="rounded-lg border border-status-warning/40 bg-status-warning/10 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
