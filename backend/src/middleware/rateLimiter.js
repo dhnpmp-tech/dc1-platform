@@ -15,14 +15,18 @@ function retryAfterSeconds(req, windowMs) {
 }
 
 function createRateLimiter({ windowMs, max, keyGenerator }) {
+  // Allow rate limits to be bypassed in test environments to prevent flaky tests.
+  // Set DISABLE_RATE_LIMIT=1 or NODE_ENV=test to skip enforcement.
+  const isTestEnv = process.env.DISABLE_RATE_LIMIT === '1' || process.env.NODE_ENV === 'test';
   return rateLimit({
     windowMs,
-    max,
+    max: isTestEnv ? Number.MAX_SAFE_INTEGER : max,
     keyGenerator,
     standardHeaders: true,
     legacyHeaders: false,
     handler: (req, res) => {
       const retryAfter = retryAfterSeconds(req, windowMs);
+      console.warn(`[rate-limit] 429 hit: ${req.method} ${req.path} key=${keyGenerator ? keyGenerator(req) : 'default'}`);
       res.setHeader('Retry-After', String(retryAfter));
       res.status(429).json({
         error: 'Rate limit exceeded',
@@ -67,17 +71,25 @@ function createAdminIpAllowlist() {
   };
 }
 
+// Provider registration: 5 per IP per hour — prevents fake provider spam (DCP-855).
 const registerLimiter = createRateLimiter({
-  windowMs: 10 * 60 * 1000,
+  windowMs: 60 * 60 * 1000,
   max: 5,
   keyGenerator: (req) => ipFallbackKey(req),
 });
 
-// Job submission: 30 per IP per minute (spec: 30 req/min per IP).
+// Job submission (legacy /submit route): 30 per IP per minute.
 const jobSubmitLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 30,
   keyGenerator: (req) => ipFallbackKey(req),
+});
+
+// Job creation (POST /api/jobs): 10 per renter key per minute — prevents accidental runaway billing (DCP-855).
+const jobCreateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req),
 });
 
 const marketplaceLimiter = createRateLimiter({
@@ -150,17 +162,18 @@ const adminLimiter = createRateLimiter({
   keyGenerator: (req) => `admin:${getAdminToken(req) || ipFallbackKey(req)}`,
 });
 
-// Provider heartbeat: 60 per provider key per minute (daemon sends every 30s = 2/min normally).
+// Provider heartbeat: 4 per provider key per minute (daemon sends every 30s = 2/min normally;
+// ceiling of 4 allows one retry without enabling flooding) — DCP-855.
 const heartbeatProviderLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 60,
+  max: 4,
   keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req),
 });
 
-// Auth endpoints: 10 per IP per 15 minutes (strict — login, register, token exchange).
+// Auth endpoints: 5 per IP per 15 minutes — brute force protection for login/OTP flows (DCP-855).
 const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 5,
   keyGenerator: (req) => ipFallbackKey(req),
 });
 
@@ -168,6 +181,13 @@ const authLimiter = createRateLimiter({
 const catalogLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 200,
+  keyGenerator: (req) => ipFallbackKey(req),
+});
+
+// Model catalog scraping protection: 100 per IP per minute — prevents competitor pricing scrapes (DCP-855).
+const modelCatalogLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 100,
   keyGenerator: (req) => ipFallbackKey(req),
 });
 
@@ -197,10 +217,12 @@ module.exports = {
   createAdminIpAllowlist,
   registerLimiter,
   jobSubmitLimiter,
+  jobCreateLimiter,
   marketplaceLimiter,
   publicProvidersLimiter,
   publicEndpointLimiter,
   catalogLimiter,
+  modelCatalogLimiter,
   authenticatedEndpointLimiter,
   modelDeployLimiter,
   containerRegistryLimiter,

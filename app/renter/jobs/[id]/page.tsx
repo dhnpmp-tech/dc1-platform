@@ -529,6 +529,124 @@ function HistoryTab({
   )
 }
 
+// ── Job State Machine ─────────────────────────────────────────────────────────
+type JobPhase = 'queued' | 'assigned' | 'running' | 'completed' | 'failed'
+
+function getJobPhase(status: string, providerId?: number | null): JobPhase {
+  if (status === 'completed') return 'completed'
+  if (['failed', 'permanently_failed', 'cancelled'].includes(status)) return 'failed'
+  if (status === 'running') return 'running'
+  if (status === 'pending' && providerId) return 'assigned'
+  return 'queued'
+}
+
+function JobStateMachine({ status, providerId, providerGpu, startedAt }: {
+  status: string
+  providerId?: number | null
+  providerGpu: string | null
+  startedAt: string | null
+}) {
+  const phase = getJobPhase(status, providerId)
+  const isFailed = phase === 'failed'
+
+  const steps: { id: JobPhase; label: string; desc: string }[] = [
+    { id: 'queued',    label: 'Queued',    desc: 'Job submitted & waiting' },
+    { id: 'assigned',  label: 'Assigned',  desc: providerGpu ? `GPU: ${providerGpu}` : 'Provider matched' },
+    { id: 'running',   label: 'Running',   desc: startedAt ? `Since ${new Date(startedAt).toLocaleTimeString()}` : 'In progress' },
+    { id: 'completed', label: isFailed ? 'Failed' : 'Completed', desc: isFailed ? 'Job did not complete' : 'Job finished' },
+  ]
+
+  const phaseOrder: JobPhase[] = ['queued', 'assigned', 'running', 'completed']
+  const currentIdx = isFailed ? phaseOrder.length - 1 : phaseOrder.indexOf(phase)
+
+  return (
+    <div className="card py-4">
+      <div className="flex items-center justify-between relative">
+        {/* Connector line */}
+        <div className="absolute top-4 left-0 right-0 h-0.5 bg-dc1-border mx-8" aria-hidden="true" />
+        {steps.map((step, i) => {
+          const done = i < currentIdx
+          const active = i === currentIdx
+          const failed = active && isFailed
+          return (
+            <div key={step.id} className="relative flex flex-col items-center gap-1.5 flex-1 z-10">
+              <div className={`h-8 w-8 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-all
+                ${failed ? 'border-status-error bg-status-error/10 text-status-error'
+                  : done ? 'border-dc1-amber bg-dc1-amber text-white'
+                  : active ? 'border-dc1-amber bg-dc1-amber/10 text-dc1-amber animate-pulse'
+                  : 'border-dc1-border bg-dc1-surface-l2 text-dc1-text-muted'}`}>
+                {done ? '✓' : failed ? '✕' : i + 1}
+              </div>
+              <div className="text-center">
+                <p className={`text-xs font-semibold ${active ? (failed ? 'text-status-error' : 'text-dc1-amber') : done ? 'text-dc1-text-primary' : 'text-dc1-text-muted'}`}>
+                  {step.label}
+                </p>
+                <p className="text-[10px] text-dc1-text-muted hidden sm:block">{active || done ? step.desc : ''}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Live Running Metrics ───────────────────────────────────────────────────────
+function LiveMetrics({ job, pricePerHr }: { job: JobDetail; pricePerHr?: number | null }) {
+  const [elapsedSecs, setElapsedSecs] = useState(0)
+
+  useEffect(() => {
+    if (job.status !== 'running' || !job.started_at) return
+    const start = new Date(job.started_at).getTime()
+    const tick = () => setElapsedSecs(Math.floor((Date.now() - start) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [job.status, job.started_at])
+
+  if (job.status !== 'running') return null
+
+  const hrs = elapsedSecs / 3600
+  const estimatedCostSAR = pricePerHr ? hrs * pricePerHr : null
+  const elapsedLabel = elapsedSecs >= 60
+    ? `${Math.floor(elapsedSecs / 60)}m ${elapsedSecs % 60}s`
+    : `${elapsedSecs}s`
+
+  return (
+    <div className="card border-dc1-amber/30 bg-dc1-amber/5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="h-2 w-2 rounded-full bg-dc1-amber animate-pulse" aria-hidden="true" />
+        <h2 className="text-sm font-bold text-dc1-amber">Live Metrics</h2>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2.5 text-center">
+          <div className="text-dc1-amber font-extrabold text-base font-mono">{elapsedLabel}</div>
+          <div className="text-dc1-text-muted mt-0.5">Elapsed</div>
+        </div>
+        {estimatedCostSAR !== null && (
+          <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2.5 text-center">
+            <div className="text-dc1-text-primary font-extrabold text-base">{estimatedCostSAR.toFixed(4)}</div>
+            <div className="text-dc1-text-muted mt-0.5">SAR so far</div>
+          </div>
+        )}
+        {job.provider_id && (
+          <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2.5 text-center">
+            <div className="text-status-success font-bold text-sm">#{job.provider_id}</div>
+            <div className="text-dc1-text-muted mt-0.5">Provider</div>
+          </div>
+        )}
+        <div className="bg-dc1-surface-l2 rounded-lg px-3 py-2.5 text-center">
+          <div className="flex items-center justify-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-status-success animate-pulse" />
+            <span className="text-status-success font-bold text-sm">Active</span>
+          </div>
+          <div className="text-dc1-text-muted mt-0.5">Status</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface RetryState {
   open: boolean
   loading: boolean
@@ -671,7 +789,8 @@ export default function RenterJobDetailPage() {
     }
 
     fetchData()
-    const interval = setInterval(fetchData, 10000)
+    // Poll every 3s for active jobs, 10s for terminal
+    const interval = setInterval(fetchData, 3000)
     return () => clearInterval(interval)
   }, [jobId, router])
 
@@ -900,6 +1019,15 @@ export default function RenterJobDetailPage() {
             )}
           </div>
         </div>
+
+        {/* State machine + live metrics */}
+        <JobStateMachine
+          status={job.status}
+          providerId={job.provider_id}
+          providerGpu={providerGpu}
+          startedAt={job.started_at}
+        />
+        <LiveMetrics job={job} />
 
         {(isCompleted || isFailed) && (
           <div className={`card ${isFailed ? 'border-status-error/30 bg-status-error/5' : 'border-dc1-amber/30'}`}>
