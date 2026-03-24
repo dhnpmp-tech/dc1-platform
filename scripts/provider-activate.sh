@@ -18,13 +18,16 @@ set -euo pipefail
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 readonly API_BASE="https://api.dcp.sa"
+readonly INSTALL_URL="https://dcp.sa/install"
 readonly SERVICE_NAME="dcp-provider"
+readonly SERVICE_USER="dcp-provider"
 readonly SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 readonly STATE_DIR="/opt/dcp/provider"
 readonly STATE_FILE="${STATE_DIR}/provider.conf"
 readonly LOG_FILE="${STATE_DIR}/provider.log"
 readonly HEARTBEAT_INTERVAL=30   # seconds between heartbeats
 readonly DAEMON_VERSION="1.1.0"
+readonly KEY_PATTERN='^dc1-provider-[a-zA-Z0-9]{16,}$'
 
 # Earnings table (USD/hr at 70% utilisation) — from DCP pricing engine
 declare -A GPU_RATE_USD=(
@@ -51,19 +54,41 @@ fail()    { printf "${RED}✗${NC}  %s\n" "$*" >&2; }
 banner()  { printf "\n${BOLD}%s${NC}\n" "$*"; }
 die()     { fail "$*"; exit 1; }
 
+# Fix #5: Sanitize strings before JSON interpolation
+# Strips control characters, escapes backslash and double-quote.
+json_escape() {
+  printf '%s' "$1" | tr -d '\000-\031' | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# Fix #8: Validate key format before any network call
+validate_key_format() {
+  local key="$1"
+  if [[ ! "$key" =~ $KEY_PATTERN ]]; then
+    die "Key format invalid. Expected: dc1-provider-<16+ alphanumeric chars>. Check your registration email."
+  fi
+}
+
+# Fix #6: Detect piped install (curl|bash — $0 is /bin/bash or /dev/fd/*)
+is_piped_install() {
+  local real
+  real=$(realpath "$0" 2>/dev/null || echo "$0")
+  [[ "$real" == "/bin/bash" ]] || \
+  [[ "$real" == "/proc/self/fd/"* ]] || \
+  [[ "$real" == "/dev/fd/"* ]] || \
+  [[ "$real" == "/dev/stdin" ]]
+}
+
+# Fix #3: Safe state-file reader — no sourcing, no code execution
+read_state_key() {
+  grep -oP 'PROVIDER_KEY=\K[a-zA-Z0-9_-]+' "$STATE_FILE" 2>/dev/null || true
+}
+
 # ── GPU Detection ─────────────────────────────────────────────────────────────
 detect_nvidia_gpu() {
-  if ! command -v nvidia-smi >/dev/null 2>&1; then
-    return 1
-  fi
-  if ! nvidia-smi >/dev/null 2>&1; then
-    return 1
-  fi
-  return 0
+  command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1
 }
 
 get_gpu_info() {
-  # Returns: GPU_NAME GPU_VRAM_MIB GPU_COUNT DRIVER_VERSION COMPUTE_CAP
   GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1 | sed 's/^[[:space:]]*//')
   GPU_VRAM_MIB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1 | tr -d ' ')
   GPU_COUNT=$(nvidia-smi --list-gpus | wc -l)
@@ -73,19 +98,13 @@ get_gpu_info() {
 }
 
 get_gpu_live_metrics() {
-  # Returns: GPU_UTIL_PCT TEMP_C POWER_W FREE_VRAM_MIB
   local metrics
   metrics=$(nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,power.draw,memory.free \
     --format=csv,noheader,nounits 2>/dev/null | head -1)
-  GPU_UTIL_PCT=$(echo "$metrics" | cut -d',' -f1 | tr -d ' ')
-  TEMP_C=$(echo "$metrics" | cut -d',' -f2 | tr -d ' ')
-  POWER_W=$(echo "$metrics" | cut -d',' -f3 | tr -d ' ')
-  FREE_VRAM_MIB=$(echo "$metrics" | cut -d',' -f4 | tr -d ' ')
-  # Normalise: strip trailing decimals for integer fields
-  GPU_UTIL_PCT=${GPU_UTIL_PCT%%.*}
-  TEMP_C=${TEMP_C%%.*}
-  POWER_W=${POWER_W%%.*}
-  FREE_VRAM_MIB=${FREE_VRAM_MIB%%.*}
+  GPU_UTIL_PCT=$(echo "$metrics" | cut -d',' -f1 | tr -d ' '); GPU_UTIL_PCT=${GPU_UTIL_PCT%%.*}
+  TEMP_C=$(echo "$metrics"       | cut -d',' -f2 | tr -d ' '); TEMP_C=${TEMP_C%%.*}
+  POWER_W=$(echo "$metrics"      | cut -d',' -f3 | tr -d ' '); POWER_W=${POWER_W%%.*}
+  FREE_VRAM_MIB=$(echo "$metrics"| cut -d',' -f4 | tr -d ' '); FREE_VRAM_MIB=${FREE_VRAM_MIB%%.*}
 }
 
 # ── Earnings Estimate ─────────────────────────────────────────────────────────
@@ -94,7 +113,6 @@ estimate_earnings() {
   local gpu_count="$2"
   local rate_usd=0
 
-  # Fuzzy-match the GPU name against our earnings table
   for model in "${!GPU_RATE_USD[@]}"; do
     if [[ "$gpu_name" == *"$model"* ]] || [[ "$gpu_name" == *"${model//RTX /}"* ]]; then
       rate_usd="${GPU_RATE_USD[$model]}"
@@ -103,7 +121,6 @@ estimate_earnings() {
   done
 
   if [[ "$rate_usd" == "0" ]]; then
-    # Fallback: estimate by VRAM size
     local vram_gb=$(( GPU_VRAM_MIB / 1024 ))
     if   [[ $vram_gb -ge 80 ]]; then rate_usd=2.50
     elif [[ $vram_gb -ge 40 ]]; then rate_usd=1.00
@@ -114,26 +131,20 @@ estimate_earnings() {
     fi
   fi
 
-  # Monthly = rate * 24 * 30 * utilisation * gpu_count
-  local monthly_usd
-  monthly_usd=$(awk "BEGIN { printf \"%.0f\", $rate_usd * 24 * 30 * $UTIL_FACTOR * $gpu_count }")
-  local monthly_sar
-  monthly_sar=$(awk "BEGIN { printf \"%.0f\", $monthly_usd * $SAR_PER_USD }")
-
-  ESTIMATED_MONTHLY_USD="$monthly_usd"
-  ESTIMATED_MONTHLY_SAR="$monthly_sar"
+  ESTIMATED_MONTHLY_USD=$(awk "BEGIN { printf \"%.0f\", $rate_usd * 24 * 30 * $UTIL_FACTOR * $gpu_count }")
+  ESTIMATED_MONTHLY_SAR=$(awk "BEGIN { printf \"%.0f\", $ESTIMATED_MONTHLY_USD * $SAR_PER_USD }")
   ESTIMATED_HOURLY_USD=$(awk "BEGIN { printf \"%.3f\", $rate_usd * $gpu_count }")
 }
 
-# ── API Calls ─────────────────────────────────────────────────────────────────
+# ── API Calls — Fix #2: key in Authorization header, not URL query string ─────
 api_get() {
   local path="$1"
   local key="${2:-}"
-  local url="${API_BASE}${path}"
   if [[ -n "$key" ]]; then
-    url="${url}?key=${key}"
+    curl -sS --max-time 10 -H "X-Provider-Key: ${key}" "${API_BASE}${path}"
+  else
+    curl -sS --max-time 10 "${API_BASE}${path}"
   fi
-  curl -sS --max-time 10 "$url"
 }
 
 api_patch() {
@@ -143,8 +154,9 @@ api_patch() {
   curl -sS --max-time 10 \
     -X PATCH \
     -H "Content-Type: application/json" \
+    -H "X-Provider-Key: ${key}" \
     -d "$body" \
-    "${API_BASE}${path}?key=${key}"
+    "${API_BASE}${path}"
 }
 
 api_post() {
@@ -172,12 +184,12 @@ validate_key() {
 # ── Update GPU Profile ─────────────────────────────────────────────────────────
 update_gpu_profile() {
   local key="$1"
-  local vram_mb=$(( GPU_VRAM_MIB ))  # MiB ≈ MB for this purpose
-  local body="{\"gpu_model\":\"${GPU_NAME}\",\"vram_mb\":${vram_mb},\"gpu_count\":${GPU_COUNT}}"
+  local safe_gpu_name
+  safe_gpu_name=$(json_escape "$GPU_NAME")
+  local body="{\"gpu_model\":\"${safe_gpu_name}\",\"vram_mb\":${GPU_VRAM_MIB},\"gpu_count\":${GPU_COUNT}}"
   local response
   response=$(api_patch "/api/providers/me/gpu-profile" "$key" "$body" 2>/dev/null || echo '{"error":"network"}')
   if echo "$response" | grep -q '"error"'; then
-    # Might fail if daemon already set profile — not fatal
     warn "GPU profile update skipped (daemon may already own it — OK)"
     return 0
   fi
@@ -189,34 +201,40 @@ send_heartbeat() {
   local key="$1"
   local hostname
   hostname=$(hostname 2>/dev/null || echo "unknown")
-  local ip
-  ip=$(curl -sS --max-time 5 "https://api.ipify.org" 2>/dev/null || echo "0.0.0.0")
-
-  get_gpu_live_metrics
-
   local os_info
   os_info=$(uname -srm 2>/dev/null || echo "linux")
 
+  get_gpu_live_metrics
+
+  # Fix #5: escape all user-controlled strings before JSON interpolation
+  local safe_gpu_name safe_driver safe_hostname safe_os safe_compute safe_cuda
+  safe_gpu_name=$(json_escape "$GPU_NAME")
+  safe_driver=$(json_escape "$DRIVER_VERSION")
+  safe_hostname=$(json_escape "$hostname")
+  safe_os=$(json_escape "$os_info")
+  safe_compute=$(json_escape "${COMPUTE_CAP:-unknown}")
+  safe_cuda=$(json_escape "${CUDA_VERSION:-unknown}")
+
+  # Fix #4: removed api.ipify.org call — backend records IP from TCP connection
   local body
   body=$(cat <<JSON
 {
   "api_key": "${key}",
-  "provider_ip": "${ip}",
-  "provider_hostname": "${hostname}",
+  "provider_hostname": "${safe_hostname}",
   "gpu_status": {
-    "gpu_name": "${GPU_NAME}",
+    "gpu_name": "${safe_gpu_name}",
     "gpu_vram_mib": ${GPU_VRAM_MIB},
-    "driver_version": "${DRIVER_VERSION}",
+    "driver_version": "${safe_driver}",
     "gpu_util_pct": ${GPU_UTIL_PCT:-0},
     "temp_c": ${TEMP_C:-0},
     "power_w": ${POWER_W:-0},
     "free_vram_mib": ${FREE_VRAM_MIB:-0},
     "daemon_version": "${DAEMON_VERSION}",
     "python_version": "n/a",
-    "os_info": "${os_info}",
+    "os_info": "${safe_os}",
     "gpu_count": ${GPU_COUNT},
-    "compute_capability": "${COMPUTE_CAP:-unknown}",
-    "cuda_version": "${CUDA_VERSION:-unknown}"
+    "compute_capability": "${safe_compute}",
+    "cuda_version": "${safe_cuda}"
   }
 }
 JSON
@@ -227,34 +245,56 @@ JSON
 # ── Heartbeat Loop (runs as background service) ────────────────────────────────
 run_heartbeat_loop() {
   local key="$1"
-  # Re-read GPU static info (in case script was invoked as service)
   get_gpu_info 2>/dev/null || true
-
   while true; do
     send_heartbeat "$key"
     sleep "$HEARTBEAT_INTERVAL"
   done
 }
 
+# ── Fix #1: Create dedicated system user for the service ──────────────────────
+ensure_service_user() {
+  if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+    useradd -r -s /bin/false -d "$STATE_DIR" -c "DCP Provider Agent" "$SERVICE_USER"
+    # Add to video/render groups so nvidia-smi works without root
+    usermod -aG video "$SERVICE_USER" 2>/dev/null || true
+    usermod -aG render "$SERVICE_USER" 2>/dev/null || true
+  fi
+}
+
 # ── Systemd Service Install ────────────────────────────────────────────────────
 install_systemd_service() {
   local key="$1"
-  local script_path
-  script_path="$(realpath "$0")"
 
-  # Save state
+  ensure_service_user
+
+  # Fix #7: restrict state directory permissions
   mkdir -p "$STATE_DIR"
+  chmod 750 "$STATE_DIR"
   printf 'PROVIDER_KEY=%s\n' "$key" > "$STATE_FILE"
   chmod 600 "$STATE_FILE"
+  chown -R "${SERVICE_USER}:${SERVICE_USER}" "$STATE_DIR"
 
-  # Copy script if running from a temp path (e.g. piped from curl)
+  # Fix #6: detect piped install and re-download instead of copying bash binary
   local installed_script="${STATE_DIR}/provider-activate.sh"
-  if [[ "$script_path" != "$installed_script" ]]; then
-    cp "$0" "$installed_script"
+  local script_path
+  if is_piped_install; then
+    info "Piped install detected — downloading script to ${installed_script} ..."
+    curl -sSL "$INSTALL_URL" -o "$installed_script"
     chmod +x "$installed_script"
+    chown "${SERVICE_USER}:${SERVICE_USER}" "$installed_script"
     script_path="$installed_script"
+  else
+    script_path="$(realpath "$0")"
+    if [[ "$script_path" != "$installed_script" ]]; then
+      cp "$script_path" "$installed_script"
+      chmod +x "$installed_script"
+      chown "${SERVICE_USER}:${SERVICE_USER}" "$installed_script"
+      script_path="$installed_script"
+    fi
   fi
 
+  # Fix #1: run as dedicated user, not root; add security hardening
   cat > "$SERVICE_FILE" <<UNIT
 [Unit]
 Description=DCP GPU Provider Agent
@@ -263,12 +303,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=${SERVICE_USER}
+Group=${SERVICE_USER}
 ExecStart=${script_path} --heartbeat-loop
 EnvironmentFile=${STATE_FILE}
 Restart=always
 RestartSec=10
 StandardOutput=append:${LOG_FILE}
 StandardError=append:${LOG_FILE}
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
@@ -280,17 +324,30 @@ UNIT
 }
 
 install_bg_loop() {
-  # Fallback: launch a background process with nohup
   local key="$1"
+
+  # Fix #7: restrict state directory permissions
   mkdir -p "$STATE_DIR"
+  chmod 750 "$STATE_DIR"
   printf 'PROVIDER_KEY=%s\n' "$key" > "$STATE_FILE"
   chmod 600 "$STATE_FILE"
 
-  # Kill any running loop for this key
+  # Fix #6: detect piped install
+  local script_to_run
+  if is_piped_install; then
+    local installed_script="${STATE_DIR}/provider-activate.sh"
+    info "Piped install detected — downloading script to ${installed_script} ..."
+    curl -sSL "$INSTALL_URL" -o "$installed_script"
+    chmod +x "$installed_script"
+    script_to_run="$installed_script"
+  else
+    script_to_run="$(realpath "$0")"
+  fi
+
   pkill -f "provider-activate.sh --heartbeat-loop" 2>/dev/null || true
   sleep 1
 
-  nohup bash "$0" --heartbeat-loop >>"$LOG_FILE" 2>&1 &
+  nohup bash "$script_to_run" --heartbeat-loop >>"$LOG_FILE" 2>&1 &
   disown
   ok "Provider agent started (background process, PID $!)"
   info "Logs: ${LOG_FILE}"
@@ -336,8 +393,9 @@ main_setup() {
 
   local key=""
   if [[ -f "$STATE_FILE" ]]; then
+    # Fix #3: use grep, not source
     local saved_key
-    saved_key=$(grep -oP 'PROVIDER_KEY=\K.+' "$STATE_FILE" 2>/dev/null || echo "")
+    saved_key=$(read_state_key)
     if [[ -n "$saved_key" ]]; then
       printf "Found saved key: ${BOLD}${saved_key:0:20}…${NC}\n"
       printf "Press ENTER to use it, or type a new key: "
@@ -355,6 +413,9 @@ main_setup() {
   if [[ -z "$key" ]]; then
     die "No key provided. Cannot continue."
   fi
+
+  # Fix #8: validate key format before any network call
+  validate_key_format "$key"
 
   # ── Step 3: Validate key with API ─────────────────────────────────────────
   banner "Step 3 of 4 — Connecting to DCP"
@@ -387,7 +448,7 @@ main_setup() {
   if command -v systemctl >/dev/null 2>&1 && [[ "$(id -u)" -eq 0 ]]; then
     info "Installing systemd service (${SERVICE_NAME}) ..."
     install_systemd_service "$key"
-    ok "Provider agent installed as system service"
+    ok "Provider agent installed as system service (runs as ${SERVICE_USER})"
     ok "Will restart automatically on reboot"
     info "Logs: journalctl -u ${SERVICE_NAME} -f"
   else
@@ -410,7 +471,7 @@ main_setup() {
   info "Your GPU will appear online within 1 minute at https://dcp.sa/dashboard"
   info "DCP will route jobs to your GPU automatically. Earnings accumulate in real time."
   printf "\n"
-  info "To check status:  curl ${API_BASE}/api/providers/me?key=${key:0:24}..."
+  info "To check status:  curl -H 'X-Provider-Key: <your-key>' ${API_BASE}/api/providers/me"
   if command -v systemctl >/dev/null 2>&1 && [[ -f "$SERVICE_FILE" ]]; then
     info "To view logs:     journalctl -u ${SERVICE_NAME} -f"
     info "To stop:          sudo systemctl stop ${SERVICE_NAME}"
@@ -424,25 +485,27 @@ main_setup() {
 # ── Entry point ────────────────────────────────────────────────────────────────
 case "${1:-}" in
   --heartbeat-loop)
-    # Internal: invoked by systemd / nohup. Load key from state file.
+    # Internal: invoked by systemd or nohup. Load key from state file.
+    # Fix #3: grep instead of source to prevent arbitrary code execution
     if [[ -z "${PROVIDER_KEY:-}" ]]; then
       if [[ -f "$STATE_FILE" ]]; then
-        # shellcheck disable=SC1090
-        source "$STATE_FILE"
+        PROVIDER_KEY=$(read_state_key)
       fi
     fi
     if [[ -z "${PROVIDER_KEY:-}" ]]; then
       die "PROVIDER_KEY not set. Run the script interactively first."
     fi
+    # Fix #8: validate key format even in daemon mode
+    validate_key_format "$PROVIDER_KEY"
     get_gpu_info 2>/dev/null || true
     run_heartbeat_loop "$PROVIDER_KEY"
     ;;
   --status)
-    # Quick status check
-    if [[ -f "$STATE_FILE" ]]; then
-      # shellcheck disable=SC1090
-      source "$STATE_FILE"
-      RESPONSE=$(api_get "/api/providers/me" "${PROVIDER_KEY:-}" 2>/dev/null || echo "{}")
+    # Fix #3: grep instead of source
+    PROVIDER_KEY=$(read_state_key 2>/dev/null || true)
+    if [[ -n "${PROVIDER_KEY:-}" ]]; then
+      validate_key_format "$PROVIDER_KEY"
+      RESPONSE=$(api_get "/api/providers/me" "$PROVIDER_KEY" 2>/dev/null || echo "{}")
       printf "Provider status: %s\n" "$RESPONSE"
     else
       printf "Not configured. Run the script to activate.\n"
