@@ -603,6 +603,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             resource_spec,
             container_restart_count,
             model_cache,
+            vllm_endpoint_url,   // DCP-922
         } = req.body;
         const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
         if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
@@ -653,6 +654,16 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             toFiniteNumber(modelCacheObj.pct_used, { min: 0, max: 100 }) ??
             (modelCacheTotalMb > 0 ? (modelCacheUsedMb / modelCacheTotalMb) * 100 : null);
         const modelCacheUsedPct = modelCacheUsedPctRaw != null ? Number(modelCacheUsedPctRaw.toFixed(2)) : 0;
+
+        // DCP-922: validate and sanitize provider-registered vLLM endpoint URL
+        let cleanVllmEndpointUrl = null;
+        if (vllm_endpoint_url) {
+            const rawUrl = normalizeString(vllm_endpoint_url, { maxLen: 512, trim: true });
+            if (rawUrl && /^https?:\/\/.+/.test(rawUrl)) {
+                cleanVllmEndpointUrl = rawUrl.replace(/\/+$/, '');
+            }
+        }
+
         const now = new Date().toISOString();
 
         // Verify API key (sync — better-sqlite3)
@@ -708,7 +719,8 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
           model_cache_disk_total_mb = ?,
           model_cache_disk_used_pct = ?,
           gpu_profile_source = 'daemon',
-          gpu_profile_updated_at = ?
+          gpu_profile_updated_at = ?,
+          vllm_endpoint_url = COALESCE(?, vllm_endpoint_url)
           WHERE id = ?`,
           JSON.stringify(normalizedGpuStatus || {}), providerIp || null, providerHostname || null, now, providerRuntimeStatus,
           peerId || p.p2p_peer_id,
@@ -724,6 +736,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
           modelCacheTotalMb,
           modelCacheUsedPct,
           now,
+          cleanVllmEndpointUrl,
           p.id
         );
 
