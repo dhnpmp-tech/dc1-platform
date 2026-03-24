@@ -42,7 +42,17 @@ const jobSubmitSchema = z.object({
   task_spec: z.record(z.string(), z.unknown()).optional(),
 
   // Optional metadata
-  model: z.string().max(256).optional(),
+  // model: ML model identifier (e.g. "mistralai/Mistral-7B", "ALLaM-7B", "Qwen2.5:7b").
+  // Restricted to safe characters to prevent injection into shell/docker commands.
+  model: z
+    .string()
+    .min(1)
+    .max(256)
+    .regex(
+      /^[\w.\-/:@]+$/,
+      'model must contain only alphanumeric characters, dots, hyphens, underscores, slashes, colons, and @ symbols'
+    )
+    .optional(),
   priority: z.string().max(32).optional(),
   pricing_class: z.string().max(64).optional(),
   prewarm_requested: z.boolean().optional(),
