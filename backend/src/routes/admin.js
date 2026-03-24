@@ -6,6 +6,7 @@ const { spawnSync } = require('child_process');
 const router = express.Router();
 const db = require('../db');
 const { requireAdminAuth, getAdminTokenFromReq } = require('../middleware/auth');
+const { requireAdminRbac } = require('../middleware/adminAuth');
 const {
   normalizeImageRef,
   validateAndNormalizeImageRef,
@@ -46,8 +47,10 @@ const TRIVY_TIMEOUT_MS = Number.parseInt(process.env.DCP_TRIVY_TIMEOUT_MS || '18
 const DOCKER_TIMEOUT_MS = Number.parseInt(process.env.DCP_DOCKER_TIMEOUT_MS || '30000', 10);
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
-// Requires DC1_ADMIN_TOKEN env var.
-router.use(requireAdminAuth);
+// DCP-768: requireAdminRbac = token auth + RBAC role check + audit log.
+// Internally delegates to requireAdminAuth for static-token verification,
+// additionally sets req.adminUser and writes to admin_audit_log on every request.
+router.use(requireAdminRbac);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

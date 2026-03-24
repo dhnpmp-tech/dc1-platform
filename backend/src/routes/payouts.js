@@ -20,6 +20,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { requireAdminAuth, getBearerToken } = require('../middleware/auth');
+const { requireAdminRbac } = require('../middleware/adminAuth');
 const { verifyProviderKey } = require('../services/apiKeyService');
 const {
   requestPayout,
@@ -132,7 +133,8 @@ router.get('/providers/:id/earnings', (req, res) => {
 // Admin marks a payout as paid (default) or rejects it.
 // Body: { action?: 'paid'|'reject', payment_ref?: string, reason?: string }
 //
-router.patch('/admin/payouts/:id', requireAdminAuth, (req, res) => {
+// DCP-768: requireAdminRbac = token auth + RBAC role check + audit log
+router.patch('/admin/payouts/:id', requireAdminRbac, (req, res) => {
   try {
     const { action = 'paid', payment_ref, reason } = req.body;
 
