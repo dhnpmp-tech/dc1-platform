@@ -409,6 +409,56 @@ describe("JobAttestation", function () {
     });
   });
 
+  // ── verifyJob ────────────────────────────────────────────────────────────────
+
+  describe("verifyJob", function () {
+    beforeEach(async function () {
+      await contract.connect(renter).depositForJob(JOB_ID, provider.address, AMOUNT);
+    });
+
+    it("emits JobVerified with correct args when owner calls after deposit", async function () {
+      const tokenCount = 1_234n;
+
+      await expect(contract.connect(owner).verifyJob(JOB_ID, provider.address, tokenCount))
+        .to.emit(contract, "JobVerified")
+        .withArgs(JOB_ID, provider.address, tokenCount, (v) => v > 0n);
+    });
+
+    it("emits JobVerified on an attested job", async function () {
+      const att = await makeAttestation();
+      const sig = await signAttestation(att, provider);
+      await contract.connect(provider).attestJob(att, sig);
+
+      await expect(contract.connect(owner).verifyJob(JOB_ID, provider.address, 500n))
+        .to.emit(contract, "JobVerified");
+    });
+
+    it("reverts when job does not exist", async function () {
+      const nonExistentJobId = ethers.keccak256(ethers.toUtf8Bytes("nonexistent"));
+      await expect(
+        contract.connect(owner).verifyJob(nonExistentJobId, provider.address, 100n)
+      ).to.be.revertedWith("Job does not exist");
+    });
+
+    it("reverts when provider does not match job record", async function () {
+      await expect(
+        contract.connect(owner).verifyJob(JOB_ID, stranger.address, 100n)
+      ).to.be.revertedWith("Provider mismatch");
+    });
+
+    it("reverts when tokenCount is zero", async function () {
+      await expect(
+        contract.connect(owner).verifyJob(JOB_ID, provider.address, 0)
+      ).to.be.revertedWith("Token count must be > 0");
+    });
+
+    it("reverts when non-owner calls verifyJob", async function () {
+      await expect(
+        contract.connect(stranger).verifyJob(JOB_ID, provider.address, 100n)
+      ).to.be.revertedWithCustomError(contract, "OwnableUnauthorizedAccount");
+    });
+  });
+
   // ── challengeDeadline ────────────────────────────────────────────────────────
 
   describe("challengeDeadline", function () {
