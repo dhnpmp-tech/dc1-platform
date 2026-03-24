@@ -24,6 +24,7 @@ const {
   normalizePricingClass,
   calculateControlPlaneSignals,
 } = require('../services/controlPlane');
+const jobEventEmitter = require('../utils/jobEventEmitter');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -2621,6 +2622,109 @@ router.get('/history', (req, res) => {
   }
 });
 
+// GET /api/jobs/:job_id/stream — Server-Sent Events for real-time job status (DCP-742)
+//
+// Emits: job_queued | provider_assigned | job_starting | job_running | job_completed | job_failed
+// Payload: { event, status, provider_id, elapsed_sec, tokens_used, cost_usd }
+// Stream closes automatically when the job reaches a terminal state.
+// Auth: same as GET /api/jobs/:job_id (renter key, provider key, or admin)
+router.get('/:job_id/stream', (req, res) => {
+  let closed = false;
+  let pollTimer = null;
+  let keepaliveTimer = null;
+  let unsubscribe = null;
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (pollTimer) clearInterval(pollTimer);
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
+    if (unsubscribe) unsubscribe();
+    try { res.end(); } catch (_) {}
+  };
+
+  const sendSseEvent = (eventName, data) => {
+    if (closed) return;
+    try {
+      res.write(`event: ${eventName}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {
+      cleanup();
+    }
+  };
+
+  try {
+    const job = db.get('SELECT * FROM jobs WHERE id = ? OR job_id = ?', req.params.job_id, req.params.job_id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!canReadJob(req, job)) return res.status(403).json({ error: 'Forbidden' });
+
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (res.flushHeaders) res.flushHeaders();
+
+    // Emit current state immediately so client has a baseline
+    const initialEvent = jobEventEmitter.statusToSseEvent(job.status) || 'job_queued';
+    sendSseEvent(initialEvent, jobEventEmitter.buildPayload(job, initialEvent));
+
+    // If job is already terminal, close immediately
+    if (TERMINAL_JOB_STATUSES.has(String(job.status || '').toLowerCase())) {
+      sendSseEvent('end', { status: job.status, ts: Date.now() });
+      cleanup();
+      return;
+    }
+
+    // Subscribe to real-time events from jobEventEmitter
+    unsubscribe = jobEventEmitter.subscribe(job.job_id, (eventName, data) => {
+      sendSseEvent(eventName, data);
+      if (jobEventEmitter.TERMINAL_SSE_EVENTS.has(eventName)) {
+        sendSseEvent('end', { status: data.status, ts: Date.now() });
+        cleanup();
+      }
+    });
+
+    // Polling fallback — catches any events that arrive before a client connects
+    // or that are missed due to timing. Polls every 2 seconds.
+    let lastKnownStatus = job.status;
+    pollTimer = setInterval(() => {
+      if (closed) return;
+      try {
+        const latest = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
+        if (!latest) { cleanup(); return; }
+
+        if (latest.status !== lastKnownStatus) {
+          lastKnownStatus = latest.status;
+          const sseEvent = jobEventEmitter.statusToSseEvent(latest.status);
+          if (sseEvent) {
+            sendSseEvent(sseEvent, jobEventEmitter.buildPayload(latest, sseEvent));
+          }
+          if (TERMINAL_JOB_STATUSES.has(String(latest.status || '').toLowerCase())) {
+            sendSseEvent('end', { status: latest.status, ts: Date.now() });
+            cleanup();
+          }
+        }
+      } catch (pollErr) {
+        console.error('Job SSE poll error:', pollErr);
+        cleanup();
+      }
+    }, 2000);
+
+    // Keep-alive comment every 20 seconds to prevent proxy timeouts
+    keepaliveTimer = setInterval(() => {
+      if (!closed) res.write(': keep-alive\n\n');
+    }, 20000);
+
+    req.on('close', cleanup);
+    req.on('aborted', cleanup);
+  } catch (error) {
+    console.error('Job SSE stream error:', error);
+    if (!res.headersSent) return res.status(500).json({ error: 'Failed to stream job status' });
+    cleanup();
+  }
+});
+
 // GET /api/jobs/:job_id
 router.get('/:job_id', (req, res) => {
   try {
@@ -2639,6 +2743,13 @@ router.get('/:job_id', (req, res) => {
     }
 
     applyRetryMetadata(job);
+
+    // Polling-friendly fields (mirrors SSE payload)
+    const startedAt = job.started_at ? new Date(job.started_at) : null;
+    job.elapsed_sec = startedAt ? Math.round((Date.now() - startedAt.getTime()) / 1000) : null;
+    job.tokens_used = job.tokens_used ?? null;
+    job.cost_usd = jobEventEmitter.halalaToCostUsd(job.actual_cost_halala ?? job.cost_halala ?? null);
+
     res.json({ job });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch job' });
