@@ -352,6 +352,10 @@ app.use('/api/sync', syncRouter);
 const rentersRouter = require('./routes/renters');
 app.use('/api/renters', rentersRouter);
 
+const { renterRouter: renterTxRouter, providerRouter: providerTxRouter } = require('./routes/transactions');
+app.use('/api/renters', renterTxRouter);
+app.use('/api/providers', providerTxRouter);
+
 const supportRouter = require('./routes/support');
 app.use('/api/support', supportRouter);
 
