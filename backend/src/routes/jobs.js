@@ -2995,6 +2995,12 @@ router.post('/:job_id/fail', (req, res) => {
       },
     });
 
+    // Update provider reputation score after job failure (DCP-867)
+    if (job.provider_id) {
+      ProviderReputation.updateReputation(job.provider_id)
+        .catch(err => console.error('[reputation] Failed to update after job failure:', err.message));
+    }
+
     // Release escrow back to renter
     runStatement(
       `UPDATE escrow_holds SET status = 'released_renter', resolved_at = ?
