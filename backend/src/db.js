@@ -1155,6 +1155,28 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_payment_id ON payments(payment_
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_moyasar_id ON payments(moyasar_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status, created_at DESC)`);
 
+// ─── RENTER CREDIT LEDGER TABLE — DCP-755 ───
+// Immutable double-entry audit trail for all renter balance movements.
+// Every credit (top-up, admin grant, refund) and debit (job start) is recorded here.
+// The authoritative balance is renters.balance_halala; this table is the audit trail.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS renter_credit_ledger (
+    id           TEXT PRIMARY KEY,
+    renter_id    INTEGER NOT NULL,
+    amount_halala INTEGER NOT NULL CHECK (amount_halala > 0),
+    direction    TEXT NOT NULL CHECK (direction IN ('credit', 'debit')),
+    source       TEXT NOT NULL,
+    job_id       TEXT,
+    payment_ref  TEXT,
+    note         TEXT,
+    created_at   TEXT NOT NULL,
+    FOREIGN KEY (renter_id) REFERENCES renters(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_credit_ledger_renter_time ON renter_credit_ledger(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_credit_ledger_job_id      ON renter_credit_ledger(job_id) WHERE job_id IS NOT NULL`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_credit_ledger_source      ON renter_credit_ledger(source, created_at DESC)`);
+
 // ─── WITHDRAWALS TABLE ───
 db.exec(`
   CREATE TABLE IF NOT EXISTS withdrawals (

@@ -1513,4 +1513,96 @@ router.get('/me/analytics', (req, res) => {
   }
 });
 
+// ─── CREDIT BALANCE & LEDGER — DCP-755 ──────────────────────────────────────
+// Admin-facing endpoints that operate on a renter by numeric :id.
+// All require DC1_ADMIN_TOKEN (x-admin-token header).
+
+const { requireAdminAuth } = require('../middleware/auth');
+const { getRenterBalance, addCredits, getLedger } = require('../services/creditService');
+
+/**
+ * GET /api/renters/:id/balance
+ * Current credit balance for a renter (admin only).
+ */
+router.get('/:id/balance', requireAdminAuth, (req, res) => {
+  const renterId = parseInt(req.params.id, 10);
+  if (!renterId || renterId <= 0) return res.status(400).json({ error: 'Invalid renter id' });
+
+  try {
+    const result = getRenterBalance(db, renterId);
+    if (!result) return res.status(404).json({ error: 'Renter not found' });
+    res.json(result);
+  } catch (err) {
+    console.error('GET /:id/balance error:', err);
+    res.status(500).json({ error: 'Failed to retrieve balance' });
+  }
+});
+
+/**
+ * POST /api/renters/:id/topup
+ * Record a manual credit top-up for a renter (admin only).
+ *
+ * Body: { amount_halala?: number, amount_sar?: number, payment_ref?: string, note?: string }
+ */
+router.post('/:id/topup', requireAdminAuth, (req, res) => {
+  const renterId = parseInt(req.params.id, 10);
+  if (!renterId || renterId <= 0) return res.status(400).json({ error: 'Invalid renter id' });
+
+  const renter = db.get('SELECT id, status FROM renters WHERE id = ?', renterId);
+  if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+  const { amount_halala, amount_sar, payment_ref, note } = req.body;
+
+  let amountHalala = null;
+  if (Number.isFinite(amount_halala) && amount_halala > 0) {
+    amountHalala = Math.round(amount_halala);
+  } else if (Number.isFinite(amount_sar) && amount_sar > 0) {
+    amountHalala = Math.round(amount_sar * 100);
+  }
+
+  if (!amountHalala || amountHalala <= 0) {
+    return res.status(400).json({ error: 'Provide amount_halala (integer) or amount_sar (float), must be > 0' });
+  }
+  if (amountHalala > 1_000_000) {
+    return res.status(400).json({ error: 'Max top-up is 10,000 SAR (1,000,000 halala) per transaction' });
+  }
+
+  try {
+    const result = addCredits(db, renterId, amountHalala, 'topup', {
+      paymentRef: payment_ref || null,
+      note: note || null,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('POST /:id/topup error:', err);
+    res.status(500).json({ error: 'Top-up failed' });
+  }
+});
+
+/**
+ * GET /api/renters/:id/ledger
+ * Paginated credit/debit transaction history (admin only).
+ *
+ * Query params: limit (max 200, default 50), offset (default 0), direction (credit|debit)
+ */
+router.get('/:id/ledger', requireAdminAuth, (req, res) => {
+  const renterId = parseInt(req.params.id, 10);
+  if (!renterId || renterId <= 0) return res.status(400).json({ error: 'Invalid renter id' });
+
+  const renter = db.get('SELECT id FROM renters WHERE id = ?', renterId);
+  if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+  const limit = parseInt(req.query.limit, 10) || 50;
+  const offset = parseInt(req.query.offset, 10) || 0;
+  const { direction } = req.query;
+
+  try {
+    const ledger = getLedger(db, renterId, { limit, offset, direction });
+    res.json(ledger);
+  } catch (err) {
+    console.error('GET /:id/ledger error:', err);
+    res.status(500).json({ error: 'Failed to retrieve ledger' });
+  }
+});
+
 module.exports = router;
