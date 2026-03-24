@@ -1507,6 +1507,29 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_job_templates_renter ON job_templates(re
 // Index for renter job history queries (DCP-695)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_renter_id ON jobs(renter_id, created_at DESC)`);
 
+// ─── PAYOUT REQUESTS TABLE ─── (DCP-763)
+// Off-chain payout request queue. Providers request USD withdrawals from their
+// claimable_earnings_halala balance. DCP admin processes via bank transfer.
+// Status flow: pending → processing → paid
+//              pending/processing → rejected (funds returned to claimable balance)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payout_requests (
+    id            TEXT    PRIMARY KEY,
+    provider_id   INTEGER NOT NULL,
+    amount_usd    REAL    NOT NULL,
+    amount_sar    REAL    NOT NULL,
+    amount_halala INTEGER NOT NULL,
+    status        TEXT    NOT NULL DEFAULT 'pending'
+                  CHECK(status IN ('pending','processing','paid','rejected')),
+    requested_at  TEXT    NOT NULL,
+    processed_at  TEXT,
+    payment_ref   TEXT,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payout_requests_provider ON payout_requests(provider_id, requested_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payout_requests_status ON payout_requests(status, requested_at DESC)`);
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 function flatParams(params) {

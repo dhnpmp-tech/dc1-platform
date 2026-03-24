@@ -231,18 +231,29 @@ function inferPrefetchStatus(portfolio, availabilityStatus) {
   return 'unavailable';
 }
 
+// Replaced hardcoded COMPETITOR_PRICING_BY_VRAM_TIER with GPU_RATE_TABLE lookup (DCP-762).
 function buildCompetitorPricing(minVramGb, dcpSarPerHour) {
-  const tier = COMPETITOR_PRICING_BY_VRAM_TIER.find((t) => minVramGb >= t.minVram)
-    || COMPETITOR_PRICING_BY_VRAM_TIER[COMPETITOR_PRICING_BY_VRAM_TIER.length - 1];
-  const vastPrice = tier.vast_ai;
-  const savingsPct = vastPrice > 0
-    ? toFixedNumber(((vastPrice - dcpSarPerHour) / vastPrice) * 100, 0)
+  // Find GPU_RATE_TABLE entry with the closest min_vram_gb >= minVramGb
+  const entry = GPU_RATE_TABLE
+    .filter(e => e.models[0] !== 'default' && e.min_vram_gb >= minVramGb)
+    .sort((a, b) => a.min_vram_gb - b.min_vram_gb)[0]
+    || GPU_RATE_TABLE[GPU_RATE_TABLE.length - 1];
+
+  const vastUsd = entry.competitor_prices.vast_ai;
+  const vastSar = toFixedNumber(vastUsd * SAR_USD_RATE, 2);
+  const savingsPct = vastSar > 0
+    ? toFixedNumber(((vastSar - dcpSarPerHour) / vastSar) * 100, 0)
     : 0;
+
   return {
     competitor_prices: {
-      vast_ai: vastPrice,
-      runpod: tier.runpod,
-      aws: tier.aws,
+      vast_ai: vastSar,
+      runpod: toFixedNumber(entry.competitor_prices.runpod * SAR_USD_RATE, 2),
+      aws: toFixedNumber(entry.competitor_prices.aws * SAR_USD_RATE, 2),
+      // USD values for display
+      vast_ai_usd: vastUsd,
+      runpod_usd: entry.competitor_prices.runpod,
+      aws_usd: entry.competitor_prices.aws,
     },
     savings_pct: Math.max(0, savingsPct),
   };

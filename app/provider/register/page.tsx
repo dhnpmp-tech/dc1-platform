@@ -19,9 +19,21 @@ interface RegistrationFormData {
   fullName: string
   email: string
   gpuModel: string
+  vram: string
+  locationCity: string
+  locationCountry: string
   operatingSystem: string
   phone: string
   pdplConsent: boolean
+}
+
+const GPU_MODEL_VRAM: Record<string, string> = {
+  'RTX 4090': '24',
+  'RTX 4080': '16',
+  'RTX 3090': '24',
+  'H100': '80',
+  'H200': '141',
+  'Other': '',
 }
 
 interface StatusStep {
@@ -38,6 +50,9 @@ export default function ProviderRegisterPage() {
     fullName: '',
     email: '',
     gpuModel: '',
+    vram: '',
+    locationCity: '',
+    locationCountry: '',
     operatingSystem: '',
     phone: '',
     pdplConsent: false,
@@ -170,6 +185,9 @@ export default function ProviderRegisterPage() {
           name: formData.fullName,
           email: formData.email,
           gpu_model: formData.gpuModel,
+          vram_gb: formData.vram ? parseFloat(formData.vram) : undefined,
+          location_city: formData.locationCity || undefined,
+          location_country: formData.locationCountry || undefined,
           os: formData.operatingSystem,
           phone: formData.phone || undefined,
         }),
@@ -311,10 +329,13 @@ export default function ProviderRegisterPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value }
+      if (name === 'gpuModel' && value in GPU_MODEL_VRAM) {
+        next.vram = GPU_MODEL_VRAM[value]
+      }
+      return next
+    })
   }
 
   if (showSuccess && apiKey) {
@@ -1126,13 +1147,78 @@ export default function ProviderRegisterPage() {
                   required
                 >
                   <option value="">{t('register.provider.gpu_model_placeholder')}</option>
-                  <option value="RTX 4090">NVIDIA RTX 4090</option>
-                  <option value="RTX 3090">NVIDIA RTX 3090</option>
-                  <option value="RTX 3080">NVIDIA RTX 3080</option>
-                  <option value="A100">NVIDIA A100</option>
-                  <option value="H100">NVIDIA H100</option>
+                  <option value="RTX 4090">NVIDIA RTX 4090 (24 GB)</option>
+                  <option value="RTX 4080">NVIDIA RTX 4080 (16 GB)</option>
+                  <option value="RTX 3090">NVIDIA RTX 3090 (24 GB)</option>
+                  <option value="H100">NVIDIA H100 (80 GB)</option>
+                  <option value="H200">NVIDIA H200 (141 GB)</option>
                   <option value="Other">Other</option>
                 </select>
+              </div>
+
+              {/* VRAM (auto-filled from GPU model) */}
+              <div>
+                <label htmlFor="vram" className="label">
+                  VRAM (GB)
+                </label>
+                <input
+                  id="vram"
+                  type="number"
+                  name="vram"
+                  value={formData.vram}
+                  onChange={handleInputChange}
+                  placeholder="Auto-filled from GPU model"
+                  className="input"
+                  min="1"
+                  max="1000"
+                />
+                {formData.gpuModel && formData.vram && (
+                  <p className="mt-1 text-xs text-dc1-text-muted">
+                    Auto-detected from {formData.gpuModel}
+                  </p>
+                )}
+              </div>
+
+              {/* Location */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="locationCity" className="label">
+                    City
+                  </label>
+                  <input
+                    id="locationCity"
+                    type="text"
+                    name="locationCity"
+                    value={formData.locationCity}
+                    onChange={handleInputChange}
+                    placeholder="Riyadh"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="locationCountry" className="label">
+                    Country
+                  </label>
+                  <select
+                    id="locationCountry"
+                    name="locationCountry"
+                    value={formData.locationCountry}
+                    onChange={handleInputChange}
+                    className="input"
+                  >
+                    <option value="">Select country</option>
+                    <option value="SA">Saudi Arabia</option>
+                    <option value="AE">United Arab Emirates</option>
+                    <option value="US">United States</option>
+                    <option value="GB">United Kingdom</option>
+                    <option value="DE">Germany</option>
+                    <option value="FR">France</option>
+                    <option value="NL">Netherlands</option>
+                    <option value="SG">Singapore</option>
+                    <option value="JP">Japan</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
               </div>
 
               {/* Operating System */}

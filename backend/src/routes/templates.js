@@ -6,6 +6,8 @@ const router = express.Router();
 const db = require('../db');
 const { publicEndpointLimiter } = require('../middleware/rateLimiter');
 const { getApiKeyFromReq } = require('../middleware/auth');
+const pricingService = require('../services/pricingService');
+const { GPU_RATE_TABLE } = require('../config/pricing');
 
 // Templates are stored as JSON files in /docker-templates at the repo root
 const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
@@ -68,8 +70,10 @@ router.get('/', publicEndpointLimiter, (req, res) => {
     }
   }
 
-  // Strip approved_images from list response (security -- returned only on whitelist endpoint)
-  const safe = filtered.map(({ approved_images: _ai, ...t }) => t);
+  // Strip approved_images from list response; attach floor pricing per template (DCP-762)
+  const safe = filtered.map(({ approved_images: _ai, ...t }) => ({
+    ...t, pricing: buildTemplatePricing(t),
+  }));
   res.json({ templates: safe, count: safe.length });
 });
 
@@ -106,28 +110,32 @@ router.get('/:id', publicEndpointLimiter, (req, res) => {
   if (!template) return res.status(404).json({ error: 'Template not found' });
   // Strip approved_images from direct response too -- daemon uses /whitelist
   const { approved_images: _ai, ...safe } = template;
-  res.json(safe);
+  res.json({ ...safe, pricing: buildTemplatePricing(safe) });
 });
 
-// Pricing constants (aligned with jobs.js COST_RATES -- DCP-668)
-// Halala per minute by job_type. 100 halala = 1 SAR.
-const DEPLOY_COST_RATES = {
-  'llm-inference':    9,
-  'llm_inference':    9,
-  'training':         7,
-  'rendering':        10,
-  'image_generation': 10,
-  'vllm_serve':       9,
-  'rag-pipeline':     15,
-  'custom_container': 7,
-  'default':          6,
-};
-const DEPLOY_PRICING_MULTIPLIERS = { priority: 1.20, standard: 1.00, economy: 0.90 };
+// Pricing sourced from config/pricing.js via pricingService (DCP-762).
+function calcDeployCostHalala(jobType, durationMinutes, pricingClass, gpuModel) {
+  return pricingService.calculateCostHalala(gpuModel || null, durationMinutes, pricingClass, jobType);
+}
 
-function calcDeployCostHalala(jobType, durationMinutes, pricingClass) {
-  const base = DEPLOY_COST_RATES[jobType] || DEPLOY_COST_RATES['default'];
-  const mult = DEPLOY_PRICING_MULTIPLIERS[pricingClass] || 1.0;
-  return Math.ceil(base * durationMinutes * mult);
+// Build pricing display block for a template using its min_vram_gb (DCP-762).
+function buildTemplatePricing(template) {
+  const minVram = template.min_vram_gb || 0;
+  // Find best-fit GPU tier: smallest entry whose min_vram_gb >= template min
+  const entry = GPU_RATE_TABLE
+    .filter(e => e.models[0] !== 'default' && e.min_vram_gb >= minVram)
+    .sort((a, b) => a.min_vram_gb - b.min_vram_gb)[0]
+    || GPU_RATE_TABLE[GPU_RATE_TABLE.length - 1];
+  const gpuKey = entry.models[0] === 'default' ? null : entry.models[0];
+  const rate = pricingService.getRate(gpuKey);
+  return {
+    price_per_hour_usd: rate.rate_per_hour_usd,
+    price_per_hour_sar: rate.rate_per_hour_sar,
+    gpu_tier: rate.tier,
+    gpu_display_name: rate.display_name,
+    competitor_prices: rate.competitor_prices,
+    savings_pct: rate.savings_pct,
+  };
 }
 
 // Find best idle provider matching minVramGb. Returns provider row or null.
@@ -185,13 +193,15 @@ router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
     if (!Number.isFinite(duration_minutes) || duration_minutes <= 0 || duration_minutes > 1440) {
       return res.status(400).json({ error: 'duration_minutes must be between 1 and 1440' });
     }
-    const pricing_class = DEPLOY_PRICING_MULTIPLIERS[req.body.pricing_class] !== undefined
+    const { PRICING_CLASS_MULTIPLIERS } = require('../config/pricing');
+    const pricing_class = PRICING_CLASS_MULTIPLIERS[req.body.pricing_class] !== undefined
       ? req.body.pricing_class
       : 'standard';
     const extraParams = (req.body.params && typeof req.body.params === 'object') ? req.body.params : {};
 
-    // 4. Calculate estimated cost
-    const cost_halala = calcDeployCostHalala(template.job_type, duration_minutes, pricing_class);
+    // 4. Calculate estimated cost using template's min_vram_gb for tier selection (DCP-762)
+    // gpuModel resolved after provider lookup in step 6; recalculated then for snapshot accuracy.
+    const cost_halala = calcDeployCostHalala(template.job_type, duration_minutes, pricing_class, null);
 
     // 5. Balance checks
     if (renter.balance_halala <= 0) {
@@ -237,22 +247,31 @@ router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
     const timeoutSec = 1800;
     const timeoutAt = new Date(Date.now() + timeoutSec * 1000).toISOString();
 
+    // Build rate snapshot using provider's actual gpu_model (DCP-762)
+    const gpuRateSnapshot = pricingService.estimateCost(
+      provider.gpu_model || null, duration_minutes * 60, pricing_class, template.job_type
+    ).gpu_rate_snapshot;
+    const gpuRateSnapshotJson = gpuRateSnapshot ? JSON.stringify(gpuRateSnapshot) : null;
+
     const JOB_COLS = new Set((db.all("PRAGMA table_info('jobs')") || []).map(r => r.name));
     const hasTemplateId = JOB_COLS.has('template_id');
+    const hasGpuRateSnapshot = JOB_COLS.has('gpu_rate_snapshot');
 
     const insertSql = hasTemplateId
       ? `INSERT INTO jobs
            (job_id, provider_id, renter_id, job_type, status, submitted_at,
             duration_minutes, cost_halala, gpu_requirements, container_spec, task_spec,
             max_duration_seconds, timeout_at, created_at, priority, pricing_class,
-            prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+            prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id
+            ${hasGpuRateSnapshot ? ', gpu_rate_snapshot' : ''})
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?${hasGpuRateSnapshot ? ',?' : ''})`
       : `INSERT INTO jobs
            (job_id, provider_id, renter_id, job_type, status, submitted_at,
             duration_minutes, cost_halala, gpu_requirements, container_spec, task_spec,
             max_duration_seconds, timeout_at, created_at, priority, pricing_class,
-            prewarm_requested, workspace_volume_name, checkpoint_enabled)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+            prewarm_requested, workspace_volume_name, checkpoint_enabled
+            ${hasGpuRateSnapshot ? ', gpu_rate_snapshot' : ''})
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?${hasGpuRateSnapshot ? ',?' : ''})`;
 
     const insertVals = [
       job_id, provider.id, renter.id, template.job_type, 'pending', now,
@@ -260,6 +279,7 @@ router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
       timeoutSec, timeoutAt, now, 2, pricing_class,
       0, `dcp-job-${job_id}`, 0,
       ...(hasTemplateId ? [template.id] : []),
+      ...(hasGpuRateSnapshot ? [gpuRateSnapshotJson] : []),
     ];
 
     const doInsert = () => {
