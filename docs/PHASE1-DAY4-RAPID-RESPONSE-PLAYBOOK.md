@@ -1,362 +1,394 @@
 # Phase 1 Day 4 — Rapid Response Playbook
-## Failure Decision Tree & Emergency Procedures
 
-**Created:** 2026-03-24
-**Execution Date:** 2026-03-26 08:00-12:00 UTC
-**Purpose:** Immediate troubleshooting and escalation for failures during Day 4 pre-test validation
-
----
-
-## Quick Reference — 8 Failure Categories
-
-When a validation section FAILS, immediately:
-1. **Identify failure category** (below)
-2. **Execute troubleshooting commands** (provided)
-3. **Document results** in Day 4 report
-4. **Escalate** if unresolved within 5 minutes
+**Date:** 2026-03-24 (for execution 2026-03-26 08:00-12:00 UTC)
+**Lead:** QA Engineer (891b2856-c2eb-4162-9ce4-9f903abd315f)
+**Purpose:** Decision tree for 8 failure categories with immediate troubleshooting and escalation
 
 ---
 
-## 1. INFRASTRUCTURE FAILURES (API/VPS Health)
+## Decision Tree: Failure Categories
 
-**Symptoms:** HTTP timeouts, 502 errors, connection refused on api.dcp.sa
+### Category 1: VPS/Infrastructure Failure (Section 1)
 
-### Troubleshooting Commands
+**Symptoms:**
+- SSH timeout to 76.13.179.86
+- "Connection refused" on port 443
+- PM2 services offline
+
+**Immediate Actions (0-2 min):**
 ```bash
-# Check API health
-curl -v https://api.dcp.sa/api/health
-# Expected: HTTP 200, response time <500ms
-
-# Check backend service status
-ssh node@76.13.179.86 "pm2 list"
-# Expected: dc1-provider-onboarding status "online"
-
-# Check VPS connectivity
+# Check VPS status from your local machine
 ping -c 3 76.13.179.86
-# Expected: all packets received, <100ms latency
+# If unreachable: Network issue, escalate immediately
 
-# Check Docker status on VPS
-ssh node@76.13.179.86 "docker ps | grep llm-worker"
-# Expected: container running (if deployed)
+# Try SSH with verbose output
+ssh -v root@76.13.179.86 "pm2 status" 2>&1 | head -50
 ```
 
-### If Infrastructure Fails
-**Decision:** CRITICAL BLOCKER — Cannot proceed to next section
-- [ ] Post to DCP-641: "INFRASTRUCTURE FAILURE — API unreachable"
-- [ ] Tag: @CEO @Backend-Architect
-- [ ] Action: Restart backend service or investigate VPS issues
-- [ ] Timeout: 10 minutes max, then escalate to NO-GO decision
+**If SSH works but PM2 down:**
+```bash
+# Restart services via SSH
+ssh root@76.13.179.86 "cd /root/dc1-platform && pm2 restart all"
+# Wait 30 seconds and verify
+ssh root@76.13.179.86 "pm2 status"
+```
+
+**Escalation (if fails 2x):**
+- Post to DCP-773: "🔴 **BLOCKER: VPS Infrastructure Failure**"
+- Include: SSH error output, PM2 status, timestamp
+- Tag: @CEO
+- Status: **NO-GO**
+- Decision: Stop testing, investigate VPS access
 
 ---
 
-## 2. DATABASE FAILURES (Query Errors, Connection Timeouts)
+### Category 2: Database Connection Failure (Section 2)
 
-**Symptoms:** "connection timeout", "database locked", migration failures
+**Symptoms:**
+- "Database locked" or "ECONNREFUSED"
+- GPU pricing table empty
+- Provider/renter tables missing
 
-### Troubleshooting Commands
+**Immediate Actions (0-3 min):**
 ```bash
-# Check database connectivity
-psql postgresql://user:pass@localhost:5432/dc1_platform -c "SELECT version();"
-# Expected: PostgreSQL version output
+# Check database file exists
+ssh root@76.13.179.86 "ls -lh /root/dc1-platform/db/dc1.db"
 
-# Check active connections
-psql -c "SELECT count(*) FROM pg_stat_activity;"
-# Expected: <50 connections
+# Check database integrity
+ssh root@76.13.179.86 "sqlite3 /root/dc1-platform/db/dc1.db 'SELECT COUNT(*) FROM gpu_pricing;'"
+# Expected output: Number >0
 
-# Check for locks
-psql -c "SELECT * FROM pg_locks WHERE NOT granted;"
-# Expected: empty result set (no blocking locks)
-
-# Run migration validation
-cd /home/node/dc1-platform
-npm run db:validate
-# Expected: all migrations applied successfully
+# If empty, check if schema exists
+ssh root@76.13.179.86 "sqlite3 /root/dc1-platform/db/dc1.db '.schema' | grep gpu_pricing"
 ```
 
-### If Database Fails
-**Decision:** CRITICAL BLOCKER — Cannot validate data integrity
-- [ ] Post to DCP-641: "DATABASE FAILURE — connection issues detected"
-- [ ] Tag: @Backend-Architect @DevOps
-- [ ] Action: Check logs, restart PostgreSQL, rollback migrations if needed
-- [ ] Timeout: 10 minutes, then NO-GO
+**If schema missing:**
+```bash
+# Restore from backup or reinitialize
+ssh root@76.13.179.86 << 'EOF'
+cd /root/dc1-platform
+npm run db:migrate
+npm run db:seed:gpu-pricing
+EOF
+```
+
+**Escalation (if fails):**
+- Post to DCP-773: "🔴 **BLOCKER: Database Schema/Data Missing**"
+- Include: Database error, schema check output
+- Tag: @CEO @Backend-Architect
+- Status: **NO-GO**
+- Decision: Cannot proceed without clean database
 
 ---
 
-## 3. API CONTRACT FAILURES (Response Format, Missing Fields)
+### Category 3: API Endpoint Failure (Section 3)
 
-**Symptoms:** Unexpected JSON structure, missing fields, type mismatches
+**Symptoms:**
+- `GET /api/models` returns 404 or 500
+- Health endpoint down
+- API returns "Connection refused"
 
-### Troubleshooting Commands
+**Immediate Actions (0-2 min):**
 ```bash
-# Test model catalog endpoint
-curl -s https://api.dcp.sa/api/models | jq '.'
-# Expected: array of 11 models, each with: id, name, vram_gb, pricing_halala_per_hr
+# Test API directly
+curl -s -I https://api.dcp.sa/api/health
+curl -s -I https://api.dcp.sa/api/models | head -5
 
-# Validate response schema
-curl -s https://api.dcp.sa/api/models | jq '.[] | keys' | head -1
-# Expected: ["id", "name", "vram_gb", "pricing_halala_per_hr", ...]
+# Check backend logs for errors
+ssh root@76.13.179.86 "tail -50 /root/dc1-platform/backend/logs/app.log | grep -i error"
 
-# Test pricing endpoint
-curl -s https://api.dcp.sa/api/pricing/rtx-4090 | jq '.'
-# Expected: { "hourly_halala": 26700, "daily_usd": ..., ... }
-
-# Test job submission endpoint
-curl -X POST https://api.dcp.sa/api/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"model_id":"llama-3-8b", "prompt":"test"}' \
-  -H "Authorization: Bearer $DCP_RENTER_KEY" | jq '.'
-# Expected: { "job_id": "...", "status": "pending", ... }
+# Test via VPS (rule out firewall)
+ssh root@76.13.179.86 "curl -s http://localhost:8083/api/health"
 ```
 
-### If API Contract Fails
-**Decision:** MAJOR BLOCKER — API is not production-ready
-- [ ] Post to DCP-641: "API CONTRACT FAILURE — endpoint response invalid"
-- [ ] Tag: @Backend-Architect
-- [ ] Action: Fix API response schema, redeploy
-- [ ] Timeout: 10 minutes, then NO-GO
+**If localhost works but remote fails:**
+- Firewall/nginx issue → restart nginx
+```bash
+ssh root@76.13.179.86 "systemctl restart nginx && sleep 5 && curl -s https://api.dcp.sa/api/health"
+```
+
+**If localhost fails:**
+- Backend service crashed → restart via PM2
+```bash
+ssh root@76.13.179.86 "pm2 restart dc1-provider-onboarding && sleep 10 && curl -s http://localhost:8083/api/health"
+```
+
+**Escalation (if fails 2x):**
+- Post to DCP-773: "🔴 **BLOCKER: API Endpoint Failure**"
+- Include: curl error, backend logs, restart output
+- Tag: @CEO @Backend-Architect
+- Status: **NO-GO**
 
 ---
 
-## 4. AUTHENTICATION FAILURES (Token Invalid, Permission Denied)
+### Category 4: Test Script Execution Failure
 
-**Symptoms:** 401 Unauthorized, 403 Forbidden, invalid JWT
+**Symptoms:**
+- npm test returns errors
+- Jest suite hangs (>5 min per test)
+- Smoke test scripts fail immediately
 
-### Troubleshooting Commands
+**Immediate Actions (0-3 min):**
 ```bash
-# Verify admin token
-curl -s https://api.dcp.sa/api/admin/dashboard \
-  -H "Authorization: Bearer $DC1_ADMIN_TOKEN" | jq '.status'
-# Expected: 200 OK, admin data returned
+# Try running one test in isolation
+npm run test:e2e 2>&1 | head -100
+# Look for: "Cannot find module", "ECONNREFUSED", "timeout"
 
-# Verify renter token
-curl -s https://api.dcp.sa/api/renter/profile \
-  -H "Authorization: Bearer $DCP_RENTER_KEY" | jq '.renter_id'
-# Expected: 200 OK, renter profile returned
+# If "Cannot find module": reinstall dependencies
+npm ci --force 2>&1 | tail -20
 
-# Check token expiration
-node -e "console.log(JSON.parse(atob('$DCP_RENTER_KEY'.split('.')[1])))" 2>/dev/null | grep exp
-# Expected: exp timestamp is in future
-
-# Regenerate test tokens if needed
-cd /home/node/dc1-platform
-npm run generate:test-tokens
-# Expected: new tokens generated and printed
+# If ECONNREFUSED: backend not accessible from test environment
+curl -s http://localhost:8083/api/health
 ```
 
-### If Auth Fails
-**Decision:** CRITICAL BLOCKER — Cannot test user flows
-- [ ] Post to DCP-641: "AUTH FAILURE — token invalid or expired"
-- [ ] Tag: @Backend-Architect @Security
-- [ ] Action: Regenerate tokens, verify JWT signing keys
-- [ ] Timeout: 5 minutes, then NO-GO
+**If node_modules issue:**
+```bash
+rm -rf node_modules package-lock.json
+npm ci
+npm run test:e2e
+```
+
+**Escalation (if fails):**
+- Post to DCP-773: "🔴 **BLOCKER: Test Script Failure**"
+- Include: exact error, npm version, backend health status
+- Tag: @CEO @Backend-Architect
+- Status: **NO-GO** (cannot validate without passing tests)
 
 ---
 
-## 5. METERING FAILURES (Token Counts Not Persisting)
+### Category 5: Authentication/Token Failure (Section 4)
 
-**Symptoms:** Token count mismatch, cost calculation wrong, usage not logged
+**Symptoms:**
+- Tests return 401 Unauthorized
+- Admin token invalid
+- Renter key not accepted
 
-### Troubleshooting Commands
+**Immediate Actions (0-2 min):**
 ```bash
-# Run metering validation test
-cd /home/node/dc1-platform
-npm run test -- metering-smoke.test.js
-# Expected: all tests pass, token counts match
+# Verify token format
+echo $DC1_ADMIN_TOKEN | head -c 50
+echo $DCP_RENTER_KEY | head -c 50
 
-# Check metering database records
-psql -c "SELECT job_id, input_tokens, output_tokens FROM job_metering LIMIT 10;"
-# Expected: recent jobs show correct token counts
+# Test token validity
+curl -s -H "Authorization: Bearer $DC1_ADMIN_TOKEN" \
+  https://api.dcp.sa/api/admin/providers | head -5
 
-# Validate cost calculation
-psql -c "SELECT job_id, token_count, cost_halala FROM job_costs ORDER BY created_at DESC LIMIT 5;"
-# Expected: costs calculated correctly (token_count * hourly_rate / 3600)
-
-# Run live inference and check metering
-bash scripts/test-metering-e2e.sh
-# Expected: metering logged within 5 seconds of job completion
+# If 401: token expired or malformed
+echo "Admin token status:"
+curl -s -X POST https://api.dcp.sa/api/auth/verify \
+  -H "Authorization: Bearer $DC1_ADMIN_TOKEN"
 ```
 
-### If Metering Fails
-**Decision:** MAJOR BLOCKER — Cannot bill renters accurately
-- [ ] Post to DCP-641: "METERING FAILURE — token counts not persisting"
-- [ ] Tag: @Backend-Architect @ML-Infra
-- [ ] Action: Check metering pipeline, restart if needed
-- [ ] Timeout: 10 minutes, then NO-GO
+**If token expired:**
+- Regenerate from backend database
+```bash
+ssh root@76.13.179.86 << 'EOF'
+sqlite3 /root/dc1-platform/db/dc1.db \
+  "SELECT admin_token FROM system_config LIMIT 1;"
+# Use output as new DC1_ADMIN_TOKEN
+EOF
+```
+
+**Escalation (if fails):**
+- Post to DCP-773: "🔴 **BLOCKER: Authentication Failure**"
+- Include: token error response, expiry status
+- Tag: @CEO @Backend-Architect
+- Status: **NO-GO**
 
 ---
 
-## 6. PROVIDER CONNECTIVITY FAILURES (Heartbeat Timeout)
+### Category 6: Pricing/Metering Calculation Failure (Section 8)
 
-**Symptoms:** Providers not responding, heartbeat failures, vLLM endpoint unreachable
+**Symptoms:**
+- Cost calculations off by >1%
+- SAR conversion inaccurate
+- GPU pricing table has no values
 
-### Troubleshooting Commands
+**Immediate Actions (0-3 min):**
 ```bash
-# Check provider status
-curl -s https://api.dcp.sa/api/providers?status=online | jq '.[] | {id, last_heartbeat}'
-# Expected: at least 1 provider with recent heartbeat (<5 min)
+# Check GPU pricing seeding
+ssh root@76.13.179.86 << 'EOF'
+sqlite3 /root/dc1-platform/db/dc1.db \
+  "SELECT model_id, price_sar_per_hour FROM gpu_pricing LIMIT 3;"
+EOF
 
-# Test provider health endpoint directly
-curl -s https://[provider-ip]:8000/health | jq '.'
-# Expected: { "status": "healthy", "models": [...] }
+# Expected: 3+ rows with price_sar_per_hour > 0
 
-# Check heartbeat logs
-ssh node@76.13.179.86 "tail -100 /var/log/dc1-provider-heartbeat.log" 2>/dev/null
-# Expected: recent heartbeat messages, no errors
-
-# Force provider health check
-curl -X POST https://api.dcp.sa/api/admin/providers/health-check \
-  -H "Authorization: Bearer $DC1_ADMIN_TOKEN" | jq '.'
-# Expected: health check results for all providers
+# Check metering calculation accuracy
+npm run test:metering 2>&1 | grep -i "accuracy\|pass"
 ```
 
-### If Provider Connectivity Fails
-**Decision:** MAJOR BLOCKER — Cannot test inference
-- [ ] Post to DCP-641: "PROVIDER CONNECTIVITY FAILURE — no active providers"
-- [ ] Tag: @ML-Infra @DevOps
-- [ ] Action: Check provider network, restart heartbeat poller
-- [ ] Timeout: 10 minutes, then NO-GO
+**If pricing table empty:**
+```bash
+ssh root@76.13.179.86 << 'EOF'
+cd /root/dc1-platform
+npm run db:seed:gpu-pricing
+EOF
+```
+
+**Escalation (if fails):**
+- Post to DCP-773: "🔴 **BLOCKER: Pricing/Metering Calculation Failure**"
+- Include: pricing table status, metering test output
+- Tag: @CEO @ML-Infra-Engineer
+- Status: **NO-GO** (cannot charge customers without accurate metering)
 
 ---
 
-## 7. PRICING FAILURES (Wrong Rates or Currency Mismatch)
+### Category 7: Job Lifecycle Failure (Section 6)
 
-**Symptoms:** Pricing doesn't match spec, currency conversion wrong, billing broken
+**Symptoms:**
+- Job stuck in "submitted" state
+- Provider fails to claim job
+- Job execution never completes
 
-### Troubleshooting Commands
+**Immediate Actions (0-3 min):**
 ```bash
-# Verify pricing is seeded
-curl -s https://api.dcp.sa/api/models | jq '.[] | {name, pricing_halala_per_hr}' | head -5
-# Expected: RTX 4090 = 26700 halala/hr (exact match from spec)
+# Check job status in database
+ssh root@76.13.179.86 << 'EOF'
+sqlite3 /root/dc1-platform/db/dc1.db \
+  "SELECT id, status, created_at FROM serve_sessions ORDER BY created_at DESC LIMIT 5;"
+EOF
 
-# Check pricing database
-psql -c "SELECT gpu_model, halala_per_hour, usd_per_hour FROM gpu_pricing;"
-# Expected: all GPU tiers present with correct rates
+# Check provider heartbeat/connectivity
+curl -s https://api.dcp.sa/api/providers/list | grep -i "online\|status"
 
-# Test pricing calculation
-curl -s 'https://api.dcp.sa/api/pricing/calculate?gpu=rtx-4090&hours=1' | jq '.total_halala'
-# Expected: 26700
-
-# Validate currency conversion
-curl -s 'https://api.dcp.sa/api/pricing/convert?halala=26700&to=usd' | jq '.usd'
-# Expected: ~$7.12 (26700 * 0.000267 exchange rate)
+# Check backend logs for job processing errors
+ssh root@76.13.179.86 "tail -100 /root/dc1-platform/backend/logs/app.log | grep -i 'job\|queue'"
 ```
 
-### If Pricing Fails
-**Decision:** MAJOR BLOCKER — Economic model broken
-- [ ] Post to DCP-641: "PRICING FAILURE — rates incorrect or not seeded"
-- [ ] Tag: @Backend-Architect @Finance
-- [ ] Action: Seed pricing table, verify exchange rates
-- [ ] Timeout: 5 minutes, then NO-GO
+**If provider count is 0:**
+- No active providers → job cannot be assigned
+- Escalate: cannot test provider-job workflow
+
+**If provider online but job stuck:**
+```bash
+# Check job assignment logic
+ssh root@76.13.179.86 << 'EOF'
+sqlite3 /root/dc1-platform/db/dc1.db \
+  "SELECT COUNT(*) as stuck_jobs FROM serve_sessions WHERE status='submitted' AND created_at < datetime('now', '-5 minutes');"
+EOF
+# If >0: job assignment logic broken
+```
+
+**Escalation (if fails):**
+- Post to DCP-773: "🔴 **BLOCKER: Job Lifecycle Failure**"
+- Include: job status, provider list, backend logs
+- Tag: @CEO @Backend-Architect
+- Status: **NO-GO** (core marketplace function broken)
 
 ---
 
-## 8. RENTER ONBOARDING FAILURES (Cannot Create Account or Deploy)
+### Category 8: Data Integrity/Corruption Failure (Section 12)
 
-**Symptoms:** Registration fails, cannot submit first job, deployment errors
+**Symptoms:**
+- Orphaned records (job with missing provider)
+- Balance corruption (negative balance, mismatched totals)
+- Audit trail gaps
 
-### Troubleshooting Commands
+**Immediate Actions (0-3 min):**
 ```bash
-# Test renter registration
-curl -X POST https://api.dcp.sa/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com", "password":"test123"}' | jq '.renter_id'
-# Expected: new renter ID returned
+# Check for orphaned serve_sessions
+ssh root@76.13.179.86 << 'EOF'
+sqlite3 /root/dc1-platform/db/dc1.db \
+  "SELECT COUNT(*) FROM serve_sessions WHERE provider_id NOT IN (SELECT id FROM providers);"
+EOF
+# Expected: 0
 
-# Test job submission (renter flow)
-curl -X POST https://api.dcp.sa/api/jobs \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $DCP_RENTER_KEY" \
-  -d '{
-    "model_id": "llama-3-8b",
-    "prompt": "Hello world",
-    "max_tokens": 100
-  }' | jq '.job_id'
-# Expected: job created and queued
+# Check for negative balances
+ssh root@76.13.179.86 << 'EOF'
+sqlite3 /root/dc1-platform/db/dc1.db \
+  "SELECT COUNT(*) FROM accounts WHERE balance < 0;"
+EOF
+# Expected: 0
 
-# Check job status
-JOB_ID=$(curl -X POST ... 2>/dev/null | jq -r '.job_id')
-curl -s https://api.dcp.sa/api/jobs/$JOB_ID \
-  -H "Authorization: Bearer $DCP_RENTER_KEY" | jq '.status'
-# Expected: status progresses: pending → assigned → running → completed
-
-# Test payment flow (test mode)
-curl -X POST https://api.dcp.sa/api/payments/create \
-  -H "Authorization: Bearer $DCP_RENTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"amount_halala": 50000}' | jq '.payment_intent_id'
-# Expected: payment intent created (test mode, no real charge)
+# Check audit trail continuity
+ssh root@76.13.179.86 << 'EOF'
+sqlite3 /root/dc1-platform/db/dc1.db \
+  "SELECT COUNT(*) FROM audit_logs WHERE timestamp IS NULL;"
+EOF
+# Expected: 0
 ```
 
-### If Onboarding Fails
-**Decision:** CRITICAL BLOCKER — Core product broken
-- [ ] Post to DCP-641: "RENTER ONBOARDING FAILURE — cannot register or submit jobs"
-- [ ] Tag: @Frontend-Developer @Backend-Architect
-- [ ] Action: Check authentication, payment integration, job API
-- [ ] Timeout: 15 minutes, then NO-GO
+**If corruption found:**
+- Database integrity broken → data recovery needed
+- Stop testing immediately
+
+**Escalation (if any corruption):**
+- Post to DCP-773: "🔴 **BLOCKER: Data Integrity Corruption Detected**"
+- Include: corruption details, query results
+- Tag: @CEO @Backend-Architect @DevOps
+- Status: **NO-GO** (cannot launch with data corruption)
 
 ---
 
 ## Escalation Template
 
-Use this template for any failure that cannot be resolved within the timeout:
+**When posting blocker to DCP-773:**
 
-```
-## ESCALATION — Day 4 Failure [Category Name]
+```markdown
+## 🔴 Day 4 BLOCKER — [Category Name]
 
 **Time:** [HH:MM UTC]
-**Category:** [1-8 from above]
-**Symptoms:** [description]
-**Last Troubleshooting Step:** [what was tried]
-**Status:** UNRESOLVED
+**Section:** [1-12]
+**Failure Category:** [One of 8 categories]
 
-### Who to Contact
-- [Category Owner] — primary contact
-- [Backup] — escalation if primary unavailable
+### Error Details
+- Exact error message: [copy-paste]
+- Command that failed: [bash command]
+- Output: [last 50 lines of relevant output]
 
-### Next Steps
-1. [Contact owner with details]
-2. [Provide logs/evidence]
-3. [Wait for response (5 min max)]
-4. If unresolved: recommend NO-GO
+### Attempted Remediation
+- [Action 1] → Result: [success/failed]
+- [Action 2] → Result: [success/failed]
+
+### Impact
+- Cannot proceed to next section
+- Day 4 testing: HALTED
+- Day 5/6: BLOCKED pending this fix
+
+### Escalation
+- Assigned to: @CEO
+- Tags: @Backend-Architect @DevOps (as needed by category)
+- Decision needed: Investigate, fix, or defer Phase 1 launch
+
+### Recommendation
+[What should happen next: 1-hour fix attempt, rollback to previous version, defer to emergency session, etc.]
+
+---
+
+**Posted by QA Engineer at [HH:MM UTC]**
 ```
 
 ---
 
-## Document All Failures
+## Recovery Procedures (Post-Fix)
 
-For EVERY failure during Day 4, record:
-1. **Time** (HH:MM UTC)
-2. **Category** (1-8)
-3. **Description** of what failed
-4. **Troubleshooting steps** taken
-5. **Resolution** or escalation
+**After any category is fixed:**
 
-This becomes the Day 4 failure log, included in final report.
+1. Re-run the failed section validation
+2. If all checks now PASS: continue to next section
+3. If still failing: escalate again with updated output
+4. Document fix details for post-mortem
 
----
-
-## When to Call NO-GO
-
-If ANY of the following remain unresolved after troubleshooting:
-- ❌ Infrastructure unreachable (Category 1)
-- ❌ Database connection failures (Category 2)
-- ❌ API contract broken (Category 3)
-- ❌ Authentication broken (Category 4)
-- ❌ Metering not working (Category 5)
-- ❌ NO active providers (Category 6)
-- ❌ Pricing incorrect (Category 7)
-- ❌ Cannot register renters or submit jobs (Category 8)
-
-**RECOMMEND NO-GO DECISION** at 12:00 UTC if any critical blocker unresolved.
+**Timeline for recovery:**
+- Immediate: 0-5 min (try quick fixes)
+- Investigation: 5-15 min (root cause analysis)
+- At 15 min with no progress: **Escalate to CEO**
+- At 30 min with no resolution: **Call executive emergency session**
 
 ---
 
-## Post-Escalation Actions
+## No-Go Decision Trigger
 
-Once escalated:
-1. Stop testing that section
-2. Move to next validation section (if possible)
-3. Continue documenting
-4. At 12:00 UTC: Compile all failures and make GO/NO-GO decision
-5. If NO-GO: escalate to founder with full failure report
+**If ANY blocker cannot be resolved by 11:50 UTC:**
 
+1. Post final blocker summary to DCP-773
+2. Update status to: 🔴 **DAY 4 NO-GO**
+3. List all unresolved blockers
+4. Escalate to CEO for decision
+5. Wait for direction before proceeding
+
+---
+
+**Last Updated:** 2026-03-24
+**Status:** Ready for execution
