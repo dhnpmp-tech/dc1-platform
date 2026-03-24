@@ -5142,6 +5142,71 @@ router.post('/:id/offline', (req, res) => {
     }
 });
 
+// ---- GET /api/providers/:id/stake-status -- DCP-920 --------------------------------
+// Provider stake status check. Auth: own API key or admin. Used by onboarding wizard.
+router.get('/:id/stake-status', async (req, res) => {
+    try {
+        const providerId = Number.parseInt(req.params.id, 10);
+        if (!Number.isFinite(providerId) || providerId < 1) {
+            return res.status(400).json({ error: 'Invalid provider id' });
+        }
+        if (!isAdminRequest(req)) {
+            const apiKey = getBearerToken(req) || req.query?.api_key;
+            if (!apiKey) return res.status(401).json({ error: 'Authentication required' });
+            const p = db.get('SELECT id FROM providers WHERE id = ? AND api_key = ?', providerId, apiKey);
+            if (!p) return res.status(403).json({ error: 'Access denied' });
+        }
+        const provider = db.get(
+            'SELECT id, evm_wallet_address, stake_status, stake_amount_wei, gpu_tier FROM providers WHERE id = ?',
+            providerId
+        );
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const tier = Number(provider.gpu_tier) || 0;
+        let stakeAmount = BigInt(provider.stake_amount_wei || '0');
+        let hasMinimumStake = provider.stake_status === 'active';
+        let minimumRequired = 0n;
+        let liveCheckPerformed = false;
+
+        if (process.env.PROVIDER_STAKE_ADDRESS) {
+            try {
+                const { verifyProviderStake, getTierMinimumStake } =
+                    await import('../blockchain/stake-verifier.mjs');
+                minimumRequired = getTierMinimumStake(tier);
+                const result = await verifyProviderStake(providerId);
+                stakeAmount = result.stakeAmount;
+                hasMinimumStake = result.hasMinimumStake;
+                liveCheckPerformed = true;
+            } catch (importErr) {
+                console.warn('[stake-status] Live check failed:', importErr.message);
+            }
+        } else {
+            try {
+                const { getTierMinimumStake } = await import('../blockchain/stake-verifier.mjs');
+                minimumRequired = getTierMinimumStake(tier);
+                hasMinimumStake = stakeAmount >= minimumRequired && provider.stake_status === 'active';
+            } catch (_) { /* stake-verifier unavailable */ }
+        }
+
+        const shortfall = minimumRequired > stakeAmount ? minimumRequired - stakeAmount : 0n;
+        return res.json({
+            providerId,
+            walletAddress: provider.evm_wallet_address || null,
+            stakeStatus: provider.stake_status || 'none',
+            stakeAmount: stakeAmount.toString(),
+            minimumRequired: minimumRequired.toString(),
+            hasMinimumStake,
+            shortfall: shortfall.toString(),
+            gpuTier: tier,
+            liveCheckPerformed,
+            requireStake: process.env.REQUIRE_STAKE === 'true',
+        });
+    } catch (error) {
+        console.error('[providers/:id/stake-status]', error);
+        return res.status(500).json({ error: 'Failed to fetch stake status' });
+    }
+});
+
 module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,

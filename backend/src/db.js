@@ -954,6 +954,17 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN gpu_rate_snapshot TEXT',
   // Job billing lifecycle phase — DCP-911
   "ALTER TABLE jobs ADD COLUMN lifecycle_status TEXT DEFAULT 'pending'",
+  // vLLM inference proxy — DCP-922: provider-registered vLLM endpoint URL
+  'ALTER TABLE providers ADD COLUMN vllm_endpoint_url TEXT',
+  // Provider staking -- DCP-920 (ProviderStake.sol integration)
+  // stake_status: 'none' | 'active' | 'slashed' | 'insufficient' | 'withdrawn'
+  "ALTER TABLE providers ADD COLUMN stake_status TEXT DEFAULT 'none'",
+  "ALTER TABLE providers ADD COLUMN stake_amount_wei TEXT DEFAULT '0'",
+  'ALTER TABLE providers ADD COLUMN stake_tx_hash TEXT',
+  'ALTER TABLE providers ADD COLUMN evm_wallet_address TEXT',
+  'ALTER TABLE providers ADD COLUMN unstake_requested_at TEXT',
+  // Stake verification flag on serve sessions -- DCP-920
+  'ALTER TABLE serve_sessions ADD COLUMN stake_verified INTEGER',
 ];
 
 migrations.forEach(sql => {
