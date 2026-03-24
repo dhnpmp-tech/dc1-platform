@@ -6,6 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import { useLanguage } from '../../lib/i18n'
+import QuickRedeployModal from '../../components/modals/QuickRedeployModal'
 
 const API_BASE = '/api/dc1'
 
@@ -418,8 +419,6 @@ export default function CostDashboardPage() {
   const [loadingJobs, setLoadingJobs] = useState(true)
   const [error, setError] = useState('')
   const [redeployJob, setRedeployJob] = useState<Job | null>(null)
-  const [redeploying, setRedeploying] = useState(false)
-  const [redeployError, setRedeployError] = useState('')
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -485,35 +484,9 @@ export default function CostDashboardPage() {
 
   // ── Redeploy handler ─────────────────────────────────────────────
 
-  const handleRedeploy = useCallback(async (job: Job) => {
+  const handleRedeploy = useCallback((job: Job) => {
     setRedeployJob(job)
-    setRedeployError('')
   }, [])
-
-  const confirmRedeploy = useCallback(async () => {
-    if (!redeployJob) return
-    const key = localStorage.getItem('dc1_renter_key')
-    if (!key) return
-    setRedeploying(true)
-    setRedeployError('')
-    try {
-      const res = await fetch(`${API_BASE}/jobs/${redeployJob.job_id}/retry`, {
-        method: 'POST',
-        headers: { 'X-Renter-Key': key },
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error ?? 'Failed to redeploy')
-      }
-      setRedeployJob(null)
-      // Refresh jobs
-      fetchData(key)
-    } catch (err) {
-      setRedeployError(err instanceof Error ? err.message : 'Redeploy failed')
-    } finally {
-      setRedeploying(false)
-    }
-  }, [redeployJob, fetchData])
 
   // ── Derived stats ────────────────────────────────────────────────
 
@@ -641,48 +614,16 @@ export default function CostDashboardPage() {
         )}
       </div>
 
-      {/* ── Redeploy Confirmation Modal ───────────────────────────── */}
+      {/* ── Quick-Redeploy Modal (Phase 2.0) ─────────────────────── */}
       {redeployJob && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Confirm redeploy"
-        >
-          <div className="bg-dc1-surface-l1 border border-dc1-border rounded-xl p-6 w-full max-w-md shadow-2xl">
-            <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">Redeploy Job?</h3>
-            <p className="text-sm text-dc1-text-secondary mb-1">
-              This will submit a new job using the same parameters as:
-            </p>
-            <p className="text-sm font-mono text-dc1-amber mb-4 truncate">{getModelLabel(redeployJob)}</p>
-
-            {redeployError && (
-              <p className="text-sm text-status-error mb-4 bg-status-error/10 rounded px-3 py-2">
-                {redeployError}
-              </p>
-            )}
-
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => { setRedeployJob(null); setRedeployError('') }}
-                className="px-4 py-2 rounded text-sm text-dc1-text-secondary hover:text-dc1-text-primary bg-dc1-surface-l3 hover:bg-dc1-surface-l2 border border-dc1-border transition-all"
-                disabled={redeploying}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmRedeploy}
-                className="btn btn-primary px-4 py-2 text-sm flex items-center gap-2"
-                disabled={redeploying}
-              >
-                {redeploying && (
-                  <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                )}
-                {redeploying ? 'Deploying…' : 'Confirm Redeploy'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <QuickRedeployModal
+          job={redeployJob}
+          onClose={() => setRedeployJob(null)}
+          onSuccess={() => {
+            const key = localStorage.getItem('dc1_renter_key')
+            if (key) fetchData(key)
+          }}
+        />
       )}
     </DashboardLayout>
   )
