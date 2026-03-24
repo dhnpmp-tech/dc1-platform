@@ -1191,6 +1191,97 @@ router.get('/dashboard', (req, res) => {
   }
 });
 
+// === GET /api/admin/overview - Platform snapshot for founder monitoring ===
+// Returns: providersRegistered, providersOnline, jobsQueued/Running/Completed, revenueSARToday/Total
+router.get('/overview', (req, res) => {
+  try {
+    const now = new Date();
+    const fiveMinAgo = new Date(now - 5 * 60000).toISOString();
+    const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
+
+    const providerCounts = db.get(
+      `SELECT COUNT(*) as registered,
+              SUM(CASE WHEN last_heartbeat > ? THEN 1 ELSE 0 END) as online
+       FROM providers`,
+      fiveMinAgo
+    ) || {};
+
+    const jobStats = db.get(
+      `SELECT SUM(CASE WHEN status IN ('pending','queued') THEN 1 ELSE 0 END) as queued,
+              SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as running,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+              COALESCE(SUM(CASE WHEN status = 'completed' AND completed_at >= ? THEN actual_cost_halala ELSE 0 END), 0) as today_revenue_halala,
+              COALESCE(SUM(CASE WHEN status = 'completed' THEN actual_cost_halala ELSE 0 END), 0) as total_revenue_halala
+       FROM jobs`,
+      todayStart.toISOString()
+    ) || {};
+
+    res.json({
+      providersRegistered: providerCounts.registered || 0,
+      providersOnline: providerCounts.online || 0,
+      jobsQueued: jobStats.queued || 0,
+      jobsRunning: jobStats.running || 0,
+      jobsCompleted: jobStats.completed || 0,
+      revenueSARToday: (jobStats.today_revenue_halala || 0) / 100,
+      revenueSARTotal: (jobStats.total_revenue_halala || 0) / 100,
+      timestamp: now.toISOString(),
+    });
+  } catch (error) {
+    console.error('Admin overview error:', error);
+    res.status(500).json({ error: 'Failed to fetch overview' });
+  }
+});
+
+// === GET /api/admin/revenue - Revenue breakdown by day (platform 15% / provider 85%) ===
+// Query params: days (default 30, max 365)
+router.get('/revenue', (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 365);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const totals = db.get(
+      `SELECT COALESCE(SUM(actual_cost_halala), 0) as total_halala,
+              COALESCE(SUM(dc1_fee_halala), 0) as platform_halala,
+              COALESCE(SUM(provider_earned_halala), 0) as provider_halala,
+              COUNT(*) as total_jobs
+       FROM jobs WHERE status = 'completed'`
+    ) || {};
+
+    const daily = db.all(
+      `SELECT DATE(completed_at) as date,
+              COUNT(*) as jobs,
+              COALESCE(SUM(actual_cost_halala), 0) as total_halala,
+              COALESCE(SUM(dc1_fee_halala), 0) as platform_halala,
+              COALESCE(SUM(provider_earned_halala), 0) as provider_halala
+       FROM jobs
+       WHERE status = 'completed' AND completed_at >= ?
+       GROUP BY DATE(completed_at)
+       ORDER BY date DESC`,
+      since
+    );
+
+    res.json({
+      period_days: days,
+      totals: {
+        total_sar: (totals.total_halala || 0) / 100,
+        platform_fees_sar: (totals.platform_halala || 0) / 100,
+        provider_payouts_sar: (totals.provider_halala || 0) / 100,
+        total_jobs: totals.total_jobs || 0,
+      },
+      by_day: daily.map(d => ({
+        date: d.date,
+        jobs: d.jobs,
+        total_sar: d.total_halala / 100,
+        platform_fees_sar: d.platform_halala / 100,
+        provider_payouts_sar: d.provider_halala / 100,
+      })),
+    });
+  } catch (error) {
+    console.error('Admin revenue error:', error);
+    res.status(500).json({ error: 'Failed to fetch revenue' });
+  }
+});
+
 // === GET /api/admin/metrics - Operational system metrics ===
 router.get('/metrics', (req, res) => {
   try {
