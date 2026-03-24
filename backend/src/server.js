@@ -337,6 +337,11 @@ app.use('/api/recovery', recoveryRouter);
 const jobsRouter = require('./routes/jobs');
 app.use('/api/jobs', jobsRouter);
 
+// Invoice endpoints — DCP-780
+const { jobsInvoiceRouter, rentersInvoiceRouter } = require('./routes/invoices');
+app.use('/api/jobs', jobsInvoiceRouter);
+app.use('/api/renters', rentersInvoiceRouter);
+
 const standupRouter = require('./routes/standup');
 app.use('/api/standup', standupRouter);
 const reconciliationRouter = require('./routes/reconciliation');
@@ -381,6 +386,9 @@ app.use('/api/p2p', p2pRouter);
 
 const webhooksRouter = require('./routes/webhooks');
 app.use('/api/webhooks', webhooksRouter);
+
+const networkRouter = require('./routes/network');
+app.use('/api/network', networkRouter);
 
 // Initialize Supabase sync bridge
 
