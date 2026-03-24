@@ -14,6 +14,7 @@ const {
 } = require('../services/p2p-discovery');
 const { reconcileRenterByEmailFromSupabase } = require('../services/renter-identity-reconciliation');
 const { isPublicWebhookUrl } = require('../lib/webhook-security');
+const { validateWebhookUrl, validateWebhookUrlValue } = require('../middleware/validateWebhookUrl');
 const { validateBody } = require('../middleware/validate');
 const { renterRegisterSchema, renterTopupSchema } = require('../schemas/topup.schema');
 
@@ -1837,6 +1838,100 @@ router.get('/:id/ledger', requireAdminAuth, (req, res) => {
   } catch (err) {
     console.error('GET /:id/ledger error:', err);
     res.status(500).json({ error: 'Failed to retrieve ledger' });
+  }
+});
+
+/**
+ * POST /api/renters/:id/webhooks (DCP-863)
+ * Register or update a webhook URL for a renter.
+ *
+ * Auth: renter API key (x-renter-key header) — must match the renter identified by :id.
+ * Body: { url: string }   — must be a valid, publicly reachable HTTPS URL on port 443.
+ *
+ * SSRF prevention: the URL is validated by validateWebhookUrl middleware before storage.
+ * Enforces HTTPS-only, port 443, and rejects all RFC-1918 / loopback / link-local addresses
+ * plus a live DNS resolution check.
+ */
+router.post('/:id/webhooks', validateWebhookUrl('url'), async (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) {
+      return res.status(401).json({ error: 'API key required (x-renter-key header or key query)' });
+    }
+
+    const renterId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(renterId) || renterId <= 0) {
+      return res.status(400).json({ error: 'Invalid renter id' });
+    }
+
+    const renter = db.get('SELECT id, status FROM renters WHERE api_key = ? AND id = ? AND status = ?', key, renterId, 'active');
+    if (!renter) {
+      return res.status(403).json({ error: 'Forbidden — API key does not match the requested renter id' });
+    }
+
+    const { url } = req.body || {};
+    if (!url) {
+      return res.status(400).json({ error: 'url is required in the request body' });
+    }
+
+    // req.validatedWebhookUrl is set by validateWebhookUrl middleware
+    const webhookUrl = req.validatedWebhookUrl;
+    if (!webhookUrl) {
+      // Middleware should have rejected invalid URLs; this is a safety fallback
+      return res.status(400).json({ error: 'webhook URL validation did not complete — ensure url is valid' });
+    }
+
+    runStatement(
+      'UPDATE renters SET webhook_url = ?, updated_at = ? WHERE id = ?',
+      webhookUrl,
+      new Date().toISOString(),
+      renter.id
+    );
+
+    return res.status(201).json({
+      success: true,
+      renter_id: renter.id,
+      webhook_url: webhookUrl,
+    });
+  } catch (err) {
+    console.error('[renters] POST /:id/webhooks error:', err);
+    return res.status(500).json({ error: 'Failed to register webhook' });
+  }
+});
+
+/**
+ * DELETE /api/renters/:id/webhooks (DCP-863)
+ * Remove the registered webhook URL for a renter.
+ *
+ * Auth: renter API key (x-renter-key header) — must match the renter identified by :id.
+ */
+router.delete('/:id/webhooks', (req, res) => {
+  try {
+    const key = req.headers['x-renter-key'] || req.query.key;
+    if (!key) {
+      return res.status(401).json({ error: 'API key required (x-renter-key header or key query)' });
+    }
+
+    const renterId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(renterId) || renterId <= 0) {
+      return res.status(400).json({ error: 'Invalid renter id' });
+    }
+
+    const renter = db.get('SELECT id, status FROM renters WHERE api_key = ? AND id = ? AND status = ?', key, renterId, 'active');
+    if (!renter) {
+      return res.status(403).json({ error: 'Forbidden — API key does not match the requested renter id' });
+    }
+
+    runStatement(
+      'UPDATE renters SET webhook_url = NULL, updated_at = ? WHERE id = ?',
+      new Date().toISOString(),
+      renter.id
+    );
+
+    return res.json({ success: true, renter_id: renter.id, webhook_url: null });
+  } catch (err) {
+    console.error('[renters] DELETE /:id/webhooks error:', err);
+    return res.status(500).json({ error: 'Failed to remove webhook' });
   }
 });
 
