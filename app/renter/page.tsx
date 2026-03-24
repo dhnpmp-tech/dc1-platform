@@ -9,6 +9,7 @@ import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../lib/i18n'
 import { clearSession } from '../lib/auth'
 import OnboardingWizard, { isOnboarded } from '../components/OnboardingWizard'
+import JobCard, { Job as JobCardJob } from '../components/JobCard'
 
 const API_BASE = '/api/dc1'
 
@@ -33,14 +34,6 @@ interface GPU {
   status: 'online' | 'offline'
 }
 
-interface Job {
-  id: string
-  job_type: string
-  status: 'running' | 'completed' | 'pending' | 'failed'
-  cost: number
-  duration: number
-  submitted_at: string
-}
 
 // ── SVG Icon Components ────────────────────────────────────────────
 const HomeIcon = () => (
@@ -99,7 +92,8 @@ export default function RenterDashboard() {
   const router = useRouter()
   const [renter, setRenter] = useState<RenterInfo | null>(null)
   const [gpus, setGpus] = useState<GPU[]>([])
-  const [jobs, setJobs] = useState<Job[]>([])
+  const [jobs, setJobs] = useState<JobCardJob[]>([])
+  const [apiKey, setApiKey] = useState('')
   const [authChecking, setAuthChecking] = useState(true)
   const [authReason, setAuthReason] = useState<'missing_credentials' | 'invalid_credentials' | 'expired_session' | null>(null)
   const [bannerDismissed, setBannerDismissed] = useState(false)
@@ -165,6 +159,7 @@ export default function RenterDashboard() {
         const data = await res.json()
         if (data.renter) {
           setRenter(data.renter)
+          setApiKey(key)
           localStorage.setItem('dc1_renter_key', key)
           fetchGPUs()
           fetchJobs(key)
@@ -222,20 +217,21 @@ export default function RenterDashboard() {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
       if (res.ok) {
         const data = await res.json()
-        const jobsData = data.recent_jobs?.map((j: any) => {
-          let duration = 0
-          if (j.completed_at && j.submitted_at) {
-            duration = Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
-          }
-          return {
-            id: j.job_id || `#${j.id}`,
-            job_type: j.job_type,
-            status: j.status,
-            cost: (j.actual_cost_halala || 0) / 100,
-            duration,
-            submitted_at: j.submitted_at,
-          }
-        }) || []
+        const jobsData: JobCardJob[] = (data.recent_jobs || []).map((j: any) => ({
+          id: j.id,
+          job_id: j.job_id || String(j.id),
+          job_type: j.job_type || 'gpu_job',
+          status: j.status,
+          submitted_at: j.submitted_at,
+          started_at: j.started_at,
+          completed_at: j.completed_at,
+          actual_cost_halala: j.actual_cost_halala || 0,
+          actual_duration_minutes: j.actual_duration_minutes,
+          price_per_hour_halala: j.price_per_hour_halala,
+          params: j.params ?? null,
+          container_spec: j.container_spec ?? null,
+          gpu_type: j.gpu_model ?? null,
+        }))
         setJobs(jobsData)
       }
     } catch (err) {
@@ -391,40 +387,26 @@ export default function RenterDashboard() {
               {t('common.view_all')}
             </Link>
           </div>
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t('table.job_id')}</th>
-                  <th>{t('table.type')}</th>
-                  <th>{t('table.status')}</th>
-                  <th>{t('table.cost')}</th>
-                  <th>{t('table.duration')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.length > 0 ? (
-                  jobs.slice(0, 10).map(job => (
-                    <tr key={job.id}>
-                      <td className="font-mono text-sm">{job.id.slice(0, 8)}</td>
-                      <td>{(job.job_type || '').replace(/_/g, ' ')}</td>
-                      <td>
-                        <StatusBadge status={job.status} />
-                      </td>
-                      <td className="text-dc1-amber font-semibold">{job.cost > 0 ? `${job.cost.toFixed(2)} ${t('common.sar')}` : '—'}</td>
-                      <td>{job.duration > 0 ? (job.duration >= 60 ? `${Math.floor(job.duration / 60)}m ${job.duration % 60}s` : `${job.duration}s`) : '—'}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="text-center py-8 text-dc1-text-secondary">
-                      {t('renter.no_jobs_playground')}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          {jobs.length > 0 ? (
+            <div className="space-y-3">
+              {jobs.slice(0, 3).map(job => (
+                <JobCard
+                  key={job.job_id}
+                  job={job}
+                  renterKey={apiKey}
+                  compact
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="card py-10 text-center space-y-3">
+              <p className="text-dc1-text-secondary">No jobs yet.</p>
+              <p className="text-dc1-text-muted text-sm">Browse templates to get started.</p>
+              <Link href="/marketplace/templates" className="inline-block btn btn-primary px-6 py-2.5 text-sm mt-2">
+                Browse Templates →
+              </Link>
+            </div>
+          )}
         </section>
 
         {/* Quick Actions */}
