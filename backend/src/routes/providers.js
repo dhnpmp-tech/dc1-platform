@@ -297,11 +297,15 @@ async function notifyRenterJobWebhook(job, eventName, details = {}) {
 // ============================================================================
 router.post('/register', validateBody(providerRegisterSchema), async (req, res) => {
     try {
-        const { name, email, gpu_model, os, phone, resource_spec } = req.body;
+        const { name, email, gpu_model, os, phone, resource_spec, provider_tier, location } = req.body;
         const cleanName = normalizeString(name, { maxLen: 120 });
         const cleanEmail = normalizeEmail(email);
         const cleanGpuModel = normalizeString(gpu_model, { maxLen: 120 });
         const cleanOs = normalizeString(os, { maxLen: 40 });
+        const cleanLocation = normalizeString(location, { maxLen: 255 });
+        const cleanTier = provider_tier && ['A', 'B', 'C'].includes(String(provider_tier).toUpperCase())
+            ? String(provider_tier).toUpperCase()
+            : 'C'; // Default to Tier C if not provided (DCP-835)
 
         // Validate inputs
         if (!cleanName || !cleanEmail || !cleanGpuModel || !cleanOs) {
@@ -340,11 +344,11 @@ router.post('/register', validateBody(providerRegisterSchema), async (req, res) 
             } catch (_) {}
         }
 
-        // Save to database
+        // Save to database with tier from GPU validation (DCP-835)
         const result = await runStatement(
-            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, resource_spec)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
+            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, resource_spec, provider_tier, location)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson, cleanTier, cleanLocation]
         );
         
         // Generate installer URL

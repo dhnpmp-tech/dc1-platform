@@ -128,7 +128,90 @@ async function detectOS() {
   return osMap[osType] || 'linux';
 }
 
-// ── GPU Benchmark ────────────────────────────────────────────────────
+// ── GPU Validation (DCP-832) ────────────────────────────────────────
+
+async function validateProviderGpu() {
+  try {
+    console.log('\n🔍 Validating GPU specifications...\n');
+
+    const validateScript = path.join(__dirname, 'validate-provider-gpu.mjs');
+    if (!existsSync(validateScript)) {
+      printError('GPU validation script not found at ' + validateScript);
+      return null;
+    }
+
+    const { stdout, stderr } = await execAsync(`node "${validateScript}"`, {
+      timeout: 60000, // 1 minute timeout
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    });
+
+    // Parse the JSON validation result from stdout
+    // The script outputs JSON between "=== Result (JSON) ===" markers
+    const jsonMatch = stdout.match(/=== Result \(JSON\) ===[\s\S]*?(\{[\s\S]*?\})/);
+    if (jsonMatch && jsonMatch[1]) {
+      try {
+        const validation = JSON.parse(jsonMatch[1]);
+        return validation;
+      } catch (e) {
+        printError('Failed to parse validation results: ' + e.message);
+        return null;
+      }
+    }
+
+    printError('Validation did not produce valid output');
+    return null;
+  } catch (error) {
+    printError('GPU validation failed: ' + error.message);
+    return null;
+  }
+}
+
+// ── Optional Quick Benchmark (DCP-832) ──────────────────────────────
+
+async function runQuickBenchmark() {
+  try {
+    console.log('\n⚡ Running quick 60-second benchmark...\n');
+
+    const benchmarkScript = path.join(__dirname, 'benchmark-arabic-models.mjs');
+    if (!existsSync(benchmarkScript)) {
+      printWarning('Quick benchmark script not found, skipping...');
+      return null;
+    }
+
+    // Run benchmark against llama3-8b (fastest Tier A model)
+    const { stdout, stderr } = await execAsync(
+      `VLLM_ENDPOINT=http://localhost:8000 node "${benchmarkScript}" --model llama-3-8b-instruct`,
+      {
+        timeout: 90000, // 90 second timeout for 60s benchmark + overhead
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+      }
+    );
+
+    // Parse the JSON benchmark report from stdout
+    const jsonMatch = stdout.match(/\{[\s\S]*?"ttft_ms"[\s\S]*?\}/);
+    if (jsonMatch) {
+      try {
+        const benchmark = JSON.parse(jsonMatch[0]);
+        return benchmark;
+      } catch (e) {
+        printWarning('Failed to parse quick benchmark results: ' + e.message);
+        return null;
+      }
+    }
+
+    printWarning('Quick benchmark did not produce valid output');
+    return null;
+  } catch (error) {
+    if (error.message.includes('ECONNREFUSED')) {
+      printWarning('vLLM endpoint not running locally, skipping quick benchmark...');
+    } else {
+      printWarning(`Quick benchmark skipped: ${error.message}`);
+    }
+    return null;
+  }
+}
+
+// ── GPU Benchmark (Legacy) ──────────────────────────────────────────
 
 async function runGpuBenchmark() {
   try {
@@ -308,33 +391,64 @@ async function main() {
     const detectedOS = await detectOS();
     printSuccess(`Operating system: ${detectedOS}`);
 
-    // ── Step 2: Run GPU Benchmark ────
+    // ── Step 2: Validate GPU (DCP-835) ───
+    const validation = await validateProviderGpu();
+    if (!validation || validation.validation !== 'PASS') {
+      printError(`GPU validation failed: ${validation?.tier_reason || 'Unknown error'}`);
+      process.exit(1);
+    }
+
+    const providerTier = validation.tier;
+    console.log('\n✅ GPU Validation Results:\n');
+    console.log(`  GPU Model:         ${validation.gpu.model}`);
+    console.log(`  VRAM:              ${validation.gpu.vram_gb}GB`);
+    console.log(`  CUDA Version:      ${validation.gpu.cuda_version}`);
+    console.log(`  Assigned Tier:     ${providerTier}`);
+    console.log(`  Compatible Models: ${validation.compatibility.compatible_models.length}`);
+
+    if (validation.compatibility.compatible_models.length > 0) {
+      console.log(`  Models: ${validation.compatibility.compatible_models.slice(0, 5).join(', ')}${validation.compatibility.compatible_models.length > 5 ? '...' : ''}`);
+    }
+
+    // ── Step 3: Optional Quick Benchmark (DCP-835) ───
+    let quickBenchmark = null;
+    const runQuickBench = await prompt('\n\nRun quick 60-second performance benchmark? (y/n): ', 'n');
+    if (runQuickBench.toLowerCase() === 'y') {
+      quickBenchmark = await runQuickBenchmark();
+      if (quickBenchmark) {
+        console.log('\n⚡ Quick Benchmark Results (Llama 3 8B):\n');
+        console.log(`  Time-to-First-Token: ${quickBenchmark.ttft_ms || 'N/A'} ms`);
+        console.log(`  Token Throughput:    ${quickBenchmark.throughput_toks || 'N/A'} tokens/sec`);
+      }
+    }
+
+    // ── Step 4: Run Full GPU Benchmark ────
     const benchmark = await runGpuBenchmark();
     if (!benchmark) {
       printError('GPU benchmark failed. Cannot proceed.');
       process.exit(1);
     }
 
-    console.log('\n📊 Benchmark Results:\n');
+    console.log('\n📊 Full Benchmark Results:\n');
     console.log(`  GPU Model:       ${benchmark.gpu_model}`);
     console.log(`  VRAM:            ${benchmark.vram_gb}GB`);
     console.log(`  TFLOPS:          ${benchmark.tflops}`);
     console.log(`  Memory BW:       ${benchmark.bandwidth_gbps} GB/s`);
     console.log(`  Token Throughput: ${benchmark.tokens_per_sec} tokens/sec`);
-    console.log(`  Assigned Tier:   ${benchmark.tier}`);
+    console.log(`  Assigned Tier:   ${providerTier} (from GPU validation)`);
 
     const earnings = estimateMonthlyEarnings(benchmark.tier, benchmark.gpu_model, benchmark.vram_gb);
     console.log(`\n💰 Estimated Monthly Earnings (70% utilization):`);
     console.log(`  ${earnings.estimatedMonthlyEarnings} SAR/month (at ${earnings.hourlyRate} SAR/hour)`);
 
-    // ── Step 3: Ask for Registration ─
+    // ── Step 5: Ask for Registration ─
     const proceed = await prompt('\n\nRegister as a DCP provider? (y/n): ', 'y');
     if (proceed.toLowerCase() !== 'y') {
       printInfo('Onboarding cancelled.');
       process.exit(0);
     }
 
-    // ── Step 4: Collect Provider Info ─
+    // ── Step 6: Collect Provider Info ─
     console.log('\n📝 Please provide your information:\n');
 
     const name = await prompt('  Provider Name: ');
@@ -351,19 +465,22 @@ async function main() {
 
     const location = await prompt('  Location (City/Country): ');
 
-    // ── Step 5: Register Provider ────
+    // ── Step 7: Register Provider ────
     console.log('\n📤 Registering with DCP...\n');
 
     const registrationPayload = {
       name,
       email,
+      location,
       gpu_model: benchmark.gpu_model,
       os: detectedOS,
       phone: '', // Optional
+      provider_tier: providerTier, // From GPU validation (DCP-835)
       resource_spec: {
         vram_gb: benchmark.vram_gb,
+        vram_gb_from_validation: validation.gpu.vram_gb,
         tflops: benchmark.tflops,
-        tier: benchmark.tier,
+        tier: providerTier,
       },
     };
 

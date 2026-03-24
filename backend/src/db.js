@@ -952,6 +952,8 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN template_id TEXT',
   // GPU-model-aware rate snapshot at job dispatch time — DCP-762
   'ALTER TABLE jobs ADD COLUMN gpu_rate_snapshot TEXT',
+  // Provider GPU tier from validation (DCP-835: integrate GPU validation into onboarding)
+  'ALTER TABLE providers ADD COLUMN provider_tier TEXT DEFAULT \'C\'',
 ];
 
 migrations.forEach(sql => {
