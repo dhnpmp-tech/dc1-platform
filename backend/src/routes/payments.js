@@ -22,6 +22,12 @@ const getMoyasarSecret = () => process.env.MOYASAR_SECRET_KEY || '';
 const getMoyasarWebhookSecret = () => process.env.MOYASAR_WEBHOOK_SECRET || '';
 const WEBHOOK_STATUSES = new Set(['initiated', 'paid', 'failed', 'refunded']);
 const isProduction = () => process.env.NODE_ENV === 'production';
+
+// Phase 1 bank transfer constants (manual Saudi IBAN flow)
+const BANK_TRANSFER_IBAN = process.env.DCP_BANK_IBAN || 'SA0000000000000000000000';
+const BANK_TRANSFER_ACCOUNT_NAME = process.env.DCP_BANK_ACCOUNT_NAME || 'DC1 Compute Platform';
+const BANK_TRANSFER_BANK_NAME = process.env.DCP_BANK_NAME || 'Al Rajhi Bank';
+const BANK_TRANSFER_EXPIRY_HOURS = 48;
 const ALLOWED_CALLBACK_ORIGINS = new Set(
   [
     FRONTEND_URL,
@@ -217,17 +223,33 @@ function requireRenter(req, res, next) {
   return next();
 }
 
+// ─── GET /api/payments/balance ─────────────────────────────────────────────────
+// Renter checks their current SAR balance.
+router.get('/balance', requireRenter, (req, res) => {
+  const renter = req.renter;
+  const fresh = db.get('SELECT balance_halala FROM renters WHERE id = ?', renter.id);
+  const balanceHalala = (fresh && fresh.balance_halala) || 0;
+  return res.json({
+    balance_sar: Number((balanceHalala / 100).toFixed(2)),
+    balance_halala: balanceHalala,
+    renter_id: renter.id,
+    name: renter.name,
+    email: renter.email,
+  });
+});
+
 // ─── POST /api/payments/topup ──────────────────────────────────────────────────
-// Initiate a SAR top-up via Moyasar. Returns a hosted checkout URL.
-// Body: { amount_halala: number, payment_method: "creditcard"|"applepay" }
+// Initiate a SAR top-up. bank_transfer returns IBAN instructions (Phase 1, manual).
+// creditcard/applepay go through Moyasar (Phase 2).
+// Body: { amount_halala: number, payment_method: "creditcard"|"applepay"|"bank_transfer" }
 router.post('/topup', requireRenter, (req, res) => {
   const renter = req.renter;
   const { amount_halala, payment_method, amount_sar, source_type, callback_url } = req.body || {};
   const methodRaw = payment_method || source_type || 'creditcard';
   const paymentMethod = String(methodRaw).trim().toLowerCase();
-  const allowedMethods = ['creditcard', 'applepay'];
+  const allowedMethods = ['creditcard', 'applepay', 'bank_transfer'];
   if (!allowedMethods.includes(paymentMethod)) {
-    return res.status(400).json({ error: 'payment_method/source_type must be one of: creditcard, applepay' });
+    return res.status(400).json({ error: 'payment_method must be one of: creditcard, applepay, bank_transfer' });
   }
 
   let amountHalala = toFiniteInt(amount_halala, { min: 100, max: 1000000 });
@@ -251,6 +273,41 @@ router.post('/topup', requireRenter, (req, res) => {
   }
 
   const amountSar = Number((amountHalala / 100).toFixed(2));
+
+  // ── Phase 1: bank transfer (manual IBAN, no gateway required) ──────────────
+  if (paymentMethod === 'bank_transfer') {
+    const topupId = `pay_bt_${crypto.randomBytes(12).toString('hex')}`;
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + BANK_TRANSFER_EXPIRY_HOURS * 3600 * 1000).toISOString();
+    const reference = `DCP-${renter.id}-${topupId.slice(-8).toUpperCase()}`;
+    runStatement(
+      `INSERT INTO payments
+         (payment_id, renter_id, amount_sar, amount_halala, status, source_type, payment_method,
+          description, created_at)
+       VALUES (?, ?, ?, ?, 'pending', 'bank_transfer', 'bank_transfer', ?, ?)`,
+      topupId, renter.id, amountSar, amountHalala,
+      `DCP bank transfer top-up — ${renter.name} (${renter.email})`, now
+    );
+    return res.json({
+      topup_id: topupId,
+      payment_method: 'bank_transfer',
+      amount_sar: amountSar,
+      amount_halala: amountHalala,
+      status: 'pending',
+      expires_at: expiresAt,
+      instructions: {
+        step1: `Transfer exactly SAR ${amountSar.toFixed(2)} to the account below`,
+        step2: `Include reference "${reference}" in the transfer notes/memo`,
+        step3: 'Balance will be credited within 1 business day after admin confirmation',
+        bank_name: BANK_TRANSFER_BANK_NAME,
+        account_name: BANK_TRANSFER_ACCOUNT_NAME,
+        iban: BANK_TRANSFER_IBAN,
+        reference,
+      },
+    });
+  }
+
+  // ── Phase 2: Moyasar gateway (creditcard / applepay) ──────────────────────
   const normalizedCallbackUrl = normalizeCallbackUrl(callback_url);
   const callbackUrl = normalizedCallbackUrl || `${FRONTEND_URL}/renter/billing?payment=callback`;
   if (callback_url != null && !normalizedCallbackUrl) {

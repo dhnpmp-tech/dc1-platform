@@ -2142,6 +2142,86 @@ router.post('/bulk/renters', (req, res) => {
 });
 
 // ============================================================================
+// POST /api/admin/payments/confirm-topup — Confirm a pending bank transfer topup
+// Credits renter balance once admin verifies SAR receipt in bank account.
+// Body: { topup_id: string, note?: string }
+// ============================================================================
+router.post('/payments/confirm-topup', (req, res) => {
+  const crypto = require('crypto');
+  try {
+    const { topup_id, note } = req.body || {};
+    if (!topup_id || typeof topup_id !== 'string') {
+      return res.status(400).json({ error: 'topup_id (string) is required' });
+    }
+    const payment = db.get(
+      `SELECT * FROM payments WHERE payment_id = ? AND source_type = 'bank_transfer'`,
+      topup_id.trim()
+    );
+    if (!payment) {
+      return res.status(404).json({ error: 'Bank transfer topup not found' });
+    }
+    if (payment.status === 'paid') {
+      return res.status(409).json({ error: 'Topup already confirmed', confirmed_at: payment.confirmed_at });
+    }
+    if (payment.status === 'refunded') {
+      return res.status(409).json({ error: 'Topup has been refunded and cannot be re-confirmed' });
+    }
+    const renter = db.get('SELECT id, name, email, balance_halala FROM renters WHERE id = ?', payment.renter_id);
+    if (!renter) {
+      return res.status(404).json({ error: 'Renter not found for this topup' });
+    }
+    const now = new Date().toISOString();
+    const normalizedNote = normalizeString(note, { maxLen: 500 }) || 'Bank transfer confirmed by admin';
+    const tx = db._db.transaction(() => {
+      db.prepare(
+        `UPDATE payments SET status = 'paid', confirmed_at = ?, gateway_response = ? WHERE payment_id = ?`
+      ).run(now, JSON.stringify({ confirmed_by: 'admin', note: normalizedNote, confirmed_at: now }), payment.payment_id);
+      db.prepare(
+        `UPDATE renters SET balance_halala = balance_halala + ?, updated_at = ? WHERE id = ?`
+      ).run(payment.amount_halala, now, renter.id);
+      try {
+        db.prepare(
+          `INSERT INTO renter_credit_ledger (id, renter_id, amount_halala, direction, source, payment_ref, note, created_at)
+           VALUES (?, ?, ?, 'credit', 'bank_transfer_topup', ?, ?, ?)`
+        ).run(
+          `rcl_${crypto.randomBytes(10).toString('hex')}`,
+          renter.id, payment.amount_halala, payment.payment_id, normalizedNote, now
+        );
+      } catch (_) {}
+      try {
+        db.prepare(
+          `INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)`
+        ).run(
+          'topup_confirmed', 'renter', renter.id,
+          `Bank transfer topup ${payment.payment_id} confirmed: ${payment.amount_halala} halala credited to "${renter.name}". Note: ${normalizedNote}`,
+          now
+        );
+      } catch (_) {}
+    });
+    tx();
+    const updated = db.get('SELECT balance_halala FROM renters WHERE id = ?', renter.id);
+    console.log(`[admin/confirm-topup] ${payment.payment_id} confirmed — ${payment.amount_halala} halala to renter ${renter.id}`);
+    return res.json({
+      success: true,
+      topup_id: payment.payment_id,
+      renter_id: renter.id,
+      renter_name: renter.name,
+      renter_email: renter.email,
+      amount_sar: payment.amount_sar,
+      amount_halala: payment.amount_halala,
+      previous_balance_halala: renter.balance_halala,
+      new_balance_halala: updated.balance_halala,
+      new_balance_sar: Number((updated.balance_halala / 100).toFixed(2)),
+      confirmed_at: now,
+      note: normalizedNote,
+    });
+  } catch (err) {
+    console.error('[admin/confirm-topup] Error:', err.message);
+    return res.status(500).json({ error: 'Failed to confirm topup' });
+  }
+});
+
+// ============================================================================
 // GET /api/admin/jobs - List all jobs with filters
 // ============================================================================
 router.get('/jobs', (req, res) => {
