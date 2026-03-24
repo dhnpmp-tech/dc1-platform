@@ -883,6 +883,92 @@ router.get('/providers/health', (req, res) => {
   }
 });
 
+// === GET /api/admin/providers/metrics - Aggregated provider + job metrics ===
+router.get('/providers/metrics', requireAdminAuth, (req, res) => {
+  try {
+    const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const fiveMinAgoIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+    // Provider counts by status bucket
+    const totalProviders = db.get('SELECT COUNT(*) AS count FROM providers WHERE deleted_at IS NULL');
+    const onlineProviders = db.get(
+      'SELECT COUNT(*) AS count FROM providers WHERE deleted_at IS NULL AND last_heartbeat > ?',
+      fiveMinAgoIso
+    );
+    const pendingProviders = db.get(
+      "SELECT COUNT(*) AS count FROM providers WHERE deleted_at IS NULL AND COALESCE(approval_status, 'pending') = 'pending'"
+    );
+    const offlineCount = (totalProviders.count || 0) - (onlineProviders.count || 0) - (pendingProviders.count || 0);
+
+    // GPU model distribution
+    const gpuDistribution = db.all(
+      `SELECT COALESCE(gpu_name_detected, gpu_model, 'unknown') AS gpu_model, COUNT(*) AS provider_count
+       FROM providers
+       WHERE deleted_at IS NULL
+       GROUP BY COALESCE(gpu_name_detected, gpu_model, 'unknown')
+       ORDER BY provider_count DESC`
+    );
+
+    // Aggregate job stats for last 7 days
+    const jobStats = db.get(
+      `SELECT
+         COUNT(*) AS total_jobs,
+         ROUND(
+           100.0 * SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) / MAX(COUNT(*), 1),
+           2
+         ) AS success_rate,
+         ROUND(
+           AVG(
+             CASE
+               WHEN completed_at IS NOT NULL AND started_at IS NOT NULL
+               THEN (julianday(completed_at) - julianday(started_at)) * 86400.0
+             END
+           ),
+           2
+         ) AS avg_duration_s
+       FROM jobs
+       WHERE COALESCE(created_at, submitted_at) >= ?`,
+      sevenDaysAgoIso
+    );
+
+    // Top 5 providers by job count
+    const topProviders = db.all(
+      `SELECT p.id, p.email, p.gpu_model, COUNT(j.id) AS job_count
+       FROM providers p
+       LEFT JOIN jobs j ON j.provider_id = p.id
+       WHERE p.deleted_at IS NULL
+       GROUP BY p.id
+       ORDER BY job_count DESC
+       LIMIT 5`
+    );
+
+    return res.json({
+      providers: {
+        total: totalProviders.count || 0,
+        online: onlineProviders.count || 0,
+        offline: Math.max(0, offlineCount),
+        pending: pendingProviders.count || 0,
+      },
+      gpu_distribution: gpuDistribution,
+      jobs_last_7d: {
+        total_jobs: jobStats.total_jobs || 0,
+        success_rate: jobStats.success_rate != null ? Number(jobStats.success_rate) : null,
+        avg_duration_s: jobStats.avg_duration_s != null ? Number(jobStats.avg_duration_s) : null,
+      },
+      top_providers_by_job_count: topProviders.map(p => ({
+        id: p.id,
+        email: p.email || null,
+        gpu_model: p.gpu_model || null,
+        job_count: Number(p.job_count || 0),
+      })),
+      generated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Admin providers metrics error:', error);
+    return res.status(500).json({ error: 'Failed to fetch provider metrics' });
+  }
+});
+
 // === CONTROL PLANE: serverless readiness policies/signals/prewarm ===
 router.get('/control-plane/policies', (req, res) => {
   try {
