@@ -14,6 +14,8 @@ const {
 } = require('../services/p2p-discovery');
 const { reconcileRenterByEmailFromSupabase } = require('../services/renter-identity-reconciliation');
 const { isPublicWebhookUrl } = require('../lib/webhook-security');
+const { validateBody } = require('../middleware/validate');
+const { renterRegisterSchema, renterTopupSchema } = require('../schemas/topup.schema');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -242,7 +244,7 @@ function hashedDeletedEmail(rawEmail, accountId) {
 }
 
 // POST /api/renters/register
-router.post('/register', (req, res) => {
+router.post('/register', validateBody(renterRegisterSchema), (req, res) => {
   try {
     const { name, email, organization, use_case, useCase, phone } = req.body;
     const cleanName = normalizeString(name, { maxLen: 120 });
@@ -697,7 +699,7 @@ router.get('/pricing', (req, res) => {
 // POST /api/renters/topup — Add balance to renter account
 // In production this would be connected to a payment gateway (Stripe/Tap).
 // For Gate 1 we accept direct top-up with amount_halala.
-router.post('/topup', (req, res) => {
+router.post('/topup', validateBody(renterTopupSchema), (req, res) => {
   try {
     if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SANDBOX_TOPUP !== 'true') {
       return res.status(403).json({ error: 'Direct top-up disabled in production. Use payment flow.' });

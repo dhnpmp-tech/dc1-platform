@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { validateBody } = require('../middleware/validate');
+const { benchmarkRunSchema, benchmarkSimulateSchema } = require('../schemas/benchmark.schema');
 
 // ============================================================================
 // POST /api/benchmark/run — Start a benchmark on a provider
 // ============================================================================
-router.post('/run', (req, res) => {
+router.post('/run', validateBody(benchmarkRunSchema), (req, res) => {
   try {
     const { provider_id, benchmark_type } = req.body;
 
@@ -57,7 +59,7 @@ router.post('/run', (req, res) => {
 // ============================================================================
 // POST /api/benchmark/simulate — Simulate a benchmark result (testing)
 // ============================================================================
-router.post('/simulate', (req, res) => {
+router.post('/simulate', validateBody(benchmarkSimulateSchema), (req, res) => {
   try {
     const { provider_id, benchmark_type, score_gflops, temp_max_celsius, vram_used_mib, latency_ms } = req.body;
 

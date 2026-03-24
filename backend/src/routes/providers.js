@@ -32,6 +32,8 @@ const {
     getAttemptLogPath,
 } = require('../services/job-execution-logs');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
+const { validateBody } = require('../middleware/validate');
+const { providerRegisterSchema, providerBenchmarkSchema } = require('../schemas/providers.schema');
 
 function flattenRunParams(params) {
     if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -293,7 +295,7 @@ async function notifyRenterJobWebhook(job, eventName, details = {}) {
 // ============================================================================
 // POST /api/providers/register - Register new provider
 // ============================================================================
-router.post('/register', async (req, res) => {
+router.post('/register', validateBody(providerRegisterSchema), async (req, res) => {
     try {
         const { name, email, gpu_model, os, phone, resource_spec } = req.body;
         const cleanName = normalizeString(name, { maxLen: 120 });
@@ -948,7 +950,7 @@ router.post('/:id/heartbeat', (req, res) => {
 // Auth: x-provider-key header or Authorization: Bearer <api_key>
 // Purpose: Store GPU benchmark results and assign provider to tier (A/B/C)
 // ============================================================================
-router.post('/:id/benchmark', (req, res) => {
+router.post('/:id/benchmark', validateBody(providerBenchmarkSchema), (req, res) => {
     try {
         const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
         if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
