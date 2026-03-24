@@ -4449,6 +4449,91 @@ router.post('/:id/activate', function(req, res) {
     }
 });
 
+// ============================================================================
+// Provider API Key Management (DCP-760)
+// POST   /api/providers/:id/keys       — issue a new scoped provider API key
+// GET    /api/providers/:id/keys       — list non-revoked key metadata
+// DELETE /api/providers/:id/keys/:kid  — revoke a key
+//
+// Auth: provider's legacy api_key (x-provider-key or Bearer) OR admin token.
+// Keys use format dcp_prov_<32 base62> and are SHA-256 hashed before storage.
+// ============================================================================
+
+const { generateProviderKey, listProviderKeys, revokeProviderKey } = require('../services/apiKeyService');
+const { apiKeyAuth } = require('../middleware/apiKeyAuth');
+
+function getProviderFromLegacyKey(req) {
+    const legacyKey = normalizeString(
+        req.headers['x-provider-key'] || getBearerToken(req),
+        { maxLen: 128, trim: false }
+    );
+    if (!legacyKey) return null;
+    return db.get('SELECT * FROM providers WHERE api_key = ? AND deleted_at IS NULL', [legacyKey]);
+}
+
+function canManageProviderKeys(req, providerId) {
+    if (isAdminRequest(req)) return true;
+    const provider = getProviderFromLegacyKey(req);
+    return !!(provider && provider.id == providerId);
+}
+
+router.post('/:id/keys', (req, res) => {
+    try {
+        const providerId = parseInt(req.params.id, 10);
+        if (!providerId) return res.status(400).json({ error: 'Invalid provider id' });
+        if (!canManageProviderKeys(req, providerId)) {
+            return res.status(403).json({ error: 'Forbidden: provider key or admin token required' });
+        }
+        const provider = db.get('SELECT id FROM providers WHERE id = ? AND deleted_at IS NULL', [providerId]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const label = typeof req.body?.label === 'string' ? req.body.label.slice(0, 128) : '';
+        const { key, keyId, prefix } = generateProviderKey(providerId, label);
+
+        return res.status(201).json({
+            key,
+            key_id: keyId,
+            prefix,
+            label: label || null,
+            message: 'Save this key — it will not be shown again.',
+        });
+    } catch (err) {
+        console.error('[providers/:id/keys POST]', err);
+        return res.status(500).json({ error: 'Failed to issue API key' });
+    }
+});
+
+router.get('/:id/keys', (req, res) => {
+    try {
+        const providerId = parseInt(req.params.id, 10);
+        if (!providerId) return res.status(400).json({ error: 'Invalid provider id' });
+        if (!canManageProviderKeys(req, providerId)) {
+            return res.status(403).json({ error: 'Forbidden: provider key or admin token required' });
+        }
+        const keys = listProviderKeys(providerId);
+        return res.json({ keys, count: keys.length });
+    } catch (err) {
+        console.error('[providers/:id/keys GET]', err);
+        return res.status(500).json({ error: 'Failed to list API keys' });
+    }
+});
+
+router.delete('/:id/keys/:kid', (req, res) => {
+    try {
+        const providerId = parseInt(req.params.id, 10);
+        if (!providerId) return res.status(400).json({ error: 'Invalid provider id' });
+        if (!canManageProviderKeys(req, providerId)) {
+            return res.status(403).json({ error: 'Forbidden: provider key or admin token required' });
+        }
+        const revoked = revokeProviderKey(req.params.kid, providerId);
+        if (!revoked) return res.status(404).json({ error: 'Key not found or already revoked' });
+        return res.json({ revoked: true });
+    } catch (err) {
+        console.error('[providers/:id/keys DELETE]', err);
+        return res.status(500).json({ error: 'Failed to revoke API key' });
+    }
+});
+
 module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
