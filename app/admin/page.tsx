@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import StatCard from '../components/ui/StatCard'
@@ -24,6 +24,45 @@ interface EditModal {
   rate_sar: string
   saving: boolean
   error: string
+}
+
+interface ProviderStatus {
+  id: number
+  name: string
+  gpu_model: string
+  status: string
+  gpu_util_pct: number | null
+  last_heartbeat: string | null
+  jobs_today: number
+  earnings_today_halala: number
+  endpoint_url: string | null
+  stake_status: string | null
+  registered_at: string | null
+}
+
+interface AdminJob {
+  job_id: string
+  renter_id: string
+  model: string
+  provider_name: string
+  status: string
+  token_count: number | null
+  cost_halala: number
+  submitted_at: string
+}
+
+interface RevenueSummary {
+  date: string
+  gross_halala: number
+  platform_fee_halala: number
+  provider_earnings_halala: number
+}
+
+interface ApiError {
+  id: string | number
+  message: string
+  path: string | null
+  created_at: string
 }
 
 interface AdminMetrics {
@@ -68,7 +107,25 @@ export default function AdminDashboard() {
   const [recentHeartbeats, setRecentHeartbeats] = useState<any[]>([])
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'overview' | 'pricing' | 'health'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'pricing' | 'health' | 'ops'>('overview')
+
+  // Operations tab state
+  const [providers, setProviders] = useState<ProviderStatus[]>([])
+  const [providersLoading, setProvidersLoading] = useState(false)
+  const [providerSort, setProviderSort] = useState<{ col: 'status' | 'earnings'; dir: 'asc' | 'desc' }>({ col: 'status', dir: 'asc' })
+  const [expandedProvider, setExpandedProvider] = useState<number | null>(null)
+  const [jobs, setJobs] = useState<AdminJob[]>([])
+  const [jobsLoading, setJobsLoading] = useState(false)
+  const [revenue7d, setRevenue7d] = useState<RevenueSummary[]>([])
+  const [revenueLoading, setRevenueLoading] = useState(false)
+  const opsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Health tab enhanced state
+  const [apiHealthy, setApiHealthy] = useState<boolean | null>(null)
+  const [apiHealthLoading, setApiHealthLoading] = useState(false)
+  const [apiErrors, setApiErrors] = useState<ApiError[]>([])
+  const [errorsLoading, setErrorsLoading] = useState(false)
+  const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Pricing state
   const [pricingRates, setPricingRates] = useState<PricingRate[]>([])
@@ -160,6 +217,105 @@ export default function AdminDashboard() {
     const interval = setInterval(fetchMetrics, 60000)
     return () => clearInterval(interval)
   }, [activeTab, isAuthed, fetchMetrics])
+
+  const fetchProviders = useCallback(async () => {
+    setProvidersLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/providers/status`, {
+        headers: { 'x-admin-token': getToken() },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setProviders(data.providers || data || [])
+      }
+    } catch { /* non-fatal */ } finally {
+      setProvidersLoading(false)
+    }
+  }, [])
+
+  const fetchJobs = useCallback(async () => {
+    setJobsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/jobs?status=running,completed&limit=20`, {
+        headers: { 'x-admin-token': getToken() },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setJobs(data.jobs || data || [])
+      }
+    } catch { /* non-fatal */ } finally {
+      setJobsLoading(false)
+    }
+  }, [])
+
+  const fetchRevenue7d = useCallback(async () => {
+    setRevenueLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/revenue/summary`, {
+        headers: { 'x-admin-token': getToken() },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setRevenue7d(data.days || data || [])
+      }
+    } catch { /* non-fatal */ } finally {
+      setRevenueLoading(false)
+    }
+  }, [])
+
+  const pingApiHealth = useCallback(async () => {
+    setApiHealthLoading(true)
+    try {
+      const res = await fetch('/api/health')
+      setApiHealthy(res.ok)
+    } catch {
+      setApiHealthy(false)
+    } finally {
+      setApiHealthLoading(false)
+    }
+  }, [])
+
+  const fetchApiErrors = useCallback(async () => {
+    setErrorsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/errors?limit=5`, {
+        headers: { 'x-admin-token': getToken() },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setApiErrors(data.errors || data || [])
+      }
+    } catch { /* non-fatal */ } finally {
+      setErrorsLoading(false)
+    }
+  }, [])
+
+  // Ops tab: initial data fetch + 30s job refresh
+  useEffect(() => {
+    if (!isAuthed || activeTab !== 'ops') return
+    fetchProviders()
+    fetchJobs()
+    fetchRevenue7d()
+    const interval = setInterval(fetchJobs, 30000)
+    opsIntervalRef.current = interval
+    return () => {
+      clearInterval(interval)
+      opsIntervalRef.current = null
+    }
+  }, [activeTab, isAuthed, fetchProviders, fetchJobs, fetchRevenue7d])
+
+  // Health tab: API ping every 60s + fetch errors
+  useEffect(() => {
+    if (!isAuthed || activeTab !== 'health') return
+    pingApiHealth()
+    fetchApiErrors()
+    const interval = setInterval(pingApiHealth, 60000)
+    healthIntervalRef.current = interval
+    return () => {
+      clearInterval(interval)
+      healthIntervalRef.current = null
+    }
+  }, [activeTab, isAuthed, pingApiHealth, fetchApiErrors])
 
   // Warn before leaving with unsaved changes
   useEffect(() => {
@@ -267,7 +423,7 @@ export default function AdminDashboard() {
   const onlineProviders = stats?.online_now || 0
   const activationPct = totalProviders > 0 ? Math.min((onlineProviders / totalProviders) * 100, 100) : 0
 
-  const tabClass = (tab: 'overview' | 'pricing' | 'health') =>
+  const tabClass = (tab: 'overview' | 'pricing' | 'health' | 'ops') =>
     `px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
       activeTab === tab
         ? 'border-dc1-amber text-dc1-amber bg-dc1-surface-l2'
@@ -316,6 +472,12 @@ export default function AdminDashboard() {
           setActiveTab('health')
         }}>
           {t('admin.tab.health')}
+        </button>
+        <button className={tabClass('ops')} onClick={() => {
+          if (hasUnsaved && !window.confirm(t('admin.pricing.unsavedWarning'))) return
+          setActiveTab('ops')
+        }}>
+          Operations
         </button>
       </div>
 
@@ -640,8 +802,269 @@ export default function AdminDashboard() {
                   </p>
                 </div>
               </div>
+
+              {/* API Health Ping */}
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="section-heading">API Health</h2>
+                  {apiHealthLoading && <span className="text-xs text-dc1-text-muted">Checking…</span>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${
+                    apiHealthy === null ? 'bg-dc1-text-muted' :
+                    apiHealthy ? 'bg-status-success animate-pulse' : 'bg-status-error animate-pulse'
+                  }`} />
+                  <span className={`text-sm font-medium ${
+                    apiHealthy === null ? 'text-dc1-text-muted' :
+                    apiHealthy ? 'text-status-success' : 'text-status-error'
+                  }`}>
+                    {apiHealthy === null ? 'Checking…' : apiHealthy ? 'api.dcp.sa — healthy' : 'api.dcp.sa — unreachable'}
+                  </span>
+                  <button
+                    onClick={pingApiHealth}
+                    className="ml-auto px-3 py-1 text-xs bg-dc1-surface-l2 text-dc1-text-secondary rounded hover:bg-dc1-surface-l3 transition-colors"
+                  >
+                    Ping now
+                  </button>
+                </div>
+                <p className="text-xs text-dc1-text-muted mt-2">Auto-checks every 60s</p>
+              </div>
+
+              {/* Last 5 Errors */}
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="section-heading">Recent Errors</h2>
+                  {errorsLoading && <span className="text-xs text-dc1-text-muted">Loading…</span>}
+                </div>
+                {apiErrors.length === 0 ? (
+                  <p className="text-sm text-dc1-text-muted">{errorsLoading ? 'Fetching…' : 'No recent errors recorded.'}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {apiErrors.map((e, i) => (
+                      <div key={String(e.id ?? i)} className="bg-dc1-surface-l2 border border-dc1-border/60 rounded-lg p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm text-status-error font-mono truncate">{e.message}</p>
+                          <span className="text-xs text-dc1-text-muted whitespace-nowrap">{e.created_at ? new Date(e.created_at).toLocaleTimeString() : '—'}</span>
+                        </div>
+                        {e.path && <p className="text-xs text-dc1-text-muted mt-1">{e.path}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Operations Tab */}
+      {activeTab === 'ops' && (
+        <div className="space-y-8">
+          {/* Provider Status Table */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-heading">Provider Status</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                {providersLoading && <span className="text-xs text-dc1-text-muted">Loading…</span>}
+                <span className="text-xs text-dc1-text-secondary">Sort:</span>
+                <button
+                  onClick={() => setProviderSort(s => ({ col: 'status', dir: s.col === 'status' && s.dir === 'asc' ? 'desc' : 'asc' }))}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${providerSort.col === 'status' ? 'bg-dc1-amber/20 text-dc1-amber' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:bg-dc1-surface-l3'}`}
+                >
+                  Status {providerSort.col === 'status' ? (providerSort.dir === 'asc' ? '↑' : '↓') : ''}
+                </button>
+                <button
+                  onClick={() => setProviderSort(s => ({ col: 'earnings', dir: s.col === 'earnings' && s.dir === 'desc' ? 'asc' : 'desc' }))}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${providerSort.col === 'earnings' ? 'bg-dc1-amber/20 text-dc1-amber' : 'bg-dc1-surface-l2 text-dc1-text-secondary hover:bg-dc1-surface-l3'}`}
+                >
+                  Earnings {providerSort.col === 'earnings' ? (providerSort.dir === 'desc' ? '↓' : '↑') : ''}
+                </button>
+                <button onClick={fetchProviders} className="px-2 py-1 text-xs bg-dc1-surface-l2 text-dc1-text-secondary rounded hover:bg-dc1-surface-l3 transition-colors">
+                  Refresh
+                </button>
+              </div>
+            </div>
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>GPU</th>
+                    <th>Status</th>
+                    <th>GPU Util</th>
+                    <th>Last Heartbeat</th>
+                    <th>Jobs Today</th>
+                    <th>Earnings Today</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...providers]
+                    .sort((a, b) => {
+                      if (providerSort.col === 'status') {
+                        const order: Record<string, number> = { online: 0, offline: 1 }
+                        const av = order[a.status] ?? 2
+                        const bv = order[b.status] ?? 2
+                        return providerSort.dir === 'asc' ? av - bv : bv - av
+                      }
+                      const ae = a.earnings_today_halala ?? 0
+                      const be = b.earnings_today_halala ?? 0
+                      return providerSort.dir === 'desc' ? be - ae : ae - be
+                    })
+                    .flatMap(p => {
+                      const rows = [
+                        <tr
+                          key={p.id}
+                          className="cursor-pointer hover:bg-dc1-surface-l2/50 transition-colors"
+                          onClick={() => setExpandedProvider(expandedProvider === p.id ? null : p.id)}
+                        >
+                          <td className="font-medium">
+                            <span className="mr-1 text-dc1-text-muted text-xs">{expandedProvider === p.id ? '▼' : '▶'}</span>
+                            {p.name}
+                          </td>
+                          <td className="text-dc1-amber text-sm">{p.gpu_model || '—'}</td>
+                          <td><StatusBadge status={p.status === 'online' ? 'online' : 'offline'} /></td>
+                          <td className="text-sm font-mono">{p.gpu_util_pct !== null ? `${p.gpu_util_pct}%` : '—'}</td>
+                          <td className="text-sm text-dc1-text-secondary">
+                            {p.last_heartbeat ? new Date(p.last_heartbeat).toLocaleTimeString() : '—'}
+                          </td>
+                          <td className="text-sm">{p.jobs_today ?? 0}</td>
+                          <td className="text-sm font-mono text-status-success">
+                            {((p.earnings_today_halala ?? 0) / 100).toFixed(2)} SAR
+                          </td>
+                        </tr>,
+                      ]
+                      if (expandedProvider === p.id) {
+                        rows.push(
+                          <tr key={`${p.id}-x`} className="bg-dc1-surface-l2/30">
+                            <td colSpan={7} className="px-4 py-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                                <div>
+                                  <p className="text-dc1-text-muted text-xs mb-1">Endpoint URL</p>
+                                  <p className="font-mono text-dc1-text-secondary break-all">{p.endpoint_url || '—'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-dc1-text-muted text-xs mb-1">Stake Status</p>
+                                  <p className="text-dc1-text-secondary">{p.stake_status || '—'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-dc1-text-muted text-xs mb-1">Registered</p>
+                                  <p className="text-dc1-text-secondary">{p.registered_at ? new Date(p.registered_at).toLocaleDateString() : '—'}</p>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>,
+                        )
+                      }
+                      return rows
+                    })}
+                  {providers.length === 0 && (
+                    <tr><td colSpan={7} className="text-dc1-text-muted text-sm">{providersLoading ? 'Loading providers…' : 'No providers found.'}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Live Job Feed */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-heading">Live Job Feed</h2>
+              <div className="flex items-center gap-2">
+                {jobsLoading && <span className="text-xs text-dc1-text-muted">Refreshing…</span>}
+                <span className="text-xs text-dc1-text-muted">Auto-refresh 30s</span>
+                <button onClick={fetchJobs} className="px-2 py-1 text-xs bg-dc1-surface-l2 text-dc1-text-secondary rounded hover:bg-dc1-surface-l3 transition-colors">
+                  Refresh now
+                </button>
+              </div>
+            </div>
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Job ID</th>
+                    <th>Renter</th>
+                    <th>Model</th>
+                    <th>Provider</th>
+                    <th>Status</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.map((j, i) => (
+                    <tr key={j.job_id ?? i}>
+                      <td className="font-mono text-xs text-dc1-text-secondary">{j.job_id ? `${j.job_id.slice(0, 8)}…` : '—'}</td>
+                      <td className="text-sm font-mono text-dc1-text-muted">{j.renter_id ? `${j.renter_id.slice(0, 6)}…` : '—'}</td>
+                      <td className="text-sm text-dc1-amber">{j.model || '—'}</td>
+                      <td className="text-sm">{j.provider_name || '—'}</td>
+                      <td><StatusBadge status={j.status as 'running' | 'completed' | 'failed' | 'pending'} /></td>
+                      <td className="text-sm font-mono">{j.token_count ?? '—'}</td>
+                      <td className="text-sm font-mono text-status-success">{((j.cost_halala ?? 0) / 100).toFixed(4)} SAR</td>
+                    </tr>
+                  ))}
+                  {jobs.length === 0 && (
+                    <tr><td colSpan={7} className="text-dc1-text-muted text-sm">{jobsLoading ? 'Loading jobs…' : 'No recent jobs.'}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 7-Day Revenue Chart */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-heading">7-Day Revenue</h2>
+              {revenueLoading && <span className="text-xs text-dc1-text-muted">Loading…</span>}
+            </div>
+            {revenue7d.length === 0 ? (
+              <p className="text-sm text-dc1-text-muted">{revenueLoading ? 'Loading revenue data…' : 'No revenue data available yet.'}</p>
+            ) : (() => {
+              const maxGross = Math.max(...revenue7d.map(d => d.gross_halala || 0), 1)
+              return (
+                <div>
+                  <div className="flex items-end gap-2 h-32 mb-3">
+                    {revenue7d.slice(-7).map((day, i) => {
+                      const gross = day.gross_halala || 0
+                      const fee = day.platform_fee_halala || 0
+                      const pct = Math.max((gross / maxGross) * 100, 2)
+                      return (
+                        <div key={day.date ?? i} className="flex-1 flex flex-col items-center gap-1">
+                          <div
+                            className="w-full rounded-t-sm bg-dc1-amber/60 hover:bg-dc1-amber/80 transition-colors relative group"
+                            style={{ height: `${pct}%` }}
+                          >
+                            <div
+                              className="absolute inset-x-0 bottom-0 rounded-t-sm bg-status-success/80"
+                              style={{ height: `${fee > 0 && gross > 0 ? (fee / gross) * 100 : 0}%` }}
+                            />
+                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 bg-dc1-surface-l1 border border-dc1-border rounded px-2 py-1 text-xs whitespace-nowrap shadow-lg pointer-events-none">
+                              {(gross / 100).toFixed(2)} SAR gross
+                            </div>
+                          </div>
+                          <span className="text-xs text-dc1-text-muted">
+                            {day.date ? new Date(day.date).toLocaleDateString('en-SA', { month: 'short', day: 'numeric' }) : `D${i + 1}`}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="flex items-center gap-4 mt-2">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-sm bg-dc1-amber/60" />
+                      <span className="text-xs text-dc1-text-muted">Gross revenue</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-sm bg-status-success/80" />
+                      <span className="text-xs text-dc1-text-muted">Platform fee (15%)</span>
+                    </div>
+                    <div className="ml-auto text-xs text-dc1-text-secondary font-mono">
+                      7d total: {(revenue7d.reduce((s, d) => s + (d.gross_halala || 0), 0) / 100).toFixed(2)} SAR
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
         </div>
       )}
 
