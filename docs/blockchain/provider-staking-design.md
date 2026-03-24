@@ -1,184 +1,250 @@
 # Provider Staking Design
 
-> **Type:** Architectural Decision Record (ADR) — Future Phase
-> **Status:** Spec only — not yet implemented
+> **Type:** Architectural Decision Record (ADR)
+> **Status:** Spec — implementation-ready when escrow wallet is funded
 > **Purpose:** Provider economic alignment, Sybil resistance, and SLA enforcement
-> **DCP-810** | Blockchain Engineer | 2026-03-24
+> **DCP-853** | Blockchain Engineer | 2026-03-24
 
 ---
 
 ## Executive Summary
 
-Provider staking requires each active GPU provider to lock a USDC stake on-chain. The stake is:
-- **Slashed** (partially burned/redistributed) if the provider delivers bad service
-- **Released** when the provider gracefully exits
-- **Earning multiplier** — higher stake unlocks premium job routing and higher utilization
+Provider staking requires each active GPU provider to lock a USDC stake on-chain before receiving jobs. The stake:
 
-This creates economic alignment: providers with skin-in-the-game are incentivized to stay online, serve jobs correctly, and not front-run or ghost renters.
+- **Deters Sybil registrations** — real capital cost per active slot
+- **Creates slashing risk** — bad behaviour costs money, not just reputation
+- **Enforces graceful exits** — unbonding period prevents mid-job abandonments
+- **Enables stake-weighted routing** — higher stake → higher priority job allocation
 
----
-
-## 1. Why Staking?
-
-**Current problem:** DCP has 43 registered providers and 0 active. There is no economic cost to registration, so registered providers have no urgency to go live. There is also no mechanism to deter:
-
-- **Ghosting** — accepting a job, going offline mid-execution
-- **Sybil attacks** — one bad actor registering many fake providers to game job routing
-- **Under-provisioning** — claiming RTX 4090 VRAM but serving from a slower GPU
-
-**Staking solution:** A minimum economic stake creates:
-1. A cost-per-registration that deters Sybil registrations
-2. A slashing risk that deters bad behavior
-3. An exit barrier that ensures graceful handoff of running jobs
+This is a Phase 2 mechanism. Phase 1 runs without mandatory staking to accelerate provider onboarding.
 
 ---
 
-## 2. Stake Parameters
+## 1. Competitive Landscape
 
-### Minimum Stake by GPU Tier
+### Akash Network
 
-| GPU Tier | Example GPUs | Minimum Stake |
-|----------|-------------|--------------|
-| Entry    | RTX 3080, 3090 | 10 USDC |
-| Standard | RTX 4080, 4090 | 25 USDC |
-| High     | A100, L40S | 100 USDC |
-| Enterprise | H100, H200 | 250 USDC |
+Akash uses a delegated-proof-of-stake model where providers must bond AKT tokens with validators. Key characteristics:
+- **Minimum bond:** ~1,000 AKT (≈ $400 at typical prices) — prohibitive for small providers
+- **Unbonding period:** 21 days — very long, discourages small operators
+- **Slashing:** Applied for validator downtime, not provider-level SLA failures
+- **Weakness:** Slashing targets validator behaviour, not compute delivery quality. A provider can ghost a job without on-chain consequences.
 
-**Rationale:** Stake is calibrated to ~10% of the monthly provider revenue at 50% utilization. It represents meaningful "skin in the game" without being prohibitive for the internet cafe tier (primary onboarding target).
+**DCP improvement:** Stake directly tied to job-level SLA, not block-production. Slash evidence is a job ID + oracle signature, not validator consensus. Unbonding is 7 days (3× faster than Akash).
 
-- RTX 4090 at 50% utilization earns ~$90/mo → 25 USDC stake ≈ 3.5 days earnings
-- H100 at 50% utilization earns ~$900/mo → 250 USDC stake ≈ 2 days earnings
+### io.net
 
-### Stake Multipliers (Optional Enhancement)
+io.net uses a reputation scoring system rather than token staking:
+- **No on-chain stake** — providers can join and leave freely
+- **Reputation score** (0–100) based on uptime, job success rate, latency
+- **Deactivation threshold:** Score < 50 disqualifies provider from job routing
+- **Weakness:** No economic cost for bad behaviour — providers can reset reputation by re-registering. No renter compensation for failed jobs.
 
-Providers may stake above the minimum to unlock routing priority:
+**DCP improvement:** Economic stake means providers lose real money on SLA failures, not just score points. Slashed funds partially compensate affected renters (30% of slash amount).
 
-| Stake (× minimum) | Routing Priority | Display Badge |
-|-------------------|-----------------|---------------|
-| 1× (minimum)      | Standard        | None |
-| 2× | +10% job allocation weight | Bronze |
-| 5× | +25% job allocation weight | Silver |
-| 10× | +50% job allocation weight + premium listing | Gold |
+### Design Decision
+
+DCP uses a **hybrid model**: reputation scoring (Phase 1, already implemented) **plus** USDC staking (Phase 2). This mirrors io.net's low-friction onboarding while adding Akash-style economic guarantees once scale warrants it.
 
 ---
 
-## 3. Slash Conditions
+## 2. Stake Parameters by GPU Tier
 
-Slashing is triggered by documented evidence of provider misconduct:
+Stake amounts are denominated in **USDC** (same token as escrow — no new token required). ETH equivalent shown for reference at $3,000/ETH.
 
-| Condition | Slash Amount | Evidence Required |
-|-----------|-------------|-------------------|
-| Job ghosting (accepted but timed out before first token) | 5% of stake | Escrow timeout + oracle log |
-| Repeated job failure (>3 consecutive failures within 24h) | 10% of stake | Oracle failure logs |
-| VRAM misrepresentation (claimed > actual by >20%) | 20% of stake | On-chain benchmark proof |
-| Fraudulent job reporting (inflated token counts) | 50% of stake | Metering discrepancy report |
-| Stake falls below minimum (slashed below floor) | Provider deactivated | Automatic on-chain check |
+| GPU Tier   | Example GPUs              | Minimum Stake | ETH Equivalent | Monthly Revenue @ 50% util | Stake as % of Revenue |
+|------------|---------------------------|---------------|----------------|-----------------------------|-----------------------|
+| Entry      | RTX 3080, RTX 3090        | 10 USDC       | ~0.0033 ETH    | ~$60/mo                     | ~17%                  |
+| Standard   | RTX 4080, RTX 4090        | 25 USDC       | ~0.0083 ETH    | ~$96/mo                     | ~26%                  |
+| High       | A100 40GB, L40S           | 100 USDC      | ~0.033 ETH     | ~$432/mo                    | ~23%                  |
+| Enterprise | H100 80GB, H200 141GB     | 250 USDC      | ~0.083 ETH     | ~$1,080/mo                  | ~23%                  |
+
+**Rationale:**
+- Stake is calibrated to 15–25% of monthly revenue at 50% utilization
+- For the primary onboarding target (Saudi internet cafe with RTX 4090): 25 USDC ≈ SAR 93.75 ≈ ~3 days earnings
+- H100 providers risk 250 USDC but earn $1,080/mo — stake is recouped in under 7 days of uptime
+- Entry tier uses 10 USDC to remain accessible to the university/gaming-cafe segment
+
+### Stake Multipliers (Routing Priority)
+
+Providers may voluntarily stake above minimum to earn routing priority:
+
+| Stake Multiple | Routing Weight Bonus | Display Badge |
+|---------------|---------------------|---------------|
+| 1× (minimum)  | Baseline            | None          |
+| 2×            | +10%                | Bronze        |
+| 5×            | +25%                | Silver        |
+| 10×           | +50% + featured listing | Gold      |
+
+Job routing order: `stake_weight * gpu_score * uptime_score` descending.
+
+---
+
+## 3. Slashing Conditions
+
+Slashing is triggered by documented on-chain evidence. All slash events require an oracle signature.
+
+| Condition | Slash Amount | Evidence Required | Renter Compensation |
+|-----------|-------------|-------------------|---------------------|
+| Job ghosting — accepted, timed out before first token | 5% of stake | Escrow timeout + oracle timestamp | 30% of slash |
+| Repeated job failure — >3 consecutive fails in 24h | 10% of stake | Oracle failure log with job IDs | 30% of slash |
+| VRAM misrepresentation — claimed >20% above actual | 20% of stake | On-chain benchmark proof | 30% of slash |
+| Fraudulent token reporting — metering discrepancy | 50% of stake | Metering audit trail | 30% of slash |
+| Stake falls below minimum after partial slash | Full deactivation | Automatic on-chain check | N/A |
 
 **Slashed funds distribution:**
-- 50% → burned (deflationary, reduces USDC supply in system)
+- 50% → burned (deflationary)
 - 30% → affected renter (compensation)
-- 20% → DCP treasury (dispute resolution cost coverage)
+- 20% → DCP treasury (dispute resolution cost)
 
-**Important:** In Phase 1, slashing is **admin-triggered** (DC1 oracle signs the slash). Fully autonomous slashing via ZK proofs is Phase 3 scope.
-
----
-
-## 4. Unstaking Period
-
-To prevent providers from withdrawing stake during or immediately after a disputed job:
-
-- **Cooldown period:** 7 days from unstaking request to fund release
-- **Active job lock:** Cannot initiate unstake while jobs are `in_progress` or `disputed`
-- **Grace period warning:** 48h notice to active renters before provider goes offline
-- **Emergency exit:** Contract owner (DC1) can reduce cooldown to 24h for verified hardware failures
-
-The 7-day cooldown covers:
-- The 72h dispute window renters have to report job issues
-- Backend settlement batch processing time
-- Manual review time for edge cases
+**Phase 1 note:** Slashing is admin-triggered (DC1 oracle signs). Fully autonomous slashing via ZK proofs is Phase 3 scope.
 
 ---
 
-## 5. Smart Contract Design
+## 4. Unbonding Period
 
-### New contract: `ProviderStaking.sol`
+| State | Duration | Condition |
+|-------|----------|-----------|
+| Normal unstake request | 7 days | No active jobs |
+| Active job lock | Blocked until jobs complete | Cannot request unstake mid-job |
+| Grace period notice | 48h to active renters | Provider going offline |
+| Emergency exit (hardware failure, verified) | 24h (owner override) | DC1 admin signature required |
 
-Separate from `Escrow.sol` to keep concerns isolated. Escrow handles job payments; staking handles provider deposits and slashing.
+**Why 7 days:**
+- Covers the 72h renter dispute window
+- Covers backend settlement batch processing (weekly cycles)
+- Sufficient buffer for manual review of edge cases
+- 3× faster than Akash (21 days), same as most DeFi staking protocols
+
+---
+
+## 5. Smart Contract: `ProviderStaking.sol`
+
+Separate from `Escrow.sol` to isolate concerns. Escrow handles job payments; staking handles deposits and slashing.
 
 ```solidity
-// Core interface
-function stake(uint256 amount, bytes32 providerId) external;
-function requestUnstake(bytes32 providerId) external;
-function finalizeUnstake(bytes32 providerId) external; // after 7-day cooldown
-function slash(bytes32 providerId, uint256 amount, address recipient, bytes calldata oracleSignature) external;
-function getStakeInfo(bytes32 providerId) external view returns (StakeInfo memory);
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
 
-struct StakeInfo {
-    address owner;          // wallet that staked
-    uint256 amount;         // current stake in USDC
-    uint256 lockedUntil;    // cooldown expiry (0 if not unstaking)
-    bool isActive;          // provider allowed to receive jobs
-    uint256 stakedAt;
+interface IProviderStaking {
+    struct StakeInfo {
+        address owner;         // wallet that staked
+        uint256 amount;        // current stake in USDC (6 decimals)
+        uint256 lockedUntil;   // unstake cooldown expiry (0 = not unstaking)
+        bool isActive;         // eligible to receive jobs
+        uint256 stakedAt;      // timestamp of most recent stake
+        uint8 tier;            // 0=Entry, 1=Standard, 2=High, 3=Enterprise
+    }
+
+    /// @notice Deposit USDC stake to activate provider slot
+    /// @param providerId keccak256(providerEmail) from DCP registry
+    /// @param amount USDC amount (6 decimals)
+    function stake(bytes32 providerId, uint256 amount) external;
+
+    /// @notice Begin 7-day unbonding. Reverts if jobs are in_progress.
+    function requestUnstake(bytes32 providerId) external;
+
+    /// @notice Withdraw stake after cooldown expires.
+    function finalizeUnstake(bytes32 providerId) external;
+
+    /// @notice Slash a provider. Requires oracle signature over (providerId, amount, reason).
+    function slash(
+        bytes32 providerId,
+        uint256 amount,
+        address renterRecipient,
+        bytes calldata oracleSignature
+    ) external;
+
+    /// @notice Read stake info for job routing.
+    function getStakeInfo(bytes32 providerId) external view returns (StakeInfo memory);
+
+    /// @notice Minimum stake for a given tier (0–3).
+    function minimumStake(uint8 tier) external view returns (uint256);
 }
 ```
 
-**Key design decisions:**
-- Staking token: USDC (same as escrow — no new token required)
-- `providerId` is `keccak256(providerEmail)` from the existing provider registry — no EVM address required at registration
-- Provider must set an EVM wallet address before staking (one-time action)
-- Contract is upgradeable via proxy (Beacon pattern) — allows Phase 2 parameter changes without migration
+**Design decisions:**
+- Staking token: USDC on Base Sepolia (same as escrow — no new token)
+- `providerId` = `keccak256(abi.encodePacked(providerEmail))` — no EVM address required at registration
+- Provider must set an EVM wallet address once before staking (one-time onboarding step)
+- Contract is upgradeable via BeaconProxy — allows parameter changes in Phase 2 without migration
+- Oracle key is the same key used in `Escrow.sol` — already trusted for payment operations
 
 ---
 
 ## 6. Backend Integration
 
-When staking is live:
+When staking is live, the following changes are required:
 
-1. Provider registration flow adds: "Set your stake to go live" as Step 4 (after the existing 3-step onboarding)
-2. Job routing (`/api/jobs/queue` handler) checks `stake_status = active` before assigning jobs
-3. `escrow-chain` bridge calls `getStakeInfo()` before accepting `depositAndLock` — no stake, no jobs
-4. Settlement service triggers slash check after each failed job
+### Database
 
-The `providers` table gains a `stake_status` column: `none | pending | active | slashed | withdrawn`.
+```sql
+-- Add to providers table
+ALTER TABLE providers ADD COLUMN stake_status TEXT DEFAULT 'none';
+-- Values: 'none' | 'pending' | 'active' | 'slashed' | 'withdrawn'
 
----
+ALTER TABLE providers ADD COLUMN stake_amount_usdc REAL DEFAULT 0;
+ALTER TABLE providers ADD COLUMN stake_tier INTEGER DEFAULT 0;
+ALTER TABLE providers ADD COLUMN evm_wallet_address TEXT;
+ALTER TABLE providers ADD COLUMN unstake_requested_at DATETIME;
+```
 
-## 7. Provider UX Impact
+### Job Routing
 
-For the primary onboarding target (Saudi internet cafes with RTX 4090s):
+`GET /api/jobs/queue` — filter: `stake_status = 'active'` (Phase 2+).
+`POST /api/jobs/assign` — weight: `stake_amount * gpu_score * uptime_score`.
 
-- **Stake required:** 25 USDC ≈ SAR 93.75
-- **Time to recoup:** ~1.5 days at 50% utilization (RTX 4090 earns ~$3/day)
-- **Presented as:** "Activate your GPU — deposit $25 to start earning"
-- **Incentive framing:** "Your stake is your earnings buffer — you can withdraw anytime after a 7-day cooling period"
+### Escrow Bridge
 
-This is positioned as a **deposit**, not a fee. Providers get it back when they exit.
+`escrow-chain` calls `getStakeInfo(providerId)` before accepting a `depositAndLock`. Providers with `isActive = false` are rejected before any renter funds are locked.
 
----
+### Settlement Service
 
-## 8. Investor Q&A Preparation
-
-**Q: How does staking prevent Sybil attacks?**
-A: Each active GPU requires a real USDC deposit. Registering 100 fake providers now costs $2,500+ in locked capital. The registration fee (near zero) deters nothing; the stake requirement deters everything.
-
-**Q: Can DCP confiscate provider stakes unfairly?**
-A: No. The slash function requires a valid oracle signature over specific evidence (job ID, failure type). The oracle key is the same one used in escrow — already trusted for payment. Slashing events are on-chain and auditable. A dispute contract (Phase 3) will allow providers to challenge slashes on-chain.
-
-**Q: What's the total staking TVL at target scale?**
-A: At 1,000 active providers (Phase 2 target): 700 Standard × $25 + 200 High × $100 + 100 Enterprise × $250 = **$62,500 TVL** in ProviderStaking.sol — modest but meaningful.
+After each job failure, settlement service triggers a slash eligibility check. Slash is executed if criteria are met and oracle signature is available.
 
 ---
 
-## 9. Implementation Roadmap
+## 7. Provider UX
+
+For the primary onboarding target (Saudi internet cafe, RTX 4090):
+
+| Field | Value |
+|-------|-------|
+| Required stake | 25 USDC ≈ SAR 93.75 |
+| Time to recoup from earnings | ~3 days at 50% utilization |
+| Presented as | "Activate your GPU — deposit $25 to start earning" |
+| Withdrawal framing | "Your stake is your earnings buffer — withdraw anytime after 7 days" |
+
+The stake is positioned as a **refundable deposit**, not a fee.
+
+---
+
+## 8. Implementation Roadmap
 
 | Phase | Milestone | When |
 |-------|-----------|------|
-| Phase 1 (current) | No staking — registration free, any provider can receive jobs | Live |
-| Phase 2 | `ProviderStaking.sol` deployed, staking optional but incentivized (routing priority) | Post-mainnet launch |
-| Phase 2.5 | Staking mandatory for new registrations; existing providers grandfathered for 30 days | Q3 2026 |
+| Phase 1 (current) | No mandatory staking — free registration, reputation-only routing | Live |
+| Phase 2 | `ProviderStaking.sol` deployed; staking optional but routing-incentivised | Post-mainnet |
+| Phase 2.5 | Staking mandatory for new registrations; existing providers grandfathered 30 days | Q3 2026 |
 | Phase 3 | On-chain dispute resolution; slash challenges via ZK proofs | 2027 |
 
 ---
 
-*Related: Escrow.sol, docs/blockchain/escrow-deployment-readiness.md, docs/FOUNDER-STRATEGIC-BRIEF.md*
-*Last updated: 2026-03-24 — DCP-810*
+## 9. Total Value Locked (TVL) Projections
+
+At Phase 2 target scale (1,000 active providers):
+
+| Tier | Count | Stake/Provider | Subtotal |
+|------|-------|---------------|---------|
+| Entry (RTX 3090) | 400 | $10 | $4,000 |
+| Standard (RTX 4090) | 400 | $25 | $10,000 |
+| High (A100/L40S) | 150 | $100 | $15,000 |
+| Enterprise (H100/H200) | 50 | $250 | $12,500 |
+| **Total TVL** | **1,000** | | **$41,500** |
+
+Modest TVL; primary value is economic deterrence, not DeFi yield.
+
+---
+
+*Related: `Escrow.sol`, `docs/blockchain/base-sepolia-launch-checklist.md`, `docs/FOUNDER-STRATEGIC-BRIEF.md`*
+*Last updated: 2026-03-24 — DCP-853*
