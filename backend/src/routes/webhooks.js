@@ -32,8 +32,13 @@ router.post('/provider/event', (req, res) => {
   const provider = req.webhookProvider;
   console.info(`[webhooks] provider=${provider.id} event=${event} job_id=${job_id || 'n/a'}`);
 
-  // Dispatch to jobQueue to update job status based on event type
-  const queueResult = handleProviderEvent({ event, job_id, provider_id: provider.id, payload });
+  // Dispatch to job queue event handler — updates job status based on event type.
+  const queueResult = handleProviderEvent({
+    event,
+    job_id,
+    provider_id: provider.id,
+    payload: payload || {},
+  });
 
   return res.status(200).json({
     received: true,
@@ -41,7 +46,7 @@ router.post('/provider/event', (req, res) => {
     event,
     job_id: job_id || null,
     job_updated: queueResult.updated,
-    job_status: queueResult.newStatus || null,
+    new_status: queueResult.newStatus || null,
   });
 });
 
