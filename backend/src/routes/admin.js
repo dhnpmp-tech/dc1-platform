@@ -754,20 +754,38 @@ router.get('/providers/health', (req, res) => {
   try {
     const nowMs = Date.now();
     const providers = db.all(
-      `SELECT id, email, last_heartbeat, vram_gb, vram_mb, gpu_vram_mb, gpu_vram_mib
+      `SELECT id, email, last_heartbeat, vram_gb, vram_mb, gpu_vram_mb, gpu_vram_mib,
+              gpu_name_detected, gpu_model, status
        FROM providers`
     );
+
+    // Latest GPU telemetry per provider
+    const latestTelemetry = db.all(
+      `WITH latest AS (
+         SELECT t.provider_id, t.gpu_util_pct, t.vram_used_gb, t.active_jobs
+         FROM provider_gpu_telemetry t
+         INNER JOIN (
+           SELECT provider_id, MAX(recorded_at) AS max_at
+           FROM provider_gpu_telemetry GROUP BY provider_id
+         ) m ON m.provider_id = t.provider_id AND m.max_at = t.recorded_at
+       )
+       SELECT * FROM latest`
+    );
+    const telemetryMap = {};
+    for (const row of latestTelemetry) telemetryMap[row.provider_id] = row;
 
     let onlineCount = 0;
     let staleCount = 0;
     let offlineCount = 0;
     let totalVramGb = 0;
+    const providerList = [];
 
     for (const provider of providers) {
       const ageSeconds = heartbeatAgeSeconds(provider.last_heartbeat, nowMs);
-      if (ageSeconds == null || ageSeconds > 15 * 60) offlineCount += 1;
-      else if (ageSeconds > 5 * 60) staleCount += 1;
-      else onlineCount += 1;
+      let healthStatus;
+      if (ageSeconds == null || ageSeconds > 15 * 60) { healthStatus = 'offline'; offlineCount += 1; }
+      else if (ageSeconds > 5 * 60) { healthStatus = 'stale'; staleCount += 1; }
+      else { healthStatus = 'online'; onlineCount += 1; }
 
       const vramGb = Number(
         provider.vram_gb
@@ -776,7 +794,24 @@ router.get('/providers/health', (req, res) => {
         || (provider.gpu_vram_mib ? provider.gpu_vram_mib / 1024 : 0)
       );
       totalVramGb += Number.isFinite(vramGb) ? vramGb : 0;
+
+      const t = telemetryMap[provider.id] || {};
+      providerList.push({
+        id: provider.id,
+        email: provider.email || null,
+        gpu_name: provider.gpu_name_detected || provider.gpu_model || null,
+        status: healthStatus,
+        last_heartbeat: provider.last_heartbeat || null,
+        heartbeat_age_seconds: ageSeconds,
+        gpu_utilization_pct: t.gpu_util_pct != null ? Number(Number(t.gpu_util_pct).toFixed(1)) : null,
+        vram_used_gb: t.vram_used_gb != null ? Number(Number(t.vram_used_gb).toFixed(2)) : null,
+        active_jobs: t.active_jobs != null ? Number(t.active_jobs) : null,
+        vram_total_gb: Number.isFinite(vramGb) && vramGb > 0 ? Number(vramGb.toFixed(2)) : null,
+      });
     }
+
+    // Sort: online first, then stale, then offline
+    providerList.sort((a, b) => (['online', 'stale', 'offline'].indexOf(a.status)) - (['online', 'stale', 'offline'].indexOf(b.status)));
 
     const telemetryAvg = db.get(
       `WITH latest AS (
@@ -834,6 +869,7 @@ router.get('/providers/health', (req, res) => {
             active_jobs: Number(busiestProvider.active_jobs || 0),
           }
         : null,
+      providers: providerList,
       generated_at: new Date(nowMs).toISOString(),
     });
   } catch (error) {

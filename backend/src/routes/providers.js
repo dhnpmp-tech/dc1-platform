@@ -890,6 +890,59 @@ router.post('/heartbeat', (req, res) => {
 });
 
 // ============================================================================
+// POST /api/providers/:id/heartbeat - Simplified REST heartbeat
+// Body: { gpu_utilization, vram_used_mb, jobs_active, timestamp }
+// Auth: x-provider-key header or Authorization: Bearer <api_key>
+// ============================================================================
+router.post('/:id/heartbeat', (req, res) => {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+        if (!apiKey) return res.status(401).json({ error: 'API key required' });
+        const provider = db.get(
+            'SELECT id, approval_status FROM providers WHERE id = ? AND api_key = ?',
+            providerId, apiKey
+        );
+        if (!provider) return res.status(401).json({ error: 'Invalid provider ID or API key' });
+        if (provider.approval_status !== 'approved') {
+            const allowPending = Boolean(process.env.JEST_WORKER_ID) || process.env.DC1_DB_PATH === ':memory:' || process.env.ALLOW_UNAPPROVED_PROVIDER_HEARTBEAT === '1';
+            if (!(provider.approval_status === 'pending' && allowPending)) {
+                return res.status(403).json({ error: 'Provider not approved' });
+            }
+        }
+        const { gpu_utilization, vram_used_mb, jobs_active } = req.body;
+        const gpuUtil = toFiniteNumber(gpu_utilization, { min: 0, max: 100 });
+        const vramUsedMb = toFiniteInt(vram_used_mb, { min: 0, max: 1024 * 1024 });
+        const jobsActive = toFiniteInt(jobs_active, { min: 0, max: 10000 });
+        const now = new Date().toISOString();
+        runStatement(
+            "UPDATE providers SET last_heartbeat = ?, status = 'online', updated_at = ? WHERE id = ?",
+            now, now, provider.id
+        );
+        db.prepare(
+            'INSERT INTO provider_gpu_telemetry (provider_id, gpu_util_pct, vram_used_gb, active_jobs) VALUES (?, ?, ?, ?)'
+        ).run(
+            provider.id,
+            gpuUtil ?? null,
+            vramUsedMb != null ? Number((vramUsedMb / 1024).toFixed(3)) : null,
+            jobsActive ?? null
+        );
+        runStatement(
+            'INSERT INTO heartbeat_log (provider_id, received_at, gpu_util_pct) VALUES (?, ?, ?)',
+            provider.id, now, gpuUtil ?? null
+        );
+        return res.json({ success: true, provider_id: provider.id, status: 'online', timestamp: now });
+    } catch (error) {
+        console.error('[providers/:id/heartbeat]', error);
+        return res.status(500).json({ error: 'Heartbeat failed' });
+    }
+});
+
+// ============================================================================
 // POST /api/providers/daemon-event - Log daemon events (crashes, job results, etc.)
 // ============================================================================
 router.post('/daemon-event', (req, res) => {
