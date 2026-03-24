@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 import { useLanguage } from '../../lib/i18n'
-import { NoJobsYet } from '../../components/EmptyStates'
 
 const API_BASE = '/api/dc1'
+const PAGE_SIZE = 50
 
 interface Job {
   id: number
@@ -16,10 +16,22 @@ interface Job {
   job_type: string
   status: string
   submitted_at: string
-  completed_at: string
+  started_at?: string | null
+  completed_at?: string | null
   actual_cost_halala: number
+  cost_halala?: number
+  actual_duration_minutes?: number | null
+  duration_minutes?: number | null
+  progress_phase?: string | null
+  error?: string | null
+  provider_name?: string | null
+  provider_gpu?: string | null
+  prompt_tokens?: number | null
+  completion_tokens?: number | null
+  tokens_used?: number | null
   params?: string | null
   container_spec?: string | null
+  refunded?: boolean
 }
 
 const HomeIcon = () => (
@@ -47,7 +59,6 @@ const PlaygroundIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
   </svg>
 )
-
 const ChartIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -60,59 +71,128 @@ const GearIcon = () => (
   </svg>
 )
 
-interface RetryState {
-  job: Job | null
-  loading: boolean
-  error: string
-  requiredHalala: number | null
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function formatDuration(job: Job): string {
+  if (job.actual_duration_minutes) {
+    const mins = job.actual_duration_minutes
+    if (mins < 1) return `${Math.round(mins * 60)}s`
+    return `${mins.toFixed(1)}m`
+  }
+  if (job.completed_at && job.submitted_at) {
+    const secs = Math.round(
+      (new Date(job.completed_at).getTime() - new Date(job.submitted_at).getTime()) / 1000
+    )
+    if (secs < 60) return `${secs}s`
+    return `${(secs / 60).toFixed(1)}m`
+  }
+  return '—'
 }
 
-interface SaveTplState {
-  job: Job | null
-  name: string
-  saving: boolean
-  saved: boolean
+function formatTokens(job: Job): string {
+  const total = (job.tokens_used ?? 0) || ((job.prompt_tokens ?? 0) + (job.completion_tokens ?? 0))
+  if (!total) return '—'
+  if (total >= 1000) return `${(total / 1000).toFixed(1)}K`
+  return String(total)
 }
 
+function formatCost(job: Job): string {
+  const halala = job.actual_cost_halala || job.cost_halala || 0
+  if (!halala) return '—'
+  return `${(halala / 100).toFixed(2)} SAR`
+}
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function getModelLabel(job: Job): string {
+  if (job.params) {
+    try {
+      const p = JSON.parse(job.params)
+      if (p.model) return String(p.model)
+    } catch { /* ok */ }
+  }
+  return (job.job_type || '').replace(/_/g, ' ')
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+function EmptyJobs() {
+  return (
+    <tr>
+      <td colSpan={8}>
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="text-5xl mb-4">⚡</div>
+          <h3 className="text-lg font-bold text-dc1-text-primary mb-2">No jobs yet</h3>
+          <p className="text-dc1-text-secondary text-sm mb-6 max-w-xs">
+            You haven't run any compute jobs. Browse the model catalog and deploy your first model.
+          </p>
+          <Link href="/renter/models" className="btn btn-primary">
+            Browse Models →
+          </Link>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function RenterJobsPage() {
   const router = useRouter()
   const { t } = useLanguage()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
-  const [renterName, setRenterName] = useState('Renter')
-  const [totalSpent, setTotalSpent] = useState(0)
-  const [retry, setRetry] = useState<RetryState>({ job: null, loading: false, error: '', requiredHalala: null })
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [totalSpentSar, setTotalSpentSar] = useState(0)
+  const [balanceSar, setBalanceSar] = useState<number | null>(null)
   const [exportingCsv, setExportingCsv] = useState(false)
-  const [saveTpl, setSaveTpl] = useState<SaveTplState>({ job: null, name: '', saving: false, saved: false })
+  const [retryJobId, setRetryJobId] = useState<string | null>(null)
+  const [retryLoading, setRetryLoading] = useState(false)
+  const [retryError, setRetryError] = useState('')
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
-    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: 'Models', href: '/renter/models', icon: <PlaygroundIcon /> },
     { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
     { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
     { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
 
-  const fetchJobs = async (apiKey: string) => {
+  const fetchJobs = useCallback(async (apiKey: string, offset = 0, append = false) => {
     try {
-      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey)}`)
-      if (!res.ok) {
+      const res = await fetch(`${API_BASE}/jobs/history?limit=${PAGE_SIZE}`, {
+        headers: { 'x-renter-key': apiKey },
+      })
+      if (res.status === 401) {
         localStorage.removeItem('dc1_renter_key')
         router.push('/login')
         return
       }
+      if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
-      setRenterName(data.renter?.name || 'Renter')
-      setTotalSpent((data.renter?.total_spent_halala || 0) / 100)
-      setJobs(data.recent_jobs || [])
+      const fetched: Job[] = data.jobs || []
+
+      if (append) {
+        setJobs(prev => [...prev, ...fetched])
+      } else {
+        setJobs(fetched)
+        // Compute cumulative spend from all returned jobs
+        const spent = fetched.reduce((sum: number, j: Job) => sum + ((j.actual_cost_halala || j.cost_halala || 0) / 100), 0)
+        setTotalSpentSar(spent)
+        if (data.balance_sar !== undefined) setBalanceSar(parseFloat(data.balance_sar))
+      }
+      // If we got a full page, there may be more
+      setHasMore(fetched.length === PAGE_SIZE)
     } catch (err) {
       console.error('Failed to load jobs:', err)
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
-  }
+  }, [router])
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_renter_key')
@@ -123,50 +203,12 @@ export default function RenterJobsPage() {
     fetchJobs(apiKey)
     const interval = setInterval(() => fetchJobs(apiKey), 30000)
     return () => clearInterval(interval)
-  }, [router])
+  }, [router, fetchJobs])
 
-  const openRetryModal = (job: Job) => {
-    setRetry({ job, loading: false, error: '', requiredHalala: Number(job.actual_cost_halala || 0) })
-  }
-
-  const confirmRetry = async () => {
+  const loadMore = () => {
     const apiKey = localStorage.getItem('dc1_renter_key') || ''
-    const { job } = retry
-    if (!job) return
-
-    setRetry(r => ({ ...r, loading: true, error: '' }))
-
-    try {
-      const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(job.id))}/retry?key=${encodeURIComponent(apiKey)}`, {
-        method: 'POST',
-        headers: { 'x-renter-key': apiKey },
-      })
-      if (res.status === 402) {
-        const err = await res.json().catch(() => ({}))
-        setRetry(r => ({
-          ...r,
-          loading: false,
-          error: 'insufficient_balance',
-          requiredHalala: Number(err.required_halala || r.requiredHalala || 0),
-        }))
-        return
-      }
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setRetry(r => ({ ...r, loading: false, error: err.error || 'Failed to re-submit job' }))
-        return
-      }
-      const data = await res.json()
-      const newId = data.job?.id || data.id || null
-      setRetry({ job: null, loading: false, error: '', requiredHalala: null })
-      if (newId) {
-        router.push(`/renter/jobs/${newId}`)
-        return
-      }
-      fetchJobs(apiKey)
-    } catch {
-      setRetry(r => ({ ...r, loading: false, error: 'Network error. Please try again.' }))
-    }
+    setLoadingMore(true)
+    fetchJobs(apiKey, jobs.length, true)
   }
 
   const exportCsv = async () => {
@@ -192,36 +234,38 @@ export default function RenterJobsPage() {
     }
   }
 
-  const openSaveTemplateModal = (job: Job) => {
-    setSaveTpl({ job, name: '', saving: false, saved: false })
-  }
-
-  const confirmSaveTemplate = async () => {
+  const retryJob = async (job: Job) => {
     const apiKey = localStorage.getItem('dc1_renter_key') || ''
-    const { job, name } = saveTpl
-    if (!job || !name.trim()) return
-    setSaveTpl(s => ({ ...s, saving: true }))
-    let parsedParams: Record<string, unknown> = {}
-    try { if (job.params) parsedParams = JSON.parse(job.params) } catch { /* ok */ }
+    setRetryJobId(job.job_id || String(job.id))
+    setRetryLoading(true)
+    setRetryError('')
     try {
-      const res = await fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(apiKey)}`, {
+      const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(job.id))}/retry?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          job_type: job.job_type,
-          model: parsedParams.model || job.job_type,
-          resource_spec_json: JSON.stringify(parsedParams),
-        }),
+        headers: { 'x-renter-key': apiKey },
       })
-      if (res.ok) {
-        setSaveTpl(s => ({ ...s, saving: false, saved: true }))
-        setTimeout(() => setSaveTpl({ job: null, name: '', saving: false, saved: false }), 2000)
-      } else {
-        setSaveTpl(s => ({ ...s, saving: false }))
+      if (res.status === 402) {
+        setRetryError('Insufficient balance. Please top up.')
+        return
       }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setRetryError(err.error || 'Retry failed')
+        return
+      }
+      const data = await res.json()
+      const newId = data.job?.id || data.id || null
+      setRetryJobId(null)
+      setRetryError('')
+      if (newId) {
+        router.push(`/renter/jobs/${newId}`)
+        return
+      }
+      fetchJobs(apiKey)
     } catch {
-      setSaveTpl(s => ({ ...s, saving: false }))
+      setRetryError('Network error. Please try again.')
+    } finally {
+      setRetryLoading(false)
     }
   }
 
@@ -237,16 +281,16 @@ export default function RenterJobsPage() {
 
   const completedJobs = jobs.filter(j => j.status === 'completed').length
   const failedJobs = jobs.filter(j => j.status === 'failed').length
-  const retryHoldSar = ((retry.requiredHalala || 0) / 100).toFixed(2)
 
   return (
-    <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
+    <DashboardLayout navItems={navItems} role="renter">
       <div className="space-y-8">
+        {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">{t('nav.jobs')}</h1>
             <p className="text-dc1-text-secondary text-sm mt-1">
-              {jobs.length} {jobs.length !== 1 ? t('dashboard.jobs_run') : t('dashboard.jobs_run')} — auto-refreshes every 30s
+              {jobs.length} job{jobs.length !== 1 ? 's' : ''} loaded — auto-refreshes every 30s
             </p>
           </div>
           <button
@@ -256,9 +300,9 @@ export default function RenterJobsPage() {
             aria-label="Export job history as CSV"
           >
             {exportingCsv ? (
-              <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" aria-hidden="true" />
+              <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
             ) : (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             )}
@@ -277,14 +321,25 @@ export default function RenterJobsPage() {
             <p className="text-2xl font-bold text-status-success">{completedJobs}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">{t('table.status')}</p>
+            <p className="text-sm text-dc1-text-secondary">Failed</p>
             <p className="text-2xl font-bold text-status-error">{failedJobs}</p>
           </div>
           <div className="card p-4">
             <p className="text-sm text-dc1-text-secondary">{t('dashboard.total_spent')}</p>
-            <p className="text-2xl font-bold text-dc1-amber">{totalSpent.toFixed(2)} {t('common.sar')}</p>
+            <p className="text-2xl font-bold text-dc1-amber">{totalSpentSar.toFixed(2)} {t('common.sar')}</p>
+            {balanceSar !== null && (
+              <p className="text-xs text-dc1-text-muted mt-1">Balance: {balanceSar.toFixed(2)} SAR</p>
+            )}
           </div>
         </div>
+
+        {/* Retry error banner */}
+        {retryError && (
+          <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error flex items-center justify-between">
+            <span>{retryError}</span>
+            <button onClick={() => setRetryError('')} className="ml-4 text-status-error/70 hover:text-status-error">✕</button>
+          </div>
+        )}
 
         {/* Jobs Table */}
         <div className="table-container">
@@ -292,9 +347,11 @@ export default function RenterJobsPage() {
             <thead>
               <tr>
                 <th>{t('table.job_id')}</th>
-                <th>{t('table.type')}</th>
+                <th>Model / Template</th>
+                <th>GPU</th>
                 <th>{t('billing.submitted')}</th>
-                <th>{t('table.completed')}</th>
+                <th>Duration</th>
+                <th>Tokens</th>
                 <th>{t('table.status')}</th>
                 <th>{t('table.cost')}</th>
                 <th className="sr-only">{t('table.action')}</th>
@@ -303,24 +360,30 @@ export default function RenterJobsPage() {
             <tbody>
               {jobs.length > 0 ? (
                 jobs.map(j => {
-                  const duration = j.completed_at && j.submitted_at
-                    ? Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
-                    : 0
+                  const isRetrying = retryLoading && retryJobId === (j.job_id || String(j.id))
                   return (
                     <tr key={j.id}>
+                      {/* Job ID */}
                       <td className="font-mono text-sm">
                         <Link href={`/renter/jobs/${j.id}`} className="text-dc1-amber hover:underline">
                           {(j.job_id || `#${j.id}`).slice(0, 16)}
                         </Link>
+                        {j.refunded && (
+                          <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-status-info/10 text-status-info border border-status-info/20">
+                            refunded
+                          </span>
+                        )}
                       </td>
+
+                      {/* Model / Template */}
                       <td className="text-sm">
-                        <div className="flex flex-col gap-1">
-                          <span>{(j.job_type || '').replace(/_/g, ' ')}</span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium">{getModelLabel(j)}</span>
                           {j.container_spec && (() => {
                             try {
                               const spec = JSON.parse(j.container_spec)
                               if (spec.image_type) return (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-dc1-amber/15 text-dc1-amber border border-dc1-amber/25 w-fit font-mono">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dc1-amber/10 text-dc1-amber border border-dc1-amber/20 w-fit font-mono">
                                   {spec.image_type}
                                 </span>
                               )
@@ -329,169 +392,88 @@ export default function RenterJobsPage() {
                           })()}
                         </div>
                       </td>
+
+                      {/* GPU */}
                       <td className="text-sm text-dc1-text-secondary">
-                        {j.submitted_at
-                          ? new Date(j.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                          : '—'}
+                        {j.provider_gpu
+                          ? <span className="font-mono text-xs bg-dc1-surface-l2 px-1.5 py-0.5 rounded border border-dc1-border">{j.provider_gpu}</span>
+                          : '—'
+                        }
                       </td>
+
+                      {/* Submitted */}
+                      <td className="text-sm text-dc1-text-secondary whitespace-nowrap">
+                        {formatDate(j.submitted_at)}
+                      </td>
+
+                      {/* Duration */}
                       <td className="text-sm text-dc1-text-secondary">
-                        {j.completed_at
-                          ? `${duration}s`
-                          : '—'}
+                        {formatDuration(j)}
                       </td>
-                      <td><StatusBadge status={j.status as any} /></td>
+
+                      {/* Tokens */}
+                      <td className="text-sm text-dc1-text-secondary">
+                        {formatTokens(j)}
+                      </td>
+
+                      {/* Status */}
+                      <td><StatusBadge status={j.status as Parameters<typeof StatusBadge>[0]['status']} /></td>
+
+                      {/* Cost */}
                       <td className="text-dc1-amber font-semibold">
-                        {j.actual_cost_halala
-                          ? `${(j.actual_cost_halala / 100).toFixed(2)} SAR`
-                          : '—'}
+                        {formatCost(j)}
                       </td>
+
+                      {/* Actions */}
                       <td>
-                        <div className="flex items-center gap-1">
-                          {j.status === 'failed' && (
-                            <button
-                              onClick={() => openRetryModal(j)}
-                              className="text-dc1-amber border border-dc1-amber/40 hover:bg-dc1-amber/10 rounded p-1.5 min-h-[32px] min-w-[32px] transition-colors inline-flex items-center justify-center"
-                              aria-label={`Retry job ${j.job_id || j.id}`}
-                              title="Retry Job"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        {j.status === 'failed' && (
+                          <button
+                            onClick={() => retryJob(j)}
+                            disabled={isRetrying}
+                            className="text-dc1-amber border border-dc1-amber/40 hover:bg-dc1-amber/10 rounded p-1.5 min-h-[32px] min-w-[32px] transition-colors inline-flex items-center justify-center disabled:opacity-50"
+                            aria-label={`Retry job ${j.job_id || j.id}`}
+                            title="Retry Job"
+                          >
+                            {isRetrying ? (
+                              <span className="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full" />
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M5.64 18.36A9 9 0 103.5 12" />
                               </svg>
-                            </button>
-                          )}
-                          <button
-                            onClick={() => openSaveTemplateModal(j)}
-                            className="text-xs text-dc1-text-muted border border-white/10 hover:border-dc1-amber/40 hover:text-dc1-amber rounded px-2 py-1 min-h-[32px] transition-colors"
-                            aria-label={`Save job ${j.job_id || j.id} as template`}
-                            title="Save as Template"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                            )}
                           </button>
-                        </div>
+                        )}
                       </td>
                     </tr>
                   )
                 })
               ) : (
-                <tr>
-                  <td colSpan={7}>
-                    <NoJobsYet />
-                  </td>
-                </tr>
+                <EmptyJobs />
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Load More */}
+        {hasMore && (
+          <div className="flex justify-center">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="btn btn-secondary min-h-[44px] px-8 flex items-center gap-2"
+            >
+              {loadingMore ? (
+                <>
+                  <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                  Loading…
+                </>
+              ) : (
+                'Load more jobs'
+              )}
+            </button>
+          </div>
+        )}
       </div>
-
-      {/* Retry Confirmation Modal */}
-      {retry.job && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="retry-modal-title"
-        >
-          <div className="card w-full max-w-md p-6 space-y-5">
-            <h2 id="retry-modal-title" className="text-lg font-bold text-dc1-text-primary">
-              {t('renter.retry_job')}
-            </h2>
-            <p className="text-dc1-text-secondary text-sm">
-              {t('renter.retry_confirm').replace('{amount}', retryHoldSar)}
-            </p>
-            <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
-              <span className="text-dc1-text-muted">Type: </span>{(retry.job.job_type || '').replace(/_/g, ' ')}
-              <br />
-              <span className="text-dc1-text-muted">Original ID: </span>{retry.job.job_id || `#${retry.job.id}`}
-            </div>
-
-            {retry.error === 'insufficient_balance' ? (
-              <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
-                Insufficient balance. Please{' '}
-                <Link href="/renter/billing" className="underline font-semibold">top up your balance</Link>{' '}
-                first.
-              </div>
-            ) : retry.error ? (
-              <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
-                {retry.error}
-              </div>
-            ) : null}
-
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setRetry({ job: null, loading: false, error: '', requiredHalala: null })}
-                disabled={retry.loading}
-                className="btn btn-secondary min-h-[44px] px-4"
-              >
-                {t('common.retry')}
-              </button>
-              <button
-                onClick={confirmRetry}
-                disabled={retry.loading}
-                className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2"
-              >
-                {retry.loading && (
-                  <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                )}
-                {retry.loading ? t('common.loading') : t('renter.retry_job')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Save Template Modal */}
-      {saveTpl.job && !saveTpl.saved && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="save-tpl-modal-title"
-        >
-          <div className="card w-full max-w-sm p-6 space-y-4">
-            <h2 id="save-tpl-modal-title" className="text-lg font-bold text-dc1-text-primary">{t('renter.save_template')}</h2>
-            <p className="text-dc1-text-secondary text-sm">{t('renter.template_name')}</p>
-            <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-sm font-mono text-dc1-text-secondary">
-              <span className="text-dc1-text-muted">Type: </span>{(saveTpl.job.job_type || '').replace(/_/g, ' ')}
-            </div>
-            <input
-              type="text"
-              placeholder="e.g. Arabic Summariser"
-              className="w-full bg-dc1-surface-l2 border border-white/10 rounded-lg px-4 py-3 text-dc1-text-primary placeholder-dc1-text-muted focus:outline-none focus:border-dc1-amber/60 transition text-sm"
-              value={saveTpl.name}
-              onChange={e => setSaveTpl(s => ({ ...s, name: e.target.value }))}
-              onKeyDown={e => { if (e.key === 'Enter') confirmSaveTemplate() }}
-              autoFocus
-              maxLength={120}
-            />
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setSaveTpl({ job: null, name: '', saving: false, saved: false })}
-                disabled={saveTpl.saving}
-                className="btn btn-secondary min-h-[44px] px-4"
-              >
-                {t('common.retry')}
-              </button>
-              <button
-                onClick={confirmSaveTemplate}
-                disabled={saveTpl.saving || !saveTpl.name.trim()}
-                className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2"
-              >
-                {saveTpl.saving && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />}
-                {saveTpl.saving ? t('common.loading') : t('renter.save_template')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Save Template Success Toast */}
-      {saveTpl.saved && (
-        <div className="fixed bottom-6 right-6 z-50 bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 flex items-center gap-2 text-status-success text-sm font-medium shadow-lg">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-          {t('renter.retry_success')}
-        </div>
-      )}
     </DashboardLayout>
   )
 }

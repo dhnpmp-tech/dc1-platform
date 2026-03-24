@@ -14,31 +14,26 @@ const HomeIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 11l4-4m0 0l4 4m-4-4V5" />
   </svg>
 )
-
 const MarketplaceIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
   </svg>
 )
-
 const ModelsIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
   </svg>
 )
-
 const JobsIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
   </svg>
 )
-
 const BillingIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m4 0h1M9 19h6a2 2 0 002-2V5a2 2 0 00-2-2H9a2 2 0 00-2 2v12a2 2 0 002 2z" />
   </svg>
 )
-
 const GearIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -58,13 +53,29 @@ interface ModelListItem {
   use_cases?: string[]
   providers_online?: number
   avg_price_sar_per_min?: number
+  avg_price_sar_per_hr?: number
+  savings_pct?: number
+  competitor_price_sar_hr?: number
+  competitor_label?: string
   status?: string
   tier?: string | null
   prewarm_class?: string | null
   template_id?: string | null
 }
 
+interface DeployState {
+  model: ModelListItem | null
+  loading: boolean
+  error: string
+  jobId: string | null
+}
+
 type TaskFilter = 'all' | 'chat' | 'embedding' | 'reranking' | 'image'
+
+// ── Pricing comparison (DCP vs Vast.ai, SAR/hr) ───────────────────────────────
+// RTX 4090: DCP 1.00 vs Vast.ai 1.31 (24% savings)
+// Reference: FOUNDER-STRATEGIC-BRIEF.md — buyer economics table
+const VAST_AI_SAR_PER_HR_FALLBACK = 1.31  // RTX 4090 baseline; shown when API has no competitor data
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isArabicModel(model: ModelListItem): boolean {
@@ -84,6 +95,26 @@ function getTaskType(model: ModelListItem): string {
   if (id.includes('rerank') || uses.some(u => u.includes('rerank'))) return 'reranking'
   if (id.includes('sdxl') || id.includes('stable-diff') || uses.some(u => u.includes('image'))) return 'image'
   return 'chat'
+}
+
+function getPriceHr(model: ModelListItem): number | null {
+  if (model.avg_price_sar_per_hr) return model.avg_price_sar_per_hr
+  if (model.avg_price_sar_per_min) return model.avg_price_sar_per_min * 60
+  return null
+}
+
+function getSavingsPct(model: ModelListItem): number | null {
+  const dcp = getPriceHr(model)
+  if (!dcp) return null
+  if (model.savings_pct) return Math.round(model.savings_pct)
+  if (model.competitor_price_sar_hr) {
+    return Math.round((1 - dcp / model.competitor_price_sar_hr) * 100)
+  }
+  // Fallback: use Vast.ai RTX 4090 baseline
+  if (dcp < VAST_AI_SAR_PER_HR_FALLBACK) {
+    return Math.round((1 - dcp / VAST_AI_SAR_PER_HR_FALLBACK) * 100)
+  }
+  return null
 }
 
 function getTierBadge(tier?: string | null) {
@@ -114,19 +145,122 @@ function SkeletonCard() {
   )
 }
 
+// ── Deploy Modal ──────────────────────────────────────────────────────────────
+function DeployModal({ deploy, onClose, onConfirm }: {
+  deploy: DeployState
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const model = deploy.model!
+  const priceHr = getPriceHr(model)
+  const arabic = isArabicModel(model)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="deploy-modal-title"
+    >
+      <div className="card w-full max-w-md p-6 space-y-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="deploy-modal-title" className="text-lg font-bold text-dc1-text-primary">
+              Deploy {model.display_name}
+            </h2>
+            <p className="text-xs text-dc1-text-muted font-mono mt-0.5">{model.model_id}</p>
+          </div>
+          <button onClick={onClose} className="text-dc1-text-muted hover:text-dc1-text-primary p-1" aria-label="Close">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Model specs summary */}
+        <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-xs grid grid-cols-2 gap-2">
+          {(model.min_gpu_vram_gb ?? model.vram_gb) && (
+            <div>
+              <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">VRAM Required</p>
+              <p className="font-semibold text-dc1-text-primary">{model.min_gpu_vram_gb ?? model.vram_gb} GB</p>
+            </div>
+          )}
+          {priceHr !== null && (
+            <div>
+              <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">Estimated Rate</p>
+              <p className="font-bold text-dc1-amber">{priceHr.toFixed(2)} SAR/hr</p>
+            </div>
+          )}
+          {arabic && (
+            <div className="col-span-2">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-dc1-amber/10 text-dc1-amber border border-dc1-amber/20 font-medium">
+                🌙 Arabic-capable — PDPL-compliant
+              </span>
+            </div>
+          )}
+        </div>
+
+        <p className="text-sm text-dc1-text-secondary">
+          Your job will be queued and assigned to an available provider with the required GPU specs.
+          Billing starts when the job begins executing.
+        </p>
+
+        {deploy.error && (
+          <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
+            {deploy.error}
+          </div>
+        )}
+
+        {deploy.jobId && (
+          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 text-sm text-status-success">
+            Job submitted! Job ID: <span className="font-mono">{deploy.jobId}</span>
+          </div>
+        )}
+
+        {!deploy.jobId && (
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={onClose}
+              disabled={deploy.loading}
+              className="btn btn-secondary min-h-[44px] px-4"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={deploy.loading}
+              className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2"
+            >
+              {deploy.loading && (
+                <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+              )}
+              {deploy.loading ? 'Submitting…' : 'Deploy Now'}
+            </button>
+          </div>
+        )}
+
+        {deploy.jobId && (
+          <div className="flex gap-3 justify-end">
+            <button onClick={onClose} className="btn btn-secondary min-h-[44px] px-4">Close</button>
+            <Link href="/renter/jobs" className="btn btn-primary min-h-[44px] px-5">
+              View Jobs →
+            </Link>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Model Card ────────────────────────────────────────────────────────────────
-function ModelCard({ model }: { model: ModelListItem }) {
+function ModelCard({ model, onDeploy }: { model: ModelListItem; onDeploy: (m: ModelListItem) => void }) {
   const arabic = isArabicModel(model)
   const tierBadge = getTierBadge(model.tier)
   const prewarmBadge = getPrewarmBadge(model.prewarm_class)
   const taskType = getTaskType(model)
-  const priceHr = model.avg_price_sar_per_min ? (model.avg_price_sar_per_min * 60).toFixed(2) : null
+  const priceHr = getPriceHr(model)
+  const savingsPct = getSavingsPct(model)
   const vram = model.min_gpu_vram_gb ?? model.vram_gb
-
-  // Link to template if available, otherwise to renter job submission
-  const deployHref = model.template_id
-    ? `/renter/register?template=${encodeURIComponent(model.template_id)}&source=renter_models`
-    : `/renter/register?model=${encodeURIComponent(model.model_id)}&source=renter_models`
 
   return (
     <article className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5 flex flex-col gap-3 hover:border-dc1-amber/30 hover:shadow-amber transition-all duration-200 group">
@@ -203,28 +337,28 @@ function ModelCard({ model }: { model: ModelListItem }) {
         {priceHr !== null && (
           <div>
             <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">DCP Price</p>
-            <p className="font-extrabold text-dc1-amber">
-              {priceHr} <span className="text-[9px] font-normal text-dc1-text-muted">SAR/hr</span>
-            </p>
+            <p className="font-extrabold text-dc1-amber">{priceHr.toFixed(2)} <span className="text-[9px] font-normal text-dc1-text-muted">SAR/hr</span></p>
           </div>
         )}
       </div>
 
-      {/* Arabic savings callout */}
-      {arabic && (
-        <div className="bg-status-success/5 border border-status-success/20 rounded-lg px-3 py-2 text-xs">
-          <span className="text-status-success font-semibold">Save up to 51%</span>
-          <span className="text-dc1-text-muted ml-1">vs AWS Bedrock</span>
+      {/* Savings vs competitor */}
+      {savingsPct !== null && savingsPct > 0 && (
+        <div className="bg-status-success/5 border border-status-success/20 rounded-lg px-3 py-2 text-xs flex items-center justify-between">
+          <span className="text-dc1-text-muted">
+            vs {model.competitor_label ?? 'Vast.ai'}
+          </span>
+          <span className="text-status-success font-bold">Save {savingsPct}%</span>
         </div>
       )}
 
       {/* CTA */}
-      <Link
-        href={deployHref}
-        className="btn btn-primary w-full text-center text-sm mt-auto min-h-[44px] flex items-center justify-center"
+      <button
+        onClick={() => onDeploy(model)}
+        className="btn btn-primary w-full text-sm mt-auto min-h-[44px]"
       >
         Deploy Model
-      </Link>
+      </button>
     </article>
   )
 }
@@ -241,7 +375,9 @@ export default function RenterModelsPage() {
   const [filterArabic, setFilterArabic] = useState(false)
   const [filterTask, setFilterTask] = useState<TaskFilter>('all')
   const [filterVram, setFilterVram] = useState('')
+  const [filterPriceMax, setFilterPriceMax] = useState('')
   const [filterTier, setFilterTier] = useState<'all' | 'tier_a' | 'tier_b'>('all')
+  const [deploy, setDeploy] = useState<DeployState>({ model: null, loading: false, error: '', jobId: null })
 
   const navItems = [
     { label: t('nav.dashboard') || 'Dashboard', href: '/renter', icon: <HomeIcon /> },
@@ -253,7 +389,6 @@ export default function RenterModelsPage() {
   ]
 
   useEffect(() => {
-    // Require renter session
     const key = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key')
     if (!key) {
       router.push('/login?role=renter&reason=missing_credentials')
@@ -280,6 +415,11 @@ export default function RenterModelsPage() {
         const vram = m.min_gpu_vram_gb ?? m.vram_gb ?? 0
         if (!isNaN(minV) && vram < minV) return false
       }
+      if (filterPriceMax !== '') {
+        const maxP = parseFloat(filterPriceMax)
+        const priceHr = getPriceHr(m)
+        if (!isNaN(maxP) && priceHr !== null && priceHr > maxP) return false
+      }
       if (search.trim()) {
         const q = search.toLowerCase()
         const hay = `${m.model_id} ${m.display_name} ${m.family ?? ''} ${(m.use_cases ?? []).join(' ')}`.toLowerCase()
@@ -287,10 +427,66 @@ export default function RenterModelsPage() {
       }
       return true
     })
-  }, [models, filterArabic, filterTask, filterTier, filterVram, search])
+  }, [models, filterArabic, filterTask, filterTier, filterVram, filterPriceMax, search])
 
   const arabicCount = models.filter(isArabicModel).length
   const tierACount = models.filter(m => m.tier === 'tier_a').length
+
+  const openDeploy = (model: ModelListItem) => {
+    setDeploy({ model, loading: false, error: '', jobId: null })
+  }
+
+  const closeDeploy = () => {
+    setDeploy({ model: null, loading: false, error: '', jobId: null })
+  }
+
+  const confirmDeploy = async () => {
+    const model = deploy.model
+    if (!model) return
+    const apiKey = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key') || ''
+    setDeploy(d => ({ ...d, loading: true, error: '' }))
+    try {
+      const res = await fetch(`${API_BASE}/jobs/from-template`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-renter-key': apiKey,
+        },
+        body: JSON.stringify({
+          model_id: model.model_id,
+          template_id: model.template_id ?? undefined,
+        }),
+      })
+      if (res.status === 404) {
+        // Backend endpoint not yet deployed — fall back to job submission page
+        router.push(`/renter/playground?model=${encodeURIComponent(model.model_id)}`)
+        return
+      }
+      if (res.status === 402) {
+        setDeploy(d => ({ ...d, loading: false, error: 'Insufficient balance. Please top up your wallet before deploying.' }))
+        return
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setDeploy(d => ({ ...d, loading: false, error: err.error || 'Failed to submit job. Please try again.' }))
+        return
+      }
+      const data = await res.json()
+      const jobId = data.job_id || data.id || 'submitted'
+      setDeploy(d => ({ ...d, loading: false, jobId }))
+    } catch {
+      setDeploy(d => ({ ...d, loading: false, error: 'Network error. Please try again.' }))
+    }
+  }
+
+  const clearFilters = () => {
+    setSearch('')
+    setFilterArabic(false)
+    setFilterTask('all')
+    setFilterTier('all')
+    setFilterVram('')
+    setFilterPriceMax('')
+  }
 
   return (
     <DashboardLayout navItems={navItems} role="renter">
@@ -323,8 +519,8 @@ export default function RenterModelsPage() {
             <span className="text-dc1-text-secondary">Tier A (pre-warmed)</span>
           </div>
           <div className="flex items-center gap-2 bg-status-success/10 rounded-lg px-3 py-2 border border-status-success/20">
-            <span className="text-status-success font-bold">Save 33–51%</span>
-            <span className="text-dc1-text-secondary">vs AWS Bedrock</span>
+            <span className="text-status-success font-bold">Save 24–51%</span>
+            <span className="text-dc1-text-secondary">vs competitors</span>
           </div>
         </div>
 
@@ -387,6 +583,15 @@ export default function RenterModelsPage() {
             onChange={e => setFilterVram(e.target.value)}
             className="input text-sm w-36 min-h-[44px]"
           />
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            placeholder="Max price (SAR/hr)"
+            value={filterPriceMax}
+            onChange={e => setFilterPriceMax(e.target.value)}
+            className="input text-sm w-40 min-h-[44px]"
+          />
           <label className="flex items-center gap-2 text-sm text-dc1-text-secondary cursor-pointer select-none min-h-[44px]">
             <input
               type="checkbox"
@@ -415,20 +620,23 @@ export default function RenterModelsPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20">
+            <p className="text-2xl mb-3">🔍</p>
             <p className="text-dc1-text-secondary mb-1">No models match your filters.</p>
-            <button
-              onClick={() => { setSearch(''); setFilterArabic(false); setFilterTask('all'); setFilterTier('all'); setFilterVram('') }}
-              className="btn btn-outline btn-sm mt-3"
-            >
+            <button onClick={clearFilters} className="btn btn-outline btn-sm mt-3">
               Clear filters
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filtered.map(m => <ModelCard key={m.model_id} model={m} />)}
+            {filtered.map(m => <ModelCard key={m.model_id} model={m} onDeploy={openDeploy} />)}
           </div>
         )}
       </div>
+
+      {/* Deploy modal */}
+      {deploy.model && (
+        <DeployModal deploy={deploy} onClose={closeDeploy} onConfirm={confirmDeploy} />
+      )}
     </DashboardLayout>
   )
 }
