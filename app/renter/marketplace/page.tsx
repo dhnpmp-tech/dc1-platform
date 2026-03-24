@@ -1136,6 +1136,12 @@ export default function MarketplacePage() {
             >
               {t('marketplace.models_tab')}
             </button>
+            <Link
+              href="/renter/marketplace/templates"
+              className="px-3 py-1.5 rounded-lg text-sm border border-dc1-border text-dc1-text-secondary hover:text-dc1-amber hover:border-dc1-amber/40 transition-colors flex items-center gap-1"
+            >
+              🗂️ Templates
+            </Link>
           </div>
 
           <div className="flex items-center gap-2">
