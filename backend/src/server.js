@@ -68,17 +68,40 @@ function getLatestDaemonVersion() {
   return '3.3.0';
 }
 
-// ── CORS Lockdown ─────────────────────────────────────────────────────
+// ── CORS Lockdown (DCP-879) ───────────────────────────────────────────────
 // Additional origins can be injected via CORS_ORIGINS (comma-separated)
 const _extraOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : [];
 const _frontendOrigin = (process.env.FRONTEND_URL || '').trim();
+const _isDev = process.env.NODE_ENV !== 'production';
 const ALLOWED_ORIGINS = [
   'https://dcp.sa',
   'https://www.dcp.sa',
+  'https://app.dcp.sa',
+  'https://api.dcp.sa',
   ...(_frontendOrigin ? [_frontendOrigin] : []),
   ..._extraOrigins,
+  // localhost variants — only in non-production environments
+  ...(_isDev ? [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+    'http://localhost:8080',
+  ] : []),
+];
+// Explicit CORS methods and headers (DCP-879)
+const CORS_ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+const CORS_ALLOWED_HEADERS = [
+  'Authorization',
+  'Content-Type',
+  'X-Renter-Key',
+  'X-Provider-Key',
+  'X-Admin-Token',
+  'X-DC1-Signature',
+  'X-DCP-Event',
+  'X-Paperclip-Run-Id',
 ];
 app.use(cors({
   origin: (origin, callback) => {
@@ -89,7 +112,10 @@ app.use(cors({
     console.warn(`[cors] Blocked origin: ${origin}`);
     callback(new Error('Not allowed by CORS'));
   },
+  methods: CORS_ALLOWED_METHODS,
+  allowedHeaders: CORS_ALLOWED_HEADERS,
   credentials: true,
+  maxAge: 86400, // preflight cache: 24 hours
 }));
 
 // Webhook raw parser must run before express.json()
@@ -113,17 +139,29 @@ app.use('/api/webhooks', express.raw({ type: 'application/json' }), (req, _res, 
 app.use(express.json({ limit: '50mb' }));  // Large limit for base64 image results (512x512 PNG ~ 500KB base64)
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ── Security Headers ────────────────────────────────────────────────────
+// ── Security Headers (DCP-879) ───────────────────────────────────────────
+// Headless REST API — no HTML served from this origin, so strict policies apply.
 app.use((req, res, next) => {
+  // Prevent MIME sniffing
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Deny framing (clickjacking protection)
   res.setHeader('X-Frame-Options', 'DENY');
+  // Legacy XSS filter
   res.setHeader('X-XSS-Protection', '1; mode=block');
+  // Referrer: send origin only on same-origin, strip on cross-origin
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  // Headless API: strict CSP — no scripts/styles needed
+  // Disable browser features not used by a JSON API
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // CSP: headless API serves no scripts/styles — lock down everything
   res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
-  // HSTS — only meaningful once TLS is live on api.dcp.sa but safe to set now
-  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  // HSTS: 2-year max-age, include subdomains + preload (TLS live on api.dcp.sa)
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  // Cross-Origin isolation headers (DCP-879)
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  // Opt into origin-keyed agent cluster for process isolation
+  res.setHeader('Origin-Agent-Cluster', '?1');
   next();
 });
 
