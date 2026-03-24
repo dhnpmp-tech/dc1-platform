@@ -412,50 +412,90 @@ describe("JobAttestation", function () {
   // ── verifyJob ────────────────────────────────────────────────────────────────
 
   describe("verifyJob", function () {
-    beforeEach(async function () {
-      await contract.connect(renter).depositForJob(JOB_ID, provider.address, AMOUNT);
-    });
+    const VJ_JOB_ID     = ethers.keccak256(ethers.toUtf8Bytes("dc1-verify-job-001"));
+    const INPUT_TOKENS  = 500n;
+    const OUTPUT_TOKENS = 750n;
+    const TOTAL_TOKENS  = INPUT_TOKENS + OUTPUT_TOKENS;
 
-    it("emits JobVerified with correct args when owner calls after deposit", async function () {
-      const tokenCount = 1_234n;
+    // Provider signs keccak256(abi.encodePacked(jobId, inputTokens, outputTokens))
+    // using Ethereum personal-sign.
+    async function signVerifyJob(jobId, inputTokens, outputTokens, signer) {
+      const messageHash = ethers.solidityPackedKeccak256(
+        ["bytes32", "uint256", "uint256"],
+        [jobId, inputTokens, outputTokens]
+      );
+      return signer.signMessage(ethers.getBytes(messageHash));
+    }
 
-      await expect(contract.connect(owner).verifyJob(JOB_ID, provider.address, tokenCount))
+    it("verifyJob emits JobVerified event", async function () {
+      const sig = await signVerifyJob(VJ_JOB_ID, INPUT_TOKENS, OUTPUT_TOKENS, provider);
+      await expect(
+        contract.connect(stranger).verifyJob(VJ_JOB_ID, provider.address, INPUT_TOKENS, OUTPUT_TOKENS, sig)
+      )
         .to.emit(contract, "JobVerified")
-        .withArgs(JOB_ID, provider.address, tokenCount, (v) => v > 0n);
+        .withArgs(VJ_JOB_ID, provider.address, TOTAL_TOKENS);
     });
 
-    it("emits JobVerified on an attested job", async function () {
-      const att = await makeAttestation();
-      const sig = await signAttestation(att, provider);
-      await contract.connect(provider).attestJob(att, sig);
-
-      await expect(contract.connect(owner).verifyJob(JOB_ID, provider.address, 500n))
-        .to.emit(contract, "JobVerified");
+    it("verifyJob stores correct token counts", async function () {
+      const sig = await signVerifyJob(VJ_JOB_ID, INPUT_TOKENS, OUTPUT_TOKENS, provider);
+      await contract.connect(stranger).verifyJob(
+        VJ_JOB_ID, provider.address, INPUT_TOKENS, OUTPUT_TOKENS, sig
+      );
+      const rec = await contract.getJobRecord(VJ_JOB_ID);
+      expect(rec.provider).to.equal(provider.address);
+      expect(rec.tokenCount).to.equal(TOTAL_TOKENS);
+      expect(rec.isVerified).to.be.true;
+      expect(rec.verifiedAt).to.be.greaterThan(0n);
     });
 
-    it("reverts when job does not exist", async function () {
-      const nonExistentJobId = ethers.keccak256(ethers.toUtf8Bytes("nonexistent"));
+    it("verifyJob reverts on invalid signature", async function () {
+      const sig = await signVerifyJob(VJ_JOB_ID, INPUT_TOKENS, OUTPUT_TOKENS, stranger);
       await expect(
-        contract.connect(owner).verifyJob(nonExistentJobId, provider.address, 100n)
-      ).to.be.revertedWith("Job does not exist");
+        contract.connect(renter).verifyJob(VJ_JOB_ID, provider.address, INPUT_TOKENS, OUTPUT_TOKENS, sig)
+      ).to.be.revertedWith("Invalid provider signature");
     });
 
-    it("reverts when provider does not match job record", async function () {
+    it("verifyJob reverts on duplicate jobId", async function () {
+      const sig = await signVerifyJob(VJ_JOB_ID, INPUT_TOKENS, OUTPUT_TOKENS, provider);
+      await contract.connect(stranger).verifyJob(
+        VJ_JOB_ID, provider.address, INPUT_TOKENS, OUTPUT_TOKENS, sig
+      );
+      const sig2 = await signVerifyJob(VJ_JOB_ID, INPUT_TOKENS, OUTPUT_TOKENS, provider);
       await expect(
-        contract.connect(owner).verifyJob(JOB_ID, stranger.address, 100n)
-      ).to.be.revertedWith("Provider mismatch");
+        contract.connect(stranger).verifyJob(VJ_JOB_ID, provider.address, INPUT_TOKENS, OUTPUT_TOKENS, sig2)
+      )
+        .to.be.revertedWithCustomError(contract, "AlreadyVerified")
+        .withArgs(VJ_JOB_ID);
     });
 
-    it("reverts when tokenCount is zero", async function () {
-      await expect(
-        contract.connect(owner).verifyJob(JOB_ID, provider.address, 0)
-      ).to.be.revertedWith("Token count must be > 0");
+    it("getJobRecord returns correct data after verification", async function () {
+      const sig = await signVerifyJob(VJ_JOB_ID, INPUT_TOKENS, OUTPUT_TOKENS, provider);
+      await contract.connect(stranger).verifyJob(
+        VJ_JOB_ID, provider.address, INPUT_TOKENS, OUTPUT_TOKENS, sig
+      );
+      const rec = await contract.getJobRecord(VJ_JOB_ID);
+      expect(rec.provider).to.equal(provider.address);
+      expect(rec.tokenCount).to.equal(TOTAL_TOKENS);
+      expect(rec.verifiedAt).to.be.greaterThan(0n);
+      expect(rec.isVerified).to.be.true;
     });
 
-    it("reverts when non-owner calls verifyJob", async function () {
+    it("only provider who signed can verify", async function () {
+      const sigFromProvider = await signVerifyJob(VJ_JOB_ID, INPUT_TOKENS, OUTPUT_TOKENS, provider);
+      // Claiming stranger as provider fails — signer != stranger
       await expect(
-        contract.connect(stranger).verifyJob(JOB_ID, provider.address, 100n)
-      ).to.be.revertedWithCustomError(contract, "OwnableUnauthorizedAccount");
+        contract.connect(renter).verifyJob(
+          VJ_JOB_ID, stranger.address, INPUT_TOKENS, OUTPUT_TOKENS, sigFromProvider
+        )
+      ).to.be.revertedWith("Invalid provider signature");
+      // Correct provider passes
+      await expect(
+        contract.connect(renter).verifyJob(
+          VJ_JOB_ID, provider.address, INPUT_TOKENS, OUTPUT_TOKENS, sigFromProvider
+        )
+      )
+        .to.emit(contract, "JobVerified")
+        .withArgs(VJ_JOB_ID, provider.address, TOTAL_TOKENS);
     });
   });
 
