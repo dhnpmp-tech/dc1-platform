@@ -1,0 +1,340 @@
+{
+  "version": "2026-03-24",
+  "description": "Provider capability matrix: GPU models → deployable templates + tier assignment + VRAM requirements. Used by template catalog UI to filter templates by provider tier.",
+  "tiers": {
+    "A": {
+      "label": "Premium",
+      "description": "80+ GB VRAM (H100, H200) — can run all templates including largest models",
+      "gpu_models": [
+        "nvidia-h100-80gb",
+        "nvidia-h200-141gb",
+        "nvidia-a100-80gb",
+        "nvidia-a6000-48gb"
+      ],
+      "vram_budget_gb": 80,
+      "capable_templates": [
+        "vllm-serve",
+        "llama3-8b",
+        "qwen25-7b",
+        "mistral-7b",
+        "nemotron-nano",
+        "nemotron-super",
+        "falcon-h1-7b",
+        "arabic-embeddings",
+        "arabic-reranker",
+        "arabic-rag-complete",
+        "sdxl",
+        "stable-diffusion",
+        "jupyter-gpu",
+        "python-scientific-compute",
+        "pytorch-training",
+        "pytorch-multi-gpu",
+        "pytorch-single-gpu",
+        "lora-finetune",
+        "qlora-finetune",
+        "ollama",
+        "custom-container"
+      ]
+    },
+    "B": {
+      "label": "High-end",
+      "description": "16-48 GB VRAM (RTX 4090, 4080, L40S) — runs all LLMs + image gen models",
+      "gpu_models": [
+        "nvidia-rtx-4090-24gb",
+        "nvidia-rtx-4080-16gb",
+        "nvidia-l40s-48gb",
+        "nvidia-a5000-24gb",
+        "nvidia-rtx-6000-48gb"
+      ],
+      "vram_budget_gb": 24,
+      "capable_templates": [
+        "vllm-serve",
+        "llama3-8b",
+        "qwen25-7b",
+        "mistral-7b",
+        "nemotron-nano",
+        "nemotron-super",
+        "falcon-h1-7b",
+        "arabic-embeddings",
+        "arabic-reranker",
+        "arabic-rag-complete",
+        "sdxl",
+        "stable-diffusion",
+        "jupyter-gpu",
+        "python-scientific-compute",
+        "pytorch-training",
+        "pytorch-multi-gpu",
+        "pytorch-single-gpu",
+        "lora-finetune",
+        "qlora-finetune",
+        "ollama",
+        "custom-container"
+      ]
+    },
+    "C": {
+      "label": "Entry-level",
+      "description": "8-16 GB VRAM (RTX 3090, 3080, 2080 Ti) — runs smaller models + low-VRAM tasks",
+      "gpu_models": [
+        "nvidia-rtx-3090-24gb",
+        "nvidia-rtx-3080-10gb",
+        "nvidia-rtx-2080-ti-11gb",
+        "nvidia-gtx-1080-ti-11gb",
+        "nvidia-tesla-v100-16gb"
+      ],
+      "vram_budget_gb": 10,
+      "capable_templates": [
+        "nemotron-nano",
+        "stable-diffusion",
+        "jupyter-gpu",
+        "python-scientific-compute",
+        "pytorch-single-gpu",
+        "ollama",
+        "custom-container"
+      ]
+    }
+  },
+  "templates": {
+    "vllm-serve": {
+      "id": "vllm-serve",
+      "name": "vLLM Model Serving",
+      "min_vram_gb": 16,
+      "compatible_tiers": ["A", "B"],
+      "description": "OpenAI-compatible LLM inference engine",
+      "job_type": "llm-inference"
+    },
+    "llama3-8b": {
+      "id": "llama3-8b",
+      "name": "Llama 3 8B Instruct",
+      "min_vram_gb": 16,
+      "compatible_tiers": ["A", "B"],
+      "description": "Meta Llama 3 8B instruction-tuned model",
+      "job_type": "llm-inference"
+    },
+    "qwen25-7b": {
+      "id": "qwen25-7b",
+      "name": "Qwen 2.5 7B Instruct",
+      "min_vram_gb": 16,
+      "compatible_tiers": ["A", "B"],
+      "description": "Alibaba Qwen 2.5 7B instruction-tuned model",
+      "job_type": "llm-inference"
+    },
+    "mistral-7b": {
+      "id": "mistral-7b",
+      "name": "Mistral 7B Instruct",
+      "min_vram_gb": 16,
+      "compatible_tiers": ["A", "B"],
+      "description": "Mistral AI 7B instruction-tuned model",
+      "job_type": "llm-inference"
+    },
+    "nemotron-nano": {
+      "id": "nemotron-nano",
+      "name": "NVIDIA Nemotron Nano",
+      "min_vram_gb": 8,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "NVIDIA Nemotron Nano 4B lightweight model",
+      "job_type": "llm-inference"
+    },
+    "nemotron-super": {
+      "id": "nemotron-super",
+      "name": "NVIDIA Nemotron Super",
+      "min_vram_gb": 24,
+      "compatible_tiers": ["A", "B"],
+      "description": "NVIDIA Nemotron Super large model",
+      "job_type": "llm-inference"
+    },
+    "falcon-h1-7b": {
+      "id": "falcon-h1-7b",
+      "name": "Falcon H1 7B",
+      "min_vram_gb": 16,
+      "compatible_tiers": ["A", "B"],
+      "description": "TII UAE Falcon H1 7B Arabic-optimized model",
+      "job_type": "llm-inference"
+    },
+    "arabic-embeddings": {
+      "id": "arabic-embeddings",
+      "name": "Arabic Embeddings (BGE-M3)",
+      "min_vram_gb": 8,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "BAAI BGE-M3 Arabic multilingual embeddings",
+      "job_type": "embedding"
+    },
+    "arabic-reranker": {
+      "id": "arabic-reranker",
+      "name": "Arabic Reranker (BGE)",
+      "min_vram_gb": 8,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "BAAI BGE Arabic reranking model for RAG",
+      "job_type": "reranking"
+    },
+    "arabic-rag-complete": {
+      "id": "arabic-rag-complete",
+      "name": "Arabic RAG Complete Stack",
+      "min_vram_gb": 24,
+      "compatible_tiers": ["A", "B"],
+      "description": "Full Arabic RAG pipeline: embeddings + reranker + LLM",
+      "job_type": "rag"
+    },
+    "sdxl": {
+      "id": "sdxl",
+      "name": "Stable Diffusion XL",
+      "min_vram_gb": 8,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "Stability AI SDXL image generation",
+      "job_type": "image-generation"
+    },
+    "stable-diffusion": {
+      "id": "stable-diffusion",
+      "name": "Stable Diffusion 3",
+      "min_vram_gb": 4,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "Stable Diffusion image generation model",
+      "job_type": "image-generation"
+    },
+    "jupyter-gpu": {
+      "id": "jupyter-gpu",
+      "name": "Jupyter GPU Notebook",
+      "min_vram_gb": 4,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "JupyterLab with CUDA/GPU support",
+      "job_type": "notebook"
+    },
+    "python-scientific-compute": {
+      "id": "python-scientific-compute",
+      "name": "Python Scientific Compute",
+      "min_vram_gb": 4,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "Python with NumPy, PyTorch, scikit-learn",
+      "job_type": "compute"
+    },
+    "pytorch-training": {
+      "id": "pytorch-training",
+      "name": "PyTorch Model Training",
+      "min_vram_gb": 12,
+      "compatible_tiers": ["A", "B"],
+      "description": "PyTorch training environment",
+      "job_type": "training"
+    },
+    "pytorch-multi-gpu": {
+      "id": "pytorch-multi-gpu",
+      "name": "PyTorch Multi-GPU Training",
+      "min_vram_gb": 40,
+      "compatible_tiers": ["A"],
+      "description": "PyTorch distributed training across multiple GPUs",
+      "job_type": "training"
+    },
+    "pytorch-single-gpu": {
+      "id": "pytorch-single-gpu",
+      "name": "PyTorch Single GPU",
+      "min_vram_gb": 8,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "PyTorch single GPU training",
+      "job_type": "training"
+    },
+    "lora-finetune": {
+      "id": "lora-finetune",
+      "name": "LoRA Fine-tuning",
+      "min_vram_gb": 12,
+      "compatible_tiers": ["A", "B"],
+      "description": "Low-Rank Adaptation fine-tuning of large models",
+      "job_type": "finetuning"
+    },
+    "qlora-finetune": {
+      "id": "qlora-finetune",
+      "name": "QLoRA Fine-tuning",
+      "min_vram_gb": 8,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "Quantized LoRA fine-tuning (memory-efficient)",
+      "job_type": "finetuning"
+    },
+    "ollama": {
+      "id": "ollama",
+      "name": "Ollama Local LLM",
+      "min_vram_gb": 4,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "Ollama local model serving",
+      "job_type": "llm-inference"
+    },
+    "custom-container": {
+      "id": "custom-container",
+      "name": "Custom Container",
+      "min_vram_gb": 4,
+      "compatible_tiers": ["A", "B", "C"],
+      "description": "Deploy your own Docker container image",
+      "job_type": "custom"
+    }
+  },
+  "gpu_specs": {
+    "nvidia-h100-80gb": {
+      "name": "NVIDIA H100 80GB",
+      "memory_gb": 80,
+      "tier": "A",
+      "release_year": 2022,
+      "cuda_cores": 14080,
+      "tensor_tflops": 989,
+      "memory_bandwidth_gbps": 3352
+    },
+    "nvidia-h200-141gb": {
+      "name": "NVIDIA H200 141GB",
+      "memory_gb": 141,
+      "tier": "A",
+      "release_year": 2024,
+      "cuda_cores": 14080,
+      "tensor_tflops": 989,
+      "memory_bandwidth_gbps": 4800
+    },
+    "nvidia-a100-80gb": {
+      "name": "NVIDIA A100 80GB",
+      "memory_gb": 80,
+      "tier": "A",
+      "release_year": 2020,
+      "cuda_cores": 6912,
+      "tensor_tflops": 312,
+      "memory_bandwidth_gbps": 2039
+    },
+    "nvidia-rtx-4090-24gb": {
+      "name": "NVIDIA RTX 4090 24GB",
+      "memory_gb": 24,
+      "tier": "B",
+      "release_year": 2022,
+      "cuda_cores": 16384,
+      "tensor_tflops": 661,
+      "memory_bandwidth_gbps": 1008
+    },
+    "nvidia-rtx-4080-16gb": {
+      "name": "NVIDIA RTX 4080 16GB",
+      "memory_gb": 16,
+      "tier": "B",
+      "release_year": 2022,
+      "cuda_cores": 9728,
+      "tensor_tflops": 370,
+      "memory_bandwidth_gbps": 576
+    },
+    "nvidia-l40s-48gb": {
+      "name": "NVIDIA L40S 48GB",
+      "memory_gb": 48,
+      "tier": "B",
+      "release_year": 2023,
+      "cuda_cores": 18176,
+      "tensor_tflops": 733,
+      "memory_bandwidth_gbps": 960
+    },
+    "nvidia-rtx-3090-24gb": {
+      "name": "NVIDIA RTX 3090 24GB",
+      "memory_gb": 24,
+      "tier": "C",
+      "release_year": 2020,
+      "cuda_cores": 10496,
+      "tensor_tflops": 366,
+      "memory_bandwidth_gbps": 936
+    },
+    "nvidia-rtx-3080-10gb": {
+      "name": "NVIDIA RTX 3080 10GB",
+      "memory_gb": 10,
+      "tier": "C",
+      "release_year": 2020,
+      "cuda_cores": 8704,
+      "tensor_tflops": 300,
+      "memory_bandwidth_gbps": 760
+    }
+  }
+}
