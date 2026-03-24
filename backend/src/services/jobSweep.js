@@ -549,6 +549,134 @@ async function runSweep(state) {
   }
 }
 
+// ─── Provider Offline Sweep ──────────────────────────────────────────────────
+// Runs every 60s. Finds providers with no heartbeat for > 5 minutes,
+// marks them offline, releases active jobs back to the queue,
+// and notifies affected renters via their configured webhooks.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let providerSweepTimer = null;
+const PROVIDER_OFFLINE_THRESHOLD_SECS = 5 * 60;
+
+async function sweepOfflineProviders(db) {
+  try {
+    const staleProviders = db.all(
+      `SELECT id, status, last_heartbeat
+       FROM providers
+       WHERE status != 'offline'
+         AND (
+           last_heartbeat IS NULL
+           OR CAST((julianday('now') - julianday(last_heartbeat)) * 86400 AS INTEGER) > ?
+         )`,
+      PROVIDER_OFFLINE_THRESHOLD_SECS
+    );
+    if (staleProviders.length === 0) return;
+
+    const now = new Date().toISOString();
+    const providerColumns = new Set(db.all(`PRAGMA table_info(providers)`).map((r) => r.name));
+    const jobColumns = new Set(db.all(`PRAGMA table_info(jobs)`).map((r) => r.name));
+
+    const providerSets = [`status = 'offline'`];
+    if (providerColumns.has('updated_at')) providerSets.push(`updated_at = '${now}'`);
+
+    const jobSets = [`status = 'queued'`, 'provider_id = NULL'];
+    if (jobColumns.has('last_error')) jobSets.push(`last_error = 'Provider went offline'`);
+    if (jobColumns.has('retry_count')) jobSets.push('retry_count = COALESCE(retry_count, 0) + 1');
+    if (jobColumns.has('picked_up_at')) jobSets.push('picked_up_at = NULL');
+    if (jobColumns.has('assigned_at')) jobSets.push('assigned_at = NULL');
+    if (jobColumns.has('started_at')) jobSets.push('started_at = NULL');
+    if (jobColumns.has('updated_at')) jobSets.push(`updated_at = '${now}'`);
+
+    const markOfflineStmt = db.prepare(`UPDATE providers SET ${providerSets.join(', ')} WHERE id = ?`);
+    const fetchJobsStmt = db.prepare(
+      `SELECT j.id, j.job_id, j.renter_id, j.provider_id, j.job_type, j.submitted_at, j.started_at,
+              r.webhook_url, r.api_key AS renter_api_key
+       FROM jobs j
+       LEFT JOIN renters r ON r.id = j.renter_id
+       WHERE j.provider_id = ? AND j.status IN ('running', 'pending', 'assigned', 'pulling')`
+    );
+    const requeueStmt = db.prepare(
+      `UPDATE jobs SET ${jobSets.join(', ')} WHERE provider_id = ? AND status IN ('running', 'pending', 'assigned', 'pulling')`
+    );
+
+    const jobsToNotify = [];
+    const tx = db.transaction(() => {
+      for (const provider of staleProviders) {
+        const activeJobs = fetchJobsStmt.all(provider.id);
+        jobsToNotify.push(...activeJobs);
+        markOfflineStmt.run(provider.id);
+        requeueStmt.run(provider.id);
+        console.log(
+          `[providerSweep] provider ${provider.id} offline (last_heartbeat: ${provider.last_heartbeat || 'never'}), requeued ${activeJobs.length} jobs`
+        );
+      }
+    });
+    tx();
+
+    // Notify affected renters (fire-and-forget)
+    const { isPublicWebhookUrl } = require('../lib/webhook-security');
+    const allowPrivate = process.env.NODE_ENV === 'test' || process.env.ALLOW_PRIVATE_WEBHOOK_URLS === '1';
+    for (const job of jobsToNotify) {
+      if (!job.webhook_url) continue;
+      if (!allowPrivate && !isPublicWebhookUrl(job.webhook_url)) continue;
+      try {
+        const payload = JSON.stringify({
+          event: 'provider.offline',
+          timestamp: now,
+          job: {
+            id: job.id,
+            job_id: job.job_id,
+            renter_id: job.renter_id,
+            provider_id: job.provider_id,
+            status: 'queued',
+            job_type: job.job_type || null,
+            submitted_at: job.submitted_at || null,
+            started_at: job.started_at || null,
+          },
+          message: 'Provider went offline. Job has been returned to the queue and will be reassigned.',
+        });
+        const secret = process.env.DCP_WEBHOOK_SECRET || job.renter_api_key || '';
+        const signature = createWebhookSignature(secret, payload);
+        fetch(job.webhook_url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-DCP-Event': 'provider.offline',
+            'X-DCP-Signature': signature,
+          },
+          body: payload,
+          signal: getTimeoutSignal(5000),
+        }).catch((err) => {
+          console.warn(`[providerSweep] webhook failed for job ${job.job_id || job.id}: ${err.message}`);
+        });
+      } catch (err) {
+        console.warn(`[providerSweep] webhook prep failed for job ${job.job_id || job.id}: ${err.message}`);
+      }
+    }
+  } catch (error) {
+    recordSweepError('sweepOfflineProviders', error);
+  }
+}
+
+function startProviderOfflineSweep(db, intervalMs = 60000) {
+  assertDb(db);
+  stopProviderOfflineSweep();
+  const safeMs = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 60000;
+  sweepOfflineProviders(db).catch((err) => recordSweepError('initial provider offline sweep', err));
+  providerSweepTimer = setInterval(() => {
+    sweepOfflineProviders(db).catch((err) => recordSweepError('scheduled provider offline sweep', err));
+  }, safeMs);
+  if (typeof providerSweepTimer.unref === 'function') providerSweepTimer.unref();
+  return providerSweepTimer;
+}
+
+function stopProviderOfflineSweep() {
+  if (providerSweepTimer) {
+    clearInterval(providerSweepTimer);
+    providerSweepTimer = null;
+  }
+}
+
 function startJobSweep(db, intervalMs = 30000) {
   assertDb(db);
   stopJobSweep();
@@ -605,4 +733,6 @@ module.exports = {
   getQueueDepth,
   getSweepMetrics,
   createWebhookSignature,
+  startProviderOfflineSweep,
+  stopProviderOfflineSweep,
 };
