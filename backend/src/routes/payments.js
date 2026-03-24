@@ -631,4 +631,114 @@ router.get('/history', (req, res) => {
   });
 });
 
+// ─── Admin auth helper ──────────────────────────────────────────────────────────
+function isAdmin(req) {
+  const adminToken = process.env.DC1_ADMIN_TOKEN;
+  if (!adminToken) return false;
+  const provided = req.headers['x-admin-token'] || req.query.admin_token;
+  return provided === adminToken;
+}
+
+// ─── GET /api/payments/pending ─────────────────────────────────────────────────
+// Returns unsettled payment events (escrow_tx_hash IS NULL).
+// Used to identify payments awaiting on-chain settlement when Base Sepolia escrow is live.
+// Auth: admin only.
+router.get('/pending', (req, res) => {
+  if (!isAdmin(req)) {
+    return res.status(403).json({ error: 'Admin authentication required' });
+  }
+
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+
+  const events = db.all(
+    `SELECT pe.id, pe.job_id, pe.provider_id, pe.renter_id,
+            pe.amount_sar, pe.amount_usd, pe.tokens_used,
+            pe.settled_at, pe.escrow_tx_hash, pe.created_at,
+            p.name AS provider_name, r.email AS renter_email
+     FROM payment_events pe
+     LEFT JOIN providers p ON p.id = pe.provider_id
+     LEFT JOIN renters r ON r.id = pe.renter_id
+     WHERE pe.escrow_tx_hash IS NULL
+     ORDER BY pe.created_at ASC
+     LIMIT ? OFFSET ?`,
+    limit, offset
+  );
+
+  const total = db.get(`SELECT COUNT(*) AS count FROM payment_events WHERE escrow_tx_hash IS NULL`);
+  const summary = db.get(
+    `SELECT COALESCE(SUM(amount_sar), 0) AS total_sar, COALESCE(SUM(amount_usd), 0) AS total_usd
+     FROM payment_events WHERE escrow_tx_hash IS NULL`
+  );
+
+  res.json({
+    pending_events: events,
+    pagination: { limit, offset, total: total.count },
+    summary: {
+      total_pending_sar: Number(summary.total_sar.toFixed(4)),
+      total_pending_usd: Number(summary.total_usd.toFixed(4)),
+    },
+  });
+});
+
+// ─── GET /api/payments/provider/:id ───────────────────────────────────────────
+// Returns payment event history for a specific provider.
+// Auth: admin, or provider using their own API key (x-provider-key header).
+router.get('/provider/:id', (req, res) => {
+  const providerId = parseInt(req.params.id);
+  if (!Number.isFinite(providerId) || providerId < 1) {
+    return res.status(400).json({ error: 'Invalid provider id' });
+  }
+
+  // Auth: admin or the provider themselves
+  const providerKey = req.headers['x-provider-key'] || req.query.key;
+  if (!isAdmin(req)) {
+    if (!providerKey) {
+      return res.status(401).json({ error: 'Admin token or provider API key required' });
+    }
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', providerKey);
+    if (!provider || provider.id !== providerId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
+
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+
+  const events = db.all(
+    `SELECT pe.id, pe.job_id, pe.provider_id, pe.renter_id,
+            pe.amount_sar, pe.amount_usd, pe.tokens_used,
+            pe.settled_at, pe.escrow_tx_hash, pe.created_at
+     FROM payment_events pe
+     WHERE pe.provider_id = ?
+     ORDER BY pe.created_at DESC
+     LIMIT ? OFFSET ?`,
+    providerId, limit, offset
+  );
+
+  const total = db.get(`SELECT COUNT(*) AS count FROM payment_events WHERE provider_id = ?`, providerId);
+  const summary = db.get(
+    `SELECT COALESCE(SUM(amount_sar), 0) AS total_sar,
+            COALESCE(SUM(amount_usd), 0) AS total_usd,
+            COALESCE(SUM(tokens_used), 0) AS total_tokens,
+            COUNT(*) FILTER (WHERE escrow_tx_hash IS NOT NULL) AS settled_count,
+            COUNT(*) FILTER (WHERE escrow_tx_hash IS NULL) AS pending_count
+     FROM payment_events WHERE provider_id = ?`,
+    providerId
+  );
+
+  res.json({
+    provider_id: providerId,
+    payment_events: events,
+    pagination: { limit, offset, total: total.count },
+    summary: {
+      total_earned_sar: Number(summary.total_sar.toFixed(4)),
+      total_earned_usd: Number(summary.total_usd.toFixed(4)),
+      total_tokens_billed: summary.total_tokens,
+      settled_count: summary.settled_count,
+      pending_escrow_count: summary.pending_count,
+    },
+  });
+});
+
 module.exports = router;

@@ -1059,6 +1059,41 @@ function splitBilling(totalHalala) {
   return { provider, dc1: totalHalala - provider };
 }
 
+// SAR/USD exchange rate for payment event logging (1 SAR ≈ 0.2667 USD)
+const SAR_TO_USD = 0.2667;
+
+/**
+ * Record a payment event when a job completes successfully.
+ * Inserts into payment_events table — off-chain ledger that feeds escrow settlement.
+ * escrow_tx_hash remains null until Base Sepolia wallet is funded and escrow is live.
+ */
+function recordPaymentEvent(job, providerEarnedHalala, tokensUsed) {
+  try {
+    const id = 'pe_' + crypto.randomBytes(12).toString('hex');
+    const amountSar = Number((providerEarnedHalala / 100).toFixed(4));
+    const amountUsd = Number((amountSar * SAR_TO_USD).toFixed(4));
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO payment_events
+         (id, job_id, provider_id, renter_id, amount_sar, amount_usd, tokens_used, settled_at, escrow_tx_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      job.job_id || String(job.id),
+      job.provider_id,
+      job.renter_id,
+      amountSar,
+      amountUsd,
+      tokensUsed != null ? tokensUsed : null,
+      now,
+      null,  // escrow_tx_hash: set when on-chain escrow settlement fires
+      now
+    );
+  } catch (err) {
+    console.error('[payment-events] Failed to record payment event:', err.message);
+  }
+}
+
 // Whitelisted job types — renters may only submit these types
 const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark', 'custom_container', 'vllm_serve', 'rag-pipeline']);
 
@@ -2193,6 +2228,10 @@ router.post('/:job_id/result', (req, res) => {
           ` | dc1FeeHalala=${dc1Fee}`
         );
       }
+      // Off-chain payment event: bridges to on-chain escrow settlement when wallet is funded
+      const completedJob = db.get('SELECT prompt_tokens, completion_tokens FROM jobs WHERE id = ?', job.id);
+      const tokensUsed = completedJob ? ((completedJob.prompt_tokens || 0) + (completedJob.completion_tokens || 0)) || null : null;
+      recordPaymentEvent(job, providerEarned, tokensUsed);
     } else {
       // Permanent failure — return held amount to renter balance
       runStatement(
@@ -2887,6 +2926,9 @@ router.post('/:job_id/complete', (req, res) => {
         ` | dc1FeeHalala=${dc1_fee}`
       );
     }
+
+    // Off-chain payment event: bridges to on-chain escrow settlement when wallet is funded
+    recordPaymentEvent(job, provider_earned, null);
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
     fireAndForgetJobEmail('completed', updated, {

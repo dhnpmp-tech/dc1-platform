@@ -1570,6 +1570,28 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_renter   ON invoices(renter_id,
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_job      ON invoices(job_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_id, created_at DESC)`);
 
+// ─── PAYMENT EVENTS TABLE — DCP-825 ───
+// Off-chain ledger of job payment events. Populated on every job completion.
+// escrow_tx_hash is null until on-chain settlement is executed (pending wallet funding).
+// This is the data pipeline that feeds Base Sepolia escrow once the wallet is funded.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payment_events (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    provider_id INTEGER NOT NULL,
+    renter_id INTEGER NOT NULL,
+    amount_sar REAL NOT NULL,
+    amount_usd REAL NOT NULL,
+    tokens_used INTEGER,
+    settled_at DATETIME,
+    escrow_tx_hash TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payment_events_job_id ON payment_events(job_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payment_events_provider_id ON payment_events(provider_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payment_events_escrow ON payment_events(escrow_tx_hash, created_at DESC)`);
+
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
