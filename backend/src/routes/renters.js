@@ -17,6 +17,7 @@ const { isPublicWebhookUrl } = require('../lib/webhook-security');
 const { validateWebhookUrl, validateWebhookUrlValue } = require('../middleware/validateWebhookUrl');
 const { validateBody } = require('../middleware/validate');
 const { renterRegisterSchema, renterTopupSchema } = require('../schemas/topup.schema');
+const { getBearerToken } = require('../middleware/auth');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -778,6 +779,66 @@ router.get('/balance', (req, res) => {
   } catch (error) {
     console.error('Renter balance error:', error);
     res.status(500).json({ error: 'Balance check failed' });
+  }
+});
+
+// GET /api/renters/jobs — Renter job history with pagination and status filter (DCP-892)
+// Auth: Bearer <api_key> | X-Renter-Key header | ?key= query param
+// Query: ?page=1&limit=20&status=completed|failed|running
+router.get('/jobs', (req, res) => {
+  try {
+    const key = getBearerToken(req) || req.headers['x-renter-key'] || req.query.key;
+    if (!key) return res.status(401).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+    if (!renter) return res.status(401).json({ error: 'Invalid or inactive API key' });
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const ALLOWED_STATUSES = new Set(['completed', 'failed', 'running', 'pending', 'cancelled']);
+    const statusFilter = req.query.status;
+    const useStatusFilter = statusFilter && ALLOWED_STATUSES.has(statusFilter);
+
+    const whereClause = useStatusFilter
+      ? 'WHERE j.renter_id = ? AND j.status = ?'
+      : 'WHERE j.renter_id = ?';
+    const queryParams = useStatusFilter ? [renter.id, statusFilter] : [renter.id];
+
+    const total = db.get(
+      `SELECT COUNT(*) AS cnt FROM jobs j ${whereClause}`,
+      ...queryParams
+    );
+
+    const jobs = db.all(
+      `SELECT j.job_id,
+              j.template_id,
+              j.provider_id,
+              j.status,
+              j.started_at,
+              j.completed_at,
+              COALESCE(j.actual_cost_halala, j.cost_halala, 0) AS cost_halala,
+              COALESCE(ss.total_tokens, 0) AS output_tokens,
+              NULL AS input_tokens
+       FROM jobs j
+       LEFT JOIN serve_sessions ss ON ss.job_id = j.job_id
+       ${whereClause}
+       ORDER BY j.submitted_at DESC
+       LIMIT ? OFFSET ?`,
+      ...queryParams, limit, offset
+    );
+
+    return res.json({
+      jobs,
+      total: total.cnt,
+      page,
+      limit,
+      pages: Math.ceil(total.cnt / limit),
+    });
+  } catch (error) {
+    console.error('[renters/jobs]', error);
+    return res.status(500).json({ error: 'Failed to fetch job history' });
   }
 });
 

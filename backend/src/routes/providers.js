@@ -914,14 +914,15 @@ router.post('/:id/heartbeat', heartbeatProviderLimiter, (req, res) => {
                 return res.status(403).json({ error: 'Provider not approved' });
             }
         }
-        // Accept both legacy field names and REST aliases (DCP-782)
-        const { gpu_utilization, vram_used_mb, jobs_active,
+        // Accept legacy field names, REST aliases (DCP-782), and canonical metric names (DCP-892)
+        const { gpu_utilization, gpu_utilization_pct, vram_used_mb, active_jobs, jobs_active,
                 vram_used, jobs_running, uptime_seconds } = req.body;
-        const gpuUtil = toFiniteNumber(gpu_utilization, { min: 0, max: 100 });
+        // gpu_utilization_pct is the canonical name (DCP-892); gpu_utilization is the legacy alias
+        const gpuUtil = toFiniteNumber(gpu_utilization_pct ?? gpu_utilization, { min: 0, max: 100 });
         // vram_used (MB) is alias for vram_used_mb
         const vramUsedMb = toFiniteInt(vram_used_mb ?? vram_used, { min: 0, max: 1024 * 1024 });
-        // jobs_running is alias for jobs_active
-        const jobsActive = toFiniteInt(jobs_active ?? jobs_running, { min: 0, max: 10000 });
+        // active_jobs (DCP-892 canonical), jobs_active and jobs_running are legacy aliases
+        const jobsActive = toFiniteInt(active_jobs ?? jobs_active ?? jobs_running, { min: 0, max: 10000 });
         const now = new Date().toISOString();
         runStatement(
             "UPDATE providers SET last_heartbeat = ?, status = 'online', updated_at = ? WHERE id = ?",
@@ -935,6 +936,10 @@ router.post('/:id/heartbeat', heartbeatProviderLimiter, (req, res) => {
             vramUsedMb != null ? Number((vramUsedMb / 1024).toFixed(3)) : null,
             jobsActive ?? null
         );
+        // Write to provider_metrics for the health poller timeseries (DCP-892)
+        db.prepare(
+            'INSERT INTO provider_metrics (provider_id, recorded_at, gpu_utilization_pct, vram_used_mb, active_jobs) VALUES (?, ?, ?, ?, ?)'
+        ).run(provider.id, now, gpuUtil ?? null, vramUsedMb ?? null, jobsActive ?? null);
         runStatement(
             'INSERT INTO heartbeat_log (provider_id, received_at, gpu_util_pct) VALUES (?, ?, ?)',
             provider.id, now, gpuUtil ?? null
@@ -996,6 +1001,50 @@ router.get('/:id/liveness', (req, res) => {
     } catch (error) {
         console.error('[providers/:id/liveness]', error);
         return res.status(500).json({ error: 'Failed to fetch liveness status' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/:id/metrics?period=1h — Provider utilization timeseries (DCP-892)
+// Returns timeseries of gpu_utilization_pct, vram_used_mb, active_jobs from provider_metrics.
+// Auth: public (read-only health data)
+// Query params: period = 1h (default) | 6h | 24h | 7d
+// ============================================================================
+const METRICS_PERIOD_SECONDS = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 };
+
+router.get('/:id/metrics', (req, res) => {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE id = ?', providerId);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const periodParam = normalizeString(req.query.period, { maxLen: 8, trim: true }) || '1h';
+        const periodSeconds = METRICS_PERIOD_SECONDS[periodParam];
+        if (!periodSeconds) {
+            return res.status(400).json({ error: 'Invalid period. Use 1h, 6h, 24h, or 7d' });
+        }
+
+        const since = new Date(Date.now() - periodSeconds * 1000).toISOString();
+        const rows = db.all(
+            `SELECT recorded_at, gpu_utilization_pct, vram_used_mb, active_jobs
+             FROM provider_metrics
+             WHERE provider_id = ? AND recorded_at >= ?
+             ORDER BY recorded_at ASC`,
+            providerId, since
+        );
+
+        return res.json({
+            provider_id: providerId,
+            period: periodParam,
+            since,
+            count: rows.length,
+            metrics: rows,
+        });
+    } catch (error) {
+        console.error('[providers/:id/metrics]', error);
+        return res.status(500).json({ error: 'Failed to fetch metrics' });
     }
 });
 

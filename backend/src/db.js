@@ -1279,6 +1279,22 @@ try {
   db.prepare('ALTER TABLE provider_gpu_telemetry ADD COLUMN cold_start_ms INTEGER').run();
 } catch (e) {}
 
+// ─── PROVIDER METRICS TABLE — DCP-892 ───
+// Lightweight timeseries for the REST heartbeat (:id/heartbeat) and health poller.
+// Stores gpu_utilization_pct, vram_used_mb, active_jobs per provider per ping.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    gpu_utilization_pct REAL,
+    vram_used_mb INTEGER,
+    active_jobs INTEGER DEFAULT 0,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider_time ON provider_metrics(provider_id, recorded_at)`);
+
 // ─── CONTROL PLANE POLICY TABLE ───
 // Queue/SLO policy inputs used by autoscale and pre-warm recommendations.
 db.exec(`
