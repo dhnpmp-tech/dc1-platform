@@ -1482,6 +1482,9 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_job_templates_renter ON job_templates(renter_id, created_at DESC)`);
 
+// Index for renter job history queries (DCP-695)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_renter_id ON jobs(renter_id, created_at DESC)`);
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 function flatParams(params) {
