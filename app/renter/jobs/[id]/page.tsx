@@ -261,6 +261,120 @@ function StatusPipeline({
   )
 }
 
+// ── Job State Machine ─────────────────────────────────────────────────────────
+type JobPhase = 'queued' | 'assigned' | 'running' | 'completed' | 'failed'
+
+function getJobPhase(status: string, providerId?: number | null): JobPhase {
+  if (status === 'completed') return 'completed'
+  if (['failed', 'permanently_failed', 'cancelled'].includes(status)) return 'failed'
+  if (status === 'running') return 'running'
+  if (status === 'pending' && providerId) return 'assigned'
+  return 'queued'
+}
+
+const JOB_PHASES: { id: JobPhase; label: string }[] = [
+  { id: 'queued',    label: 'Queued' },
+  { id: 'assigned',  label: 'Assigned' },
+  { id: 'running',   label: 'Running' },
+  { id: 'completed', label: 'Done' },
+]
+
+function JobStateMachine({ status, providerId, providerGpu }: {
+  status: string
+  providerId?: number | null
+  providerGpu: string | null
+}) {
+  const phase = getJobPhase(status, providerId)
+  const isFailed = phase === 'failed'
+  const activeIdx = isFailed
+    ? JOB_PHASES.findIndex(p => p.id === 'running')
+    : JOB_PHASES.findIndex(p => p.id === phase)
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center gap-0">
+        {JOB_PHASES.map((p, i) => {
+          const done = i < activeIdx
+          const active = i === activeIdx && !isFailed
+          const failed = isFailed && i === activeIdx
+          return (
+            <div key={p.id} className="flex items-center flex-1 last:flex-none">
+              <div className="flex flex-col items-center gap-1">
+                <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
+                  failed    ? 'border-status-error bg-status-error/20 text-status-error' :
+                  done      ? 'border-status-success bg-status-success text-white' :
+                  active    ? 'border-dc1-amber bg-dc1-amber/10 text-dc1-amber animate-pulse' :
+                              'border-dc1-border bg-dc1-surface-l2 text-dc1-text-muted'
+                }`}>
+                  {failed ? '✕' : done ? '✓' : i + 1}
+                </div>
+                <span className={`text-[10px] whitespace-nowrap font-medium ${
+                  failed ? 'text-status-error' : active ? 'text-dc1-amber' : done ? 'text-status-success' : 'text-dc1-text-muted'
+                }`}>
+                  {p.label}
+                </span>
+              </div>
+              {i < JOB_PHASES.length - 1 && (
+                <div className={`flex-1 h-0.5 mx-1 mb-4 ${done ? 'bg-status-success' : 'bg-dc1-border'}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {isFailed && (
+        <p className="text-xs text-status-error mt-2 text-center">Job failed — check logs for details</p>
+      )}
+      {providerGpu && phase === 'running' && (
+        <p className="text-xs text-dc1-text-muted mt-2 text-center">Running on {providerGpu}</p>
+      )}
+    </div>
+  )
+}
+
+// ── Live Metrics ──────────────────────────────────────────────────────────────
+function LiveMetrics({ job }: { job: JobDetail }) {
+  const [elapsedSecs, setElapsedSecs] = useState(0)
+
+  useEffect(() => {
+    if (job.status !== 'running' || !job.started_at) return
+    const start = new Date(job.started_at).getTime()
+    const tick = () => setElapsedSecs(Math.floor((Date.now() - start) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [job.status, job.started_at])
+
+  if (job.status !== 'running') return null
+
+  const hh = Math.floor(elapsedSecs / 3600).toString().padStart(2, '0')
+  const mm = Math.floor((elapsedSecs % 3600) / 60).toString().padStart(2, '0')
+  const ss = (elapsedSecs % 60).toString().padStart(2, '0')
+  const currentCostSar = ((job.actual_cost_halala || 0) / 100).toFixed(4)
+
+  return (
+    <div className="bg-dc1-surface-l1 border border-dc1-amber/20 rounded-xl px-4 py-3 flex flex-wrap gap-4 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-status-success animate-pulse" />
+        <span className="text-dc1-text-muted uppercase tracking-wide">Running</span>
+      </div>
+      <div>
+        <span className="text-dc1-text-muted">Elapsed </span>
+        <span className="font-mono font-bold text-dc1-text-primary">{hh}:{mm}:{ss}</span>
+      </div>
+      {job.provider_id && (
+        <div>
+          <span className="text-dc1-text-muted">Provider </span>
+          <span className="font-mono font-bold text-dc1-text-primary">#{job.provider_id}</span>
+        </div>
+      )}
+      <div>
+        <span className="text-dc1-text-muted">Cost so far </span>
+        <span className="font-mono font-bold text-dc1-amber">{currentCostSar} SAR</span>
+      </div>
+    </div>
+  )
+}
+
 type StreamStatus = 'connecting' | 'live' | 'completed' | 'failed'
 type LogDownloadSurface = 'logs_tab' | 'history_tab'
 
@@ -820,7 +934,7 @@ export default function RenterJobDetailPage() {
     }
 
     fetchData()
-    const interval = setInterval(fetchData, 10000)
+    const interval = setInterval(fetchData, 3000)
     return () => clearInterval(interval)
   }, [jobId, router])
 
@@ -1055,6 +1169,10 @@ export default function RenterJobDetailPage() {
           </div>
         </div>
 
+        {/* State machine + live metrics */}
+        <JobStateMachine status={job.status} providerId={job.provider_id} providerGpu={providerGpu} />
+        <LiveMetrics job={job} />
+
         {(isCompleted || isFailed) && (
           <div className={`card ${isFailed ? 'border-status-error/30 bg-status-error/5' : 'border-dc1-amber/30'}`}>
             <h2 className={`section-heading mb-2 ${isFailed ? 'text-status-error' : ''}`}>
@@ -1104,6 +1222,11 @@ export default function RenterJobDetailPage() {
                   >
                     {templateSaving ? t('renter.job_detail.saving') : t('renter.job_detail.save_as_template')}
                   </button>
+                  {modelName && modelName !== '—' && (
+                    <Link href={`/renter/models?deploy=${encodeURIComponent(modelName)}`} className="btn btn-secondary text-sm min-h-[40px] px-4">
+                      🚀 Re-deploy {modelName.split('/').pop()}
+                    </Link>
+                  )}
                   <button
                     onClick={hasTextOutput ? copyTextOutput : exportOutput}
                     className="btn btn-secondary text-sm min-h-[40px] px-4"
