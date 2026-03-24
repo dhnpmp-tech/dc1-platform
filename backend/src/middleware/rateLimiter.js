@@ -53,16 +53,31 @@ function getAdminToken(req) {
   return getAdminTokenFromReq(req);
 }
 
+// Admin IP allowlist middleware factory. When ADMIN_IP_ALLOWLIST env var is set
+// (comma-separated IPs), returns middleware that rejects any request whose source
+// IP is not in the list with 403. Returns null when unset — no restriction applied.
+function createAdminIpAllowlist() {
+  const raw = (process.env.ADMIN_IP_ALLOWLIST || '').trim();
+  if (!raw) return null;
+  const allowed = new Set(raw.split(',').map((ip) => ip.trim()).filter(Boolean));
+  return function adminIpAllowlist(req, res, next) {
+    const ip = req.ip || req.socket?.remoteAddress || '';
+    if (allowed.has(ip)) return next();
+    return res.status(403).json({ error: 'Access denied: IP not in allowlist' });
+  };
+}
+
 const registerLimiter = createRateLimiter({
   windowMs: 10 * 60 * 1000,
   max: 5,
   keyGenerator: (req) => ipFallbackKey(req),
 });
 
+// Job submission: 30 per IP per minute (spec: 30 req/min per IP).
 const jobSubmitLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req),
+  max: 30,
+  keyGenerator: (req) => ipFallbackKey(req),
 });
 
 const marketplaceLimiter = createRateLimiter({
@@ -136,30 +151,34 @@ const adminLimiter = createRateLimiter({
 });
 
 // Provider heartbeat: 60 per provider key per minute (daemon sends every 30s = 2/min normally).
-// Keyed by provider key so each provider has its own bucket; falls back to IP.
 const heartbeatProviderLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 60,
   keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req),
 });
 
-// Auth endpoints: 10 per IP per minute.
+// Auth endpoints: 10 per IP per 15 minutes (strict — login, register, token exchange).
 const authLimiter = createRateLimiter({
-  windowMs: 60 * 1000,
+  windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: (req) => ipFallbackKey(req),
 });
 
-// Public endpoint limiter: 100 requests per IP per minute.
-// Applied to unauthenticated access on /api/providers, /api/jobs, /api/models.
+// Catalog/public browsing: 200 per IP per 15 minutes (spec: 200 req/15min per IP).
+const catalogLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  keyGenerator: (req) => ipFallbackKey(req),
+});
+
+// Public endpoint limiter: 200 requests per IP per 15 minutes.
 const publicEndpointLimiter = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 100,
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   keyGenerator: (req) => ipFallbackKey(req),
 });
 
 // Authenticated endpoint limiter: 1000 requests per API key per minute.
-// Applied when a valid API key (renter, provider, or bearer token) is present.
 const authenticatedEndpointLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 1000,
@@ -167,7 +186,6 @@ const authenticatedEndpointLimiter = createRateLimiter({
 });
 
 // Model deploy limiter: 20 deploy requests per API key (or IP) per minute.
-// Applied to POST /api/models/:model_id/deploy to prevent deploy spam.
 const modelDeployLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 20,
@@ -176,11 +194,13 @@ const modelDeployLimiter = createRateLimiter({
 
 module.exports = {
   createRateLimiter,
+  createAdminIpAllowlist,
   registerLimiter,
   jobSubmitLimiter,
   marketplaceLimiter,
   publicProvidersLimiter,
   publicEndpointLimiter,
+  catalogLimiter,
   authenticatedEndpointLimiter,
   modelDeployLimiter,
   containerRegistryLimiter,
