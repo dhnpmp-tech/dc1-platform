@@ -233,6 +233,7 @@ export default function MarketplaceTemplatesPage() {
   const [search, setSearch] = useState('')
   const [filterVram, setFilterVram] = useState('')
   const [filterArabic, setFilterArabic] = useState(false)
+  const [filterTier, setFilterTier] = useState<'all' | 'instant' | 'cached' | 'on-demand'>('all')
 
   useEffect(() => {
     fetch(`${API_BASE}/templates`)
@@ -253,6 +254,12 @@ export default function MarketplaceTemplatesPage() {
         const minVram = parseInt(filterVram, 10)
         if (!isNaN(minVram) && (t.min_vram_gb ?? 0) < minVram) return false
       }
+      if (filterTier !== 'all') {
+        const tier = (t.tier ?? 'on-demand').toLowerCase()
+        if (filterTier === 'instant' && tier !== 'instant') return false
+        if (filterTier === 'cached' && tier !== 'cached') return false
+        if (filterTier === 'on-demand' && tier !== 'on-demand' && tier !== '') return false
+      }
       if (search.trim()) {
         const q = search.toLowerCase()
         const hay = `${t.name} ${t.description} ${(t.tags ?? []).join(' ')}`.toLowerCase()
@@ -260,7 +267,7 @@ export default function MarketplaceTemplatesPage() {
       }
       return true
     })
-  }, [templates, activeCategory, filterVram, filterArabic, search])
+  }, [templates, activeCategory, filterVram, filterArabic, filterTier, search])
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -347,6 +354,17 @@ export default function MarketplaceTemplatesPage() {
                 onChange={e => setFilterVram(e.target.value)}
                 className="input text-sm w-36"
               />
+              <select
+                value={filterTier}
+                onChange={e => setFilterTier(e.target.value as typeof filterTier)}
+                className="input text-sm w-40"
+                aria-label="Deployment speed"
+              >
+                <option value="all">⚡ All speeds</option>
+                <option value="instant">⚡ Instant (0-2s)</option>
+                <option value="cached">🚀 Cached (2-10s)</option>
+                <option value="on-demand">⏱ On-Demand (10s+)</option>
+              </select>
               <label className="flex items-center gap-2 text-sm text-dc1-text-secondary cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -356,6 +374,12 @@ export default function MarketplaceTemplatesPage() {
                 />
                 🌙 Arabic only
               </label>
+              <button
+                onClick={() => { setSearch(''); setFilterVram(''); setFilterArabic(false); setFilterTier('all'); setActiveCategory('all') }}
+                className="text-xs text-dc1-text-muted hover:text-dc1-amber transition-colors whitespace-nowrap"
+              >
+                Reset
+              </button>
               <span className="text-xs text-dc1-text-muted whitespace-nowrap ms-auto">
                 {loading ? 'Loading…' : `${filtered.length} of ${templates.length}`}
               </span>
