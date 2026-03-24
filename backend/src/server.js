@@ -88,6 +88,14 @@ app.use(cors({
 
 // Webhook raw parser must run before express.json()
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+// Raw body capture for provider heartbeat HMAC validation
+app.use('/api/providers/heartbeat', express.raw({ type: 'application/json' }), (req, _res, next) => {
+  if (Buffer.isBuffer(req.body)) {
+    req.rawBody = req.body;
+    try { req.body = JSON.parse(req.body.toString('utf8')); } catch { req.body = {}; }
+  }
+  next();
+});
 app.use(express.json({ limit: '50mb' }));  // Large limit for base64 image results (512x512 PNG ~ 500KB base64)
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
