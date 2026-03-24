@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Escrow Event Listener — DCP-858
+ * Escrow Event Listener — DCP-858 / DCP-903
  *
  * Polls the Base Sepolia Escrow contract for on-chain settlement events and
  * reconciles them with the off-chain payment ledger (SQLite).
@@ -16,6 +16,14 @@
  *
  *   Cancelled(jobId, renter, amount)
  *     → logs the on-chain cancellation for audit purposes
+ *
+ *   PaymentReleased(jobId, provider, amount) — DCP-903 bridge event
+ *     → marks matching job as 'payment_released' in jobs table
+ *     → creates a payout_request record for the provider
+ *
+ *   DisputeRaised(jobId, renter) — DCP-903 bridge event
+ *     → marks matching job as 'disputed' in jobs table
+ *     → writes an alert to admin_alerts table for ops review
  *
  *   PayoutReleased(provider, amount) — future event, stub ready
  *     → marks provider payout record as confirmed when contract supports it
@@ -32,6 +40,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 
 // ── ethers graceful fallback ─────────────────────────────────────────────────
 let ethers;
@@ -74,6 +83,15 @@ const CURSOR_TABLE_SQL = `
 const PAYOUT_TX_COL_SQL = `
   ALTER TABLE payout_requests ADD COLUMN escrow_tx_hash TEXT
 `;
+const ADMIN_ALERTS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS admin_alerts (
+    id          TEXT PRIMARY KEY,
+    alert_type  TEXT NOT NULL,
+    job_id      TEXT,
+    payload     TEXT,
+    created_at  TEXT NOT NULL
+  )
+`;
 
 // ── Module state ──────────────────────────────────────────────────────────────
 let _timer    = null;
@@ -101,6 +119,9 @@ function ensureSchema(db) {
   } catch (_) {
     // Column already exists — sqlite throws on duplicate ADD COLUMN
   }
+
+  // Ensure admin_alerts table exists for DisputeRaised events.
+  db.exec(ADMIN_ALERTS_TABLE_SQL);
 
   const row = db.prepare('SELECT id FROM escrow_listener_cursor WHERE id = 1').get();
   if (!row) {
@@ -250,6 +271,128 @@ function handlePayoutReleased(db, txHash, providerAddr, amountWei) {
   }
 }
 
+/**
+ * Handle PaymentReleased(jobId bytes32, provider address, amount uint256) — DCP-903
+ *
+ * Emitted when the escrow settles payment to a provider for a completed job.
+ * This is the primary "job done, money moved" confirmation event.
+ *
+ * Actions:
+ *   1. Marks the matching job row as `payment_released` in the jobs table.
+ *   2. Creates a `payout_request` record for the provider so the admin
+ *      can confirm off-chain disbursement.
+ */
+function handlePaymentReleased(db, log, contract) {
+  try {
+    const parsed       = contract.interface.parseLog(log);
+    const jobId32      = parsed.args[0].toLowerCase();
+    const providerAddr = parsed.args[1];
+    const amount       = parsed.args[2].toString();
+    const txHash       = log.transactionHash;
+    const now          = new Date().toISOString();
+
+    // Find the matching job by scanning and comparing keccak256 hashes.
+    const candidateJobs = db.prepare(
+      "SELECT id, job_id, provider_id FROM jobs WHERE status NOT IN ('payment_released', 'cancelled') LIMIT 200"
+    ).all();
+
+    let matchedJob = null;
+    for (const row of candidateJobs) {
+      const candidate32 = ethers.keccak256(ethers.toUtf8Bytes(row.job_id)).toLowerCase();
+      if (candidate32 === jobId32) {
+        matchedJob = row;
+        break;
+      }
+    }
+
+    if (!matchedJob) {
+      console.warn(`[escrow-listener] PaymentReleased: no matching job for jobId32=${jobId32} tx=${txHash}`);
+    } else {
+      db.prepare("UPDATE jobs SET status = 'payment_released' WHERE id = ?").run(matchedJob.id);
+      console.log(`[escrow-listener] PaymentReleased: job=${matchedJob.job_id} status→payment_released tx=${txHash}`);
+    }
+
+    // Look up provider by eth_address to get provider_id.
+    const provider = db.prepare(
+      'SELECT id FROM providers WHERE LOWER(eth_address) = LOWER(?) AND deleted_at IS NULL LIMIT 1'
+    ).get(providerAddr);
+
+    if (!provider) {
+      console.warn(`[escrow-listener] PaymentReleased: no provider found for address=${providerAddr} tx=${txHash}`);
+      return;
+    }
+
+    // Create a payout_request for the provider (USDC 6 decimals → SAR at 3.75 rate).
+    const amountUsd    = Number(amount) / 1_000_000;
+    const amountSar    = amountUsd * 3.75;
+    const amountHalala = Math.round(amountSar * 100);
+    const payoutId     = randomUUID();
+
+    db.prepare(`
+      INSERT INTO payout_requests
+        (id, provider_id, amount_usd, amount_sar, amount_halala, status, requested_at, escrow_tx_hash)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(payoutId, provider.id, amountUsd, amountSar, amountHalala, now, txHash);
+
+    console.log(
+      `[escrow-listener] PaymentReleased: payout_request=${payoutId} provider=${providerAddr} amount=${amount} tx=${txHash}`
+    );
+  } catch (err) {
+    console.error('[escrow-listener] handlePaymentReleased error:', err.message);
+  }
+}
+
+/**
+ * Handle DisputeRaised(jobId bytes32, renter address) — DCP-903
+ *
+ * Emitted when a renter raises an on-chain dispute against a completed job.
+ *
+ * Actions:
+ *   1. Marks the matching job row as `disputed` in the jobs table.
+ *   2. Writes an admin alert to the `admin_alerts` table so the ops team
+ *      is notified for manual review.
+ */
+function handleDisputeRaised(db, log, contract) {
+  try {
+    const parsed     = contract.interface.parseLog(log);
+    const jobId32    = parsed.args[0].toLowerCase();
+    const renterAddr = parsed.args[1];
+    const txHash     = log.transactionHash;
+    const now        = new Date().toISOString();
+
+    // Find the matching job by scanning and comparing keccak256 hashes.
+    const candidateJobs = db.prepare(
+      "SELECT id, job_id FROM jobs WHERE status NOT IN ('disputed', 'cancelled') LIMIT 200"
+    ).all();
+
+    let matchedJobId = null;
+    for (const row of candidateJobs) {
+      const candidate32 = ethers.keccak256(ethers.toUtf8Bytes(row.job_id)).toLowerCase();
+      if (candidate32 === jobId32) {
+        db.prepare("UPDATE jobs SET status = 'disputed' WHERE id = ?").run(row.id);
+        matchedJobId = row.job_id;
+        console.log(`[escrow-listener] DisputeRaised: job=${row.job_id} status→disputed tx=${txHash}`);
+        break;
+      }
+    }
+
+    if (!matchedJobId) {
+      console.warn(`[escrow-listener] DisputeRaised: no matching job for jobId32=${jobId32} tx=${txHash}`);
+    }
+
+    // Write admin alert regardless — disputes always need ops attention.
+    const alertId = randomUUID();
+    const payload = JSON.stringify({ jobId32, renter: renterAddr, txHash, matchedJobId });
+    db.prepare(
+      'INSERT INTO admin_alerts (id, alert_type, job_id, payload, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).run(alertId, 'dispute_raised', matchedJobId, payload, now);
+
+    console.log(`[escrow-listener] DisputeRaised: alert=${alertId} renter=${renterAddr} tx=${txHash}`);
+  } catch (err) {
+    console.error('[escrow-listener] handleDisputeRaised error:', err.message);
+  }
+}
+
 // ── Core poll loop ────────────────────────────────────────────────────────────
 
 /**
@@ -267,10 +410,12 @@ async function processBlockRange(fromBlock, toBlock) {
   const iface = _contract.interface;
 
   // Topic hashes for events we care about.
-  const CLAIMED_TOPIC    = iface.getEvent('Claimed').topicHash;
-  const CANCELLED_TOPIC  = iface.getEvent('Cancelled').topicHash;
+  const CLAIMED_TOPIC          = iface.getEvent('Claimed').topicHash;
+  const CANCELLED_TOPIC        = iface.getEvent('Cancelled').topicHash;
+  const PAYMENT_RELEASED_TOPIC = iface.getEvent('PaymentReleased').topicHash;
+  const DISPUTE_RAISED_TOPIC   = iface.getEvent('DisputeRaised').topicHash;
   // PayoutReleased topic — not in current ABI; placeholder for future contract.
-  const PAYOUT_TOPIC     = process.env.PAYOUT_RELEASED_TOPIC || null;
+  const PAYOUT_TOPIC           = process.env.PAYOUT_RELEASED_TOPIC || null;
 
   for (const log of logs) {
     const topic0 = log.topics[0];
@@ -278,6 +423,10 @@ async function processBlockRange(fromBlock, toBlock) {
       handleClaimed(_db, log, _contract);
     } else if (topic0 === CANCELLED_TOPIC) {
       handleCancelled(_db, log, _contract);
+    } else if (topic0 === PAYMENT_RELEASED_TOPIC) {
+      handlePaymentReleased(_db, log, _contract);
+    } else if (topic0 === DISPUTE_RAISED_TOPIC) {
+      handleDisputeRaised(_db, log, _contract);
     } else if (PAYOUT_TOPIC && topic0 === PAYOUT_TOPIC) {
       // Decode manually: PayoutReleased(address indexed provider, uint256 amount)
       const providerAddr = ethers.AbiCoder.defaultAbiCoder()
@@ -416,7 +565,9 @@ module.exports = {
   stop,
   runOnce,
   // Exported for unit testing only:
-  _handleClaimed:        handleClaimed,
-  _handleCancelled:      handleCancelled,
-  _handlePayoutReleased: handlePayoutReleased,
+  _handleClaimed:         handleClaimed,
+  _handleCancelled:       handleCancelled,
+  _handlePayoutReleased:  handlePayoutReleased,
+  _handlePaymentReleased: handlePaymentReleased,
+  _handleDisputeRaised:   handleDisputeRaised,
 };
