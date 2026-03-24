@@ -374,6 +374,9 @@ const webhooksRouter = require('./routes/webhooks');
 app.use('/api/webhooks', webhooksRouter);
 
 // Initialize Supabase sync bridge
+
+const settlementRouter = require('./routes/settlement');
+app.use('/api/settlement', settlementRouter);
 const supabaseSync = require('./services/supabase-sync');
 if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
 
