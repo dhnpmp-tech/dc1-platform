@@ -7,6 +7,7 @@ import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import { useLanguage } from '../../lib/i18n'
 import QuickRedeployModal from '../../components/modals/QuickRedeployModal'
+import WalletTopUpModal from '../../components/modals/WalletTopUpModal'
 
 const API_BASE = '/api/dc1'
 
@@ -153,9 +154,10 @@ function StatusPill({ status }: { status: string }) {
 interface WalletBalanceCardProps {
   balanceHalala: number
   totalSpentHalala: number
+  onTopUp: () => void
 }
 
-function WalletBalanceCard({ balanceHalala, totalSpentHalala }: WalletBalanceCardProps) {
+function WalletBalanceCard({ balanceHalala, totalSpentHalala, onTopUp }: WalletBalanceCardProps) {
   const isLow = balanceHalala < 1000 // < 10 SAR
   const isCritical = balanceHalala < 200 // < 2 SAR
 
@@ -181,8 +183,8 @@ function WalletBalanceCard({ balanceHalala, totalSpentHalala }: WalletBalanceCar
         </div>
       </div>
       <div className="mt-4">
-        <Link
-          href="/renter/billing"
+        <button
+          onClick={onTopUp}
           className="btn btn-primary inline-flex items-center gap-2 text-sm py-2 px-4"
           aria-label="Top up wallet"
         >
@@ -190,7 +192,7 @@ function WalletBalanceCard({ balanceHalala, totalSpentHalala }: WalletBalanceCar
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Top Up
-        </Link>
+        </button>
       </div>
     </div>
   )
@@ -419,6 +421,7 @@ export default function CostDashboardPage() {
   const [loadingJobs, setLoadingJobs] = useState(true)
   const [error, setError] = useState('')
   const [redeployJob, setRedeployJob] = useState<Job | null>(null)
+  const [showTopUpModal, setShowTopUpModal] = useState(false)
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -544,6 +547,7 @@ export default function CostDashboardPage() {
             <WalletBalanceCard
               balanceHalala={renterData.balance_halala ?? 0}
               totalSpentHalala={renterData.total_spent_halala ?? 0}
+              onTopUp={() => setShowTopUpModal(true)}
             />
 
             {/* ── Summary Stat Cards ────────────────────────────────── */}
