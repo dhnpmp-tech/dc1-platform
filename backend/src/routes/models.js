@@ -476,7 +476,18 @@ function getModelById(modelId) {
 }
 
 function toLegacyListItem(model) {
+  const sarPerHr = toFixedNumber((model.pricing.avg_sar_per_min || 0) * 60, 4);
+  const usdPerHr = toFixedNumber(sarPerHr / SAR_USD_RATE, 4);
+
   return {
+    // canonical fields
+    id: model.model_id,
+    name: model.display_name,
+    pricing_usd_hr: usdPerHr,
+    pricing_sar_hr: sarPerHr,
+    arabic_capable: !!(model.arabic || model.arabic_capability),
+    benchmark_tokens_sec: toNumber(model.benchmark?.tokens_per_sec) || null,
+    // legacy fields retained for backwards compat
     model_id: model.model_id,
     display_name: model.display_name,
     family: model.family,
@@ -625,13 +636,14 @@ function buildDeploySubmitPayload(model, options = {}) {
 
 // applyQueryFilters — shared filter logic for list and catalog endpoints.
 // Supported query params:
-//   arabic_capable=true   — only models with Arabic capability
+//   arabic_capable=true / arabic=true  — only models with Arabic capability
 //   min_vram_gb=N         — only models requiring <= N GB VRAM (renter GPU fits model)
 //   category=llm|embedding|image|training  — filter by task type
 function applyQueryFilters(models, query) {
   let result = models;
 
-  if (String(query.arabic_capable || '').toLowerCase() === 'true') {
+  const arabicFilter = String(query.arabic_capable || query.arabic || '').toLowerCase() === 'true';
+  if (arabicFilter) {
     result = result.filter((m) => m.arabic || m.arabic_capability);
   }
 

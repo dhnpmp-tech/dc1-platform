@@ -1690,6 +1690,170 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
   }
 });
 
+// POST /api/jobs/from-template
+// One-click template deployment for renters. Reads docker-templates/*.json, validates
+// renter balance, creates a job record, and atomically deducts a credit hold.
+// Auth: renter API key via x-renter-key header or ?key= query param.
+// Body: { templateId, gpuModel } — gpuModel is optional (null = any GPU).
+// Returns: { jobId, estimatedStartSec, providerAssigned, status, cost_halala }
+router.post('/from-template', requireRenter, (req, res) => {
+  try {
+    const { templateId, gpuModel } = req.body || {};
+
+    if (!templateId || typeof templateId !== 'string') {
+      return res.status(400).json({ error: 'templateId is required' });
+    }
+
+    const template = loadDockerTemplate(templateId);
+    if (!template) {
+      return res.status(404).json({ error: `Template '${templateId}' not found` });
+    }
+
+    // Validate gpuModel against allowlist (null = any GPU, always accepted)
+    const normalizedGpu = gpuModel != null ? normalizeGpuType(gpuModel) : null;
+    if (normalizedGpu !== null && !ALLOWED_GPU_TYPES.has(normalizedGpu)) {
+      return res.status(400).json({
+        error: `Invalid gpuModel '${gpuModel}'. Allowed values: ${[...ALLOWED_GPU_TYPES].join(', ')}`,
+        code: 'INVALID_GPU_TYPE',
+      });
+    }
+
+    const jobType = template.job_type || 'llm-inference';
+    if (!ALLOWED_JOB_TYPES.has(jobType)) {
+      return res.status(400).json({ error: `Template job_type '${jobType}' is not supported` });
+    }
+
+    const durationMinutes = 60; // default one-click duration
+    const pricingClass = 'standard';
+    const cost_halala = calculateCostHalala(jobType, durationMinutes, pricingClass, normalizedGpu);
+
+    // Balance checks
+    if (req.renter.balance_halala <= 0) {
+      return res.status(402).json({
+        error: 'Insufficient balance',
+        balance_halala: req.renter.balance_halala,
+        required_halala: cost_halala,
+        message: `Top up at least ${Math.ceil(cost_halala / 100)} SAR to deploy this template. POST /api/renters/topup`,
+      });
+    }
+    if (req.renter.balance_halala < cost_halala) {
+      return res.status(402).json({
+        error: 'Insufficient balance',
+        balance_halala: req.renter.balance_halala,
+        required_halala: cost_halala,
+        shortfall_halala: cost_halala - req.renter.balance_halala,
+        message: `Top up at least ${Math.ceil((cost_halala - req.renter.balance_halala) / 100)} SAR to deploy this template. POST /api/renters/topup`,
+      });
+    }
+
+    // Find best available provider with enough VRAM
+    const minVramGb = template.min_vram_gb || 8;
+    const provider = db.get(
+      `SELECT id, gpu_model FROM providers
+       WHERE status = 'online'
+         AND COALESCE(is_paused, 0) = 0
+         AND COALESCE(
+               vram_gb,
+               CAST(ROUND(COALESCE(gpu_vram_mb, gpu_vram_mib, 0) / 1024.0) AS INTEGER),
+               0
+             ) >= ?
+       ORDER BY last_heartbeat DESC
+       LIMIT 1`,
+      minVramGb
+    );
+
+    const provider_id = provider ? provider.id : null;
+    const initialStatus = provider ? 'pending' : 'queued';
+    const now = new Date().toISOString();
+    const job_id = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    const timeoutSeconds = 1800;
+    const timeoutAt = new Date(Date.now() + timeoutSeconds * 1000).toISOString().replace('T', ' ').replace('Z', '');
+
+    const taskSpec = JSON.stringify({
+      job_type: jobType,
+      template_id: template.id,
+      params: template.params || {},
+    });
+    const taskSpecHmac = signTaskSpec(taskSpec);
+
+    const containerSpecObj = { pricing_class: pricingClass };
+    if (template.image && template.image !== 'custom') {
+      containerSpecObj.image_override = template.image;
+    }
+    const containerSpec = JSON.stringify(containerSpecObj);
+
+    const gpuRequirements = JSON.stringify(
+      normalizedGpu
+        ? { min_vram_gb: minVramGb, gpu_type: normalizedGpu }
+        : { min_vram_gb: minVramGb }
+    );
+
+    const createJobTx = createTransaction(() => {
+      const deductResult = runStatement(
+        `UPDATE renters
+         SET balance_halala = balance_halala - ?,
+             updated_at = ?
+         WHERE id = ? AND balance_halala >= ?`,
+        cost_halala, now, req.renter.id, cost_halala
+      );
+      if (deductResult.changes === 0) {
+        throw Object.assign(new Error('Insufficient balance at commit time'), { code: 'INSUFFICIENT_BALANCE_AT_COMMIT' });
+      }
+
+      const insertResult = HAS_TEMPLATE_ID
+        ? runStatement(
+            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, status, submitted_at, duration_minutes,
+              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+              created_at, priority, pricing_class, template_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            job_id, provider_id, req.renter.id, jobType, initialStatus, now, durationMinutes,
+            cost_halala, gpuRequirements, containerSpec, taskSpec, taskSpecHmac,
+            timeoutSeconds, provider_id ? timeoutAt : null,
+            now, DEFAULT_JOB_PRIORITY, pricingClass, template.id
+          )
+        : runStatement(
+            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, status, submitted_at, duration_minutes,
+              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+              created_at, priority, pricing_class)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            job_id, provider_id, req.renter.id, jobType, initialStatus, now, durationMinutes,
+            cost_halala, gpuRequirements, containerSpec, taskSpec, taskSpecHmac,
+            timeoutSeconds, provider_id ? timeoutAt : null,
+            now, DEFAULT_JOB_PRIORITY, pricingClass
+          );
+
+      runStatement(
+        `UPDATE renters SET total_jobs = total_jobs + 1, updated_at = ? WHERE id = ?`,
+        now, req.renter.id
+      );
+
+      return insertResult.lastInsertRowid;
+    });
+
+    try {
+      createJobTx();
+    } catch (txErr) {
+      if (txErr.code === 'INSUFFICIENT_BALANCE_AT_COMMIT') {
+        return res.status(402).json({ error: 'Insufficient balance', message: 'Concurrent request depleted balance' });
+      }
+      throw txErr;
+    }
+
+    return res.status(201).json({
+      jobId: job_id,
+      estimatedStartSec: provider_id ? 10 : 120,
+      providerAssigned: !!provider_id,
+      status: initialStatus,
+      templateId: template.id,
+      durationMinutes,
+      cost_halala,
+    });
+  } catch (error) {
+    console.error('[jobs/from-template] Error:', error);
+    return res.status(500).json({ error: 'Failed to deploy template' });
+  }
+});
+
 // POST /api/jobs/:job_id/retry?key=RENTER_KEY
 // Clones a failed renter-owned job into a fresh submission and re-holds escrow.
 router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
