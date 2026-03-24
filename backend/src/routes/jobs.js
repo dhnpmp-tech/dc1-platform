@@ -1055,8 +1055,8 @@ function calculateCostHalala(jobType, durationMinutes, pricingClass, gpuModel) {
 
 // Floor-plus-remainder: guarantees provider + dc1 === total exactly
 function splitBilling(totalHalala) {
-  const provider = Math.floor(totalHalala * 0.75);
-  return { provider, dc1: totalHalala - provider };
+  const dc1 = Math.floor(totalHalala * 15 / 100);
+  return { provider: totalHalala - dc1, dc1 };
 }
 
 // Whitelisted job types — renters may only submit these types

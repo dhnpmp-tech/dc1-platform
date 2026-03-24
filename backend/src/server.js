@@ -607,7 +607,7 @@ app.get('/api/docs', (req, res) => {
     return res.status(404).json({ error: 'OpenAPI spec not found' });
   }
   res.setHeader('Content-Type', 'application/yaml');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+
   res.sendFile(OPENAPI_PATH);
 });
 
