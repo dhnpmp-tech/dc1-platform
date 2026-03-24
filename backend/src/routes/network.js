@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { requireAdminAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -20,8 +21,11 @@ router.get('/providers', (req, res) => {
     const available = req.query.available === 'true' || req.query.available === '1';
     const gpuModel = req.query.gpu_model;
     const minVramGb = req.query.min_vram_gb ? parseInt(req.query.min_vram_gb, 10) : null;
+
+    // Safely parse limit to avoid NaN when Math.min receives invalid input
+    const rawLimit = req.query.limit ? parseInt(req.query.limit, 10) : null;
     const limit = Math.min(
-      req.query.limit ? parseInt(req.query.limit, 10) : 100,
+      (rawLimit !== null && Number.isFinite(rawLimit) && rawLimit > 0) ? rawLimit : 100,
       500
     );
 
@@ -44,8 +48,6 @@ router.get('/providers', (req, res) => {
         status,
         reliability_score,
         last_heartbeat,
-        ip_address,
-        provider_ip,
         created_at
       FROM providers
       WHERE is_paused = 0
@@ -103,8 +105,6 @@ router.get('/providers', (req, res) => {
         reliability_score: row.reliability_score,
         last_heartbeat: row.last_heartbeat,
         last_heartbeat_sec_ago: heartbeatSec,
-        ip_address: row.ip_address,
-        provider_ip: row.provider_ip,
         created_at: row.created_at,
       };
     });
@@ -128,7 +128,7 @@ router.get('/providers', (req, res) => {
 /**
  * GET /api/network/topology
  *
- * Network topology health endpoint for admin dashboard.
+ * Network topology health endpoint for admin dashboard (requires admin auth).
  * Returns aggregated network statistics:
  *   - total_registered: total providers in system
  *   - total_online: providers with heartbeat < 2 min
@@ -141,7 +141,7 @@ router.get('/providers', (req, res) => {
  *   - provider_status_breakdown: detailed breakdown by status
  *   - recent_heartbeat_count: providers with heartbeat in last 5 min
  */
-router.get('/topology', (req, res) => {
+router.get('/topology', requireAdminAuth, (req, res) => {
   try {
     // Total registered providers (not paused)
     const totalReg = db.get(
@@ -192,7 +192,7 @@ router.get('/topology', (req, res) => {
 
     // Average GPU utilization from recent heartbeats
     const avgUtil = db.get(
-      `SELECT AVG(CAST(SUBSTR(gpu_util_pct, 1, 3) AS FLOAT)) AS avg_util
+      `SELECT AVG(CAST(gpu_util_pct AS FLOAT)) AS avg_util
        FROM heartbeat_log
        WHERE received_at > datetime('now', '-1 hours')`,
     );
