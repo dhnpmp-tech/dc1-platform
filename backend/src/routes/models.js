@@ -452,11 +452,28 @@ function buildModelPayload(row, freshProviders, portfolioIndex) {
   return payload;
 }
 
-function getCatalogModels() {
+// In-memory catalog cache — avoids repeated DB reads and FS loads per request.
+// TTL is 5 min so provider availability stays reasonably fresh.
+const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+let _catalogCache = null;
+let _catalogCacheAt = 0;
+
+function invalidateCatalogCache() {
+  _catalogCache = null;
+  _catalogCacheAt = 0;
+}
+
+function getCatalogModels({ forceRefresh = false } = {}) {
+  const now = Date.now();
+  if (!forceRefresh && _catalogCache && (now - _catalogCacheAt) < CATALOG_CACHE_TTL_MS) {
+    return _catalogCache;
+  }
   const rows = getModelRows();
   const freshProviders = buildFreshProviderLookup();
   const portfolioIndex = loadArabicPortfolioIndex();
-  return rows.map((row) => buildModelPayload(row, freshProviders, portfolioIndex));
+  _catalogCache = rows.map((row) => buildModelPayload(row, freshProviders, portfolioIndex));
+  _catalogCacheAt = now;
+  return _catalogCache;
 }
 
 function parseCompareIds(req) {
@@ -993,4 +1010,5 @@ router.get(/^\/([a-zA-Z0-9._/-]+)$/, publicEndpointLimiter, (req, res) => {
   }
 });
 
+router.invalidateCatalogCache = invalidateCatalogCache;
 module.exports = router;
