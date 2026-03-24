@@ -169,6 +169,55 @@ api_post() {
     "${API_BASE}${path}"
 }
 
+
+# ── Signed Webhook POST (DCP-722) ──────────────────────────────────────────────
+# Sends a provider event to /api/webhooks/* signed with HMAC-SHA256.
+#
+# Usage: api_post_signed <path> <provider_key> <json_body>
+#
+# Headers added:
+#   X-Provider-Key: <key>
+#   X-DCP-Timestamp: <unix-epoch-seconds>
+#   X-DCP-Signature: sha256=<hmac-sha256 hex>
+#
+# Requires: openssl (standard on Ubuntu 20.04+)
+api_post_signed() {
+  local path="$1"
+  local key="$2"
+  local body="$3"
+  local ts
+  ts=$(date +%s)
+  local sig
+  sig="sha256=$(printf '%s' "${body}" | openssl dgst -sha256 -hmac "${key}" -hex 2>/dev/null | awk '{print $NF}')"
+  curl -sS --max-time 10 \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Provider-Key: ${key}" \
+    -H "X-DCP-Timestamp: ${ts}" \
+    -H "X-DCP-Signature: ${sig}" \
+    -d "${body}" \
+    "${API_BASE}${path}"
+}
+
+# ── Send a signed provider event ───────────────────────────────────────────────
+# Reports a provider event (e.g. container_exit, error_report, job_done) to DCP.
+#
+# Usage: send_provider_event <provider_key> <event_name> [<job_id>]
+send_provider_event() {
+  local key="$1"
+  local event="$2"
+  local job_id="${3:-}"
+  local safe_event safe_job_id body
+  safe_event=$(json_escape "${event}")
+  safe_job_id=$(json_escape "${job_id}")
+  if [[ -n "${job_id}" ]]; then
+    body="{\"event\":\"${safe_event}\",\"job_id\":\"${safe_job_id}\"}"
+  else
+    body="{\"event\":\"${safe_event}\"}"
+  fi
+  api_post_signed "/api/webhooks/provider/event" "${key}" "${body}" >/dev/null 2>&1 || true
+}
+
 # ── Validate Provider Key ──────────────────────────────────────────────────────
 validate_key() {
   local key="$1"
