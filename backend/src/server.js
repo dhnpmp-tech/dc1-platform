@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const paymentsRouter = require('./routes/payments');
-const { startJobSweep, getSweepMetrics } = require('./services/jobSweep');
+const { startJobSweep, getSweepMetrics, startProviderOfflineSweep } = require('./services/jobSweep');
 const { runControlPlaneCycle } = require('./services/controlPlane');
 const { sendAlert } = require('./services/notifications');
 const {
@@ -92,6 +92,14 @@ app.use(cors({
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 // Raw body capture for provider heartbeat HMAC validation
 app.use('/api/providers/heartbeat', express.raw({ type: 'application/json' }), (req, _res, next) => {
+  if (Buffer.isBuffer(req.body)) {
+    req.rawBody = req.body;
+    try { req.body = JSON.parse(req.body.toString('utf8')); } catch { req.body = {}; }
+  }
+  next();
+});
+// Raw body capture for provider webhook HMAC validation (DCP-722)
+app.use('/api/webhooks', express.raw({ type: 'application/json' }), (req, _res, next) => {
   if (Buffer.isBuffer(req.body)) {
     req.rawBody = req.body;
     try { req.body = JSON.parse(req.body.toString('utf8')); } catch { req.body = {}; }
@@ -362,6 +370,9 @@ app.use('/api/containers', containersRouter);
 const p2pRouter = require('./routes/p2p');
 app.use('/api/p2p', p2pRouter);
 
+const webhooksRouter = require('./routes/webhooks');
+app.use('/api/webhooks', webhooksRouter);
+
 // Initialize Supabase sync bridge
 const supabaseSync = require('./services/supabase-sync');
 if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
@@ -373,6 +384,8 @@ const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);
 const sweepIntervalMs = Number.isFinite(sweepIntervalMsRaw) && sweepIntervalMsRaw > 0 ? sweepIntervalMsRaw : 30000;
 startJobSweep(db, sweepIntervalMs);
+const providerOfflineSweepIntervalMs = Number.parseInt(process.env.PROVIDER_OFFLINE_SWEEP_INTERVAL_MS || '60000', 10);
+startProviderOfflineSweep(db, Number.isFinite(providerOfflineSweepIntervalMs) && providerOfflineSweepIntervalMs > 0 ? providerOfflineSweepIntervalMs : 60000);
 
 const controlPlaneIntervalMsRaw = Number.parseInt(process.env.CONTROL_PLANE_INTERVAL_MS || '60000', 10);
 const controlPlaneIntervalMs = Number.isFinite(controlPlaneIntervalMsRaw) && controlPlaneIntervalMsRaw > 0
