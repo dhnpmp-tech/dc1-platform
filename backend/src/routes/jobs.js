@@ -1480,15 +1480,22 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
     const initialStatus = isQueued ? 'queued' : 'pending';
 
     const createJobTx = createTransaction(() => {
-      runStatement(
+      // DCP-777: Atomic balance guard — AND balance_halala >= ? ensures the deduction
+      // fails (changes=0) if funds were already spent by a concurrent request.
+      // Defense-in-depth for future async refactors of this path.
+      const deductResult = runStatement(
         `UPDATE renters
          SET balance_halala = balance_halala - ?,
              updated_at = ?
-         WHERE id = ?`,
+         WHERE id = ? AND balance_halala >= ?`,
         cost_halala,
         now,
-        req.renter.id
+        req.renter.id,
+        cost_halala
       );
+      if (deductResult.changes === 0) {
+        throw Object.assign(new Error('Insufficient balance at commit time'), { code: 'INSUFFICIENT_BALANCE_AT_COMMIT' });
+      }
 
       const templateIdValue = resolvedTemplate?.id || reqTemplateId || null;
       const gpuRateSnapshotJson = gpuRateSnapshot ? JSON.stringify(gpuRateSnapshot) : null;
@@ -1762,13 +1769,18 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
     const escrowExpiresAt = new Date(Date.now() + (timeout + 1800) * 1000).toISOString();
 
     const createRetryJobTx = createTransaction(() => {
-      runStatement(
+      // DCP-777: Same atomic balance guard as main submit path.
+      const deductResult = runStatement(
         `UPDATE renters
          SET balance_halala = balance_halala - ?
-         WHERE id = ?`,
+         WHERE id = ? AND balance_halala >= ?`,
         quotedCostHalala,
-        renter.id
+        renter.id,
+        quotedCostHalala
       );
+      if (deductResult.changes === 0) {
+        throw Object.assign(new Error('Insufficient balance at commit time'), { code: 'INSUFFICIENT_BALANCE_AT_COMMIT' });
+      }
 
       const insertSql = HAS_RETRIED_FROM_JOB_ID
         ? `INSERT INTO jobs (
