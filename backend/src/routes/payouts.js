@@ -1,16 +1,20 @@
 'use strict';
 
 /**
- * Payout Routes — DCP-763
+ * Payout Routes — DCP-763 / DCP-862
  *
  * Off-chain payout request queue for provider earnings withdrawal.
  * DCP admin processes payouts manually via bank transfer.
  *
  * Routes (mounted at /api):
- *   POST  /providers/:id/payouts   — request payout (provider auth)
- *   GET   /providers/:id/payouts   — payout history (provider auth)
- *   GET   /providers/:id/earnings  — balance summary (provider auth)
- *   PATCH /admin/payouts/:id       — mark paid or reject (admin token)
+ *   POST  /providers/:id/payouts      — request payout (provider auth)
+ *   GET   /providers/:id/payouts      — payout history (provider auth)
+ *   GET   /providers/:id/earnings     — balance summary (provider auth)
+ *   PATCH /admin/payouts/:id          — mark paid or reject (admin token, legacy)
+ *
+ *   GET   /admin/payouts/pending      — list pending payout requests (DCP-862)
+ *   POST  /admin/payouts/:id/approve  — approve → processing + notify provider (DCP-862)
+ *   POST  /admin/payouts/:id/reject   — reject + return funds + notify provider (DCP-862)
  *
  * Provider auth: x-provider-key header, ?key query param, or Bearer dcp_prov_* token.
  * Admin auth: DC1_ADMIN_TOKEN via X-Admin-Token header or Bearer token.
@@ -29,6 +33,8 @@ const {
   markPayoutPaid,
   rejectPayout,
 } = require('../services/payoutService');
+const { sendWithdrawalApprovedEmail } = require('../services/emailService');
+const { sendAlert } = require('../services/notifications');
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
@@ -124,6 +130,163 @@ router.get('/providers/:id/earnings', (req, res) => {
     return res.json(summary);
   } catch (err) {
     console.error('[payouts] GET /providers/:id/earnings error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /api/admin/payouts/pending ───────────────────────────────────────────
+//
+// List all payout requests with status 'pending', newest first.
+// Returns: { payouts: [...], total: N }
+// Fields per payout: payout_id, provider_id, provider_name, provider_email,
+//   amount_sar, amount_usd, amount_eth_est, requested_at, status
+//
+// DCP-862: requireAdminRbac = token auth + RBAC role check + audit log
+router.get('/admin/payouts/pending', requireAdminRbac, (req, res) => {
+  try {
+    const raw_db = db._db || db;
+    const ETH_USD = Number(process.env.ETH_USD_RATE) || 3200; // fallback spot rate
+    const USD_TO_SAR = 3.75;
+    const HALALA_PER_SAR = 100;
+
+    const rows = raw_db.prepare(`
+      SELECT
+        pr.id            AS payout_id,
+        pr.provider_id,
+        pr.amount_halala,
+        pr.status,
+        pr.requested_at,
+        p.name           AS provider_name,
+        p.email          AS provider_email
+      FROM payout_requests pr
+      LEFT JOIN providers p ON p.id = pr.provider_id
+      WHERE pr.status = 'pending'
+      ORDER BY pr.requested_at DESC
+    `).all();
+
+    const total = rows.length;
+    const payouts = rows.map((r) => {
+      const amountSar = Number((r.amount_halala / HALALA_PER_SAR).toFixed(2));
+      const amountUsd = Number((amountSar / USD_TO_SAR).toFixed(2));
+      const amountEthEst = Number((amountUsd / ETH_USD).toFixed(6));
+      return {
+        payout_id:      r.payout_id,
+        provider_id:    r.provider_id,
+        provider_name:  r.provider_name || null,
+        provider_email: r.provider_email || null,
+        amount_sar:     amountSar,
+        amount_usd:     amountUsd,
+        amount_eth_est: amountEthEst,
+        requested_at:   r.requested_at,
+        status:         r.status,
+      };
+    });
+
+    return res.json({ payouts, total });
+  } catch (err) {
+    console.error('[payouts] GET /admin/payouts/pending error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/admin/payouts/:id/approve ──────────────────────────────────────
+//
+// Approve a pending payout: transitions status pending → processing.
+// Sends email + Telegram notification to the provider.
+// Body: { payment_ref?: string }
+//
+// DCP-862
+router.post('/admin/payouts/:id/approve', requireAdminRbac, async (req, res) => {
+  try {
+    const raw_db = db._db || db;
+    const { payment_ref } = req.body || {};
+
+    const row = raw_db.prepare('SELECT * FROM payout_requests WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'NOT_FOUND', message: 'Payout request not found' });
+    if (row.status !== 'pending') {
+      return res.status(409).json({
+        error: 'NOT_APPROVABLE',
+        message: `Cannot approve a payout with status '${row.status}'`,
+      });
+    }
+
+    const now = new Date().toISOString();
+    raw_db.prepare(`
+      UPDATE payout_requests
+      SET status = 'processing', processed_at = ?, payment_ref = ?
+      WHERE id = ?
+    `).run(now, payment_ref || null, req.params.id);
+
+    const updated = raw_db.prepare('SELECT * FROM payout_requests WHERE id = ?').get(req.params.id);
+
+    const provider = raw_db.prepare('SELECT id, name, email FROM providers WHERE id = ?').get(row.provider_id);
+    const USD_TO_SAR = 3.75;
+    const HALALA_PER_SAR = 100;
+    const amountSar = Number((row.amount_halala / HALALA_PER_SAR).toFixed(2));
+
+    if (provider?.email) {
+      sendWithdrawalApprovedEmail(provider.email, amountSar)
+        .catch((e) => console.error('[payouts] approve email failed:', e.message));
+    }
+
+    sendAlert('withdrawal_pending', [
+      '✅ Payout APPROVED',
+      `Provider: ${provider?.name || row.provider_id} (${provider?.email || 'no email'})`,
+      `Amount: ${amountSar} SAR`,
+      `Payout ID: ${req.params.id}`,
+      payment_ref ? `Ref: ${payment_ref}` : null,
+    ].filter(Boolean).join('\n'))
+      .catch((e) => console.error('[payouts] approve alert failed:', e.message));
+
+    console.log(`[payout] approved payout_id=${req.params.id} provider_id=${row.provider_id} amount_sar=${amountSar} ref=${payment_ref}`);
+    return res.json(updated);
+  } catch (err) {
+    console.error('[payouts] POST /admin/payouts/:id/approve error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/admin/payouts/:id/reject ───────────────────────────────────────
+//
+// Reject a pending/processing payout: returns held funds to provider balance.
+// Sends Telegram notification to admin + logs rejection reason.
+// Body: { reason?: string }
+//
+// DCP-862
+router.post('/admin/payouts/:id/reject', requireAdminRbac, async (req, res) => {
+  try {
+    const raw_db = db._db || db;
+    const { reason } = req.body || {};
+
+    const result = rejectPayout(raw_db, req.params.id, reason || null);
+    if (result.error) {
+      const statusMap = { NOT_FOUND: 404, NOT_REJECTABLE: 409 };
+      return res.status(statusMap[result.error] || 400).json(result);
+    }
+
+    const provider = raw_db.prepare('SELECT id, name, email FROM providers WHERE id = ?').get(result.provider_id);
+    const USD_TO_SAR = 3.75;
+    const HALALA_PER_SAR = 100;
+    const amountSar = Number((result.amount_halala / HALALA_PER_SAR).toFixed(2));
+
+    sendAlert('critical_error', [
+      '❌ Payout REJECTED',
+      `Provider: ${provider?.name || result.provider_id} (${provider?.email || 'no email'})`,
+      `Amount: ${amountSar} SAR (funds returned to balance)`,
+      `Payout ID: ${req.params.id}`,
+      reason ? `Reason: ${reason}` : 'Reason: not specified',
+    ].join('\n'))
+      .catch((e) => console.error('[payouts] reject alert failed:', e.message));
+
+    // Log rejection — no rejection email template yet (TODO: add sendPayoutRejectedEmail)
+    console.log(`[payout] rejected payout_id=${req.params.id} provider_id=${result.provider_id} reason="${reason}" amount_sar=${amountSar}`);
+    if (provider?.email) {
+      console.log(`[payout] TODO: send rejection email to ${provider.email} for payout ${req.params.id}`);
+    }
+
+    return res.json(result);
+  } catch (err) {
+    console.error('[payouts] POST /admin/payouts/:id/reject error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
