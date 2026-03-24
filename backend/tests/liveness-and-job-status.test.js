@@ -10,6 +10,9 @@
  *   4. runLivenessSweep requeues in-progress jobs when provider goes offline
  */
 
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost:54321';
+process.env.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'test-service-key-stub';
+
 const request = require('supertest');
 const express = require('express');
 const db      = require('../src/db');
