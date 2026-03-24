@@ -331,6 +331,10 @@ app.use('/api/providers', providersRouter);
 const adminRouter = require('./routes/admin');
 app.use('/api/admin', adminRouter);
 
+const { providerEarningsRouter, adminStatsRouter } = require('./routes/earnings');
+app.use('/api/providers', providerEarningsRouter);
+app.use('/api/admin', adminStatsRouter);
+
 const benchmarkRouter = require('./routes/benchmark');
 app.use('/api/benchmark', benchmarkRouter);
 
