@@ -374,6 +374,60 @@ describe("Escrow — Integration", function () {
     });
   });
 
+  // ── Reentrancy guard ───────────────────────────────────────────────────────
+
+  describe("reentrancy guard (nonReentrant)", function () {
+    it("reverts re-entrant claimLock attempt via malicious ERC-20 transfer()", async function () {
+      // Deploy attacker token and a fresh escrow backed by it
+      const MaliciousToken = await ethers.getContractFactory("MaliciousToken");
+      const malToken = await MaliciousToken.deploy();
+
+      const Escrow = await ethers.getContractFactory("Escrow");
+      const malEscrow = await Escrow.deploy(await malToken.getAddress(), oracle.address);
+
+      // Fund renter and approve escrow
+      const attackAmt = ethers.parseUnits("10", 6);
+      await malToken.mint(renter.address, attackAmt);
+      await malToken.connect(renter).approve(await malEscrow.getAddress(), ethers.MaxUint256);
+
+      const jId = jobId("reentrancy-attack");
+      const expiry = (await time.latest()) + ONE_HOUR;
+
+      // Deposit succeeds (token does not re-enter during transferFrom)
+      await malEscrow.connect(renter).depositAndLock(jId, provider.address, attackAmt, expiry);
+
+      // Build a valid oracle proof against the malEscrow address
+      const domain = {
+        name: "DCP Escrow",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await malEscrow.getAddress(),
+      };
+      const types = {
+        Claim: [
+          { name: "jobId",    type: "bytes32"  },
+          { name: "provider", type: "address"  },
+          { name: "amount",   type: "uint256"  },
+        ],
+      };
+      const sig = await oracle.signTypedData(domain, types, {
+        jobId: jId, provider: provider.address, amount: attackAmt,
+      });
+
+      // Arm the token: on the next transfer() it will call claimLock re-entrantly
+      await malToken.arm(await malEscrow.getAddress(), jId, sig);
+
+      // The outer claimLock must revert because the inner re-entrant call trips ReentrancyGuard
+      await expect(
+        malEscrow.connect(provider).claimLock(jId, sig)
+      ).to.be.reverted;
+
+      // Status must still be LOCKED — no state change leaked through
+      const record = await malEscrow.getEscrow(jId);
+      expect(record.status).to.equal(1); // LOCKED
+    });
+  });
+
   // ── Admin access control ───────────────────────────────────────────────────
 
   describe("admin — access control completeness", function () {
