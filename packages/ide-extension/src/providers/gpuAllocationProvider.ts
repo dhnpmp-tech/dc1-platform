@@ -13,10 +13,8 @@ class GPUItem extends vscode.TreeItem {
 }
 
 export class GPUAllocationProvider implements vscode.TreeDataProvider<GPUItem> {
-  private onDidChangeTreeData: vscode.EventEmitter<GPUItem | undefined | null | void> =
-    new vscode.EventEmitter<GPUItem | undefined | null | void>();
-  readonly onDidChangeTreeDataEvent: vscode.Event<GPUItem | undefined | null | void> =
-    this.onDidChangeTreeData.event;
+  private _onDidChangeTreeData = new vscode.EventEmitter<GPUItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private providerAPI: ProviderAPI;
   private gpus: GPU[] = [];
@@ -72,6 +70,6 @@ export class GPUAllocationProvider implements vscode.TreeDataProvider<GPUItem> {
   }
 
   refresh(): void {
-    this.onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire();
   }
 }

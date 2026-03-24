@@ -14,10 +14,8 @@ class EarningItem extends vscode.TreeItem {
 }
 
 export class EarningsProvider implements vscode.TreeDataProvider<EarningItem> {
-  private onDidChangeTreeData: vscode.EventEmitter<EarningItem | undefined | null | void> =
-    new vscode.EventEmitter<EarningItem | undefined | null | void>();
-  readonly onDidChangeTreeDataEvent: vscode.Event<EarningItem | undefined | null | void> =
-    this.onDidChangeTreeData.event;
+  private _onDidChangeTreeData = new vscode.EventEmitter<EarningItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private providerAPI: ProviderAPI;
   private earnings: Earnings | null = null;
@@ -52,6 +50,6 @@ export class EarningsProvider implements vscode.TreeDataProvider<EarningItem> {
   }
 
   refresh(): void {
-    this.onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire();
   }
 }
