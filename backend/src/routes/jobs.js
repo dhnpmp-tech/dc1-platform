@@ -8,6 +8,8 @@ const { retryJobLimiter } = require('../middleware/rateLimiter');
 const { getApiKeyFromReq, isAdminRequest, requireAdminAuth } = require('../middleware/auth');
 const { validateAndNormalizeImageRef, isApprovedImageRef } = require('../lib/container-registry');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
+const { validateBody } = require('../middleware/validate');
+const { jobSubmitSchema } = require('../schemas/jobs.schema');
 const { getChainEscrow } = require('../services/escrow-chain');
 const {
   sendJobQueued,
@@ -1092,7 +1094,7 @@ function getJobScheduler() {
 
 // POST /api/jobs/submit — requires renter auth
 // provider_id is optional: omit to auto-route to best GPU-fit provider (DCP-205)
-router.post('/submit', requireRenter, (req, res) => {
+router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) => {
   try {
     const {
       provider_id: reqProviderId,
