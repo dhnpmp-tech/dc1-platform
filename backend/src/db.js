@@ -1570,6 +1570,41 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_renter   ON invoices(renter_id,
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_job      ON invoices(job_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_id, created_at DESC)`);
 
+// ─── RENTER WEBHOOKS TABLE — DCP-861 ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS renter_webhooks (
+    id TEXT PRIMARY KEY,
+    renter_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    events TEXT NOT NULL DEFAULT 'job.completed,job.failed,balance.low',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    FOREIGN KEY (renter_id) REFERENCES renters(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_webhooks_renter ON renter_webhooks(renter_id, active)`);
+
+// ─── RENTER WEBHOOK DELIVERIES TABLE — DCP-861 ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS renter_webhook_deliveries (
+    id TEXT PRIMARY KEY,
+    webhook_id TEXT NOT NULL,
+    renter_id INTEGER NOT NULL,
+    job_id TEXT,
+    event TEXT NOT NULL,
+    payload TEXT,
+    status_code INTEGER,
+    attempt INTEGER NOT NULL DEFAULT 1,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (webhook_id) REFERENCES renter_webhooks(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_webhook_deliveries_webhook ON renter_webhook_deliveries(webhook_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_webhook_deliveries_job ON renter_webhook_deliveries(job_id)`);
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
