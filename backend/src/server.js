@@ -6,6 +6,7 @@ const path = require('path');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const paymentsRouter = require('./routes/payments');
 const { startJobSweep, getSweepMetrics, startProviderOfflineSweep } = require('./services/jobSweep');
+const { startProviderHealthWorker } = require('./workers/providerHealthWorker');
 const { runControlPlaneCycle } = require('./services/controlPlane');
 const { sendAlert } = require('./services/notifications');
 const {
@@ -389,6 +390,8 @@ const sweepIntervalMs = Number.isFinite(sweepIntervalMsRaw) && sweepIntervalMsRa
 startJobSweep(db, sweepIntervalMs);
 const providerOfflineSweepIntervalMs = Number.parseInt(process.env.PROVIDER_OFFLINE_SWEEP_INTERVAL_MS || '60000', 10);
 startProviderOfflineSweep(db, Number.isFinite(providerOfflineSweepIntervalMs) && providerOfflineSweepIntervalMs > 0 ? providerOfflineSweepIntervalMs : 60000);
+const providerHealthCheckIntervalMs = Number.parseInt(process.env.PROVIDER_HEALTH_CHECK_INTERVAL_MS || String(5 * 60 * 1000), 10);
+startProviderHealthWorker(db, Number.isFinite(providerHealthCheckIntervalMs) && providerHealthCheckIntervalMs > 0 ? providerHealthCheckIntervalMs : 5 * 60 * 1000);
 
 const controlPlaneIntervalMsRaw = Number.parseInt(process.env.CONTROL_PLANE_INTERVAL_MS || '60000', 10);
 const controlPlaneIntervalMs = Number.isFinite(controlPlaneIntervalMsRaw) && controlPlaneIntervalMsRaw > 0
