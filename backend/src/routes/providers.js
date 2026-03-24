@@ -372,6 +372,124 @@ router.post('/register', validateBody(providerRegisterSchema), async (req, res) 
 });
 
 // ============================================================================
+// EARNINGS CALCULATOR ENDPOINTS — DCP-770
+// ============================================================================
+
+const { getAvailableGPUs, calculateEarnings, calculateEarningsRanges, compareGPUEarnings } = require('../services/earningsCalculator');
+
+/**
+ * GET /api/providers/earnings/gpus
+ * List all available GPUs for earning calculations
+ */
+router.get('/earnings/gpus', (req, res) => {
+  try {
+    const gpus = getAvailableGPUs();
+    res.json({
+      success: true,
+      gpus,
+      message: 'Available GPU models for earning calculations',
+    });
+  } catch (error) {
+    console.error('[providers/earnings/gpus GET]', error);
+    res.status(500).json({ error: 'Failed to fetch available GPUs' });
+  }
+});
+
+/**
+ * GET /api/providers/earnings/estimate?gpu=RTX_4090&utilization=0.70
+ * Calculate earnings estimate for a specific GPU and utilization level
+ */
+router.get('/earnings/estimate', (req, res) => {
+  try {
+    const { gpu, utilization } = req.query;
+
+    if (!gpu) {
+      return res.status(400).json({
+        error: 'Missing required parameter: gpu',
+        example: '/api/providers/earnings/estimate?gpu=RTX_4090&utilization=0.70',
+        availableGPUs: getAvailableGPUs().map(g => g.id),
+      });
+    }
+
+    const util = utilization ? parseFloat(utilization) : 0.70;
+    const result = calculateEarnings(gpu, util);
+
+    if (result.error) {
+      return res.status(400).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('[providers/earnings/estimate GET]', error);
+    res.status(500).json({ error: 'Failed to calculate earnings' });
+  }
+});
+
+/**
+ * GET /api/providers/earnings/ranges?gpu=RTX_4090
+ * Show earning estimates at multiple utilization levels (for charts)
+ */
+router.get('/earnings/ranges', (req, res) => {
+  try {
+    const { gpu, step } = req.query;
+
+    if (!gpu) {
+      return res.status(400).json({
+        error: 'Missing required parameter: gpu',
+        example: '/api/providers/earnings/ranges?gpu=RTX_4090&step=0.10',
+      });
+    }
+
+    const stepSize = step ? Math.min(parseFloat(step), 0.5) : 0.10;
+    const result = calculateEarningsRanges(gpu, stepSize);
+
+    if (result.error) {
+      return res.status(400).json(result);
+    }
+
+    res.json({
+      success: true,
+      ...result,
+      message: 'Earning estimates at different utilization levels',
+    });
+  } catch (error) {
+    console.error('[providers/earnings/ranges GET]', error);
+    res.status(500).json({ error: 'Failed to calculate earning ranges' });
+  }
+});
+
+/**
+ * GET /api/providers/earnings/compare?utilization=0.70
+ * Compare earnings across all GPU models at a given utilization level
+ */
+router.get('/earnings/compare', (req, res) => {
+  try {
+    const { utilization } = req.query;
+    const util = utilization ? parseFloat(utilization) : 0.70;
+
+    if (isNaN(util) || util < 0 || util > 1) {
+      return res.status(400).json({
+        error: 'Invalid utilization value',
+        message: 'utilization must be a number between 0.0 and 1.0',
+        example: '/api/providers/earnings/compare?utilization=0.70',
+      });
+    }
+
+    const comparison = compareGPUEarnings(util);
+
+    res.json({
+      success: true,
+      utilization: (util * 100).toFixed(1),
+      gpus: comparison,
+      message: 'Comparison of earnings across all GPU models',
+    });
+  } catch (error) {
+    console.error('[providers/earnings/compare GET]', error);
+    res.status(500).json({ error: 'Failed to compare earnings' });
+  }
+});
+
+// ============================================================================
 // POST /api/providers/login-email - Login with email instead of API key
 // ============================================================================
 
