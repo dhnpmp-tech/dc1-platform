@@ -918,7 +918,7 @@ router.post('/:id/heartbeat', (req, res) => {
         }
         // Accept both legacy field names and REST aliases (DCP-782)
         const { gpu_utilization, vram_used_mb, jobs_active,
-                vram_used, jobs_running, uptime_seconds } = req.body;
+                vram_used, jobs_running, uptime_seconds, job_tokens } = req.body;
         const gpuUtil = toFiniteNumber(gpu_utilization, { min: 0, max: 100 });
         // vram_used (MB) is alias for vram_used_mb
         const vramUsedMb = toFiniteInt(vram_used_mb ?? vram_used, { min: 0, max: 1024 * 1024 });
@@ -941,6 +941,20 @@ router.post('/:id/heartbeat', (req, res) => {
             'INSERT INTO heartbeat_log (provider_id, received_at, gpu_util_pct) VALUES (?, ?, ?)',
             provider.id, now, gpuUtil ?? null
         );
+
+        // DCP-779: update per-job token counts reported by provider daemon
+        if (job_tokens && typeof job_tokens === 'object' && !Array.isArray(job_tokens)) {
+            const updateTokens = db.prepare(
+                `UPDATE serve_sessions SET total_tokens = ? WHERE job_id = ? AND provider_id = ?`
+            );
+            for (const [jobId, tokenCount] of Object.entries(job_tokens)) {
+                const tokens = parseInt(tokenCount, 10);
+                if (Number.isFinite(tokens) && tokens >= 0) {
+                    updateTokens.run(tokens, jobId, provider.id);
+                }
+            }
+        }
+
         const uptimeSec = toFiniteInt(uptime_seconds, { min: 0 });
         return res.json({
             success: true,
