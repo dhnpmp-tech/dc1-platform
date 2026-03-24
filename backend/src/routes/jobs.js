@@ -1491,11 +1491,34 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       );
 
       const templateIdValue = resolvedTemplate?.id || reqTemplateId || null;
+      const gpuRateSnapshotJson = gpuRateSnapshot ? JSON.stringify(gpuRateSnapshot) : null;
       const insertResult = HAS_TEMPLATE_ID
         ? runStatement(
             `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
               cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
-              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id)
+              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, template_id, gpu_rate_snapshot)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
+            gpu_requirements ? JSON.stringify(gpu_requirements) : null,
+            containerSpecJson,
+            taskSpecStr,
+            taskSpecHmac,
+            timeout,
+            isQueued ? null : timeoutAt,
+            null,
+            now,
+            jobPriority,
+            pricingClass,
+            prewarmRequested ? 1 : 0,
+            workspaceVolumeName,
+            checkpointEnabled,
+            templateIdValue,
+            gpuRateSnapshotJson
+          )
+        : runStatement(
+            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
+              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
+              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled, gpu_rate_snapshot)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
             gpu_requirements ? JSON.stringify(gpu_requirements) : null,
@@ -1511,27 +1534,7 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
             prewarmRequested ? 1 : 0,
             workspaceVolumeName,
             checkpointEnabled,
-            templateIdValue
-          )
-        : runStatement(
-            `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes,
-              cost_halala, gpu_requirements, container_spec, task_spec, task_spec_hmac, max_duration_seconds, timeout_at,
-              notes, created_at, priority, pricing_class, prewarm_requested, workspace_volume_name, checkpoint_enabled)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            job_id, provider_id, req.renter.id, job_type, effectiveModel, initialStatus, now, durationMinutes, cost_halala,
-            gpu_requirements ? JSON.stringify(gpu_requirements) : null,
-            containerSpecJson,
-            taskSpecStr,
-            taskSpecHmac,
-            timeout,
-            isQueued ? null : timeoutAt,
-            null,
-            now,
-            jobPriority,
-            pricingClass,
-            prewarmRequested ? 1 : 0,
-            workspaceVolumeName,
-            checkpointEnabled
+            gpuRateSnapshotJson
           );
 
       runStatement(
