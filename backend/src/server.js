@@ -336,6 +336,9 @@ app.use('/api/recovery', recoveryRouter);
 
 const jobsRouter = require('./routes/jobs');
 app.use('/api/jobs', jobsRouter);
+const { jobsInvoiceRouter, rentersInvoiceRouter } = require('./routes/invoices');
+app.use('/api/jobs', jobsInvoiceRouter);
+app.use('/api/renters', rentersInvoiceRouter);
 
 const standupRouter = require('./routes/standup');
 app.use('/api/standup', standupRouter);

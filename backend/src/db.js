@@ -1553,6 +1553,23 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_prov_api_keys_prefix ON provider_api_keys(key_prefix, revoked_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_prov_api_keys_provider ON provider_api_keys(provider_id, revoked_at)`);
 
+// ─── INVOICES TABLE ─── (DCP-780)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS invoices (
+    invoice_id      TEXT PRIMARY KEY,
+    job_id          TEXT NOT NULL UNIQUE,
+    renter_id       INTEGER NOT NULL,
+    provider_id     INTEGER,
+    amount_usd      REAL NOT NULL,
+    sar_equivalent  REAL NOT NULL,
+    settlement_hash TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_renter   ON invoices(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_job      ON invoices(job_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_id, created_at DESC)`);
+
 
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
