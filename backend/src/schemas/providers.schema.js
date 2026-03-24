@@ -4,6 +4,7 @@ const { z } = require('zod');
 
 /**
  * POST /api/providers/register — provider registration body.
+ * Captures GPU capability spec for job matching and marketplace discovery (DCP-796).
  */
 const providerRegisterSchema = z.object({
   name: z.string().min(2).max(100),
@@ -12,6 +13,12 @@ const providerRegisterSchema = z.object({
   os: z.enum(['windows', 'linux', 'mac', 'darwin']),
   phone: z.string().max(40).optional(),
   location: z.string().max(200).optional(),
+  // GPU capability fields for job matching
+  vram_gb: z.number().min(1).max(1000).optional(),
+  cuda_version: z.string().max(20).optional(),
+  gpu_count: z.number().min(1).max(1000).optional(),
+  bandwidth_mbps: z.number().min(1).max(1000000).optional(),
+  available_containers: z.array(z.string()).optional(),
   resource_spec: z.union([z.string().max(4096), z.record(z.string(), z.unknown())]).optional(),
 }).strict();
 

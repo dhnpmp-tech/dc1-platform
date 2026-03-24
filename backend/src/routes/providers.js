@@ -3686,6 +3686,46 @@ router.get('/available', (req, res) => {
 });
 
 // ============================================================================
+// GET /api/providers/stats — Provider network statistics
+// Returns aggregate metrics: total_registered, total_online, total_vram_available
+// Used by marketplace homepage to show network capacity
+// ============================================================================
+router.get('/stats', (req, res) => {
+    try {
+        // Query provider statistics
+        const stats = db.all(`
+            SELECT
+                COUNT(*) as total_registered,
+                SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as total_online,
+                SUM(CASE WHEN status = 'online' AND gpu_vram_mib IS NOT NULL THEN gpu_vram_mib / 1024.0 ELSE 0 END) as total_vram_gb_online,
+                SUM(CASE WHEN gpu_vram_mib IS NOT NULL THEN gpu_vram_mib / 1024.0 ELSE 0 END) as total_vram_gb_all,
+                AVG(CASE WHEN reputation_score IS NOT NULL THEN reputation_score ELSE 100 END) as avg_reputation_score,
+                SUM(total_jobs) as total_jobs_all_time
+            FROM providers
+            WHERE COALESCE(is_paused, 0) = 0
+        `);
+
+        if (!stats || stats.length === 0) {
+            return res.status(500).json({ error: 'Failed to compute provider statistics' });
+        }
+
+        const stat = stats[0];
+        res.json({
+            total_registered: stat.total_registered || 0,
+            total_online: stat.total_online || 0,
+            total_vram_gb_available: Math.round((stat.total_vram_gb_online || 0) * 10) / 10,
+            total_vram_gb_all: Math.round((stat.total_vram_gb_all || 0) * 10) / 10,
+            avg_reputation_score: Math.round((stat.avg_reputation_score || 100) * 10) / 10,
+            total_jobs_completed: stat.total_jobs_all_time || 0,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('Provider stats error:', error);
+        res.status(500).json({ error: 'Failed to fetch provider statistics' });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/marketplace — Public provider cards for marketplace page
 // Returns only online providers with minimal card fields (no auth required)
 // ============================================================================
