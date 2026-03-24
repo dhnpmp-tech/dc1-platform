@@ -8,6 +8,7 @@ const { publicEndpointLimiter } = require('../middleware/rateLimiter');
 const { getApiKeyFromReq } = require('../middleware/auth');
 const pricingService = require('../services/pricingService');
 const { GPU_RATE_TABLE } = require('../config/pricing');
+const { stripImageOverride, validateImageOverride } = require('../middleware/imageValidation');
 
 // Templates are stored as JSON files in /docker-templates at the repo root
 const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
@@ -197,7 +198,27 @@ router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
     const pricing_class = PRICING_CLASS_MULTIPLIERS[req.body.pricing_class] !== undefined
       ? req.body.pricing_class
       : 'standard';
-    const extraParams = (req.body.params && typeof req.body.params === 'object') ? req.body.params : {};
+    const rawParams = (req.body.params && typeof req.body.params === 'object') ? req.body.params : {};
+
+    // DCP-SEC-011: Validate image_override if caller supplies one in params.
+    // image_override in extraParams bypasses the template's approved image and the
+    // registry whitelist — reject 422 and log the attempt before any further processing.
+    if (rawParams.image_override !== undefined) {
+      const result = validateImageOverride(rawParams.image_override);
+      if (!result.valid) {
+        console.warn(
+          `[SEC-011] image_override injection attempt blocked — renter=${renter.id} image=${rawParams.image_override}`
+        );
+        return res.status(422).json({
+          error: result.reason,
+          code: 'IMAGE_OVERRIDE_NOT_ALLOWED',
+        });
+      }
+    }
+
+    // Strip image_override from extraParams regardless — the container image is
+    // always sourced from the validated template definition, never from caller params.
+    const extraParams = stripImageOverride(rawParams);
 
     // 4. Calculate estimated cost using template's min_vram_gb for tier selection (DCP-762)
     // gpuModel resolved after provider lookup in step 6; recalculated then for snapshot accuracy.
