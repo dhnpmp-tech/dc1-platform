@@ -92,7 +92,8 @@ function findBestProvider({ job_type, min_vram_gb = 0, globalRateHalala = 10, pr
 
   if (qualified.length === 0) return null;
 
-  // Sort: online before degraded, then uptime DESC, then price ASC
+  // Sort: online before degraded, then reputation DESC, then uptime DESC, then price ASC
+  // DCP-867: Reputation scoring integrated into provider dispatch selection
   qualified.sort((a, b) => {
     // Online providers are preferred over degraded
     if (a.live_status !== b.live_status) {
@@ -102,6 +103,9 @@ function findBestProvider({ job_type, min_vram_gb = 0, globalRateHalala = 10, pr
     if (String(pricing_class).toLowerCase() === 'priority' && a.preload_ready !== b.preload_ready) {
       return a.preload_ready ? -1 : 1;
     }
+    // Higher reputation first (DCP-867: provider quality scoring, default 50 for new providers)
+    const repDiff = (b.reputation_score || 50) - (a.reputation_score || 50);
+    if (repDiff !== 0) return repDiff;
     // Higher uptime first
     const uptimeDiff = b.uptime_percent - a.uptime_percent;
     if (uptimeDiff !== 0) return uptimeDiff;

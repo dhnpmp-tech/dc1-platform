@@ -374,6 +374,59 @@ describe("Escrow — Integration", function () {
     });
   });
 
+  // ── Reentrancy guard ───────────────────────────────────────────────────────
+
+  describe("reentrancy guard", function () {
+    it("reverts re-entrant claimLock attempt via malicious token transfer()", async function () {
+      // Deploy a malicious ERC-20 that re-enters claimLock on transfer()
+      const MaliciousToken = await ethers.getContractFactory("MaliciousToken");
+      const malToken = await MaliciousToken.deploy();
+
+      // Deploy a fresh escrow backed by the malicious token
+      const Escrow = await ethers.getContractFactory("Escrow");
+      const malEscrow = await Escrow.deploy(await malToken.getAddress(), oracle.address);
+
+      // Mint tokens to renter and approve escrow
+      await malToken.mint(renter.address, ethers.parseUnits("100", 6));
+      await malToken.connect(renter).approve(await malEscrow.getAddress(), ethers.MaxUint256);
+
+      const jId = jobId("reentrant-claim");
+      const expiry = (await time.latest()) + ONE_HOUR;
+      const amt = ethers.parseUnits("10", 6);
+
+      // depositAndLock — transferFrom called, token does NOT re-enter during deposit
+      await malEscrow.connect(renter).depositAndLock(jId, provider.address, amt, expiry);
+
+      // Sign valid oracle proof
+      const domain = {
+        name: "DCP Escrow",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await malEscrow.getAddress(),
+      };
+      const types = {
+        Claim: [
+          { name: "jobId", type: "bytes32" },
+          { name: "provider", type: "address" },
+          { name: "amount", type: "uint256" },
+        ],
+      };
+      const sig = await oracle.signTypedData(domain, types, { jobId: jId, provider: provider.address, amount: amt });
+
+      // Arm the token: on the next transfer() call it will try to re-enter claimLock
+      await malToken.arm(await malEscrow.getAddress(), jId, sig);
+
+      // claimLock triggers transfer() → re-entrant call → should revert
+      await expect(
+        malEscrow.connect(provider).claimLock(jId, sig)
+      ).to.be.reverted;
+
+      // Escrow status must still be LOCKED (entire tx rolled back)
+      const record = await malEscrow.getEscrow(jId);
+      expect(record.status).to.equal(1); // LOCKED
+    });
+  });
+
   // ── Admin access control ───────────────────────────────────────────────────
 
   describe("admin — access control completeness", function () {
