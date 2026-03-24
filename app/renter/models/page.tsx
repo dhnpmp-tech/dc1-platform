@@ -151,9 +151,20 @@ function DeployModal({ deploy, onClose, onConfirm }: {
   onClose: () => void
   onConfirm: () => void
 }) {
+  const router = useRouter()
   const model = deploy.model!
   const priceHr = getPriceHr(model)
+  const savingsPct = getSavingsPct(model)
+  const competitorLabel = model.competitor_label ?? 'Vast.ai'
   const arabic = isArabicModel(model)
+  const isNoProvider = deploy.error.toLowerCase().includes('no provider') || deploy.error.toLowerCase().includes('no available provider')
+  const isInsufficientBalance = deploy.error.toLowerCase().includes('insufficient balance')
+
+  useEffect(() => {
+    if (!deploy.jobId || deploy.jobId === 'submitted') return
+    const timer = setTimeout(() => router.push(`/renter/jobs/${deploy.jobId}`), 1200)
+    return () => clearTimeout(timer)
+  }, [deploy.jobId, router])
 
   return (
     <div
@@ -200,20 +211,49 @@ function DeployModal({ deploy, onClose, onConfirm }: {
           )}
         </div>
 
+        {savingsPct !== null && savingsPct > 0 && (
+          <div className="bg-status-success/5 border border-status-success/20 rounded-lg px-4 py-2.5 flex items-center justify-between text-sm">
+            <span className="text-dc1-text-muted">vs {competitorLabel}</span>
+            <span className="text-status-success font-bold">You save {savingsPct}%</span>
+          </div>
+        )}
+
         <p className="text-sm text-dc1-text-secondary">
           Your job will be queued and assigned to an available provider with the required GPU specs.
           Billing starts when the job begins executing.
         </p>
 
-        {deploy.error && (
+        {isNoProvider && (
+          <div className="bg-dc1-amber/5 border border-dc1-amber/30 rounded-lg px-4 py-3 space-y-2">
+            <p className="text-sm font-semibold text-dc1-amber">No providers available right now</p>
+            <p className="text-xs text-dc1-text-secondary">Join the waitlist and we&apos;ll notify you when a provider comes online.</p>
+            <Link href={`/renter/waitlist?model=${encodeURIComponent(model.model_id)}`} className="inline-block btn btn-outline btn-sm text-dc1-amber border-dc1-amber/40">Join Waitlist →</Link>
+          </div>
+        )}
+
+        {isInsufficientBalance && (
+          <div className="bg-status-error/5 border border-status-error/30 rounded-lg px-4 py-3 space-y-2">
+            <p className="text-sm font-semibold text-status-error">Insufficient balance</p>
+            <p className="text-xs text-dc1-text-secondary">Add credits to your wallet to deploy this model.</p>
+            <Link href="/renter/billing" className="inline-block btn btn-outline btn-sm text-status-error border-status-error/40">Add Credits →</Link>
+          </div>
+        )}
+
+        {deploy.error && !isNoProvider && !isInsufficientBalance && (
           <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
             {deploy.error}
           </div>
         )}
 
         {deploy.jobId && (
-          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 text-sm text-status-success">
-            Job submitted! Job ID: <span className="font-mono">{deploy.jobId}</span>
+          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm text-status-success font-semibold">
+              <span className="animate-spin h-4 w-4 border-2 border-status-success border-t-transparent rounded-full" />
+              Job submitted — redirecting to live status…
+            </div>
+            {deploy.jobId !== 'submitted' && (
+              <Link href={`/renter/jobs/${deploy.jobId}`} className="text-xs text-status-success underline">View Live Status →</Link>
+            )}
           </div>
         )}
 
@@ -242,9 +282,11 @@ function DeployModal({ deploy, onClose, onConfirm }: {
         {deploy.jobId && (
           <div className="flex gap-3 justify-end">
             <button onClick={onClose} className="btn btn-secondary min-h-[44px] px-4">Close</button>
-            <Link href="/renter/jobs" className="btn btn-primary min-h-[44px] px-5">
-              View Jobs →
-            </Link>
+            {deploy.jobId !== 'submitted' ? (
+              <Link href={`/renter/jobs/${deploy.jobId}`} className="btn btn-primary min-h-[44px] px-5">View Live Status →</Link>
+            ) : (
+              <Link href="/renter/jobs" className="btn btn-primary min-h-[44px] px-5">View Jobs →</Link>
+            )}
           </div>
         )}
       </div>
