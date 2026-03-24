@@ -433,10 +433,12 @@ export default function CostDashboardPage() {
   ]
 
   const fetchData = useCallback(async (key: string) => {
+    const authHeaders = { 'X-Renter-Key': key }
+
     // Profile + balance
     setLoadingProfile(true)
     try {
-      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
+      const res = await fetch(`${API_BASE}/renters/me`, { headers: authHeaders })
       if (res.status === 401 || res.status === 404) {
         localStorage.removeItem('dc1_renter_key')
         router.push('/login')
@@ -454,7 +456,7 @@ export default function CostDashboardPage() {
     // Job history
     setLoadingJobs(true)
     try {
-      const res = await fetch(`${API_BASE}/jobs/history?key=${encodeURIComponent(key)}`)
+      const res = await fetch(`${API_BASE}/jobs/history`, { headers: authHeaders })
       if (!res.ok) throw new Error('Failed to fetch jobs')
       const data: JobsResponse = await res.json()
       setJobs(data.jobs ?? [])
@@ -467,7 +469,7 @@ export default function CostDashboardPage() {
 
     // Daily spend for chart
     try {
-      const res = await fetch(`${API_BASE}/renters/me/analytics?key=${encodeURIComponent(key)}&period=30d`)
+      const res = await fetch(`${API_BASE}/renters/me/analytics?period=30d`, { headers: authHeaders })
       if (res.ok) {
         const data = await res.json()
         setDailySpend(data.daily_spend ?? [])
@@ -495,8 +497,9 @@ export default function CostDashboardPage() {
     setRedeploying(true)
     setRedeployError('')
     try {
-      const res = await fetch(`${API_BASE}/jobs/${redeployJob.job_id}/retry?key=${encodeURIComponent(key)}`, {
+      const res = await fetch(`${API_BASE}/jobs/${redeployJob.job_id}/retry`, {
         method: 'POST',
+        headers: { 'X-Renter-Key': key },
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -606,16 +609,27 @@ export default function CostDashboardPage() {
             <div className="card">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h2 className="text-base font-semibold text-dc1-text-primary">Job History</h2>
-                <a
-                  href={`${API_BASE}/renters/me/jobs/export?key=${
-                    typeof window !== 'undefined' ? (localStorage.getItem('dc1_renter_key') ?? '') : ''
-                  }`}
-                  download="jobs.csv"
+                <button
+                  onClick={async () => {
+                    const key = localStorage.getItem('dc1_renter_key')
+                    if (!key) return
+                    const res = await fetch(`${API_BASE}/renters/me/jobs/export`, {
+                      headers: { 'X-Renter-Key': key },
+                    })
+                    if (!res.ok) return
+                    const blob = await res.blob()
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = 'jobs.csv'
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
                   className="text-xs text-dc1-text-secondary hover:text-dc1-text-primary transition-colors underline-offset-2 hover:underline"
                   aria-label="Download job history as CSV"
                 >
                   Export CSV
-                </a>
+                </button>
               </div>
               <JobHistoryList
                 jobs={jobs}
