@@ -1062,6 +1062,39 @@ function splitBilling(totalHalala) {
 // Whitelisted job types — renters may only submit these types
 const ALLOWED_JOB_TYPES = new Set(['image_generation', 'llm-inference', 'llm_inference', 'rendering', 'training', 'benchmark', 'custom_container', 'vllm_serve', 'rag-pipeline']);
 
+// Whitelisted GPU model identifiers (finding S1-02).
+// Sourced from GPU_COMPATIBILITY (jobScheduler) + GPU_RATE_TABLE (pricing config).
+// Input is normalised to uppercase with all non-alphanumeric chars stripped before lookup.
+// null/omitted gpu_type is always accepted (means "any GPU").
+const ALLOWED_GPU_TYPES = new Set([
+  'H200', 'H100', 'A100',  // data-centre tier
+  'L40S', 'L40',           // pro workstation tier
+  'RTX4090', 'RTX4080',    // consumer high-end tier
+  'RTX3090', 'RTX3080',    // consumer previous-gen tier
+]);
+
+/**
+ * Normalise a gpu_type value for allowlist comparison.
+ * Strips all non-alphanumeric characters and converts to uppercase.
+ * e.g. "RTX 4090" → "RTX4090", "rtx-4090" → "RTX4090"
+ */
+function normalizeGpuType(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  return raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || null;
+}
+
+/**
+ * Validate gpu_requirements.gpu_type against the known allowlist.
+ * Returns null when valid, or an error string when invalid.
+ */
+function validateGpuType(gpuType) {
+  if (gpuType == null) return null; // omitted → any GPU, always allowed
+  const normalized = normalizeGpuType(gpuType);
+  if (!normalized) return null;     // empty string after normalisation → treat as omitted
+  if (ALLOWED_GPU_TYPES.has(normalized)) return null;
+  return `Invalid gpu_requirements.gpu_type '${gpuType}'. Allowed values: ${[...ALLOWED_GPU_TYPES].join(', ')}`;
+}
+
 // Lazy-load jobRouter to avoid module-load ordering issues
 let _jobRouter;
 function getJobRouter() {
@@ -1131,6 +1164,13 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
     // Whitelist check — only allow known job types
     if (!ALLOWED_JOB_TYPES.has(job_type)) {
       return res.status(400).json({ error: `Invalid job_type. Allowed: ${[...ALLOWED_JOB_TYPES].join(', ')}` });
+    }
+
+    // S1-02: Reject unrecognised GPU model strings before they reach the scheduler.
+    // Prevents injection of arbitrary strings into scheduling/billing logic.
+    const gpuTypeError = validateGpuType(gpu_requirements?.gpu_type);
+    if (gpuTypeError) {
+      return res.status(400).json({ error: gpuTypeError, code: 'INVALID_GPU_TYPE' });
     }
 
     // DCP-SEC-001: Reject Jupyter jobs with default or missing NOTEBOOK_TOKEN (HIGH)
@@ -4058,6 +4098,12 @@ router.post('/', requireRenter, async (req, res) => {
       return res.status(400).json({
         error: `Invalid job_type. Allowed: ${[...ALLOWED_JOB_TYPES].join(', ')}`,
       });
+    }
+
+    // S1-02: Validate GPU type allowlist (same check as the main submit endpoint)
+    const adminGpuTypeError = validateGpuType(gpu_requirements?.gpu_type);
+    if (adminGpuTypeError) {
+      return res.status(400).json({ error: adminGpuTypeError, code: 'INVALID_GPU_TYPE' });
     }
 
     const pricingClass = normalizePricingClass(requestedPricingClass || 'standard');
