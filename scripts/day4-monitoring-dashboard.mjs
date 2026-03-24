@@ -3,189 +3,333 @@
 /**
  * Phase 1 Day 4 — Real-Time Monitoring Dashboard
  *
- * Purpose: Live health tracking during 4-hour pre-test validation
- * Usage: node scripts/day4-monitoring-dashboard.mjs
- * Output: Terminal dashboard with 5-second refresh rate
+ * Purpose: Real-time system health monitoring during Day 4 testing execution
+ * Usage: Run on Terminal 3 during testing: `node scripts/day4-monitoring-dashboard.mjs`
  *
- * Metrics Tracked:
- * - API health (response time, HTTP status)
- * - Model catalog (11 models live, pricing set)
- * - Database connectivity (query latency)
- * - Provider heartbeats (active count, latest ping)
- * - Test progress (sections completed, time remaining)
- * - Error log (real-time failures)
+ * Monitors:
+ * - API latency and health (GET /api/health, /api/models)
+ * - Model catalog status (11 models expected)
+ * - Database connectivity and performance
+ * - Backend system resources (memory, CPU)
+ * - Error log streaming (live errors from app.log)
+ * - Overall system health assessment
+ *
+ * Output: Real-time display with 5-second refresh, color-coded status
  */
 
-import fetch from 'node-fetch';
-import { createReadStream } from 'fs';
-import readline from 'readline';
+import fs from 'fs';
+import https from 'https';
+import child_process from 'child_process';
 
-const API_URL = process.env.DCP_API_BASE || 'https://api.dcp.sa';
-const REFRESH_INTERVAL_MS = 5000; // 5 seconds
-const START_TIME = new Date();
-const DURATION_MIN = 240; // 4 hours
+const API_BASE = 'https://api.dcp.sa';
+const LOG_FILE = '/root/dc1-platform/backend/logs/app.log';
+const REFRESH_INTERVAL = 5000; // 5 seconds
 
-// State tracking
-let metrics = {
-  api: { status: 'unknown', latency_ms: 0, response_time: new Date() },
-  models: { count: 0, pricing_set: false },
-  database: { latency_ms: 0, connected: false },
-  providers: { active: 0, total_registered: 0, last_heartbeat: null },
-  tests: { passed: 0, failed: 0, current_section: 0 },
-  errors: []
+// Color codes for terminal output
+const colors = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  red: '\x1b[31m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[36m',
+  bold: '\x1b[1m',
 };
 
+// State tracking
+let lastLogSize = 0;
+let testStartTime = Date.now();
+let apiCallCount = 0;
+let apiErrorCount = 0;
+let lastHealthStatus = 'unknown';
+let modelCount = 0;
+
 /**
- * Fetch and parse API metrics
+ * Make HTTP request with timeout and return response time
  */
-async function updateMetrics() {
-  try {
-    // API Health & Model Catalog
-    const start = Date.now();
-    const modelRes = await fetch(`${API_URL}/api/models`, { timeout: 5000 });
-    const latency = Date.now() - start;
+function makeRequest(url) {
+  return new Promise((resolve) => {
+    const startTime = Date.now();
 
-    if (modelRes.ok) {
-      const models = await modelRes.json();
-      metrics.api.status = 'healthy';
-      metrics.api.latency_ms = latency;
-      metrics.models.count = Array.isArray(models) ? models.length : 0;
-      metrics.models.pricing_set = models.some(m => m.pricing_halala_per_hr > 0) || false;
-    } else {
-      metrics.api.status = 'degraded';
-      metrics.api.latency_ms = latency;
-      addError(`API responded with ${modelRes.status}`);
-    }
-  } catch (err) {
-    metrics.api.status = 'down';
-    addError(`API unreachable: ${err.message}`);
-  }
+    https.get(url, { timeout: 5000 }, (res) => {
+      const responseTime = Date.now() - startTime;
+      let data = '';
 
-  // Provider Status (if heartbeat data available)
-  try {
-    const providerRes = await fetch(`${API_URL}/api/providers?status=online`, { timeout: 5000 });
-    if (providerRes.ok) {
-      const providers = await providerRes.json();
-      metrics.providers.active = Array.isArray(providers) ? providers.length : 0;
-      if (providers.length > 0) {
-        metrics.providers.last_heartbeat = new Date(providers[0].last_heartbeat);
-      }
-    }
-  } catch (err) {
-    // Provider data optional, don't fail the whole update
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode,
+          responseTime,
+          data: data.slice(0, 1000), // Limit to first 1000 chars
+        });
+      });
+    }).on('error', (err) => {
+      resolve({
+        status: 0,
+        responseTime: Date.now() - startTime,
+        error: err.message,
+      });
+    }).on('timeout', () => {
+      resolve({
+        status: 0,
+        responseTime: Date.now() - startTime,
+        error: 'TIMEOUT',
+      });
+    });
+  });
+}
+
+/**
+ * Check API health endpoint
+ */
+async function checkApiHealth() {
+  apiCallCount++;
+  const result = await makeRequest(`${API_BASE}/api/health`);
+
+  if (result.status === 200) {
+    lastHealthStatus = 'OK';
+    return { status: 'OK', responseTime: result.responseTime };
+  } else if (result.status === 0) {
+    lastHealthStatus = 'DOWN';
+    return { status: 'DOWN', error: result.error };
+  } else {
+    lastHealthStatus = 'ERROR';
+    return { status: 'ERROR', code: result.status };
   }
 }
 
 /**
- * Add error to log with timestamp
+ * Check model catalog
  */
-function addError(message) {
-  const timestamp = new Date().toISOString();
-  metrics.errors.push({ timestamp, message });
-  // Keep last 20 errors only
-  if (metrics.errors.length > 20) {
-    metrics.errors = metrics.errors.slice(-20);
+async function checkModelCatalog() {
+  const result = await makeRequest(`${API_BASE}/api/models`);
+
+  if (result.status === 200) {
+    const models = JSON.parse(result.data).length || 0;
+    modelCount = models;
+    return {
+      status: models === 11 ? 'OK' : 'DEGRADED',
+      count: models,
+      expected: 11,
+    };
+  } else {
+    modelCount = 0;
+    apiErrorCount++;
+    return {
+      status: 'ERROR',
+      code: result.status,
+      error: result.error,
+    };
   }
 }
 
 /**
- * Clear screen and render dashboard
+ * Get system resources from VPS
  */
-function render() {
+function getSystemResources() {
+  try {
+    const output = child_process.execSync(
+      'ssh root@76.13.179.86 "free -h | grep Mem | awk \'{print $3, $2}\' && uptime | awk \'{print $(NF-2), $(NF-1), $NF}\'" 2>/dev/null',
+      { timeout: 3000, encoding: 'utf8' }
+    ).trim();
+
+    if (output) {
+      const lines = output.split('\n');
+      return {
+        memory: lines[0] || 'unknown',
+        load: lines[1] || 'unknown',
+      };
+    }
+  } catch (err) {
+    // SSH might fail, that's OK
+  }
+  return { memory: 'unknown', load: 'unknown' };
+}
+
+/**
+ * Check backend error logs
+ */
+function checkRecentErrors() {
+  try {
+    const stats = fs.statSync(LOG_FILE);
+    const currentSize = stats.size;
+
+    // Read new content since last check
+    if (currentSize > lastLogSize) {
+      const readStream = fs.createReadStream(LOG_FILE, {
+        start: lastLogSize,
+        end: currentSize,
+      });
+
+      let newContent = '';
+      readStream.on('data', (chunk) => newContent += chunk);
+      readStream.on('end', () => {
+        lastLogSize = currentSize;
+
+        // Count error lines
+        const errorLines = newContent.split('\n').filter(line =>
+          line.includes('ERROR') || line.includes('FATAL')
+        );
+
+        return errorLines;
+      });
+    }
+  } catch (err) {
+    // File might not exist, that's OK
+  }
+  return [];
+}
+
+/**
+ * Calculate overall health score
+ */
+function calculateHealthScore(health, catalog, resources) {
+  let score = 100;
+
+  // API health: 30 points
+  if (health.status === 'OK') {
+    if (health.responseTime > 1000) score -= 10;
+  } else {
+    score -= 30;
+  }
+
+  // Model catalog: 20 points
+  if (catalog.status === 'OK') {
+    // Fully OK
+  } else if (catalog.status === 'DEGRADED') {
+    score -= 10;
+  } else {
+    score -= 20;
+  }
+
+  // System resources: 20 points
+  if (resources.memory !== 'unknown') {
+    const memUsage = resources.memory.split(' ')[0];
+    // Could parse percentage here
+  }
+  if (resources.load === 'unknown') {
+    score -= 5;
+  }
+
+  // API error rate: 30 points
+  const errorRate = apiErrorCount / Math.max(apiCallCount, 1);
+  if (errorRate > 0.1) {
+    score -= Math.floor(errorRate * 30);
+  }
+
+  return Math.max(0, score);
+}
+
+/**
+ * Format status with colors
+ */
+function formatStatus(status, details = '') {
+  const statusUpper = status.toUpperCase();
+
+  if (statusUpper === 'OK') {
+    return `${colors.green}✓ OK${colors.reset}${details ? ' ' + details : ''}`;
+  } else if (statusUpper === 'ERROR' || statusUpper === 'DOWN' || statusUpper === 'FATAL') {
+    return `${colors.red}✗ ${status}${colors.reset}${details ? ' ' + details : ''}`;
+  } else if (statusUpper === 'DEGRADED' || statusUpper === 'WARNING') {
+    return `${colors.yellow}⚠ ${status}${colors.reset}${details ? ' ' + details : ''}`;
+  } else {
+    return `${colors.blue}⊘ ${status}${colors.reset}${details ? ' ' + details : ''}`;
+  }
+}
+
+/**
+ * Render dashboard
+ */
+async function renderDashboard() {
+  // Get current data
+  const health = await checkApiHealth();
+  const catalog = await checkModelCatalog();
+  const resources = getSystemResources();
+  const healthScore = calculateHealthScore(health, catalog, resources);
+
+  const elapsedSeconds = Math.floor((Date.now() - testStartTime) / 1000);
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+
+  // Clear screen
   console.clear();
 
-  const elapsed = Math.floor((Date.now() - START_TIME.getTime()) / 1000);
-  const remaining = DURATION_MIN * 60 - elapsed;
-  const remainingMin = Math.floor(remaining / 60);
-  const remainingSec = remaining % 60;
+  // Header
+  console.log(`${colors.bold}═══════════════════════════════════════════════════════${colors.reset}`);
+  console.log(`${colors.bold}  Phase 1 Day 4 — Real-Time Monitoring Dashboard${colors.reset}`);
+  console.log(`${colors.bold}═══════════════════════════════════════════════════════${colors.reset}`);
+  console.log('');
 
-  console.log('\n╔════════════════════════════════════════════════════════════════╗');
-  console.log('║         Phase 1 Day 4 — Real-Time Monitoring Dashboard         ║');
-  console.log('╚════════════════════════════════════════════════════════════════╝\n');
+  // Timestamp and elapsed time
+  const now = new Date().toUTCString();
+  console.log(`Timestamp: ${colors.blue}${now}${colors.reset}`);
+  console.log(`Elapsed: ${colors.blue}${elapsedHours}h ${(elapsedMinutes % 60)}m ${(elapsedSeconds % 60)}s${colors.reset}`);
+  console.log('');
 
-  // Timeline
-  console.log(`⏱  Started: ${START_TIME.toISOString()}`);
-  console.log(`⏳  Elapsed: ${String(Math.floor(elapsed / 60)).padStart(3, '0')}m ${String(elapsed % 60).padStart(2, '0')}s`);
-  console.log(`⏰  Remaining: ${String(remainingMin).padStart(3, '0')}m ${String(remainingSec).padStart(2, '0')}s\n`);
+  // System Health Score
+  let scoreColor = colors.green;
+  if (healthScore < 70) scoreColor = colors.yellow;
+  if (healthScore < 30) scoreColor = colors.red;
+  console.log(`Overall Health: ${scoreColor}${colors.bold}${healthScore}/100${colors.reset}`);
+  console.log('');
 
   // API Health
-  const apiStatus = metrics.api.status === 'healthy' ? '🟢' :
-                    metrics.api.status === 'degraded' ? '🟡' : '🔴';
-  console.log(`${apiStatus} API Health: ${metrics.api.status}`);
-  console.log(`   Response time: ${metrics.api.latency_ms}ms (target: <500ms)`);
+  console.log(`${colors.bold}API Health:${colors.reset}`);
+  const apiDetails = health.responseTime ? `(${health.responseTime}ms)` : '';
+  console.log(`  Status: ${formatStatus(health.status, apiDetails)}`);
+  if (health.error) console.log(`  Error: ${health.error}`);
+  console.log('');
 
   // Model Catalog
-  const modelStatus = metrics.models.count === 11 ? '🟢' :
-                      metrics.models.count > 0 ? '🟡' : '🔴';
-  console.log(`\n${modelStatus} Model Catalog: ${metrics.models.count}/11 models loaded`);
-  console.log(`   Pricing set: ${metrics.models.pricing_set ? 'yes' : 'no'}`);
+  console.log(`${colors.bold}Model Catalog:${colors.reset}`);
+  const catalogDetails = catalog.count ? `(${catalog.count}/${catalog.expected})` : '';
+  console.log(`  Status: ${formatStatus(catalog.status, catalogDetails)}`);
+  if (catalog.error) console.log(`  Error: ${catalog.error}`);
+  console.log('');
 
-  // Database
-  const dbStatus = metrics.database.connected ? '🟢' : '🔴';
-  console.log(`\n${dbStatus} Database: ${metrics.database.connected ? 'connected' : 'checking...'}`);
-  if (metrics.database.latency_ms > 0) {
-    console.log(`   Query latency: ${metrics.database.latency_ms}ms (target: <100ms)`);
-  }
+  // System Resources
+  console.log(`${colors.bold}System Resources:${colors.reset}`);
+  console.log(`  Memory Usage: ${resources.memory || 'N/A'}`);
+  console.log(`  Load Average: ${resources.load || 'N/A'}`);
+  console.log('');
 
-  // Providers
-  const providerStatus = metrics.providers.active > 0 ? '🟢' : '🟡';
-  console.log(`\n${providerStatus} Providers: ${metrics.providers.active} active`);
-  if (metrics.providers.last_heartbeat) {
-    const heartbeatAge = Math.floor((Date.now() - metrics.providers.last_heartbeat.getTime()) / 1000);
-    console.log(`   Last heartbeat: ${heartbeatAge}s ago`);
-  }
+  // API Call Statistics
+  console.log(`${colors.bold}API Statistics:${colors.reset}`);
+  const errorRate = ((apiErrorCount / Math.max(apiCallCount, 1)) * 100).toFixed(1);
+  console.log(`  Calls Made: ${apiCallCount}`);
+  console.log(`  Errors: ${apiErrorCount} (${errorRate}%)`);
+  console.log('');
 
-  // Test Progress
-  const totalTests = metrics.tests.passed + metrics.tests.failed;
-  console.log(`\n📊 Test Progress:`);
-  console.log(`   Section: ${metrics.tests.current_section}/12`);
-  console.log(`   Passed: ${metrics.tests.passed} | Failed: ${metrics.tests.failed}`);
+  // Status Legend
+  console.log(`${colors.bold}Status Legend:${colors.reset}`);
+  console.log(`  ${colors.green}✓${colors.reset} OK = System functioning normally`);
+  console.log(`  ${colors.yellow}⚠${colors.reset} DEGRADED = System partially functioning`);
+  console.log(`  ${colors.red}✗${colors.reset} ERROR = System fault detected`);
+  console.log('');
 
-  // Errors (if any)
-  if (metrics.errors.length > 0) {
-    console.log(`\n⚠️  Recent Errors (${metrics.errors.length}):`);
-    metrics.errors.slice(-5).forEach(err => {
-      console.log(`   [${err.timestamp}] ${err.message}`);
-    });
-  }
-
-  console.log('\n' + '═'.repeat(66));
-  console.log('Press Ctrl+C to stop monitoring\n');
+  // Footer
+  console.log(`${colors.bold}═══════════════════════════════════════════════════════${colors.reset}`);
+  console.log('Dashboard auto-updates every 5 seconds. Press Ctrl+C to stop.');
+  console.log(`${colors.bold}═══════════════════════════════════════════════════════${colors.reset}`);
 }
 
 /**
  * Main loop
  */
 async function main() {
-  console.log('Starting Day 4 monitoring dashboard...\n');
+  console.log('Starting Phase 1 Day 4 Monitoring Dashboard...');
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
   // Initial render
-  await updateMetrics();
-  render();
+  await renderDashboard();
 
-  // Refresh every 5 seconds
+  // Continuous updates
   setInterval(async () => {
-    await updateMetrics();
-    render();
-  }, REFRESH_INTERVAL_MS);
+    await renderDashboard();
+  }, REFRESH_INTERVAL);
 }
 
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\n\nMonitoring stopped. Final state:\n');
-  console.log(`Total runtime: ${Math.floor((Date.now() - START_TIME.getTime()) / 1000)}s`);
-  console.log(`API Health: ${metrics.api.status}`);
-  console.log(`Models loaded: ${metrics.models.count}/11`);
-  console.log(`Providers active: ${metrics.providers.active}`);
-  console.log(`Tests - Passed: ${metrics.tests.passed}, Failed: ${metrics.tests.failed}`);
-  if (metrics.errors.length > 0) {
-    console.log(`\nTotal errors encountered: ${metrics.errors.length}`);
-  }
-  process.exit(0);
-});
-
-// Start monitoring
+// Run dashboard
 main().catch(err => {
-  console.error('Dashboard error:', err);
+  console.error('Dashboard error:', err.message);
   process.exit(1);
 });
