@@ -296,6 +296,11 @@ app.use('/api/providers', tieredApiLimiter);
 app.use('/api/jobs', tieredApiLimiter);
 app.use('/api/models', tieredApiLimiter);
 app.use('/api/templates', tieredApiLimiter);
+// Renter endpoints: 1000 req/min (authenticated) or 200 req/min (public) per IP (DCP-894)
+// Covers /api/renters/jobs and other authenticated renter routes.
+// More specific limiters (topupLimiter, webhookRegistrationLimiter) remain in effect
+// for their respective paths — express-rate-limit instances track independent counters.
+app.use('/api/renters', tieredApiLimiter);
 
 // Auth endpoints (if added in future): 10 per IP per minute
 app.use('/api/auth', authLimiter);
