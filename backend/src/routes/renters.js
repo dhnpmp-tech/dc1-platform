@@ -1513,6 +1513,241 @@ router.get('/me/analytics', (req, res) => {
   }
 });
 
+// ─── RENTER-FACING TOPUP, BALANCE & TRANSACTIONS — DCP-861 ──────────────────
+// Renter-owned endpoints. Auth: x-renter-key must match the :id renter.
+// These mirror the admin /:id/balance + /:id/topup routes but allow
+// renters to self-serve without admin token.
+
+const { VALID_EVENTS: WEBHOOK_VALID_EVENTS } = require('../services/renterWebhookService');
+
+/**
+ * Middleware: authenticate renter by x-renter-key AND verify :id matches.
+ * Adds req.renter to the request.
+ */
+function requireRenterOwner(req, res, next) {
+  const key = req.headers['x-renter-key'] || req.query.key;
+  if (!key) return res.status(401).json({ error: 'x-renter-key header required' });
+  const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+  if (!renter) return res.status(401).json({ error: 'Invalid API key' });
+  const paramId = parseInt(req.params.id, 10);
+  if (renter.id !== paramId) return res.status(403).json({ error: 'Forbidden: key does not match renter id' });
+  req.renter = renter;
+  return next();
+}
+
+/**
+ * POST /api/renters/:id/topup
+ * Self-serve renter credit top-up (placeholder payment — no gateway yet).
+ * Body: { amount_sar: number, payment_ref?: string }
+ */
+router.post('/:id/topup', requireRenterOwner, (req, res) => {
+  const { amount_sar, payment_ref } = req.body || {};
+  const renter = req.renter;
+
+  const amountSar = typeof amount_sar === 'number' ? amount_sar : Number(amount_sar);
+  if (!Number.isFinite(amountSar) || amountSar <= 0) {
+    return res.status(400).json({ error: 'amount_sar must be a positive number' });
+  }
+  if (amountSar > 10000) {
+    return res.status(400).json({ error: 'amount_sar exceeds maximum of 10,000 SAR per transaction' });
+  }
+
+  const amountHalala = Math.round(amountSar * 100);
+  const paymentRef = (typeof payment_ref === 'string' && payment_ref.trim()) ? payment_ref.trim().slice(0, 200) : null;
+
+  try {
+    const { getRenterBalance: _getRenterBalance, addCredits: _addCredits } = require('../services/creditService');
+    const result = _addCredits(db, renter.id, amountHalala, 'topup', {
+      paymentRef,
+      note: paymentRef ? `Self-serve topup via ref ${paymentRef}` : 'Self-serve topup',
+    });
+    res.json({
+      success: true,
+      transaction_id: result.ledger_id,
+      amount_sar: amountSar,
+      amount_halala: amountHalala,
+      new_balance_sar: result.new_balance_sar,
+      new_balance_halala: result.new_balance_halala,
+      payment_ref: paymentRef,
+    });
+  } catch (err) {
+    console.error('POST /:id/topup (renter) error:', err);
+    res.status(500).json({ error: 'Top-up failed' });
+  }
+});
+
+/**
+ * GET /api/renters/:id/balance
+ * Renter-facing balance check — returns balance_sar + last 5 transactions.
+ */
+router.get('/:id/balance', requireRenterOwner, (req, res) => {
+  try {
+    const { getRenterBalance: _getRenterBalance, getLedger: _getLedger } = require('../services/creditService');
+    const balance = _getRenterBalance(db, req.renter.id);
+    if (!balance) return res.status(404).json({ error: 'Renter not found' });
+
+    const recent = _getLedger(db, req.renter.id, { limit: 5, offset: 0 });
+
+    res.json({
+      balance_sar: balance.balance_sar,
+      balance_halala: balance.balance_halala,
+      balance_usd: balance.balance_usd,
+      last_topup_at: balance.last_topup_at,
+      total_spent_sar: balance.total_spent_sar,
+      recent_transactions: recent.entries,
+    });
+  } catch (err) {
+    console.error('GET /:id/balance (renter) error:', err);
+    res.status(500).json({ error: 'Balance check failed' });
+  }
+});
+
+/**
+ * GET /api/renters/:id/transactions
+ * Paginated credit/debit transaction history for the renter.
+ * Query: limit (max 50, default 20), offset (default 0), direction (credit|debit)
+ */
+router.get('/:id/transactions', requireRenterOwner, (req, res) => {
+  const rawLimit = parseInt(req.query.limit, 10);
+  const rawOffset = parseInt(req.query.offset, 10);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 20;
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+  const { direction } = req.query;
+
+  try {
+    const { getLedger: _getLedger } = require('../services/creditService');
+    const ledger = _getLedger(db, req.renter.id, { limit, offset, direction });
+    res.json(ledger);
+  } catch (err) {
+    console.error('GET /:id/transactions error:', err);
+    res.status(500).json({ error: 'Failed to retrieve transactions' });
+  }
+});
+
+/**
+ * POST /api/renters/:id/webhooks
+ * Register a webhook endpoint for job lifecycle events.
+ * Body: { url: string (https only), secret: string (16+ chars), events?: string[] }
+ */
+router.post('/:id/webhooks', requireRenterOwner, (req, res) => {
+  const { url, secret, events } = req.body || {};
+  const renter = req.renter;
+
+  // Validate URL — must be HTTPS
+  if (typeof url !== 'string' || !url.trim()) {
+    return res.status(400).json({ error: 'url is required' });
+  }
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url.trim());
+  } catch {
+    return res.status(400).json({ error: 'url is not a valid URL' });
+  }
+  if (parsedUrl.protocol !== 'https:') {
+    return res.status(400).json({ error: 'url must use HTTPS' });
+  }
+
+  // Validate secret — must be 16+ chars
+  if (typeof secret !== 'string' || secret.length < 16) {
+    return res.status(400).json({ error: 'secret must be at least 16 characters' });
+  }
+
+  // Validate events list — defaults to all valid events
+  const DEFAULT_EVENTS = ['job.completed', 'job.failed', 'balance.low'];
+  let eventList = DEFAULT_EVENTS;
+  if (events != null) {
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({ error: 'events must be a non-empty array' });
+    }
+    const invalid = events.filter(e => !WEBHOOK_VALID_EVENTS.has(e));
+    if (invalid.length > 0) {
+      return res.status(400).json({
+        error: `Invalid event(s): ${invalid.join(', ')}. Valid: ${[...WEBHOOK_VALID_EVENTS].join(', ')}`,
+      });
+    }
+    eventList = [...new Set(events)]; // dedupe
+  }
+
+  // Limit: max 5 active webhooks per renter
+  const existingCount = db.get(
+    `SELECT COUNT(*) as n FROM renter_webhooks WHERE renter_id = ? AND active = 1`,
+    renter.id
+  );
+  if (existingCount && existingCount.n >= 5) {
+    return res.status(422).json({ error: 'Maximum 5 active webhooks per renter' });
+  }
+
+  try {
+    const { randomUUID } = require('crypto');
+    const id = randomUUID();
+    const now = new Date().toISOString();
+
+    db.prepare(
+      `INSERT INTO renter_webhooks (id, renter_id, url, secret, events, active, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?)`
+    ).run(id, renter.id, parsedUrl.toString(), secret, eventList.join(','), now);
+
+    res.status(201).json({
+      id,
+      url: parsedUrl.toString(),
+      events: eventList,
+      active: true,
+      created_at: now,
+    });
+  } catch (err) {
+    console.error('POST /:id/webhooks error:', err);
+    res.status(500).json({ error: 'Failed to register webhook' });
+  }
+});
+
+/**
+ * GET /api/renters/:id/webhooks
+ * List all active webhooks for the renter (secret is masked).
+ */
+router.get('/:id/webhooks', requireRenterOwner, (req, res) => {
+  try {
+    const webhooks = db.all(
+      `SELECT id, url, events, active, created_at
+       FROM renter_webhooks WHERE renter_id = ? ORDER BY created_at DESC`,
+      req.renter.id
+    );
+    res.json({
+      webhooks: webhooks.map(w => ({
+        ...w,
+        events: w.events.split(','),
+        active: !!w.active,
+      })),
+    });
+  } catch (err) {
+    console.error('GET /:id/webhooks error:', err);
+    res.status(500).json({ error: 'Failed to list webhooks' });
+  }
+});
+
+/**
+ * DELETE /api/renters/:id/webhooks/:webhookId
+ * Deactivate a webhook (soft-delete).
+ */
+router.delete('/:id/webhooks/:webhookId', requireRenterOwner, (req, res) => {
+  const { webhookId } = req.params;
+  try {
+    const webhook = db.get(
+      `SELECT id FROM renter_webhooks WHERE id = ? AND renter_id = ?`,
+      webhookId, req.renter.id
+    );
+    if (!webhook) return res.status(404).json({ error: 'Webhook not found' });
+
+    db.prepare(
+      `UPDATE renter_webhooks SET active = 0, updated_at = ? WHERE id = ?`
+    ).run(new Date().toISOString(), webhookId);
+
+    res.json({ success: true, id: webhookId, active: false });
+  } catch (err) {
+    console.error('DELETE /:id/webhooks/:webhookId error:', err);
+    res.status(500).json({ error: 'Failed to deactivate webhook' });
+  }
+});
+
 // ─── CREDIT BALANCE & LEDGER — DCP-755 ──────────────────────────────────────
 // Admin-facing endpoints that operate on a renter by numeric :id.
 // All require DC1_ADMIN_TOKEN (x-admin-token header).
