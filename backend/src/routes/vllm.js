@@ -211,6 +211,7 @@ function getCapableProviders(minVramMb) {
   const providers = db.all(
     `SELECT p.id, p.status, p.is_paused, p.last_heartbeat, p.supported_compute_types,
             p.vram_mb, p.gpu_vram_mb, p.gpu_vram_mib, p.vram_gb,
+            p.vllm_endpoint_url,
             t.gpu_util_pct
      FROM providers p
      LEFT JOIN (
@@ -253,6 +254,40 @@ function assignProvider(minVramMb) {
   // Sort ascending by gpu_util_pct (nulls treated as 0 — prefer providers that haven't reported util)
   capable.sort((a, b) => (a.gpu_util_pct ?? 0) - (b.gpu_util_pct ?? 0));
   return capable[0];
+}
+
+
+// DCP-922: Proxy an inference request to a provider's vLLM endpoint.
+// Returns { text, promptTokens, completionTokens } on success or { proxyError, detail } on failure.
+const PROXY_TIMEOUT_MS = 30000;
+async function proxyToProviderEndpoint({ endpointUrl, modelId, messages, maxTokens, temperature }) {
+  const url = `${endpointUrl}/v1/chat/completions`;
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, temperature, stream: false }),
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'timeout' : 'connection_refused';
+    return { proxyError: reason, detail: err.message };
+  }
+  if (!response.ok) {
+    return { proxyError: `provider_http_${response.status}`, detail: `Provider returned ${response.status}` };
+  }
+  let body;
+  try { body = await response.json(); } catch (_) {
+    return { proxyError: 'invalid_response', detail: 'Provider returned non-JSON body' };
+  }
+  const text = body?.choices?.[0]?.message?.content || '';
+  const usage = body?.usage || {};
+  return {
+    text,
+    promptTokens: Number(usage.prompt_tokens || 0),
+    completionTokens: Number(usage.completion_tokens || 0),
+  };
 }
 
 function buildRuntimeDiagnostics({ modelId, minVramGb, jobId = null }) {
@@ -634,6 +669,88 @@ async function submitAndAwait(req) {
     throw error;
   }
 
+
+  // DCP-922: If the selected provider has a registered vLLM endpoint, proxy directly.
+  // Try primary provider + up to 2 fallback providers before giving up.
+  if (assignedProvider.vllm_endpoint_url) {
+    const proxyMessages = preparedMessages.value;
+    const fallbackCandidates = [assignedProvider];
+    try {
+      const extras = db.all(
+        `SELECT id, vllm_endpoint_url FROM providers
+         WHERE status = 'online' AND COALESCE(is_paused, 0) = 0
+           AND deleted_at IS NULL AND vllm_endpoint_url IS NOT NULL
+           AND id != ?
+         ORDER BY uptime_percent DESC LIMIT 2`,
+        assignedProvider.id
+      );
+      fallbackCandidates.push(...extras);
+    } catch (_) { /* non-fatal */ }
+
+    let lastProxyError = null;
+    for (const candidate of fallbackCandidates) {
+      if (!candidate.vllm_endpoint_url) continue;
+      const proxyResult = await proxyToProviderEndpoint({
+        endpointUrl: candidate.vllm_endpoint_url,
+        modelId: modelReq.model_id,
+        messages: proxyMessages,
+        maxTokens,
+        temperature,
+      });
+
+      if (proxyResult.proxyError) {
+        console.warn(`[vllm/proxy] provider #${candidate.id} failed: ${proxyResult.proxyError}`);
+        lastProxyError = proxyResult.proxyError;
+        continue;
+      }
+
+      const totalTokens = proxyResult.promptTokens + proxyResult.completionTokens;
+      const nowProxy = new Date().toISOString();
+      try {
+        runStatement(
+          'UPDATE jobs SET status = ?, prompt_tokens = ?, completion_tokens = ?, result_text = ?, updated_at = ? WHERE job_id = ?',
+          'completed', proxyResult.promptTokens, proxyResult.completionTokens, proxyResult.text, nowProxy, jobId
+        );
+      } catch (_) { /* non-fatal */ }
+      try {
+        const rateRecord = db.get(
+          'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
+        ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
+        const tokenRateHalala = rateRecord?.token_rate_halala || 1;
+        runStatement(
+          `UPDATE serve_sessions SET
+             total_inferences = total_inferences + 1,
+             total_tokens = total_tokens + ?,
+             total_billed_halala = total_billed_halala + ?,
+             last_inference_at = ?
+           WHERE job_id = ?`,
+          totalTokens, Math.max(1, totalTokens * tokenRateHalala), nowProxy, jobId
+        );
+      } catch (_) { /* non-fatal */ }
+
+      return {
+        payload: buildOpenAiResponse({
+          job: { result_text: proxyResult.text },
+          model: modelReq.model_id,
+          text: proxyResult.text,
+          promptTokens: proxyResult.promptTokens,
+          completionTokens: proxyResult.completionTokens,
+        }),
+        text: proxyResult.text,
+      };
+    }
+
+    const diagProxy = buildRuntimeDiagnostics({ modelId: modelReq.model_id, minVramGb: modelReq.min_vram_gb, jobId });
+    logVllmDegradation('proxy_all_failed', diagProxy, { last_error: lastProxyError });
+    return {
+      error: {
+        status: 503,
+        body: { error: 'no_providers_available', message: 'All provider endpoints failed', last_error: lastProxyError, diagnostics: diagProxy },
+      },
+    };
+  }
+
+  // Legacy path: provider has no vllm_endpoint_url — fall back to job polling
   const waitResult = await waitForJobCompletion(insert.lastInsertRowid, {
     modelId: modelReq.model_id,
     minVramGb: modelReq.min_vram_gb,
