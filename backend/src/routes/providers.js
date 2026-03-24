@@ -432,32 +432,14 @@ router.post('/verify-otp', loginEmailLimiter, async (req, res) => {
   }
 });
 
+// DCP-896 SECURITY FIX: /login-email DISABLED — returned full API key with only
+// email as "proof of identity" (no password, no OTP). This is an authentication
+// bypass. Clients must use /send-otp + /verify-otp instead.
 router.post('/login-email', loginEmailLimiter, (req, res) => {
-    try {
-        const { email } = req.body;
-        const cleanEmail = normalizeEmail(email);
-        if (!cleanEmail) return res.status(400).json({ error: 'Valid email is required' });
-
-        const provider = db.get('SELECT * FROM providers WHERE LOWER(email) = LOWER(?)', cleanEmail);
-        if (!provider) {
-            return res.status(404).json({ error: 'No provider account found with this email. Register first at /provider/register' });
-        }
-
-        res.json({
-            success: true,
-            api_key: provider.api_key,
-            provider: {
-                id: provider.id,
-                name: provider.name,
-                email: provider.email,
-                gpu_model: provider.gpu_model,
-                status: provider.status,
-            }
-        });
-    } catch (error) {
-        console.error('Provider email login error:', error);
-        res.status(500).json({ error: 'Login failed' });
-    }
+    return res.status(410).json({
+        error: 'This endpoint is disabled for security reasons.',
+        instructions: 'Use POST /api/providers/send-otp to receive a verification code, then POST /api/providers/verify-otp to authenticate.',
+    });
 });
 
 // ============================================================================
@@ -1248,13 +1230,19 @@ router.post('/daemon-event', (req, res) => {
 
 // ============================================================================
 // GET /api/providers/status - Get provider dashboard data
+// Auth: x-provider-key header or ?key= query param (NOT in URL path — DCP-896)
 // ============================================================================
-router.get('/status/:api_key', async (req, res) => {
+router.get('/status', async (req, res) => {
     try {
-        const { api_key } = req.params;
-        
+        // DCP-896: key moved from URL path parameter to header/query to prevent
+        // API key exposure in server access logs and browser history.
+        const api_key = req.headers['x-provider-key'] || req.query.key;
+        if (!api_key) {
+            return res.status(400).json({ error: 'API key required (x-provider-key header or ?key= query)' });
+        }
+
         const provider = await db.get(
-            'SELECT * FROM providers WHERE api_key = ?',
+            'SELECT * FROM providers WHERE api_key = ? AND deleted_at IS NULL',
             [api_key]
         );
         
