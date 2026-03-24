@@ -379,6 +379,9 @@ app.use(analyticsService.latencyMiddleware);
 app.use('/installers', express.static(path.join(__dirname, '..', 'installers')));
 
 // API Routes
+const authRouter = require('./routes/auth');
+app.use('/api/auth', authRouter);
+
 const providersRouter = require('./routes/providers');
 app.use('/api/providers', providersRouter);
 

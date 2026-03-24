@@ -1,3 +1,33 @@
+# DCP Platform — Standing Rules (ALL Agents)
+
+## Naming
+- This project is **DCP** (Decentralized Compute Platform). Never call it "DC-1" or "DC1".
+
+## Paperclip (Issue Tracker)
+- Paperclip is at `http://76.13.179.86:3100`
+- **NEVER create issues via SQL, CLI, or direct API.** Always use the Chrome frontend UI.
+
+## Deployment
+- **Production deploys are MANUAL ONLY.** No agent or CI may auto-deploy.
+- No agent may push, restart, or modify the production VPS (76.13.179.86) without explicit founder approval.
+
+## Git
+- Do not commit directly to `main` without code review (see detailed rule below).
+- Keep `package-lock.json` in sync with `package.json` — `npm ci` must pass in CI.
+- Be conservative with pushes — Vercel Hobby plan has a 100 deploys/day cap.
+
+## Architecture Quick Reference
+- Frontend: Next.js 14 (App Router) on Vercel → dcp.sa
+- Backend: Express.js + SQLite on bare-metal → api.dcp.sa (76.13.179.86:8083)
+- Auth: Supabase OTP magic links → custom API keys in SQLite
+- Supabase project: `rwxqcqgjszvbwcyjfpec.supabase.co`
+- Payments: Moyasar (SAR, halala units)
+
+## Co-founders
+- Tareq, Fadi, Peter (CTO — setup@oida.ae)
+
+---
+
 # CEO Agent Memory — DCP (Decentralized Compute Platform)
 
 ## Identity

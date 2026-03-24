@@ -2,6 +2,8 @@
 // Uses Supabase's built-in signInWithOtp / verifyOtp
 const { supabase } = require('../supabase');
 
+const SITE_URL = (process.env.FRONTEND_URL || 'https://dcp.sa').replace(/\/+$/, '');
+
 /**
  * Send OTP code to email via Supabase Auth
  * @param {string} email - normalized email
@@ -13,6 +15,7 @@ async function sendOtp(email) {
       email,
       options: {
         shouldCreateUser: true,
+        emailRedirectTo: `${SITE_URL}/auth/callback`,
       }
     });
 
