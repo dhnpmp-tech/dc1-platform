@@ -136,7 +136,7 @@ function findAvailableProvider(minVramGb) {
   const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   return db.get(
     `SELECT id, name, gpu_model, vram_gb, gpu_vram_mib FROM providers
-     WHERE status = 'active'
+     WHERE status IN ('active', 'online')
        AND last_heartbeat >= ?
        AND COALESCE(gpu_vram_mib, vram_gb * 1024, 0) >= ?
        AND NOT EXISTS (
