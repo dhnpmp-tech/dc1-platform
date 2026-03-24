@@ -315,3 +315,95 @@ A **guided multi-step wizard** that transforms a newly-registered provider from 
 - **DCP-751:** Provider Activation Campaign (copywriting, outreach)
 - **DCP-770:** Provider Earnings Calculator (backend API)
 - **docs/PROVIDER-QUICKSTART-API.md** (referenced in Step 2)
+
+---
+
+## Step 3B: Stake Activation (Phase 2 Addition)
+
+> **Phase:** Inserted between Step 3 (Connection Test) and Step 4 (Model Pre-fetch) when Phase 2 staking activates. Hidden in Phase 1 — providers go directly from Step 3 to Step 4.
+>
+> **Backend flag:** `STAKING_REQUIRED=true` enables this step.
+
+### What the provider sees
+
+**Heading:** "Activate your GPU slot"
+
+**Subheading:** "A small refundable deposit secures your place in the marketplace."
+
+**Stake summary card (RTX 4090 example):**
+
+```
+Your GPU Tier: Standard (RTX 4090)
+Required Deposit: 0.008 ETH  (~$25.60 / SAR 96)
+
+This deposit:
+  ✅ Unlocks job routing — you start receiving jobs immediately
+  ✅ Is fully refundable after 7 days notice
+  ✅ Higher stake = higher routing priority
+
+Wallet: Not connected
+```
+
+**"Connect Wallet" button** — MetaMask or WalletConnect (wagmi)
+
+**After wallet connects:**
+
+```
+Connected: 0xAbCd...1234
+Balance: 0.045 ETH (~$144)   ✅ Sufficient
+
+  [  Stake 0.008 ETH and Activate  ]
+```
+
+**Optional "Earn faster" accordion (collapsed by default):**
+
+```
+Stake multiple  | Routing bonus | Badge
+1× (0.008 ETH)  | Baseline      | —
+2× (0.016 ETH)  | +10% jobs     | Bronze ⬤
+5× (0.040 ETH)  | +25% jobs     | Silver ⬤
+10× (0.080 ETH) | +50% + featured | Gold ⬤
+```
+
+### Widget Interaction States
+
+| State | What provider sees |
+|-------|--------------------|
+| Wallet not connected | "Connect Wallet" button; stake button hidden |
+| Connected, insufficient balance | ❌ "You need 0.008 ETH, you have 0.003 ETH. [Buy ETH →]" |
+| Connected, sufficient | Green "Stake X ETH and Activate" button |
+| Transaction pending | Spinner: "Sending… (do not close this page)" |
+| Confirmed | ✅ "Stake confirmed! [View on Basescan]" — "Next Step" unlocked |
+| Failed/rejected | ❌ "Transaction failed. [Try again]" |
+
+### On-Chain Flow
+
+1. Provider clicks "Stake X ETH and Activate"
+2. Frontend calls `ProviderStake.stake({ value: tierMin })`
+3. Wallet prompts confirmation
+4. Contract emits `Staked(provider, amount)`
+5. Backend `stakeEventListener.js` sets `providers.stake_status = 'active'`
+6. Frontend polls `GET /api/providers/:id/stake-status` every 2s
+7. On `'active'` → show confirmation, unlock Step 4
+
+> **Phase 2 USDC:** Two-step flow — "Approve USDC" then "Stake and Activate".
+
+### Skip Option
+
+- **"I'll stake later"** — grey link, de-emphasised
+- Effect: `stake_status = 'none'`, provider inactive
+- Dashboard: persistent yellow banner "Stake required to receive jobs. [Stake now →]"
+
+### Required API Endpoints (Phase 2)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/providers/:id/stake-status` | Poll `{ stakeStatus }` after tx |
+| `POST /api/providers/:id/set-wallet` | Save `evmWalletAddress` |
+| `GET /api/providers/:id/stake-info` | Return `{ tierMin, stakeStatus, routingWeight, badge }` |
+
+### Coordination
+
+Implementation by **Frontend Developer** (DCP-910). Contracts audited and ready. Backend schema and event listener: `docs/blockchain/provider-stake-integration.md`.
+
+*DCP-913 | Blockchain Engineer | 2026-03-24*
