@@ -3343,6 +3343,16 @@ router.get('/active', (req, res) => {
         return res.status(401).json({ error: 'Invalid or expired API key' });
     }
 
+    // Query filters: ?tier=A, ?min_vram=24, ?available=true
+    const filterTier = req.query.tier ? String(req.query.tier).toUpperCase() : null;
+    const filterMinVram = req.query.min_vram ? parseFloat(req.query.min_vram) : null;
+    if (filterTier && !['A', 'B', 'C'].includes(filterTier)) {
+        return res.status(400).json({ error: 'tier must be A, B, or C' });
+    }
+    if (filterMinVram !== null && (isNaN(filterMinVram) || filterMinVram < 0)) {
+        return res.status(400).json({ error: 'min_vram must be a positive number (GB)' });
+    }
+
     try {
         const { COST_RATES } = require('./jobs');
         let providers = [];
@@ -3351,6 +3361,7 @@ router.get('/active', (req, res) => {
                 `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
                         gpu_vram_mb, gpu_info_json,
                         gpu_compute_capability, gpu_cuda_version, gpu_count_reported, gpu_spec_json,
+                        gpu_tier, available_gpu_tiers,
                         status, location, run_mode, reliability_score, reputation_score,
                         cached_models, last_heartbeat, uptime_percent, p.total_jobs, is_paused, created_at,
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
@@ -3418,6 +3429,13 @@ router.get('/active', (req, res) => {
             // /active returns only fully-online providers (not degraded)
             if (computedStatus !== 'online') return acc;
 
+            // Apply query filters: ?tier=A, ?min_vram=24
+            if (filterTier && p.gpu_tier !== filterTier) return acc;
+            if (filterMinVram !== null) {
+                const vramGb = p.gpu_vram_mib ? p.gpu_vram_mib / 1024 : (p.gpu_vram_mb ? p.gpu_vram_mb / 1024 : 0);
+                if (vramGb < filterMinVram) return acc;
+            }
+
             let cachedModels = [];
             if (p.cached_models) { try { cachedModels = JSON.parse(p.cached_models); } catch {} }
 
@@ -3460,6 +3478,8 @@ router.get('/active', (req, res) => {
                     cuda_version: gpuInfo?.cuda_version || p.gpu_cuda_version || null,
                 },
                 gpu_spec: gpuSpec,
+                gpu_tier: p.gpu_tier || null,
+                available_gpu_tiers: p.available_gpu_tiers ? (function() { try { return JSON.parse(p.available_gpu_tiers); } catch(e) { return []; } })() : [],
                 status: 'online',
                 is_live: true,
                 heartbeat_age_seconds,
@@ -3485,6 +3505,7 @@ router.get('/active', (req, res) => {
             providers: mapped,
             total: mapped.length,
             timestamp: new Date().toISOString(),
+            filters: { tier: filterTier || null, min_vram_gb: filterMinVram },
         });
     } catch (error) {
         console.error('[/active] Error:', error);
@@ -4193,8 +4214,245 @@ router.get('/:id/health', (req, res) => {
     }
 });
 
+
+// ============================================================================
+// Provider Activation System (DCP-753)
+// ============================================================================
+// Minimum hardware requirements for provider activation
+const ACTIVATION_MIN_VRAM_GB = 8;
+const ACTIVATION_MIN_TFLOPS = 10;
+
+// Provider event emitter for downstream consumers (e.g. job dispatcher DCP-738)
+const _providerEventEmitter = new (require('events'))();
+_providerEventEmitter.setMaxListeners(50);
+
+function ensureAvailableGpuTiersColumn() {
+    try {
+        db.prepare('ALTER TABLE providers ADD COLUMN available_gpu_tiers TEXT').run();
+    } catch (_) { /* Column already exists */ }
+}
+
+function ensureProviderBenchmarksTable() {
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS provider_benchmarks (
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            provider_id TEXT NOT NULL,
+            gpu_model TEXT NOT NULL,
+            vram_gb REAL NOT NULL,
+            tflops REAL NOT NULL,
+            bandwidth_gbps REAL,
+            tokens_per_sec REAL,
+            tier TEXT NOT NULL,
+            submitted_at TEXT NOT NULL,
+            FOREIGN KEY (provider_id) REFERENCES providers(id)
+        )
+    `).run();
+}
+
+function activateProviderById(providerId) {
+    ensureAvailableGpuTiersColumn();
+    ensureProviderBenchmarksTable();
+
+    const provider = db.get(
+        'SELECT id, status, approval_status FROM providers WHERE id = ?',
+        providerId
+    );
+    if (!provider) return { activated: false, reason: 'Provider not found' };
+
+    const benchmark = db.get(
+        'SELECT gpu_model, vram_gb, tflops, tier FROM provider_benchmarks WHERE provider_id = ? ORDER BY submitted_at DESC LIMIT 1',
+        providerId
+    );
+    if (!benchmark) return { activated: false, reason: 'No benchmark on record' };
+
+    const errors = [];
+    if (benchmark.vram_gb < ACTIVATION_MIN_VRAM_GB) {
+        errors.push('VRAM ' + benchmark.vram_gb + 'GB < minimum ' + ACTIVATION_MIN_VRAM_GB + 'GB');
+    }
+    if (benchmark.tflops < ACTIVATION_MIN_TFLOPS) {
+        errors.push('TFLOPS ' + benchmark.tflops + ' < minimum ' + ACTIVATION_MIN_TFLOPS);
+    }
+    if (errors.length > 0) {
+        return { activated: false, reason: 'Hardware below minimum: ' + errors.join('; ') };
+    }
+
+    if (provider.status === 'active') {
+        return { activated: false, reason: 'Already active' };
+    }
+
+    const tier = benchmark.tier || 'C';
+    const tierRank = { A: 0, B: 1, C: 2 };
+    const tierRankVal = tierRank[tier] !== undefined ? tierRank[tier] : 2;
+    const availableTiers = Object.keys(tierRank).filter(function(t) {
+        return (tierRank[t] !== undefined ? tierRank[t] : 2) >= tierRankVal;
+    });
+
+    const now = new Date().toISOString();
+    runStatement(
+        'UPDATE providers SET status = ?, available_gpu_tiers = ?, updated_at = ? WHERE id = ?',
+        'active', JSON.stringify(availableTiers), now, providerId
+    );
+
+    _providerEventEmitter.emit('provider.activated', {
+        provider_id: providerId,
+        tier: tier,
+        available_tiers: availableTiers,
+        vram_gb: benchmark.vram_gb,
+        tflops: benchmark.tflops,
+        gpu_model: benchmark.gpu_model,
+        activated_at: now,
+    });
+
+    console.log('[providers] Activated provider ' + providerId + ' (tier=' + tier + ', vram=' + benchmark.vram_gb + 'GB, tflops=' + benchmark.tflops + ')');
+    return { activated: true, tier: tier, available_tiers: availableTiers };
+}
+
+// ============================================================================
+// POST /api/providers/:id/benchmark-submit — Benchmark submission + activation
+// ============================================================================
+router.post('/:id/benchmark-submit', function(req, res) {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+        if (!apiKey) return res.status(401).json({ error: 'API key required' });
+
+        const provider = db.get(
+            'SELECT id, approval_status FROM providers WHERE id = ? AND api_key = ?',
+            providerId, apiKey
+        );
+        if (!provider) return res.status(401).json({ error: 'Invalid provider ID or API key' });
+
+        const body = req.body || {};
+        const gpu_model = body.gpu_model;
+        const vram_gb = body.vram_gb;
+        const tflops = body.tflops;
+        const tier = body.tier;
+        const bandwidth_gbps = body.bandwidth_gbps;
+        const tokens_per_sec = body.tokens_per_sec;
+
+        if (!gpu_model || typeof gpu_model !== 'string') {
+            return res.status(400).json({ error: 'gpu_model required (string)' });
+        }
+
+        const vramNum = parseFloat(vram_gb);
+        const tflopsNum = parseFloat(tflops);
+
+        if (isNaN(vramNum) || vramNum < 1 || vramNum > 1000) {
+            return res.status(400).json({ error: 'vram_gb must be a number between 1 and 1000' });
+        }
+        if (isNaN(tflopsNum) || tflopsNum < 1 || tflopsNum > 10000) {
+            return res.status(400).json({ error: 'tflops must be a number between 1 and 10000' });
+        }
+
+        let computedTier = tier;
+        if (!computedTier) {
+            if (tflopsNum >= 900 && vramNum >= 40) computedTier = 'A';
+            else if (tflopsNum >= 200 && vramNum >= 20) computedTier = 'B';
+            else computedTier = 'C';
+        } else if (!['A', 'B', 'C'].includes(String(computedTier))) {
+            return res.status(400).json({ error: 'tier must be A, B, or C' });
+        }
+
+        const now = new Date().toISOString();
+        const gpuModelClean = normalizeString(gpu_model, { maxLen: 255 });
+        const bwNum = parseFloat(bandwidth_gbps) || null;
+        const tpsNum = parseFloat(tokens_per_sec) || null;
+
+        ensureProviderBenchmarksTable();
+        db.prepare(
+            'INSERT INTO provider_benchmarks (provider_id, gpu_model, vram_gb, tflops, bandwidth_gbps, tokens_per_sec, tier, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(provider.id, gpuModelClean, vramNum, tflopsNum, bwNum, tpsNum, computedTier, now);
+
+        runStatement(
+            'UPDATE providers SET gpu_tier = ?, updated_at = ? WHERE id = ?',
+            computedTier, now, provider.id
+        );
+
+        let activation = null;
+        if (provider.approval_status === 'approved') {
+            activation = activateProviderById(provider.id);
+        }
+
+        const meetsMinimum = vramNum >= ACTIVATION_MIN_VRAM_GB && tflopsNum >= ACTIVATION_MIN_TFLOPS;
+
+        return res.json({
+            success: true,
+            provider_id: provider.id,
+            gpu_model: gpuModelClean,
+            tier: computedTier,
+            timestamp: now,
+            meets_minimum_requirements: meetsMinimum,
+            activation: activation
+                ? { triggered: true, activated: activation.activated, tier: activation.tier, available_tiers: activation.available_tiers, reason: activation.reason }
+                : { triggered: false, reason: provider.approval_status !== 'approved' ? 'Pending admin approval' : 'Not triggered' },
+            message: (activation && activation.activated)
+                ? 'Benchmark recorded. Provider activated to tier ' + computedTier + '.'
+                : 'Benchmark recorded (tier ' + computedTier + '). ' + (meetsMinimum ? 'Awaiting approval.' : 'Hardware below minimum requirements.'),
+        });
+    } catch (error) {
+        console.error('[providers/:id/benchmark-submit]', error);
+        return res.status(500).json({ error: 'Benchmark submission failed', details: error.message });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/:id/activate — Explicit provider activation (admin/internal)
+// ============================================================================
+router.post('/:id/activate', function(req, res) {
+    try {
+        const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
+        if (!providerId) return res.status(400).json({ error: 'Provider ID required' });
+
+        if (!isAdminRequest(req)) {
+            const apiKey = normalizeString(
+                req.headers['x-provider-key'] || getBearerToken(req),
+                { maxLen: 128, trim: false }
+            );
+            if (!apiKey) return res.status(401).json({ error: 'Admin or provider API key required' });
+            const p = db.get('SELECT id FROM providers WHERE id = ? AND api_key = ?', providerId, apiKey);
+            if (!p) return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const result = activateProviderById(providerId);
+
+        if (result.activated) {
+            return res.json({
+                success: true,
+                provider_id: providerId,
+                status: 'active',
+                tier: result.tier,
+                available_tiers: result.available_tiers,
+                message: 'Provider ' + providerId + ' activated to tier ' + result.tier,
+            });
+        } else {
+            const statusCode = result.reason === 'Provider not found' ? 404
+                : result.reason === 'No benchmark on record' ? 422
+                : result.reason === 'Already active' ? 200
+                : 422;
+            return res.status(statusCode).json({
+                success: result.reason === 'Already active',
+                provider_id: providerId,
+                activated: false,
+                reason: result.reason,
+            });
+        }
+    } catch (error) {
+        console.error('[providers/:id/activate]', error);
+        return res.status(500).json({ error: 'Activation failed', details: error.message });
+    }
+});
+
 module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
     inferVramGb,
+    activateProviderById,
+    _providerEventEmitter,
+    ACTIVATION_MIN_VRAM_GB,
+    ACTIVATION_MIN_TFLOPS,
 };
