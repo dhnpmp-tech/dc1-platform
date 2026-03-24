@@ -2552,7 +2552,7 @@ router.post('/job-result', (req, res) => {
 // Body: { tokenCount, durationMs, modelId }
 // Creates billing_record (15% platform / 85% provider), sets lifecycle_status='billed'.
 // ============================================================================
-router.post('/:id/jobs/:jobId/complete', (req, res) => {
+router.post('/:id/jobs/:jobId/complete', async (req, res) => {
     try {
         const providerId = toFiniteInt(req.params.id, { min: 1 });
         if (!providerId) return res.status(400).json({ error: 'Invalid provider id' });
@@ -2561,7 +2561,7 @@ router.post('/:id/jobs/:jobId/complete', (req, res) => {
         if (!apiKey) return res.status(401).json({ error: 'Missing API key' });
 
         const provider = db.get(
-            'SELECT id, cost_per_gpu_second_halala FROM providers WHERE api_key = ? AND id = ?',
+            'SELECT id, cost_per_gpu_second_halala, evm_wallet_address FROM providers WHERE api_key = ? AND id = ?',
             apiKey, providerId
         );
         if (!provider) return res.status(401).json({ error: 'Invalid API key or provider mismatch' });
@@ -2576,6 +2576,35 @@ router.post('/:id/jobs/:jobId/complete', (req, res) => {
             const record = db.get('SELECT * FROM billing_records WHERE job_id = ?', cleanJobId);
             return res.json({ success: true, already_billed: true, billing_record: record });
         }
+
+        // ── DCP-927: EIP-712 attestation gate ────────────────────────────────
+        const requireAttestation = process.env.REQUIRE_ATTESTATION === 'true';
+        const attestationData    = req.body?.attestationData    || null;
+        const attestationSig     = req.body?.signature || req.body?.attestationSignature || null;
+        let   attestationValid   = false;
+
+        if (attestationData && attestationSig && provider.evm_wallet_address) {
+            try {
+                const { verifyJobAttestation } = await import('../blockchain/attestation-verifier.mjs');
+                const vResult = verifyJobAttestation(attestationData, attestationSig, provider.evm_wallet_address);
+                attestationValid = vResult.valid;
+                if (!vResult.valid && requireAttestation) {
+                    return res.status(401).json({
+                        error: 'Attestation signature invalid',
+                        recovered: vResult.recoveredAddress,
+                        expected: provider.evm_wallet_address,
+                    });
+                }
+            } catch (importErr) {
+                console.warn('[providers/:id/jobs/:jobId/complete] attestation import failed:', importErr.message);
+                if (requireAttestation) {
+                    return res.status(500).json({ error: 'Attestation verification unavailable' });
+                }
+            }
+        } else if (requireAttestation && (!attestationData || !attestationSig)) {
+            return res.status(400).json({ error: 'attestationData and signature required when REQUIRE_ATTESTATION=true' });
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         const tokenCount = toFiniteInt(req.body?.tokenCount, { min: 0 }) ?? 0;
         const durationMs = toFiniteInt(req.body?.durationMs, { min: 0 }) ?? 0;
@@ -2615,9 +2644,17 @@ router.post('/:id/jobs/:jobId/complete', (req, res) => {
                 modelId, tokenCount, durationMs,
                 grossCostHalala, platformFeeHalala, providerEarningHalala, now
             );
+            // DCP-927: record attestation state on the job row
+            const newAttestStatus = attestationValid ? 'signed' : 'pending';
             db.prepare(
-                `UPDATE jobs SET lifecycle_status = 'billed', updated_at = ? WHERE job_id = ?`
-            ).run(now, cleanJobId);
+                `UPDATE jobs SET lifecycle_status = 'billed', attestation_status = ?, updated_at = ? WHERE job_id = ?`
+            ).run(newAttestStatus, now, cleanJobId);
+            // Store signature on the active serve session if present
+            if (attestationSig) {
+                db.prepare(
+                    `UPDATE serve_sessions SET attestation_signature = ? WHERE job_id = ? AND provider_id = ?`
+                ).run(attestationSig, cleanJobId, provider.id);
+            }
             if (!(job.actual_cost_halala > 0)) {
                 db.prepare(
                     `UPDATE providers SET claimable_earnings_halala = claimable_earnings_halala + ? WHERE id = ?`
@@ -2635,6 +2672,7 @@ router.post('/:id/jobs/:jobId/complete', (req, res) => {
             provider_earning_halala: providerEarningHalala,
             platform_fee_rate: PLATFORM_FEE_RATE,
             lifecycle_status: 'billed',
+            attestation_status: attestationValid ? 'signed' : 'pending',
         });
     } catch (error) {
         console.error('[providers/:id/jobs/:jobId/complete]', error);

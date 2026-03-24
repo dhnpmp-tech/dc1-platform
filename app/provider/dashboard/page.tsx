@@ -6,6 +6,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import { useLanguage } from '../../lib/i18n'
+import { StakeWidget } from '../components/StakeWidget'
 
 const API_BASE = '/api/dc1'
 
@@ -362,6 +363,8 @@ export default function ProviderEarningsDashboard() {
             )}
           </div>
         </div>
+
+        <StakeWidget />
 
         <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
           <div className="flex items-center justify-between mb-4">

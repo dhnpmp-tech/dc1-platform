@@ -965,6 +965,11 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN unstake_requested_at TEXT',
   // Stake verification flag on serve sessions -- DCP-920
   'ALTER TABLE serve_sessions ADD COLUMN stake_verified INTEGER',
+  // Job attestation signatures + on-chain record -- DCP-927 (JobAttestation.sol)
+  // attestation_status: 'pending' | 'signed' | 'on_chain' | 'failed'
+  'ALTER TABLE serve_sessions ADD COLUMN attestation_signature TEXT',
+  'ALTER TABLE jobs ADD COLUMN attestation_tx_hash TEXT',
+  "ALTER TABLE jobs ADD COLUMN attestation_status TEXT DEFAULT 'pending'",
 ];
 
 migrations.forEach(sql => {
