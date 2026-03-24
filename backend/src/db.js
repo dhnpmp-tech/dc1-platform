@@ -1563,6 +1563,7 @@ module.exports = {
   get: (sql, ...params) => db.prepare(sql).get(...flatParams(params)),
   all: (sql, ...params) => db.prepare(sql).all(...flatParams(params)),
   prepare: (sql) => db.prepare(sql),
+  transaction: (fn) => db.transaction(fn),
   close: () => db.close(),
   _db: db
 };
