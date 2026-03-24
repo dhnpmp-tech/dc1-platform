@@ -89,8 +89,22 @@ const ADMIN_ALERTS_TABLE_SQL = `
     alert_type  TEXT NOT NULL,
     job_id      TEXT,
     payload     TEXT,
-    created_at  TEXT NOT NULL
+    created_at  TEXT NOT NULL,
+    tx_hash     TEXT
   )
+`;
+// EB-M01: column migration for existing DBs (safe to run multiple times)
+const ADMIN_ALERTS_TX_HASH_COL_SQL = `ALTER TABLE admin_alerts ADD COLUMN tx_hash TEXT`;
+// EB-M01: unique indexes prevent duplicate records on cursor reset / event replay
+const PAYOUT_TX_UNIQUE_IDX_SQL = `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_tx
+  ON payout_requests(escrow_tx_hash)
+  WHERE escrow_tx_hash IS NOT NULL
+`;
+const ADMIN_ALERT_TX_UNIQUE_IDX_SQL = `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_alert_tx
+  ON admin_alerts(alert_type, tx_hash)
+  WHERE tx_hash IS NOT NULL
 `;
 
 // ── Module state ──────────────────────────────────────────────────────────────
@@ -122,6 +136,13 @@ function ensureSchema(db) {
 
   // Ensure admin_alerts table exists for DisputeRaised events.
   db.exec(ADMIN_ALERTS_TABLE_SQL);
+
+  // EB-M01: add tx_hash column to admin_alerts on existing DBs (idempotent).
+  try { db.exec(ADMIN_ALERTS_TX_HASH_COL_SQL); } catch (_) { /* column already exists */ }
+
+  // EB-M01: unique indexes prevent duplicate inserts on cursor reset / event replay.
+  db.exec(PAYOUT_TX_UNIQUE_IDX_SQL);
+  db.exec(ADMIN_ALERT_TX_UNIQUE_IDX_SQL);
 
   const row = db.prepare('SELECT id FROM escrow_listener_cursor WHERE id = 1').get();
   if (!row) {
@@ -328,8 +349,10 @@ function handlePaymentReleased(db, log, contract) {
     const amountHalala = Math.round(amountSar * 100);
     const payoutId     = randomUUID();
 
+    // EB-M01: INSERT OR IGNORE prevents duplicate payout_request on cursor reset/replay.
+    // idx_payout_tx unique index on escrow_tx_hash guarantees exactly-once semantics.
     db.prepare(`
-      INSERT INTO payout_requests
+      INSERT OR IGNORE INTO payout_requests
         (id, provider_id, amount_usd, amount_sar, amount_halala, status, requested_at, escrow_tx_hash)
       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
     `).run(payoutId, provider.id, amountUsd, amountSar, amountHalala, now, txHash);
@@ -381,11 +404,12 @@ function handleDisputeRaised(db, log, contract) {
     }
 
     // Write admin alert regardless — disputes always need ops attention.
+    // EB-M01: INSERT OR IGNORE on (alert_type, tx_hash) prevents duplicate alerts on replay.
     const alertId = randomUUID();
     const payload = JSON.stringify({ jobId32, renter: renterAddr, txHash, matchedJobId });
     db.prepare(
-      'INSERT INTO admin_alerts (id, alert_type, job_id, payload, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).run(alertId, 'dispute_raised', matchedJobId, payload, now);
+      'INSERT OR IGNORE INTO admin_alerts (id, alert_type, job_id, payload, created_at, tx_hash) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(alertId, 'dispute_raised', matchedJobId, payload, now, txHash);
 
     console.log(`[escrow-listener] DisputeRaised: alert=${alertId} renter=${renterAddr} tx=${txHash}`);
   } catch (err) {
