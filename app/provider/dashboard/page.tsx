@@ -6,6 +6,8 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
 import { useLanguage } from '../../lib/i18n'
+import ProviderActivationBanner from '../components/ProviderActivationBanner'
+import EarningsEstimate from '../components/EarningsEstimate'
 
 const API_BASE = '/api/dc1'
 
@@ -269,6 +271,14 @@ export default function ProviderEarningsDashboard() {
           <Link href="/provider/earnings" className="text-sm text-dc1-amber hover:underline">Full earnings report →</Link>
         </div>
 
+        {/* Activation banner — shown to registered-but-inactive providers */}
+        {!isOnline && metrics?.jobsCompleted === 0 && (
+          <ProviderActivationBanner
+            gpuModel={provider.gpuModel !== 'Unknown GPU' ? provider.gpuModel : undefined}
+            onActivated={loadData}
+          />
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Total Jobs Served" value={metrics?.jobsCompleted ?? 0} />
           <StatCard label="Avg Job Duration" value={metrics ? `${metrics.avgJobDurationMinutes.toFixed(1)} min` : '—'} />
@@ -286,6 +296,9 @@ export default function ProviderEarningsDashboard() {
                 </span>
                 {provider.isPaused && (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-status-warning/20 text-status-warning border border-status-warning/30">Paused</span>
+                )}
+                {!isOnline && !provider.isPaused && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-dc1-surface-l3 text-dc1-text-muted border border-dc1-border">Inactive</span>
                 )}
               </div>
               <p className="text-dc1-text-secondary text-sm truncate">{provider.gpuModel}</p>
@@ -362,6 +375,11 @@ export default function ProviderEarningsDashboard() {
             )}
           </div>
         </div>
+
+        {/* Earnings estimate for inactive providers */}
+        {!isOnline && (
+          <EarningsEstimate gpuModel={provider.gpuModel !== 'Unknown GPU' ? provider.gpuModel : undefined} />
+        )}
 
         <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
           <div className="flex items-center justify-between mb-4">
