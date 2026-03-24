@@ -18,6 +18,7 @@ const { validateWebhookUrl, validateWebhookUrlValue } = require('../middleware/v
 const { validateBody } = require('../middleware/validate');
 const { renterRegisterSchema, renterTopupSchema } = require('../schemas/topup.schema');
 const { getBearerToken } = require('../middleware/auth');
+const analytics = require('../services/analyticsService');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -270,16 +271,21 @@ router.post('/register', validateBody(renterRegisterSchema), (req, res) => {
       cleanName, cleanEmail, api_key, cleanOrg || null, cleanUseCase || null, cleanPhone || null, now
     );
 
+    const renterId = result.lastInsertRowid;
     res.status(201).json({
       success: true,
-      renter_id: result.lastInsertRowid,
+      renter_id: renterId,
       api_key,
       message: `Welcome ${cleanName}! Save your API key — it won't be shown again.`
     });
 
-    // Fire-and-forget welcome email — does not affect registration response
+    // Fire-and-forget: welcome email + analytics
     sendWelcomeEmail(cleanEmail, cleanName, api_key, 'renter')
       .catch((e) => console.error('[renters.register] welcome email failed:', e.message));
+    analytics.renter.signupComplete(renterId, {
+      organization: cleanOrg || null,
+      use_case: cleanUseCase || null,
+    }).catch(() => {});
   } catch (error) {
     if (error.message && error.message.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'A renter with this email already exists' });
@@ -906,6 +912,7 @@ router.post('/verify-otp', loginEmailLimiter, async (req, res) => {
         total_jobs: renter.total_jobs,
       }
     });
+    analytics.renter.login(renter.id, { method: 'otp' }).catch(() => {});
   } catch (error) {
     console.error('Renter OTP verify error:', error);
     res.status(500).json({ error: 'Verification failed' });

@@ -369,6 +369,12 @@ app.use('/api/', generalLimiter);
 // Static HTML files (provider-onboarding.html, admin.html, docs.html) removed.
 // All frontend is served by Next.js on Vercel (dcp.sa).
 
+// ── Analytics Latency Middleware (DCP-935) ──────────────────────────────
+// Fire-and-forget API latency events to Segment for authenticated requests.
+// Must be registered BEFORE route handlers so res.json is wrapped in time.
+const analyticsService = require('./services/analyticsService');
+app.use(analyticsService.latencyMiddleware);
+
 // Serve installer files for download (daemon binaries — still needed)
 app.use('/installers', express.static(path.join(__dirname, '..', 'installers')));
 

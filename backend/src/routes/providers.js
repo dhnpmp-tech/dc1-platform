@@ -37,6 +37,7 @@ const {
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 const { validateBody } = require('../middleware/validate');
 const { providerRegisterSchema, providerBenchmarkSchema } = require('../schemas/providers.schema');
+const analytics = require('../services/analyticsService');
 
 function flattenRunParams(params) {
     if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -356,9 +357,13 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             message: `Welcome ${cleanName}! Your API key is ready. Download the installer to get started.`
         });
 
-        // Fire-and-forget welcome email — does not affect registration response
+        // Fire-and-forget: welcome email + analytics
         sendWelcomeEmail(cleanEmail, cleanName, api_key, 'provider')
             .catch((e) => console.error('[providers.register] welcome email failed:', e.message));
+        analytics.provider.signupComplete(result.lastInsertRowid, {
+            gpu_model: cleanGpuModel,
+            os: cleanOs,
+        }).catch(() => {});
         
     } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
