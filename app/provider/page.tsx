@@ -8,6 +8,7 @@ import StatusBadge from '../components/ui/StatusBadge'
 import StatCard from '../components/ui/StatCard'
 import { useLanguage } from '../lib/i18n'
 import ProviderWizard from './components/ProviderWizard'
+import ProviderActivationCard from './components/ProviderActivationCard'
 
 interface ProviderData {
   id: string
@@ -466,6 +467,20 @@ export default function ProviderDashboard() {
             </Link>
           </div>
         </div>
+
+        {/* Provider activation onboarding — DCP-679 3-screen flow */}
+        {providerData.status === 'offline' && providerData.jobsCompleted === 0 && !providerData.lastHeartbeat && (
+          <ProviderActivationCard
+            providerId={providerData.id}
+            apiKey={providerApiKey}
+            onComplete={() => {
+              setProviderData((prev) => {
+                if (!prev) return prev
+                return { ...prev, lastHeartbeat: new Date().toISOString() }
+              })
+            }}
+          />
+        )}
 
         {latestDaemon && (
           daemonNeedsUpdate ? (
