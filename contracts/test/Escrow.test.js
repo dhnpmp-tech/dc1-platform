@@ -481,6 +481,42 @@ describe("Escrow", function () {
       );
     });
 
+    // ── Cross-job signature replay ──────────────────────────────────────────────
+    // Proves that an oracle proof signed for job-A cannot be used to claim job-B,
+    // even when provider and amount are identical. The EIP-712 digest encodes jobId,
+    // so the recovered signer will not match the oracle for a mismatched jobId.
+    it("oracle proof signed for job-A cannot claim job-B (cross-job replay)", async function () {
+      const JOB_B = ethers.keccak256(ethers.toUtf8Bytes("dc1-job-002"));
+      const expiryB = (await time.latest()) + ONE_HOUR;
+
+      // Deposit a second job with same provider/amount
+      await usdc.mint(renter.address, AMOUNT);
+      await escrow
+        .connect(renter)
+        .depositAndLock(JOB_B, provider.address, AMOUNT, expiryB);
+
+      // Sign a proof specifically for JOB_B but attempt to use it for JOB_ID
+      const proofForB = await oracleSign(JOB_B, provider.address, AMOUNT, oracle);
+      await expect(
+        escrow.connect(provider).claimLock(JOB_ID, proofForB)
+      ).to.be.revertedWith("Invalid oracle proof");
+    });
+
+    // ── Burn-to-zero then attempt deposit (insufficient balance) ────────────────
+    // Verifies MockUSDC.burn() works and that ERC-20 safeTransferFrom
+    // rejects when the renter's balance is insufficient.
+    it("deposit fails when renter balance burned to zero", async function () {
+      const currentBalance = await usdc.balanceOf(renter.address);
+      await usdc.burn(renter.address, currentBalance);
+      expect(await usdc.balanceOf(renter.address)).to.equal(0);
+
+      const newJobId = ethers.keccak256(ethers.toUtf8Bytes("dc1-job-burn-test"));
+      const expiry = (await time.latest()) + ONE_HOUR;
+      await expect(
+        escrow.connect(renter).depositAndLock(newJobId, provider.address, AMOUNT, expiry)
+      ).to.be.reverted;
+    });
+
     // ── Only renter (or relayer/owner) can cancel ───────────────────────────────
     it("only renter, relayer, or owner can cancel an expired lock", async function () {
       await time.increaseTo(expiry + 1);

@@ -16,6 +16,11 @@ contract MockUSDC is ERC20 {
         _mint(to, amount);
     }
 
+    /// @notice Anyone can burn their own tokens — for testing insufficient-balance scenarios
+    function burn(address from, uint256 amount) external {
+        _burn(from, amount);
+    }
+
     function decimals() public pure override returns (uint8) {
         return 6;
     }
