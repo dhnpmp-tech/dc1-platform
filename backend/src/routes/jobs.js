@@ -4112,6 +4112,26 @@ router.get('/', requireRenter, (req, res) => {
   }
 });
 
+// In-memory idempotency cache for POST /api/jobs — keyed by "renterId:idempotency_key"
+// Entries expire after 5 minutes. This is sufficient for Phase 1 single-process deployments.
+const _jobIdempotencyCache = new Map();
+const JOB_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+function _pruneJobIdempotencyCache() {
+  const now = Date.now();
+  for (const [k, v] of _jobIdempotencyCache) {
+    if (now - v.ts > JOB_IDEMPOTENCY_TTL_MS) _jobIdempotencyCache.delete(k);
+  }
+}
+
+// List available docker template IDs for error messages
+function getAvailableTemplateIds() {
+  try {
+    return require('fs').readdirSync(DOCKER_TEMPLATES_DIR)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => f.replace(/\.json$/, ''));
+  } catch { return []; }
+}
+
 /**
  * POST /api/jobs
  * Simplified job submission using the credit-hold dispatch pipeline.
@@ -4131,11 +4151,39 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
       template_id: reqTemplateId,
     } = req.body;
 
+    // ── Idempotency deduplication ────────────────────────────────────────────
+    const idempotencyKey = req.headers['x-idempotency-key'];
+    if (idempotencyKey) {
+      _pruneJobIdempotencyCache();
+      const cacheKey = `${req.renter.id}:${String(idempotencyKey).slice(0, 128)}`;
+      const cached = _jobIdempotencyCache.get(cacheKey);
+      if (cached) {
+        return res.status(200).json({ ...cached.body, idempotent: true });
+      }
+    }
+
+    // ── Provider availability check ──────────────────────────────────────────
+    const onlineProviderCount = db.prepare(
+      `SELECT COUNT(*) AS count FROM providers WHERE status = 'online'`
+    ).get()?.count || 0;
+    if (onlineProviderCount === 0) {
+      return res.status(503).json({
+        error: 'No providers are currently online. Your job cannot be dispatched at this time.',
+        code: 'NO_PROVIDERS_AVAILABLE',
+        retry_after_seconds: 60,
+      });
+    }
+
     let resolvedTemplate = null;
     if (reqTemplateId) {
       resolvedTemplate = loadDockerTemplate(reqTemplateId);
       if (!resolvedTemplate) {
-        return res.status(404).json({ error: `Template '${reqTemplateId}' not found` });
+        const available = getAvailableTemplateIds();
+        return res.status(400).json({
+          error: `Template '${reqTemplateId}' not found`,
+          code: 'INVALID_TEMPLATE_ID',
+          available_templates: available,
+        });
       }
     }
 
@@ -4203,7 +4251,7 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
     );
 
     const job = db.get('SELECT * FROM jobs WHERE job_id = ?', job_id);
-    return res.status(201).json({
+    const responseBody = {
       success: true,
       job: {
         job_id: job.job_id,
@@ -4225,7 +4273,19 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
           ? { id: dispatchResult.provider.id, name: dispatchResult.provider.name }
           : null,
       },
-    });
+    };
+
+    // Cache for idempotency deduplication
+    if (idempotencyKey) {
+      const cacheKey = `${req.renter.id}:${String(idempotencyKey).slice(0, 128)}`;
+      _jobIdempotencyCache.set(cacheKey, { body: responseBody, ts: Date.now() });
+    }
+
+    // X-RateLimit-Remaining for clients using legacy header format
+    const rlRemaining = req.rateLimit?.remaining;
+    if (rlRemaining != null) res.setHeader('X-RateLimit-Remaining', String(rlRemaining));
+
+    return res.status(201).json(responseBody);
   } catch (err) {
     if (err.code === 'INSUFFICIENT_CREDITS') {
       return res.status(402).json({
@@ -4233,10 +4293,11 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
         available_halala: err.available,
         required_halala: err.required,
         shortfall_halala: err.shortfall,
+        docs: 'POST /api/renters/topup to add balance',
       });
     }
     console.error('[POST /api/jobs] dispatch error:', err);
-    res.status(500).json({ error: 'Job dispatch failed' });
+    res.status(500).json({ error: 'Job dispatch failed', code: 'DISPATCH_ERROR' });
   }
 });
 

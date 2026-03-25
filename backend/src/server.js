@@ -600,6 +600,92 @@ app.get('/api/health', (req, res) => {
   }
 });
 
+// Detailed health check — used by monitoring agents and QA during Phase 1
+app.get('/api/health/detailed', (req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    const sweep = getSweepMetrics();
+    const now24hAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const providersRegistered = db.prepare(
+      `SELECT COUNT(*) AS count FROM providers`
+    ).get()?.count || 0;
+
+    const providersOnline = db.prepare(
+      `SELECT COUNT(*) AS count FROM providers WHERE status = 'online'`
+    ).get()?.count || 0;
+
+    const jobsQueued = db.prepare(
+      `SELECT COUNT(*) AS count FROM jobs WHERE status = 'queued'`
+    ).get()?.count || 0;
+
+    const jobsRunning = db.prepare(
+      `SELECT COUNT(*) AS count FROM jobs WHERE status IN ('assigned','pulling','running')`
+    ).get()?.count || 0;
+
+    const jobsCompleted24h = db.prepare(
+      `SELECT COUNT(*) AS count FROM jobs WHERE status = 'completed' AND updated_at >= ?`
+    ).get(now24hAgo)?.count || 0;
+
+    const jobsFailed24h = db.prepare(
+      `SELECT COUNT(*) AS count FROM jobs WHERE status = 'failed' AND updated_at >= ?`
+    ).get(now24hAgo)?.count || 0;
+
+    // Models: count from arabic-portfolio.json
+    let modelCatalogCount = 0;
+    try {
+      const portfolioPath = require('path').join(__dirname, '../../../infra/config/arabic-portfolio.json');
+      const portfolio = JSON.parse(require('fs').readFileSync(portfolioPath, 'utf8'));
+      modelCatalogCount = Array.isArray(portfolio) ? portfolio.length
+        : Array.isArray(portfolio?.models) ? portfolio.models.length : 0;
+    } catch { /* portfolio file unavailable */ }
+
+    // Templates: count .json files in docker-templates
+    let templateCount = 0;
+    try {
+      const templatesDir = require('path').join(__dirname, '../../../docker-templates');
+      templateCount = require('fs').readdirSync(templatesDir)
+        .filter((f) => f.endsWith('.json')).length;
+    } catch { /* templates dir unavailable */ }
+
+    // Metering: last token record and 24h total from serve_sessions
+    let lastTokenRecordAt = null;
+    let totalTokens24h = 0;
+    try {
+      const lastSession = db.prepare(
+        `SELECT last_inference_at FROM serve_sessions WHERE last_inference_at IS NOT NULL ORDER BY last_inference_at DESC LIMIT 1`
+      ).get();
+      lastTokenRecordAt = lastSession?.last_inference_at || null;
+
+      const tokens24h = db.prepare(
+        `SELECT COALESCE(SUM(total_tokens), 0) AS total FROM serve_sessions WHERE updated_at >= ?`
+      ).get(now24hAgo);
+      totalTokens24h = tokens24h?.total || 0;
+    } catch { /* serve_sessions unavailable */ }
+
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime_seconds: Math.floor(process.uptime()),
+      db: 'ok',
+      providers: { registered: providersRegistered, online: providersOnline },
+      jobs: {
+        queued: jobsQueued,
+        running: jobsRunning,
+        completed_24h: jobsCompleted24h,
+        failed_24h: jobsFailed24h,
+      },
+      models: { catalog_count: modelCatalogCount },
+      templates: { count: templateCount },
+      metering: { last_token_record_at: lastTokenRecordAt, total_tokens_24h: totalTokens24h },
+      sweep,
+    });
+  } catch (err) {
+    console.error('[health/detailed] Failed to run health checks:', err?.message || err);
+    res.status(500).json({ error: 'Health check failed' });
+  }
+});
+
 // Public daemon latest-version endpoint (no auth required)
 app.get('/api/daemon/latest-version', (req, res) => {
   const latestVersion = getLatestDaemonVersion();
