@@ -558,23 +558,38 @@ def _resolve_download_url(download_url):
     return None
 
 def get_gpu_info():
-    """Return raw nvidia-smi output for heartbeat diagnostics."""
+    """Return GPU info as a dict for the heartbeat payload.
+
+    The backend validates that gpu_info is a plain object, so we must
+    always return a dict — never a bare string.
+    """
     try:
         result = subprocess.run(
-            ["nvidia-smi"],
+            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+             "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
             timeout=5,
         )
-        output = (result.stdout or result.stderr or "").strip()
-        if not output:
-            return "nvidia-smi produced no output"
-        # Keep payload size bounded while preserving the core diagnostics.
-        return output[:16000]
+        output = (result.stdout or "").strip()
+        if output:
+            parts = [p.strip() for p in output.split(",")]
+            return {
+                "gpu_name": parts[0] if len(parts) > 0 else None,
+                "vram_mb": int(float(parts[1])) if len(parts) > 1 and parts[1] else None,
+                "driver_version": parts[2] if len(parts) > 2 else None,
+                "cuda_version": None,
+            }
+        # nvidia-smi present but returned nothing useful
+        raw = (result.stderr or "").strip()[:2000]
+        return {"gpu_name": None, "vram_mb": None, "driver_version": None,
+                "cuda_version": None, "raw": raw or "nvidia-smi produced no output"}
     except FileNotFoundError:
-        return "nvidia-smi not found"
+        return {"gpu_name": "CPU only", "vram_mb": 0, "driver_version": None,
+                "cuda_version": None}
     except Exception as e:
-        return f"nvidia-smi unavailable: {e}"
+        return {"gpu_name": None, "vram_mb": None, "driver_version": None,
+                "cuda_version": None, "error": str(e)[:500]}
 
 def check_for_update():
     """Check if a newer daemon version is available and self-update."""
