@@ -61,6 +61,8 @@ interface ModelListItem {
   tier?: string | null
   prewarm_class?: string | null
   template_id?: string | null
+  arabic_capability?: boolean   // authoritative Arabic flag from DCP-950
+  arabic?: boolean              // alias returned by GET /api/dc1/models
 }
 
 interface DeployState {
@@ -79,10 +81,15 @@ const VAST_AI_SAR_PER_HR_FALLBACK = 1.31  // RTX 4090 baseline; shown when API h
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isArabicModel(model: ModelListItem): boolean {
+  // Prefer authoritative backend flag (added in DCP-950)
+  if (model.arabic_capability != null) return model.arabic_capability
+  if (model.arabic != null) return model.arabic
+  // Client-side fallback for older API responses
   const id = model.model_id?.toLowerCase() ?? ''
   const family = model.family?.toLowerCase() ?? ''
   return (
     id.includes('allam') || id.includes('jais') || id.includes('arabic') ||
+    id.includes('falcon-h1') || id.includes('falcon_h1') ||
     family.includes('arabic') || family.includes('allam') || family.includes('jais') ||
     (model.use_cases ?? []).some(u => u.toLowerCase().includes('arabic'))
   )
