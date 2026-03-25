@@ -84,7 +84,7 @@ export default function SimpleMdxRenderer({ source }: SimpleMdxRendererProps) {
       }
       const code = codeLines.join('\n')
       blocks.push(
-        <pre key={`pre-${key++}`}>
+        <pre key={`pre-${key++}`} className="max-w-full overflow-x-auto whitespace-pre-wrap break-words">
           <code
             className={`language-${language || 'text'} hljs`}
             dangerouslySetInnerHTML={{ __html: highlightCode(code, language) }}

@@ -25,6 +25,22 @@
   html, body {
     width: 100%;
     min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Mobile-safe code blocks: prevent horizontal viewport overflow */
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+    word-break: break-word;
+  }
+
+  @media (max-width: 640px) {
+    pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
   }
 
   /* Scrollbar Styling */
@@ -206,7 +222,7 @@
 
   /* Card styles */
   .card {
-    @apply bg-dc1-surface-l1 border border-dc1-border rounded-lg p-6 transition-all duration-200;
+    @apply bg-dc1-surface-l1 border border-dc1-border rounded-lg p-6 transition-all duration-200 overflow-hidden;
   }
 
   .card-hover {
@@ -408,7 +424,9 @@
 }
 
 .docs-mdx pre {
-  @apply mb-5 overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4;
+  @apply mb-5 overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4 max-w-full;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .docs-mdx pre code {

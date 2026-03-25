@@ -444,7 +444,7 @@ export default function ApiDocsPage() {
           <div className="mt-5">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-dc1-text-muted">Response</p>
             <p className="mt-1 text-sm text-dc1-text-secondary">{statusLine || 'No response yet.'}</p>
-            <pre className="mt-2 overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary">
+            <pre className="mt-2 overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary max-w-full whitespace-pre-wrap break-words">
               {result || '// Execute a request to view response payload.'}
             </pre>
           </div>
@@ -472,7 +472,7 @@ export default function ApiDocsPage() {
                   {endpoint.requestExample && (
                     <div className="mt-4">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-dc1-text-muted">Example Request</p>
-                      <pre className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary">
+                      <pre className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary max-w-full whitespace-pre-wrap break-words">
                         {endpoint.requestExample}
                       </pre>
                     </div>
@@ -480,7 +480,7 @@ export default function ApiDocsPage() {
 
                   <div className="mt-4">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-dc1-text-muted">Example Response</p>
-                    <pre className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary">
+                    <pre className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 text-xs text-dc1-text-secondary max-w-full whitespace-pre-wrap break-words">
                       {endpoint.responseExample}
                     </pre>
                   </div>

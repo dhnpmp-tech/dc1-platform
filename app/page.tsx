@@ -835,7 +835,7 @@ export default function HomePage() {
                   <h3 className="text-base font-semibold text-dc1-text-primary mb-1">{item.title}</h3>
                   <p className="text-sm text-dc1-text-secondary mb-2">{item.desc}</p>
                   {item.code && (
-                    <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto">
+                    <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto max-w-full whitespace-pre-wrap break-all">
                       {item.code}
                     </pre>
                   )}
@@ -852,7 +852,7 @@ Invoke-WebRequest \`
 .\\setup.ps1`}</pre>
             <div className="mt-4 pt-4 border-t border-dc1-border">
               <p className="text-xs text-dc1-text-muted mb-2">After install, your terminal shows:</p>
-              <pre className="text-xs text-green-400 font-mono leading-relaxed">{`✓ GPU detected: RTX 4090 (24 GB)
+              <pre className="text-xs text-green-400 font-mono leading-relaxed whitespace-pre-wrap break-words max-w-full">{`✓ GPU detected: RTX 4090 (24 GB)
 ✓ Daemon connected and reporting heartbeat
 ✓ Connected to DCP — heartbeat active for compatible workload routing`}</pre>
             </div>
@@ -997,11 +997,11 @@ Invoke-WebRequest \`
               <div className="space-y-3">
                 <div>
                   <p className="text-xs text-dc1-text-muted font-mono mb-1"># Python — provider SDK</p>
-                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono"># Check the latest SDK package name in /docs/sdk-guides</pre>
+                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono max-w-full overflow-x-auto whitespace-pre-wrap"># Check the latest SDK package name in /docs/sdk-guides</pre>
                 </div>
                 <div>
                   <p className="text-xs text-dc1-text-muted font-mono mb-1"># Node.js — renter SDK</p>
-                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono"># Check the latest SDK package name in /docs/sdk-guides</pre>
+                  <pre className="bg-dc1-surface-l2 rounded px-3 py-2 border border-dc1-border text-xs text-dc1-amber font-mono max-w-full overflow-x-auto whitespace-pre-wrap"># Check the latest SDK package name in /docs/sdk-guides</pre>
                 </div>
               </div>
               <div className="border-t border-dc1-border pt-4">
@@ -1067,7 +1067,7 @@ provider.start()  # initialize, heartbeat, and run assigned container workloads`
   }'`}</pre>
             <div className="mt-4 pt-4 border-t border-dc1-border">
               <p className="text-xs text-dc1-text-muted mb-2">Response:</p>
-              <pre className="text-xs text-green-400 font-mono leading-relaxed">{`{
+              <pre className="text-xs text-green-400 font-mono leading-relaxed whitespace-pre-wrap break-words max-w-full">{`{
   "job_id": "job-abc123",
   "status": "queued",
   "status_detail": "queued"

@@ -177,7 +177,7 @@ export default function RenterGuidePage() {
                   {step.output && (
                     <div>
                       <p className="text-xs text-dc1-text-muted font-mono mb-2 uppercase tracking-wider">Terminal output</p>
-                      <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-green-400 font-mono">
+                      <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-green-400 font-mono max-w-full whitespace-pre-wrap break-words">
                         {step.output}
                       </pre>
                     </div>
@@ -204,7 +204,7 @@ export default function RenterGuidePage() {
                 <p className="text-dc1-text-secondary mb-6 max-w-2xl leading-relaxed">
                   {t('rg.vscode_desc')}
                 </p>
-                <pre className="bg-dc1-surface-l2 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto mb-4">
+                <pre className="bg-dc1-surface-l2 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto mb-4 max-w-full whitespace-pre-wrap break-words">
                   {VSCODE_SHORTCUT}
                 </pre>
                 <Link

@@ -335,7 +335,7 @@ export default function ProviderGuidePage() {
                           </button>
                         ))}
                       </div>
-                      <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto">
+                      <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto max-w-full whitespace-pre-wrap break-words">
                         {getTab(idx) === 'linux' ? step.code.linux : step.code.windows}
                       </pre>
                     </div>
@@ -344,7 +344,7 @@ export default function ProviderGuidePage() {
                   {step.output && (
                     <div>
                       <p className="text-xs text-dc1-text-muted font-mono mb-2 uppercase tracking-wider">Expected output</p>
-                      <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-green-400 font-mono overflow-x-auto">
+                      <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-green-400 font-mono overflow-x-auto max-w-full whitespace-pre-wrap break-words">
                         {step.output}
                       </pre>
                     </div>
@@ -372,7 +372,7 @@ export default function ProviderGuidePage() {
               >
                 <h3 className="text-base font-semibold text-dc1-text-primary mb-2">{item.status}</h3>
                 <p className="text-sm text-dc1-text-secondary leading-relaxed mb-3">{item.action}</p>
-                <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto">
+                <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto max-w-full whitespace-pre-wrap break-words">
                   {item.command}
                 </pre>
               </article>
