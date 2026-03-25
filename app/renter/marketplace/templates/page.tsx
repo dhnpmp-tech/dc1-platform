@@ -38,6 +38,16 @@ const GearIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 )
+const PlaygroundIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </svg>
+)
+const ChartIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+  </svg>
+)
 
 // ── Template data (static — loaded from docker-templates/*.json at build/runtime) ──
 // These match the files in docker-templates/ exactly.
@@ -616,12 +626,14 @@ export default function TemplateCatalogPage() {
   const [deploy, setDeploy] = useState<DeployModalState>({ template: null, loading: false, error: '', jobId: null })
 
   const navItems = [
-    { label: t('nav.dashboard') || 'Dashboard', href: '/renter', icon: <HomeIcon /> },
-    { label: t('nav.marketplace') || 'Marketplace', href: '/renter/marketplace', icon: <MarketplaceIcon /> },
+    { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
+    { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
     { label: 'Models', href: '/renter/models', icon: <ModelsIcon /> },
-    { label: t('nav.jobs') || 'Jobs', href: '/renter/jobs', icon: <JobsIcon /> },
-    { label: t('nav.billing') || 'Billing', href: '/renter/billing', icon: <BillingIcon /> },
-    { label: t('nav.settings') || 'Settings', href: '/renter/settings', icon: <GearIcon /> },
+    { label: t('nav.playground'), href: '/renter/playground', icon: <PlaygroundIcon /> },
+    { label: t('nav.jobs'), href: '/renter/jobs', icon: <JobsIcon /> },
+    { label: t('nav.billing'), href: '/renter/billing', icon: <BillingIcon /> },
+    { label: t('nav.analytics'), href: '/renter/analytics', icon: <ChartIcon /> },
+    { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
 
   const filtered = useMemo(() => {
