@@ -430,6 +430,60 @@ export default function ProviderDashboard() {
           </div>
         )}
 
+        {/* Activate Your GPU banner — shown when approved but offline (DCP-963) */}
+        {providerData.approvalStatus === 'approved' && providerData.status === 'offline' && (
+          <div className="rounded-2xl border-2 border-dc1-amber/50 bg-gradient-to-br from-dc1-amber/10 to-dc1-amber/5 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-start gap-5">
+              <div className="text-4xl select-none">⚡</div>
+              <div className="flex-1 space-y-4">
+                <div>
+                  <h2 className="text-lg font-bold text-dc1-amber">Activate Your GPU — Start Earning</h2>
+                  <p className="text-sm text-dc1-text-secondary mt-1">
+                    Your GPU is registered but not yet online. Complete 3 quick steps to start accepting jobs and earning SAR.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Link
+                    href="/provider/download"
+                    className="flex items-start gap-3 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l2 px-4 py-3 hover:border-dc1-amber/60 transition-colors group"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm group-hover:bg-dc1-amber/30 transition-colors">1</span>
+                    <div>
+                      <p className="text-sm font-semibold text-dc1-text-primary">Connect Endpoint</p>
+                      <p className="text-xs text-dc1-text-muted mt-0.5">Download & run the DCP daemon on your GPU machine</p>
+                    </div>
+                  </Link>
+                  <Link
+                    href="/provider/gpu"
+                    className="flex items-start gap-3 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l2 px-4 py-3 hover:border-dc1-amber/60 transition-colors group"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm group-hover:bg-dc1-amber/30 transition-colors">2</span>
+                    <div>
+                      <p className="text-sm font-semibold text-dc1-text-primary">Verify Heartbeat</p>
+                      <p className="text-xs text-dc1-text-muted mt-0.5">Confirm your GPU is sending live heartbeats to DCP</p>
+                    </div>
+                  </Link>
+                  <div className="flex items-start gap-3 rounded-xl border border-dc1-border bg-dc1-surface-l2 px-4 py-3 opacity-60">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-dc1-surface-l3 text-dc1-text-muted font-bold text-sm">3</span>
+                    <div>
+                      <p className="text-sm font-semibold text-dc1-text-secondary">Go Live</p>
+                      <p className="text-xs text-dc1-text-muted mt-0.5">Status turns online automatically once heartbeat is confirmed</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Link href="/provider/download" className="btn btn-primary btn-sm">
+                    Download Daemon →
+                  </Link>
+                  <a href="https://docs.dcp.sa/provider/quickstart" target="_blank" rel="noopener noreferrer" className="text-sm text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80">
+                    Provider Quickstart Guide
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Page Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">{t('provider.dashboard')}</h1>
