@@ -429,6 +429,9 @@ app.use('/api/support', supportRouter);
 const modelsRouter = require('./routes/models');
 app.use('/api/models', modelsRouter);
 
+const pricingRouter = require('./routes/pricing');
+app.use('/api/pricing', pricingRouter);
+
 const vllmRouter = require('./routes/vllm');
 app.use('/api/vllm', vllmRouter);
 
