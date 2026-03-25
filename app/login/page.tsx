@@ -86,11 +86,14 @@ function LoginPageInner() {
 
   const normalizeAuthError = (status: number, rawError: string, fallback: string) => {
     const lower = rawError.toLowerCase()
+    if (lower.includes('token') || lower.includes('otp') || lower.includes('code') || lower.includes('verification')) {
+      return t('login.error.invalid_or_expired_code')
+    }
     if (status === 401 || status === 403) {
-      if (lower.includes('expired') || lower.includes('session')) return t('auth.error.expired_session')
+      if (lower.includes('session')) return t('auth.error.expired_session')
       return t('auth.error.invalid_credentials')
     }
-    if (lower.includes('expired') || lower.includes('session')) return t('auth.error.expired_session')
+    if (lower.includes('session')) return t('auth.error.expired_session')
     return rawError || fallback
   }
 
