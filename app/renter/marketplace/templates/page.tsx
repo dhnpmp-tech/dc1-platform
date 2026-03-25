@@ -713,14 +713,13 @@ export default function TemplateCatalogPage() {
     const apiKey = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key') || ''
     setDeploy(d => ({ ...d, loading: true, error: '' }))
     try {
-      const res = await fetch('/api/dc1/jobs/from-template', {
+      const res = await fetch(`/api/dc1/templates/${encodeURIComponent(tmpl.id)}/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
-        body: JSON.stringify({ template_id: tmpl.id }),
+        body: JSON.stringify({ duration_minutes: 60 }),
       })
-      if (res.status === 404) {
-        // Backend not yet wired — redirect to playground with model prefilled
-        router.push(`/renter/playground?template=${encodeURIComponent(tmpl.id)}`)
+      if (res.status === 503) {
+        setDeploy(d => ({ ...d, loading: false, error: 'No GPU provider available right now. Please try again shortly.' }))
         return
       }
       if (res.status === 402) {
@@ -733,7 +732,7 @@ export default function TemplateCatalogPage() {
         return
       }
       const data = await res.json()
-      const jobId = data.job_id || data.id || 'submitted'
+      const jobId = data.jobId || data.job_id || data.id || 'submitted'
       setDeploy(d => ({ ...d, loading: false, jobId }))
     } catch {
       setDeploy(d => ({ ...d, loading: false, error: 'Network error. Please try again.' }))
