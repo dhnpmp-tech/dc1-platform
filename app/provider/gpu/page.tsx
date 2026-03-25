@@ -220,6 +220,7 @@ export default function ProviderGpuMetrics() {
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [providerName, setProviderName] = useState('Provider')
   const navItems = [
     { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
     { label: t('nav.jobs'), href: '/provider/jobs', icon: <LightningIcon /> },
@@ -262,6 +263,14 @@ export default function ProviderGpuMetrics() {
   useEffect(() => {
     setLoading(true)
     fetchMetrics(timeRange)
+    // Fetch provider name
+    const key = getProviderKey()
+    if (key) {
+      fetch(`${getApiBase()}/providers/me?key=${encodeURIComponent(key)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data?.name) setProviderName(data.name) })
+        .catch(() => {})
+    }
     const interval = setInterval(() => fetchMetrics(timeRange), 30_000)
     return () => clearInterval(interval)
   }, [fetchMetrics, timeRange])
@@ -300,7 +309,7 @@ export default function ProviderGpuMetrics() {
 
   if (loading) {
     return (
-      <DashboardLayout navItems={navItems} role="provider" userName="Provider">
+      <DashboardLayout navItems={navItems} role="provider" userName={providerName}>
         <div className="space-y-6">
           <div className="h-8 w-48 bg-dc1-surface-l2 rounded skeleton" />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -312,7 +321,7 @@ export default function ProviderGpuMetrics() {
   }
 
   return (
-    <DashboardLayout navItems={navItems} role="provider" userName="Provider">
+    <DashboardLayout navItems={navItems} role="provider" userName={providerName}>
       <div className="space-y-8">
 
         {/* Header */}

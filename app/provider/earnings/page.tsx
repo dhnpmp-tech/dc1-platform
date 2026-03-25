@@ -236,14 +236,6 @@ function EarningsTrendChart({ data, isRTL }: { data: TrendPoint[]; isRTL: boolea
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-const navItems = [
-  { label: 'Dashboard', href: '/provider', icon: <HomeIcon /> },
-  { label: 'Jobs', href: '/provider/jobs', icon: <LightningIcon /> },
-  { label: 'Earnings', href: '/provider/earnings', icon: <CurrencyIcon /> },
-  { label: 'GPU Metrics', href: '/provider/gpu', icon: <GpuIcon /> },
-  { label: 'Settings', href: '/provider/settings', icon: <GearIcon /> },
-]
-
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between">
@@ -276,6 +268,13 @@ function statusLabel(status: Withdrawal['status']): string {
 export default function EarningsPage() {
   const router = useRouter()
   const { t, isRTL } = useLanguage()
+  const navItems = [
+    { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
+    { label: t('nav.jobs'), href: '/provider/jobs', icon: <LightningIcon /> },
+    { label: t('nav.earnings'), href: '/provider/earnings', icon: <CurrencyIcon /> },
+    { label: t('nav.gpu_metrics'), href: '/provider/gpu', icon: <GpuIcon /> },
+    { label: t('nav.settings'), href: '/provider/settings', icon: <GearIcon /> },
+  ]
   const [providerName, setProviderName] = useState('Provider')
   const [tab, setTab] = useState<'overview' | 'jobs' | 'daemon' | 'withdrawals'>('overview')
   const [earnings, setEarnings] = useState<EarningsData | null>(null)
