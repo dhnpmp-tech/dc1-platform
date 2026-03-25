@@ -93,6 +93,7 @@ export default function RenterDashboard() {
   const [renter, setRenter] = useState<RenterInfo | null>(null)
   const [gpus, setGpus] = useState<GPU[]>([])
   const [jobs, setJobs] = useState<JobCardJob[]>([])
+  const [jobsLoading, setJobsLoading] = useState(true)
   const [apiKey, setApiKey] = useState('')
   const [authChecking, setAuthChecking] = useState(true)
   const [authReason, setAuthReason] = useState<'missing_credentials' | 'invalid_credentials' | 'expired_session' | null>(null)
@@ -213,6 +214,7 @@ export default function RenterDashboard() {
   }
 
   const fetchJobs = async (key: string) => {
+    setJobsLoading(true)
     try {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
       if (res.ok) {
@@ -236,6 +238,8 @@ export default function RenterDashboard() {
       }
     } catch (err) {
       console.error('Failed to fetch jobs:', err)
+    } finally {
+      setJobsLoading(false)
     }
   }
 

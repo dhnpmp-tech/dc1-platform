@@ -1117,6 +1117,7 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
     const {
       provider_id: reqProviderId,
       template_id: reqTemplateId,
+      bundle_id: reqBundleId,
       duration_minutes,
       gpu_requirements: reqGpuRequirements,
       container_spec: reqContainerSpec,
@@ -1129,6 +1130,32 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       prewarm_requested: requestedPrewarm,
     } = req.body;
 
+    // Bundle definitions — matches GET /api/templates/bundles
+    const BUNDLE_DEFINITIONS = {
+      'arabic-rag': {
+        job_type: 'rag-pipeline',
+        min_vram_gb: 24,
+        components: [
+          { role: 'embed',    model: 'BAAI/bge-m3',              port: 8001 },
+          { role: 'rerank',   model: 'BAAI/bge-reranker-v2-m3', port: 8002 },
+          { role: 'generate', model: 'allam-7b-instruct',         port: 8003 },
+        ],
+        pricing_class: 'standard',
+      },
+    };
+
+    // Resolve bundle if bundle_id provided — expands to multi-component job_type + VRAM
+    let resolvedBundle = null;
+    if (reqBundleId) {
+      resolvedBundle = BUNDLE_DEFINITIONS[reqBundleId] || null;
+      if (!resolvedBundle) {
+        return res.status(404).json({
+          error: `Bundle '${reqBundleId}' not found`,
+          available_bundles: Object.keys(BUNDLE_DEFINITIONS),
+        });
+      }
+    }
+
     // Resolve docker template if templateId provided — overrides job_type, min_vram, image defaults
     let resolvedTemplate = null;
     if (reqTemplateId) {
@@ -1138,10 +1165,10 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       }
     }
 
-    const job_type = req.body.job_type || resolvedTemplate?.job_type;
-    const gpu_requirements = reqGpuRequirements || (resolvedTemplate?.min_vram_gb
-      ? { min_vram_gb: resolvedTemplate.min_vram_gb }
-      : undefined);
+    const job_type = req.body.job_type || resolvedBundle?.job_type || resolvedTemplate?.job_type;
+    const gpu_requirements = reqGpuRequirements
+      || (resolvedBundle?.min_vram_gb ? { min_vram_gb: resolvedBundle.min_vram_gb } : undefined)
+      || (resolvedTemplate?.min_vram_gb ? { min_vram_gb: resolvedTemplate.min_vram_gb } : undefined);
     const container_spec = reqContainerSpec || (resolvedTemplate?.image && resolvedTemplate.image !== 'custom'
       ? { image_override: resolvedTemplate.image }
       : undefined);
@@ -1482,6 +1509,18 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       finalTaskSpec = JOB_TEMPLATES[job_type](params);
       result_type = job_type === 'image_generation' ? 'image' : job_type === 'vllm_serve' ? 'endpoint' : 'text';
     }
+    // If a bundle was resolved, inject bundle metadata into the task spec so providers
+    // know which multi-model stack to launch. This overrides any template-derived spec.
+    if (resolvedBundle && !finalTaskSpec) {
+      const bundlePayload = {
+        job_type: resolvedBundle.job_type,
+        bundle_id: reqBundleId,
+        components: resolvedBundle.components,
+        params: isPlainObject(bodyParams) ? bodyParams : {},
+      };
+      finalTaskSpec = JSON.stringify(bundlePayload);
+    }
+
     if (!finalTaskSpec) {
       // Legacy compatibility: older suites submit non-template job types without task_spec.
       // Keep assignment flow functional by storing a deterministic minimal payload.
@@ -1668,7 +1707,8 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
         priority: jobPriority,
         pricing_class: pricingClass,
         prewarm_requested: prewarmRequested,
-        queue_position: queue_position
+        queue_position: queue_position,
+        ...(resolvedBundle ? { bundle_id: reqBundleId, bundle_components: resolvedBundle.components } : {}),
       },
       ...(isQueued
         ? {
@@ -4112,6 +4152,26 @@ router.get('/', requireRenter, (req, res) => {
   }
 });
 
+// In-memory idempotency cache for POST /api/jobs — keyed by "renterId:idempotency_key"
+// Entries expire after 5 minutes. This is sufficient for Phase 1 single-process deployments.
+const _jobIdempotencyCache = new Map();
+const JOB_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+function _pruneJobIdempotencyCache() {
+  const now = Date.now();
+  for (const [k, v] of _jobIdempotencyCache) {
+    if (now - v.ts > JOB_IDEMPOTENCY_TTL_MS) _jobIdempotencyCache.delete(k);
+  }
+}
+
+// List available docker template IDs for error messages
+function getAvailableTemplateIds() {
+  try {
+    return require('fs').readdirSync(DOCKER_TEMPLATES_DIR)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => f.replace(/\.json$/, ''));
+  } catch { return []; }
+}
+
 /**
  * POST /api/jobs
  * Simplified job submission using the credit-hold dispatch pipeline.
@@ -4131,11 +4191,39 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
       template_id: reqTemplateId,
     } = req.body;
 
+    // ── Idempotency deduplication ────────────────────────────────────────────
+    const idempotencyKey = req.headers['x-idempotency-key'];
+    if (idempotencyKey) {
+      _pruneJobIdempotencyCache();
+      const cacheKey = `${req.renter.id}:${String(idempotencyKey).slice(0, 128)}`;
+      const cached = _jobIdempotencyCache.get(cacheKey);
+      if (cached) {
+        return res.status(200).json({ ...cached.body, idempotent: true });
+      }
+    }
+
+    // ── Provider availability check ──────────────────────────────────────────
+    const onlineProviderCount = db.prepare(
+      `SELECT COUNT(*) AS count FROM providers WHERE status = 'online'`
+    ).get()?.count || 0;
+    if (onlineProviderCount === 0) {
+      return res.status(503).json({
+        error: 'No providers are currently online. Your job cannot be dispatched at this time.',
+        code: 'NO_PROVIDERS_AVAILABLE',
+        retry_after_seconds: 60,
+      });
+    }
+
     let resolvedTemplate = null;
     if (reqTemplateId) {
       resolvedTemplate = loadDockerTemplate(reqTemplateId);
       if (!resolvedTemplate) {
-        return res.status(404).json({ error: `Template '${reqTemplateId}' not found` });
+        const available = getAvailableTemplateIds();
+        return res.status(400).json({
+          error: `Template '${reqTemplateId}' not found`,
+          code: 'INVALID_TEMPLATE_ID',
+          available_templates: available,
+        });
       }
     }
 
@@ -4203,7 +4291,7 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
     );
 
     const job = db.get('SELECT * FROM jobs WHERE job_id = ?', job_id);
-    return res.status(201).json({
+    const responseBody = {
       success: true,
       job: {
         job_id: job.job_id,
@@ -4225,7 +4313,19 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
           ? { id: dispatchResult.provider.id, name: dispatchResult.provider.name }
           : null,
       },
-    });
+    };
+
+    // Cache for idempotency deduplication
+    if (idempotencyKey) {
+      const cacheKey = `${req.renter.id}:${String(idempotencyKey).slice(0, 128)}`;
+      _jobIdempotencyCache.set(cacheKey, { body: responseBody, ts: Date.now() });
+    }
+
+    // X-RateLimit-Remaining for clients using legacy header format
+    const rlRemaining = req.rateLimit?.remaining;
+    if (rlRemaining != null) res.setHeader('X-RateLimit-Remaining', String(rlRemaining));
+
+    return res.status(201).json(responseBody);
   } catch (err) {
     if (err.code === 'INSUFFICIENT_CREDITS') {
       return res.status(402).json({
@@ -4233,10 +4333,11 @@ router.post('/', jobCreateLimiter, requireRenter, async (req, res) => {
         available_halala: err.available,
         required_halala: err.required,
         shortfall_halala: err.shortfall,
+        docs: 'POST /api/renters/topup to add balance',
       });
     }
     console.error('[POST /api/jobs] dispatch error:', err);
-    res.status(500).json({ error: 'Job dispatch failed' });
+    res.status(500).json({ error: 'Job dispatch failed', code: 'DISPATCH_ERROR' });
   }
 });
 

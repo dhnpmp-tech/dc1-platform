@@ -211,13 +211,13 @@ export default function PricingPage() {
               (p: { gpu_model: string; rate_halala_per_hour: number }) => p.gpu_model === tier.gpu
             )
             if (apiPrice) {
-              // Convert internal rate units to USD/hour for display
+// Convert internal rate units to USD/hour for display
               // DB stores rates as USD × 100,000 (e.g. $0.105 = 10500)
               const dcpFloorUsd = apiPrice.rate_halala_per_hour / 100000
               return {
                 ...tier,
                 dcpFloor: dcpFloorUsd,
-                // Negative = DCP is cheaper (matches hardcoded sign convention)
+// Negative = DCP is cheaper (matches hardcoded sign convention)
                 discountVsVast: parseFloat((((dcpFloorUsd - tier.vastTypical) / tier.vastTypical) * 100).toFixed(1)),
               }
             }

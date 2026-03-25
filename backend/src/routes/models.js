@@ -502,13 +502,16 @@ function toLegacyListItem(model) {
     context_window: model.context_window,
     use_cases: model.use_cases,
     min_gpu_vram_gb: model.min_gpu_vram_gb,
+    arabic_capability: model.arabic_capability || false,
     providers_online: model.availability.providers_online,
     avg_price_sar_per_min: model.pricing.avg_sar_per_min,
     status: model.availability.status,
     tier: model.portfolio?.tier || null,
     prewarm_class: model.portfolio?.prewarm_class || null,
+    template_id: model.template_id || null,
     competitor_prices: model.pricing.competitor_prices || null,
     savings_pct: model.pricing.savings_pct || null,
+    pricing_per_hour: model.pricing.default_sar_per_hour,
   };
 }
 
@@ -642,17 +645,21 @@ function buildDeploySubmitPayload(model, options = {}) {
 
 // applyQueryFilters — shared filter logic for list and catalog endpoints.
 // Supported query params:
-//   arabic_capable=true   — only models with Arabic capability
-//   min_vram_gb=N         — only models requiring <= N GB VRAM (renter GPU fits model)
+//   arabic_capable=true / arabic=true  — only models with Arabic capability
+//   min_vram_gb=N / vram=N             — only models requiring <= N GB VRAM (renter GPU fits model)
 //   category=llm|embedding|image|training  — filter by task type
+//   tier=tier_a|tier_b|tier_c|instant  — filter by portfolio tier (instant maps to prewarm_class=hot)
 function applyQueryFilters(models, query) {
   let result = models;
 
-  if (String(query.arabic_capable || '').toLowerCase() === 'true') {
+  // arabic=true is a short alias for arabic_capable=true
+  const arabicFlag = String(query.arabic_capable || query.arabic || '').toLowerCase();
+  if (arabicFlag === 'true' || arabicFlag === '1') {
     result = result.filter((m) => m.arabic || m.arabic_capability);
   }
 
-  const minVram = toInt(query.min_vram_gb, { min: 1, max: 1024 });
+  // vram=N / vram_min=N are short aliases for min_vram_gb=N
+  const minVram = toInt(query.min_vram_gb ?? query.vram_min ?? query.vram, { min: 1, max: 1024 });
   if (minVram != null) {
     result = result.filter((m) => {
       const vramNeeded = toInt(m.min_gpu_vram_gb, { min: 1, max: 1024 }) || 1;
@@ -678,12 +685,23 @@ function applyQueryFilters(models, query) {
     }
   }
 
+  // tier=instant maps to prewarm_class=hot; tier_a/tier_b/tier_c match portfolio tier directly
+  const tierFilter = normalizeString(query.tier, { maxLen: 32 });
+  if (tierFilter) {
+    const t = tierFilter.toLowerCase();
+    if (t === 'instant') {
+      result = result.filter((m) => m.portfolio?.prewarm_class === 'hot');
+    } else if (t === 'tier_a' || t === 'tier_b' || t === 'tier_c') {
+      result = result.filter((m) => m.portfolio?.tier === t);
+    }
+  }
+
   return result;
 }
 
 // GET /api/models
 // Public model registry with live provider availability and averaged pricing.
-// Query params: arabic_capable, min_vram_gb, category
+// Query params: arabic_capable/arabic, min_vram_gb/vram, category, tier
 router.get('/', modelCatalogLimiter, (req, res) => {
   try {
     const all = getCatalogModels();

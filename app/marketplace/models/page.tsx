@@ -43,6 +43,8 @@ interface ModelListItem {
   status?: string
   tier?: string | null
   prewarm_class?: string | null
+  arabic_capability?: boolean   // from DCP-950: authoritative Arabic flag from backend
+  arabic?: boolean              // alias returned by GET /api/dc1/models
 }
 
 // ── Competitive pricing table (SAR per hour, from strategic brief) ─────────────
@@ -79,9 +81,14 @@ function sarPerMinToHr(sarPerMin?: number): string {
 }
 
 function isArabicModel(model: ModelListItem): boolean {
+  // Prefer the authoritative backend flag (added in DCP-950)
+  if (model.arabic_capability != null) return model.arabic_capability
+  if (model.arabic != null) return model.arabic
+  // Client-side fallback for older API responses
   const id = model.model_id?.toLowerCase() ?? ''
   const family = model.family?.toLowerCase() ?? ''
   return id.includes('allam') || id.includes('jais') || id.includes('arabic') ||
+    id.includes('falcon-h1') || id.includes('falcon_h1') ||
     family.includes('arabic') || family.includes('allam') || family.includes('jais') ||
     (model.use_cases ?? []).some(u => u.toLowerCase().includes('arabic'))
 }

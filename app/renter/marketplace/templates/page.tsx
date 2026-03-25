@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
@@ -382,6 +382,19 @@ const DIFFICULTY_CLASS: Record<string, string> = {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function deriveCategory(id: string, tags: string[]): TemplateCategory {
+  const lower = id.toLowerCase()
+  const tagSet = tags.map(t => t.toLowerCase())
+  if (lower.includes('arabic') || lower.includes('allam') || lower.includes('jais') ||
+      tagSet.includes('arabic')) return 'Arabic AI'
+  if (lower.includes('sdxl') || lower.includes('stable-diff') || tagSet.includes('image')) return 'Image'
+  if (lower.includes('lora') || lower.includes('qlora') || lower.includes('finetune') ||
+      tagSet.includes('training')) return 'Training'
+  if (lower.includes('jupyter') || lower.includes('python-scientific') ||
+      tagSet.includes('notebook')) return 'Dev Tools'
+  return 'LLM'
+}
+
 function getSavingsPct(t: Template): number | null {
   const ref = t.hyperscaler_price_sar_per_hour ?? HYPERSCALER_SAR_PER_HR_FALLBACK
   if (t.estimated_price_sar_per_hour >= ref) return null
@@ -624,6 +637,42 @@ export default function TemplateCatalogPage() {
   const [maxPrice, setMaxPrice] = useState('')
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | 'easy' | 'medium' | 'advanced'>('all')
   const [deploy, setDeploy] = useState<DeployModalState>({ template: null, loading: false, error: '', jobId: null })
+  const [apiTemplates, setApiTemplates] = useState<Template[] | null>(null)
+  const [loadingTemplates, setLoadingTemplates] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/dc1/templates')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        const list: Record<string, unknown>[] = Array.isArray(data?.templates) ? data.templates : []
+        const mapped: Template[] = list.map(raw => {
+          const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
+          const rawId = String(raw.id ?? '')
+          const isArabic = tags.some(tag => tag.toLowerCase().includes('arabic')) ||
+            rawId.includes('arabic') || rawId.includes('allam') || rawId.includes('jais')
+          return {
+            id: rawId,
+            name: String(raw.name ?? ''),
+            description: String(raw.description ?? ''),
+            icon: String(raw.icon ?? '📦'),
+            category: deriveCategory(rawId, tags),
+            min_vram_gb: Number(raw.min_vram_gb ?? 8),
+            estimated_price_sar_per_hour: Number(raw.estimated_price_sar_per_hour ?? 0),
+            hyperscaler_price_sar_per_hour: undefined,
+            tags,
+            difficulty: (['easy', 'medium', 'advanced'].includes(String(raw.difficulty ?? ''))
+              ? String(raw.difficulty) : 'easy') as Template['difficulty'],
+            is_arabic: isArabic,
+            sort_order: Number(raw.sort_order ?? 99),
+          }
+        })
+        if (mapped.length > 0) setApiTemplates(mapped)
+      })
+      .catch(() => { /* fallback to static TEMPLATES */ })
+      .finally(() => setLoadingTemplates(false))
+  }, [])
+
+  const activeTemplates = apiTemplates ?? TEMPLATES
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -637,7 +686,7 @@ export default function TemplateCatalogPage() {
   ]
 
   const filtered = useMemo(() => {
-    return TEMPLATES.filter(tmpl => {
+    return activeTemplates.filter(tmpl => {
       if (category !== 'all' && tmpl.category !== category) return false
       if (difficultyFilter !== 'all' && tmpl.difficulty !== difficultyFilter) return false
       if (maxVram !== '') {
@@ -655,9 +704,9 @@ export default function TemplateCatalogPage() {
       }
       return true
     }).sort((a, b) => a.sort_order - b.sort_order)
-  }, [category, difficultyFilter, maxVram, maxPrice, search])
+  }, [activeTemplates, category, difficultyFilter, maxVram, maxPrice, search])
 
-  const arabicCount = TEMPLATES.filter(t => t.is_arabic).length
+  const arabicCount = activeTemplates.filter(tt => tt.is_arabic).length
 
   const openDeploy = (tmpl: Template) => {
     const key = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key')
@@ -676,14 +725,13 @@ export default function TemplateCatalogPage() {
     const apiKey = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key') || ''
     setDeploy(d => ({ ...d, loading: true, error: '' }))
     try {
-      const res = await fetch('/api/dc1/jobs/from-template', {
+      const res = await fetch(`/api/dc1/templates/${encodeURIComponent(tmpl.id)}/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
-        body: JSON.stringify({ template_id: tmpl.id }),
+        body: JSON.stringify({ duration_minutes: 60 }),
       })
-      if (res.status === 404) {
-        // Backend not yet wired — redirect to playground with model prefilled
-        router.push(`/renter/playground?template=${encodeURIComponent(tmpl.id)}`)
+      if (res.status === 503) {
+        setDeploy(d => ({ ...d, loading: false, error: 'No GPU provider available right now. Please try again shortly.' }))
         return
       }
       if (res.status === 402) {
@@ -696,7 +744,7 @@ export default function TemplateCatalogPage() {
         return
       }
       const data = await res.json()
-      const jobId = data.job_id || data.id || 'submitted'
+      const jobId = data.jobId || data.job_id || data.id || 'submitted'
       setDeploy(d => ({ ...d, loading: false, jobId }))
     } catch {
       setDeploy(d => ({ ...d, loading: false, error: 'Network error. Please try again.' }))
@@ -721,7 +769,7 @@ export default function TemplateCatalogPage() {
           <div>
             <h1 className="text-2xl font-bold text-dc1-text-primary">GPU Template Catalog</h1>
             <p className="text-sm text-dc1-text-secondary mt-1">
-              {TEMPLATES.length} ready-to-deploy templates — LLMs, fine-tuning, embeddings, image generation.
+              {activeTemplates.length} ready-to-deploy templates — LLMs, fine-tuning, embeddings, image generation.
             </p>
           </div>
           <Link href="/renter/marketplace" className="btn btn-secondary btn-sm self-start sm:self-auto">
@@ -732,7 +780,7 @@ export default function TemplateCatalogPage() {
         {/* Stats bar */}
         <div className="flex flex-wrap gap-3 text-sm">
           <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
-            <span className="text-dc1-amber font-bold">{TEMPLATES.length}</span>
+            <span className="text-dc1-amber font-bold">{activeTemplates.length}</span>
             <span className="text-dc1-text-secondary">templates</span>
           </div>
           <div className="flex items-center gap-2 bg-dc1-amber/10 rounded-lg px-3 py-2 border border-dc1-amber/20">
@@ -833,7 +881,7 @@ export default function TemplateCatalogPage() {
           {/* Results count + clear */}
           <div className="ms-auto flex items-center gap-3">
             <span className="text-xs text-dc1-text-muted whitespace-nowrap">
-              {filtered.length} of {TEMPLATES.length} templates
+              {loadingTemplates ? 'Loading…' : `${filtered.length} of ${activeTemplates.length} templates`}
             </span>
             {hasFilters && (
               <button onClick={clearFilters} className="text-xs text-dc1-amber hover:underline">
@@ -844,7 +892,11 @@ export default function TemplateCatalogPage() {
         </div>
 
         {/* Grid */}
-        {filtered.length === 0 ? (
+        {loadingTemplates ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-2xl mb-3">🔍</p>
             <p className="text-dc1-text-secondary mb-1">No templates match your filters.</p>
@@ -865,7 +917,7 @@ export default function TemplateCatalogPage() {
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <Link href="/renter/marketplace" className="btn btn-secondary btn-sm">Browse Providers</Link>
-            <button onClick={() => openDeploy(TEMPLATES.find(t => t.id === 'custom-container')!)} className="btn btn-outline btn-sm">
+            <button onClick={() => openDeploy(activeTemplates.find(t => t.id === 'custom-container') ?? activeTemplates[0])} className="btn btn-outline btn-sm">
               📦 Custom Container
             </button>
           </div>
