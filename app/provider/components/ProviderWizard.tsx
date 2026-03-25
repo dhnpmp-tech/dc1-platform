@@ -38,7 +38,7 @@ export default function ProviderWizard({
     if (platform === 'windows') {
       return `powershell -c "iwr https://api.dcp.sa/api/providers/download/installer -OutF setup.ps1; .\\setup.ps1 ${apiKey}"`
     }
-    return `curl -fsSL https://api.dcp.sa/api/providers/install.sh | bash -s ${apiKey}`
+    return `curl -fsSL https://api.dcp.sa/api/providers/daemon/linux | bash -s ${apiKey}`
   }, [apiKey, platform])
 
   useEffect(() => {
