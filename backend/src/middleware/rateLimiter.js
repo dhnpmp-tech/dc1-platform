@@ -87,8 +87,9 @@ const renterDataExportLimiter = createRateLimiter({ windowMs: 24*60*60*1000, max
 const providerDataExportLimiter = createRateLimiter({ windowMs: 24*60*60*1000, max: 1, keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req) });
 const adminLimiter = createRateLimiter({ windowMs: 60*1000, max: 30, keyGenerator: (req) => `admin:${getAdminToken(req) || ipFallbackKey(req)}` });
 
-// Provider heartbeat: 4 per provider key per minute (DCP-855, daemon sends 2/min, ceiling=4 for retries)
-const heartbeatProviderLimiter = createRateLimiter({ windowMs: 60*1000, max: 4, keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req) });
+// Provider heartbeat: 10 per provider key per minute (DCP-855, daemon sends 2/min, raised from 4 to
+// prevent 429-loop where rate-limited responses themselves consume the budget)
+const heartbeatProviderLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req) });
 
 // Auth endpoints: 5 per IP per 15 minutes (DCP-855)
 const authLimiter = createRateLimiter({ windowMs: 15*60*1000, max: 5, keyGenerator: (req) => ipFallbackKey(req) });

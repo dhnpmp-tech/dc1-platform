@@ -177,7 +177,11 @@ def get_last_heartbeat_error():
 # ─── BACKEND API ─────────────────────────────────────────────────────────────
 
 def fetch_provider_status(api_base, api_key):
-    """Fetch provider status from the backend /me endpoint."""
+    """Fetch provider status from the backend /me endpoint.
+
+    The endpoint returns {"provider": {...}, "recent_jobs": [...]}.
+    We unwrap and return the inner provider dict.
+    """
     try:
         resp = requests.get(
             f"{api_base}/api/providers/me",
@@ -185,7 +189,9 @@ def fetch_provider_status(api_base, api_key):
             timeout=10,
         )
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+            # Unwrap: endpoint returns {provider: {...}}
+            return data.get("provider", data)
     except Exception:
         pass
     return None
