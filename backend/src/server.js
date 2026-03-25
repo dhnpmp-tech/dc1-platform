@@ -226,10 +226,11 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Apply strict rejection on renter-facing routes (frontend already migrated)
-// app.use('/api/renters/me', rejectRenterQueryParamKey); // DISABLED: frontend not migrated yet
-// app.use('/api/renters/analytics', rejectRenterQueryParamKey); // DISABLED
-// app.use('/api/renters/export', rejectRenterQueryParamKey); // DISABLED
+// NOTE: Query-param key rejection disabled — frontend still uses ?key= in 30+
+// locations. Re-enable after DCP-712 frontend migration is actually complete.
+// app.use('/api/renters/me', rejectRenterQueryParamKey);
+// app.use('/api/renters/analytics', rejectRenterQueryParamKey);
+// app.use('/api/renters/export', rejectRenterQueryParamKey);
 
 // ── Auth Failure Logging ────────────────────────────────────────────────
 // Wrap res.status to detect 401/403 and emit an audit log entry.

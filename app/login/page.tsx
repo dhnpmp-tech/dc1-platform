@@ -86,6 +86,7 @@ function LoginPageInner() {
 
   const normalizeAuthError = (status: number, rawError: string, fallback: string) => {
     const lower = rawError.toLowerCase()
+    // OTP-specific: if the error mentions token/code/otp expiry, show the code-specific message
     if (lower.includes('token') || lower.includes('otp') || lower.includes('code') || lower.includes('verification')) {
       return t('login.error.invalid_or_expired_code')
     }

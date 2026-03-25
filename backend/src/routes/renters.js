@@ -685,6 +685,8 @@ router.get('/pricing', (req, res) => {
     }
 
     // Transform database format to API response
+    // NOTE: Despite the column name, rate_halala stores USD × 100,000
+    // (e.g. $0.105/hr = 10500). Legacy naming from pre-launch.
     const pricing = prices.map(p => ({
       gpu_model: p.gpu_model,
       rate_halala_per_hour: p.rate_halala,

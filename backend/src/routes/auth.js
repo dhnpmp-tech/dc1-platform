@@ -15,6 +15,15 @@ const router = express.Router();
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
+/**
+ * POST /api/auth/magic-link-exchange
+ * Body: { access_token: string }
+ * Returns: { success, role, api_key, renter|provider }
+ *
+ * Mirrors the same lookup logic as /api/renters/verify-otp and
+ * /api/providers/verify-otp, including the Supabase reconciliation
+ * fallback for renters.
+ */
 router.post('/magic-link-exchange', async (req, res) => {
   try {
     const { access_token } = req.body;
@@ -31,9 +40,9 @@ router.post('/magic-link-exchange', async (req, res) => {
     }
 
     const email = user.email.toLowerCase().trim();
-    console.log('[AUTH] Magic link exchange for ' + email);
+    console.log(`[AUTH] Magic link exchange for ${email}`);
 
-    // Try renter first (mirrors /api/renters/verify-otp)
+    // ── Try renter first (mirrors /api/renters/verify-otp) ──────────
     let renter = db.get(
       'SELECT * FROM renters WHERE LOWER(email) = LOWER(?) AND status = ?',
       email, 'active'
@@ -45,7 +54,7 @@ router.post('/magic-link-exchange', async (req, res) => {
         const reconciliation = await reconcileRenterByEmailFromSupabase({ db, email });
         if (reconciliation.reconciled && reconciliation.renter && reconciliation.renter.status === 'active') {
           renter = reconciliation.renter;
-          console.log('[AUTH] Reconciled renter from Supabase for ' + email);
+          console.log(`[AUTH] Reconciled renter from Supabase for ${email}`);
         }
       } catch (reconcileErr) {
         console.error('[AUTH] Renter reconciliation error:', reconcileErr.message);
@@ -69,7 +78,7 @@ router.post('/magic-link-exchange', async (req, res) => {
       });
     }
 
-    // Try provider (mirrors /api/providers/verify-otp)
+    // ── Try provider (mirrors /api/providers/verify-otp) ────────────
     const provider = db.get(
       'SELECT * FROM providers WHERE LOWER(email) = LOWER(?)',
       email
