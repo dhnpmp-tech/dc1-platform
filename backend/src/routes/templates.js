@@ -104,6 +104,41 @@ router.get('/whitelist', publicEndpointLimiter, (req, res) => {
   res.json({ approved_images: all });
 });
 
+// Bundle definitions — pre-composed multi-model stacks.
+// VRAM totals: arabic-rag needs BGE-M3(~8GB) + BGE-reranker(~3GB) + ALLaM-7B(~16GB) = ~27GB
+// RTX 4090 (24GB) is the minimum; 32GB+ recommended for stable simultaneous loading.
+const TEMPLATE_BUNDLES = [
+  {
+    id: 'arabic-rag',
+    name: 'Arabic RAG Pipeline',
+    description: 'One-click Arabic document Q&A: BGE-M3 embeddings + BGE reranker + ALLaM 7B. ' +
+                 'PDPL-compliant, in-Kingdom inference for government, legal, and fintech use cases.',
+    components: ['arabic-embeddings', 'arabic-reranker', 'allam-7b'],
+    component_ports: { embed: 8001, rerank: 8002, generate: 8003 },
+    vram_required_gb: 52,
+    vram_recommended_gb: 80,
+    price_per_hour_usd: 1.20,
+    price_per_hour_sar: parseFloat((1.20 * (parseFloat(process.env.SAR_USD_RATE || '3.75'))).toFixed(2)),
+    use_cases: ['government', 'legal', 'fintech', 'document-qa', 'enterprise-search'],
+    pdpl_compliant: true,
+    languages: ['ar', 'en'],
+    llm_options: ['allam-7b-instruct', 'jais-13b-chat'],
+    tags: ['rag', 'arabic', 'enterprise', 'pdpl'],
+    deploy_endpoint: '/api/templates/arabic-rag/deploy',
+  },
+];
+
+// GET /api/templates/bundles -- list pre-composed multi-model stacks
+router.get('/bundles', publicEndpointLimiter, (req, res) => {
+  const { SAR_USD_RATE } = require('../config/pricing');
+  // Recompute SAR prices at current rate
+  const bundles = TEMPLATE_BUNDLES.map(b => ({
+    ...b,
+    price_per_hour_sar: parseFloat((b.price_per_hour_usd * SAR_USD_RATE).toFixed(2)),
+  }));
+  return res.json({ bundles, count: bundles.length });
+});
+
 // GET /api/templates/:id -- single template with full detail
 router.get('/:id', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();

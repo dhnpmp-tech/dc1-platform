@@ -1117,6 +1117,7 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
     const {
       provider_id: reqProviderId,
       template_id: reqTemplateId,
+      bundle_id: reqBundleId,
       duration_minutes,
       gpu_requirements: reqGpuRequirements,
       container_spec: reqContainerSpec,
@@ -1129,6 +1130,32 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       prewarm_requested: requestedPrewarm,
     } = req.body;
 
+    // Bundle definitions — matches GET /api/templates/bundles
+    const BUNDLE_DEFINITIONS = {
+      'arabic-rag': {
+        job_type: 'rag-pipeline',
+        min_vram_gb: 24,
+        components: [
+          { role: 'embed',    model: 'BAAI/bge-m3',              port: 8001 },
+          { role: 'rerank',   model: 'BAAI/bge-reranker-v2-m3', port: 8002 },
+          { role: 'generate', model: 'allam-7b-instruct',         port: 8003 },
+        ],
+        pricing_class: 'standard',
+      },
+    };
+
+    // Resolve bundle if bundle_id provided — expands to multi-component job_type + VRAM
+    let resolvedBundle = null;
+    if (reqBundleId) {
+      resolvedBundle = BUNDLE_DEFINITIONS[reqBundleId] || null;
+      if (!resolvedBundle) {
+        return res.status(404).json({
+          error: `Bundle '${reqBundleId}' not found`,
+          available_bundles: Object.keys(BUNDLE_DEFINITIONS),
+        });
+      }
+    }
+
     // Resolve docker template if templateId provided — overrides job_type, min_vram, image defaults
     let resolvedTemplate = null;
     if (reqTemplateId) {
@@ -1138,10 +1165,10 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       }
     }
 
-    const job_type = req.body.job_type || resolvedTemplate?.job_type;
-    const gpu_requirements = reqGpuRequirements || (resolvedTemplate?.min_vram_gb
-      ? { min_vram_gb: resolvedTemplate.min_vram_gb }
-      : undefined);
+    const job_type = req.body.job_type || resolvedBundle?.job_type || resolvedTemplate?.job_type;
+    const gpu_requirements = reqGpuRequirements
+      || (resolvedBundle?.min_vram_gb ? { min_vram_gb: resolvedBundle.min_vram_gb } : undefined)
+      || (resolvedTemplate?.min_vram_gb ? { min_vram_gb: resolvedTemplate.min_vram_gb } : undefined);
     const container_spec = reqContainerSpec || (resolvedTemplate?.image && resolvedTemplate.image !== 'custom'
       ? { image_override: resolvedTemplate.image }
       : undefined);
@@ -1482,6 +1509,18 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       finalTaskSpec = JOB_TEMPLATES[job_type](params);
       result_type = job_type === 'image_generation' ? 'image' : job_type === 'vllm_serve' ? 'endpoint' : 'text';
     }
+    // If a bundle was resolved, inject bundle metadata into the task spec so providers
+    // know which multi-model stack to launch. This overrides any template-derived spec.
+    if (resolvedBundle && !finalTaskSpec) {
+      const bundlePayload = {
+        job_type: resolvedBundle.job_type,
+        bundle_id: reqBundleId,
+        components: resolvedBundle.components,
+        params: isPlainObject(bodyParams) ? bodyParams : {},
+      };
+      finalTaskSpec = JSON.stringify(bundlePayload);
+    }
+
     if (!finalTaskSpec) {
       // Legacy compatibility: older suites submit non-template job types without task_spec.
       // Keep assignment flow functional by storing a deterministic minimal payload.
@@ -1668,7 +1707,8 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
         priority: jobPriority,
         pricing_class: pricingClass,
         prewarm_requested: prewarmRequested,
-        queue_position: queue_position
+        queue_position: queue_position,
+        ...(resolvedBundle ? { bundle_id: reqBundleId, bundle_components: resolvedBundle.components } : {}),
       },
       ...(isQueued
         ? {

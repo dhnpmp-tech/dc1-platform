@@ -13,6 +13,7 @@ const jobSubmitSchema = z.object({
   // Core routing fields
   job_type: z.string().min(1).max(64).optional(),
   template_id: z.string().min(1).max(128).optional(),
+  bundle_id: z.string().min(1).max(128).optional(),
 
   // Duration: 0.1 to 1440 minutes (24 hours)
   duration_minutes: z.number().min(0.1).max(1440).optional(),
