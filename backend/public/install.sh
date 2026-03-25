@@ -22,7 +22,9 @@ case "${OS_UNAME}" in
   *) DCP_OS="linux" ;;
 esac
 
-DCP_PROVIDER_KEY="${DCP_PROVIDER_KEY:-}"
+# Accept provider key as first positional arg (curl ... | bash -s KEY)
+# or via DCP_PROVIDER_KEY env var.
+DCP_PROVIDER_KEY="${DCP_PROVIDER_KEY:-${1:-}}"
 DCP_PROVIDER_ID="${DCP_PROVIDER_ID:-}"
 DCP_PROVIDER_EMAIL="${DCP_PROVIDER_EMAIL:-}"
 DCP_PROVIDER_NAME="${DCP_PROVIDER_NAME:-}"
