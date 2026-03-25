@@ -220,6 +220,20 @@ router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
     // always sourced from the validated template definition, never from caller params.
     const extraParams = stripImageOverride(rawParams);
 
+    // DCP-SEC-001 (mirror): Reject Jupyter deployments with missing or weak NOTEBOOK_TOKEN.
+    // The one-click deploy path is separate from POST /api/jobs/submit — the same guard
+    // must be applied here to prevent an unauthenticated Jupyter server on the GPU.
+    if (template.id === 'jupyter-gpu') {
+      const notebookToken = extraParams.NOTEBOOK_TOKEN;
+      const WEAK_TOKENS = new Set(['dc1jupyter', '', 'jupyter', 'password', 'token']);
+      if (!notebookToken || WEAK_TOKENS.has(String(notebookToken).trim())) {
+        return res.status(400).json({
+          error: 'NOTEBOOK_TOKEN must be a unique, non-default value for Jupyter deployments. Pass params.NOTEBOOK_TOKEN with a random UUID or strong secret.',
+          code: 'WEAK_NOTEBOOK_TOKEN',
+        });
+      }
+    }
+
     // 4. Calculate estimated cost using template's min_vram_gb for tier selection (DCP-762)
     // gpuModel resolved after provider lookup in step 6; recalculated then for snapshot accuracy.
     const cost_halala = calcDeployCostHalala(template.job_type, duration_minutes, pricing_class, null);
