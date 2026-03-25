@@ -293,9 +293,8 @@ def make_icon(state="online"):
     return str(icon_path)
 
 
-def set_menu_bar_icon(app, state="online"):
-    """Set the menu bar icon using NSImage template for proper dark/light mode."""
-    icon_path = make_icon(state)
+def _apply_icon_on_main_thread(app, icon_path):
+    """Apply the icon image — must be called from the main thread."""
     try:
         nsapp = getattr(app, '_nsapp', None)
         if nsapp and NSImage and NSData:
@@ -307,16 +306,18 @@ def set_menu_bar_icon(app, state="online"):
                     img.setSize_((16, 16))  # logical size (Retina uses 32px)
                     img.setTemplate_(True)  # adapts to dark/light menu bar
                     status_item.setImage_(img)
-                    app.title = None  # clear text title when using icon
-                    return
+                    app.title = None
+                    return True
     except Exception:
         pass
-    # Fallback: use rumps icon property
-    try:
-        app.icon = icon_path
-        app.title = None
-    except Exception:
-        pass  # During init, icon can't be set yet — will be set on first poll
+    return False
+
+
+def set_menu_bar_icon(app, state="online"):
+    """Set the menu bar icon, dispatching to main thread for safety."""
+    icon_path = make_icon(state)
+    # Store desired state so the timer callback can apply it
+    app._pending_icon_path = icon_path
 
 
 # ─── MENU BAR APP ────────────────────────────────────────────────────────────
@@ -384,44 +385,99 @@ class DCPMenuBarApp(rumps.App):
             self.quit_btn,
         ]
 
-        # Start background polling
+        # Pending icon path (set by background thread, applied by timer on main thread)
+        self._pending_icon_path = None
+        self._pending_status_data = None
+
+        # Use a rumps Timer for main-thread UI updates (every 2s check for pending changes)
+        self._ui_timer = rumps.Timer(self._apply_pending_ui, 2)
+        self._ui_timer.start()
+
+        # Background thread fetches data without touching UI directly
         self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.poll_thread.start()
 
-        # Initial update
-        self._update_status()
-
     def _poll_loop(self):
-        """Background thread that periodically updates status."""
+        """Background thread that periodically fetches status data."""
+        # Initial fetch
+        self._fetch_status_data()
         while True:
             time.sleep(POLL_INTERVAL)
             try:
-                self._update_status()
+                self._fetch_status_data()
             except Exception:
                 pass
 
-    def _update_status(self):
-        """Refresh all status information."""
-        self.config = load_config()
-        self.daemon_running = is_daemon_running()
+    def _apply_pending_ui(self, _timer):
+        """Main-thread timer callback: apply any pending icon/UI changes."""
+        # Apply pending icon
+        icon_path = self._pending_icon_path
+        if icon_path:
+            self._pending_icon_path = None
+            _apply_icon_on_main_thread(self, icon_path)
 
-        api_key = self.config.get("DCP_PROVIDER_KEY", "")
-        api_base = self.config.get("DCP_API_BASE", "https://api.dcp.sa")
+        # Apply pending status data
+        data = self._pending_status_data
+        if data:
+            self._pending_status_data = None
+            self._apply_status_to_ui(data)
 
-        # Update title bar icon
-        if self.daemon_running:
-            set_menu_bar_icon(self, "online")
-            self.status_item.title = "⦿  Online — Daemon Running"
+    def _fetch_status_data(self):
+        """Background-thread safe: gather all status data into a dict."""
+        config = load_config()
+        daemon_running = is_daemon_running()
+        api_key = config.get("DCP_PROVIDER_KEY", "")
+        api_base = config.get("DCP_API_BASE", "https://api.dcp.sa")
+
+        version = get_daemon_version()
+        last_hb = get_last_heartbeat_from_log()
+        last_error = get_last_heartbeat_error()
+
+        info = None
+        if api_key:
+            info = fetch_provider_status(api_base, api_key)
+
+        # Package everything — no UI touches here
+        self._pending_status_data = {
+            "config": config,
+            "daemon_running": daemon_running,
+            "version": version,
+            "last_hb": last_hb,
+            "last_error": last_error,
+            "info": info,
+        }
+
+        # Set pending icon (file I/O only, no AppKit)
+        if daemon_running:
+            if info and info.get("approval_status") == "pending":
+                set_menu_bar_icon(self, "warning")
+            else:
+                set_menu_bar_icon(self, "online")
         else:
             set_menu_bar_icon(self, "offline")
+
+    def _apply_status_to_ui(self, data):
+        """Main-thread only: apply gathered status data to menu items."""
+        config = data["config"]
+        daemon_running = data["daemon_running"]
+        version = data["version"]
+        last_hb = data["last_hb"]
+        last_error = data["last_error"]
+        info = data["info"]
+
+        self.config = config
+        self.daemon_running = daemon_running
+
+        # Status line
+        if daemon_running:
+            self.status_item.title = "⦿  Online — Daemon Running"
+        else:
             self.status_item.title = "○  Offline — Daemon Stopped"
 
         # Daemon version
-        version = get_daemon_version()
         self.version_item.title = f"Daemon: v{version}" if version else "Daemon: not installed"
 
         # Last heartbeat
-        last_hb = get_last_heartbeat_from_log()
         if last_hb:
             ago = datetime.now() - last_hb
             if ago < timedelta(minutes=1):
@@ -431,55 +487,44 @@ class DCPMenuBarApp(rumps.App):
             else:
                 hb_str = last_hb.strftime("%H:%M:%S")
             self.heartbeat_item.title = f"Last heartbeat: {hb_str}"
+        elif last_error:
+            short = last_error[:60] + "…" if len(last_error) > 60 else last_error
+            self.heartbeat_item.title = f"Heartbeat: ⚠ {short}"
         else:
-            error = get_last_heartbeat_error()
-            if error:
-                # Truncate long errors
-                short = error[:60] + "…" if len(error) > 60 else error
-                self.heartbeat_item.title = f"Heartbeat: ⚠ {short}"
+            self.heartbeat_item.title = "Last heartbeat: —"
+
+        # Backend info
+        if info:
+            self.provider_info = info
+            self.provider_item.title = f"Provider: {info.get('name', 'Unknown')}"
+            gpu = info.get("gpu_model") or info.get("gpu_name_detected") or "CPU only"
+            self.gpu_item.title = f"GPU: {gpu}"
+
+            earnings_halala = info.get("total_earnings_halala") or info.get("total_earnings") or 0
+            if isinstance(earnings_halala, (int, float)) and earnings_halala > 0:
+                sar = earnings_halala / 100 if earnings_halala > 100 else earnings_halala
+                self.earnings_item.title = f"Earnings: {sar:.2f} SAR"
             else:
-                self.heartbeat_item.title = "Last heartbeat: —"
+                self.earnings_item.title = "Earnings: 0.00 SAR"
 
-        # Fetch remote status if we have a key
-        if api_key:
-            info = fetch_provider_status(api_base, api_key)
-            if info:
-                self.provider_info = info
-
-                name = info.get("name", "Unknown")
-                self.provider_item.title = f"Provider: {name}"
-
-                gpu = info.get("gpu_model") or info.get("gpu_name_detected") or "CPU only"
-                self.gpu_item.title = f"GPU: {gpu}"
-
-                # Earnings
-                earnings_halala = info.get("total_earnings_halala") or info.get("total_earnings") or 0
-                if isinstance(earnings_halala, (int, float)) and earnings_halala > 0:
-                    sar = earnings_halala / 100 if earnings_halala > 100 else earnings_halala
-                    self.earnings_item.title = f"Earnings: {sar:.2f} SAR"
+            backend_status = info.get("status", "unknown")
+            approval = info.get("approval_status", "unknown")
+            if daemon_running:
+                if approval == "pending":
+                    self.status_item.title = "⦿  Daemon Running — Awaiting Approval"
+                elif backend_status == "online":
+                    self.status_item.title = "⦿  Online — Active"
                 else:
-                    self.earnings_item.title = "Earnings: 0.00 SAR"
-
-                # Update status with backend info
-                backend_status = info.get("status", "unknown")
-                approval = info.get("approval_status", "unknown")
-                if self.daemon_running:
-                    if approval == "pending":
-                        self.status_item.title = "⦿  Daemon Running — Awaiting Approval"
-                        set_menu_bar_icon(self, "warning")
-                    elif backend_status == "online":
-                        self.status_item.title = "⦿  Online — Active"
-                    else:
-                        self.status_item.title = f"⦿  Daemon Running — {backend_status}"
-            else:
-                self.provider_item.title = f"Provider: {self.config.get('DCP_PROVIDER_NAME', '—')}"
+                    self.status_item.title = f"⦿  Daemon Running — {backend_status}"
+        elif config.get("DCP_PROVIDER_KEY"):
+            self.provider_item.title = f"Provider: {config.get('DCP_PROVIDER_NAME', '—')}"
         else:
             self.provider_item.title = "Provider: Not configured"
             self.status_item.title = "○  Not configured — Run installer"
 
-        # Toggle start/stop visibility
-        self.start_btn.set_callback(self.start_daemon if not self.daemon_running else None)
-        self.stop_btn.set_callback(self.stop_daemon if self.daemon_running else None)
+        # Toggle start/stop
+        self.start_btn.set_callback(self.start_daemon if not daemon_running else None)
+        self.stop_btn.set_callback(self.stop_daemon if daemon_running else None)
 
     def open_dashboard(self, _):
         provider_id = self.config.get("DCP_PROVIDER_ID", "")
@@ -551,8 +596,9 @@ class DCPMenuBarApp(rumps.App):
             rumps.notification("DCP Provider", "Start Failed", str(e))
 
     def manual_refresh(self, _):
-        self._update_status()
-        rumps.notification("DCP Provider", "Status Refreshed", self.status_item.title)
+        self._fetch_status_data()
+        # Data will be applied by _apply_pending_ui timer on next tick
+        rumps.notification("DCP Provider", "Refreshing…", "Status will update shortly.")
 
     def quit_app(self, _):
         rumps.quit_application()
