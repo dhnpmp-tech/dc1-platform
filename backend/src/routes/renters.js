@@ -688,7 +688,7 @@ router.get('/pricing', (req, res) => {
     const pricing = prices.map(p => ({
       gpu_model: p.gpu_model,
       rate_halala_per_hour: p.rate_halala,
-      rate_sar_per_hour: (p.rate_halala / 100).toFixed(2),
+      rate_usd_per_hour: (p.rate_halala / 100000).toFixed(3),
       updated_at: p.updated_at,
     }));
 

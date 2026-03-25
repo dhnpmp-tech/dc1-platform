@@ -202,11 +202,11 @@ export default function PricingPage() {
             )
             if (apiPrice) {
               // Convert halala/hour to USD/hour for display
-              const dcpFloorUsd = apiPrice.rate_halala_per_hour / 100
+              const dcpFloorUsd = apiPrice.rate_halala_per_hour / 100000
               return {
                 ...tier,
                 dcpFloor: dcpFloorUsd,
-                discountVsVast: parseFloat((((tier.vastTypical - dcpFloorUsd) / tier.vastTypical) * 100).toFixed(1)),
+                discountVsVast: parseFloat((((dcpFloorUsd - tier.vastTypical) / tier.vastTypical) * 100).toFixed(1)),
               }
             }
             return tier

@@ -227,9 +227,9 @@ app.use((req, _res, next) => {
 });
 
 // Apply strict rejection on renter-facing routes (frontend already migrated)
-app.use('/api/renters/me', rejectRenterQueryParamKey);
-app.use('/api/renters/analytics', rejectRenterQueryParamKey);
-app.use('/api/renters/export', rejectRenterQueryParamKey);
+// app.use('/api/renters/me', rejectRenterQueryParamKey); // DISABLED: frontend not migrated yet
+// app.use('/api/renters/analytics', rejectRenterQueryParamKey); // DISABLED
+// app.use('/api/renters/export', rejectRenterQueryParamKey); // DISABLED
 
 // ── Auth Failure Logging ────────────────────────────────────────────────
 // Wrap res.status to detect 401/403 and emit an audit log entry.
