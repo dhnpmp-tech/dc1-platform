@@ -310,6 +310,74 @@ PLIST
   info "LaunchAgent loaded and restarted."
 }
 
+setup_macos_menubar() {
+  step "Installing DCP menu bar monitor"
+  local menubar_path="${INSTALL_DIR}/dcp_menubar.py"
+  local menubar_url="${API_BASE}/api/providers/download/menubar"
+  local tmp
+  tmp="$(mktemp)"
+  trap 'rm -f "${tmp}"' RETURN
+
+  if curl -fsSL "${menubar_url}" -o "${tmp}" 2>/dev/null; then
+    mv "${tmp}" "${menubar_path}"
+    chmod +x "${menubar_path}"
+  else
+    warn "Could not download menu bar app. Skipping."
+    rm -f "${tmp}"
+    return
+  fi
+
+  # Install rumps + requests if needed
+  "${PYTHON_BIN}" -c "import rumps" 2>/dev/null || {
+    info "Installing menu bar dependencies (rumps, requests)…"
+    "${PYTHON_BIN}" -m pip install rumps requests -q 2>/dev/null || \
+      "${PYTHON_BIN}" -m pip install --user rumps requests -q 2>/dev/null || \
+      "${PYTHON_BIN}" -m pip install --break-system-packages rumps requests -q 2>/dev/null || {
+        warn "Could not install rumps. Menu bar app will install deps on first launch."
+      }
+  }
+
+  # Create a LaunchAgent to start the menu bar app at login
+  local mb_label="com.dcp.provider.menubar"
+  local mb_plist="${HOME}/Library/LaunchAgents/${mb_label}.plist"
+  mkdir -p "$(dirname "${mb_plist}")"
+
+  cat > "${mb_plist}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${mb_label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PYTHON_BIN}</string>
+    <string>${menubar_path}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${INSTALL_DIR}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/menubar.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/menubar-error.log</string>
+</dict>
+</plist>
+PLIST
+
+  # Load (or reload) the menu bar agent
+  launchctl bootout "gui/$(id -u)" "${mb_plist}" >/dev/null 2>&1 || true
+  if launchctl bootstrap "gui/$(id -u)" "${mb_plist}" >/dev/null 2>&1; then
+    :
+  else
+    launchctl load -w "${mb_plist}" >/dev/null 2>&1 || true
+  fi
+  info "Menu bar monitor installed and launched."
+}
+
 fetch_provider_id_if_missing() {
   if [ -n "${DCP_PROVIDER_ID}" ]; then
     return
@@ -347,6 +415,7 @@ download_daemon
 
 if [ "${DCP_OS}" = "mac" ]; then
   setup_macos_launchagent
+  setup_macos_menubar
 else
   setup_linux_service
 fi

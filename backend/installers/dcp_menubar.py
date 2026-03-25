@@ -1,0 +1,427 @@
+#!/usr/bin/env python3
+"""
+DCP Provider — macOS Menu Bar App
+Shows daemon status, provider info, and quick actions at a glance.
+
+Requires: pip3 install rumps requests
+"""
+
+import os
+import sys
+import json
+import time
+import threading
+import subprocess
+import webbrowser
+from pathlib import Path
+from datetime import datetime, timedelta
+
+try:
+    import rumps
+except ImportError:
+    print("Installing rumps…")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "rumps", "-q"])
+    import rumps
+
+try:
+    import requests
+except ImportError:
+    print("Installing requests…")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "-q"])
+    import requests
+
+# ─── PATHS & CONSTANTS ──────────────────────────────────────────────────────
+
+CONFIG_DIR = Path.home() / ".dcp"
+CONFIG_FILE = CONFIG_DIR / "config"
+INSTALL_DIR = Path.home() / "dcp-provider"
+LOG_FILE = INSTALL_DIR / "logs" / "daemon.log"
+DAEMON_PATH = INSTALL_DIR / "dc1_daemon.py"
+PID_FILE = INSTALL_DIR / "dc1_daemon.pid"
+LAUNCHD_LABEL = "com.dcp.provider"
+
+DASHBOARD_URL = "https://dcp.sa/provider"
+POLL_INTERVAL = 30  # seconds between status checks
+
+
+# ─── CONFIG LOADING ──────────────────────────────────────────────────────────
+
+def load_config():
+    """Read the shell-style config file (~/.dcp/config) into a dict."""
+    cfg = {}
+    if not CONFIG_FILE.exists():
+        return cfg
+    for line in CONFIG_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, val = line.partition("=")
+            # Strip surrounding quotes
+            val = val.strip().strip("'\"")
+            cfg[key.strip()] = val
+    return cfg
+
+
+# ─── DAEMON STATUS ───────────────────────────────────────────────────────────
+
+def is_daemon_running():
+    """Check if the DCP daemon process is alive."""
+    # Check LaunchAgent first
+    try:
+        uid = os.getuid()
+        result = subprocess.run(
+            ["launchctl", "print", f"gui/{uid}/{LAUNCHD_LABEL}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and "state = running" in result.stdout.lower():
+            return True
+    except Exception:
+        pass
+
+    # Fallback: check PID file
+    if PID_FILE.exists():
+        try:
+            pid = int(PID_FILE.read_text().strip())
+            os.kill(pid, 0)  # Signal 0 = check if alive
+            return True
+        except (ValueError, OSError):
+            pass
+
+    # Fallback: pgrep
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", str(DAEMON_PATH)],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def get_daemon_version():
+    """Read DAEMON_VERSION from the installed daemon script."""
+    if not DAEMON_PATH.exists():
+        return None
+    try:
+        for line in DAEMON_PATH.read_text().splitlines()[:100]:
+            if line.strip().startswith("DAEMON_VERSION"):
+                # DAEMON_VERSION = "3.3.2"
+                return line.split("=", 1)[1].strip().strip('"\'')
+    except Exception:
+        pass
+    return None
+
+
+def get_last_log_lines(n=20):
+    """Read the last n lines from the daemon log."""
+    if not LOG_FILE.exists():
+        return "No log file found."
+    try:
+        lines = LOG_FILE.read_text().splitlines()
+        return "\n".join(lines[-n:])
+    except Exception as e:
+        return f"Error reading log: {e}"
+
+
+def get_last_heartbeat_from_log():
+    """Parse the last successful heartbeat timestamp from the log."""
+    if not LOG_FILE.exists():
+        return None
+    try:
+        lines = LOG_FILE.read_text().splitlines()
+        # Walk backwards to find the last heartbeat line
+        for line in reversed(lines[-200:]):
+            if "Heartbeat HTTP" in line and "200" in line:
+                # Parse timestamp: "2026-03-26 02:52:00,123"
+                ts_str = line[:23]
+                return datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
+            if "Heartbeat" in line and "WARNING" not in line and "ERROR" not in line:
+                ts_str = line[:23]
+                try:
+                    return datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    return None
+
+
+def get_last_heartbeat_error():
+    """Get the most recent heartbeat error from the log."""
+    if not LOG_FILE.exists():
+        return None
+    try:
+        lines = LOG_FILE.read_text().splitlines()
+        for line in reversed(lines[-100:]):
+            if "Heartbeat HTTP" in line and ("WARNING" in line or "ERROR" in line):
+                # Extract just the error part
+                if "{'error':" in line:
+                    start = line.index("{'error':")
+                    return line[start:]
+                return line.split("]", 1)[-1].strip() if "]" in line else line
+    except Exception:
+        pass
+    return None
+
+
+# ─── BACKEND API ─────────────────────────────────────────────────────────────
+
+def fetch_provider_status(api_base, api_key):
+    """Fetch provider status from the backend /me endpoint."""
+    try:
+        resp = requests.get(
+            f"{api_base}/api/providers/me",
+            params={"key": api_key},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return None
+
+
+# ─── MENU BAR APP ────────────────────────────────────────────────────────────
+
+class DCPMenuBarApp(rumps.App):
+    def __init__(self):
+        super().__init__(
+            "DCP",
+            title="DCP ●",
+            quit_button=None,  # We'll add our own
+        )
+
+        # State
+        self.daemon_running = False
+        self.provider_info = None
+        self.config = {}
+        self.last_error = None
+
+        # Menu items
+        self.status_item = rumps.MenuItem("Status: Checking…")
+        self.status_item.set_callback(None)
+
+        self.provider_item = rumps.MenuItem("Provider: —")
+        self.provider_item.set_callback(None)
+
+        self.version_item = rumps.MenuItem("Daemon: —")
+        self.version_item.set_callback(None)
+
+        self.heartbeat_item = rumps.MenuItem("Last heartbeat: —")
+        self.heartbeat_item.set_callback(None)
+
+        self.earnings_item = rumps.MenuItem("Earnings: —")
+        self.earnings_item.set_callback(None)
+
+        self.gpu_item = rumps.MenuItem("GPU: —")
+        self.gpu_item.set_callback(None)
+
+        self.separator1 = None
+
+        self.dashboard_btn = rumps.MenuItem("Open Dashboard", callback=self.open_dashboard)
+        self.logs_btn = rumps.MenuItem("View Logs", callback=self.view_logs)
+        self.restart_btn = rumps.MenuItem("Restart Daemon", callback=self.restart_daemon)
+        self.stop_btn = rumps.MenuItem("Stop Daemon", callback=self.stop_daemon)
+        self.start_btn = rumps.MenuItem("Start Daemon", callback=self.start_daemon)
+        self.refresh_btn = rumps.MenuItem("Refresh Now", callback=self.manual_refresh)
+        self.quit_btn = rumps.MenuItem("Quit DCP Monitor", callback=self.quit_app)
+
+        self.menu = [
+            self.status_item,
+            None,  # separator
+            self.provider_item,
+            self.gpu_item,
+            self.version_item,
+            self.heartbeat_item,
+            self.earnings_item,
+            None,  # separator
+            self.dashboard_btn,
+            self.logs_btn,
+            None,  # separator
+            self.restart_btn,
+            self.stop_btn,
+            self.start_btn,
+            self.refresh_btn,
+            None,  # separator
+            self.quit_btn,
+        ]
+
+        # Start background polling
+        self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self.poll_thread.start()
+
+        # Initial update
+        self._update_status()
+
+    def _poll_loop(self):
+        """Background thread that periodically updates status."""
+        while True:
+            time.sleep(POLL_INTERVAL)
+            try:
+                self._update_status()
+            except Exception:
+                pass
+
+    def _update_status(self):
+        """Refresh all status information."""
+        self.config = load_config()
+        self.daemon_running = is_daemon_running()
+
+        api_key = self.config.get("DCP_PROVIDER_KEY", "")
+        api_base = self.config.get("DCP_API_BASE", "https://api.dcp.sa")
+
+        # Update title bar icon
+        if self.daemon_running:
+            self.title = "DCP ●"  # Green-ish dot (will show in menu bar)
+            self.status_item.title = "⦿  Online — Daemon Running"
+        else:
+            self.title = "DCP ○"
+            self.status_item.title = "○  Offline — Daemon Stopped"
+
+        # Daemon version
+        version = get_daemon_version()
+        self.version_item.title = f"Daemon: v{version}" if version else "Daemon: not installed"
+
+        # Last heartbeat
+        last_hb = get_last_heartbeat_from_log()
+        if last_hb:
+            ago = datetime.now() - last_hb
+            if ago < timedelta(minutes=1):
+                hb_str = f"{int(ago.total_seconds())}s ago"
+            elif ago < timedelta(hours=1):
+                hb_str = f"{int(ago.total_seconds() / 60)}m ago"
+            else:
+                hb_str = last_hb.strftime("%H:%M:%S")
+            self.heartbeat_item.title = f"Last heartbeat: {hb_str}"
+        else:
+            error = get_last_heartbeat_error()
+            if error:
+                # Truncate long errors
+                short = error[:60] + "…" if len(error) > 60 else error
+                self.heartbeat_item.title = f"Heartbeat: ⚠ {short}"
+            else:
+                self.heartbeat_item.title = "Last heartbeat: —"
+
+        # Fetch remote status if we have a key
+        if api_key:
+            info = fetch_provider_status(api_base, api_key)
+            if info:
+                self.provider_info = info
+
+                name = info.get("name", "Unknown")
+                self.provider_item.title = f"Provider: {name}"
+
+                gpu = info.get("gpu_model") or info.get("gpu_name_detected") or "CPU only"
+                self.gpu_item.title = f"GPU: {gpu}"
+
+                # Earnings
+                earnings_halala = info.get("total_earnings_halala") or info.get("total_earnings") or 0
+                if isinstance(earnings_halala, (int, float)) and earnings_halala > 0:
+                    sar = earnings_halala / 100 if earnings_halala > 100 else earnings_halala
+                    self.earnings_item.title = f"Earnings: {sar:.2f} SAR"
+                else:
+                    self.earnings_item.title = "Earnings: 0.00 SAR"
+
+                # Update status with backend info
+                backend_status = info.get("status", "unknown")
+                approval = info.get("approval_status", "unknown")
+                if self.daemon_running:
+                    if approval == "pending":
+                        self.status_item.title = "⦿  Daemon Running — Awaiting Approval"
+                        self.title = "DCP ◐"
+                    elif backend_status == "online":
+                        self.status_item.title = "⦿  Online — Active"
+                    else:
+                        self.status_item.title = f"⦿  Daemon Running — {backend_status}"
+            else:
+                self.provider_item.title = f"Provider: {self.config.get('DCP_PROVIDER_NAME', '—')}"
+        else:
+            self.provider_item.title = "Provider: Not configured"
+            self.status_item.title = "○  Not configured — Run installer"
+
+        # Toggle start/stop visibility
+        self.start_btn.set_callback(self.start_daemon if not self.daemon_running else None)
+        self.stop_btn.set_callback(self.stop_daemon if self.daemon_running else None)
+
+    def open_dashboard(self, _):
+        provider_id = self.config.get("DCP_PROVIDER_ID", "")
+        webbrowser.open(DASHBOARD_URL)
+
+    def view_logs(self, _):
+        """Open the daemon log in Console.app or default text viewer."""
+        if LOG_FILE.exists():
+            subprocess.Popen(["open", str(LOG_FILE)])
+        else:
+            rumps.notification(
+                "DCP Provider",
+                "No logs found",
+                f"Expected at: {LOG_FILE}",
+            )
+
+    def restart_daemon(self, _):
+        """Restart the daemon via launchctl."""
+        try:
+            uid = os.getuid()
+            subprocess.run(
+                ["launchctl", "kickstart", "-k", f"gui/{uid}/{LAUNCHD_LABEL}"],
+                capture_output=True, timeout=10,
+            )
+            rumps.notification("DCP Provider", "Daemon Restarted", "The daemon has been restarted.")
+            time.sleep(2)
+            self._update_status()
+        except Exception as e:
+            rumps.notification("DCP Provider", "Restart Failed", str(e))
+
+    def stop_daemon(self, _):
+        """Stop the daemon via launchctl."""
+        try:
+            uid = os.getuid()
+            subprocess.run(
+                ["launchctl", "bootout", f"gui/{uid}/{LAUNCHD_LABEL}"],
+                capture_output=True, timeout=10,
+            )
+            rumps.notification("DCP Provider", "Daemon Stopped", "The daemon has been stopped.")
+            time.sleep(2)
+            self._update_status()
+        except Exception as e:
+            rumps.notification("DCP Provider", "Stop Failed", str(e))
+
+    def start_daemon(self, _):
+        """Start the daemon via launchctl."""
+        plist = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+        if not plist.exists():
+            rumps.notification(
+                "DCP Provider",
+                "Not Installed",
+                "LaunchAgent not found. Run the installer first.",
+            )
+            return
+        try:
+            uid = os.getuid()
+            subprocess.run(
+                ["launchctl", "bootstrap", f"gui/{uid}", str(plist)],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["launchctl", "kickstart", f"gui/{uid}/{LAUNCHD_LABEL}"],
+                capture_output=True, timeout=10,
+            )
+            rumps.notification("DCP Provider", "Daemon Started", "The daemon is starting up.")
+            time.sleep(3)
+            self._update_status()
+        except Exception as e:
+            rumps.notification("DCP Provider", "Start Failed", str(e))
+
+    def manual_refresh(self, _):
+        self._update_status()
+        rumps.notification("DCP Provider", "Status Refreshed", self.status_item.title)
+
+    def quit_app(self, _):
+        rumps.quit_application()
+
+
+# ─── ENTRY POINT ─────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    DCPMenuBarApp().run()
