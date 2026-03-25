@@ -10,6 +10,9 @@ import os
 import sys
 import json
 import time
+import math
+import struct
+import zlib
 import threading
 import subprocess
 import webbrowser
@@ -29,6 +32,12 @@ except ImportError:
     print("Installing requests…")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "-q"])
     import requests
+
+try:
+    from AppKit import NSImage, NSData
+except ImportError:
+    NSImage = None
+    NSData = None
 
 # ─── PATHS & CONSTANTS ──────────────────────────────────────────────────────
 
@@ -182,13 +191,135 @@ def fetch_provider_status(api_base, api_key):
     return None
 
 
+# ─── ICON GENERATION ─────────────────────────────────────────────────────────
+
+def _make_png(width, height, pixels):
+    """Create a minimal RGBA PNG from raw pixel bytes (no PIL needed)."""
+    def chunk(chunk_type, data):
+        c = chunk_type + data
+        return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+
+    header = b'\x89PNG\r\n\x1a\n'
+    ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0))
+
+    raw = b''
+    for y in range(height):
+        raw += b'\x00'  # filter: none
+        row_start = y * width * 4
+        raw += pixels[row_start:row_start + width * 4]
+
+    idat = chunk(b'IDAT', zlib.compress(raw))
+    iend = chunk(b'IEND', b'')
+    return header + ihdr + idat + iend
+
+
+def _draw_hexagon(size, filled=True, alert=False):
+    """Draw a hexagon icon as RGBA pixel data.
+
+    - filled=True: solid hexagon (online)
+    - filled=False: hollow hexagon outline (offline)
+    - alert=True: adds a small dot in corner (warning)
+    """
+    pixels = bytearray(size * size * 4)
+    cx, cy = size / 2, size / 2
+    r = size * 0.40  # outer radius
+    r_inner = r - max(2, size * 0.12)  # inner radius for outline
+
+    def in_hexagon(x, y, radius):
+        dx, dy = x - cx, y - cy
+        for i in range(6):
+            angle = math.pi / 3 * i + math.pi / 6
+            nx = math.cos(angle)
+            ny = math.sin(angle)
+            if dx * nx + dy * ny > radius:
+                return False
+        return True
+
+    for y in range(size):
+        for x in range(size):
+            idx = (y * size + x) * 4
+            px, py = x + 0.5, y + 0.5
+
+            if filled:
+                if in_hexagon(px, py, r):
+                    # Template image: use black pixels, alpha determines shape
+                    pixels[idx:idx+4] = b'\x00\x00\x00\xff'
+                else:
+                    pixels[idx:idx+4] = b'\x00\x00\x00\x00'
+            else:
+                in_outer = in_hexagon(px, py, r)
+                in_inner = in_hexagon(px, py, r_inner)
+                if in_outer and not in_inner:
+                    pixels[idx:idx+4] = b'\x00\x00\x00\xff'
+                else:
+                    pixels[idx:idx+4] = b'\x00\x00\x00\x00'
+
+            # Alert dot in bottom-right
+            if alert:
+                dot_cx, dot_cy = size * 0.78, size * 0.78
+                dot_r = size * 0.15
+                dist = math.sqrt((px - dot_cx)**2 + (py - dot_cy)**2)
+                if dist <= dot_r:
+                    pixels[idx:idx+4] = b'\x00\x00\x00\xff'
+
+    return bytes(pixels)
+
+
+def make_icon(state="online"):
+    """Generate a menu bar icon PNG and return the file path.
+
+    States: 'online' (filled), 'offline' (hollow), 'warning' (hollow+dot)
+    """
+    size = 32  # @2x for Retina
+    if state == "online":
+        px = _draw_hexagon(size, filled=True)
+    elif state == "warning":
+        px = _draw_hexagon(size, filled=True, alert=True)
+    else:
+        px = _draw_hexagon(size, filled=False)
+
+    png_data = _make_png(size, size, px)
+
+    icon_dir = Path.home() / "dcp-provider" / ".icons"
+    icon_dir.mkdir(parents=True, exist_ok=True)
+    icon_path = icon_dir / f"dcp_{state}.png"
+    icon_path.write_bytes(png_data)
+    return str(icon_path)
+
+
+def set_menu_bar_icon(app, state="online"):
+    """Set the menu bar icon using NSImage template for proper dark/light mode."""
+    icon_path = make_icon(state)
+    try:
+        nsapp = getattr(app, '_nsapp', None)
+        if nsapp and NSImage and NSData:
+            status_item = getattr(nsapp, 'nsstatusitem', None)
+            if status_item:
+                data = NSData.dataWithContentsOfFile_(icon_path)
+                if data:
+                    img = NSImage.alloc().initWithData_(data)
+                    img.setSize_((16, 16))  # logical size (Retina uses 32px)
+                    img.setTemplate_(True)  # adapts to dark/light menu bar
+                    status_item.setImage_(img)
+                    app.title = None  # clear text title when using icon
+                    return
+    except Exception:
+        pass
+    # Fallback: use rumps icon property
+    try:
+        app.icon = icon_path
+        app.title = None
+    except Exception:
+        pass  # During init, icon can't be set yet — will be set on first poll
+
+
 # ─── MENU BAR APP ────────────────────────────────────────────────────────────
 
 class DCPMenuBarApp(rumps.App):
     def __init__(self):
         super().__init__(
             "DCP",
-            title="⬡",  # Compact hexagon icon — fits in notched MacBooks
+            title="DCP",  # Temporary text until icon loads
             quit_button=None,  # We'll add our own
         )
 
@@ -273,10 +404,10 @@ class DCPMenuBarApp(rumps.App):
 
         # Update title bar icon
         if self.daemon_running:
-            self.title = "⬡"  # Hexagon = online
+            set_menu_bar_icon(self, "online")
             self.status_item.title = "⦿  Online — Daemon Running"
         else:
-            self.title = "⬡!"  # Hexagon + alert = offline
+            set_menu_bar_icon(self, "offline")
             self.status_item.title = "○  Offline — Daemon Stopped"
 
         # Daemon version
@@ -329,7 +460,7 @@ class DCPMenuBarApp(rumps.App):
                 if self.daemon_running:
                     if approval == "pending":
                         self.status_item.title = "⦿  Daemon Running — Awaiting Approval"
-                        self.title = "⬡?"
+                        set_menu_bar_icon(self, "warning")
                     elif backend_status == "online":
                         self.status_item.title = "⦿  Online — Active"
                     else:
