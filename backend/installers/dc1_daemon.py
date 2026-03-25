@@ -1194,7 +1194,7 @@ def send_heartbeat():
                 payload["bandwidth"] = dict(_bandwidth_stats)  # Copy to avoid race
         code, resp = http_post(url, payload)
         if code == 200:
-            log.debug("Heartbeat OK")
+            log.info("Heartbeat OK (200)")
         else:
             log.warning(f"Heartbeat HTTP {code}: {resp}")
     except Exception as e:
