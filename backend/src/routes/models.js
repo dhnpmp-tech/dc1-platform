@@ -511,6 +511,7 @@ function toLegacyListItem(model) {
     template_id: model.template_id || null,
     competitor_prices: model.pricing.competitor_prices || null,
     savings_pct: model.pricing.savings_pct || null,
+    pricing_per_hour: model.pricing.default_sar_per_hour,
   };
 }
 
@@ -657,8 +658,8 @@ function applyQueryFilters(models, query) {
     result = result.filter((m) => m.arabic || m.arabic_capability);
   }
 
-  // vram=N is a short alias for min_vram_gb=N
-  const minVram = toInt(query.min_vram_gb ?? query.vram, { min: 1, max: 1024 });
+  // vram=N / vram_min=N are short aliases for min_vram_gb=N
+  const minVram = toInt(query.min_vram_gb ?? query.vram_min ?? query.vram, { min: 1, max: 1024 });
   if (minVram != null) {
     result = result.filter((m) => {
       const vramNeeded = toInt(m.min_gpu_vram_gb, { min: 1, max: 1024 }) || 1;

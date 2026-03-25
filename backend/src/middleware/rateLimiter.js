@@ -108,6 +108,10 @@ const authenticatedEndpointLimiter = createRateLimiter({ windowMs: 60*1000, max:
 // Model deploy: 20 per API key per minute
 const modelDeployLimiter = createRateLimiter({ windowMs: 60*1000, max: 20, keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req) });
 
+// Template deploy: 10 per renter key per minute (DCP-956)
+// Mirrors jobCreateLimiter — prevents IP-cycling abuse on the one-click deploy endpoint.
+const templateDeployLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
+
 // Provider activation: 3 per provider key per hour (DCP-875)
 // Prevents repeated activation probing; daemon activates once on startup.
 const providerActivateLimiter = createRateLimiter({ windowMs: 60*60*1000, max: 3, keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req) });
@@ -127,4 +131,5 @@ module.exports = {
   renterDataExportLimiter, providerDataExportLimiter,
   adminLimiter, heartbeatProviderLimiter, authLimiter,
   providerActivateLimiter, webhookRegistrationLimiter,
+  templateDeployLimiter,
 };

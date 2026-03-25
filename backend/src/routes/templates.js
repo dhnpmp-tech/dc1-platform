@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
-const { publicEndpointLimiter } = require('../middleware/rateLimiter');
+const { publicEndpointLimiter, templateDeployLimiter } = require('../middleware/rateLimiter');
 const { getApiKeyFromReq } = require('../middleware/auth');
 const pricingService = require('../services/pricingService');
 const { GPU_RATE_TABLE } = require('../config/pricing');
@@ -164,7 +164,7 @@ function findAvailableProvider(minVramGb) {
 // Body: { duration_minutes?, pricing_class?, params? }
 // Returns 201: { jobId, status, estimatedStart, gpuTier, totalCost, template, provider, message }
 // Errors: 401 no auth | 403 invalid key | 402 insufficient balance | 404 not found | 503 no GPU
-router.post('/:id/deploy', publicEndpointLimiter, (req, res) => {
+router.post('/:id/deploy', templateDeployLimiter, (req, res) => {
   try {
     // 1. Authenticate renter
     const key = getApiKeyFromReq(req, {
