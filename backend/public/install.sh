@@ -65,10 +65,10 @@ load_config() {
     # shellcheck disable=SC1090
     . "${CONFIG_FILE}"
   fi
-  [ -n "${env_key}" ] && DCP_PROVIDER_KEY="${env_key}"
-  [ -n "${env_id}" ] && DCP_PROVIDER_ID="${env_id}"
-  [ -n "${env_email}" ] && DCP_PROVIDER_EMAIL="${env_email}"
-  [ -n "${env_name}" ] && DCP_PROVIDER_NAME="${env_name}"
+  [ -n "${env_key}" ] && DCP_PROVIDER_KEY="${env_key}" || true
+  [ -n "${env_id}" ] && DCP_PROVIDER_ID="${env_id}" || true
+  [ -n "${env_email}" ] && DCP_PROVIDER_EMAIL="${env_email}" || true
+  [ -n "${env_name}" ] && DCP_PROVIDER_NAME="${env_name}" || true
 }
 
 write_config() {
