@@ -1668,6 +1668,59 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_billing_records_provider ON billing_reco
 db.exec(`CREATE INDEX IF NOT EXISTS idx_billing_records_renter ON billing_records(renter_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_billing_records_status ON billing_records(status, created_at DESC)`);
 
+// ─── REFERRALS TABLE ───
+// Provider referral system: each provider gets a referral code. When a new provider
+// signs up with a referral code, the referrer earns a percentage of their first month.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS referrals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    referrer_id INTEGER NOT NULL,
+    referred_id INTEGER NOT NULL,
+    referral_code TEXT NOT NULL,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'expired', 'paid')),
+    bonus_pct REAL DEFAULT 5.0,
+    bonus_duration_days INTEGER DEFAULT 30,
+    total_bonus_halala INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,
+    paid_at DATETIME,
+    FOREIGN KEY (referrer_id) REFERENCES providers(id),
+    FOREIGN KEY (referred_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_referrals_referred ON referrals(referred_id)`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_referrals_pair ON referrals(referrer_id, referred_id)`);
+
+// Add referral_code to providers table
+try { db.prepare('ALTER TABLE providers ADD COLUMN referral_code TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE providers ADD COLUMN referred_by INTEGER').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE providers ADD COLUMN referral_earnings_halala INTEGER DEFAULT 0').run(); } catch (_) {}
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_referral_code ON providers(referral_code)`);
+
+// ─── PROVIDER GROUPS TABLE ───
+// Fleet management: group multiple machines under one account.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    owner_id INTEGER NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'paused', 'disbanded')),
+    total_gpus INTEGER DEFAULT 0,
+    total_vram_gb REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_groups_owner ON provider_groups(owner_id, status)`);
+
+// Add group membership to providers
+try { db.prepare('ALTER TABLE providers ADD COLUMN group_id INTEGER').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE providers ADD COLUMN group_role TEXT DEFAULT \'member\'').run(); } catch (_) {}
+db.exec(`CREATE INDEX IF NOT EXISTS idx_providers_group ON providers(group_id)`);
+
 // Compatibility wrapper: providers.js uses db.run/get/all (async sqlite3 style)
 // better-sqlite3 uses db.prepare().run/get/all - these wrappers bridge the gap
 function flatParams(params) {

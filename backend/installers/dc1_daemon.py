@@ -55,7 +55,7 @@ HMAC_SECRET = "{{HMAC_SECRET}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.3.2"
+DAEMON_VERSION = "3.4.0"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
@@ -96,6 +96,29 @@ VRAM_REQUIREMENTS = {
     "vllm_serve": 14336,        # vLLM 7B model in FP16 needs ~14 GB
 }
 VRAM_DEFAULT_REQUIREMENT = 2000  # Default if job type unknown
+
+# ─── POWER COST AWARENESS ────────────────────────────────────────────────────
+# Provider can set electricity cost in config.json to skip unprofitable jobs
+POWER_COST_CONFIG_FILE = Path.home() / "dc1-provider" / "power_config.json"
+DEFAULT_ELECTRICITY_COST_KWH = 0.0  # 0 = disabled (accept all jobs)
+DEFAULT_GPU_TDP_WATTS = 300          # Default TDP for profitability calc
+
+# ─── MULTI-GPU CONCURRENT JOBS ───────────────────────────────────────────────
+MAX_CONCURRENT_JOBS = 1  # Default: 1 job at a time (auto-raised for multi-GPU)
+_gpu_job_slots = {}  # {gpu_index: job_id or None}
+_gpu_slots_lock = threading.Lock()
+
+# ─── NETWORK QUALITY ─────────────────────────────────────────────────────────
+NETWORK_QUALITY_INTERVAL = 300  # Measure network quality every 5 minutes
+NETWORK_QUALITY_PING_COUNT = 5  # Packets for packet loss measurement
+_network_quality = {
+    "latency_ms": None,
+    "jitter_ms": None,
+    "packet_loss_pct": None,
+    "dns_resolve_ms": None,
+    "last_check": None,
+}
+_nq_lock = threading.Lock()
 
 # Disk space requirements (MB)
 DISK_MIN_FREE_MB = 5000          # 5 GB minimum free space (models can be 4-8 GB)
@@ -508,6 +531,269 @@ def bandwidth_loop():
             measure_bandwidth()
         except Exception as e:
             log.debug(f"Bandwidth check error: {e}")
+
+# ─── NETWORK QUALITY MONITOR ────────────────────────────────────────────────
+
+def measure_network_quality():
+    """Measure network quality: latency, jitter, packet loss, DNS resolve time."""
+    global _network_quality
+    results = {}
+
+    # 1. Ping-based latency, jitter, and packet loss
+    try:
+        # Extract hostname from API_URL
+        from urllib.parse import urlparse
+        host = urlparse(API_URL).hostname or "api.dcp.sa"
+
+        ping_cmd = ["ping", "-c", str(NETWORK_QUALITY_PING_COUNT), "-W", "3", host]
+        if platform.system() == "Darwin":
+            ping_cmd = ["ping", "-c", str(NETWORK_QUALITY_PING_COUNT), "-W", "3000", host]
+
+        result = subprocess.run(ping_cmd, capture_output=True, text=True, timeout=20)
+        output = result.stdout
+
+        # Parse packet loss
+        for line in output.splitlines():
+            if "packet loss" in line:
+                # "5 packets transmitted, 5 received, 0% packet loss"
+                import re
+                m = re.search(r'(\d+(?:\.\d+)?)%\s+packet loss', line)
+                if m:
+                    results["packet_loss_pct"] = float(m.group(1))
+
+            if "min/avg/max" in line or "rtt" in line:
+                # "round-trip min/avg/max/stddev = 1.2/2.5/5.1/1.3 ms"
+                import re
+                m = re.search(r'=\s*([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', line)
+                if m:
+                    results["latency_ms"] = round(float(m.group(2)))  # avg
+                    results["jitter_ms"] = round(float(m.group(4)), 1)  # stddev
+    except Exception as e:
+        log.debug(f"Ping measurement failed: {e}")
+
+    # 2. DNS resolve time
+    try:
+        import socket
+        from urllib.parse import urlparse
+        host = urlparse(API_URL).hostname or "api.dcp.sa"
+        start = time.time()
+        socket.getaddrinfo(host, 443)
+        results["dns_resolve_ms"] = round((time.time() - start) * 1000)
+    except Exception:
+        pass
+
+    results["last_check"] = datetime.utcnow().isoformat() + "Z"
+
+    with _nq_lock:
+        _network_quality.update(results)
+
+    log.info(f"Network quality: latency={results.get('latency_ms')}ms "
+             f"jitter={results.get('jitter_ms')}ms "
+             f"loss={results.get('packet_loss_pct')}% "
+             f"dns={results.get('dns_resolve_ms')}ms")
+
+    return _network_quality
+
+
+def network_quality_loop():
+    """Background thread: measure network quality periodically."""
+    time.sleep(30)  # Delay after startup
+    measure_network_quality()
+    while True:
+        time.sleep(NETWORK_QUALITY_INTERVAL)
+        try:
+            measure_network_quality()
+        except Exception as e:
+            log.debug(f"Network quality check error: {e}")
+
+
+# ─── POWER COST AWARENESS ───────────────────────────────────────────────────
+
+def load_power_config():
+    """Load power cost configuration from power_config.json.
+
+    Example config:
+    {
+        "electricity_cost_kwh": 0.18,    // SAR per kWh
+        "gpu_tdp_watts": 300,            // GPU TDP in watts
+        "min_profit_margin_pct": 20,     // Minimum profit margin %
+        "enabled": true
+    }
+    """
+    try:
+        if POWER_COST_CONFIG_FILE.exists():
+            return json.loads(POWER_COST_CONFIG_FILE.read_text())
+    except Exception:
+        pass
+    return {
+        "electricity_cost_kwh": DEFAULT_ELECTRICITY_COST_KWH,
+        "gpu_tdp_watts": DEFAULT_GPU_TDP_WATTS,
+        "min_profit_margin_pct": 20,
+        "enabled": False,
+    }
+
+
+def estimate_job_profitability(job, gpu=None):
+    """Estimate whether a job is profitable after electricity costs.
+
+    Returns (profitable: bool, details: dict).
+    """
+    power_config = load_power_config()
+    if not power_config.get("enabled") or power_config.get("electricity_cost_kwh", 0) <= 0:
+        return True, {"reason": "power cost tracking disabled"}
+
+    electricity_cost_kwh = power_config["electricity_cost_kwh"]
+    gpu_tdp_watts = power_config.get("gpu_tdp_watts", DEFAULT_GPU_TDP_WATTS)
+    min_margin_pct = power_config.get("min_profit_margin_pct", 20)
+
+    # Estimate GPU power from actual readings if available
+    if gpu and gpu.get("power_w"):
+        gpu_power_watts = gpu["power_w"]
+    else:
+        gpu_power_watts = gpu_tdp_watts
+
+    # Job earnings estimate (halala per GPU-second)
+    cost_per_gpu_second = job.get("cost_per_gpu_second_halala", 0.25)
+    estimated_duration = job.get("estimated_duration_seconds", JOB_TIMEOUT)
+
+    # Revenue = cost_per_gpu_second * duration (in halala)
+    revenue_halala = cost_per_gpu_second * estimated_duration
+    revenue_sar = revenue_halala / 100
+
+    # Power cost = watts * hours * cost_per_kwh
+    hours = estimated_duration / 3600
+    power_cost_sar = (gpu_power_watts / 1000) * hours * electricity_cost_kwh
+
+    # System overhead (CPU, RAM, cooling) — estimate 30% on top of GPU
+    total_cost_sar = power_cost_sar * 1.3
+
+    profit_sar = revenue_sar - total_cost_sar
+    margin_pct = (profit_sar / revenue_sar * 100) if revenue_sar > 0 else -100
+
+    profitable = margin_pct >= min_margin_pct
+
+    details = {
+        "revenue_sar": round(revenue_sar, 4),
+        "power_cost_sar": round(total_cost_sar, 4),
+        "profit_sar": round(profit_sar, 4),
+        "margin_pct": round(margin_pct, 1),
+        "gpu_watts": gpu_power_watts,
+        "electricity_kwh": electricity_cost_kwh,
+        "profitable": profitable,
+    }
+
+    if not profitable:
+        log.info(f"Job profitability check: UNPROFITABLE — "
+                 f"revenue={revenue_sar:.4f} SAR, cost={total_cost_sar:.4f} SAR, "
+                 f"margin={margin_pct:.1f}% (min: {min_margin_pct}%)")
+
+    return profitable, details
+
+
+# ─── MULTI-GPU JOB SLOTS ────────────────────────────────────────────────────
+
+def init_gpu_slots():
+    """Initialize GPU job slots based on detected GPUs."""
+    global MAX_CONCURRENT_JOBS, _gpu_job_slots
+    gpu = detect_gpu()
+    if not gpu:
+        MAX_CONCURRENT_JOBS = 1
+        _gpu_job_slots = {0: None}
+        return
+
+    all_gpus = gpu.get("all_gpus", [gpu])
+    gpu_count = len(all_gpus)
+    MAX_CONCURRENT_JOBS = max(1, gpu_count)
+
+    with _gpu_slots_lock:
+        _gpu_job_slots = {g["index"]: None for g in all_gpus}
+
+    if gpu_count > 1:
+        log.info(f"Multi-GPU: {gpu_count} GPUs detected, {MAX_CONCURRENT_JOBS} concurrent job slots")
+    else:
+        log.info(f"Single GPU detected, 1 job slot")
+
+
+def acquire_gpu_slot(job_id, required_vram=0):
+    """Acquire a free GPU slot for a job. Returns gpu_index or None."""
+    gpu = detect_gpu()
+    if not gpu:
+        return 0  # CPU-only, use slot 0
+
+    all_gpus = gpu.get("all_gpus", [gpu])
+
+    with _gpu_slots_lock:
+        for g in all_gpus:
+            idx = g["index"]
+            if _gpu_job_slots.get(idx) is None:
+                free_vram = g.get("free_vram_mib", 0)
+                if required_vram <= 0 or free_vram >= required_vram:
+                    _gpu_job_slots[idx] = job_id
+                    log.info(f"GPU slot {idx} acquired for job {job_id} "
+                             f"(free VRAM: {free_vram} MiB)")
+                    return idx
+    return None
+
+
+def release_gpu_slot(gpu_index, job_id=None):
+    """Release a GPU slot after job completion."""
+    with _gpu_slots_lock:
+        if gpu_index in _gpu_job_slots:
+            held_job = _gpu_job_slots[gpu_index]
+            if job_id is None or held_job == job_id:
+                _gpu_job_slots[gpu_index] = None
+                log.info(f"GPU slot {gpu_index} released (was: {held_job})")
+                return True
+    return False
+
+
+def get_free_gpu_slot_count():
+    """Return number of free GPU slots."""
+    with _gpu_slots_lock:
+        return sum(1 for v in _gpu_job_slots.values() if v is None)
+
+
+def get_active_job_count():
+    """Return number of currently running jobs across all GPUs."""
+    with _gpu_slots_lock:
+        return sum(1 for v in _gpu_job_slots.values() if v is not None)
+
+
+# ─── GRACEFUL JOB DRAINING ──────────────────────────────────────────────────
+
+_draining = False
+_drain_lock = threading.Lock()
+
+def start_draining():
+    """Enter draining mode: finish current jobs, accept no new ones."""
+    global _draining
+    with _drain_lock:
+        _draining = True
+    active = get_active_job_count()
+    log.info(f"Entering drain mode — {active} active job(s) will complete before shutdown")
+    report_event("drain_start", f"Draining: {active} active jobs will complete", severity="info")
+
+
+def is_draining():
+    """Check if daemon is in draining mode."""
+    with _drain_lock:
+        return _draining
+
+
+def wait_for_drain(timeout=600):
+    """Wait for all active jobs to complete. Returns True if drained within timeout."""
+    start = time.time()
+    while time.time() - start < timeout:
+        active = get_active_job_count()
+        if active == 0:
+            log.info("Drain complete — all jobs finished")
+            report_event("drain_complete", "All jobs drained successfully")
+            return True
+        log.info(f"Draining: {active} job(s) still active, waiting...")
+        time.sleep(5)
+    log.warning(f"Drain timeout after {timeout}s — {get_active_job_count()} jobs still active")
+    return False
+
 
 # ─── AUTO-UPDATE ────────────────────────────────────────────────────────────
 
@@ -1192,6 +1478,24 @@ def send_heartbeat():
         with _bw_lock:
             if _bandwidth_stats.get("download_mbps") is not None:
                 payload["bandwidth"] = dict(_bandwidth_stats)  # Copy to avoid race
+        # Include network quality metrics
+        with _nq_lock:
+            if _network_quality.get("latency_ms") is not None:
+                payload["network_quality"] = dict(_network_quality)
+        # Include power cost config if enabled
+        power_config = load_power_config()
+        if power_config.get("enabled"):
+            payload["power_config"] = {
+                "electricity_cost_kwh": power_config.get("electricity_cost_kwh"),
+                "gpu_tdp_watts": power_config.get("gpu_tdp_watts"),
+            }
+        # Include multi-GPU slot status
+        payload["gpu_slots"] = {
+            "total": MAX_CONCURRENT_JOBS,
+            "active": get_active_job_count(),
+            "free": get_free_gpu_slot_count(),
+        }
+        payload["draining"] = is_draining()
         code, resp = http_post(url, payload)
         if code == 200:
             log.info("Heartbeat OK (200)")
@@ -2096,6 +2400,16 @@ def execute_job(job):
 
 def poll_and_execute():
     """Poll for assigned jobs and execute them."""
+    # Skip polling if draining (finishing current jobs, no new ones)
+    if is_draining():
+        log.debug("Draining mode — skipping job poll")
+        return
+
+    # Skip if all GPU slots are occupied
+    if get_free_gpu_slot_count() <= 0:
+        log.debug(f"All {MAX_CONCURRENT_JOBS} GPU slot(s) occupied — skipping job poll")
+        return
+
     # Dual endpoint support: try new endpoint first, fall back to legacy
     urls = [
         f"{API_URL}/api/providers/{API_KEY}/jobs",
@@ -2159,6 +2473,27 @@ def poll_and_execute():
         except: pass
         return
 
+    # ── Guard: Power cost profitability ──
+    gpu = detect_gpu()
+    profitable, profit_details = estimate_job_profitability(job, gpu)
+    if not profitable:
+        log.warning(f"Job {job_id} rejected: unprofitable — "
+                    f"revenue={profit_details['revenue_sar']} SAR, "
+                    f"cost={profit_details['power_cost_sar']} SAR, "
+                    f"margin={profit_details['margin_pct']}%")
+        report_event("job_rejected",
+            f"Unprofitable job: margin={profit_details['margin_pct']}% "
+            f"(min: {load_power_config().get('min_profit_margin_pct', 20)}%)",
+            job_id=job_id, severity="info")
+        try:
+            http_post(f"{API_URL}/api/providers/job-result", {
+                "api_key": API_KEY, "job_id": job_id, "success": False,
+                "error": f"Job rejected: below minimum profit margin ({profit_details['margin_pct']}%)",
+                "gpu_seconds_used": 0,
+            }, timeout=15)
+        except: pass
+        return
+
     # ── Guard: HMAC signature verification (prevents RCE via tampered task_spec) ──
     task_spec_raw = job.get("task_spec")
     task_spec_hmac = job.get("task_spec_hmac")
@@ -2177,10 +2512,22 @@ def poll_and_execute():
             except: pass
             return
 
+    # ── Acquire GPU slot for multi-GPU support ──
+    required_vram = VRAM_REQUIREMENTS.get(job_type, VRAM_DEFAULT_REQUIREMENT)
+    gpu_slot = acquire_gpu_slot(job_id, required_vram)
+    if gpu_slot is None:
+        log.warning(f"Job {job_id} deferred: no free GPU slot with enough VRAM")
+        return  # Will be picked up on next poll when a slot frees
+
     # Execute in background thread so heartbeats continue
     def _run():
         start_time = time.time()
         try:
+            # Set CUDA_VISIBLE_DEVICES for multi-GPU isolation
+            job_env = os.environ.copy()
+            if MAX_CONCURRENT_JOBS > 1:
+                job_env["CUDA_VISIBLE_DEVICES"] = str(gpu_slot)
+                log.info(f"Job {job_id} pinned to GPU {gpu_slot}")
             outcome = execute_job(job)
         except Exception as e:
             elapsed = round(time.time() - start_time, 1)
@@ -2188,6 +2535,9 @@ def poll_and_execute():
             log.error(f"Job {job_id} CRASHED after {elapsed}s: {error_detail[:500]}")
             report_event("job_failure", error_detail, job_id=job_id, severity="critical")
             outcome = {"success": False, "error": error_detail[:1000]}
+        finally:
+            # Release GPU slot regardless of outcome
+            release_gpu_slot(gpu_slot, job_id)
 
         elapsed = round(time.time() - start_time, 1)
         gpu_count = get_detected_gpu_count()
@@ -2370,11 +2720,21 @@ def main():
         log.error("No API URL configured. Use --url or download from DCP dashboard.")
         sys.exit(1)
 
-    # Register signal handlers for graceful shutdown
+    # Register signal handlers for graceful shutdown with job draining
     def _handle_signal(sig, frame):
         signame = signal.Signals(sig).name if hasattr(signal, 'Signals') else str(sig)
-        log.info(f"Signal {signame} received — shutting down gracefully")
-        report_event("daemon_stop", f"Stopped by signal {signame}")
+        active = get_active_job_count()
+        if active > 0:
+            log.info(f"Signal {signame} received — draining {active} active job(s) before shutdown")
+            start_draining()
+            drained = wait_for_drain(timeout=600)  # 10 min max
+            if drained:
+                report_event("daemon_stop", f"Stopped by signal {signame} (drained cleanly)")
+            else:
+                report_event("daemon_stop", f"Stopped by signal {signame} (drain timeout, {get_active_job_count()} jobs orphaned)")
+        else:
+            log.info(f"Signal {signame} received — no active jobs, shutting down immediately")
+            report_event("daemon_stop", f"Stopped by signal {signame}")
         sys.exit(0)
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -2452,6 +2812,23 @@ def main():
     log.info("Starting bandwidth monitor (every %ds)...", BANDWIDTH_CHECK_INTERVAL)
     bw_thread = threading.Thread(target=bandwidth_loop, daemon=True, name="DC1-Bandwidth")
     bw_thread.start()
+
+    log.info("Starting network quality monitor (every %ds)...", NETWORK_QUALITY_INTERVAL)
+    nq_thread = threading.Thread(target=network_quality_loop, daemon=True, name="DC1-NetQuality")
+    nq_thread.start()
+
+    # Step 8: Initialize multi-GPU job slots
+    log.info("Initializing GPU job slots...")
+    init_gpu_slots()
+    log.info(f"Job slots: {MAX_CONCURRENT_JOBS} concurrent (free: {get_free_gpu_slot_count()})")
+
+    # Step 9: Log power cost config
+    power_cfg = load_power_config()
+    if power_cfg.get("enabled"):
+        log.info(f"Power cost tracking: ENABLED — {power_cfg.get('electricity_cost_kwh')} SAR/kWh, "
+                 f"TDP={power_cfg.get('gpu_tdp_watts')}W, min margin={power_cfg.get('min_profit_margin_pct')}%")
+    else:
+        log.info("Power cost tracking: disabled (set ~/dc1-provider/power_config.json to enable)")
 
     log.info("Daemon running. Press Ctrl+C to stop.")
 

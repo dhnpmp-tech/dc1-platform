@@ -2758,6 +2758,10 @@ router.get('/download/daemon', (req, res) => {
 // ============================================================================
 router.get('/download/menubar', (req, res) => {
     try {
+        // check_only: return version info without downloading
+        if (req.query.check_only === 'true') {
+            return res.json({ version: '2.0.0', platform: 'macos' });
+        }
         const menubarPath = path.join(__dirname, '../../installers/dcp_menubar.py');
         if (!fs.existsSync(menubarPath)) {
             return res.status(404).json({ error: 'Menu bar app not found' });
@@ -2767,6 +2771,48 @@ router.get('/download/menubar', (req, res) => {
         res.sendFile(menubarPath);
     } catch (error) {
         console.error('Menubar download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/download/tray-windows - Serve Windows system tray app
+// ============================================================================
+router.get('/download/tray-windows', (req, res) => {
+    try {
+        if (req.query.check_only === 'true') {
+            return res.json({ version: '2.0.0', platform: 'windows' });
+        }
+        const trayPath = path.join(__dirname, '../../installers/dcp_tray_windows.py');
+        if (!fs.existsSync(trayPath)) {
+            return res.status(404).json({ error: 'Windows tray app not found' });
+        }
+        res.setHeader('Content-Type', 'text/x-python');
+        res.setHeader('Content-Disposition', 'attachment; filename="dcp_tray_windows.py"');
+        res.sendFile(trayPath);
+    } catch (error) {
+        console.error('Windows tray download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/download/tray-linux - Serve Linux desktop tray app
+// ============================================================================
+router.get('/download/tray-linux', (req, res) => {
+    try {
+        if (req.query.check_only === 'true') {
+            return res.json({ version: '2.0.0', platform: 'linux' });
+        }
+        const trayPath = path.join(__dirname, '../../installers/dcp_tray_linux.py');
+        if (!fs.existsSync(trayPath)) {
+            return res.status(404).json({ error: 'Linux tray app not found' });
+        }
+        res.setHeader('Content-Type', 'text/x-python');
+        res.setHeader('Content-Disposition', 'attachment; filename="dcp_tray_linux.py"');
+        res.sendFile(trayPath);
+    } catch (error) {
+        console.error('Linux tray download error:', error);
         res.status(500).json({ error: 'Download failed' });
     }
 });
@@ -5280,6 +5326,250 @@ router.get('/:id/stake-status', async (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch stake status' });
     }
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REFERRAL SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Generate referral code for authenticated provider
+router.get('/me/referral-code', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id, referral_code FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    let code = provider.referral_code;
+    if (!code) {
+        code = 'DCP-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+        runStatement('UPDATE providers SET referral_code = ? WHERE id = ?', code, provider.id);
+    }
+
+    const stats = db.get(`
+        SELECT COUNT(*) as total_referrals,
+               COALESCE(SUM(total_bonus_halala), 0) as total_bonus_halala
+        FROM referrals WHERE referrer_id = ?
+    `, provider.id) || { total_referrals: 0, total_bonus_halala: 0 };
+
+    res.json({
+        referral_code: code,
+        referral_link: `https://dcp.sa/provider/register?ref=${code}`,
+        total_referrals: stats.total_referrals,
+        total_bonus_sar: (stats.total_bonus_halala / 100).toFixed(2),
+    });
+});
+
+// List my referrals
+router.get('/me/referrals', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const referrals = db.all(`
+        SELECT r.*, p.name as referred_name, p.gpu_model, p.status as provider_status
+        FROM referrals r
+        JOIN providers p ON p.id = r.referred_id
+        WHERE r.referrer_id = ?
+        ORDER BY r.created_at DESC
+    `, provider.id);
+
+    res.json({ referrals });
+});
+
+// Apply referral code during registration
+router.post('/apply-referral', (req, res) => {
+    const { referral_code, new_provider_id } = req.body;
+    if (!referral_code || !new_provider_id) {
+        return res.status(400).json({ error: 'referral_code and new_provider_id required' });
+    }
+
+    const referrer = db.get('SELECT id, name FROM providers WHERE referral_code = ?', referral_code);
+    if (!referrer) return res.status(404).json({ error: 'Invalid referral code' });
+    if (referrer.id === new_provider_id) return res.status(400).json({ error: 'Cannot refer yourself' });
+
+    const existing = db.get('SELECT id FROM referrals WHERE referrer_id = ? AND referred_id = ?',
+        referrer.id, new_provider_id);
+    if (existing) return res.status(409).json({ error: 'Referral already exists' });
+
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    runStatement(`INSERT INTO referrals (referrer_id, referred_id, referral_code, bonus_pct, bonus_duration_days, expires_at)
+            VALUES (?, ?, ?, 5.0, 30, ?)`,
+        referrer.id, new_provider_id, referral_code, expiresAt);
+    runStatement('UPDATE providers SET referred_by = ? WHERE id = ?', referrer.id, new_provider_id);
+
+    res.json({ success: true, referrer_name: referrer.name, bonus_pct: 5.0, duration_days: 30 });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROVIDER GROUPS / FLEET MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Create a provider group
+router.post('/groups', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const { name, description } = req.body;
+    if (!name) return res.status(400).json({ error: 'Group name required' });
+
+    const result = runStatement(
+        `INSERT INTO provider_groups (name, owner_id, description) VALUES (?, ?, ?)`,
+        name, provider.id, description || null
+    );
+
+    runStatement('UPDATE providers SET group_id = ?, group_role = ? WHERE id = ?',
+        result.lastInsertRowid, 'admin', provider.id);
+
+    res.status(201).json({
+        group_id: result.lastInsertRowid,
+        name,
+        owner_id: provider.id,
+    });
+});
+
+// List my groups
+router.get('/groups', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id, group_id FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const owned = db.all(`
+        SELECT g.*,
+            (SELECT COUNT(*) FROM providers p WHERE p.group_id = g.id) as member_count,
+            (SELECT COALESCE(SUM(p.total_earnings_halala), 0) FROM providers p WHERE p.group_id = g.id) as group_earnings_halala
+        FROM provider_groups g
+        WHERE g.owner_id = ?
+        ORDER BY g.created_at DESC
+    `, provider.id);
+
+    let membership = null;
+    if (provider.group_id) {
+        membership = db.get(`
+            SELECT g.*,
+                (SELECT COUNT(*) FROM providers p WHERE p.group_id = g.id) as member_count
+            FROM provider_groups g WHERE g.id = ?
+        `, provider.group_id);
+    }
+
+    res.json({ owned_groups: owned, membership });
+});
+
+// Get group details with members
+router.get('/groups/:groupId', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const group = db.get('SELECT * FROM provider_groups WHERE id = ?', req.params.groupId);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    if (group.owner_id !== provider.id) {
+        const isMember = db.get('SELECT id FROM providers WHERE id = ? AND group_id = ?',
+            provider.id, group.id);
+        if (!isMember) return res.status(403).json({ error: 'Not a member of this group' });
+    }
+
+    const members = db.all(`
+        SELECT id, name, gpu_model, gpu_count, vram_gb, status, group_role,
+               total_earnings_halala, total_jobs, created_at
+        FROM providers WHERE group_id = ?
+        ORDER BY group_role DESC, created_at ASC
+    `, group.id);
+
+    const stats = {
+        total_gpus: members.reduce((sum, m) => sum + (m.gpu_count || 1), 0),
+        total_vram_gb: members.reduce((sum, m) => sum + (m.vram_gb || 0), 0),
+        total_earnings_sar: members.reduce((sum, m) => sum + (m.total_earnings_halala || 0), 0) / 100,
+        total_jobs: members.reduce((sum, m) => sum + (m.total_jobs || 0), 0),
+        online_count: members.filter(m => m.status === 'online').length,
+    };
+
+    res.json({ group, members, stats });
+});
+
+// Add member to group
+router.post('/groups/:groupId/members', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const group = db.get('SELECT * FROM provider_groups WHERE id = ? AND owner_id = ?',
+        req.params.groupId, provider.id);
+    if (!group) return res.status(403).json({ error: 'Not group owner' });
+
+    const { email, provider_id } = req.body;
+    let target;
+    if (email) {
+        target = db.get('SELECT id, name, group_id FROM providers WHERE email = ?', email);
+    } else if (provider_id) {
+        target = db.get('SELECT id, name, group_id FROM providers WHERE id = ?', provider_id);
+    }
+    if (!target) return res.status(404).json({ error: 'Provider not found' });
+    if (target.group_id) return res.status(409).json({ error: 'Provider already in a group' });
+
+    runStatement('UPDATE providers SET group_id = ?, group_role = ? WHERE id = ?',
+        group.id, 'member', target.id);
+
+    res.json({ success: true, added: target.name, group_id: group.id });
+});
+
+// Remove member from group
+router.delete('/groups/:groupId/members/:memberId', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const group = db.get('SELECT * FROM provider_groups WHERE id = ? AND owner_id = ?',
+        req.params.groupId, provider.id);
+    if (!group) return res.status(403).json({ error: 'Not group owner' });
+
+    const memberId = parseInt(req.params.memberId);
+    if (memberId === provider.id) return res.status(400).json({ error: 'Cannot remove yourself (owner)' });
+
+    runStatement('UPDATE providers SET group_id = NULL, group_role = NULL WHERE id = ? AND group_id = ?',
+        memberId, group.id);
+
+    res.json({ success: true, removed_id: memberId });
+});
+
+// Group aggregate earnings
+router.get('/groups/:groupId/earnings', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const group = db.get('SELECT * FROM provider_groups WHERE id = ?', req.params.groupId);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (group.owner_id !== provider.id) return res.status(403).json({ error: 'Not group owner' });
+
+    const memberEarnings = db.all(`
+        SELECT id, name, gpu_model, total_earnings_halala, total_jobs
+        FROM providers WHERE group_id = ?
+        ORDER BY total_earnings_halala DESC
+    `, group.id);
+
+    const total = memberEarnings.reduce((sum, m) => sum + (m.total_earnings_halala || 0), 0);
+
+    res.json({
+        group_id: group.id,
+        group_name: group.name,
+        total_earnings_sar: (total / 100).toFixed(2),
+        members: memberEarnings.map(m => ({
+            ...m,
+            earnings_sar: ((m.total_earnings_halala || 0) / 100).toFixed(2),
+        })),
+    });
+});
+
 
 module.exports = router;
 module.exports.__private = {
