@@ -188,7 +188,7 @@ class DCPMenuBarApp(rumps.App):
     def __init__(self):
         super().__init__(
             "DCP",
-            title="DCP ●",
+            title="⬡",  # Compact hexagon icon — fits in notched MacBooks
             quit_button=None,  # We'll add our own
         )
 
@@ -273,10 +273,10 @@ class DCPMenuBarApp(rumps.App):
 
         # Update title bar icon
         if self.daemon_running:
-            self.title = "DCP ●"  # Green-ish dot (will show in menu bar)
+            self.title = "⬡"  # Hexagon = online
             self.status_item.title = "⦿  Online — Daemon Running"
         else:
-            self.title = "DCP ○"
+            self.title = "⬡!"  # Hexagon + alert = offline
             self.status_item.title = "○  Offline — Daemon Stopped"
 
         # Daemon version
@@ -329,7 +329,7 @@ class DCPMenuBarApp(rumps.App):
                 if self.daemon_running:
                     if approval == "pending":
                         self.status_item.title = "⦿  Daemon Running — Awaiting Approval"
-                        self.title = "DCP ◐"
+                        self.title = "⬡?"
                     elif backend_status == "online":
                         self.status_item.title = "⦿  Online — Active"
                     else:
