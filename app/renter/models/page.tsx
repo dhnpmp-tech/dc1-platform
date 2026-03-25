@@ -153,10 +153,11 @@ function SkeletonCard() {
 }
 
 // ── Deploy Modal ──────────────────────────────────────────────────────────────
-function DeployModal({ deploy, onClose, onConfirm }: {
+function DeployModal({ deploy, onClose, onConfirm, registeredProviderCount }: {
   deploy: DeployState
   onClose: () => void
   onConfirm: () => void
+  registeredProviderCount: number | null
 }) {
   const router = useRouter()
   const model = deploy.model!
@@ -232,9 +233,22 @@ function DeployModal({ deploy, onClose, onConfirm }: {
 
         {isNoProvider && (
           <div className="bg-dc1-amber/5 border border-dc1-amber/30 rounded-lg px-4 py-3 space-y-2">
-            <p className="text-sm font-semibold text-dc1-amber">No providers available right now</p>
-            <p className="text-xs text-dc1-text-secondary">Join the waitlist and we&apos;ll notify you when a provider comes online.</p>
-            <Link href={`/renter/waitlist?model=${encodeURIComponent(model.model_id)}`} className="inline-block btn btn-outline btn-sm text-dc1-amber border-dc1-amber/40">Join Waitlist →</Link>
+            <p className="text-sm font-semibold text-dc1-amber">No providers online right now</p>
+            {registeredProviderCount !== null && registeredProviderCount > 0 ? (
+              <p className="text-xs text-dc1-text-secondary">
+                <span className="text-dc1-amber font-semibold">{registeredProviderCount} providers</span> are registered and activating — typically online within 4–6 hours.
+              </p>
+            ) : (
+              <p className="text-xs text-dc1-text-secondary">Providers are being onboarded. Check back in a few hours or join the waitlist for a notification.</p>
+            )}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Link href={`/renter/waitlist?model=${encodeURIComponent(model.model_id)}`} className="inline-block btn btn-outline btn-sm text-dc1-amber border-dc1-amber/40">
+                Join Waitlist →
+              </Link>
+              <Link href="/provider-onboarding" className="inline-block btn btn-outline btn-sm text-dc1-text-secondary border-dc1-border hover:text-dc1-amber hover:border-dc1-amber/40">
+                Register as Provider
+              </Link>
+            </div>
           </div>
         )}
 
@@ -378,9 +392,13 @@ function ModelCard({ model, onDeploy }: { model: ModelListItem; onDeploy: (m: Mo
         {model.providers_online !== undefined && (
           <div>
             <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">Providers</p>
-            <p className={`font-semibold ${(model.providers_online ?? 0) > 0 ? 'text-status-success' : 'text-dc1-text-muted'}`}>
-              {model.providers_online ?? 0} online
-            </p>
+            {(model.providers_online ?? 0) > 0 ? (
+              <p className="font-semibold text-status-success">{model.providers_online} online</p>
+            ) : (
+              <p className="font-semibold text-dc1-text-muted" title="Providers are registered and activating">
+                <span className="text-dc1-amber/70">activating</span>
+              </p>
+            )}
           </div>
         )}
         {priceHr !== null && (
@@ -427,6 +445,7 @@ export default function RenterModelsPage() {
   const [filterPriceMax, setFilterPriceMax] = useState('')
   const [filterTier, setFilterTier] = useState<'all' | 'tier_a' | 'tier_b'>('all')
   const [deploy, setDeploy] = useState<DeployState>({ model: null, loading: false, error: '', jobId: null })
+  const [registeredProviderCount, setRegisteredProviderCount] = useState<number | null>(null)
 
   const navItems = [
     { label: t('nav.dashboard') || 'Dashboard', href: '/renter', icon: <HomeIcon /> },
@@ -452,6 +471,15 @@ export default function RenterModelsPage() {
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false))
+
+    // Fetch registered provider count for empty-state messaging (DCP-963)
+    fetch(`${API_BASE}/network`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        const total = data?.network_health?.total_registered ?? null
+        if (typeof total === 'number') setRegisteredProviderCount(total)
+      })
+      .catch(() => { /* non-critical — best effort */ })
   }, [router])
 
   const filtered = useMemo(() => {
@@ -567,6 +595,12 @@ export default function RenterModelsPage() {
             <span className="text-dc1-amber font-bold">⭐ {loading ? '…' : tierACount}</span>
             <span className="text-dc1-text-secondary">Tier A (pre-warmed)</span>
           </div>
+          {registeredProviderCount !== null && (
+            <div className="flex items-center gap-2 bg-status-info/10 rounded-lg px-3 py-2 border border-status-info/20" title="Providers registered and activating on DCP">
+              <span className="text-status-info font-bold">{registeredProviderCount}</span>
+              <span className="text-dc1-text-secondary">providers registered</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 bg-status-success/10 rounded-lg px-3 py-2 border border-status-success/20">
             <span className="text-status-success font-bold">Save 24–51%</span>
             <span className="text-dc1-text-secondary">vs competitors</span>
@@ -684,7 +718,7 @@ export default function RenterModelsPage() {
 
       {/* Deploy modal */}
       {deploy.model && (
-        <DeployModal deploy={deploy} onClose={closeDeploy} onConfirm={confirmDeploy} />
+        <DeployModal deploy={deploy} onClose={closeDeploy} onConfirm={confirmDeploy} registeredProviderCount={registeredProviderCount} />
       )}
     </DashboardLayout>
   )
