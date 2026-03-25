@@ -81,7 +81,32 @@ ESCROW_USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
    - `claimLock jobId=... tx=...` (success path) or skip warnings with actionable reason.
 4. On-chain inspect with `getEscrow(jobId32)` from a console script if needed.
 
-## 7) Known Constraints for This Testnet Pack
+## 7) Gas Estimates (measured locally — DCP-957, 2026-03-25)
+
+Run against a Hardhat local network with optimizer enabled (200 runs):
+
+| Operation                    | Gas Used  | Est. cost @ 0.001 gwei, ETH=$2,500 |
+| ---------------------------- | --------- | ----------------------------------- |
+| Escrow.sol deployment        | 1,431,216 | ~$0.004 USD                         |
+| `depositAndLock`             | 152,253   | ~$0.0004 USD                        |
+| `claimLock` (provider)       | 102,892   | ~$0.0003 USD                        |
+| `cancelExpiredLock` (renter) | 47,011    | ~$0.0001 USD                        |
+| `setOracle` (admin)          | 30,685    | ~$0.0001 USD                        |
+| `setRelayer` (admin)         | 30,708    | ~$0.0001 USD                        |
+
+**Deployer wallet funding requirement:**
+Base Sepolia deployment gas: ~1.43M gas. At a safe gas price of 0.01 gwei:
+- `1,431,216 * 0.01e-9 ETH = ~0.0000143 ETH`
+- Recommended minimum: **0.01 SepoliaETH** (covers deployment + test transactions)
+- Get SepoliaETH free from: https://faucet.quicknode.com/base/sepolia or https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet
+
+**To reproduce locally:**
+```bash
+cd /home/node/dc1-platform/contracts
+node scripts/escrow-gas-estimate.mjs
+```
+
+## 8) Known Constraints for This Testnet Pack
 
 - If provider wallet addresses are not registered, backend uses settlement fallback address.
 - `cancelExpiredLock` is only valid after escrow expiry; immediate failure paths remain off-chain refunded first.
