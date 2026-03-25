@@ -43,12 +43,79 @@ function formatReliabilityTimestamp(date: Date | null): string {
   })
 }
 
+interface DetailedHealth {
+  providers: { registered: number; online: number }
+}
+
+function LaunchBanner({ health }: { health: DetailedHealth | null }) {
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('dcp-launch-banner-dismissed') === '1') {
+      setDismissed(true)
+    }
+  }, [])
+
+  const dismiss = () => {
+    setDismissed(true)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dcp-launch-banner-dismissed', '1')
+    }
+  }
+
+  const registered = health?.providers?.registered ?? 0
+  const online = health?.providers?.online ?? 0
+  const showBanner = !dismissed && online === 0 && registered >= 40
+
+  if (!showBanner) return null
+
+  return (
+    <div className="relative bg-dc1-amber/10 border-b border-dc1-amber/30 px-4 py-3 text-center">
+      <p className="text-sm text-dc1-text-primary">
+        <span className="font-semibold text-dc1-amber">DCP Phase 1 is live</span>
+        {' — '}
+        {registered} providers joining. Be first to deploy Arabic AI in-Kingdom.{' '}
+        <Link href="/models" className="font-semibold text-dc1-amber underline hover:text-dc1-amber/80">
+          Start Building →
+        </Link>
+      </p>
+      <button
+        onClick={dismiss}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-dc1-text-muted hover:text-dc1-text-primary"
+        aria-label="Dismiss banner"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+function ProviderCountWidget({ health }: { health: DetailedHealth | null }) {
+  const online = health?.providers?.online ?? null
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm">
+      <span
+        className={`inline-block h-2 w-2 rounded-full transition-colors ${
+          online === null ? 'bg-dc1-text-muted/40 animate-pulse' : online > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-dc1-text-muted/40'
+        }`}
+      />
+      <span className={`font-bold tabular-nums transition-all ${online !== null && online > 0 ? 'text-emerald-400' : 'text-dc1-text-muted'}`}>
+        {online ?? '—'}
+      </span>
+      <span className="text-dc1-text-secondary">providers online</span>
+    </span>
+  )
+}
+
 export default function HomePage() {
   const { t } = useLanguage()
   const [liveGpuCount, setLiveGpuCount] = useState<number | null>(null)
   const [gpuFamilyCoverage, setGpuFamilyCoverage] = useState<number | null>(null)
   const [reliabilityUpdatedAt, setReliabilityUpdatedAt] = useState<Date | null>(null)
   const [selectedIntent, setSelectedIntent] = useState<RoleIntent>('renter')
+  const [detailedHealth, setDetailedHealth] = useState<DetailedHealth | null>(null)
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
 
@@ -167,7 +234,25 @@ export default function HomePage() {
 
     fetchReliability()
     const interval = setInterval(fetchReliability, RELIABILITY_POLL_MS)
-    return () => clearInterval(interval)
+
+    const fetchDetailedHealth = async () => {
+      try {
+        const res = await fetch('/api/dc1/health/detailed', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        setDetailedHealth(data)
+      } catch {
+        // silently keep last value
+      }
+    }
+
+    fetchDetailedHealth()
+    const healthInterval = setInterval(fetchDetailedHealth, 60_000)
+
+    return () => {
+      clearInterval(interval)
+      clearInterval(healthInterval)
+    }
   }, [])
 
   useEffect(() => {
@@ -276,6 +361,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
+      <LaunchBanner health={detailedHealth} />
 
       {/* Hero */}
       <section className="relative overflow-hidden">
@@ -327,12 +413,15 @@ export default function HomePage() {
                 {t('landing.cta_provider')}
               </Link>
             </div>
-            <p className="text-xs text-dc1-text-muted mb-8">
+            <p className="text-xs text-dc1-text-muted mb-3">
               {t('landing.cta_alt_prefix')}{' '}
               <Link href="/support?category=enterprise&source=landing-first-fold" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold">
                 {t('landing.cta_enterprise')}
               </Link>
             </p>
+            <div className="mb-8 flex justify-center">
+              <ProviderCountWidget health={detailedHealth} />
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
               <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
                 <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>

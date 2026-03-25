@@ -260,6 +260,13 @@ export default function StatusPage() {
   const [incidents, setIncidents] = useState<IncidentRecord[]>([])
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [platformMetrics, setPlatformMetrics] = useState<{
+    providers: { registered: number; online: number }
+    jobs: { queued: number; running: number; completed_24h: number; failed_24h: number }
+    models: { catalog_count: number }
+    templates: { count: number }
+    timestamp: string
+  } | null>(null)
 
   const statusRef = useRef<ServiceStatusMap>({
     api: 'checking',
@@ -514,6 +521,20 @@ export default function StatusPage() {
     return () => clearInterval(id)
   }, [runChecks])
 
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch(`${API}/health/detailed`, { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        setPlatformMetrics(data)
+      } catch { /* silently keep last value */ }
+    }
+    fetchMetrics()
+    const id = setInterval(fetchMetrics, REFRESH_MS)
+    return () => clearInterval(id)
+  }, [])
+
   const scoreGlobal = availabilityPercent(SERVICE_ORDER.flatMap((key) => history[key]))
   const scoreApi = availabilityPercent(history.api)
   const scoreCompute = availabilityPercent([...history.gpu_network, ...history.job_execution])
@@ -540,6 +561,54 @@ export default function StatusPage() {
         </div>
 
         <OverallBanner services={services} t={t} />
+
+        {/* Platform Metrics — live data from health/detailed */}
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {(() => {
+            const pm = platformMetrics
+            const providerStatus = pm
+              ? pm.providers.online > 0 ? 'text-emerald-400' : 'text-dc1-text-muted'
+              : 'text-dc1-text-muted'
+            return (
+              <>
+                <div className="card p-4">
+                  <p className="text-xs uppercase tracking-wide text-dc1-text-muted">Providers</p>
+                  <p className={`mt-2 text-2xl font-bold tabular-nums ${providerStatus}`}>
+                    {pm ? pm.providers.online : '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-dc1-text-secondary">
+                    {pm ? `${pm.providers.registered} registered` : 'loading…'}
+                  </p>
+                </div>
+                <div className="card p-4">
+                  <p className="text-xs uppercase tracking-wide text-dc1-text-muted">Job Queue</p>
+                  <p className="mt-2 text-2xl font-bold tabular-nums text-dc1-text-primary">
+                    {pm ? pm.jobs.queued : '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-dc1-text-secondary">
+                    {pm ? `${pm.jobs.running} running` : 'loading…'}
+                  </p>
+                </div>
+                <div className="card p-4">
+                  <p className="text-xs uppercase tracking-wide text-dc1-text-muted">Models</p>
+                  <p className="mt-2 text-2xl font-bold tabular-nums text-dc1-text-primary">
+                    {pm ? pm.models.catalog_count : '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-dc1-text-secondary">in catalog</p>
+                </div>
+                <div className="card p-4">
+                  <p className="text-xs uppercase tracking-wide text-dc1-text-muted">Templates</p>
+                  <p className="mt-2 text-2xl font-bold tabular-nums text-dc1-text-primary">
+                    {pm ? pm.templates.count : '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-dc1-text-secondary">
+                    {pm ? `updated ${new Date(pm.timestamp).toLocaleTimeString()}` : 'loading…'}
+                  </p>
+                </div>
+              </>
+            )
+          })()}
+        </div>
 
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <ScoreCard title={t('status.score_global')} value={scoreLabel(scoreGlobal)} caption={t('status.score_global_desc')} />
