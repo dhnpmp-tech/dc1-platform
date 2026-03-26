@@ -5571,6 +5571,138 @@ router.get('/groups/:groupId/earnings', (req, res) => {
 });
 
 
+// ═══════════════════════════════════════════════════════════════════════════
+// POWER CONFIG DEPLOYMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Default power config template — providers can override locally
+const DEFAULT_POWER_CONFIG = {
+    electricity_cost_kwh: 0.076,    // USD/kWh — US average default
+    gpu_tdp_watts: 350,             // Watts — conservative default
+    min_profit_margin_pct: 10,      // require 10% margin over electricity cost
+    enabled: false,                 // disabled by default until provider configures
+};
+
+// Regional electricity rate presets
+const REGIONAL_POWER_PRESETS = {
+    'sa-ccsez':      { electricity_cost_kwh: 0.014, label: 'Saudi Arabia (CCSEZ)' },
+    'sa-industrial': { electricity_cost_kwh: 0.019, label: 'Saudi Arabia (Industrial)' },
+    'us':            { electricity_cost_kwh: 0.076, label: 'United States (Average)' },
+    'eu':            { electricity_cost_kwh: 0.178, label: 'EU (Average)' },
+    'uk':            { electricity_cost_kwh: 0.293, label: 'United Kingdom' },
+    'ae':            { electricity_cost_kwh: 0.028, label: 'UAE (Average)' },
+};
+
+// GPU TDP lookup for auto-detection
+const GPU_TDP_MAP = {
+    'RTX 3060': 170, 'RTX 3070': 220, 'RTX 3080': 320, 'RTX 3090': 350,
+    'RTX 4070': 200, 'RTX 4080': 320, 'RTX 4090': 450,
+    'RTX 5090': 575, 'A100': 400, 'H100': 700, 'H200': 700, 'L40S': 350,
+};
+
+// Get power config template for a provider (pre-filled with their GPU's TDP)
+router.get('/me/power-config', (req, res) => {
+    const apiKey = req.query.key || req.headers['x-api-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+    const provider = db.get('SELECT id, gpu_model, location_country FROM providers WHERE api_key = ?', apiKey);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    // Auto-detect GPU TDP from model
+    let gpuTdp = DEFAULT_POWER_CONFIG.gpu_tdp_watts;
+    if (provider.gpu_model) {
+        for (const [model, tdp] of Object.entries(GPU_TDP_MAP)) {
+            if (provider.gpu_model.toUpperCase().includes(model.toUpperCase())) {
+                gpuTdp = tdp;
+                break;
+            }
+        }
+    }
+
+    // Auto-detect region rate
+    let regionRate = DEFAULT_POWER_CONFIG.electricity_cost_kwh;
+    const country = (provider.location_country || '').toLowerCase();
+    if (country.includes('saudi') || country === 'sa') regionRate = 0.019;
+    else if (country.includes('emirates') || country === 'ae') regionRate = 0.028;
+    else if (country.includes('united kingdom') || country === 'gb' || country === 'uk') regionRate = 0.293;
+
+    const config = {
+        ...DEFAULT_POWER_CONFIG,
+        gpu_tdp_watts: gpuTdp,
+        electricity_cost_kwh: regionRate,
+        enabled: true,
+    };
+
+    res.json({
+        config,
+        presets: REGIONAL_POWER_PRESETS,
+        instructions: 'Save this as ~/dc1-provider/power_config.json on your provider machine. The daemon will read it on next heartbeat cycle.',
+    });
+});
+
+// Admin: broadcast recommended power configs for all providers
+router.post('/admin/broadcast-power-config', (req, res) => {
+    const token = req.headers['x-admin-token'] || req.query.admin_token;
+    if (!token || token !== process.env.DC1_ADMIN_TOKEN) {
+        return res.status(403).json({ error: 'Admin token required' });
+    }
+
+    const { provider_id, region } = req.body;
+
+    // If targeting a specific provider
+    if (provider_id) {
+        const provider = db.get('SELECT id, gpu_model FROM providers WHERE id = ?', provider_id);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        try {
+            db.prepare('UPDATE providers SET power_config_json = ? WHERE id = ?')
+                .run(JSON.stringify(req.body.config || DEFAULT_POWER_CONFIG), provider_id);
+        } catch {
+            // Column may not exist yet — daemon reads from local file
+        }
+
+        return res.json({ success: true, message: `Power config set for provider ${provider_id}` });
+    }
+
+    // Broadcast: list all providers with their recommended power configs
+    const providers = db.all(`
+        SELECT id, name, gpu_model, location_country, status
+        FROM providers WHERE status IN ('online', 'idle', 'offline')
+        ORDER BY id
+    `);
+
+    const configs = providers.map(p => {
+        const preset = region ? REGIONAL_POWER_PRESETS[region] : null;
+        let gpuTdp = DEFAULT_POWER_CONFIG.gpu_tdp_watts;
+        if (p.gpu_model) {
+            for (const [model, tdp] of Object.entries(GPU_TDP_MAP)) {
+                if (p.gpu_model.toUpperCase().includes(model.toUpperCase())) {
+                    gpuTdp = tdp;
+                    break;
+                }
+            }
+        }
+        return {
+            provider_id: p.id,
+            name: p.name,
+            gpu_model: p.gpu_model,
+            status: p.status,
+            recommended_config: {
+                ...DEFAULT_POWER_CONFIG,
+                gpu_tdp_watts: gpuTdp,
+                electricity_cost_kwh: preset ? preset.electricity_cost_kwh : DEFAULT_POWER_CONFIG.electricity_cost_kwh,
+                enabled: true,
+            },
+        };
+    });
+
+    res.json({
+        total_providers: configs.length,
+        configs,
+        note: 'Power configs are recommendations. Providers save locally as ~/dc1-provider/power_config.json.',
+    });
+});
+
+
 module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,

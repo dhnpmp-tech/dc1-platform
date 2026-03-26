@@ -53,6 +53,7 @@ interface RegistrationFormState {
   fullName: string
   email: string
   phone: string
+  referralCode: string
   pdplConsent: boolean
 }
 
@@ -72,8 +73,11 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
     fullName: '',
     email: '',
     phone: '',
+    referralCode: '',
     pdplConsent: false,
   })
+  const [referralStatus, setReferralStatus] = useState<'idle' | 'applied' | 'error'>('idle')
+  const [referralMessage, setReferralMessage] = useState('')
   const [platform, setPlatform] = useState<Platform>('linux')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -160,6 +164,31 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
       const pid = data.providerId ?? data.provider_id ?? ''
       setApiKey(key)
       setProviderId(pid)
+
+      // Apply referral code if provided
+      if (regForm.referralCode.trim()) {
+        try {
+          const refRes = await fetch('/api/dc1/providers/apply-referral', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              referral_code: regForm.referralCode.trim(),
+              new_provider_id: data.providerId ?? data.provider_id,
+            }),
+          })
+          if (refRes.ok) {
+            const refData = await refRes.json() as { referrer_name: string; bonus_pct: number; duration_days: number }
+            setReferralStatus('applied')
+            setReferralMessage(`Referred by ${refData.referrer_name} — ${refData.bonus_pct}% bonus for ${refData.duration_days} days!`)
+          } else {
+            setReferralStatus('error')
+            const refErr = await refRes.json().catch(() => ({})) as { error?: string }
+            setReferralMessage(refErr.error || 'Could not apply referral code')
+          }
+        } catch {
+          // Non-blocking — registration itself succeeded
+        }
+      }
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Registration failed. Please try again.')
     } finally {
@@ -493,6 +522,31 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Referral code */}
+                <div className="space-y-1.5">
+                  <label htmlFor="referral-code" className="label">
+                    Referral Code <span className="text-dc1-text-muted font-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="referral-code"
+                    type="text"
+                    value={regForm.referralCode}
+                    onChange={e => handleRegFormChange('referralCode', e.target.value.toUpperCase())}
+                    placeholder="e.g. DCP-ABC123"
+                    className="input w-full"
+                    disabled={referralStatus === 'applied'}
+                  />
+                  {referralStatus === 'applied' && (
+                    <p className="text-sm text-status-success">{referralMessage}</p>
+                  )}
+                  {referralStatus === 'error' && (
+                    <p className="text-sm text-red-400">{referralMessage}</p>
+                  )}
+                  <p className="text-xs text-dc1-text-muted">
+                    Have a referral code? Both you and the referrer earn bonus rewards.
+                  </p>
                 </div>
 
                 {/* PDPL consent */}

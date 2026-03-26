@@ -148,6 +148,22 @@ module.exports = {
       env: {
         NODE_ENV: 'production'
       }
+    },
+    {
+      // Referral bonus processor — daily at 01:00 UTC.
+      // Calculates 5% of referred providers' daily earnings and credits referrers.
+      name: 'dcp-referral-bonus-cron',
+      script: '/bin/sh',
+      args: '-lc "node /root/dc1-platform/backend/src/scripts/process-referral-bonuses.js >> /root/dc1-platform/backend/logs/referral-bonus.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '0 1 * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production'
+      }
     }
   ]
 };

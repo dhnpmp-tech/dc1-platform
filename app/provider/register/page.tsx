@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -46,6 +47,21 @@ type SupportCategory = 'provider' | 'bug'
 
 export default function ProviderRegisterPage() {
   const { t, isRTL } = useLanguage()
+  const searchParams = useSearchParams()
+
+  // ── Referral code state ──────────────────────────────────────────────────
+  const [referralCode, setReferralCode] = useState('')
+  const [referralStatus, setReferralStatus] = useState<'idle' | 'applied' | 'error'>('idle')
+  const [referralMessage, setReferralMessage] = useState('')
+
+  // Pre-fill referral code from URL ?ref=CODE
+  useEffect(() => {
+    const ref = searchParams.get('ref')
+    if (ref && !referralCode) {
+      setReferralCode(ref)
+    }
+  }, [searchParams, referralCode])
+
   const [formData, setFormData] = useState<RegistrationFormData>({
     fullName: '',
     email: '',
@@ -204,6 +220,32 @@ export default function ProviderRegisterPage() {
 
       // Store provider key for dashboard access
       localStorage.setItem('dc1_provider_key', data.api_key)
+
+      // Apply referral code if provided
+      if (referralCode.trim()) {
+        try {
+          const refRes = await fetch(`${API_BASE}/providers/apply-referral`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              referral_code: referralCode.trim(),
+              new_provider_id: data.provider_id,
+            }),
+          })
+          if (refRes.ok) {
+            const refData = await refRes.json()
+            setReferralStatus('applied')
+            setReferralMessage(`Referred by ${refData.referrer_name} — ${refData.bonus_pct}% bonus for ${refData.duration_days} days!`)
+          } else {
+            const refErr = await refRes.json().catch(() => ({}))
+            setReferralStatus('error')
+            setReferralMessage((refErr as { error?: string }).error || 'Could not apply referral code')
+          }
+        } catch {
+          setReferralStatus('error')
+          setReferralMessage('Could not apply referral code')
+        }
+      }
 
       // Mark first step as completed
       setStatusSteps((prev) =>
@@ -1256,6 +1298,39 @@ export default function ProviderRegisterPage() {
                   placeholder="+1 (555) 000-0000"
                   className="input"
                 />
+              </div>
+
+              {/* Referral Code */}
+              <div>
+                <label className="label" htmlFor="referralCode">
+                  Referral Code <span className="text-dc1-text-muted font-normal">(optional)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="referralCode"
+                    type="text"
+                    value={referralCode}
+                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. DCP-ABC123"
+                    className="input flex-1"
+                    disabled={referralStatus === 'applied'}
+                  />
+                  {referralCode && referralStatus === 'idle' && (
+                    <span className="flex items-center text-xs text-dc1-text-muted px-2">Applied at registration</span>
+                  )}
+                </div>
+                {referralStatus === 'applied' && (
+                  <p className="mt-1.5 text-sm text-status-success flex items-center gap-1.5">
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-status-success text-[10px] font-bold text-black">✓</span>
+                    {referralMessage}
+                  </p>
+                )}
+                {referralStatus === 'error' && (
+                  <p className="mt-1.5 text-sm text-red-400">{referralMessage}</p>
+                )}
+                <p className="mt-1 text-xs text-dc1-text-muted">
+                  Have a referral code from another provider? Enter it here to earn bonus rewards.
+                </p>
               </div>
 
               {/* PDPL Consent */}
