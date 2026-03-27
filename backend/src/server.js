@@ -436,6 +436,10 @@ app.use('/api/pricing', pricingRouter);
 const vllmRouter = require('./routes/vllm');
 app.use('/api/vllm', vllmRouter);
 
+// OpenRouter-compatible /v1/ endpoints (Gap 1, 2, 3)
+const v1Router = require('./routes/v1');
+app.use('/v1', v1Router);
+
 const verificationRouter = require('./routes/verification');
 app.use('/api/verification', verificationRouter);
 
@@ -474,6 +478,13 @@ app.use('/api/rag', ragRouter);
 
 const arabicRagRouter = require('./routes/arabic-rag');
 app.use('/api/templates/arabic-rag', arabicRagRouter);
+
+const hyperagentRouter = require('./routes/hyperagent');
+app.use('/api/hyperagent', hyperagentRouter);
+
+// Initialise HyperAgent system (schema bootstrap + strategy seeding)
+const hyperagent = require('./services/hyperagent');
+try { hyperagent.init(); } catch (e) { console.warn('[hyperagent] Init warning:', e.message); }
 
 const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);

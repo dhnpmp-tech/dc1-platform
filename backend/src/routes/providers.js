@@ -2142,6 +2142,20 @@ function buildNextPendingJob(providerId) {
             continue;
         }
 
+        // ── HyperAgent advisory: should this provider accept this job? ──
+        try {
+            const hyperagent = require('../services/hyperagent');
+            const providerFull = db.get('SELECT * FROM providers WHERE id = ?', providerId);
+            const advice = hyperagent.advise(providerFull, candidate, {
+                queue_depth: candidates.filter(c => c.provider_id === providerId).length,
+                cached_models: provider.cached_models || '',
+            });
+            if (!advice.accept) {
+                // HyperAgent recommends rejecting — skip but don't block job for other providers
+                continue;
+            }
+        } catch (_haErr) { /* non-critical — proceed with normal assignment */ }
+
         const updateResult = runStatement(
             `UPDATE jobs
              SET provider_id = ?,

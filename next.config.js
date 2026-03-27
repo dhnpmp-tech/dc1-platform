@@ -27,6 +27,11 @@ const nextConfig = {
         source: '/api/templates',
         destination: `${backendUrl}/api/templates`,
       },
+      // OpenRouter-compatible /v1/ endpoints (inference marketplace)
+      {
+        source: '/v1/:path*',
+        destination: `${backendUrl}/v1/:path*`,
+      },
     ];
   },
 }

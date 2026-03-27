@@ -2307,6 +2307,25 @@ router.post('/:job_id/result', (req, res) => {
       ).catch(() => {});
     }
 
+    // ── HyperAgent: record job outcome for self-improvement ──────────
+    try {
+      const hyperagent = require('../services/hyperagent');
+      const provider = db.get('SELECT gpu_model, gpu_count FROM providers WHERE id = ?', job.provider_id);
+      hyperagent.recordOutcome({
+        provider_id: job.provider_id,
+        job_id: job.job_id,
+        gpu_model: provider?.gpu_model || null,
+        job_type: job.job_type,
+        accepted: true,
+        earned_halala: providerEarned,
+        power_cost_halala: 0, // daemon-side; populated via heartbeat telemetry
+        duration_secs: durationSeconds || 0,
+        success: !!result,
+        queue_wait_secs: 0,
+        gpu_util_avg: 0,
+      });
+    } catch (_haErr) { /* non-critical — never block settlement */ }
+
     res.json({
       success: true,
       job: updated,
@@ -2987,6 +3006,23 @@ router.post('/:job_id/complete', (req, res) => {
       refunded_amount_halala: 0,
       retry_attempts: Number(updated?.retry_count || 0),
     });
+    // ── HyperAgent: record completion outcome ─────────────────────────
+    try {
+      const hyperagent = require('../services/hyperagent');
+      const providerRec = db.get('SELECT gpu_model FROM providers WHERE id = ?', job.provider_id);
+      const durationSecs = startedAt ? Math.max(0, (new Date(now) - new Date(startedAt)) / 1000) : 0;
+      hyperagent.recordOutcome({
+        provider_id: job.provider_id,
+        job_id: job.job_id,
+        gpu_model: providerRec?.gpu_model || null,
+        job_type: job.job_type,
+        accepted: true,
+        earned_halala: provider_earned,
+        duration_secs: durationSecs,
+        success: true,
+      });
+    } catch (_) { /* non-critical */ }
+
     updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
     res.json({
       success: true,

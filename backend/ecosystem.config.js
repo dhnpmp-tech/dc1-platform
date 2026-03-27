@@ -16,6 +16,11 @@ module.exports = {
         NODE_ENV: 'production',
         DC1_PROVIDER_PORT: 8083,
 
+        // ── HyperAgent (MiniMax M2.7) ──────────────────────────────────────
+        // Powers the meta-agent's LLM reasoning for strategy self-improvement
+        MINIMAX_API_KEY: process.env.MINIMAX_API_KEY || '',
+        MINIMAX_MODEL: 'MiniMax-M2.7',
+
         // ── Auth ────────────────────────────────────────────────────────────
         // REQUIRED — generate with: openssl rand -hex 32
         // Never commit real admin tokens to source control
@@ -163,6 +168,25 @@ module.exports = {
       max_memory_restart: '100M',
       env: {
         NODE_ENV: 'production'
+      }
+    },
+    {
+      // HyperAgent meta-agent — self-improvement cycle every 6 hours.
+      // Analyses job outcomes and rewrites task agent strategy parameters
+      // to optimise provider profitability (DGM-H architecture).
+      name: 'dcp-hyperagent-meta-cron',
+      script: '/bin/sh',
+      args: '-lc "node /root/dc1-platform/backend/src/workers/hyperagentWorker.js >> /root/dc1-platform/backend/logs/hyperagent.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '0 */6 * * *',
+      watch: false,
+      max_memory_restart: '200M',
+      env: {
+        NODE_ENV: 'production',
+        MINIMAX_API_KEY: process.env.MINIMAX_API_KEY || '',
+        MINIMAX_MODEL: 'MiniMax-M2.7'
       }
     }
   ]
