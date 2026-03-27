@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
@@ -45,7 +45,7 @@ interface StatusStep {
 
 type SupportCategory = 'provider' | 'bug'
 
-export default function ProviderRegisterPage() {
+function ProviderRegisterPageInner() {
   const { t, isRTL } = useLanguage()
   const searchParams = useSearchParams()
 
@@ -1438,5 +1438,13 @@ export default function ProviderRegisterPage() {
       </main>
       <Footer />
     </>
+  )
+}
+
+export default function ProviderRegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <ProviderRegisterPageInner />
+    </Suspense>
   )
 }
