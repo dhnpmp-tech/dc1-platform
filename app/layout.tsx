@@ -3,7 +3,7 @@ import './globals.css'
 import { LanguageWrapper } from './lib/i18n'
 import CookieConsent from './components/ui/CookieConsent'
 import LanguagePreferenceModal from './components/ui/LanguagePreferenceModal'
-import FeedbackWidget from './components/ui/FeedbackWidget'
+import AIChatWidget from './components/ui/AIChatWidget'
 
 export const metadata: Metadata = {
   title: 'DCP — GPU Compute Marketplace',
@@ -31,7 +31,7 @@ export default function RootLayout({
           {children}
           <CookieConsent />
           <LanguagePreferenceModal />
-          <FeedbackWidget />
+          <AIChatWidget />
         </LanguageWrapper>
       </body>
     </html>
