@@ -1,0 +1,359 @@
+---
+title: Quick Start
+description: Get started with the DC1 API in under 5 minutes. Covers SDK installation, authentication, and your first inference job.
+order: 1
+---
+
+## Overview
+
+Get your first inference job running in 5 minutes. This guide covers the developer path — SDK installation, API key setup, and your first API call.
+
+**Prerequisites:** Node.js 18+ or Python 3.9+
+
+---
+
+## Step 1: Install the SDK
+
+Pick your language:
+
+```bash
+# Node.js / TypeScript
+npm install dc1-renter-sdk
+
+# Python
+pip install dc1
+```
+
+No other dependencies required. Both SDKs are thin wrappers around the REST API.
+
+---
+
+## Step 2: Get Your API Key
+
+1. Sign up at [https://dcp.sa/renter/register](https://dcp.sa/renter/register)
+2. Go to **Dashboard → Settings → API Keys**
+3. Copy your key — it starts with `dc1-renter-`
+
+Store it securely:
+
+```bash
+# Node.js
+export DC1_RENTER_KEY="dc1-renter-abc123..."
+
+# Python
+export DC1_API_KEY="dc1-renter-abc123..."
+```
+
+---
+
+## Step 3: Verify Your Key Works
+
+### Node.js
+
+```typescript
+import { DC1RenterClient } from 'dc1-renter-sdk';
+
+const client = new DC1RenterClient({ apiKey: process.env.DC1_RENTER_KEY! });
+const me = await client.me();
+console.log(`Balance: ${me.balanceSar} SAR`);
+```
+
+### Python
+
+```python
+import dc1
+
+client = dc1.DC1Client(api_key=os.environ["DC1_API_KEY"])
+wallet = client.wallet.balance()
+print(f"Balance: {wallet.balance_sar} SAR")
+```
+
+Expected output: `Balance: 50.00 SAR` (new accounts get 50 SAR test credit).
+
+---
+
+## Step 4: List Available GPUs
+
+### Node.js
+
+```typescript
+const providers = await client.listProviders();
+const gpus = providers.filter(p => p.vramGb >= 24);
+console.log(`Found ${gpus.length} GPUs with 24+ GB VRAM`);
+
+for (const p of gpus.slice(0, 3)) {
+  console.log(`  ${p.name} | ${p.gpuModel} | ${p.vramGb} GB | ${p.reliabilityScore}% reliability`);
+}
+```
+
+### Python
+
+```python
+providers = client.providers.list()
+gpus = [p for p in providers if p.vram_gb >= 24]
+print(f"Found {len(gpus)} GPUs with 24+ GB VRAM")
+
+for p in gpus[:3]:
+    print(f"  {p.name} | {p.gpu_model} | {p.vram_gb} GB | {p.reliability_score}% reliability")
+```
+
+### cURL
+
+```bash
+curl -s "https://dcp.sa/api/dc1/renters/available-providers" | \
+  jq '.providers[:3] | .[] | {name, gpu_model, vram_gb, reliability_score}'
+```
+
+---
+
+## Step 5: Submit Your First Job
+
+### Node.js
+
+```typescript
+const job = await client.submitJob({
+  providerId: providers[0].id,
+  jobType: 'llm_inference',
+  params: {
+    prompt: 'Explain the Vision 2030 initiative in 2 sentences.',
+    model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+  },
+  durationMinutes: 2,
+});
+
+console.log(`Job submitted: ${job.id}`);
+
+const result = await client.waitForJob(job.id, { timeout: 120_000 });
+console.log(`Result: ${result.result?.output}`);
+```
+
+### Python
+
+```python
+job = client.jobs.submit(
+    'llm_inference',
+    {'prompt': 'Explain the Vision 2030 initiative in 2 sentences.', 'model': 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'},
+    provider_id=providers[0].id,
+    duration_minutes=2,
+)
+
+print(f"Job submitted: {job.id}")
+
+result = client.jobs.wait(job.id, timeout=120)
+print(f"Result: {result.result['output']}")
+```
+
+### cURL
+
+```bash
+# Submit job
+JOB_RESPONSE=$(curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: $DC1_RENTER_KEY" \
+  -d '{
+    "provider_id": 1,
+    "job_type": "llm_inference",
+    "params": {
+      "prompt": "Explain the Vision 2030 initiative in 2 sentences.",
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    },
+    "duration_minutes": 2
+  }')
+
+JOB_ID=$(echo $JOB_RESPONSE | jq -r '.job.job_id')
+echo "Job ID: $JOB_ID"
+
+# Poll until done (check every 5s)
+while true; do
+  STATUS=$(curl -s "https://dcp.sa/api/dc1/jobs/$JOB_ID" -H "x-renter-key: $DC1_RENTER_KEY" | jq -r '.job.status')
+  echo "Status: $STATUS"
+  if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
+    break
+  fi
+  sleep 5
+done
+
+# Get result
+curl -s "https://dcp.sa/api/dc1/jobs/$JOB_ID/output" -H "x-renter-key: $DC1_RENTER_KEY" | jq '.'
+```
+
+---
+
+## Available Models
+
+| Model | Type | VRAM | Speed | Cost |
+|-------|------|------|-------|------|
+| TinyLlama/TinyLlama-1.1B-Chat-v1.0 | LLM | 2 GB | ⚡⚡⚡ | 8 SAR/hr |
+| mistralai/Mistral-7B-Instruct-v0.3 | LLM | 14 GB | ⚡⚡ | 8 SAR/hr |
+| llama3/Llama-3-8B-Instruct | LLM | 16 GB | ⚡⚡ | 9 SAR/hr |
+| stabilityai/stable-diffusion-xl-base-1.0 | Image | 8 GB | ⚡⚡ | 12 SAR/hr |
+
+Use `TinyLlama` for testing (cheapest, fastest). Switch to larger models for production.
+
+---
+
+## SDK Configuration Reference
+
+### Node.js `DC1RenterClient`
+
+```typescript
+const client = new DC1RenterClient({
+  apiKey: 'dc1-renter-abc123',    // required
+  baseUrl: 'https://api.dcp.sa',  // optional, default
+  timeoutMs: 30_000,               // optional, default 30s
+});
+```
+
+### Python `DC1Client`
+
+```python
+client = dc1.DC1Client(
+    api_key='dc1-renter-abc123',  # required
+    base_url='https://api.dcp.sa', # optional
+    timeout=30,                    # optional, seconds
+)
+```
+
+---
+
+## Troubleshooting
+
+### `AuthError: Invalid API key`
+
+Your key is missing or malformed.
+
+```bash
+# Verify your key format (should be dc1-renter-xxxxx)
+echo $DC1_RENTER_KEY
+```
+
+If invalid:
+1. Go to [https://dcp.sa/renter/dashboard](https://dcp.sa/renter/dashboard) → Settings → API Keys
+2. Delete the old key and create a new one
+3. Copy the new key and update your environment variable
+
+---
+
+### `APIError: 402 Payment Required`
+
+Insufficient balance. New accounts get 50 SAR free credit.
+
+```bash
+# Check balance via API
+curl -s "https://dcp.sa/api/dc1/renters/me?key=$DC1_RENTER_KEY" | jq '.renter.balance_halala'
+```
+
+If balance is 0:
+- Add credit at [https://dcp.sa/renter/billing](https://dcp.sa/renter/billing)
+- Or wait for promotional credit
+
+---
+
+### `JobTimeoutError: Job still running after N ms`
+
+The job took longer than the timeout. Common causes:
+- Provider went offline mid-job (auto-refund issued)
+- Model loading took too long on first request
+- Network issues
+
+```typescript
+// Increase timeout for slow models
+const result = await client.waitForJob(job.id, { timeout: 300_000 }); // 5 min
+```
+
+For persistent timeouts, try a faster model (TinyLlama) or a different provider.
+
+---
+
+### `APIError: 400 Bad Request`
+
+Check your request body matches the expected schema:
+
+```bash
+# Verify job submission fields
+curl -s -X POST "https://dcp.sa/api/dc1/jobs/submit" \
+  -H "x-renter-key: $DC1_RENTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"provider_id": 1, "job_type": "llm_inference", "params": {}, "duration_minutes": 1}' | jq '.error'
+```
+
+Common causes:
+- Missing required `params` fields (e.g., `prompt` for `llm_inference`)
+- `provider_id` doesn't exist or is offline
+- `duration_minutes` is 0 or negative
+
+---
+
+### Job Failed — "Provider Offline"
+
+The GPU provider went offline during job execution. You receive a full automatic refund.
+
+```bash
+# Check provider status
+curl -s "https://dcp.sa/api/dc1/providers/{provider_id}?key=$DC1_RENTER_KEY" | jq '.provider.status'
+```
+
+Resubmit your job — 99.5% of jobs complete successfully on retry.
+
+---
+
+### Rate Limiting (429)
+
+Too many requests. Back off and retry:
+
+```typescript
+// SDK handles retries automatically, but you can add manual backoff
+async function withRetry(fn, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e.statusCode === 429 && i < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+```
+
+---
+
+### Python: `ModuleNotFoundError: No module named 'dc1'`
+
+```bash
+# Verify installation
+pip show dc1
+
+# Reinstall if missing
+pip install dc1
+```
+
+Make sure you're using the correct Python environment (virtualenv, conda, etc.).
+
+---
+
+### Node.js: `ERR_REQUIRE_ESM`
+
+Use ESM imports or set `"type": "module"` in your `package.json`:
+
+```json
+{
+  "type": "module",
+  "dependencies": {
+    "dc1-renter-sdk": "^1.0.0"
+  }
+}
+```
+
+---
+
+## Next Steps
+
+- **[API Reference](/docs/api)** — Full endpoint documentation
+- **[SDK Reference (Node.js)](https://github.com/dhnpmp-tech/dcp-sdk-node)** — SDK docs
+- **[SDK Reference (Python)](https://github.com/dhnpmp-tech/dcp-sdk-python)** — SDK docs
+- **[Example Scripts](https://github.com/dhnpmp-tech/dcp-sdk-examples)** — Runnable examples
+
+**Need help?** Email [support@dcp.sa](mailto:support@dcp.sa)

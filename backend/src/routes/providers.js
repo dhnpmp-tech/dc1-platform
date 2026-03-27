@@ -609,6 +609,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             container_restart_count,
             model_cache,
             vllm_endpoint_url,   // DCP-922
+            vllm_models,
         } = req.body;
         const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
         if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
@@ -719,6 +720,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
           gpu_model = COALESCE(?, gpu_model),
           gpu_info_json = COALESCE(?, gpu_info_json),
           cached_models = COALESCE(?, cached_models),
+          vllm_models = ?,
           container_restart_count = ?,
           model_cache_disk_mb = ?,
           model_cache_disk_total_mb = ?,
@@ -736,6 +738,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
           resolvedGpuName,
           gpuInfoJson,
           Array.isArray(cached_models) ? JSON.stringify(cached_models) : null,
+          Array.isArray(vllm_models) ? JSON.stringify(vllm_models) : null,
           reportedContainerRestarts,
           modelCacheUsedMb,
           modelCacheTotalMb,
@@ -2141,20 +2144,6 @@ function buildNextPendingJob(providerId) {
         if (!providerMatchesJob(providerProfile, requirements)) {
             continue;
         }
-
-        // ── HyperAgent advisory: should this provider accept this job? ──
-        try {
-            const hyperagent = require('../services/hyperagent');
-            const providerFull = db.get('SELECT * FROM providers WHERE id = ?', providerId);
-            const advice = hyperagent.advise(providerFull, candidate, {
-                queue_depth: candidates.filter(c => c.provider_id === providerId).length,
-                cached_models: provider.cached_models || '',
-            });
-            if (!advice.accept) {
-                // HyperAgent recommends rejecting — skip but don't block job for other providers
-                continue;
-            }
-        } catch (_haErr) { /* non-critical — proceed with normal assignment */ }
 
         const updateResult = runStatement(
             `UPDATE jobs

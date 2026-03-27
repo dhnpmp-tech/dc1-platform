@@ -61,7 +61,6 @@ class JobsResource:
         try:
             data = self._http.get(f'/api/jobs/{job_id}/output')
         except APIError as exc:
-            # Backend returns 410 for failed/cancelled jobs with useful terminal payload.
             if exc.status_code == 410 and isinstance(exc.response, dict):
                 return Job.from_api(exc.response)
             raise
@@ -109,3 +108,47 @@ class JobsResource:
         data = self._http.get('/api/jobs/history', params={'limit': limit})
         jobs_raw = data if isinstance(data, list) else data.get('jobs', [])
         return [Job.from_api(j) for j in jobs_raw]
+
+    def cancel(self, job_id: str) -> dict:
+        """Cancel a queued or running job. Refunds the estimated cost to the renter's balance.
+
+        Args:
+            job_id: The job ID to cancel.
+
+        Returns:
+            Dict with ``success`` boolean and ``job_id``.
+        """
+        data = self._http.post(f'/api/jobs/{job_id}/cancel')
+        return {
+            'success': bool(data.get('success', False)),
+            'job_id': str(data.get('job', {}).get('job_id', job_id) if isinstance(data.get('job'), dict) else job_id),
+        }
+
+    def get_logs(self, job_id: str, *, since: Optional[int] = None, limit: int = 200) -> list[dict]:
+        """Fetch execution log lines for a job.
+
+        Args:
+            job_id: The job ID.
+            since: Only return lines after this line number (for incremental tailing).
+            limit: Maximum number of lines to return (default 200, max 1000).
+
+        Returns:
+            List of log entry dicts with ``line_no``, ``level``, ``message``, and ``logged_at``.
+        """
+        params: dict = {}
+        if since is not None:
+            params['since'] = str(since)
+        if limit != 200:
+            params['limit'] = str(limit)
+
+        data = self._http.get(f'/api/jobs/{job_id}/logs', params=params if params else None)
+        raw_logs = data.get('logs', []) if isinstance(data, dict) else []
+        return [
+            {
+                'line_no': l.get('line_no', 0),
+                'level': l.get('level', 'info'),
+                'message': l.get('message', ''),
+                'logged_at': l.get('logged_at', ''),
+            }
+            for l in raw_logs
+        ]

@@ -1,0 +1,87 @@
+{
+  "id": "tensorrt-llm",
+  "name": "TensorRT-LLM Optimized Serving",
+  "description": "NVIDIA TensorRT-LLM for maximum inference throughput and lowest latency. 2-5x faster than naive vLLM. Supports Llama, Mistral, Qwen, and most HF models with INT4/FP8 quantization.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    {
+      "key": "MODEL_ID",
+      "label": "Model ID (HuggingFace)",
+      "default": "mistralai/Mistral-7B-Instruct-v0.2",
+      "required": true
+    },
+    {
+      "key": "TP_SIZE",
+      "label": "Tensor parallel size",
+      "default": "1",
+      "required": false
+    },
+    {
+      "key": "QUANTIZATION",
+      "label": "Quantization (fp16, fp8, int4)",
+      "default": "fp16",
+      "required": false
+    },
+    {
+      "key": "MAX_MODEL_LEN",
+      "label": "Max context length",
+      "default": "8192",
+      "required": false
+    },
+    {
+      "key": "MAX_TOKENS",
+      "label": "Max output tokens",
+      "default": "512",
+      "required": false
+    },
+    {
+      "key": "TEMPERATURE",
+      "label": "Sampling temperature",
+      "default": "0.7",
+      "required": false
+    }
+  ],
+  "params": {
+    "model": "mistralai/Mistral-7B-Instruct-v0.2",
+    "tp_size": 1,
+    "quantization": "fp16",
+    "max_tokens": 512,
+    "temperature": 0.7
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "hot",
+    "behavior": "Hot cache — TensorRT engines compiled and cached for sub-second model loading."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "llm-inference",
+      "duration_minutes": 60,
+      "params": {
+        "model": "mistralai/Mistral-7B-Instruct-v0.2",
+        "quantization": "fp16"
+      }
+    },
+    "output": {
+      "type": "endpoint",
+      "model": "mistralai/Mistral-7B-Instruct-v0.2",
+      "status": "running",
+      "protocol": "openai-compatible"
+    }
+  },
+  "min_vram_gb": 16,
+  "estimated_price_sar_per_hour": 9,
+  "tags": [
+    "llm",
+    "inference",
+    "tensorrt",
+    "nvidia",
+    "optimized",
+    "high-throughput",
+    "low-latency"
+  ],
+  "sort_order": 9,
+  "icon": "⚡",
+  "difficulty": "medium"
+}

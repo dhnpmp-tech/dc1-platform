@@ -1,0 +1,43 @@
+{
+  "id": "comfyui-api",
+  "name": "ComfyUI API Mode",
+  "description": "ComfyUI with REST API mode enabled — node-based workflow engine for Stable Diffusion. Supports custom nodes, workflows, and advanced image generation pipelines.",
+  "image": "dc1/sd-worker:latest",
+  "job_type": "image_generation",
+  "env_vars": [
+    { "key": "WORKFLOW_JSON", "label": "Default workflow JSON (optional)", "default": "", "required": false },
+    { "key": "EXTRA_MODEL_PATH", "label": "Extra model search path (optional)", "default": "", "required": false },
+    { "key": "LISTEN_PORT", "label": "API listen port", "default": "8188", "required": false }
+  ],
+  "params": {
+    "server": true,
+    "api_mode": true,
+    "listen_port": 8188
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "warm",
+    "behavior": "Warm cache keeps diffusion checkpoints and VAE weights local for fast workflow execution."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "image_generation",
+      "duration_minutes": 30,
+      "params": {
+        "workflow": "prompt",
+        "prompt": { "3": { "inputs": { "text": "A Saudi Arabian falcon, photorealistic, 4K" } } }
+      }
+    },
+    "output": {
+      "type": "image",
+      "status": "completed",
+      "images": ["output_00001_.png"]
+    }
+  },
+  "min_vram_gb": 8,
+  "estimated_price_sar_per_hour": 12.0,
+  "tags": ["image-gen", "comfyui", "workflow", "diffusion", "api", "creative"],
+  "sort_order": 4,
+  "icon": "🔳",
+  "difficulty": "medium"
+}

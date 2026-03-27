@@ -2514,7 +2514,15 @@ router.get('/jobs', (req, res) => {
 
     let where = '1=1';
     const params = [];
-    if (status) { where += ' AND j.status = ?'; params.push(status); }
+    if (status) {
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        where += ' AND j.status = ?'; params.push(statuses[0]);
+      } else if (statuses.length > 1) {
+        where += ` AND j.status IN (${statuses.map(() => '?').join(',')})`;
+        params.push(...statuses);
+      }
+    }
     if (type) { where += ' AND j.job_type = ?'; params.push(type); }
     if (provider_id) { where += ' AND j.provider_id = ?'; params.push(provider_id); }
     if (renter_id) { where += ' AND j.renter_id = ?'; params.push(renter_id); }
@@ -2532,7 +2540,17 @@ router.get('/jobs', (req, res) => {
     if (page > 0) { paginationSql = `LIMIT ${limit} OFFSET ${(page - 1) * limit}`; }
     else { paginationSql = `LIMIT ${limit}`; }
 
-    const jobs = db.all(`SELECT j.*, p.name as provider_name, p.gpu_model, r.name as renter_name FROM jobs j LEFT JOIN providers p ON j.provider_id = p.id LEFT JOIN renters r ON j.renter_id = r.id WHERE ${where} ORDER BY j.created_at DESC ${paginationSql}`, ...params);
+    const jobs = db.all(`SELECT j.id, j.job_id, j.provider_id, j.renter_id, j.status, j.job_type, j.model,
+        j.cost_halala, j.actual_cost_halala, j.duration_minutes, j.duration_seconds,
+        j.prompt_tokens, j.completion_tokens,
+        j.submitted_at, j.started_at, j.completed_at, j.created_at,
+        p.name as provider_name, p.gpu_model,
+        r.name as renter_name
+        FROM jobs j
+        LEFT JOIN providers p ON j.provider_id = p.id
+        LEFT JOIN renters r ON j.renter_id = r.id
+        WHERE ${where}
+        ORDER BY j.created_at DESC ${paginationSql}`, ...params);
 
     const statsRow = db.get(
       `SELECT COUNT(*) as total,
@@ -4074,67 +4092,70 @@ router.get('/billing/summary', (req, res) => {
 
 // ─── GET /api/admin/revenue/summary — DCP-917 ──────────────────────────────
 // All-time platform revenue totals + 30-day daily + top providers + top models
+// Uses jobs table instead of billing_records (billing_records table not present in SQLite)
 
-router.get('/revenue/summary', requireAdminAuth, (req, res) => {
+router.get('/revenue/summary', (req, res) => {
   try {
     const allTime = db.get(`
       SELECT
-        COUNT(*)                          AS total_jobs,
-        COALESCE(SUM(gross_cost_halala),0)        AS total_gross_halala,
-        COALESCE(SUM(platform_fee_halala),0)      AS total_platform_fees_halala,
-        COALESCE(SUM(provider_earning_halala),0)  AS total_provider_earnings_halala
-      FROM billing_records
+        COUNT(*)                                            AS total_jobs,
+        COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0) AS total_gross_halala,
+        COALESCE(SUM(COALESCE(dc1_fee_halala, 0)), 0)      AS total_platform_fees_halala,
+        COALESCE(SUM(COALESCE(provider_earned_halala, 0)), 0) AS total_provider_earnings_halala
+      FROM jobs
+      WHERE status = 'completed'
     `);
 
     const daily = db.all(`
       SELECT
-        DATE(created_at) AS date,
-        COUNT(*)                          AS jobs,
-        COALESCE(SUM(gross_cost_halala),0)        AS gross_halala,
-        COALESCE(SUM(platform_fee_halala),0)      AS platform_fee_halala,
-        COALESCE(SUM(provider_earning_halala),0)  AS provider_earning_halala
-      FROM billing_records
-      WHERE created_at >= DATE('now', '-30 days')
-      GROUP BY DATE(created_at)
+        DATE(completed_at) AS date,
+        COUNT(*)                                                          AS jobs,
+        COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0)  AS gross_halala,
+        COALESCE(SUM(COALESCE(dc1_fee_halala, 0)), 0)                  AS platform_fee_halala,
+        COALESCE(SUM(COALESCE(provider_earned_halala, 0)), 0)          AS provider_earning_halala
+      FROM jobs
+      WHERE status = 'completed' AND completed_at >= DATE('now', '-30 days')
+      GROUP BY DATE(completed_at)
       ORDER BY date DESC
     `);
 
     const topProviders = db.all(`
       SELECT
-        br.provider_id,
+        j.provider_id,
         p.name AS provider_name,
-        COUNT(*)                                    AS jobs,
-        COALESCE(SUM(br.provider_earning_halala),0) AS total_earning_halala
-      FROM billing_records br
-      LEFT JOIN providers p ON p.id = br.provider_id
-      GROUP BY br.provider_id
+        COUNT(*) AS jobs,
+        COALESCE(SUM(COALESCE(j.provider_earned_halala, 0)), 0) AS total_earning_halala
+      FROM jobs j
+      LEFT JOIN providers p ON p.id = j.provider_id
+      WHERE j.status = 'completed'
+      GROUP BY j.provider_id
       ORDER BY total_earning_halala DESC
       LIMIT 5
     `);
 
     const topModels = db.all(`
       SELECT
-        model_id,
-        COUNT(*)                     AS jobs,
-        COALESCE(SUM(token_count),0) AS total_tokens,
-        COALESCE(SUM(gross_cost_halala),0) AS gross_halala
-      FROM billing_records
-      WHERE model_id IS NOT NULL
-      GROUP BY model_id
+        model,
+        COUNT(*) AS jobs,
+        COALESCE(SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)), 0) AS total_tokens,
+        COALESCE(SUM(COALESCE(actual_cost_halala, cost_halala, 0)), 0) AS gross_halala
+      FROM jobs
+      WHERE status = 'completed' AND model IS NOT NULL
+      GROUP BY model
       ORDER BY total_tokens DESC
       LIMIT 5
     `);
 
     return res.json({
       all_time: {
-        total_jobs:                     allTime.total_jobs || 0,
-        total_gross_halala:             allTime.total_gross_halala || 0,
-        total_gross_sar:                (allTime.total_gross_halala || 0) / 100,
-        total_platform_fees_halala:     allTime.total_platform_fees_halala || 0,
-        total_platform_fees_sar:        (allTime.total_platform_fees_halala || 0) / 100,
+        total_jobs:                      allTime.total_jobs || 0,
+        total_gross_halala:              allTime.total_gross_halala || 0,
+        total_gross_sar:                 (allTime.total_gross_halala || 0) / 100,
+        total_platform_fees_halala:      allTime.total_platform_fees_halala || 0,
+        total_platform_fees_sar:         (allTime.total_platform_fees_halala || 0) / 100,
         total_provider_earnings_halala: allTime.total_provider_earnings_halala || 0,
-        total_provider_earnings_sar:    (allTime.total_provider_earnings_halala || 0) / 100,
-        platform_fee_rate:              0.15,
+        total_provider_earnings_sar:     (allTime.total_provider_earnings_halala || 0) / 100,
+        platform_fee_rate:               0.15,
       },
       top_providers: topProviders,
       top_models:    topModels,
@@ -4143,6 +4164,66 @@ router.get('/revenue/summary', requireAdminAuth, (req, res) => {
   } catch (error) {
     console.error('[admin/revenue/summary]', error);
     return res.status(500).json({ error: 'Failed to fetch revenue summary' });
+  }
+});
+
+// ─── GET /api/admin/errors — DCP-1015 ─────────────────────────────────────────
+// Returns recent error events from daemon_events + job errors for admin dashboard
+router.get('/errors', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+
+    const daemonErrors = db.all(`
+      SELECT
+        e.id,
+        e.event_type  AS message,
+        e.severity,
+        e.daemon_version,
+        e.hostname,
+        e.os_info,
+        e.details,
+        e.event_timestamp AS created_at,
+        'daemon_event'    AS source
+      FROM daemon_events e
+      WHERE e.severity IN ('error', 'critical')
+         OR e.event_type LIKE '%error%'
+         OR e.event_type LIKE '%fail%'
+      ORDER BY e.event_timestamp DESC
+      LIMIT ?
+    `, limit);
+
+    const jobErrors = db.all(`
+      SELECT
+        j.id,
+        COALESCE(j.error, j.last_error, 'Unknown error') AS message,
+        'error'                                          AS severity,
+        NULL                                            AS daemon_version,
+        p.provider_hostname                              AS hostname,
+        NULL                                            AS os_info,
+        NULL                                            AS details,
+        COALESCE(j.completed_at, j.updated_at, j.created_at) AS created_at,
+        'job'                                           AS source
+      FROM jobs j
+      LEFT JOIN providers p ON p.id = j.provider_id
+      WHERE j.status = 'failed'
+         OR j.error IS NOT NULL
+         OR j.last_error IS NOT NULL
+      ORDER BY COALESCE(j.completed_at, j.updated_at, j.created_at) DESC
+      LIMIT ?
+    `, limit);
+
+    const combined = [...daemonErrors, ...jobErrors]
+      .sort((a, b) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+      })
+      .slice(0, limit);
+
+    return res.json({ errors: combined });
+  } catch (error) {
+    console.error('[admin/errors]', error);
+    return res.status(500).json({ error: 'Failed to fetch errors' });
   }
 });
 

@@ -55,7 +55,7 @@ interface RevenueSummary {
   date: string
   gross_halala: number
   platform_fee_halala: number
-  provider_earnings_halala: number
+  provider_earning_halala: number
 }
 
 interface ApiError {
@@ -181,7 +181,7 @@ export default function AdminDashboard() {
       })
       if (!res.ok) throw new Error('Failed to load pricing')
       const data = await res.json()
-      setPricingRates(data.rates || [])
+      setPricingRates(data.prices || [])
     } catch (err: any) {
       setPricingError(err.message)
     } finally {
@@ -226,7 +226,20 @@ export default function AdminDashboard() {
       })
       if (res.ok) {
         const data = await res.json()
-        setProviders(data.providers || data || [])
+        const providerRows = data.providers || data || []
+        setProviders(providerRows.map((p: any) => ({
+          id: p.id,
+          name: p.name || p.email || 'Unknown',
+          gpu_model: p.gpu_model || null,
+          status: p.is_online ? 'online' : 'offline',
+          gpu_util_pct: p.gpu_util_pct ?? null,
+          last_heartbeat: p.last_seen || null,
+          jobs_today: p.active_jobs ?? 0,
+          earnings_today_halala: 0,
+          endpoint_url: null,
+          stake_status: null,
+          registered_at: null,
+        })))
       }
     } catch { /* non-fatal */ } finally {
       setProvidersLoading(false)
@@ -241,7 +254,11 @@ export default function AdminDashboard() {
       })
       if (res.ok) {
         const data = await res.json()
-        setJobs(data.jobs || data || [])
+        const jobsArr = data.jobs || data || []
+        setJobs(jobsArr.map((j: any) => ({
+          ...j,
+          token_count: (j.prompt_tokens || 0) + (j.completion_tokens || 0),
+        })))
       }
     } catch { /* non-fatal */ } finally {
       setJobsLoading(false)
@@ -256,7 +273,7 @@ export default function AdminDashboard() {
       })
       if (res.ok) {
         const data = await res.json()
-        setRevenue7d(data.days || data || [])
+        setRevenue7d(data.last_30_days || data.days || data || [])
       }
     } catch { /* non-fatal */ } finally {
       setRevenueLoading(false)

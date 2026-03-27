@@ -349,7 +349,7 @@ export default function ArabicRagPage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
-                href="/marketplace/templates/arabic-rag"
+                href="/marketplace/templates"
                 className="px-8 py-3.5 bg-dc1-amber text-dc1-void font-semibold rounded-lg hover:bg-dc1-amber-hover transition-colors shadow-lg shadow-dc1-amber/20"
               >
                 {c.hero.cta_primary}
@@ -540,7 +540,7 @@ export default function ArabicRagPage() {
             <p className="text-lg text-dc1-text-secondary mb-10">{c.cta_block.sub}</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
-                href="/marketplace/templates/arabic-rag"
+                href="/marketplace/templates"
                 className="px-8 py-3.5 bg-dc1-amber text-dc1-void font-semibold rounded-lg hover:bg-dc1-amber-hover transition-colors shadow-lg shadow-dc1-amber/20"
               >
                 {c.cta_block.cta_primary}

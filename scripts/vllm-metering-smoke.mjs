@@ -139,7 +139,7 @@ async function run() {
 
   printHeader('3) vLLM /complete Request');
   const traceId = `metering-${Date.now()}`;
-  const completeRes = await requestJson('/vllm/complete', {
+  const completeRes = await requestJson('/v1/complete', {
     method: 'POST',
     headers: { 'x-renter-key': RENTER_KEY },
     body: {

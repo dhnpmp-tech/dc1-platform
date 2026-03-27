@@ -7,13 +7,13 @@ order: 3
 ## Install
 
 ```bash
-# Check /docs/sdk-guides for the current package name and version before install.
+npm install dc1-renter-sdk
 ```
 
 ## Renter flow (me -> submit -> logs -> output)
 
 ```ts
-import { DC1RenterClient } from '<SDK_PACKAGE_FROM_DOCS>'
+import { DC1RenterClient } from 'dc1-renter-sdk'
 
 const baseUrl = 'https://api.dcp.sa'
 const apiKey = process.env.DC1_RENTER_KEY!
@@ -21,52 +21,40 @@ const client = new DC1RenterClient({ apiKey, baseUrl })
 
 // 1) Validate auth
 const me = await client.me()
-console.log('renter:', me.renter?.email)
+console.log('renter:', me.email)
 
 // 2) Submit job
 const submitted = await client.submitJob({
-  provider_id: 42,
-  job_type: 'llm_inference',
-  duration_minutes: 3,
-  max_duration_seconds: 180,
-  container_spec: { image_type: 'vllm-serve' },
+  providerId: 42,
+  jobType: 'llm_inference',
+  durationMinutes: 3,
   params: {
     model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
     prompt: 'Explain DCP in 3 bullets.',
   },
 })
 
-const jobId = submitted.job.job_id
+const jobId = submitted.id
 console.log('job_id:', jobId)
 
-// 3) Stream logs (SSE)
-const logRes = await fetch(`${baseUrl}/api/jobs/${jobId}/logs/stream?key=${apiKey}`)
+// 3) Wait for completion (uses polling internally)
+const result = await client.waitForJob(jobId, { timeout: 120000 })
+console.log('output:', result.result)
+
+// Alternatively: stream logs via SSE
+const logRes = await fetch(`${baseUrl}/api/jobs/${jobId}/logs/stream`, {
+  headers: { 'x-renter-key': apiKey }
+})
 if (!logRes.ok || !logRes.body) throw new Error('Failed to open log stream')
 
 const reader = logRes.body.getReader()
 const decoder = new TextDecoder()
-let logDone = false
-
-while (!logDone) {
-  const { value, done } = await reader.read()
-  if (done) break
-  const chunk = decoder.decode(value, { stream: true })
-  for (const line of chunk.split('\n')) {
-    if (!line.startsWith('data: ')) continue
-    const evt = JSON.parse(line.slice(6))
-    if (evt.type === 'log') console.log('[log]', evt.line)
-    if (evt.type === 'end') {
-      console.log('[end]', evt.status)
-      logDone = true
-      break
-    }
-  }
+for await (const chunk of decoder.decode((await logRes.body.getReader().read()).value, { stream: true }).split('\n')) {
+  if (!chunk.startsWith('data: ')) continue
+  const evt = JSON.parse(chunk.slice(6))
+  if (evt.type === 'log') console.log('[log]', evt.line)
+  if (evt.type === 'end') { console.log('[end]', evt.status); break }
 }
-
-// 4) Fetch output
-const outputRes = await fetch(`${baseUrl}/api/jobs/${jobId}/output?key=${apiKey}`)
-const output = await outputRes.json()
-console.log('output:', output)
 ```
 
 ## Parity snippets (raw fetch)

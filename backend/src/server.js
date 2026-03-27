@@ -379,6 +379,27 @@ app.use(analyticsService.latencyMiddleware);
 // Serve installer files for download (daemon binaries — still needed)
 app.use('/installers', express.static(path.join(__dirname, '..', 'installers')));
 
+// Provider auto-installer: curl dcp.sa/install | bash
+// Serves install.sh for Linux/macOS provider setup
+const INSTALL_SCRIPT_PATH = path.join(__dirname, '..', 'public', 'install.sh');
+app.get('/install', (req, res) => {
+    if (!fs.existsSync(INSTALL_SCRIPT_PATH)) {
+        return res.status(404).json({ error: 'Install script not found' });
+    }
+    res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="install.sh"');
+    return res.sendFile(INSTALL_SCRIPT_PATH);
+});
+// Also serve at /install.sh for convenience
+app.get('/install.sh', (req, res) => {
+    if (!fs.existsSync(INSTALL_SCRIPT_PATH)) {
+        return res.status(404).json({ error: 'Install script not found' });
+    }
+    res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="install.sh"');
+    return res.sendFile(INSTALL_SCRIPT_PATH);
+});
+
 // API Routes
 const authRouter = require('./routes/auth');
 app.use('/api/auth', authRouter);
@@ -434,11 +455,7 @@ const pricingRouter = require('./routes/pricing');
 app.use('/api/pricing', pricingRouter);
 
 const vllmRouter = require('./routes/vllm');
-app.use('/api/vllm', vllmRouter);
-
-// OpenRouter-compatible /v1/ endpoints (Gap 1, 2, 3)
-const v1Router = require('./routes/v1');
-app.use('/v1', v1Router);
+app.use('/v1', vllmRouter);
 
 const verificationRouter = require('./routes/verification');
 app.use('/api/verification', verificationRouter);
@@ -478,13 +495,6 @@ app.use('/api/rag', ragRouter);
 
 const arabicRagRouter = require('./routes/arabic-rag');
 app.use('/api/templates/arabic-rag', arabicRagRouter);
-
-const hyperagentRouter = require('./routes/hyperagent');
-app.use('/api/hyperagent', hyperagentRouter);
-
-// Initialise HyperAgent system (schema bootstrap + strategy seeding)
-const hyperagent = require('./services/hyperagent');
-try { hyperagent.init(); } catch (e) { console.warn('[hyperagent] Init warning:', e.message); }
 
 const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);

@@ -2,7 +2,7 @@
 
 Code examples for submitting jobs to DCP in your language of choice.
 
-**Supported languages:** JavaScript/Node.js, Python, cURL, Go, Rust (coming soon)
+**Supported languages:** JavaScript/Node.js, Python, cURL
 
 ---
 
@@ -11,19 +11,17 @@ Code examples for submitting jobs to DCP in your language of choice.
 ### Installation
 
 ```bash
-npm install dcp-sdk
+npm install dc1-renter-sdk
 ```
-
-Or use fetch API directly (no SDK needed).
 
 ### Basic Setup
 
 ```javascript
-const DCPClient = require('dcp-sdk');
+const { DC1RenterClient } = require('dc1-renter-sdk');
 
-const client = new DCPClient({
-  baseURL: 'https://api.dcp.sa',
-  apiKey: 'dcp-renter-a1b2c3d4e5f6...'
+const client = new DC1RenterClient({
+  baseUrl: 'https://api.dcp.sa',
+  apiKey: 'dc1-renter-a1b2c3d4e5f6...'
 });
 ```
 
@@ -31,122 +29,79 @@ const client = new DCPClient({
 
 ```javascript
 async function runInference() {
-  const job = await client.jobs.submit({
-    provider_id: 3,
-    job_type: 'llm_inference',
-    duration_minutes: 5,
+  const providers = await client.listProviders();
+  if (providers.length === 0) throw new Error('No providers available');
+
+  const job = await client.submitJob({
+    providerId: providers[0].id,
+    jobType: 'llm_inference',
+    durationMinutes: 5,
     params: {
       model: 'mistralai/Mistral-7B-Instruct-v0.2',
       prompt: 'Explain blockchain in one sentence',
       max_tokens: 100,
       temperature: 0.7
     },
-    gpu_requirements: {
-      min_vram_gb: 16
+    gpuRequirements: {
+      minVramGb: 16
     }
   });
 
-  console.log(`Job submitted: ${job.job_id}`);
-  console.log(`Estimated cost: ${job.estimated_cost_sar} SAR`);
+  console.log(`Job submitted: ${job.id}`);
+  console.log(`Estimated cost: ${job.costSar} SAR`);
+  return job;
 }
 
 runInference().catch(console.error);
 ```
 
-### Poll for Job Results
+### Wait for Job Results
 
 ```javascript
 async function waitForJobCompletion(jobId, maxWaitMs = 300000) {
-  const startTime = Date.now();
-  const pollIntervalMs = 5000;
-
-  while (Date.now() - startTime < maxWaitMs) {
-    const status = await client.jobs.getStatus(jobId);
-
-    console.log(`Job ${jobId} status: ${status.status}`);
-
-    if (status.status === 'completed') {
-      const output = await client.jobs.getOutput(jobId);
-      return output;
-    }
-
-    if (status.status === 'failed') {
-      throw new Error(`Job failed: ${status.error_message}`);
-    }
-
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-  }
-
-  throw new Error('Job timeout');
-}
-
-const result = await waitForJobCompletion('job-1710843200000-x7k2p');
-console.log('Result:', result);
-```
-
-### Image Generation Job
-
-```javascript
-async function generateImage() {
-  const job = await client.jobs.submit({
-    provider_id: 5,
-    job_type: 'image_generation',
-    duration_minutes: 3,
-    params: {
-      model: 'stabilityai/stable-diffusion-xl-base-1.0',
-      prompt: 'A futuristic city with flying cars',
-      steps: 20,
-      width: 1024,
-      height: 768
-    }
+  const result = await client.waitForJob(jobId, {
+    timeout: maxWaitMs,
+    pollInterval: 5000,
+    onProgress: (status) => console.log(`Job status: ${status}`)
   });
 
-  // Wait for completion
-  let status;
-  while (true) {
-    status = await client.jobs.getStatus(job.job_id);
-    if (status.status === 'completed') break;
-    await new Promise(r => setTimeout(r, 2000));
-  }
-
-  // Get image
-  const imageBuffer = await client.jobs.getOutput(job.job_id);
-  fs.writeFileSync('output.png', imageBuffer);
+  console.log('Job completed:', result.result);
+  return result;
 }
+
+waitForJobCompletion('job-1710843200000-x7k2p').catch(console.error);
 ```
 
-### Get Provider Marketplace
+### Get Provider List
 
 ```javascript
 async function listProviders() {
-  const { providers } = await client.providers.marketplace();
-
-  const liveProviders = providers.filter(p => p.is_live);
-
-  console.table(liveProviders.map(p => ({
+  const providers = await client.listProviders();
+  console.table(providers.map(p => ({
+    id: p.id,
     name: p.name,
-    gpu: p.gpu_model,
-    vram: p.vram_gb,
-    reliability: p.reliability_score,
-    cached_models: p.cached_models.join(', ')
+    gpu: p.gpuModel,
+    vramGb: p.vramGb,
+    status: p.status,
+    reliability: p.reliabilityScore
   })));
 }
 
-listProviders();
+listProviders().catch(console.error);
 ```
 
 ### Check Account Balance
 
 ```javascript
 async function checkBalance() {
-  const balance = await client.renters.getBalance();
-
-  console.log(`Available: ${balance.available_sar} SAR`);
-  console.log(`Total spent: ${balance.total_spent_sar} SAR`);
-  console.log(`Jobs completed: ${balance.total_jobs}`);
+  const balance = await client.getBalance();
+  console.log(`Available: ${balance.balanceSar} SAR`);
+  console.log(`Held: ${balance.heldSar} SAR`);
+  console.log(`Total spent: ${balance.totalSpentSar} SAR`);
+  console.log(`Jobs completed: ${balance.totalJobs}`);
 }
 
-checkBalance();
+checkBalance().catch(console.error);
 ```
 
 ### Using Fetch API (No SDK)
@@ -157,7 +112,7 @@ async function submitJobWithFetch() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-renter-key': 'dcp-renter-a1b2c3d4e5f6...'
+      'x-renter-key': 'dc1-renter-a1b2c3d4e5f6...'
     },
     body: JSON.stringify({
       provider_id: 3,
@@ -172,9 +127,10 @@ async function submitJobWithFetch() {
     })
   });
 
-  const job = await response.json();
-  console.log(`Job ${job.job_id} submitted`);
-  return job;
+  const data = await response.json();
+  const jobId = data.job?.job_id ?? data.job_id;
+  console.log(`Job ${jobId} submitted`);
+  return jobId;
 }
 ```
 
@@ -185,19 +141,18 @@ async function submitJobWithFetch() {
 ### Installation
 
 ```bash
-pip install dcp-sdk
-# or
-pip install requests  # For manual requests
+pip install dc1
 ```
 
 ### Basic Setup
 
 ```python
-from dcp import DCPClient
+import dc1
 
-client = DCPClient(
+client = dc1.DC1Client(
+    api_key='dc1-renter-a1b2c3d4e5f6...',
     base_url='https://api.dcp.sa',
-    api_key='dcp-renter-a1b2c3d4e5f6...'
+    timeout=30
 )
 ```
 
@@ -205,26 +160,22 @@ client = DCPClient(
 
 ```python
 def run_inference():
+    providers = client.providers.list()
+    if not providers:
+        raise Exception('No providers available')
+
     job = client.jobs.submit(
-        provider_id=3,
-        job_type='llm_inference',
-        duration_minutes=5,
-        params={
-            'model': 'mistralai/Mistral-7B-Instruct-v0.2',
-            'prompt': 'Write a haiku about artificial intelligence',
-            'max_tokens': 100,
-            'temperature': 0.7
-        },
-        gpu_requirements={
-            'min_vram_gb': 16
-        }
+        'llm_inference',
+        {'model': 'mistralai/Mistral-7B-Instruct-v0.2', 'prompt': 'Write a haiku about AI', 'max_tokens': 100, 'temperature': 0.7},
+        provider_id=providers[0].id,
+        duration_minutes=5
     )
 
-    print(f"Job submitted: {job['job_id']}")
-    print(f"Estimated cost: {job['estimated_cost_sar']} SAR")
-    return job['job_id']
+    print(f"Job submitted: {job.id}")
+    print(f"Estimated cost: {job.cost_sar} SAR")
+    return job
 
-job_id = run_inference()
+run_inference()
 ```
 
 ### Wait for Results
@@ -232,80 +183,20 @@ job_id = run_inference()
 ```python
 import time
 
-def wait_for_completion(job_id, max_wait_seconds=300):
-    start_time = time.time()
-    poll_interval = 5  # seconds
-
-    while time.time() - start_time < max_wait_seconds:
-        status = client.jobs.get_status(job_id)
-        print(f"Job {job_id} status: {status['status']}")
-
-        if status['status'] == 'completed':
-            output = client.jobs.get_output(job_id)
-            return output['result']
-
-        if status['status'] == 'failed':
-            raise Exception(f"Job failed: {status.get('error_message')}")
-
-        time.sleep(poll_interval)
-
-    raise TimeoutError('Job took too long')
+def wait_for_completion(job_id, timeout=300):
+    return client.jobs.wait(job_id, timeout=timeout, poll_interval=5)
 
 result = wait_for_completion('job-1710843200000-x7k2p')
-print("Result:", result)
-```
-
-### Image Generation
-
-```python
-from PIL import Image
-from io import BytesIO
-
-def generate_image():
-    job = client.jobs.submit(
-        provider_id=5,
-        job_type='image_generation',
-        duration_minutes=3,
-        params={
-            'model': 'stabilityai/stable-diffusion-xl-base-1.0',
-            'prompt': 'A stunning Saudi Arabian desert landscape',
-            'steps': 20,
-            'width': 1024,
-            'height': 768
-        }
-    )
-
-    # Wait for completion
-    status = None
-    while True:
-        status = client.jobs.get_status(job['job_id'])
-        if status['status'] == 'completed':
-            break
-        time.sleep(2)
-
-    # Get and save image
-    image_data = client.jobs.get_output(job['job_id'])
-    image = Image.open(BytesIO(image_data))
-    image.save('generated_image.png')
-    print("Image saved to generated_image.png")
-
-generate_image()
+print("Result:", result.result)
 ```
 
 ### Get Available Providers
 
 ```python
 def list_providers():
-    data = client.providers.marketplace()
-
-    live_providers = [p for p in data['providers'] if p['is_live']]
-
-    for p in live_providers:
-        print(f"{p['name']}")
-        print(f"  GPU: {p['gpu_model']} ({p['vram_gb']}GB)")
-        print(f"  Reliability: {p['reliability_score']}%")
-        print(f"  Cached models: {', '.join(p['cached_models'])}")
-        print()
+    providers = client.providers.list()
+    for p in providers:
+        print(f"{p.name} — {p.gpu_model} ({p.vram_gb}GB) — reliability: {p.reliability_score}")
 
 list_providers()
 ```
@@ -314,28 +205,23 @@ list_providers()
 
 ```python
 def check_balance():
-    balance = client.renters.get_balance()
-
-    print(f"Available: {balance['available_sar']} SAR")
-    print(f"Held: {balance['held_sar']} SAR")
-    print(f"Total spent: {balance['total_spent_sar']} SAR")
-    print(f"Jobs: {balance['total_jobs']}")
+    wallet = client.wallet.balance()
+    print(f"Balance: {wallet.balance_sar} SAR — {wallet.name} ({wallet.email})")
 
 check_balance()
 ```
 
-### Using Requests (No SDK)
+### Using urllib (No SDK)
 
 ```python
-import requests
+import urllib.request
 import json
 
-def submit_job_with_requests():
+def submit_job():
     headers = {
         'Content-Type': 'application/json',
-        'x-renter-key': 'dcp-renter-a1b2c3d4e5f6...'
+        'x-renter-key': 'dc1-renter-a1b2c3d4e5f6...'
     }
-
     payload = {
         'provider_id': 3,
         'job_type': 'llm_inference',
@@ -347,18 +233,19 @@ def submit_job_with_requests():
             'temperature': 0.7
         }
     }
-
-    response = requests.post(
+    req = urllib.request.Request(
         'https://api.dcp.sa/api/jobs/submit',
+        data=json.dumps(payload).encode(),
         headers=headers,
-        json=payload
+        method='POST'
     )
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read())
+        job_id = data.get('job', {}).get('job_id', data.get('job_id', ''))
+        print(f"Job {job_id} submitted")
+        return job_id
 
-    job = response.json()
-    print(f"Job {job['job_id']} submitted")
-    return job['job_id']
-
-submit_job_with_requests()
+submit_job()
 ```
 
 ---
@@ -370,11 +257,7 @@ submit_job_with_requests()
 ```bash
 curl -X POST https://api.dcp.sa/api/renters/register \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Your Name",
-    "email": "you@example.com",
-    "organization": "Your Company"
-  }'
+  -d '{"name": "Your Name", "email": "you@example.com", "organization": "Your Company"}'
 ```
 
 ### Top Up Balance
@@ -382,10 +265,8 @@ curl -X POST https://api.dcp.sa/api/renters/register \
 ```bash
 curl -X POST https://api.dcp.sa/api/renters/topup \
   -H "Content-Type: application/json" \
-  -H "x-renter-key: dcp-renter-a1b2c3d4e5f6..." \
-  -d '{
-    "amount_sar": 100
-  }'
+  -H "x-renter-key: dc1-renter-a1b2c3d4e5f6..." \
+  -d '{"amount_sar": 100}'
 ```
 
 ### List Available Providers
@@ -399,7 +280,7 @@ curl https://api.dcp.sa/api/renters/available-providers | jq '.providers'
 ```bash
 curl -X POST https://api.dcp.sa/api/jobs/submit \
   -H "Content-Type: application/json" \
-  -H "x-renter-key: dcp-renter-a1b2c3d4e5f6..." \
+  -H "x-renter-key: dc1-renter-a1b2c3d4e5f6..." \
   -d '{
     "provider_id": 3,
     "job_type": "llm_inference",
@@ -413,28 +294,17 @@ curl -X POST https://api.dcp.sa/api/jobs/submit \
   }'
 ```
 
-### Check Job Status
-
-```bash
-JOB_ID="job-1710843200000-x7k2p"
-
-curl https://api.dcp.sa/api/jobs/$JOB_ID/status \
-  -H "x-renter-key: dcp-renter-a1b2c3d4e5f6..."
-```
-
 ### Get Job Output
 
 ```bash
-curl https://api.dcp.sa/api/jobs/job-1710843200000-x7k2p/output \
-  -H "x-renter-key: dcp-renter-a1b2c3d4e5f6..." \
-  -o result.txt
+curl "https://api.dcp.sa/api/jobs/job-1710843200000-x7k2p/output" \
+  -H "x-renter-key: dc1-renter-a1b2c3d4e5f6..."
 ```
 
 ### Check Balance
 
 ```bash
-curl https://api.dcp.sa/api/renters/balance \
-  -H "x-renter-key: dcp-renter-a1b2c3d4e5f6..." | jq
+curl "https://api.dcp.sa/api/renters/me?key=dc1-renter-a1b2c3d4e5f6..." | jq '.renter'
 ```
 
 ### Provider Endpoints
@@ -444,11 +314,7 @@ curl https://api.dcp.sa/api/renters/balance \
 ```bash
 curl -X POST https://api.dcp.sa/api/providers/register \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "My GPU Node",
-    "location": "SA",
-    "contact_email": "ops@example.com"
-  }'
+  -d '{"name": "My GPU Node", "email": "gpu@example.com", "gpu_model": "RTX 4090", "os": "linux"}'
 ```
 
 #### Provider Heartbeat
@@ -456,145 +322,22 @@ curl -X POST https://api.dcp.sa/api/providers/register \
 ```bash
 curl -X POST https://api.dcp.sa/api/providers/heartbeat \
   -H "Content-Type: application/json" \
-  -H "x-provider-key: dcp-provider-a1b2c3d4e5f6..." \
-  -d '{
-    "status": "online",
-    "gpu_utilization": 45,
-    "temperature": 65
-  }'
+  -H "x-provider-key: dc1-provider-a1b2c3d4e5f6..."
 ```
 
 #### Check Provider Earnings
 
 ```bash
-curl https://api.dcp.sa/api/providers/earnings \
-  -H "x-provider-key: dcp-provider-a1b2c3d4e5f6..."
-```
-
----
-
-## Common Patterns
-
-### Error Handling (JavaScript)
-
-```javascript
-async function submitJobWithErrorHandling() {
-  try {
-    const job = await client.jobs.submit({
-      provider_id: 3,
-      job_type: 'llm_inference',
-      duration_minutes: 5,
-      params: {
-        model: 'mistralai/Mistral-7B-Instruct-v0.2',
-        prompt: 'Hello',
-        max_tokens: 100,
-        temperature: 0.7
-      }
-    });
-    return job.job_id;
-  } catch (error) {
-    if (error.statusCode === 400) {
-      console.error('Bad request:', error.details);
-    } else if (error.statusCode === 401) {
-      console.error('Unauthorized: Check your API key');
-    } else if (error.statusCode === 429) {
-      console.error('Rate limited: Wait before retrying');
-    } else {
-      console.error('Unexpected error:', error);
-    }
-  }
-}
-```
-
-### Error Handling (Python)
-
-```python
-from dcp import DCPClient, DCPException
-
-try:
-    job = client.jobs.submit(...)
-except DCPException as e:
-    if e.status_code == 400:
-        print("Bad request:", e.details)
-    elif e.status_code == 401:
-        print("Unauthorized: Check API key")
-    elif e.status_code == 429:
-        print("Rate limited: Retry after delay")
-    else:
-        print("Error:", e)
-```
-
-### Batch Job Submission (JavaScript)
-
-```javascript
-async function submitBatchJobs(prompts) {
-  const jobs = [];
-
-  for (const prompt of prompts) {
-    const job = await client.jobs.submit({
-      provider_id: 3,
-      job_type: 'llm_inference',
-      duration_minutes: 3,
-      params: {
-        model: 'mistralai/Mistral-7B-Instruct-v0.2',
-        prompt: prompt,
-        max_tokens: 100,
-        temperature: 0.7
-      }
-    });
-    jobs.push(job.job_id);
-
-    // Rate limit: 10 jobs per minute
-    await new Promise(r => setTimeout(r, 6000));
-  }
-
-  return jobs;
-}
-
-const prompts = [
-  'What is AI?',
-  'Explain quantum computing',
-  'Summarize relativity'
-];
-
-const jobIds = await submitBatchJobs(prompts);
-console.log(`Submitted ${jobIds.length} jobs`);
-```
-
-### Retry Logic (Python)
-
-```python
-import time
-from dcp import DCPClient
-
-def submit_with_retry(job_config, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            return client.jobs.submit(**job_config)
-        except Exception as e:
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # Exponential backoff
-                print(f"Attempt {attempt + 1} failed. Retrying in {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                raise
-
-job = submit_with_retry({
-    'provider_id': 3,
-    'job_type': 'llm_inference',
-    'duration_minutes': 5,
-    'params': {...}
-})
+curl https://api.dcp.sa/api/providers/me \
+  -H "x-provider-key: dc1-provider-a1b2c3d4e5f6..."
 ```
 
 ---
 
 ## SDK Resources
 
-- **JavaScript SDK**: [npm/dcp-sdk](https://www.npmjs.com/package/dcp-sdk)
-- **Python SDK**: [PyPI/dcp-sdk](https://pypi.org/project/dcp-sdk/)
-- **Go SDK** (beta): [github.com/dcp-ai/sdk-go](https://github.com/dcp-ai/sdk-go)
-- **Rust SDK** (beta): [crates.io/dcp-sdk](https://crates.io/crates/dcp-sdk)
+- **JavaScript SDK**: `npm install dc1-renter-sdk` — [npm](https://www.npmjs.com/package/dc1-renter-sdk)
+- **Python SDK**: `pip install dc1` — [PyPI](https://pypi.org/project/dc1/)
 
 ---
 

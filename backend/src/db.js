@@ -122,6 +122,30 @@ db.exec(`
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_job_exec_job_attempt ON job_executions(job_id, attempt_number)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_job_exec_job_id ON job_executions(job_id, started_at DESC)`);
 
+// ─── STORAGE VOLUMES TABLE ───
+// Persistent volumes for inference endpoints. Users can stop computing while keeping model weights.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS storage_volumes (
+    id TEXT PRIMARY KEY,
+    job_id TEXT,
+    provider_id INTEGER,
+    renter_id INTEGER,
+    size_gb INTEGER NOT NULL DEFAULT 10,
+    status TEXT DEFAULT 'creating' CHECK(status IN ('creating','active','stopped','deleting','deleted')),
+    created_at TEXT NOT NULL,
+    stopped_at TEXT,
+    deleted_at TEXT,
+    last_charged_at TEXT,
+    total_compute_charged_halala INTEGER DEFAULT 0,
+    total_storage_charged_halala INTEGER DEFAULT 0,
+    FOREIGN KEY (job_id) REFERENCES jobs(job_id),
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_storage_volumes_job ON storage_volumes(job_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_storage_volumes_provider ON storage_volumes(provider_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_storage_volumes_renter ON storage_volumes(renter_id, status)`);
+
 // ─── SERVE SESSIONS TABLE ───
 // Tracks active vLLM serving sessions exposed through DC1 proxy.
 // provider_id and port are nullable: vLLM direct-completion sessions are created
@@ -912,6 +936,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN model_preload_model TEXT',
   'ALTER TABLE providers ADD COLUMN model_preload_requested_at TEXT',
   'ALTER TABLE providers ADD COLUMN model_preload_updated_at TEXT',
+  'ALTER TABLE providers ADD COLUMN vllm_models TEXT',
   // Optional renter callback endpoint for job lifecycle webhooks
   'ALTER TABLE renters ADD COLUMN use_case TEXT',
   'ALTER TABLE renters ADD COLUMN phone TEXT',
@@ -970,6 +995,15 @@ const migrations = [
   'ALTER TABLE serve_sessions ADD COLUMN attestation_signature TEXT',
   'ALTER TABLE jobs ADD COLUMN attestation_tx_hash TEXT',
   "ALTER TABLE jobs ADD COLUMN attestation_status TEXT DEFAULT 'pending'",
+  // Per-second billing — DCP-1034: split into compute (gpu_seconds), storage (gb_seconds), bandwidth (bytes)
+  'ALTER TABLE jobs ADD COLUMN gpu_seconds_used REAL DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN storage_gb_seconds INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN bandwidth_bytes_out INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN bandwidth_bytes_in INTEGER DEFAULT 0',
+  // Billing breakdown — compute_halala, storage_halala, bandwidth_halala stored at completion
+  'ALTER TABLE jobs ADD COLUMN compute_halala INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN storage_halala INTEGER DEFAULT 0',
+  'ALTER TABLE jobs ADD COLUMN bandwidth_halala INTEGER DEFAULT 0',
 ];
 
 migrations.forEach(sql => {

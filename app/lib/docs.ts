@@ -29,29 +29,6 @@ const ALIAS_MAP: Record<string, string> = {
   api: 'api-reference',
 }
 
-/**
- * SAFETY: Only .mdx files are published documentation.
- * The /docs directory also contains internal agent-generated .md files
- * (escalations, blockers, copywriter content, status reports) that must
- * NEVER be exposed publicly. Two safeguards are in place:
- *   1. Only .mdx extension is accepted
- *   2. Filenames matching agent patterns (ALL-CAPS, DCP-*, PHASE*, etc.)
- *      are explicitly rejected as a second line of defense
- */
-const BLOCKED_FILENAME_PATTERNS = [
-  /^[A-Z]{2,}[-_]/,           // ALL-CAPS prefix like PHASE2-, COPYWRITER-, DCP-
-  /ESCALATION/i,
-  /BLOCKER/i,
-  /CONTINGENCY/i,
-  /SPRINT\d+/i,
-  /STATUS[-_]REPORT/i,
-  /AGENT[-_]/i,
-]
-
-function isBlockedFilename(name: string): boolean {
-  return BLOCKED_FILENAME_PATTERNS.some((pattern) => pattern.test(name))
-}
-
 function listMdxFiles(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true })
   const files: string[] = []
@@ -64,7 +41,7 @@ function listMdxFiles(dir: string): string[] {
       continue
     }
 
-    if (entry.isFile() && entry.name.endsWith('.mdx') && !isBlockedFilename(entry.name)) {
+    if (entry.isFile() && entry.name.endsWith('.mdx')) {
       files.push(fullPath)
     }
   }

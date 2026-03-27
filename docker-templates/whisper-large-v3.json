@@ -1,0 +1,48 @@
+{
+  "id": "whisper-large-v3",
+  "name": "Whisper Large-v3 Transcription",
+  "description": "OpenAI Whisper Large-v3 — state-of-the-art speech recognition. Transcribe audio files or real-time streams with multilingual support including Arabic.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Model ID (HuggingFace)", "default": "openai/whisper-large-v3", "required": true },
+    { "key": "LANGUAGE", "label": "Language code (optional, auto-detect if empty)", "default": "", "required": false },
+    { "key": "MAX_SEQ_LEN", "label": "Max audio duration (seconds, 0=no limit)", "default": "0", "required": false }
+  ],
+  "params": {
+    "model": "openai/whisper-large-v3",
+    "task": "transcribe",
+    "language": null,
+    "temperature": 0.0
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "warm",
+    "behavior": "Warm cache — Whisper large-v3 (~3GB) kept resident for sub-second cold restart on repeated transcription workloads."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "llm-inference",
+      "duration_minutes": 30,
+      "params": {
+        "model": "openai/whisper-large-v3",
+        "task": "transcribe",
+        "audio_url": "https://example.com/audio.mp3"
+      }
+    },
+    "output": {
+      "type": "text",
+      "model": "openai/whisper-large-v3",
+      "language": "ar",
+      "text": "هذا نص عربي مكثوب من الملف الصوتي",
+      "status": "completed"
+    }
+  },
+  "min_vram_gb": 8,
+  "estimated_price_sar_per_hour": 9.0,
+  "tags": ["audio", "transcription", "whisper", "speech-to-text", "arabic", "multilingual"],
+  "sort_order": 3,
+  "icon": "🎙️",
+  "difficulty": "easy",
+  "tier": "cached"
+}

@@ -12,6 +12,8 @@ const {
   GPU_RATE_TABLE,
   PRICING_CLASS_MULTIPLIERS,
   JOB_TYPE_RATES_HALALA_PER_MIN,
+  STORAGE_RATE_HALALA_PER_GB_MONTH,
+  BANDWIDTH_RATE_HALALA_PER_GB,
 } = require('../config/pricing');
 
 /**
@@ -152,4 +154,70 @@ function calculateCostHalala(gpuModel, durationMinutes, pricingClass = 'standard
   return estimateCost(gpuModel, durationMinutes * 60, pricingClass, jobType).estimated_halala;
 }
 
-module.exports = { getRate, estimateCost, calculateCostHalala, resolveGpuRate };
+/**
+ * Estimate 3-component billing for a job with per-second compute + storage + bandwidth.
+ *
+ * @param {object} options
+ * @param {string|null} options.gpuModel
+ * @param {number} options.durationSeconds - actual GPU active seconds
+ * @param {number} [options.storageGbSeconds=0] - GB-seconds of persistent storage
+ * @param {number} [options.bandwidthBytesOut=0] - egress bytes
+ * @param {string} [options.pricingClass='standard']
+ * @param {string} [options.jobType=null]
+ * @returns {{ compute_halala, storage_halala, bandwidth_halala, total_halala, total_sar, gpu_rate_snapshot }}
+ */
+function estimateThreeComponentCost({ gpuModel, durationSeconds, storageGbSeconds = 0, bandwidthBytesOut = 0, pricingClass = 'standard', jobType = null }) {
+  const multiplier = PRICING_CLASS_MULTIPLIERS[pricingClass] || 1.0;
+
+  let compute_halala = 0;
+  let gpu_rate_snapshot = null;
+
+  if (gpuModel) {
+    const rate = getRate(gpuModel);
+    const raw = rate.rate_per_second_usd * durationSeconds * SAR_USD_RATE * 100 * multiplier;
+    compute_halala = Math.ceil(raw);
+    gpu_rate_snapshot = {
+      gpu_model: gpuModel,
+      display_name: rate.display_name,
+      tier: rate.tier,
+      rate_per_hour_usd: rate.rate_per_hour_usd,
+      rate_per_second_usd: rate.rate_per_second_usd,
+      rate_per_hour_sar: rate.rate_per_hour_usd * SAR_USD_RATE,
+      pricing_class: pricingClass,
+      multiplier,
+      sar_usd_rate: SAR_USD_RATE,
+    };
+  } else {
+    const durationMinutes = durationSeconds / 60;
+    const baseRate = JOB_TYPE_RATES_HALALA_PER_MIN[jobType] || JOB_TYPE_RATES_HALALA_PER_MIN['default'];
+    compute_halala = Math.ceil(baseRate * durationMinutes * multiplier);
+    gpu_rate_snapshot = {
+      gpu_model: null,
+      job_type: jobType,
+      rate_per_min_halala: baseRate,
+      pricing_class: pricingClass,
+      multiplier,
+      sar_usd_rate: SAR_USD_RATE,
+    };
+  }
+
+  const storage_gb_month = storageGbSeconds / (30 * 24 * 3600);
+  const storage_halala = Math.ceil(storage_gb_month * STORAGE_RATE_HALALA_PER_GB_MONTH);
+
+  const bandwidth_gb_out = bandwidthBytesOut / (1024 * 1024 * 1024);
+  const bandwidth_halala = Math.ceil(bandwidth_gb_out * BANDWIDTH_RATE_HALALA_PER_GB);
+
+  const total_halala = compute_halala + storage_halala + bandwidth_halala;
+  const total_sar = parseFloat((total_halala / 100).toFixed(2));
+
+  return { compute_halala, storage_halala, bandwidth_halala, total_halala, total_sar, gpu_rate_snapshot };
+}
+
+/**
+ * Calculate total halala from 3 components (backward-compatible helper).
+ */
+function calculateThreeComponentCost(gpuModel, durationSeconds, storageGbSeconds = 0, bandwidthBytesOut = 0, pricingClass = 'standard', jobType = null) {
+  return estimateThreeComponentCost({ gpuModel, durationSeconds, storageGbSeconds, bandwidthBytesOut, pricingClass, jobType }).total_halala;
+}
+
+module.exports = { getRate, estimateCost, calculateCostHalala, resolveGpuRate, estimateThreeComponentCost, calculateThreeComponentCost, STORAGE_RATE_HALALA_PER_GB_MONTH, BANDWIDTH_RATE_HALALA_PER_GB };

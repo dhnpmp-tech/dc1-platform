@@ -1375,6 +1375,58 @@ def get_system_metrics():
     except (ImportError, Exception):
         return {"cpu": 0, "memory": 0}
 
+def detect_vllm_models():
+    """
+    Detect running vLLM containers and query their available models.
+    Returns list of model IDs from the vLLM /v1/models endpoint.
+    """
+    vllm_models = []
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}:{{.Ports}}"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return vllm_models
+
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split(":")
+            container_name = parts[0]
+            ports_info = parts[1] if len(parts) > 1 else ""
+
+            if not container_name.startswith("dc1-vllm-"):
+                continue
+
+            port_match = None
+            for port_range in ["8100-8199", "8000"]:
+                if port_range in ports_info:
+                    port_match = port_range.split("-")[0] if "-" in port_range else port_range
+                    break
+
+            if not port_match:
+                continue
+
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    f"http://localhost:{port_match}/v1/models",
+                    headers={"Accept": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = json.loads(resp.read().decode())
+                        for model in data.get("data", []):
+                            model_id = model.get("id")
+                            if model_id:
+                                vllm_models.append(model_id)
+            except Exception as e:
+                log.debug(f"vLLM models query failed for {container_name}: {e}")
+    except Exception as e:
+        log.debug(f"vLLM container detection failed: {e}")
+    return vllm_models
+
 def emit_p2p_heartbeat(peer_id, gpu, gpu_status):
     """Emit heartbeat to P2P DHT (non-blocking, fire-and-forget)."""
     global _heartbeat_sequence
@@ -1430,6 +1482,7 @@ def send_heartbeat():
     gpu = detect_gpu()
     gpu_info = get_gpu_info()
     cache_metrics = get_model_cache_metrics()
+    vllm_models = detect_vllm_models()
     gpu_status = {}
     if gpu:
         all_gpus = gpu.get("all_gpus", [gpu])
@@ -1473,6 +1526,7 @@ def send_heartbeat():
             "provider_hostname": platform.node(),
             "resource_spec": build_resource_spec(gpu),
             "model_cache": cache_metrics,
+            "vllm_models": vllm_models,
         }
         # Include bandwidth stats if available
         with _bw_lock:

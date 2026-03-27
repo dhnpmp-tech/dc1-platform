@@ -183,8 +183,8 @@ export default function HomePage() {
       ),
     },
     {
-      title: t('landing.feat_vllm_title'),
-      description: t('landing.feat_vllm_desc'),
+      title: 'OpenAI-Compatible API',
+      description: 'Drop-in replacement for OpenAI API. Use your existing code with Arabic AI models hosted in Saudi Arabia.',
       cta: t('landing.feat_vllm_cta'),
       href: '/docs',
       icon: (
@@ -342,19 +342,19 @@ export default function HomePage() {
   ]
   const howDcpWorksSteps = [
     {
-      key: 'choose_gpu',
-      title: 'Choose GPU',
-      description: 'Pick a live provider in the marketplace by model, uptime, and SAR/hour rate.',
+      key: 'choose_model',
+      title: 'Choose Model',
+      description: 'Select from Arabic AI models (ALLaM, JAIS, Falcon) or global models via OpenAI-compatible API.',
     },
     {
-      key: 'run_container_workload',
-      title: 'Run container workload',
-      description: 'Deploy your workload in NVIDIA containerized runtime paths across supported GPUs.',
+      key: 'call_inference_api',
+      title: 'Call Inference API',
+      description: 'Send requests to your model endpoint. Saudi data residency, per-token billing, zero ops.',
     },
     {
       key: 'settle_usage',
-      title: 'Settle usage',
-      description: 'Track usage and settlement records through usage-based billing flows.',
+      title: 'Track & Settle',
+      description: 'Monitor usage and costs in real-time. Pay per token with SAR billing.',
     },
   ]
 
@@ -370,7 +370,7 @@ export default function HomePage() {
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
               <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              {t('landing.hero_badge')}
+              INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY
             </div>
             <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
               {t('landing.hero_title')}
@@ -379,7 +379,7 @@ export default function HomePage() {
               {t('landing.hero_desc')}
             </p>
             <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
-              Saudi energy-cost advantage first, Arabic AI model support built in, and every workload runs in secure NVIDIA containerized execution.
+              OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <Link

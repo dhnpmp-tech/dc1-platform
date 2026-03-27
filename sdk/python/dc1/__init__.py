@@ -10,8 +10,8 @@ Usage:
 """
 
 from .client import DC1Client
-from .models import Job, Provider, Wallet
+from .models import Job, Provider, Wallet, Balance
 from .exceptions import DC1Error, AuthError, JobTimeoutError, APIError
 
 __version__ = '0.1.0'
-__all__ = ['DC1Client', 'Job', 'Provider', 'Wallet', 'DC1Error', 'AuthError', 'JobTimeoutError', 'APIError']
+__all__ = ['DC1Client', 'Job', 'Provider', 'Wallet', 'Balance', 'DC1Error', 'AuthError', 'JobTimeoutError', 'APIError']

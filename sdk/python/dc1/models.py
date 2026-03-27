@@ -100,7 +100,7 @@ class Provider:
 
 @dataclass
 class Wallet:
-    """Represents a renter's wallet."""
+    """Represents a renter's wallet (from /api/renters/me)."""
 
     balance_halala: int
     api_key: str
@@ -122,3 +122,35 @@ class Wallet:
     def balance_sar(self) -> float:
         """Balance in SAR (1 SAR = 100 halala)."""
         return self.balance_halala / 100
+
+
+@dataclass
+class Balance:
+    """Detailed wallet balance breakdown (from /api/renters/balance)."""
+
+    balance_halala: int
+    balance_sar: float
+    held_halala: int
+    held_sar: float
+    available_halala: int
+    total_spent_halala: int
+    total_spent_sar: float
+    total_jobs: int
+    _raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_api(cls, data: dict) -> 'Balance':
+        balance_halala = data.get('balance_halala', 0)
+        total_spent_halala = data.get('total_spent_halala', 0)
+        held_halala = data.get('held_halala', 0)
+        return cls(
+            balance_halala=balance_halala,
+            balance_sar=data.get('balance_sar', balance_halala / 100),
+            held_halala=held_halala,
+            held_sar=data.get('held_sar', held_halala / 100),
+            available_halala=data.get('available_halala', balance_halala),
+            total_spent_halala=total_spent_halala,
+            total_spent_sar=data.get('total_spent_sar', total_spent_halala / 100),
+            total_jobs=data.get('total_jobs', 0),
+            _raw=data,
+        )

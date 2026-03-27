@@ -167,6 +167,16 @@ function extractCompletionText(job) {
   const resultText = typeof job.result === 'string' ? job.result : '';
   const structured = parseStructuredJobResult(resultText);
 
+  if (structured && structured.type === 'tool_call') {
+    const toolCall = structured.tool_call;
+    return {
+      text: '',
+      completion_tokens: toFiniteInt(structured.tokens_generated, { min: 0, max: 1000000 }) || null,
+      tool_call: toolCall,
+      structured,
+    };
+  }
+
   if (structured && structured.type === 'text') {
     const responseText = normalizeString(structured.response, { maxLen: 100000, trim: false }) || '';
     return {
@@ -326,19 +336,24 @@ function getNoProviderQueueDepth() {
   return Number(row?.count || 0);
 }
 
-function buildTaskScript({ model, prompt, maxTokens, temperature }) {
+function buildTaskScript({ model, messages, tools, toolChoice, maxTokens, temperature }) {
   const escapedModel = JSON.stringify(model);
-  const escapedPrompt = JSON.stringify(prompt);
+  const escapedMessages = JSON.stringify(messages);
+  const escapedTools = tools ? JSON.stringify(tools) : 'null';
+  const escapedToolChoice = JSON.stringify(toolChoice || 'auto');
 
   return [
     '#!/usr/bin/env python3',
     'import json',
     'import time',
+    'import re',
     'import torch',
     'from transformers import AutoTokenizer, AutoModelForCausalLM',
     '',
     `model_id = ${escapedModel}`,
-    `user_prompt = ${escapedPrompt}`,
+    `messages = ${escapedMessages}`,
+    `tools = ${escapedTools}`,
+    `tool_choice = ${escapedToolChoice}`,
     `max_tokens = ${maxTokens}`,
     `temperature = ${temperature}`,
     '',
@@ -356,11 +371,26 @@ function buildTaskScript({ model, prompt, maxTokens, temperature }) {
     '    trust_remote_code=True',
     ')',
     '',
-    'messages = [{"role": "user", "content": user_prompt}]',
-    'try:',
-    '    formatted = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)',
-    'except Exception:',
-    '    formatted = f"User: {user_prompt}\\nAssistant:"',
+    'tool_call = None',
+    'if tools:',
+    '    try:',
+    '        apply_fn = getattr(tokenizer, "apply_chat_template", None)',
+    '        if apply_fn:',
+    '            kwargs = {"messages": messages, "tokenize": False, "add_generation_prompt": True}',
+    '            if tools:',
+    '                kwargs["tools"] = tools',
+    '            if tool_choice and tool_choice != "auto":',
+    '                kwargs["tool_choice"] = tool_choice',
+    '            formatted = apply_fn(**kwargs)',
+    '        else:',
+    '            formatted = "\\n".join(f"{m[\'role\'].capitalize()}: {m[\'content\']}" for m in messages) + "\\nAssistant:"',
+    '    except Exception as e:',
+    '        formatted = "\\n".join(f"{m[\'role\'].capitalize()}: {m[\'content\']}" for m in messages) + "\\nAssistant:"',
+    'else:',
+    '    try:',
+    '        formatted = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)',
+    '    except Exception:',
+    '        formatted = "\\n".join(f"{m[\'role\'].capitalize()}: {m[\'content\']}" for m in messages) + "\\nAssistant:"',
     '',
     'inputs = tokenizer(formatted, return_tensors="pt").to(device)',
     'input_len = inputs["input_ids"].shape[1]',
@@ -369,7 +399,7 @@ function buildTaskScript({ model, prompt, maxTokens, temperature }) {
     '        **inputs,',
     '        max_new_tokens=max_tokens,',
     '        temperature=temperature,',
-    '        do_sample=True,',
+    '        do_sample=temperature > 0,',
     '        top_p=0.9,',
     '        repetition_penalty=1.1,',
     '        pad_token_id=tokenizer.eos_token_id',
@@ -377,11 +407,28 @@ function buildTaskScript({ model, prompt, maxTokens, temperature }) {
     '',
     'gen_ids = output[0][input_len:]',
     'response = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()',
+    '',
+    'if tools and "\\ntool_calls" in response or "tool_calls" in response:',
+    '    try:',
+    '        import ast',
+    '        tc_match = re.search(r\'tool_calls\\s*=\\s*\\[\\s*\\{[^\\}]+\\}\\s*\\]\', response, re.DOTALL)',
+    '        if tc_match:',
+    '            func_match = re.search(r"\'name\'\\s*:\\s*[\'\"]([^\'\"]+)[\'\"]", tc_match.group())',
+    '            args_match = re.search(r"\'arguments\'\\s*:\\s*[\'\"]([^\'\"]+)[\'\"]", tc_match.group())',
+    '            if func_match and args_match:',
+    '                tool_call = {',
+    '                    "name": func_match.group(1),',
+    '                    "arguments": args_match.group(1),',
+    '                }',
+    '    except Exception:',
+    '        pass',
+    '',
     'result = {',
-    '    "type": "text",',
+    '    "type": "text" if not tool_call else "tool_call",',
     '    "model": model_id,',
-    '    "prompt": user_prompt,',
+    '    "messages": messages,',
     '    "response": response,',
+    '    "tool_call": tool_call,',
     '    "tokens_generated": int(len(gen_ids)),',
     '    "total_time_s": round(time.time() - t0, 3),',
     '}',
@@ -454,10 +501,26 @@ async function waitForJobCompletion(jobId, diagnosticsContext = {}) {
   };
 }
 
-function buildOpenAiResponse({ job, model, text, promptTokens, completionTokens }) {
+function buildOpenAiResponse({ job, model, text, promptTokens, completionTokens, toolCall = null }) {
   const completionId = `chatcmpl-${job.job_id}`;
   const completion = completionTokens != null ? completionTokens : approximateTokenCount(text);
   const total = promptTokens + completion;
+
+  const message = { role: 'assistant' };
+  if (toolCall) {
+    const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    message.content = '';
+    message.tool_calls = [{
+      id: toolCallId,
+      type: 'function',
+      function: {
+        name: toolCall.name || '',
+        arguments: toolCall.arguments || '{}',
+      },
+    }];
+  } else {
+    message.content = text;
+  }
 
   return {
     id: completionId,
@@ -467,8 +530,8 @@ function buildOpenAiResponse({ job, model, text, promptTokens, completionTokens 
     choices: [
       {
         index: 0,
-        message: { role: 'assistant', content: text },
-        finish_reason: 'stop',
+        message,
+        finish_reason: toolCall ? 'tool_calls' : 'stop',
       },
     ],
     usage: {
@@ -480,7 +543,7 @@ function buildOpenAiResponse({ job, model, text, promptTokens, completionTokens 
   };
 }
 
-function prepareMessages(messagesRaw) {
+function prepareMessages(messagesRaw, tools = null) {
   if (!Array.isArray(messagesRaw) || messagesRaw.length === 0) {
     return { error: 'messages must be a non-empty array' };
   }
@@ -489,8 +552,45 @@ function prepareMessages(messagesRaw) {
   for (const entry of messagesRaw.slice(0, 100)) {
     const role = normalizeString(entry?.role, { maxLen: 20 }) || 'user';
     const content = normalizeString(entry?.content, { maxLen: 20000, trim: false });
-    if (!content) continue;
-    messages.push({ role: role.toLowerCase(), content });
+    const toolCallId = normalizeString(entry?.tool_call_id, { maxLen: 64 });
+    const toolCalls = entry?.tool_calls;
+
+    if (toolCallId) {
+      messages.push({
+        role: 'tool',
+        content: content || '',
+        tool_call_id: toolCallId,
+      });
+      continue;
+    }
+
+    if (toolCalls && Array.isArray(toolCalls)) {
+      for (const tc of toolCalls.slice(0, 10)) {
+        const func = tc?.function || {};
+        const tcId = normalizeString(tc?.id, { maxLen: 64 }) || `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const funcName = normalizeString(func?.name, { maxLen: 256 });
+        const funcArgs = normalizeString(func?.arguments, { maxLen: 10000, trim: false }) || '{}';
+        if (funcName) {
+          messages.push({
+            role: 'assistant',
+            content: content || '',
+            tool_calls: [{
+              id: tcId,
+              type: 'function',
+              function: {
+                name: funcName,
+                arguments: funcArgs,
+              },
+            }],
+          });
+        }
+      }
+      continue;
+    }
+
+    if (content) {
+      messages.push({ role: role.toLowerCase(), content });
+    }
   }
 
   if (messages.length === 0) {
@@ -504,7 +604,11 @@ async function submitAndAwait(req) {
   const model = normalizeString(req.body?.model, { maxLen: 200 });
   if (!model) return { error: { status: 400, body: { error: 'model is required' } } };
 
-  const preparedMessages = prepareMessages(req.body?.messages);
+  const tools = req.body?.tools;
+  const toolChoice = req.body?.tool_choice;
+  const hasTools = Array.isArray(tools) && tools.length > 0;
+
+  const preparedMessages = prepareMessages(req.body?.messages, hasTools ? tools : null);
   if (preparedMessages.error) {
     return { error: { status: 400, body: { error: preparedMessages.error } } };
   }
@@ -572,7 +676,9 @@ async function submitAndAwait(req) {
 
   const taskSpec = buildTaskScript({
     model: modelReq.model_id,
-    prompt: mergedPrompt,
+    messages,
+    tools: hasTools ? tools : null,
+    toolChoice,
     maxTokens,
     temperature,
   });
@@ -819,6 +925,7 @@ async function submitAndAwait(req) {
     text: extracted.text,
     promptTokens,
     completionTokens: extracted.completion_tokens,
+    toolCall: extracted.tool_call || null,
   });
 
   return {
@@ -827,8 +934,8 @@ async function submitAndAwait(req) {
   };
 }
 
-// GET /api/vllm/models
-// Mirrors model registry for vLLM callers.
+// GET /v1/models
+// OpenAI-compatible model list endpoint.
 router.get('/models', (req, res) => {
   try {
     const models = db.all(
@@ -836,6 +943,7 @@ router.get('/models', (req, res) => {
          m.model_id,
          m.display_name,
          m.family,
+         m.created_at,
          m.vram_gb,
          m.quantization,
          m.context_window,
@@ -870,19 +978,16 @@ router.get('/models', (req, res) => {
 
       const providersOnline = Number(row.providers_online || 0);
       const avgSarPerMin = Number(row.avg_price_sar_per_min || 0);
+      const createdTs = row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : Math.floor(Date.now() / 1000);
 
       return {
-        model_id: row.model_id,
-        display_name: row.display_name,
-        family: row.family,
-        vram_gb: Number(row.vram_gb || 0),
-        quantization: row.quantization,
-        context_window: Number(row.context_window || 0),
-        use_cases: useCases,
-        min_gpu_vram_gb: Number(row.min_gpu_vram_gb || 0),
-        providers_online: providersOnline,
-        avg_price_sar_per_min: Number.isFinite(avgSarPerMin) ? avgSarPerMin : 0,
-        status: providersOnline > 0 ? 'available' : 'no_providers',
+        id: row.model_id,
+        object: 'model',
+        created: createdTs,
+        owned_by: row.family || 'dcp-platform',
+        permission: [],
+        root: row.model_id,
+        parent: null,
       };
     });
 
@@ -893,8 +998,63 @@ router.get('/models', (req, res) => {
   }
 });
 
-// POST /api/vllm/complete?key=
+// POST /v1/complete
+// Legacy text completions endpoint — unified stream flag routes internally
 router.post('/complete', vllmCompleteLimiter, requireRenter, async (req, res) => {
+  const shouldStream = req.body?.stream === true || req.body?.stream === 'true';
+  if (shouldStream) {
+    let cancelled = false;
+    req.on('close', () => { cancelled = true; });
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (res.flushHeaders) res.flushHeaders();
+    try {
+      const result = await submitAndAwait(req);
+      if (cancelled) return res.end();
+      if (result.error) {
+        res.write(`data: ${JSON.stringify({ error: result.error.body })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      const chunks = splitStreamText(result.text);
+      const completionId = result.payload.id || `chatcmpl-${crypto.randomBytes(8).toString('hex')}`;
+      for (const part of chunks) {
+        if (cancelled) return res.end();
+        const payload = {
+          id: completionId,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: result.payload.model,
+          choices: [{ index: 0, delta: { content: part }, finish_reason: null }],
+        };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+      const finalPayload = {
+        id: completionId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: result.payload.model,
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        usage: result.payload.usage,
+        cost_halala: result.payload.cost_halala,
+      };
+      res.write(`data: ${JSON.stringify(finalPayload)}\n\n`);
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    } catch (error) {
+      console.error('vLLM complete stream error:', error);
+      if (!res.headersSent) {
+        return res.status(500).json({ error: 'vLLM streaming failed' });
+      }
+      try {
+        res.write(`data: ${JSON.stringify({ error: 'vLLM streaming failed' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+      } catch (_) {}
+      return res.end();
+    }
+  }
   try {
     const result = await submitAndAwait(req);
     if (result.error) {
@@ -903,6 +1063,75 @@ router.post('/complete', vllmCompleteLimiter, requireRenter, async (req, res) =>
     return res.json(result.payload);
   } catch (error) {
     console.error('vLLM complete error:', error);
+    return res.status(500).json({ error: 'vLLM completion failed' });
+  }
+});
+
+// POST /v1/chat/completions
+// OpenAI-compatible unified endpoint — checks req.body.stream to route internally
+router.post('/chat/completions', vllmCompleteLimiter, requireRenter, async (req, res) => {
+  const shouldStream = req.body?.stream === true || req.body?.stream === 'true';
+  if (shouldStream) {
+    let cancelled = false;
+    req.on('close', () => { cancelled = true; });
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (res.flushHeaders) res.flushHeaders();
+    try {
+      const result = await submitAndAwait(req);
+      if (cancelled) return res.end();
+      if (result.error) {
+        res.write(`data: ${JSON.stringify({ error: result.error.body })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      const chunks = splitStreamText(result.text);
+      const completionId = result.payload.id || `chatcmpl-${crypto.randomBytes(8).toString('hex')}`;
+      for (const part of chunks) {
+        if (cancelled) return res.end();
+        const payload = {
+          id: completionId,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: result.payload.model,
+          choices: [{ index: 0, delta: { content: part }, finish_reason: null }],
+        };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+      const finalPayload = {
+        id: completionId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: result.payload.model,
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        usage: result.payload.usage,
+        cost_halala: result.payload.cost_halala,
+      };
+      res.write(`data: ${JSON.stringify(finalPayload)}\n\n`);
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    } catch (error) {
+      console.error('vLLM chat/completions stream error:', error);
+      if (!res.headersSent) {
+        return res.status(500).json({ error: 'vLLM streaming failed' });
+      }
+      try {
+        res.write(`data: ${JSON.stringify({ error: 'vLLM streaming failed' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+      } catch (_) {}
+      return res.end();
+    }
+  }
+  try {
+    const result = await submitAndAwait(req);
+    if (result.error) {
+      return res.status(result.error.status).json(result.error.body);
+    }
+    return res.json(result.payload);
+  } catch (error) {
+    console.error('vLLM chat/completions error:', error);
     return res.status(500).json({ error: 'vLLM completion failed' });
   }
 });

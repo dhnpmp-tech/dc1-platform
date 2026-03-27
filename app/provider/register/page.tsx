@@ -45,7 +45,7 @@ interface StatusStep {
 
 type SupportCategory = 'provider' | 'bug'
 
-function ProviderRegisterPageInner() {
+function ProviderRegisterPageContent() {
   const { t, isRTL } = useLanguage()
   const searchParams = useSearchParams()
 
@@ -1441,10 +1441,18 @@ function ProviderRegisterPageInner() {
   )
 }
 
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-dc1-void flex items-center justify-center">
+      <div className="animate-spin h-8 w-8 border-2 border-dc1-amber border-t-transparent rounded-full" />
+    </div>
+  )
+}
+
 export default function ProviderRegisterPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
-      <ProviderRegisterPageInner />
+    <Suspense fallback={<LoadingFallback />}>
+      <ProviderRegisterPageContent />
     </Suspense>
   )
 }

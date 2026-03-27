@@ -9,6 +9,16 @@ const nextConfig = {
         source: '/api/dc1/:path*',
         destination: `${backendUrl}/api/:path*`,
       },
+      // Provider auto-installer: curl dcp.sa/install | bash
+      // Rewrites /install and /install.sh to backend /install endpoint
+      {
+        source: '/install',
+        destination: `${backendUrl}/install`,
+      },
+      {
+        source: '/install.sh',
+        destination: `${backendUrl}/install`,
+      },
       // Model catalog API — used by ModelBrowsing and marketplace components
       {
         source: '/api/models',
@@ -27,7 +37,8 @@ const nextConfig = {
         source: '/api/templates',
         destination: `${backendUrl}/api/templates`,
       },
-      // OpenRouter-compatible /v1/ endpoints (inference marketplace)
+      // vLLM OpenAI-compatible API — mounted at /v1/ in Express (DCP-982)
+      // Proxies /v1/* → backend /v1/* so external callers can reach the vLLM router
       {
         source: '/v1/:path*',
         destination: `${backendUrl}/v1/:path*`,

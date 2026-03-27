@@ -1,0 +1,51 @@
+{
+  "id": "jais-13b-chat",
+  "name": "Jais-13B Arabic Chat",
+  "description": "Inception G42 Jais-13B — premier Arabic large language model. 13 billion parameters, trained on 1.5T Arabic tokens. OpenAI-compatible endpoint for Arabic NLP, chat, and content generation.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    { "key": "MODEL_ID", "label": "Model ID (HuggingFace)", "default": "inception/Mistral-Jais-13B-v2", "required": true },
+    { "key": "MAX_MODEL_LEN", "label": "Max context length (tokens)", "default": "8192", "required": false },
+    { "key": "DTYPE", "label": "Weight dtype", "default": "float16", "required": false },
+    { "key": "MAX_TOKENS", "label": "Max output tokens", "default": "512", "required": false },
+    { "key": "TEMPERATURE", "label": "Sampling temperature", "default": "0.7", "required": false }
+  ],
+  "params": {
+    "model": "inception/Mistral-Jais-13B-v2",
+    "prompt": "أهلاً، أخبرني عن الذكاء الاصطناعي",
+    "max_tokens": 512,
+    "temperature": 0.7
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "hot",
+    "behavior": "Hot cache — Jais-13B weights (~26GB) kept pinned for low-latency Arabic chat responses."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "llm-inference",
+      "duration_minutes": 60,
+      "params": {
+        "model": "inception/Mistral-Jais-13B-v2",
+        "prompt": "اشرح لي رؤية 2030 في المملكة العربية السعودية",
+        "max_tokens": 1024,
+        "temperature": 0.7
+      }
+    },
+    "output": {
+      "type": "text",
+      "model": "inception/Mistral-Jais-13B-v2",
+      "language": "ar",
+      "status": "completed"
+    }
+  },
+  "min_vram_gb": 28,
+  "estimated_price_sar_per_hour": 15.0,
+  "tags": ["llm", "arabic", "jais", "inception", "g42", "chat", "inference", "mena"],
+  "sort_order": 6,
+  "icon": "🕌",
+  "difficulty": "easy",
+  "tier": "cached",
+  "pdpl_compliant": true
+}

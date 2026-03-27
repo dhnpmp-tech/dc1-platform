@@ -31,6 +31,18 @@ DCP_PROVIDER_NAME="${DCP_PROVIDER_NAME:-}"
 DCP_PROVIDER_PHONE="${DCP_PROVIDER_PHONE:-}"
 DCP_SYSTEMD_MODE="${DCP_SYSTEMD_MODE:-user}" # user (default) or system
 
+# Positional args for non-interactive install:
+#   curl -sSL https://dcp.sa/install | bash -s -- email@example.com
+#   curl -sSL https://dcp.sa/install | bash -s -- "" https://custom.api.url
+#   curl -sSL https://dcp.sa/install | bash -s -- email@example.com https://custom.api.url
+if [ -n "${1:-}" ] && [ -z "${DCP_PROVIDER_KEY}" ]; then
+  # First arg is email when no API key is set
+  DCP_PROVIDER_EMAIL="${1}"
+fi
+if [ -n "${2:-}" ]; then
+  API_BASE="${2}"
+fi
+
 step() { printf '\n==> %s\n' "$1"; }
 info() { printf '  - %s\n' "$1"; }
 warn() { printf '  ! %s\n' "$1"; }

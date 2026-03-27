@@ -28,11 +28,12 @@ dc1-platform/
   backend/
     src/
       routes/providers.js    # Main API (register, heartbeat, jobs, earnings)
-      daemon/dc1_daemon.py   # Universal Python daemon v3.3.0
+    installers/
+      dc1_daemon.py          # Universal Python daemon v3.3.0
+      daemon.ps1             # Thin PowerShell installer v2.0.0
+      daemon.sh              # Unix shell installer
     public/
       provider-onboarding.html  # Registration frontend (vanilla JS)
-    installers/
-      daemon.ps1             # Thin PowerShell installer v2.0.0
     data/
       providers.db           # SQLite (email UNIQUE constraint)
   AGENT_LOG.md               # Cross-agent communication (READ+WRITE every session)

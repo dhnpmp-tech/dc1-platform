@@ -44,7 +44,7 @@ const DC1_PROVIDER_PREFIX = '/dc1/provider/'
 export const DEFAULT_BOOTSTRAP_ADDR =
   process.env.DCP_P2P_BOOTSTRAP ||
   process.env.DC1_P2P_BOOTSTRAP ||
-  '/ip4/76.13.179.86/tcp/4001/p2p/REPLACE_WITH_BOOTSTRAP_PEER_ID'
+  '/ip4/76.13.179.86/tcp/4001/p2p/12D3KooWDYjwG3BrC8pVoGVFw3efshDxDKgTWSxqpXxqv6U4bUdc'
 
 // ── Node factory ───────────────────────────────────────────────────────────
 

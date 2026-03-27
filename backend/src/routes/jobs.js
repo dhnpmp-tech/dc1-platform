@@ -1054,6 +1054,17 @@ function calculateCostHalala(jobType, durationMinutes, pricingClass, gpuModel) {
   );
 }
 
+function estimateThreeComponentCost({ gpuModel, durationSeconds, storageGbSeconds, bandwidthBytesOut, pricingClass, jobType }) {
+  return pricingService.estimateThreeComponentCost({
+    gpuModel: gpuModel || null,
+    durationSeconds,
+    storageGbSeconds: storageGbSeconds || 0,
+    bandwidthBytesOut: bandwidthBytesOut || 0,
+    pricingClass: normalizePricingClass(pricingClass),
+    jobType,
+  });
+}
+
 // Floor-plus-remainder: guarantees provider + dc1 === total exactly
 function splitBilling(totalHalala) {
   const dc1 = Math.floor(totalHalala * 15 / 100);
@@ -2091,11 +2102,14 @@ router.post('/:job_id/result', (req, res) => {
       });
     }
 
-    const { result, error: jobError, duration_seconds, gpu_util_peak, transient } = req.body;
-    // SEC: cap duration_seconds at the job's own max_duration_seconds to prevent
-    // a provider from inflating claimable earnings by reporting excessive runtime.
+    const { result, error: jobError, duration_seconds, gpu_util_peak, transient,
+      gpu_seconds, storage_gb_seconds, bandwidth_bytes_out, bandwidth_bytes_in } = req.body;
     const jobMaxSeconds = Math.max(job.max_duration_seconds || 3600, 60);
     const durationSeconds = duration_seconds == null ? null : toFiniteNumber(duration_seconds, { min: 0, max: jobMaxSeconds });
+    const gpuSeconds = gpu_seconds != null ? Math.max(0, toFiniteNumber(gpu_seconds, { min: 0 })) : durationSeconds;
+    const storageGbSeconds = storage_gb_seconds != null ? Math.max(0, toFiniteInt(storage_gb_seconds, { min: 0 })) : 0;
+    const bandwidthBytesOut = bandwidth_bytes_out != null ? Math.max(0, toFiniteInt(bandwidth_bytes_out, { min: 0 })) : 0;
+    const bandwidthBytesIn = bandwidth_bytes_in != null ? Math.max(0, toFiniteInt(bandwidth_bytes_in, { min: 0 })) : 0;
     if (duration_seconds != null && durationSeconds == null) {
       return res.status(400).json({ error: `duration_seconds must be a finite number between 0 and ${jobMaxSeconds}` });
     }
@@ -2147,11 +2161,16 @@ router.post('/:job_id/result', (req, res) => {
     }
 
     const now = new Date().toISOString();
-    const actualMinutes = durationSeconds != null
-      ? Math.ceil(durationSeconds / 60)
-      : Math.max(1, Math.ceil(Number(job.duration_minutes || 1)));
-    const actualCostHalala = Math.max(0, calculateCostHalala(job.job_type, actualMinutes, job.pricing_class));
-    const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
+    const { compute_halala, storage_halala, bandwidth_halala, total_halala } = estimateThreeComponentCost({
+      gpuModel: job.gpu_model,
+      durationSeconds: gpuSeconds || 0,
+      storageGbSeconds: storageGbSeconds,
+      bandwidthBytesOut: bandwidthBytesOut,
+      pricingClass: job.pricing_class,
+      jobType: job.job_type,
+    });
+    const totalCostHalala = Math.max(0, total_halala);
+    const { provider: providerEarned, dc1: dc1Fee } = splitBilling(totalCostHalala);
     const settlementStatus = result ? 'completed' : 'failed';
     const settledResult = result == null
       ? null
@@ -2166,17 +2185,31 @@ router.post('/:job_id/result', (req, res) => {
         actual_duration_minutes = ?,
         actual_cost_halala = ?,
         provider_earned_halala = ?,
-        dc1_fee_halala = ?
+        dc1_fee_halala = ?,
+        gpu_seconds_used = ?,
+        storage_gb_seconds = ?,
+        bandwidth_bytes_out = ?,
+        bandwidth_bytes_in = ?,
+        compute_halala = ?,
+        storage_halala = ?,
+        bandwidth_halala = ?
       WHERE id = ?`,
       [
         settlementStatus,
         settledResult,
         jobError || null,
         now,
-        actualMinutes,
-        actualCostHalala,
+        gpuSeconds != null ? Math.ceil(gpuSeconds / 60) : actualMinutes,
+        totalCostHalala,
         providerEarned,
         dc1Fee,
+        gpuSeconds || 0,
+        storageGbSeconds,
+        bandwidthBytesOut,
+        bandwidthBytesIn,
+        compute_halala,
+        storage_halala,
+        bandwidth_halala,
         job.id
       ]
     );
@@ -2191,8 +2224,12 @@ router.post('/:job_id/result', (req, res) => {
       message: result ? 'Job completed successfully' : 'Job failed without output payload',
       payload: {
         duration_seconds: durationSeconds,
-        actual_duration_minutes: actualMinutes,
-        actual_cost_halala: actualCostHalala,
+        gpu_seconds: gpuSeconds || 0,
+        actual_duration_minutes: gpuSeconds != null ? Math.ceil(gpuSeconds / 60) : actualMinutes,
+        actual_cost_halala: totalCostHalala,
+        compute_halala,
+        storage_halala,
+        bandwidth_halala,
         provider_earned_halala: providerEarned,
         dc1_fee_halala: dc1Fee,
         retry_count: Number(job.retry_count || 0),
@@ -2306,25 +2343,6 @@ router.post('/:job_id/result', (req, res) => {
         normalizeString(jobError || updated?.error, { maxLen: 200 })
       ).catch(() => {});
     }
-
-    // ── HyperAgent: record job outcome for self-improvement ──────────
-    try {
-      const hyperagent = require('../services/hyperagent');
-      const provider = db.get('SELECT gpu_model, gpu_count FROM providers WHERE id = ?', job.provider_id);
-      hyperagent.recordOutcome({
-        provider_id: job.provider_id,
-        job_id: job.job_id,
-        gpu_model: provider?.gpu_model || null,
-        job_type: job.job_type,
-        accepted: true,
-        earned_halala: providerEarned,
-        power_cost_halala: 0, // daemon-side; populated via heartbeat telemetry
-        duration_secs: durationSeconds || 0,
-        success: !!result,
-        queue_wait_secs: 0,
-        gpu_util_avg: 0,
-      });
-    } catch (_haErr) { /* non-critical — never block settlement */ }
 
     res.json({
       success: true,
@@ -2934,14 +2952,20 @@ router.post('/:job_id/complete', (req, res) => {
     }
 
     const now = new Date().toISOString();
-
-    // Calculate ACTUAL cost from real elapsed time, not the submitted estimate
     const startedAt = job.started_at || job.submitted_at;
-    const actualMinutes = startedAt
-      ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 60000))
-      : (job.duration_minutes || 1);
-    const actual_cost_halala = calculateCostHalala(job.job_type, actualMinutes, job.pricing_class);
-    const { provider: provider_earned, dc1: dc1_fee } = splitBilling(actual_cost_halala);
+    const elapsedSeconds = startedAt
+      ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 1000))
+      : ((job.duration_minutes || 1) * 60);
+    const { compute_halala, storage_halala, bandwidth_halala, total_halala } = estimateThreeComponentCost({
+      gpuModel: job.gpu_model,
+      durationSeconds: elapsedSeconds,
+      storageGbSeconds: 0,
+      bandwidthBytesOut: 0,
+      pricingClass: job.pricing_class,
+      jobType: job.job_type,
+    });
+    const totalCostHalala = Math.max(0, total_halala);
+    const { provider: provider_earned, dc1: dc1_fee } = splitBilling(totalCostHalala);
 
     runStatement(
       `UPDATE jobs SET
@@ -2950,17 +2974,29 @@ router.post('/:job_id/complete', (req, res) => {
         actual_duration_minutes = ?,
         actual_cost_halala = ?,
         provider_earned_halala = ?,
-        dc1_fee_halala = ?
+        dc1_fee_halala = ?,
+        gpu_seconds_used = ?,
+        storage_gb_seconds = 0,
+        bandwidth_bytes_out = 0,
+        bandwidth_bytes_in = 0,
+        compute_halala = ?,
+        storage_halala = ?,
+        bandwidth_halala = ?
        WHERE id = ?`,
-      now, actualMinutes, actual_cost_halala, provider_earned, dc1_fee, job.id
+      now, Math.ceil(elapsedSeconds / 60), totalCostHalala, provider_earned, dc1_fee,
+      elapsedSeconds, compute_halala, storage_halala, bandwidth_halala, job.id
     );
     recordLifecycleEvent(job, 'job.completed', {
       status: 'completed',
       source: 'api',
       message: 'Job marked completed via manual completion endpoint',
       payload: {
-        actual_duration_minutes: actualMinutes,
-        actual_cost_halala: actual_cost_halala,
+        gpu_seconds: elapsedSeconds,
+        actual_duration_minutes: Math.ceil(elapsedSeconds / 60),
+        actual_cost_halala: totalCostHalala,
+        compute_halala,
+        storage_halala,
+        bandwidth_halala,
         provider_earned_halala: provider_earned,
         dc1_fee_halala: dc1_fee,
       },
@@ -3006,23 +3042,6 @@ router.post('/:job_id/complete', (req, res) => {
       refunded_amount_halala: 0,
       retry_attempts: Number(updated?.retry_count || 0),
     });
-    // ── HyperAgent: record completion outcome ─────────────────────────
-    try {
-      const hyperagent = require('../services/hyperagent');
-      const providerRec = db.get('SELECT gpu_model FROM providers WHERE id = ?', job.provider_id);
-      const durationSecs = startedAt ? Math.max(0, (new Date(now) - new Date(startedAt)) / 1000) : 0;
-      hyperagent.recordOutcome({
-        provider_id: job.provider_id,
-        job_id: job.job_id,
-        gpu_model: providerRec?.gpu_model || null,
-        job_type: job.job_type,
-        accepted: true,
-        earned_halala: provider_earned,
-        duration_secs: durationSecs,
-        success: true,
-      });
-    } catch (_) { /* non-critical */ }
-
     updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
     res.json({
       success: true,
@@ -4403,18 +4422,30 @@ router.patch('/:job_id/complete', async (req, res) => {
 
     const now = new Date().toISOString();
     const startedAt = job.started_at || job.submitted_at;
-    const actualMinutes = startedAt
-      ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 60000))
-      : (job.duration_minutes || 1);
-    const actualCostHalala = calculateCostHalala(job.job_type, actualMinutes, job.pricing_class);
-    const { provider: providerEarned, dc1: dc1Fee } = splitBilling(actualCostHalala);
+    const elapsedSeconds = startedAt
+      ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 1000))
+      : ((job.duration_minutes || 1) * 60);
+    const { compute_halala, storage_halala, bandwidth_halala, total_halala } = estimateThreeComponentCost({
+      gpuModel: job.gpu_model,
+      durationSeconds: elapsedSeconds,
+      storageGbSeconds: 0,
+      bandwidthBytesOut: 0,
+      pricingClass: job.pricing_class,
+      jobType: job.job_type,
+    });
+    const totalCostHalala = Math.max(0, total_halala);
+    const { provider: providerEarned, dc1: dc1Fee } = splitBilling(totalCostHalala);
 
     runStatement(
       `UPDATE jobs SET status = 'completed', completed_at = ?,
         actual_duration_minutes = ?, actual_cost_halala = ?,
-        provider_earned_halala = ?, dc1_fee_halala = ?
+        provider_earned_halala = ?, dc1_fee_halala = ?,
+        gpu_seconds_used = ?, storage_gb_seconds = 0,
+        bandwidth_bytes_out = 0, bandwidth_bytes_in = 0,
+        compute_halala = ?, storage_halala = ?, bandwidth_halala = ?
        WHERE id = ?`,
-      now, actualMinutes, actualCostHalala, providerEarned, dc1Fee, job.id
+      now, Math.ceil(elapsedSeconds / 60), totalCostHalala, providerEarned, dc1Fee,
+      elapsedSeconds, compute_halala, storage_halala, bandwidth_halala, job.id
     );
 
     if (job.provider_id) {

@@ -7,29 +7,28 @@ order: 5
 ## Set environment variables
 
 ```bash
-export DCP_RENTER_KEY="dcp-renter-xxxx"
-export API_BASE="https://dcp.sa/api/dc1"
+export DCP_RENTER_KEY="dc1-renter-xxxx"
+export API_BASE="https://api.dcp.sa"
 ```
 
 ## Check account access
 
 ```bash
-curl "$API_BASE/renters/me?key=$DCP_RENTER_KEY"
+curl "$API_BASE/api/renters/me?key=$DCP_RENTER_KEY"
 ```
 
-Expected: renter profile JSON with email and balance fields.
+Expected: renter profile JSON with `renter` object containing email and balance fields.
 
 ## Submit a sample job (container-aware)
 
 ```bash
-curl -X POST "$API_BASE/jobs/submit" \
+curl -X POST "$API_BASE/api/jobs/submit" \
   -H "Content-Type: application/json" \
   -H "x-renter-key: $DCP_RENTER_KEY" \
   -d '{
     "provider_id": 42,
     "job_type": "llm_inference",
     "duration_minutes": 5,
-    "container_spec": { "image_type": "vllm-serve" },
     "params": {
       "model": "meta-llama/Llama-3-8B",
       "prompt": "Return the phrase: DCP CLI smoke test"
@@ -42,7 +41,7 @@ Expected: response contains `job.job_id`, and `status` as `queued` or `pending` 
 ## Poll job status
 
 ```bash
-curl "$API_BASE/jobs/<job_id>" -H "x-renter-key: $DCP_RENTER_KEY"
+curl "$API_BASE/api/jobs/<job_id>/output" -H "x-renter-key: $DCP_RENTER_KEY"
 ```
 
 Status lifecycle: `pending` → `queued` → `running` → `completed` (or `failed` / `cancelled`).
@@ -50,7 +49,7 @@ Status lifecycle: `pending` → `queued` → `running` → `completed` (or `fail
 ## Fetch output
 
 ```bash
-curl "$API_BASE/jobs/<job_id>/output?key=$DCP_RENTER_KEY"
+curl "$API_BASE/api/jobs/<job_id>/output" -H "x-renter-key: $DCP_RENTER_KEY"
 ```
 
-Expected: output payload with `response` and final settlement-related billing fields.
+Expected: output payload with `result` object and final settlement-related billing fields.

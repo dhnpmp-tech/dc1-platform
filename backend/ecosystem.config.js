@@ -16,11 +16,6 @@ module.exports = {
         NODE_ENV: 'production',
         DC1_PROVIDER_PORT: 8083,
 
-        // ── HyperAgent (MiniMax M2.7) ──────────────────────────────────────
-        // Powers the meta-agent's LLM reasoning for strategy self-improvement
-        MINIMAX_API_KEY: process.env.MINIMAX_API_KEY || '',
-        MINIMAX_MODEL: 'MiniMax-M2.7',
-
         // ── Auth ────────────────────────────────────────────────────────────
         // REQUIRED — generate with: openssl rand -hex 32
         // Never commit real admin tokens to source control
@@ -58,10 +53,15 @@ module.exports = {
         // Leave ESCROW_CONTRACT_ADDRESS unset to use off-chain SQLite escrow only.
         // Set all three to enable on-chain settlement via Escrow.sol on Base Sepolia.
         // Deploy contract: cd contracts && npx hardhat run scripts/deploy.js --network base-sepolia
-        // Generate oracle key: node -e "const {ethers}=require('ethers'); console.log(ethers.Wallet.createRandom().privateKey)"
+        // Generate oracle key: node -e "const{ethers}=require('ethers'); console.log(ethers.Wallet.createRandom().privateKey)"
         ESCROW_CONTRACT_ADDRESS: '',
         ESCROW_ORACLE_PRIVATE_KEY: '',  // Required if ESCROW_CONTRACT_ADDRESS is set
-        BASE_RPC_URL: 'https://sepolia.base.org'
+        BASE_RPC_URL: 'https://sepolia.base.org',
+
+        // ── P2P Network (DCP-612) ─────────────────────────────────────────────
+        // Bootstrap node multiaddr: /ip4/76.13.179.86/tcp/4001/p2p/12D3KooWDYjwG3BrC8pVoGVFw3efshDxDKgTWSxqpXxqv6U4bUdc
+        DCP_P2P_BOOTSTRAP: '/ip4/76.13.179.86/tcp/4001/p2p/12D3KooWDYjwG3BrC8pVoGVFw3efshDxDKgTWSxqpXxqv6U4bUdc',
+        P2P_DISCOVERY_ENABLED: 'true'
       }
     },
     {
@@ -168,25 +168,6 @@ module.exports = {
       max_memory_restart: '100M',
       env: {
         NODE_ENV: 'production'
-      }
-    },
-    {
-      // HyperAgent meta-agent — self-improvement cycle every 6 hours.
-      // Analyses job outcomes and rewrites task agent strategy parameters
-      // to optimise provider profitability (DGM-H architecture).
-      name: 'dcp-hyperagent-meta-cron',
-      script: '/bin/sh',
-      args: '-lc "node /root/dc1-platform/backend/src/workers/hyperagentWorker.js >> /root/dc1-platform/backend/logs/hyperagent.log 2>&1"',
-      cwd: '/root/dc1-platform/backend',
-      instances: 1,
-      autorestart: false,
-      cron_restart: '0 */6 * * *',
-      watch: false,
-      max_memory_restart: '200M',
-      env: {
-        NODE_ENV: 'production',
-        MINIMAX_API_KEY: process.env.MINIMAX_API_KEY || '',
-        MINIMAX_MODEL: 'MiniMax-M2.7'
       }
     }
   ]

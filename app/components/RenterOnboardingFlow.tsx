@@ -458,7 +458,7 @@ function StepModel({
       </div>
 
       <a
-        href="/marketplace/models"
+        href="/renter/models"
         className="text-xs text-dc1-amber hover:underline text-center"
       >
         {t.allModels}

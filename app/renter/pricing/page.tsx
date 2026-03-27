@@ -509,11 +509,90 @@ export default function PricingPage() {
           </div>
         </div>
 
+        {/* Per-Token Inference API Pricing */}
+        <div className="card border-dc1-amber/20">
+          <div className="mb-6">
+            <h2 className="section-heading">Per-Token Inference API Pricing</h2>
+            <p className="text-sm text-dc1-text-secondary mt-1">
+              OpenAI-compatible API. Pay per token. No GPU management required.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">🤖</span>
+                <h3 className="font-bold text-dc1-text-primary">Arabic LLMs</h3>
+              </div>
+              <p className="text-xs text-dc1-text-secondary mb-4">
+                ALLaM, JAIS, Falcon — built for Arabic NLP tasks
+              </p>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-dc1-text-muted">Input</span>
+                  <span className="text-sm font-bold text-dc1-amber">SAR 0.0015 / 1K tokens</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-dc1-text-muted">Output</span>
+                  <span className="text-sm font-bold text-dc1-amber">SAR 0.0045 / 1K tokens</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-dc1-text-muted mt-3">33–51% below AWS Bedrock</p>
+            </div>
+
+            <div className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">🌐</span>
+                <h3 className="font-bold text-dc1-text-primary">Global Models</h3>
+              </div>
+              <p className="text-xs text-dc1-text-secondary mb-4">
+                Llama, Mistral, Qwen — via OpenAI-compatible API
+              </p>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-dc1-text-muted">Input</span>
+                  <span className="text-sm font-bold text-dc1-amber">SAR 0.001 / 1K tokens</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-dc1-text-muted">Output</span>
+                  <span className="text-sm font-bold text-dc1-amber">SAR 0.003 / 1K tokens</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-dc1-text-muted mt-3">23% below Vast.ai</p>
+            </div>
+
+            <div className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">🔍</span>
+                <h3 className="font-bold text-dc1-text-primary">Embeddings & RAG</h3>
+              </div>
+              <p className="text-xs text-dc1-text-secondary mb-4">
+                BGE-M3, Arabic reranker — for document retrieval
+              </p>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-dc1-text-muted">Embedding</span>
+                  <span className="text-sm font-bold text-dc1-amber">SAR 0.0003 / 1K tokens</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-dc1-text-muted">Rerank</span>
+                  <span className="text-sm font-bold text-dc1-amber">SAR 0.001 / 1K tokens</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-dc1-text-muted mt-3">PDPL-compliant Saudi data residency</p>
+            </div>
+          </div>
+          <div className="mt-6 p-4 bg-dc1-amber/5 border border-dc1-amber/20 rounded-xl">
+            <p className="text-sm text-dc1-text-secondary">
+              <span className="font-semibold text-dc1-amber">OpenAI-Compatible:</span> Switch base URL to <code className="bg-dc1-void px-1.5 py-0.5 rounded text-xs">https://api.dcp.sa/v1</code> and use your existing code. Saudi data residency included.
+            </p>
+          </div>
+        </div>
+
         {/* CTA */}
         <div className="card border-dc1-amber/20 text-center py-8">
           <h2 className="text-xl font-bold text-dc1-text-primary mb-2">Ready to run?</h2>
           <p className="text-dc1-text-secondary mb-6 max-w-md mx-auto">
-            Browse live providers on the marketplace and launch a job in minutes.
+            Browse live providers on the marketplace and launch a job in minutes, or call the Inference API directly.
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <Link
@@ -527,6 +606,12 @@ export default function PricingPage() {
               className="px-6 py-2.5 bg-dc1-surface-l2 text-dc1-text-primary font-semibold rounded-lg hover:bg-dc1-surface-l3 transition-colors text-sm"
             >
               Use a Template
+            </Link>
+            <Link
+              href="/api-keys"
+              className="px-6 py-2.5 bg-dc1-surface-l2 text-dc1-text-primary font-semibold rounded-lg hover:bg-dc1-surface-l3 transition-colors text-sm"
+            >
+              Get API Key
             </Link>
           </div>
         </div>

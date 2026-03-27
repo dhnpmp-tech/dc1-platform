@@ -1,0 +1,88 @@
+{
+  "id": "llama3-70b",
+  "name": "Llama 3 70B Chat",
+  "description": "Meta Llama 3 70B Instruct — flagship 70B parameter model for complex reasoning, coding, and long-context tasks. Tensor parallelism splits across multiple GPUs for efficient serving.",
+  "image": "dc1/llm-worker:latest",
+  "job_type": "llm-inference",
+  "env_vars": [
+    {
+      "key": "MODEL_ID",
+      "label": "Model ID (HuggingFace)",
+      "default": "meta-llama/Meta-Llama-3-70B-Instruct",
+      "required": true
+    },
+    {
+      "key": "MAX_MODEL_LEN",
+      "label": "Max context length (tokens)",
+      "default": "8192",
+      "required": false
+    },
+    {
+      "key": "DTYPE",
+      "label": "Weight dtype",
+      "default": "float16",
+      "required": false
+    },
+    {
+      "key": "TENSOR_PARALLEL_SIZE",
+      "label": "Tensor parallel GPUs",
+      "default": "2",
+      "required": false
+    },
+    {
+      "key": "MAX_TOKENS",
+      "label": "Max output tokens",
+      "default": "512",
+      "required": false
+    },
+    {
+      "key": "TEMPERATURE",
+      "label": "Sampling temperature",
+      "default": "0.7",
+      "required": false
+    }
+  ],
+  "params": {
+    "model": "meta-llama/Meta-Llama-3-70B-Instruct",
+    "prompt": "Explain quantum computing in 3 sentences.",
+    "max_tokens": 512,
+    "temperature": 0.7,
+    "tensor_parallel_size": 2
+  },
+  "model_cache": {
+    "mount_path": "/opt/dcp/model-cache",
+    "default_policy": "hot",
+    "behavior": "Hot cache — Llama 3 70B weights (~140GB) kept pinned for instant multi-GPU inference."
+  },
+  "example_io": {
+    "input": {
+      "job_type": "llm-inference",
+      "duration_minutes": 120,
+      "params": {
+        "model": "meta-llama/Meta-Llama-3-70B-Instruct",
+        "prompt": "Write a Python function for binary search.",
+        "max_tokens": 1024
+      }
+    },
+    "output": {
+      "type": "text",
+      "model": "meta-llama/Meta-Llama-3-70B-Instruct",
+      "status": "completed"
+    }
+  },
+  "min_vram_gb": 80,
+  "estimated_price_sar_per_hour": 36,
+  "tags": [
+    "llm",
+    "inference",
+    "llama",
+    "meta",
+    "70b",
+    "openai-compatible",
+    "arabic"
+  ],
+  "sort_order": 8,
+  "icon": "🦙",
+  "difficulty": "medium",
+  "tier": "cached"
+}
