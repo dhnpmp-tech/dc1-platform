@@ -41,7 +41,7 @@ function listMdxFiles(dir: string): string[] {
       continue
     }
 
-    if (entry.isFile() && entry.name.endsWith('.mdx')) {
+    if (entry.isFile() && (entry.name.endsWith('.mdx') || entry.name.endsWith('.md'))) {
       files.push(fullPath)
     }
   }
