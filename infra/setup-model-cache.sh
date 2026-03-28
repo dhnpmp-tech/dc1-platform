@@ -2,7 +2,7 @@
 set -eu
 
 CACHE_ROOT="${DCP_MODEL_CACHE_ROOT:-/opt/dcp/model-cache}"
-CACHE_OWNER="${DCP_MODEL_CACHE_OWNER:-node:node}"
+CACHE_OWNER="${DCP_MODEL_CACHE_OWNER:-root:root}"
 VOLUME_NAME="${DCP_MODEL_CACHE_VOLUME:-dcp-model-cache}"
 
 log() {
