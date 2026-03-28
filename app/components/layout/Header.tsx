@@ -43,7 +43,7 @@ export default function Header() {
     roleIntent === 'provider'
       ? '/docs/provider-guide#status-waiting-install-daemon'
       : '/docs/quickstart#renter-onboarding-checklist'
-  const supportHref = `/support?category=${roleIntent === 'provider' ? 'provider' : roleIntent === 'enterprise' ? 'enterprise' : 'renter'}&source=header-nav#contact-form`
+  const supportHref = '/support?category=enterprise&source=header-nav#contact-form'
 
   const publicNav: PublicNavItem[] = useMemo(
     () => [
