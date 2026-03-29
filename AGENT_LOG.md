@@ -1,3 +1,8 @@
+## [2026-03-29 22:13 UTC] Codex — DCP-50 Rate Limiter Test-Mode Toggle + Job Submit Policy Alignment
+- **Commit**: `pending` - Fixed `createRateLimiter` so limits are disabled only when `DISABLE_RATE_LIMIT=1` (not automatically for `NODE_ENV=test`) and aligned `jobSubmitLimiter` with renter-key policy (`20/min` per renter key).
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/tests/rateLimiter.test.js`, `AGENT_LOG.md`
+- **Impact**: Backend rate-limiter behavior now matches policy and test expectations in CI-like test mode. Added explicit regression coverage for the manual disable toggle. Verification: `cd backend && npm test -- --runInBand tests/rateLimiter.test.js` passed (`17/17`).
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
