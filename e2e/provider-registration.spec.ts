@@ -25,7 +25,7 @@ test.describe('Provider Registration Flow', () => {
 
     await submitForm(page);
 
-    await expect(page.locator('text=Registration successful')).toBeVisible();
+    await expect(page.locator('text=Registration Successful!')).toBeVisible();
     await expect(page.locator('text=Your API Key')).toBeVisible();
   });
 
@@ -104,5 +104,23 @@ test.describe('Provider Registration Flow', () => {
     const submitButton = page.locator('button[type="submit"]').first();
     await expect(submitButton).toBeDisabled();
     await expect(page.locator('text=VRAM must be greater than 0.')).toBeVisible();
+  });
+
+  test('should localize provider onboarding copy in Arabic mode', async () => {
+    await page.evaluate(() => localStorage.setItem('dc1_language', 'ar'));
+    await page.reload();
+
+    await expect(page.locator('text=جاهزية المزوّد')).toBeVisible();
+    await expect(page.locator('text=رمز الإحالة')).toBeVisible();
+    await expect(page.locator('option', { hasText: 'المملكة العربية السعودية' })).toBeVisible();
+    await expect(page.locator('text=Provider readiness')).toHaveCount(0);
+  });
+
+  test('should switch GPU and OS cards to RTL alignment in Arabic mode', async () => {
+    await page.evaluate(() => localStorage.setItem('dc1_language', 'ar'));
+    await page.reload();
+
+    await expect(page.locator('button', { hasText: 'RTX 4090' }).first()).toHaveClass(/text-right/);
+    await expect(page.locator('button', { hasText: 'Ubuntu 22.04' }).first()).toHaveClass(/text-right/);
   });
 });
