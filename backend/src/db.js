@@ -165,6 +165,8 @@ db.exec(`
     expires_at TEXT NOT NULL,
     stopped_at TEXT,
     last_inference_at TEXT,
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
     total_inferences INTEGER DEFAULT 0,
     total_tokens INTEGER DEFAULT 0,
     total_billed_halala INTEGER DEFAULT 0,
@@ -200,6 +202,8 @@ try {
         expires_at TEXT NOT NULL,
         stopped_at TEXT,
         last_inference_at TEXT,
+        prompt_tokens INTEGER DEFAULT 0,
+        completion_tokens INTEGER DEFAULT 0,
         total_inferences INTEGER DEFAULT 0,
         total_tokens INTEGER DEFAULT 0,
         total_billed_halala INTEGER DEFAULT 0,
@@ -215,6 +219,21 @@ try {
   db.exec(`PRAGMA foreign_keys = ON`);
 } catch (_migErr) {
   db.exec(`PRAGMA foreign_keys = ON`);
+}
+
+// Migration: add per-session prompt/completion token columns if missing.
+try {
+  const colInfo = db.prepare(`PRAGMA table_info(serve_sessions)`).all();
+  const hasPromptTokens = colInfo.some((c) => c.name === 'prompt_tokens');
+  const hasCompletionTokens = colInfo.some((c) => c.name === 'completion_tokens');
+  if (!hasPromptTokens) {
+    db.exec(`ALTER TABLE serve_sessions ADD COLUMN prompt_tokens INTEGER DEFAULT 0`);
+  }
+  if (!hasCompletionTokens) {
+    db.exec(`ALTER TABLE serve_sessions ADD COLUMN completion_tokens INTEGER DEFAULT 0`);
+  }
+} catch (_serveSessionTokenColMigrationErr) {
+  // Non-fatal: keep startup resilient for legacy/partial test schemas.
 }
 db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_provider ON serve_sessions(provider_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_expiry ON serve_sessions(status, expires_at)`);

@@ -876,6 +876,15 @@ async function submitAndAwait(req) {
         );
       } catch (_) { /* non-fatal */ }
       try {
+        runStatement(
+          'UPDATE serve_sessions SET prompt_tokens = ?, completion_tokens = ?, updated_at = ? WHERE job_id = ?',
+          proxyPromptTokens,
+          proxyCompletionTokens,
+          nowProxy,
+          jobId
+        );
+      } catch (_) { /* non-fatal */ }
+      try {
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
         ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
@@ -934,6 +943,17 @@ async function submitAndAwait(req) {
   try {
     runStatement(
       'UPDATE jobs SET prompt_tokens = ?, completion_tokens = ?, updated_at = ? WHERE job_id = ?',
+      promptTokens,
+      actualCompletionTokens,
+      now,
+      jobId
+    );
+  } catch (_) {
+    // Non-fatal — token write-back failure must not block the inference response
+  }
+  try {
+    runStatement(
+      'UPDATE serve_sessions SET prompt_tokens = ?, completion_tokens = ?, updated_at = ? WHERE job_id = ?',
       promptTokens,
       actualCompletionTokens,
       now,

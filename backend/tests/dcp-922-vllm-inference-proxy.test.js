@@ -259,6 +259,21 @@ async function run() {
       assertEqual(res.body.usage.prompt_tokens, 25, `Expected prompt_tokens=25, got ${res.body.usage.prompt_tokens}`);
       assertEqual(res.body.usage.completion_tokens, 10, `Expected completion_tokens=10, got ${res.body.usage.completion_tokens}`);
       assertEqual(res.body.usage.total_tokens, 35, `Expected total_tokens=35, got ${res.body.usage.total_tokens}`);
+
+      const completionId = typeof res.body.id === 'string' ? res.body.id : '';
+      const idDerivedJobIdRaw = completionId.startsWith('chatcmpl-') ? completionId.replace(/^chatcmpl-/, '') : null;
+      const idDerivedJobId = idDerivedJobIdRaw && idDerivedJobIdRaw !== 'undefined' ? idDerivedJobIdRaw : null;
+      const latestJob = db.get('SELECT job_id FROM jobs ORDER BY rowid DESC LIMIT 1');
+      const jobId = idDerivedJobId || latestJob?.job_id;
+      assert(jobId, `Expected to resolve persisted job id, got completion id: ${completionId}`);
+      const session = db.get(
+        `SELECT prompt_tokens, completion_tokens
+         FROM serve_sessions WHERE job_id = ?`,
+        jobId
+      );
+      assert(session, `Expected serve_session for job ${jobId}`);
+      assertEqual(session.prompt_tokens, 25, `Expected session prompt_tokens=25, got ${session.prompt_tokens}`);
+      assertEqual(session.completion_tokens, 10, `Expected session completion_tokens=10, got ${session.completion_tokens}`);
     } finally {
       mockVllm.close();
     }
