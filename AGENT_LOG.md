@@ -1,3 +1,8 @@
+## [2026-03-29 21:30 UTC] Codex — Fixed Payout Service Test Schema Drift (`escrow_tx_hash`)
+- **Commit**: `pending` - Patched the in-memory payout test schema to include `escrow_tx_hash`, matching the live payout history query shape in `payoutService.js`.
+- **Files**: `backend/src/__tests__/payoutService.test.js`, `AGENT_LOG.md`
+- **Impact**: `src/__tests__/payoutService.test.js` now passes from a clean `main` branch checkout, unblocking payout-history regression coverage and removing the false-negative QA failure tied to test-schema mismatch.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`

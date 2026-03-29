@@ -53,6 +53,7 @@ function buildDb() {
       requested_at  TEXT    NOT NULL,
       processed_at  TEXT,
       payment_ref   TEXT,
+      escrow_tx_hash TEXT,
       FOREIGN KEY (provider_id) REFERENCES providers(id)
     )
   `);
