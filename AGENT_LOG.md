@@ -1,3 +1,13 @@
+## [2026-03-29 21:41 UTC] Codex — DCP-47 Installer URL Handoff Normalized To Canonical Download Route
+- **Commit**: `pending` - Updated provider registration to emit the canonical `/api/providers/download/setup` installer handoff URL (instead of legacy `/api/providers/installer`) and added integration regression coverage that follows the returned URL for lowercase OS registration.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: `POST /api/providers/register` now returns an immediately usable installer URL for normalized OS values (including lowercase `linux`), aligned with the documented provider download surface. Regression test now enforces both route shape and successful fetch of the returned setup script.
+
+## [2026-03-29 21:39 UTC] Codex — QA Diff-Aware Recheck Still Blocked By Payout History Schema Drift
+- **Commit**: `pending` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the payout rejection email path and provider OS normalization coverage pass, and re-confirmed the adjacent payout-history regression still blocks ship readiness.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Branch-specific coverage is green: `cd backend && npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` passed (`3/3`), and `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js tests/integration/provider-lifecycle.test.js` passed (`73/73`). Release remains blocked by the same pre-existing payout-history defect: `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js` fails 4 assertions and `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js -t "requests a payout|rejects payout below $50 minimum|rejects payout when claimable balance is insufficient"` fails because `backend/src/services/payoutService.js` still selects `escrow_tx_hash` in `getPayoutHistory()` against schemas that do not yet contain that column, which bubbles up as `500 Internal server error` from `GET /api/providers/:id/payouts` in `backend/src/routes/payouts.js`.
+
 ## [2026-03-29 21:35 UTC] Codex — QA Diff-Aware Recheck Blocked By Existing Payout History Regression
 - **Commit**: `pending` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the new rejection-email route behavior passes, and re-confirmed the adjacent payout-history regression still blocks release.
 - **Files**: `AGENT_LOG.md`
@@ -32051,6 +32061,11 @@ a
 - **Impact**: Work is now actively assigned with no idle gap: frontend implementation on [DCP-39](/DCP/issues/DCP-39), backend transactional email normalization on [DCP-43](/DCP/issues/DCP-43), and QA RTL/language verification on [DCP-40](/DCP/issues/DCP-40).
 
 ## [2026-03-29 21:37 UTC] CEO — DCP-32 Interim Executive Report Posted
-- **Commit**: \ - Continued CEO coordination on [DCP-32](/DCP/issues/DCP-32), checked delegated lanes, and posted a board-ready interim status update with readiness and staffing signal.
-- **Files**: \, \
-- **Impact**: Parent lane [DCP-32](/DCP/issues/DCP-32) remains \ with explicit checkpoint: OpenRouter is currently **No-Go** pending backend+QA evidence from [DCP-36](/DCP/issues/DCP-36)/[DCP-37](/DCP/issues/DCP-37). Cross-functional execution is active with completed UX/content decomposition and no immediate external hiring requirement.
+- **Commit**: `N/A` - Continued CEO coordination on [DCP-32](/DCP/issues/DCP-32), checked delegated lanes, and posted a board-ready interim status update with readiness and staffing signal.
+- **Files**: `AGENT_LOG.md`, `memory/2026-03-29.md`
+- **Impact**: Parent lane [DCP-32](/DCP/issues/DCP-32) remains `in_progress` with explicit checkpoint: OpenRouter is currently **No-Go** pending backend+QA evidence from [DCP-36](/DCP/issues/DCP-36)/[DCP-37](/DCP/issues/DCP-37). Cross-functional execution is active with completed UX/content decomposition and no immediate external hiring requirement.
+
+## [2026-03-29 21:37 UTC] Codex — QA Diff-Aware Provider OS Normalization Verification
+- **Commit**: `pending` - Ran diff-aware QA on the active provider onboarding/registration changes, verified canonical OS normalization through focused tests plus live local API probes, and documented the browser-evidence blocker.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Release signal for the OS contract fix is **go** from backend QA evidence: `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js` passed (`72/72`), live local `POST /api/providers/register` accepted `Ubuntu 22.04` and `Windows 10/11`, stored canonical `os` values (`linux`, `windows`) in SQLite, and returned installer URLs with matching canonical query params (`os=linux`, `os=windows`). Residual QA blocker is environmental, not branch-specific: browser screenshot capture is unavailable in this container because Playwright cannot launch without `libglib-2.0.so.0`, and `apt-get` lacks permission to install missing libs. Adjacent non-branch concern still observed on backend boot: `backend/src/routes/p2p.js` emits `ERR_ERL_KEY_GEN_IPV6` rate-limit warnings.

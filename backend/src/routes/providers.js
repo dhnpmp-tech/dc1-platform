@@ -349,8 +349,8 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
         );
         
-        // Generate installer URL
-        const installer_url = `/api/providers/installer?key=${api_key}&os=${encodeURIComponent(cleanOs)}`;
+        // Return canonical setup download route so clients can follow the URL directly.
+        const installer_url = `/api/providers/download/setup?key=${api_key}&os=${encodeURIComponent(cleanOs)}`;
         
         res.json({
             success: true,
