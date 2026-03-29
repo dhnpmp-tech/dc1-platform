@@ -107,6 +107,13 @@ describe('Provider API — POST /api/providers/register', () => {
       .send({ name: 'Test', email: 'test@dc1.test', os: 'Linux' });
     expect(res.status).toBe(400);
   });
+
+  it('accepts human-readable OS labels and stores canonical OS values', async () => {
+    const res = await registerProvider({ os: 'Ubuntu 22.04' });
+    expect(res.status).toBe(200);
+    const row = db.get('SELECT os FROM providers WHERE id = ?', res.body.provider_id);
+    expect(row.os).toBe('linux');
+  });
 });
 
 describe('Provider API — GET /api/providers/me', () => {

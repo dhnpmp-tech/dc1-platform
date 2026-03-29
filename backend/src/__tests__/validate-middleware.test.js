@@ -141,6 +141,17 @@ describe('providerRegisterSchema', () => {
   test('accepts valid registration', () => {
     const result = runMiddleware(providerRegisterSchema, validBody);
     expect(result.passed).toBe(true);
+    expect(result.parsedBody.os).toBe('linux');
+  });
+
+  test('accepts and normalizes human-readable os values', () => {
+    const ubuntu = runMiddleware(providerRegisterSchema, { ...validBody, os: 'Ubuntu 22.04' });
+    expect(ubuntu.passed).toBe(true);
+    expect(ubuntu.parsedBody.os).toBe('linux');
+
+    const windows = runMiddleware(providerRegisterSchema, { ...validBody, os: 'Windows 10/11' });
+    expect(windows.passed).toBe(true);
+    expect(windows.parsedBody.os).toBe('windows');
   });
 
   test('rejects missing name', () => {

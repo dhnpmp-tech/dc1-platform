@@ -2312,14 +2312,14 @@ router.post('/:job_id/result', (req, res) => {
     notifyRenterJobWebhook(updated, result ? 'job.completed' : 'job.failed', {
       completed_at: now,
       billing: {
-        actual_cost_halala: actualCostHalala,
+        actual_cost_halala: totalCostHalala,
         provider_earned_halala: providerEarned,
         dc1_fee_halala: dc1Fee,
       },
     }).catch(() => {});
 
     fireAndForgetJobEmail(result ? 'completed' : 'failed', updated, {
-      actual_cost_halala: actualCostHalala,
+      actual_cost_halala: totalCostHalala,
       gpu_seconds_used: durationSeconds != null ? Number(durationSeconds) : null,
       refunded_amount_halala: Number(job.cost_halala || 0),
       retry_attempts: Number(updated?.retry_count || 0),
@@ -2333,7 +2333,7 @@ router.post('/:job_id/result', (req, res) => {
         job.job_id,
         job.model || job.job_type,
         durationSeconds != null ? durationSeconds * 1000 : null,
-        { cost_halala: actualCostHalala }
+        { cost_halala: totalCostHalala }
       ).catch(() => {});
     } else {
       analytics.renter.deploymentError(
@@ -2348,7 +2348,7 @@ router.post('/:job_id/result', (req, res) => {
       success: true,
       job: updated,
       billing: {
-        actual_cost_halala: actualCostHalala,
+        actual_cost_halala: totalCostHalala,
         provider_earned_halala: providerEarned,
         dc1_fee_halala: dc1Fee
       },
