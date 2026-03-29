@@ -1,3 +1,8 @@
+## [2026-03-29 21:46 UTC] Codex — DCP-41 Arabic Provider Onboarding Localization + RTL Polish
+- **Commit**: `pending` - Localized remaining hardcoded provider onboarding copy across readiness, referral, install, and earnings sections; added Arabic country labels and RTL-aware alignment for GPU/OS selection cards.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic onboarding no longer falls back to English in the audited conversion-critical surfaces. Payload/event contracts stay unchanged. Verification caveat remains upstream: `npm run build` still fails on existing unresolved aliases from `main` (`@/app/lib/i18n`, `@/app/lib/docs`), and `npm run lint` is blocked by interactive Next.js ESLint bootstrap in this repo.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
