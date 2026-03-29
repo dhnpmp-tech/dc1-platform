@@ -55,6 +55,13 @@ interface StatusStep {
 }
 
 type SupportCategory = 'provider' | 'bug'
+type FormStep = 1 | 2 | 3
+
+const STEP_FIELDS: Record<FormStep, RegistrationField[]> = {
+  1: ['fullName', 'email', 'gpuModel', 'vram'],
+  2: ['locationCountry', 'operatingSystem'],
+  3: ['pdplConsent'],
+}
 
 function ProviderRegisterPageContent() {
   const { t, isRTL } = useLanguage()
@@ -88,6 +95,7 @@ function ProviderRegisterPageContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<RegistrationErrors>({})
+  const [currentFormStep, setCurrentFormStep] = useState<FormStep>(1)
   const [attemptedSubmit, setAttemptedSubmit] = useState(false)
   const [apiKey, setApiKey] = useState('')
   const [providerId, setProviderId] = useState('')
@@ -103,6 +111,7 @@ function ProviderRegisterPageContent() {
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollingKeyRef = useRef<string | null>(null)
   const lastTrackedStateRef = useRef<ProviderNextActionState | null>(null)
+  const fieldRefs = useRef<Partial<Record<RegistrationField, HTMLElement | null>>>({})
   const pathChooserLanes = [
     {
       key: 'self_serve_renter',
@@ -196,7 +205,20 @@ function ProviderRegisterPageContent() {
     [t]
   )
 
-  const validateForm = useCallback(() => {
+  const focusFirstFieldError = useCallback((errors: RegistrationErrors, scopedFields?: RegistrationField[]) => {
+    const fields = scopedFields ?? (Object.keys(STEP_FIELDS).flatMap((key) => STEP_FIELDS[Number(key) as FormStep]) as RegistrationField[])
+    const first = fields.find((field) => Boolean(errors[field]))
+    if (!first) return
+    const target = fieldRefs.current[first]
+    if (target && typeof target.focus === 'function') {
+      target.focus()
+      if (typeof (target as HTMLElement).scrollIntoView === 'function') {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }
+    }
+  }, [])
+
+  const validateForm = useCallback((scopedFields?: RegistrationField[]) => {
     const nextErrors: RegistrationErrors = {
       fullName: validateField('fullName', formData.fullName, formData),
       email: validateField('email', formData.email, formData),
@@ -207,21 +229,34 @@ function ProviderRegisterPageContent() {
       pdplConsent: validateField('pdplConsent', formData.pdplConsent, formData),
     }
 
+    const relevantFields = scopedFields ?? (Object.keys(nextErrors) as RegistrationField[])
     const filteredErrors = Object.fromEntries(
-      Object.entries(nextErrors).filter(([, value]) => value)
+      Object.entries(nextErrors).filter(([field, value]) => value && relevantFields.includes(field as RegistrationField))
     ) as RegistrationErrors
 
-    setFieldErrors(filteredErrors)
+    setFieldErrors((prev) => ({ ...prev, ...filteredErrors }))
 
     const firstError = Object.values(filteredErrors)[0]
     if (firstError) {
       setError(firstError)
+      focusFirstFieldError(filteredErrors, relevantFields)
       return false
     }
 
+    if (scopedFields) {
+      setFieldErrors((prev) => {
+        const next = { ...prev }
+        scopedFields.forEach((field) => {
+          if (!nextErrors[field]) delete next[field]
+        })
+        return next
+      })
+    } else {
+      setFieldErrors({})
+    }
     setError('')
     return true
-  }, [formData, validateField])
+  }, [focusFirstFieldError, formData, validateField])
 
   const customVramReady = formData.gpuModel !== 'Other' || Number(formData.vram) > 0
 
@@ -260,6 +295,12 @@ function ProviderRegisterPageContent() {
     : 'Installer shown after registration'
   const canSubmit = readinessCompleteCount === readinessChecklist.length && !isLoading
 
+  const progressSteps: Array<{ step: FormStep; title: string; helper: string }> = [
+    { step: 1, title: 'Profile + GPU', helper: 'Identity and machine profile' },
+    { step: 2, title: 'Environment', helper: 'Location and operating system' },
+    { step: 3, title: 'Consent + Submit', helper: 'Review and activate provider account' },
+  ]
+
   useEffect(() => {
     if (!attemptedSubmit) return
     validateForm()
@@ -272,6 +313,10 @@ function ProviderRegisterPageContent() {
     setError('')
 
     if (!validateForm()) {
+      trackProviderRegisterEvent('provider_register_inline_error_shown', {
+        surface: 'submit_validation',
+        step: 'submit',
+      })
       return
     }
 
@@ -360,6 +405,26 @@ function ProviderRegisterPageContent() {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleStepContinue = () => {
+    const stepFields = STEP_FIELDS[currentFormStep]
+    if (!validateForm(stepFields)) {
+      trackProviderRegisterEvent('provider_register_inline_error_shown', {
+        surface: 'step_validation',
+        step: `step_${currentFormStep}`,
+      })
+      return
+    }
+
+    const next = Math.min(3, currentFormStep + 1) as FormStep
+    if (next !== currentFormStep) {
+      setCurrentFormStep(next)
+      trackProviderRegisterEvent('provider_register_step_advanced', {
+        surface: 'registration_form',
+        step: `step_${next}`,
+      })
     }
   }
 
@@ -653,6 +718,7 @@ function ProviderRegisterPageContent() {
                     onClick={() => copyToClipboard(apiKey, 0)}
                     className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
                     title="Copy API key"
+                    aria-label="Copy API key to clipboard"
                   >
                     {copiedIndex === 0 ? (
                       <svg
@@ -709,6 +775,7 @@ function ProviderRegisterPageContent() {
                         onClick={() => copyToClipboard(linuxInstallCommand, 1)}
                         className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
                         title="Copy installation command"
+                        aria-label="Copy Linux installation command"
                       >
                         {copiedIndex === 1 ? (
                           <svg
@@ -752,6 +819,7 @@ function ProviderRegisterPageContent() {
                         onClick={() => copyToClipboard(windowsInstallCommand, 2)}
                         className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
                         title="Copy installation command"
+                        aria-label="Copy Windows installation command"
                       >
                         {copiedIndex === 2 ? (
                           <svg
@@ -1308,8 +1376,31 @@ function ProviderRegisterPageContent() {
               {t('register.provider.form_desc')}
             </p>
 
+            <div className="mb-6 grid gap-3 sm:grid-cols-3">
+              {progressSteps.map((step) => {
+                const isCurrent = currentFormStep === step.step
+                const isComplete = currentFormStep > step.step
+                return (
+                  <div
+                    key={step.step}
+                    className={`rounded-xl border p-3 ${
+                      isComplete
+                        ? 'border-status-success/30 bg-status-success/10'
+                        : isCurrent
+                          ? 'border-dc1-amber/50 bg-dc1-amber/10'
+                          : 'border-dc1-border bg-dc1-surface-l2'
+                    }`}
+                  >
+                    <p className="text-xs uppercase tracking-[0.14em] text-dc1-text-muted">Step {step.step}</p>
+                    <p className="mt-1 text-sm font-semibold text-dc1-text-primary">{step.title}</p>
+                    <p className="text-xs text-dc1-text-secondary">{step.helper}</p>
+                  </div>
+                )
+              })}
+            </div>
+
             {error && (
-              <div className="alert alert-error mb-6">
+              <div className="alert alert-error mb-6" role="alert" aria-live="polite">
                 <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
@@ -1322,6 +1413,8 @@ function ProviderRegisterPageContent() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+              {currentFormStep === 1 && (
+                <>
               {/* Full Name */}
               <div>
                 <label htmlFor="fullName" className="label">
@@ -1329,6 +1422,7 @@ function ProviderRegisterPageContent() {
                 </label>
                 <input
                   id="fullName"
+                  ref={(node) => { fieldRefs.current.fullName = node }}
                   type="text"
                   name="fullName"
                   value={formData.fullName}
@@ -1353,6 +1447,7 @@ function ProviderRegisterPageContent() {
                 </label>
                 <input
                   id="email"
+                  ref={(node) => { fieldRefs.current.email = node }}
                   type="email"
                   name="email"
                   value={formData.email}
@@ -1405,6 +1500,7 @@ function ProviderRegisterPageContent() {
                 </div>
                 <select
                   id="gpuModel"
+                  ref={(node) => { fieldRefs.current.gpuModel = node }}
                   name="gpuModel"
                   value={formData.gpuModel}
                   onChange={handleInputChange}
@@ -1437,6 +1533,7 @@ function ProviderRegisterPageContent() {
                 </label>
                 <input
                   id="vram"
+                  ref={(node) => { fieldRefs.current.vram = node }}
                   type="number"
                   name="vram"
                   value={formData.vram}
@@ -1460,8 +1557,12 @@ function ProviderRegisterPageContent() {
                   </p>
                 )}
               </div>
+                </>
+              )}
 
               {/* Location */}
+              {currentFormStep === 2 && (
+                <>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="locationCity" className="label">
@@ -1483,6 +1584,7 @@ function ProviderRegisterPageContent() {
                   </label>
                   <select
                     id="locationCountry"
+                    ref={(node) => { fieldRefs.current.locationCountry = node }}
                     name="locationCountry"
                     value={formData.locationCountry}
                     onChange={handleInputChange}
@@ -1545,6 +1647,7 @@ function ProviderRegisterPageContent() {
                 </div>
                 <select
                   id="operatingSystem"
+                  ref={(node) => { fieldRefs.current.operatingSystem = node }}
                   name="operatingSystem"
                   value={formData.operatingSystem}
                   onChange={handleInputChange}
@@ -1616,12 +1719,17 @@ function ProviderRegisterPageContent() {
                   Have a referral code from another provider? Enter it here to earn bonus rewards.
                 </p>
               </div>
+                </>
+              )}
 
               {/* PDPL Consent */}
+              {currentFormStep === 3 && (
+                <>
               <div className="p-4 rounded-lg bg-dc1-surface-l2 border border-dc1-border">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
+                    ref={(node) => { fieldRefs.current.pdplConsent = node }}
                     name="pdplConsent"
                     checked={formData.pdplConsent}
                     onChange={(e) => {
@@ -1654,44 +1762,70 @@ function ProviderRegisterPageContent() {
                   <p className="mt-3 text-sm text-red-400">{fieldErrors.pdplConsent}</p>
                 )}
               </div>
+                </>
+              )}
 
               {/* Submit Button */}
               <p className="text-xs text-dc1-text-muted">
                 Earnings shown in this flow are illustrative scenarios, not payout guarantees.
               </p>
-              {!canSubmit && (
+              {currentFormStep === 3 && !canSubmit && (
                 <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3 text-sm text-dc1-text-secondary">
                   Complete the readiness checklist above to enable registration. The missing fields will highlight automatically.
                 </div>
               )}
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                className="btn btn-primary w-full btn-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    {t('register.provider.submitting')}
-                  </>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+                {currentFormStep > 1 ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary w-full sm:w-auto"
+                    onClick={() => setCurrentFormStep((prev) => Math.max(1, prev - 1) as FormStep)}
+                  >
+                    Back
+                  </button>
                 ) : (
-                  canSubmit ? t('register.provider.submit') : 'Complete required fields to continue'
+                  <span />
                 )}
-              </button>
+
+                {currentFormStep < 3 ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary w-full sm:w-auto"
+                    onClick={handleStepContinue}
+                  >
+                    Continue to step {currentFormStep + 1}
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!canSubmit}
+                    className="btn btn-primary w-full sm:w-auto btn-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoading ? (
+                      <>
+                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        {t('register.provider.submitting')}
+                      </>
+                    ) : (
+                      canSubmit ? t('register.provider.submit') : 'Complete required fields to continue'
+                    )}
+                  </button>
+                )}
+              </div>
 
               {/* Sign In Link */}
               <p className="text-center text-sm text-dc1-text-secondary">
