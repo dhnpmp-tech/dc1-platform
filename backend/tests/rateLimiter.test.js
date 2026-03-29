@@ -53,6 +53,10 @@ function uniqueKey(prefix = 'key') {
 }
 
 describe('createRateLimiter — factory behaviour', () => {
+  afterEach(() => {
+    delete process.env.DISABLE_RATE_LIMIT;
+  });
+
   test('allows requests up to max', async () => {
     // Use a non-IP key to avoid ERR_ERL_KEY_GEN_IPV6 validation warning
     const key = uniqueKey('factory');
@@ -113,6 +117,19 @@ describe('createRateLimiter — factory behaviour', () => {
     // key-b is independent — still allowed
     const allowedB = await request(app).post('/test').set('x-test-key', keyB);
     expect(allowedB.status).toBe(200);
+  });
+
+  test('can be explicitly disabled with DISABLE_RATE_LIMIT=1', async () => {
+    process.env.DISABLE_RATE_LIMIT = '1';
+    const key = uniqueKey('factory-disabled');
+    const limiter = createRateLimiter({ windowMs: 60000, max: 1, keyGenerator: () => key });
+    const app = buildApp(limiter);
+
+    const first = await request(app).post('/test');
+    const second = await request(app).post('/test');
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
   });
 });
 

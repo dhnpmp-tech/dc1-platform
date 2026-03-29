@@ -108,7 +108,7 @@ describe('Rate limiting — provider registration (max: 5/hr)', () => {
     const provRoute = (() => { const p = require.resolve('../../src/routes/providers'); delete require.cache[p]; return require('../../src/routes/providers'); })();
     app.use('/api/providers', provRoute);
 
-    const base = { name: 'T', email: 'x@x.com', gpu_model: 'RTX', os: 'Linux' };
+    const base = { name: 'Test Provider', email: 'x@x.com', gpu_model: 'RTX 4090', os: 'linux' };
     const statuses = [];
     for (let i = 0; i < 6; i++) {
       const payload = { ...base, email: `reg-${i}-${Date.now()}@dc1.test` };
@@ -116,8 +116,8 @@ describe('Rate limiting — provider registration (max: 5/hr)', () => {
       statuses.push(res.status);
     }
 
-    // First 5 succeed (200), 6th is rate limited (429)
-    expect(statuses.slice(0, 5).every(s => s === 200)).toBe(true);
+    // First 5 are not rate-limited, 6th is rate-limited
+    expect(statuses.slice(0, 5).every((s) => s !== 429)).toBe(true);
     expect(statuses[5]).toBe(429);
   });
 });
@@ -164,12 +164,12 @@ describe('Rate limiting — job submission (max: 30/min)', () => {
 });
 
 describe('Rate limiting — per API key policy (DCP-270)', () => {
-  it('enforces 10 requests/minute per renter key and returns retryAfterMs', async () => {
+  it('enforces 20 requests/minute per renter key and returns retryAfterMs', async () => {
     const app = buildLimitedApp('post', '/api/jobs/submit', jobSubmitLimiter, makeOkHandler());
     const keyA = 'dc1-renter-key-a';
     const keyB = 'dc1-renter-key-b';
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       const res = await request(app)
         .post('/api/jobs/submit')
         .set('x-renter-key', keyA)

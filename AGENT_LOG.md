@@ -1,3 +1,8 @@
+## [2026-03-29 22:26 UTC] Codex — DCP-51 Rate-Limiting Contract Alignment (Middleware + Integration)
+- **Commit**: `pending` - Aligned `createRateLimiter` test-mode behavior (explicit `DISABLE_RATE_LIMIT=1` toggle only), switched `jobSubmitLimiter` to renter-key-first `20/min` policy, and updated integration fixtures/assertions to reflect canonical provider registration inputs and current limiter contracts.
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/tests/rateLimiter.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Rate-limiting behavior and integration coverage are now in sync with current backend policy and validation surfaces. Verification passed: `cd backend && npm test -- --runInBand tests/rateLimiter.test.js` (`17/17`) and `cd backend && npm test -- --runInBand tests/integration/rate-limiting.test.js` (`8/8`).
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
