@@ -320,26 +320,8 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         stream: wantsStream,
       });
 
-      if (proxyResult.proxyError) {
-        return res.status(502).json({
-          error: { message: `Provider error: ${proxyResult.proxyError}`, type: 'upstream_error', code: 502 }
-        });
-      }
-
-      // Streaming passthrough
-      if (wantsStream && proxyResult.streamResponse) {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache, no-transform');
-        res.setHeader('Connection', 'keep-alive');
-        res.setHeader('X-Accel-Buffering', 'no');
-        proxyResult.streamResponse.body.pipe(res);
-        return;
-      }
-
-      // Non-streaming: return OpenAI-formatted response
-      if (proxyResult.body) {
-        // Debit renter balance based on actual usage
-        const usage = proxyResult.body?.usage || {};
+      const debitAndReturnProxyResult = (resultBody) => {
+        const usage = resultBody?.usage || {};
         const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
@@ -351,7 +333,24 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
             .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
         } catch (_) { /* best-effort */ }
 
-        return res.json(proxyResult.body);
+        return res.json(resultBody);
+      };
+
+      const writeStreamingResponse = (streamResponse) => {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        streamResponse.body.pipe(res);
+      };
+
+      if (wantsStream && proxyResult.streamResponse) {
+        writeStreamingResponse(proxyResult.streamResponse);
+        return;
+      }
+
+      if (proxyResult.body) {
+        return debitAndReturnProxyResult(proxyResult.body);
       }
 
       // If selected provider endpoint exists but failed to produce a valid payload,
@@ -374,33 +373,23 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
-          res.setHeader('Content-Type', 'text/event-stream');
-          res.setHeader('Cache-Control', 'no-cache, no-transform');
-          res.setHeader('Connection', 'keep-alive');
-          res.setHeader('X-Accel-Buffering', 'no');
-          fallbackResult.streamResponse.body.pipe(res);
+          writeStreamingResponse(fallbackResult.streamResponse);
           return;
         }
 
         if (fallbackResult.body) {
-          const usage = fallbackResult.body?.usage || {};
-          const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
-          const rateRecord = db.get(
-            'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
-          ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
-          const tokenRate = rateRecord?.token_rate_halala || 1;
-          const actualCost = Math.max(1, actualTokens * tokenRate);
-          try {
-            db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
-              .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
-          } catch (_) { /* best-effort */ }
-
-          return res.json(fallbackResult.body);
+          return debitAndReturnProxyResult(fallbackResult.body);
         }
       }
 
       return res.status(502).json({
-        error: { message: 'Provider failover exhausted', type: 'upstream_error', code: 502 }
+        error: {
+          message: proxyResult.proxyError
+            ? `Provider failover exhausted after initial error: ${proxyResult.proxyError}`
+            : 'Provider failover exhausted',
+          type: 'upstream_error',
+          code: 502
+        }
       });
     }
 

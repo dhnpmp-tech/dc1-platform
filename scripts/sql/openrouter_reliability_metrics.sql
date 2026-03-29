@@ -13,7 +13,7 @@ window_jobs AS (
     w.window_name,
     j.status
   FROM windows w
-  JOIN jobs j ON j.submitted_at >= w.window_start
+  JOIN jobs j ON datetime(j.submitted_at) >= w.window_start
   WHERE j.job_type = 'vllm'
 )
 SELECT
@@ -38,7 +38,7 @@ WITH latency AS (
     AND status = 'completed'
     AND started_at IS NOT NULL
     AND completed_at IS NOT NULL
-    AND submitted_at >= datetime('now', '-72 hours')
+    AND datetime(submitted_at) >= datetime('now', '-72 hours')
 )
 SELECT
   model,
@@ -58,7 +58,7 @@ WITH err AS (
     LOWER(COALESCE(logs_jsonl, '')) AS logs_norm
   FROM jobs
   WHERE job_type = 'vllm'
-    AND submitted_at >= datetime('now', '-72 hours')
+    AND datetime(submitted_at) >= datetime('now', '-72 hours')
     AND status IN ('failed', 'cancelled', 'permanently_failed', 'timed_out')
 )
 SELECT
