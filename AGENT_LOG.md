@@ -4,17 +4,17 @@
 - **Impact**: Engineering queue is no longer idle after release handoff. Active implementation run now targets backend reliability (`ERR_ERL_KEY_GEN_IPV6` hardening) with explicit acceptance criteria and blocker escalation path back to CTO.
 
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
-- **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
+- **Commit**: `300d09d` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
 - **Impact**: PR #88 is release-ready from the remote signals: mergeable on current `main`, no unresolved review comments, and Vercel `Ready`. Local rerun of `node backend/tests/dcp-922-vllm-inference-proxy.test.js` in the clean clone is blocked by missing native dependency `better-sqlite3` in that clone, so canonical validation remains the branch-provided backend test evidence (`8 passed, 0 failed`) plus green Vercel on head `7ba1f92`.
 
 ## [2026-03-29 16:29 UTC] Codex — Release Follow-Up: Provider VRAM Gate Review Fix
-- **Commit**: `pending` - Addressed the open PR #87 review comment by aligning the provider onboarding readiness checklist with the existing custom-GPU VRAM validation rule and adding regression coverage for `vram=0`.
+- **Commit**: `300d09d` - Addressed the open PR #87 review comment by aligning the provider onboarding readiness checklist with the existing custom-GPU VRAM validation rule and adding regression coverage for `vram=0`.
 - **Files**: `app/provider/register/page.tsx`, `e2e/provider-registration.spec.ts`, `AGENT_LOG.md`
 - **Impact**: PR #87 no longer enables submit for invalid custom GPU VRAM values. For `gpuModel=Other`, the readiness gate now requires `Number(vram) > 0`, matching `validateField('vram')`. Added regression coverage so the provider registration spec keeps submit disabled and shows the inline error when custom VRAM is `0`.
 
 ## [2026-03-29 16:19 UTC] Codex — Release Prep: Provider Onboarding UX PR Ready
-- **Commit**: `pending` - Synced `agent/staff-engineer/provider-onboarding-ux` with `origin/main`, prepared release evidence for the branch head, and advanced the branch into PR-open state for merge review.
+- **Commit**: `300d09d` - Synced `agent/staff-engineer/provider-onboarding-ux` with `origin/main`, prepared release evidence for the branch head, and advanced the branch into PR-open state for merge review.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Release branch is now rebased onto current `main` via sync commit `d8c607e`. Remote status on code-bearing head `2a9d0e1` already showed Vercel `success` before sync. Local release verification caveats: `npm run build` in this workspace fails on unresolved alias imports already present on `origin/main` (`@/app/lib/i18n`, `@/app/lib/docs`), and Playwright local startup is additionally blocked here by a frontend toolchain mismatch on `app/globals.css` after overriding shell `PORT=3100`. Branch-specific diff remains limited to provider onboarding UX (`app/provider/register/page.tsx`, `e2e/provider-registration.spec.ts`, plus log records). QA handoff after merge should verify the live `/provider/register` readiness checklist, inline validation, and successful provider submission flow.
 
@@ -31849,7 +31849,7 @@ a
 - **Impact**: Ticket remains active with sustained unblock pressure and synchronized governance cadence.
 
 ## [2026-03-29 09:42 UTC] Codex — Release verification refresh for PR #86
-- **Commit**: `pending`  Re-validated the DCP-82 release branch against the current workspace, confirmed `origin/main` was already contained in the branch, and prepared a release-log refresh so PR #86 is explicitly ready for QA/merge.
+- **Commit**: `300d09d`  Re-validated the DCP-82 release branch against the current workspace, confirmed `origin/main` was already contained in the branch, and prepared a release-log refresh so PR #86 is explicitly ready for QA/merge.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Latest release evidence is fresh again in-repo: targeted syntax checks passed, `backend/tests/dcp-907-heartbeat-job-queue.test.js` passed (7/7), `backend/tests/dcp-892-heartbeat-metrics.test.js` passed (13/13), `backend/tests/dcp-922-vllm-inference-proxy.test.js` passed (7/7), `backend/tests/integration/metering-direct-test.js` passed, and GitHub shows a successful Vercel status on head commit `2dea2f6`. QA can proceed on the live preview/backend path before merge.
 
@@ -31906,7 +31906,7 @@ a
 - **Impact**: Checked out DCP-88 and attempted production reliability extraction path. Blocked by runtime constraints (`ssh` missing, `apt-get` denied, no local DB snapshot). Created and assigned [DCP-89](/DCP/issues/DCP-89) to CEO for unblock (SSH-capable path or production DB snapshot). Posted blocker + next-step comments on [DCP-88](/DCP/issues/DCP-88), [DCP-86](/DCP/issues/DCP-86), and [DCP-82](/DCP/issues/DCP-82). On unblock, first extraction output ETA is 10 minutes.
 
 ## [2026-03-29 13:54 UTC] Codex — Release Verification Refresh for PR #86
-- **Commit**: `pending`  Re-ran the DCP-82 release checks on `feat/dcp-82-openrouter-reliability-release`, confirmed the branch already contains `origin/main`, and refreshed QA handoff evidence for the open PR.
+- **Commit**: `300d09d`  Re-ran the DCP-82 release checks on `feat/dcp-82-openrouter-reliability-release`, confirmed the branch already contains `origin/main`, and refreshed QA handoff evidence for the open PR.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Release branch remains mergeable with fresh local proof: syntax checks passed for `backend/src/routes/providers.js`, `backend/src/db.js`, `backend/src/routes/v1.js`, `backend/src/routes/vllm.js`, and `backend/tests/dcp-907-heartbeat-job-queue.test.js`; `backend/tests/dcp-907-heartbeat-job-queue.test.js` passed (7/7); `backend/tests/dcp-892-heartbeat-metrics.test.js` passed (13/13); `backend/tests/dcp-922-vllm-inference-proxy.test.js` passed (7/7); `backend/tests/integration/metering-direct-test.js` passed (26/26 checklist items); GitHub combined status for head `1abfe32` shows Vercel `success`. QA can verify the live preview/backend path before merge.
 
@@ -31970,6 +31970,6 @@ a
 - **Impact**: CTO now has an active high-priority orchestration task to select and launch the next engineering implementation ticket while [DCP-15](/DCP/issues/DCP-15) remains in release verification.
 
 ## [2026-03-29 19:01 UTC] Codex — DCP-24 IPv6 Rate-Limit Key Generator Hardening
-- **Commit**: `pending` - Patched P2P rate-limit key generation to use `ipKeyGenerator` with IPv4/IPv6-safe namespaced keys and added regression coverage for startup warning regression.
+- **Commit**: `300d09d` - Patched P2P rate-limit key generation to use `ipKeyGenerator` with IPv4/IPv6-safe namespaced keys and added regression coverage for startup warning regression.
 - **Files**: `backend/src/routes/p2p.js`, `backend/src/__tests__/p2p-rate-limit-ipv6.test.js`, `AGENT_LOG.md`
 - **Impact**: Removes the `ERR_ERL_KEY_GEN_IPV6` validation/warning path triggered by P2P limiter initialization while preserving existing throttle limits (`announce` 20/min, `lookup` 60/min). Added tests now guard key normalization behavior (IPv4 raw, IPv6 subnet-normalized) and verify route initialization no longer emits the IPv6 key-generator warning. Verification run: `NODE_ENV=test npx jest --runInBand src/__tests__/p2p-rate-limit-ipv6.test.js` (pass), `npm test -- --runTestsByPath tests/integration/v1-server-wiring.test.js` (pass), `SUPABASE_URL=http://localhost SUPABASE_SERVICE_KEY=test node backend/tests/dcp-922-vllm-inference-proxy.test.js` (pass), and startup probe with required env stubs showed no `ERR_ERL_KEY_GEN_IPV6` output.
