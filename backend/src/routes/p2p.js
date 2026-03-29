@@ -21,7 +21,7 @@ const announceLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many discovery announce requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => rateLimit.ipKeyGenerator(req.ip),
 });
 
 const lookupLimiter = rateLimit({
@@ -30,7 +30,7 @@ const lookupLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many P2P lookup requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => rateLimit.ipKeyGenerator(req.ip),
 });
 
 function parseBool(value) {

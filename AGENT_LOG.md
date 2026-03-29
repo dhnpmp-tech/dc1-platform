@@ -1,3 +1,8 @@
+## [2026-03-29 22:04 UTC] Codex — DCP-49 IPv6-Safe P2P Rate Limiter Keys
+- **Commit**: `pending` - Replaced direct `req.ip` rate-limit keys in P2P announce/providers endpoints with `express-rate-limit` `ipKeyGenerator` to eliminate `ERR_ERL_KEY_GEN_IPV6` warnings and enforce IPv6-safe bucketing.
+- **Files**: `backend/src/routes/p2p.js`, `backend/src/__tests__/p2p-rate-limit-keygen.test.js`, `AGENT_LOG.md`
+- **Impact**: P2P route initialization no longer trips express-rate-limit IPv6 keygen validation. Added regression test asserting both P2P limiters delegate key generation through `ipKeyGenerator` so the warning path cannot regress silently.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
