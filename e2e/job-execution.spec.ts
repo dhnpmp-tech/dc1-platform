@@ -25,7 +25,9 @@ test.describe('Job Execution and Payment Settlement', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should display job execution status updates', async () => {
@@ -152,7 +154,9 @@ test.describe('Provider Job Execution View', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should display assigned jobs on provider dashboard', async () => {
