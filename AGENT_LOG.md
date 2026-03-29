@@ -31953,3 +31953,8 @@ a
 - **Commit**: `N/A` - Continued CTO heartbeat on [DCP-16](/DCP/issues/DCP-16): verified unblock dependency [DCP-19](/DCP/issues/DCP-19) is active under CEO, confirmed child implementation status ([DCP-17](/DCP/issues/DCP-17) in progress, [DCP-18](/DCP/issues/DCP-18) assigned/queued), and posted a fresh blocker progress comment on DCP-16.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: DCP-16 remains blocked only on hiring completion. Execution is still moving via active child implementation and CEO-owned unblock path.
+
+## [2026-03-29 21:36 UTC] Codex — DCP-38 OpenRouter Readiness Checklist
+- **Commit**: `pending` - Added a repo-tracked OpenRouter provider readiness checklist and risk register covering contract, policy, trust-boundary, and observability gaps against the current DC1 backend/provider architecture.
+- **Files**: `docs/OPENROUTER-PROVIDER-READINESS-CHECKLIST-2026-03-29.md`, `AGENT_LOG.md`
+- **Impact**: CTO and Backend Developer now have a concrete must-fix list for [DCP-33](/DCP/issues/DCP-33) and [DCP-36](/DCP/issues/DCP-36). Current recommendation is no-go for broad OpenRouter-style onboarding; only a tightly controlled trusted-provider pilot is supportable until policy-aware routing, measured endpoint health, moderation/abuse traceability, and hard heartbeat trust enforcement land.
