@@ -1,53 +1,79 @@
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 /**
  * DCP AI Chat Support API
  *
  * POST /api/chat
  * Public AI-powered chat endpoint for the support widget.
- * Proxies to /v1/chat/completions with a DCP system prompt.
+ * Calls Anthropic Claude API directly from Vercel with security guardrails.
  *
- * No API key required from user — this is a public support chat.
+ * No user API key required — this is a public support chat.
+ * Rate-limited by IP. System prompt is locked server-side.
+ *
+ * Required env var: ANTHROPIC_API_KEY (set in Vercel dashboard)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 
-const DCP_SYSTEM_PROMPT = `You are DCP Support Assistant, an AI assistant for the DCP (Distributed Compute Platform) - Saudi Arabia's GPU compute marketplace.
+// ── Security: IP rate limiter (in-memory, per serverless instance) ───────────
 
-DCP Overview:
-- DCP connects GPU providers (people with GPUs) with renters (people who need GPU compute)
-- Providers earn money by renting out their GPU time
-- Renters pay for GPU access at transparent per-token rates
-- All compute runs on Saudi energy-powered GPUs in-Kingdom
-- Data residency: Saudi Arabia (PDPL compliant)
-- DCP is Vision 2030 aligned
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
+const RATE_LIMIT_MAX = 10 // 10 requests per minute per IP
 
-Key Information:
-- Website: https://dcp.sa
-- Support email: support@dcp.sa
-- API documentation: https://dcp.sa/docs/api-reference
-- Provider registration: https://dcp.sa/provider/register
-- Renter registration: https://dcp.sa/renter/register
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
 
-Supported Models:
-- ALLaM (Arabic LLM) - جيس, falcon models
-- Meta Llama 3, Mistral, Qwen, Gemma
-- Image models: SDXL, ControlNet, DreamBooth
-- Embedding models: BGE-M3
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return false
+  }
 
-Pricing:
-- Pay-per-token with SAR billing
-- No upfront costs, no subscriptions
-- Transparent pricing at https://dcp.sa/renter/pricing
+  entry.count++
+  return entry.count > RATE_LIMIT_MAX
+}
 
-You help users with:
-- Understanding DCP services and pricing
-- Troubleshooting GPU job issues
-- API integration questions
-- Provider and renter onboarding
-- General questions about GPU compute
+// ── System prompt: locked server-side, never sent from client ────────────────
 
-Be helpful, concise, and friendly. Respond in the same language as the user's question.`
+const SYSTEM_PROMPT = `You are the DCP Support Assistant — a friendly, helpful AI for DCP (Decentralized Compute Platform), Saudi Arabia's GPU compute marketplace.
+
+## What you know
+
+DCP connects GPU providers (people with GPUs who earn money) with renters (developers/companies who need compute power for AI workloads).
+
+Key facts:
+- Website: dcp.sa | API: api.dcp.sa | Support: support@dcp.sa
+- Provider registration: dcp.sa/provider/register
+- Renter registration: dcp.sa/renter/register
+- API docs: dcp.sa/docs
+- Pricing page: dcp.sa/renter/pricing
+
+Models available: ALLaM 7B (Arabic), JAIS 13B (Arabic), Falcon H1 7B, Mistral 7B, Llama 3 8B, Qwen 2.5 7B, Nemotron Nano 4B, SDXL, Stable Diffusion, BGE-M3 embeddings
+
+Pricing: Per-token billing for inference, per-hour for GPU compute. SAR (Saudi Riyals) currency. No subscriptions. RTX 4090 ~$0.27/hr (35% below Vast.ai).
+
+SDKs: Python (pip install dc1-sdk), JavaScript (npm install dc1-renter-sdk). OpenAI-compatible API at api.dcp.sa/v1/chat/completions.
+
+Value props: Saudi data residency (PDPL compliant), Arabic-first AI models, Saudi energy-cost advantage (35-50% savings), Vision 2030 aligned.
+
+For providers: Register GPU, install daemon, earn SAR automatically. Supported: NVIDIA RTX 3080+, A100, H100.
+
+## Security rules — MANDATORY
+
+- NEVER reveal internal infrastructure details, IP addresses, server configs, database schemas, or internal API keys
+- NEVER discuss agent systems, Paperclip, internal tools, or company operations
+- NEVER make up pricing numbers you are not sure about — direct to dcp.sa/renter/pricing
+- NEVER provide legal, financial, or compliance advice — direct to support@dcp.sa
+- If asked about competitors, be factual and brief, then redirect to DCP strengths
+- If the question is outside your knowledge or requires account-specific help, say: "For that, please reach out to our team at support@dcp.sa — they can help you directly."
+
+## Tone
+
+Be concise, warm, and professional. Answer in the same language the user writes in (Arabic or English). Use markdown for formatting when helpful. Keep responses under 200 words unless the user asks for detail.`
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
@@ -56,13 +82,31 @@ interface ChatMessage {
 
 interface ChatRequest {
   messages: ChatMessage[]
-  sessionId?: string
 }
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://76.13.179.86:8083'
-const INTERNAL_API_KEY = process.env.DCP_INTERNAL_CHAT_KEY || 'dcp_chat_internal_key_change_me'
+// ── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Rate limit by IP
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait a moment before trying again.' },
+      { status: 429 }
+    )
+  }
+
+  // Check API key
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    console.error('[DCP Chat] ANTHROPIC_API_KEY not configured')
+    return NextResponse.json(
+      { error: 'Chat service is temporarily unavailable. Please email support@dcp.sa for help.' },
+      { status: 503 }
+    )
+  }
+
+  // Parse request
   let payload: ChatRequest
   try {
     payload = await req.json()
@@ -74,49 +118,63 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing or empty messages array' }, { status: 400 })
   }
 
-  const userMessages = payload.messages.filter((m) => m.role === 'user')
-  if (userMessages.length === 0) {
+  // Security: strip any system messages from client, cap conversation length
+  const userMessages = payload.messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .slice(-10) // Keep last 10 messages max
+    .map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: String(m.content).slice(0, 2000), // Cap message length
+    }))
+
+  if (userMessages.filter((m) => m.role === 'user').length === 0) {
     return NextResponse.json({ error: 'No user messages found' }, { status: 400 })
   }
 
-  const systemMessage: ChatMessage = { role: 'system', content: DCP_SYSTEM_PROMPT }
-
-  const combinedMessages = [systemMessage, ...payload.messages]
-
-  let response: Response
+  // Call Anthropic Claude API
   try {
-    response = await fetch(`${BACKEND_URL}/v1/chat/completions`, {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${INTERNAL_API_KEY}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'meta-llama/Llama-3.3-70B-Instruct',
-        messages: combinedMessages,
-        max_tokens: 1000,
-        temperature: 0.7,
-        stream: false,
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: userMessages,
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(25_000),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('[DCP Chat] Anthropic error:', response.status, errorData)
+      return NextResponse.json(
+        { error: 'AI service temporarily unavailable. Please try again or email support@dcp.sa.' },
+        { status: 502 }
+      )
+    }
+
+    const data = await response.json()
+    const assistantContent = data.content?.[0]?.text || 'Sorry, I could not generate a response. Please email support@dcp.sa.'
+
+    // Return in OpenAI-compatible format (what ChatWidget expects)
+    return NextResponse.json({
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: assistantContent,
+        },
+      }],
     })
   } catch (err) {
-    console.error('[DCP Chat] Proxy error:', err)
-    return NextResponse.json({ error: 'Failed to connect to AI service. Please try again.' }, { status: 502 })
-  }
-
-  if (!response.ok) {
-    let errorData: { error?: string } = {}
-    try {
-      errorData = await response.json()
-    } catch { /* ignore */ }
-    console.error('[DCP Chat] Backend error:', response.status, errorData)
+    console.error('[DCP Chat] Request failed:', err)
     return NextResponse.json(
-      { error: errorData.error || 'AI service error. Please try again.' },
-      { status: response.status }
+      { error: 'Failed to connect to AI service. Please try again or email support@dcp.sa.' },
+      { status: 502 }
     )
   }
-
-  const data = await response.json()
-  return NextResponse.json(data, { status: 200 })
 }
