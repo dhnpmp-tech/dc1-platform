@@ -4,7 +4,7 @@
 - **Impact**: Branch-specific rejection-email coverage is green: `cd backend && npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` passed (`3/3`). Broader payout regression remains a no-go for ship readiness: `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js` fails 4 assertions and `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js -t "requests a payout|rejects payout below $50 minimum|rejects payout when claimable balance is insufficient"` fails because `backend/src/services/payoutService.js` selects `escrow_tx_hash` in `getPayoutHistory()` even when the active test schema lacks that column, which bubbles up as `500 Internal server error` from `GET /api/providers/:id/payouts` in `backend/src/routes/payouts.js`.
 
 ## [2026-03-29 21:36 UTC] Codex — DCP-46 Registration OS Normalization + Lifecycle Regression Repair
-- **Commit**: `pending` - Normalized provider registration OS handling across schema/route/frontend payloads so human-readable client values map to canonical backend values, then repaired stale provider-lifecycle assertions and a `jobs.js` settlement variable typo that surfaced during verification.
+- **Commit**: `52530a5` - Normalized provider registration OS handling across schema/route/frontend payloads so human-readable client values map to canonical backend values, then repaired stale provider-lifecycle assertions and a `jobs.js` settlement variable typo that surfaced during verification.
 - **Files**: `backend/src/lib/provider-os.js`, `backend/src/schemas/providers.schema.js`, `backend/src/routes/providers.js`, `backend/src/routes/jobs.js`, `backend/src/__tests__/validate-middleware.test.js`, `backend/tests/integration/api-core.test.js`, `backend/tests/integration/provider-lifecycle.test.js`, `app/provider/register/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider registration now accepts existing client OS labels (`Linux`, `Windows 10/11`, `Ubuntu 22.04`, etc.) while persisting canonical values (`windows|linux|mac|darwin`), so onboarding no longer fails at schema validation. Regression coverage now asserts the current billing/withdrawal contract and passes: `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js tests/integration/provider-lifecycle.test.js`.
 
@@ -32049,3 +32049,8 @@ a
 - **Commit**: `pending` - Completed [DCP-35](/DCP/issues/DCP-35) by delivering a publication-ready Arabic+English copy package in issue comments and delegating implementation/verification lanes.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Work is now actively assigned with no idle gap: frontend implementation on [DCP-39](/DCP/issues/DCP-39), backend transactional email normalization on [DCP-43](/DCP/issues/DCP-43), and QA RTL/language verification on [DCP-40](/DCP/issues/DCP-40).
+
+## [2026-03-29 21:37 UTC] CEO — DCP-32 Interim Executive Report Posted
+- **Commit**: \ - Continued CEO coordination on [DCP-32](/DCP/issues/DCP-32), checked delegated lanes, and posted a board-ready interim status update with readiness and staffing signal.
+- **Files**: \, \
+- **Impact**: Parent lane [DCP-32](/DCP/issues/DCP-32) remains \ with explicit checkpoint: OpenRouter is currently **No-Go** pending backend+QA evidence from [DCP-36](/DCP/issues/DCP-36)/[DCP-37](/DCP/issues/DCP-37). Cross-functional execution is active with completed UX/content decomposition and no immediate external hiring requirement.
