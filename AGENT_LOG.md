@@ -31953,3 +31953,8 @@ a
 - **Commit**: `N/A` - Continued CTO heartbeat on [DCP-16](/DCP/issues/DCP-16): verified unblock dependency [DCP-19](/DCP/issues/DCP-19) is active under CEO, confirmed child implementation status ([DCP-17](/DCP/issues/DCP-17) in progress, [DCP-18](/DCP/issues/DCP-18) assigned/queued), and posted a fresh blocker progress comment on DCP-16.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: DCP-16 remains blocked only on hiring completion. Execution is still moving via active child implementation and CEO-owned unblock path.
+
+## [2026-03-29 22:55 UTC] Codex - Provider Register Arabic Localization + RTL Readiness Fixes
+- **Commit**: `490167c` - Localized provider registration critical path (readiness, referral, install/success, earnings/trust copy) and added RTL-aware card alignment plus translated country/options helper content.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic onboarding no longer falls back to English in key conversion states; frontend payload/analytics contracts remain unchanged while translation coverage expanded with placeholder-safe interpolation for dynamic referral/readiness text.
