@@ -28,25 +28,68 @@ interface ChatMessage {
 
 type WidgetState = 'closed' | 'open'
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── FAQ Knowledge Base ──────────────────────────────────────────────────────
 
-const CHAT_API_URL = '/v1/chat/completions'
+interface FAQEntry {
+  keywords: string[]
+  en: string
+  ar: string
+}
 
-const SYSTEM_PROMPT = `You are the DCP Support Assistant — a helpful AI for the DC1 Compute Platform (DCP).
+const FAQ_ENTRIES: FAQEntry[] = [
+  {
+    keywords: ['pricing', 'price', 'cost', 'how much', 'rate', 'سعر', 'تكلفة', 'أسعار'],
+    en: `**DCP Pricing**\n\nDCP uses per-token billing for inference and per-hour billing for GPU compute:\n\n- **RTX 4090**: ~$0.27/hr (35% below Vast.ai)\n- **RTX 4080**: ~$0.20/hr\n- **Inference**: Per-token pricing varies by model\n- **Currency**: SAR (Saudi Riyals), billed in halala\n\nAll pricing includes Saudi energy-cost advantage. Visit [dcp.sa/marketplace](/marketplace) to see live rates, or email **support@dcp.sa** for enterprise pricing.`,
+    ar: `**أسعار DCP**\n\nتستخدم DCP الفوترة لكل توكن للاستدلال ولكل ساعة لحوسبة GPU:\n\n- **RTX 4090**: ~$0.27/ساعة (أقل بـ 35% من Vast.ai)\n- **RTX 4080**: ~$0.20/ساعة\n- **الاستدلال**: التسعير لكل توكن يختلف حسب النموذج\n- **العملة**: ريال سعودي\n\nزر [dcp.sa/marketplace](/marketplace) للأسعار المباشرة، أو راسل **support@dcp.sa** لأسعار المؤسسات.`,
+  },
+  {
+    keywords: ['start', 'getting started', 'begin', 'how to', 'sign up', 'register', 'أبدأ', 'بداية', 'تسجيل'],
+    en: `**Getting Started with DCP**\n\n1. **As a Renter** (use GPU compute):\n   - Visit [dcp.sa/renter/register](/renter/register)\n   - Get your API key from the dashboard\n   - Use our Python SDK: \`pip install dc1-sdk\`\n   - Or call the API directly at api.dcp.sa\n\n2. **As a Provider** (earn from your GPU):\n   - Visit [dcp.sa/provider/register](/provider/register)\n   - Install the DCP daemon on your machine\n   - Start earning from idle GPU capacity\n\nNeed help? Email **support@dcp.sa**`,
+    ar: `**البدء مع DCP**\n\n1. **كمستأجر** (استخدام حوسبة GPU):\n   - زر [dcp.sa/renter/register](/renter/register)\n   - احصل على مفتاح API من لوحة التحكم\n   - استخدم SDK بايثون: \`pip install dc1-sdk\`\n\n2. **كمزود** (اربح من GPU الخاص بك):\n   - زر [dcp.sa/provider/register](/provider/register)\n   - ثبّت عميل DCP على جهازك\n\nتحتاج مساعدة؟ راسل **support@dcp.sa**`,
+  },
+  {
+    keywords: ['sdk', 'api', 'integrate', 'python', 'javascript', 'code', 'برمجة', 'تكامل'],
+    en: `**DCP SDKs & API**\n\n- **Python SDK**: \`pip install dc1-sdk\` — [docs](/docs/api)\n- **JavaScript SDK**: \`npm install dc1-renter-sdk\` — [docs](/docs/api)\n- **REST API**: OpenAI-compatible at \`api.dcp.sa/v1/chat/completions\`\n- **Auth**: Use \`x-renter-key\` header or \`?key=\` query param\n\nQuick example:\n\`\`\`python\nfrom dc1 import Client\nclient = Client(api_key="dcp_...")\nresult = client.chat("Hello!")\n\`\`\`\n\nFull docs at [dcp.sa/docs](/docs)`,
+    ar: `**حزم تطوير DCP والـ API**\n\n- **Python SDK**: \`pip install dc1-sdk\`\n- **JavaScript SDK**: \`npm install dc1-renter-sdk\`\n- **REST API**: متوافق مع OpenAI على \`api.dcp.sa/v1/chat/completions\`\n\nالتوثيق الكامل على [dcp.sa/docs](/docs)`,
+  },
+  {
+    keywords: ['provider', 'earn', 'gpu', 'contribute', 'mining', 'مزود', 'ربح', 'مساهمة'],
+    en: `**Become a DCP Provider**\n\nEarn money from your idle GPU:\n\n1. Register at [dcp.sa/provider/register](/provider/register)\n2. Install the DCP provider daemon\n3. Your GPU serves AI workloads automatically\n4. Get paid in SAR based on usage\n\n**Supported GPUs**: NVIDIA RTX 3080+, RTX 4080, RTX 4090, A100, H100\n**Earnings**: Varies by GPU model and utilization\n\nQuestions? Email **support@dcp.sa**`,
+    ar: `**كن مزوداً في DCP**\n\nاربح من GPU الخامل لديك:\n\n1. سجّل في [dcp.sa/provider/register](/provider/register)\n2. ثبّت عميل مزود DCP\n3. يخدم GPU الخاص بك أحمال عمل AI تلقائياً\n4. احصل على الدفع بالريال السعودي\n\n**GPU المدعومة**: NVIDIA RTX 3080+, RTX 4080, RTX 4090, A100, H100\n\nأسئلة؟ راسل **support@dcp.sa**`,
+  },
+  {
+    keywords: ['model', 'arabic', 'allam', 'jais', 'falcon', 'mistral', 'llama', 'نموذج', 'عربي'],
+    en: `**Supported AI Models**\n\nDCP supports Arabic-first and multilingual models:\n\n🇸🇦 **Arabic Models**: ALLaM 7B, JAIS 13B, Falcon H1 7B\n🌍 **Multilingual**: Mistral 7B, Llama 3 8B, Qwen 2.5 7B\n🖼️ **Image**: SDXL, Stable Diffusion\n⚡ **Fast**: Nemotron Nano 4B, TinyLlama\n\nAll models run on Saudi GPU infrastructure with PDPL data residency compliance.\n\nBrowse models at [dcp.sa/marketplace](/marketplace)`,
+    ar: `**نماذج AI المدعومة**\n\n🇸🇦 **نماذج عربية**: ALLaM 7B, JAIS 13B, Falcon H1 7B\n🌍 **متعددة اللغات**: Mistral 7B, Llama 3 8B, Qwen 2.5 7B\n🖼️ **صور**: SDXL, Stable Diffusion\n\nجميع النماذج تعمل على بنية GPU سعودية مع امتثال PDPL.\n\nتصفح النماذج في [dcp.sa/marketplace](/marketplace)`,
+  },
+  {
+    keywords: ['saudi', 'data', 'residency', 'pdpl', 'compliance', 'security', 'سعودي', 'بيانات', 'أمان'],
+    en: `**Saudi Data Residency & Compliance**\n\nDCP is built for Saudi data sovereignty:\n\n- **PDPL Compliant**: All data stays in-Kingdom\n- **Saudi GPUs**: Compute runs on Saudi-hosted hardware\n- **Energy Advantage**: Saudi electricity rates = 35-50% cost savings\n- **Arabic-First**: Native support for Arabic AI models\n\nFor enterprise compliance requirements, contact **support@dcp.sa**`,
+    ar: `**إقامة البيانات السعودية والامتثال**\n\nDCP مبنية لسيادة البيانات السعودية:\n\n- **متوافقة مع PDPL**: جميع البيانات تبقى داخل المملكة\n- **GPU سعودية**: الحوسبة تعمل على أجهزة مستضافة في السعودية\n- **ميزة الطاقة**: أسعار الكهرباء السعودية = توفير 35-50%\n\nللمتطلبات المؤسسية، راسل **support@dcp.sa**`,
+  },
+]
 
-DCP is a GPU compute marketplace based in Saudi Arabia that connects GPU providers with renters who need compute power for AI/ML workloads. Key facts:
-- Website: dcp.sa
-- API Base: api.dcp.sa
-- Supports models like Mistral 7B, TinyLlama, Falcon, JAIS, ALLaM
-- Job types: llm_inference, image_generation, vllm_serve, custom_container
-- SDKs available for Python (dc1-sdk) and JavaScript (dc1-renter-sdk)
-- Pricing is in SAR (Saudi Riyals) and halala
-- Provider onboarding requires GPU registration and daemon installation
-- OpenRouter compatible via /v1/chat/completions endpoint
+const FALLBACK_EN = `I don't have a specific answer for that, but I'd love to help! Here are some options:\n\n- Browse our [documentation](/docs)\n- Check the [marketplace](/marketplace) for available models and pricing\n- Email **support@dcp.sa** for personalized help\n\nYou can also ask me about: pricing, getting started, SDKs, providers, models, or data residency.`
+const FALLBACK_AR = `ليس لدي إجابة محددة لذلك، لكنني أود المساعدة!\n\n- تصفح [التوثيق](/docs)\n- اطلع على [السوق](/marketplace) للنماذج والأسعار المتاحة\n- راسل **support@dcp.sa** للمساعدة الشخصية\n\nيمكنك أيضاً السؤال عن: الأسعار، البدء، حزم التطوير، المزودين، النماذج، أو إقامة البيانات.`
 
-Be concise, helpful, and friendly. If you don't know something specific, direct users to the documentation at dcp.sa/docs or support@dcp.sa. Answer in the same language the user writes in.`
+function matchFAQ(query: string, isArabic: boolean): string {
+  const lower = query.toLowerCase()
+  let bestMatch: FAQEntry | null = null
+  let bestScore = 0
 
-const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2'
+  for (const entry of FAQ_ENTRIES) {
+    const score = entry.keywords.filter(kw => lower.includes(kw.toLowerCase())).length
+    if (score > bestScore) {
+      bestScore = score
+      bestMatch = entry
+    }
+  }
+
+  if (bestMatch && bestScore > 0) {
+    return isArabic ? bestMatch.ar : bestMatch.en
+  }
+  return isArabic ? FALLBACK_AR : FALLBACK_EN
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -94,55 +137,18 @@ export default function AIChatWidget() {
     const assistantMsg: ChatMessage = { role: 'assistant', content: '' }
     setMessages([...newMessages, assistantMsg])
 
-    try {
-      const response = await fetch(CHAT_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: DEFAULT_MODEL,
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            ...newMessages.map(m => ({ role: m.role, content: m.content })),
-          ],
-          max_tokens: 512,
-          temperature: 0.7,
-          stream: false,
-        }),
-      })
+    // Simulate brief typing delay for natural feel
+    await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 600))
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}))
-        throw new Error(errData.error?.message || `API error: ${response.status}`)
-      }
+    const response = matchFAQ(trimmed, isRTL)
 
-      const data = await response.json()
-      const assistantContent =
-        data.choices?.[0]?.message?.content ||
-        data.choices?.[0]?.text ||
-        t('Sorry, I could not generate a response.', 'عذراً، لم أتمكن من إنشاء رد.')
-
-      setMessages(prev => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'assistant', content: assistantContent }
-        return updated
-      })
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      setMessages(prev => {
-        const updated = [...prev]
-        updated[updated.length - 1] = {
-          role: 'assistant',
-          content: t(
-            `I'm having trouble connecting right now. Please try again or email support@dcp.sa for help.\n\n_Error: ${errorMessage}_`,
-            `أواجه مشكلة في الاتصال حالياً. يرجى المحاولة مرة أخرى أو مراسلة support@dcp.sa للمساعدة.\n\n_خطأ: ${errorMessage}_`,
-          ),
-        }
-        return updated
-      })
-    } finally {
-      setIsStreaming(false)
-    }
-  }, [input, messages, isStreaming, t])
+    setMessages(prev => {
+      const updated = [...prev]
+      updated[updated.length - 1] = { role: 'assistant', content: response }
+      return updated
+    })
+    setIsStreaming(false)
+  }, [input, messages, isStreaming, isRTL])
 
   // ── Handle keyboard ─────────────────────────────────────────────────────
 
@@ -214,12 +220,12 @@ export default function AIChatWidget() {
           </div>
           <div>
             <p className="text-sm font-semibold text-white leading-none">
-              {t('DCP AI Assistant', 'مساعد DCP الذكي')}
+              {t('DCP Support', 'دعم DCP')}
             </p>
             <p className="text-[10px] text-[#94a3b8] mt-0.5">
               {isStreaming
                 ? t('Thinking...', 'جارٍ التفكير...')
-                : t('Powered by DCP Inference', 'مدعوم بمحرك DCP')}
+                : t('AI Assistant', 'المساعد الذكي')}
             </p>
           </div>
         </div>
@@ -263,19 +269,25 @@ export default function AIChatWidget() {
               </svg>
             </div>
             <p className="text-sm font-medium text-white mb-1">
-              {t('Hi! I\'m the DCP AI Assistant', 'مرحباً! أنا مساعد DCP الذكي')}
+              {t('DCP Support', 'دعم DCP')}
+            </p>
+            <p className="text-xs text-[#94a3b8] mb-1">
+              {t(
+                'Hello! I\'m the DCP Support Assistant.',
+                'مرحباً! أنا مساعد DCP الذكي.',
+              )}
             </p>
             <p className="text-xs text-[#94a3b8] mb-4">
               {t(
-                'Ask me about GPU providers, pricing, SDKs, or anything DCP-related.',
-                'اسألني عن مزودي GPU، الأسعار، حزم التطوير، أو أي شيء متعلق بـ DCP.',
+                'How can I help you today?',
+                'كيف يمكنني مساعدتك اليوم؟',
               )}
             </p>
             <div className="flex flex-wrap gap-1.5 justify-center">
               {[
+                t('How does pricing work?', 'كيف يعمل التسعير؟'),
                 t('How do I get started?', 'كيف أبدأ؟'),
-                t('Show me GPU pricing', 'أرني أسعار GPU'),
-                t('How to use the SDK?', 'كيف أستخدم SDK؟'),
+                t('What models are available?', 'ما النماذج المتاحة؟'),
               ].map((suggestion) => (
                 <button
                   key={suggestion}
@@ -368,7 +380,7 @@ export default function AIChatWidget() {
           </button>
         </div>
         <p className="text-[9px] text-[#475569] text-center mt-1.5">
-          {t('Powered by DCP AI', 'مدعوم بذكاء DCP الاصطناعي')}
+          {t('DCP AI Assistant — for general support only', 'مساعد DCP الذكي — للدعم العام فقط')}
         </p>
       </div>
     </div>
