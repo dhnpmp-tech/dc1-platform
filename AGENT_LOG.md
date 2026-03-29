@@ -31678,6 +31678,6 @@ a
 - **Impact**: Shifted from pure blocker carry-forward to lane-based closure coordination after CTO assigned DCP-85/DCP-86; set parent-thread artifact deadline at 08:35 UTC for CEO final closure review readiness.
 
 ## [2026-03-29 08:45 UTC] Codex - DCP-82 Release Packaging
-- **Commit**: `TBD` - Packaged OpenRouter reliability/runtime release branch with failover, capacity-report, metering fallback, and submission docs for PR handoff.
+- **Commit**: `f43a415` - Packaged OpenRouter reliability/runtime release branch with failover, capacity-report, metering fallback, and submission docs for PR handoff.
 - **Files**: AGENT_LOG.md, backend/src/routes/providers.js, backend/src/routes/v1.js, backend/src/routes/vllm.js, docs/ops/openrouter-provider-registration-readiness.md, docs/ops/openrouter-qa-gate-checklist.md, docs/ops/openrouter-submission-bundle.md, scripts/sql/openrouter_reliability_metrics.sql
 - **Impact**: Release branch is prepared for QA/merge review. Verification status: route syntax checks passed; targeted backend Jest files did not go green in this workspace (`dcp-922-vllm-inference-proxy.test.js`, `dcp-892-heartbeat-metrics.test.js` custom-runner failures; `integration/metering-smoke.test.js` setup returned HTTP 400). Treat those as open verification concerns for QA follow-through.
