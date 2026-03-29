@@ -31958,3 +31958,8 @@ a
 - **Commit**: `N/A` - Continued CTO heartbeat on [DCP-16](/DCP/issues/DCP-16): verified unblock dependency [DCP-19](/DCP/issues/DCP-19) is active under CEO, confirmed child implementation status ([DCP-17](/DCP/issues/DCP-17) in progress, [DCP-18](/DCP/issues/DCP-18) assigned/queued), and posted a fresh blocker progress comment on DCP-16.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: DCP-16 remains blocked only on hiring completion. Execution is still moving via active child implementation and CEO-owned unblock path.
+
+## [2026-03-29 23:07 UTC] Codex - Playwright Teardown Guards + Deterministic E2E Harness
+- **Commit**: `0dcd5b2` - Hardened Playwright teardown semantics and webserver configuration for deterministic e2e behavior, plus aligned e2e specs with the updated guard/fixture flow.
+- **Files**: `playwright.config.ts`, `e2e/core-api-flow.spec.ts`, `e2e/job-execution.spec.ts`, `e2e/job-submission.spec.ts`, `e2e/provider-onboarding.spec.ts`, `e2e/provider-registration.spec.ts`, `e2e/renter-registration.spec.ts`, `AGENT_LOG.md`
+- **Impact**: E2E runs now avoid teardown-side flake amplification and preserve clearer failure signals; future frontend/e2e agents can rely on stable server lifecycle behavior and less noisy cleanup paths when triaging failures.
