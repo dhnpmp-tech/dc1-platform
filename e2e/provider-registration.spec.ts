@@ -10,7 +10,9 @@ test.describe('Provider Registration Flow', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should complete provider registration successfully', async () => {

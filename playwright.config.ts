@@ -13,14 +13,18 @@ export default defineConfig({
     ['junit', { outputFile: 'test-results/junit.xml' }],
   ],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://127.0.0.1:3210',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:3000',
+    url: 'http://127.0.0.1:3210',
+    env: {
+      PORT: '3210',
+      NODE_ENV: 'development',
+    },
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },
