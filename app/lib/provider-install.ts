@@ -4,6 +4,25 @@ const PUBLIC_API_FALLBACK = `https://dcp.sa${API_BASE}`
 export type InstallTarget = 'linux' | 'windows' | 'macos'
 export type ProviderNextActionState = 'waiting' | 'heartbeat' | 'ready' | 'paused' | 'stale'
 
+export function normalizeProviderOs(value: string): 'windows' | 'linux' | 'mac' | 'darwin' {
+  const normalized = (value || '').trim().toLowerCase()
+
+  if (normalized.includes('win')) {
+    return 'windows'
+  }
+  if (normalized.includes('mac')) {
+    return 'mac'
+  }
+  if (normalized.includes('darwin')) {
+    return 'darwin'
+  }
+  if (normalized.includes('linux') || normalized.includes('ubuntu') || normalized.includes('debian')) {
+    return 'linux'
+  }
+
+  return 'linux'
+}
+
 function normalizeApiBase(raw: string): string {
   return raw.trim().replace(/\/+$/, '')
 }

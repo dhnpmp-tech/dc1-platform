@@ -11,6 +11,7 @@ import {
   buildProviderInstallCommand,
   getProviderOnboardingStep,
   getProviderInstallApiBase,
+  normalizeProviderOs,
   ProviderNextActionState,
 } from '../../lib/provider-install'
 
