@@ -1,12 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import {
-  generateTestEmail,
-  fillInput,
-  submitForm,
-  isLoggedIn,
-  expectVisibleWithText,
-  navigateTo,
-} from './helpers';
+import { generateTestEmail, fillInput, submitForm, navigateTo } from './helpers';
 
 test.describe('Provider Registration Flow', () => {
   let page: Page;
@@ -23,73 +16,77 @@ test.describe('Provider Registration Flow', () => {
   test('should complete provider registration successfully', async () => {
     const email = generateTestEmail('provider');
 
-    // 1. Fill registration form
-    await fillInput(page, 'input[type="email"]', email);
-    await fillInput(page, 'input[type="password"]', 'TestPassword123!@#');
-    await fillInput(page, 'input[placeholder*="name" i]', 'Test Provider');
+    await fillInput(page, '#fullName', 'Test Provider');
+    await fillInput(page, '#email', email);
+    await page.selectOption('#gpuModel', 'RTX 4090');
+    await page.selectOption('#locationCountry', 'US');
+    await page.selectOption('#operatingSystem', 'Ubuntu 22.04');
+    await page.locator('input[name="pdplConsent"]').check();
 
-    // 2. Accept terms (if checkbox exists)
-    const termsCheckbox = page.locator('input[type="checkbox"]').first();
-    if (await termsCheckbox.isVisible()) {
-      await termsCheckbox.check();
-    }
-
-    // 3. Submit registration form
     await submitForm(page);
 
-    // 4. Wait for redirect to provider onboarding or dashboard
-    await page.waitForURL(/\/(provider-onboarding|provider\/dashboard|provider\/)/, { timeout: 10000 });
-
-    // 5. Verify user is logged in
-    const loggedIn = await isLoggedIn(page);
-    expect(loggedIn).toBe(true);
-
-    // 6. Verify on provider dashboard or onboarding
-    const url = page.url();
-    expect(url).toMatch(/(provider-onboarding|provider\/dashboard|provider\/)/);
+    await expect(page.locator('text=Registration successful')).toBeVisible();
+    await expect(page.locator('text=Your API Key')).toBeVisible();
   });
 
   test('should reject invalid email', async () => {
-    await fillInput(page, 'input[type="email"]', 'invalid-email');
-    await fillInput(page, 'input[type="password"]', 'TestPassword123!@#');
-    await fillInput(page, 'input[placeholder*="name" i]', 'Test Provider');
+    await fillInput(page, '#fullName', 'Test Provider');
+    await fillInput(page, '#email', 'invalid-email');
+    await page.selectOption('#gpuModel', 'RTX 4090');
+    await page.selectOption('#locationCountry', 'US');
+    await page.selectOption('#operatingSystem', 'Ubuntu 22.04');
+    await page.locator('input[name="pdplConsent"]').check();
 
-    await submitForm(page);
-
-    // Form should still be visible or show validation error
-    const emailInput = page.locator('input[type="email"]');
-    const isInvalid = await emailInput.evaluate((el: HTMLInputElement) => !el.checkValidity());
-    expect(isInvalid).toBe(true);
+    const submitButton = page.locator('button[type="submit"]').first();
+    await expect(submitButton).toBeDisabled();
+    await expect(page.locator('text=Valid email address is required')).toBeVisible();
   });
 
-  test('should reject weak password', async () => {
+  test('should require consent before submission', async () => {
     const email = generateTestEmail('provider');
-    await fillInput(page, 'input[type="email"]', email);
-    await fillInput(page, 'input[type="password"]', 'weak');
-    await fillInput(page, 'input[placeholder*="name" i]', 'Test Provider');
 
-    await submitForm(page);
+    await fillInput(page, '#fullName', 'Test Provider');
+    await fillInput(page, '#email', email);
+    await page.selectOption('#gpuModel', 'RTX 4090');
+    await page.selectOption('#locationCountry', 'US');
+    await page.selectOption('#operatingSystem', 'Ubuntu 22.04');
 
-    // Should show validation error or password field error
-    await expect(page.locator('input[type="password"]')).toBeFocused().catch(() => {
-      // If not focused on password, check for error message
-      expect(page.locator('text=/password|weak/i')).toBeVisible().catch(() => {});
-    });
+    const submitButton = page.locator('button[type="submit"]').first();
+    await expect(submitButton).toBeDisabled();
+    await expect(page.locator('text=Complete the readiness checklist above to enable registration.')).toBeVisible();
   });
 
   test('should require all fields', async () => {
-    // Try to submit empty form
     const submitButton = page.locator('button[type="submit"]').first();
+    await expect(submitButton).toBeDisabled();
+    await expect(page.locator('text=Complete the readiness checklist above to enable registration.')).toBeVisible();
+  });
 
-    // Check if HTML5 validation prevents submission
-    const firstInput = page.locator('input').first();
-    const hasValidation = await firstInput.evaluate((el: HTMLInputElement) => el.required || el.pattern);
+  test('should unlock submit once required provider fields are complete', async () => {
+    const email = generateTestEmail('provider');
 
-    if (hasValidation) {
-      await submitButton.click();
-      // Form should not submit
-      const currentUrl = page.url();
-      expect(currentUrl).toContain('register');
-    }
+    await fillInput(page, '#fullName', 'Test Provider');
+    await fillInput(page, '#email', email);
+    await page.selectOption('#gpuModel', 'RTX 4090');
+    await page.selectOption('#locationCountry', 'US');
+    await page.selectOption('#operatingSystem', 'Ubuntu 22.04');
+    await page.locator('input[name="pdplConsent"]').check();
+
+    await expect(page.locator('button[type="submit"]').first()).toBeEnabled();
+  });
+
+  test('should show inline error when custom GPU has no VRAM value', async () => {
+    const email = generateTestEmail('provider');
+
+    await fillInput(page, '#fullName', 'Custom GPU Provider');
+    await fillInput(page, '#email', email);
+    await page.selectOption('#gpuModel', 'Other');
+    await page.selectOption('#locationCountry', 'US');
+    await page.selectOption('#operatingSystem', 'Ubuntu 22.04');
+    await page.locator('input[name="pdplConsent"]').check();
+
+    const submitButton = page.locator('button[type="submit"]').first();
+    await expect(submitButton).toBeDisabled();
+    await expect(page.locator('text=VRAM is required when you choose Other.')).toBeVisible();
   });
 });
