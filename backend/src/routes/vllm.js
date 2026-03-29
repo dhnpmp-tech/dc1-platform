@@ -27,43 +27,39 @@ function persistServeSessionMetering({
   totalTokens,
   billedHalala,
 }) {
-  const updateResult = runStatement(
-    `UPDATE serve_sessions SET
-       total_inferences = total_inferences + 1,
-       total_tokens = total_tokens + ?,
-       total_billed_halala = total_billed_halala + ?,
-       last_inference_at = ?,
-       updated_at = ?
-     WHERE job_id = ?`,
-    totalTokens,
-    billedHalala,
-    nowIso,
-    nowIso,
-    jobId
-  );
+  const safeNow = normalizeString(nowIso, { maxLen: 64 }) || new Date().toISOString();
+  const safeTotalTokens = toFiniteInt(totalTokens, { min: 0, max: 1000000000 }) || 0;
+  const safeBilledHalala = toFiniteInt(billedHalala, { min: 0, max: 1000000000 }) || 0;
 
-  if (updateResult.changes > 0) {
-    return;
-  }
-
-  // If a session row was never created earlier, upsert a synthetic one now so metering is not lost.
-  const expiresAt = new Date(Date.parse(nowIso) + 3600000).toISOString();
+  // Single-statement upsert so metering remains durable even if the session row
+  // was never created during job submission.
+  const expiresAt = new Date(Date.parse(safeNow) + 3600000).toISOString();
   runStatement(
-    `INSERT OR IGNORE INTO serve_sessions (
+    `INSERT INTO serve_sessions (
       id, job_id, provider_id, model, port, status, started_at, expires_at,
       total_inferences, total_tokens, total_billed_halala, last_inference_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, 0, 'serving', ?, ?, 1, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, 0, 'serving', ?, ?, 1, ?, ?, ?, ?, ?)
+    ON CONFLICT(job_id) DO UPDATE SET
+      total_inferences = COALESCE(serve_sessions.total_inferences, 0) + 1,
+      total_tokens = COALESCE(serve_sessions.total_tokens, 0) + excluded.total_tokens,
+      total_billed_halala = COALESCE(serve_sessions.total_billed_halala, 0) + excluded.total_billed_halala,
+      last_inference_at = excluded.last_inference_at,
+      updated_at = excluded.updated_at,
+      provider_id = COALESCE(serve_sessions.provider_id, excluded.provider_id),
+      model = COALESCE(NULLIF(serve_sessions.model, ''), excluded.model),
+      status = COALESCE(serve_sessions.status, 'serving'),
+      expires_at = COALESCE(serve_sessions.expires_at, excluded.expires_at)`,
     `session-${jobId}`,
     jobId,
     providerId != null ? providerId : null,
     modelId,
-    nowIso,
+    safeNow,
     expiresAt,
-    totalTokens,
-    billedHalala,
-    nowIso,
-    nowIso,
-    nowIso
+    safeTotalTokens,
+    safeBilledHalala,
+    safeNow,
+    safeNow,
+    safeNow
   );
 }
 
@@ -341,10 +337,20 @@ async function proxyToProviderEndpoint({ endpointUrl, modelId, messages, maxToke
   }
   const text = body?.choices?.[0]?.message?.content || '';
   const usage = body?.usage || {};
+  const promptTokens = toFiniteInt(usage.prompt_tokens, { min: 0, max: 1000000000 });
+  const completionTokens = toFiniteInt(usage.completion_tokens, { min: 0, max: 1000000000 });
+  const totalTokens = toFiniteInt(usage.total_tokens, { min: 0, max: 1000000000 });
+
+  // Handle provider usage shape drift without dropping metering writes.
+  const resolvedPromptTokens = promptTokens != null ? promptTokens : 0;
+  const resolvedCompletionTokens = completionTokens != null
+    ? completionTokens
+    : (totalTokens != null ? Math.max(0, totalTokens - resolvedPromptTokens) : approximateTokenCount(text));
+
   return {
     text,
-    promptTokens: Number(usage.prompt_tokens || 0),
-    completionTokens: Number(usage.completion_tokens || 0),
+    promptTokens: resolvedPromptTokens,
+    completionTokens: resolvedCompletionTokens,
   };
 }
 
@@ -858,19 +864,22 @@ async function submitAndAwait(req) {
         continue;
       }
 
-      const totalTokens = proxyResult.promptTokens + proxyResult.completionTokens;
+      const proxyPromptTokens = toFiniteInt(proxyResult.promptTokens, { min: 0, max: 1000000000 }) || 0;
+      const proxyCompletionTokens = toFiniteInt(proxyResult.completionTokens, { min: 0, max: 1000000000 })
+        || approximateTokenCount(proxyResult.text);
+      const totalTokens = proxyPromptTokens + proxyCompletionTokens;
       const nowProxy = new Date().toISOString();
       try {
         runStatement(
           'UPDATE jobs SET status = ?, prompt_tokens = ?, completion_tokens = ?, result_text = ?, updated_at = ? WHERE job_id = ?',
-          'completed', proxyResult.promptTokens, proxyResult.completionTokens, proxyResult.text, nowProxy, jobId
+          'completed', proxyPromptTokens, proxyCompletionTokens, proxyResult.text, nowProxy, jobId
         );
       } catch (_) { /* non-fatal */ }
       try {
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
         ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
-        const tokenRateHalala = rateRecord?.token_rate_halala || 1;
+        const tokenRateHalala = toFiniteInt(rateRecord?.token_rate_halala, { min: 1, max: 1000000000 }) || 1;
         persistServeSessionMetering({
           jobId,
           providerId: candidate.id,
@@ -886,8 +895,8 @@ async function submitAndAwait(req) {
           job: { result_text: proxyResult.text },
           model: modelReq.model_id,
           text: proxyResult.text,
-          promptTokens: proxyResult.promptTokens,
-          completionTokens: proxyResult.completionTokens,
+          promptTokens: proxyPromptTokens,
+          completionTokens: proxyCompletionTokens,
         }),
         text: proxyResult.text,
       };

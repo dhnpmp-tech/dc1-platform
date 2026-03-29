@@ -1,3 +1,8 @@
+## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
+- **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
+- **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
+- **Impact**: PR #88 is release-ready from the remote signals: mergeable on current `main`, no unresolved review comments, and Vercel `Ready`. Local rerun of `node backend/tests/dcp-922-vllm-inference-proxy.test.js` in the clean clone is blocked by missing native dependency `better-sqlite3` in that clone, so canonical validation remains the branch-provided backend test evidence (`8 passed, 0 failed`) plus green Vercel on head `7ba1f92`.
+
 ## [2026-03-29 16:29 UTC] Codex — Release Follow-Up: Provider VRAM Gate Review Fix
 - **Commit**: `pending` - Addressed the open PR #87 review comment by aligning the provider onboarding readiness checklist with the existing custom-GPU VRAM validation rule and adding regression coverage for `vram=0`.
 - **Files**: `app/provider/register/page.tsx`, `e2e/provider-registration.spec.ts`, `AGENT_LOG.md`

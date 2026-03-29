@@ -9,6 +9,7 @@
  *   5. Fallback to next provider when primary fails (connection refused)
  *   6. Returns 503 when all providers fail
  *   7. Phase 1 graceful degradation: no endpoint_url → job polling path (no_capacity fallback)
+ *   8. Metering persists even when provider usage payload is malformed
  */
 
 'use strict';
@@ -361,6 +362,48 @@ async function run() {
 
     // Restore provider for any follow-up
     db.run("UPDATE providers SET status = 'online' WHERE id = ?", providerId);
+  });
+
+  // ── Test 8: malformed provider usage still persists metering ──────────────
+  await test('Malformed provider usage still persists serve_sessions metering', async () => {
+    const mockVllm = await createMockVllmServer({
+      port: VLLM_PORT,
+      modelId: MODEL_ID,
+      responseText: 'Fallback token estimation should still persist',
+      usage: { prompt_tokens: 'not-a-number', completion_tokens: null, total_tokens: 'bad' },
+    });
+
+    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?',
+      `http://127.0.0.1:${VLLM_PORT}`, providerId);
+
+    try {
+      const res = await request(mainServer, 'POST', '/api/vllm/complete', {
+        model: MODEL_ID,
+        messages: [{ role: 'user', content: 'Persist metering even with malformed usage fields' }],
+      }, { 'x-renter-key': renterKey });
+
+      assertEqual(res.status, 200, `Expected 200, got ${res.status}: ${res.text}`);
+      assert(res.body.usage && res.body.usage.total_tokens > 0, `Expected positive usage tokens, got ${JSON.stringify(res.body.usage)}`);
+
+      const completionId = typeof res.body.id === 'string' ? res.body.id : '';
+      const idDerivedJobIdRaw = completionId.startsWith('chatcmpl-') ? completionId.replace(/^chatcmpl-/, '') : null;
+      const idDerivedJobId = idDerivedJobIdRaw && idDerivedJobIdRaw !== 'undefined' ? idDerivedJobIdRaw : null;
+      const latestJob = db.get('SELECT job_id FROM jobs ORDER BY rowid DESC LIMIT 1');
+      const jobId = idDerivedJobId || latestJob?.job_id;
+      assert(jobId, `Expected to resolve persisted job id, got completion id: ${completionId}`);
+      const session = db.get(
+        `SELECT total_inferences, total_tokens, total_billed_halala, last_inference_at
+         FROM serve_sessions WHERE job_id = ?`,
+        jobId
+      );
+      assert(session, `Expected serve_session for job ${jobId}`);
+      assert(session.total_inferences >= 1, `Expected total_inferences >= 1, got ${session.total_inferences}`);
+      assert(session.total_tokens > 0, `Expected total_tokens > 0, got ${session.total_tokens}`);
+      assert(session.total_billed_halala > 0, `Expected total_billed_halala > 0, got ${session.total_billed_halala}`);
+      assert(session.last_inference_at, 'Expected last_inference_at to be set');
+    } finally {
+      mockVllm.close();
+    }
   });
 
   await teardown();
