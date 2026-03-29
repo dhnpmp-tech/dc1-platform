@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'rea
 import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
+import ProgressIndicator from './ProgressIndicator'
 import { useLanguage } from '../../lib/i18n'
 import {
   buildProviderTroubleshootingHref,
@@ -1257,6 +1258,7 @@ function ProviderRegisterPageContent() {
 
         {/* Registration Form */}
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <ProgressIndicator currentStep={1} />
           <div className="mb-6 rounded-2xl border border-dc1-amber/20 bg-dc1-surface-l1 p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
