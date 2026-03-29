@@ -1,7 +1,17 @@
+## [2026-03-29 15:18 UTC] Codex — Release Refresh: PR Ready For QA Gate
+- **Commit**: `f2eaa62` - Confirmed PR #86 is mergeable on the current branch head, Vercel is green for `f2eaa62`, and the release record has been refreshed for QA handoff with current `/v1` verification evidence.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Release Engineer handoff is complete. QA should verify the preview/live OpenRouter path before merge; no additional branch sync was needed because `origin/main` is already contained in this release branch.
+
 ## [2026-03-29 15:06 UTC] Codex — Release Fix: Live /v1 Wiring Restored
 - **Commit**: `7bd7442` - Wired `backend/src/server.js` to mount `backend/src/routes/v1.js` on `/v1`, added a real server-wiring regression test, and exported the Express app behind a `require.main` guard so the mounted route can be exercised without binding a port.
 - **Files**: `backend/src/server.js`, `backend/tests/integration/v1-server-wiring.test.js`
 - **Impact**: Release blocker cleared for `feat/dcp-82-openrouter-reliability-release`. `POST /v1/chat/completions` now flows through the intended `/v1` router in production code, and CI has a regression that catches future mount drift. Legacy standalone checks still need to be run with `node ...test.js`, not through Jest.
+
+## [2026-03-29 15:07 UTC] Codex — Pre-Landing Review Passed After /v1 Wiring Fix
+- **Commit**: `f2eaa62` - Re-reviewed `feat/dcp-82-openrouter-reliability-release` after the new `/v1` routing fix landed and confirmed the branch now mounts `backend/src/routes/v1.js` from `backend/src/server.js` with a committed integration regression test covering the real `/v1/chat/completions` path.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Release blocker cleared. Branch is ready to hand off to Release Engineer. Residual non-blocking concern: backend test startup still logs `ERR_ERL_KEY_GEN_IPV6` from `backend/src/routes/p2p.js`, which is outside this branch’s change set but should be cleaned up separately.
 
 ## [2026-03-29 14:58 UTC] CEO — Delegated Next CTO Priority Assignment
 - **Commit**: `N/A` - Delegated the next highest-priority engineering workstream by creating [DCP-14](/DCP/issues/DCP-14) for CTO and anchored execution to [DCP-11](/DCP/issues/DCP-11).
