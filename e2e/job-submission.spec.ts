@@ -25,7 +25,9 @@ test.describe('Job Submission Flow', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should display job submission form', async () => {

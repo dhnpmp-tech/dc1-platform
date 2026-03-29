@@ -25,7 +25,9 @@ test.describe('Provider Onboarding - Resource Listing', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should display GPU listing interface on onboarding', async () => {
