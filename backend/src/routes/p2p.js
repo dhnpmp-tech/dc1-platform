@@ -1,5 +1,5 @@
 const express = require('express');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db');
 const { getApiKeyFromReq } = require('../middleware/auth');
 const {
@@ -15,13 +15,18 @@ const {
 
 const router = express.Router();
 
+function p2pRateLimitKey(req) {
+  const ip = req.ip || req.socket?.remoteAddress || '0.0.0.0';
+  return `p2p-ip:${ipKeyGenerator(ip)}`;
+}
+
 const announceLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many discovery announce requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: p2pRateLimitKey,
 });
 
 const lookupLimiter = rateLimit({
@@ -30,7 +35,7 @@ const lookupLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many P2P lookup requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: p2pRateLimitKey,
 });
 
 function parseBool(value) {
@@ -386,3 +391,4 @@ router.get('/environments/:cid', lookupLimiter, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.p2pRateLimitKey = p2pRateLimitKey;
