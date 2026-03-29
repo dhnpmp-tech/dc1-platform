@@ -33,7 +33,7 @@ const {
   markPayoutPaid,
   rejectPayout,
 } = require('../services/payoutService');
-const { sendWithdrawalApprovedEmail } = require('../services/emailService');
+const { sendWithdrawalApprovedEmail, sendWithdrawalRejectedEmail } = require('../services/emailService');
 const { sendAlert } = require('../services/notifications');
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
@@ -278,10 +278,10 @@ router.post('/admin/payouts/:id/reject', requireAdminRbac, async (req, res) => {
     ].join('\n'))
       .catch((e) => console.error('[payouts] reject alert failed:', e.message));
 
-    // Log rejection — no rejection email template yet (TODO: add sendPayoutRejectedEmail)
     console.log(`[payout] rejected payout_id=${req.params.id} provider_id=${result.provider_id} reason="${reason}" amount_sar=${amountSar}`);
     if (provider?.email) {
-      console.log(`[payout] TODO: send rejection email to ${provider.email} for payout ${req.params.id}`);
+      sendWithdrawalRejectedEmail(provider.email, amountSar, reason || null)
+        .catch((e) => console.error('[payouts] reject email failed:', e.message));
     }
 
     return res.json(result);
