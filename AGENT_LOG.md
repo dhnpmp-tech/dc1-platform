@@ -1,3 +1,8 @@
+## [2026-03-29 22:04 UTC] Codex — DCP-47 Frontend Installer OS Normalization Hardening
+- **Commit**: `pending` - Normalized provider OS values to backend-safe canonical values in both provider registration surfaces and switched the onboarding wizard to canonical installer command helpers/routes.
+- **Files**: `app/lib/provider-install.ts`, `app/provider/register/page.tsx`, `app/provider/components/ProviderRegistrationWizard.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend no longer submits human-readable OS labels (`Ubuntu 22.04`, `Windows 10/11`, etc.) that the backend `/providers/register` rejects as invalid. `/provider/onboard` installer commands now use shared `/api/providers/download/setup` generation, keeping OS param shape aligned with backend download routes.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`

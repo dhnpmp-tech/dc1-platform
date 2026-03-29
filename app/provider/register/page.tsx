@@ -11,6 +11,7 @@ import {
   buildProviderInstallCommand,
   getProviderOnboardingStep,
   getProviderInstallApiBase,
+  normalizeProviderOs,
   ProviderNextActionState,
 } from '../../lib/provider-install'
 
@@ -290,7 +291,7 @@ function ProviderRegisterPageContent() {
           vram_gb: formData.vram ? parseFloat(formData.vram) : undefined,
           location_city: formData.locationCity || undefined,
           location_country: formData.locationCountry || undefined,
-          os: formData.operatingSystem,
+          os: normalizeProviderOs(formData.operatingSystem),
           phone: formData.phone || undefined,
         }),
       })
