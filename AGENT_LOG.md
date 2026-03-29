@@ -8,6 +8,11 @@
 - **Files**: `app/provider/register/page.tsx`, `e2e/provider-registration.spec.ts`
 - **Impact**: Provider signup now blocks incomplete submissions with explicit field-level guidance instead of generic failure states. The provider registration E2E spec no longer expects the obsolete password flow.
 
+## [2026-03-29 15:41 UTC] Codex — Release Landed: PR #86 Merged To Main
+- **Commit**: `69b28e8` - Landed PR #86 to `main` via a clean temporary clone to avoid unrelated local workspace changes, then handed the release to QA for live-environment verification.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: OpenRouter reliability release is now on `main`. QA should verify live `/v1` bearer auth, direct-provider failover, heartbeat capacity reporting, and submission-evidence extraction against the merged deployment.
+
 ## [2026-03-29 15:18 UTC] Codex — Release Refresh: PR Ready For QA Gate
 - **Commit**: `f2eaa62` - Confirmed PR #86 is mergeable on the current branch head, Vercel is green for `f2eaa62`, and the release record has been refreshed for QA handoff with current `/v1` verification evidence.
 - **Files**: `AGENT_LOG.md`
