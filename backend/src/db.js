@@ -1576,6 +1576,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_job_templates_renter ON job_templates(re
 
 // Index for renter job history queries (DCP-695)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_renter_id ON jobs(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_provider_type_status_model ON jobs(provider_id, job_type, status, model)`);
 
 // ─── PAYOUT REQUESTS TABLE ─── (DCP-763)
 // Off-chain payout request queue. Providers request USD withdrawals from their

@@ -231,6 +231,8 @@ function signWebhookPayload(secret, payloadJson) {
     return crypto.createHmac('sha256', secret).update(payloadJson).digest('hex');
 }
 
+const CAPACITY_RESERVED_JOB_STATUSES = ['pending', 'assigned', 'pulling', 'running'];
+
 async function notifyRenterJobWebhook(job, eventName, details = {}) {
     try {
         const allowPrivateWebhookUrl = process.env.NODE_ENV === 'test' || process.env.ALLOW_PRIVATE_WEBHOOK_URLS === '1';
@@ -859,13 +861,13 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
         );
 
         // DCP-82 Gap 3: expose dynamic capacity data for upstream schedulers (e.g., OpenRouter).
-        const activeInferenceJobs = Number(
+        const reservedInferenceJobs = Number(
             db.get(
                 `SELECT COUNT(*) AS c
                  FROM jobs
                  WHERE provider_id = ?
                    AND job_type = 'vllm'
-                   AND status IN ('pending', 'running')`,
+                   AND status IN ('pending', 'assigned', 'pulling', 'running')`,
                 p.id
             )?.c || 0
         );
@@ -874,7 +876,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
              FROM jobs
              WHERE provider_id = ?
                AND job_type = 'vllm'
-               AND status IN ('pending', 'running')
+               AND status IN ('pending', 'assigned', 'pulling', 'running')
              GROUP BY model
              ORDER BY queued DESC
              LIMIT 20`,
@@ -885,8 +887,8 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             const key = normalizeString(row.model, { maxLen: 200 }) || '__unknown__';
             queueDepthByModel[key] = Number(row.queued || 0);
         }
-        const availableGpuSlots = Math.max(0, Number(gpuCount || 1) - activeInferenceJobs);
-        const estimatedWaitSeconds = activeInferenceJobs > 0 ? activeInferenceJobs * 60 : 0;
+        const availableGpuSlots = Math.max(0, Number(gpuCount || 1) - reservedInferenceJobs);
+        const estimatedWaitSeconds = reservedInferenceJobs > 0 ? reservedInferenceJobs * 60 : 0;
 
         // Tell daemon if update is available (semantic version comparison)
         const needsUpdate = !daemonVersion || compareVersions(daemonVersion, LATEST_DAEMON_VERSION) < 0;
@@ -917,7 +919,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             capacity_report: {
                 provider_id: p.id,
                 queue_depth_by_model: queueDepthByModel,
-                active_inference_jobs: activeInferenceJobs,
+                active_inference_jobs: reservedInferenceJobs,
                 available_gpu_slots: availableGpuSlots,
                 estimated_wait_seconds: estimatedWaitSeconds,
                 generated_at: now,
