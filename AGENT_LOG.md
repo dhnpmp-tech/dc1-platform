@@ -1,3 +1,8 @@
+## [2026-03-29 23:15 UTC] Codex — DCP-55 Canonicalized Provider OS Persistence + Installer Handoff
+- **Commit**: `pending` - Normalized provider registration OS values to canonical lowercase before persistence/analytics, switched returned installer URLs to canonical `/api/providers/download/setup`, and aligned core integration fixtures with lowercase OS contract.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: Provider registrations using mixed-case OS input are now stored consistently as `windows|linux|mac|darwin`, and the returned installer URL is immediately usable across clients. Core API integration suite verifies canonical installer URL + persisted lowercase OS and passes (`31/31`).
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`

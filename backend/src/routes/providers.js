@@ -303,13 +303,14 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
         const cleanEmail = normalizeEmail(email);
         const cleanGpuModel = normalizeString(gpu_model, { maxLen: 120 });
         const cleanOs = normalizeString(os, { maxLen: 40 });
+        const normalizedOs = cleanOs.toLowerCase();
 
         // Validate inputs
         if (!cleanName || !cleanEmail || !cleanGpuModel || !cleanOs) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
         const validOs = new Set(['windows', 'linux', 'mac', 'darwin']);
-        if (!validOs.has(cleanOs.toLowerCase())) {
+        if (!validOs.has(normalizedOs)) {
             return res.status(400).json({ error: 'Invalid OS value' });
         }
 
@@ -345,11 +346,11 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
         const result = await runStatement(
             `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, resource_spec)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
+            [cleanName, cleanEmail, cleanGpuModel, normalizedOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
         );
         
-        // Generate installer URL
-        const installer_url = `/api/providers/installer?key=${api_key}&os=${encodeURIComponent(cleanOs)}`;
+        // Generate canonical installer URL
+        const installer_url = `/api/providers/download/setup?key=${api_key}&os=${encodeURIComponent(normalizedOs)}`;
         
         res.json({
             success: true,
@@ -364,7 +365,7 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             .catch((e) => console.error('[providers.register] welcome email failed:', e.message));
         analytics.provider.signupComplete(result.lastInsertRowid, {
             gpu_model: cleanGpuModel,
-            os: cleanOs,
+            os: normalizedOs,
         }).catch(() => {});
         
     } catch (error) {
