@@ -348,8 +348,8 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
         );
         
-        // Generate installer URL
-        const installer_url = `/api/providers/installer?key=${api_key}&os=${encodeURIComponent(cleanOs)}`;
+        // Generate canonical installer URL
+        const installer_url = `/api/providers/download/setup?key=${api_key}&os=${encodeURIComponent(cleanOs.toLowerCase())}`;
         
         res.json({
             success: true,

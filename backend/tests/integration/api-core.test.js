@@ -46,7 +46,7 @@ async function registerProvider(overrides = {}) {
     name:      overrides.name      || 'Test Provider',
     email:     overrides.email     || `prov-${Date.now()}-${Math.random().toString(36).slice(2)}@dc1.test`,
     gpu_model: overrides.gpu_model || 'RTX 4090',
-    os:        overrides.os        || 'Linux',
+    os:        overrides.os        || 'linux',
     ...overrides,
   };
   return request(app).post('/api/providers/register').send(payload);
@@ -97,15 +97,25 @@ describe('Provider API — POST /api/providers/register', () => {
   it('returns 400 when email is missing', async () => {
     const res = await request(app)
       .post('/api/providers/register')
-      .send({ name: 'Test', gpu_model: 'RTX 4090', os: 'Linux' });
+      .send({ name: 'Test', gpu_model: 'RTX 4090', os: 'linux' });
     expect(res.status).toBe(400);
   });
 
   it('returns 400 when gpu_model is missing', async () => {
     const res = await request(app)
       .post('/api/providers/register')
-      .send({ name: 'Test', email: 'test@dc1.test', os: 'Linux' });
+      .send({ name: 'Test', email: 'test@dc1.test', os: 'linux' });
     expect(res.status).toBe(400);
+  });
+
+  it('returns canonical setup installer_url that works for lowercase os', async () => {
+    const res = await registerProvider({ os: 'linux' });
+    expect(res.status).toBe(200);
+    expect(typeof res.body.installer_url).toBe('string');
+    expect(res.body.installer_url).toMatch(/^\/api\/providers\/download\/setup\?/);
+
+    const setup = await request(app).get(res.body.installer_url);
+    expect(setup.status).toBe(200);
   });
 });
 

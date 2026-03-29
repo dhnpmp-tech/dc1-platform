@@ -1,3 +1,8 @@
+## [2026-03-29 22:39 UTC] Codex — DCP-52 Canonical Installer URL From Provider Registration
+- **Commit**: `pending` - Updated provider registration to return canonical `/api/providers/download/setup` installer URLs with normalized lowercase OS values, and aligned core integration coverage to current provider OS validation contract.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: Registration responses now hand back immediately usable setup-script URLs for lowercase OS inputs (`linux/windows/mac/darwin`) instead of legacy `/api/providers/installer` links that can fail with `Invalid OS`. Added regression check that follows returned `installer_url` and verifies successful download; `tests/integration/api-core.test.js` now passes end-to-end against canonical lowercase OS payloads.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
