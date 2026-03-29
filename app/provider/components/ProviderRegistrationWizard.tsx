@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { buildProviderInstallCommand, getProviderInstallApiBase, InstallTarget, normalizeProviderOs } from '../../lib/provider-install'
 
 // ── Pricing data (March 2026, from docs/FOUNDER-STRATEGIC-BRIEF.md) ──────────
 interface GpuSpec {
@@ -34,7 +35,7 @@ const REGION_RATES: RegionRate[] = [
   { label: 'United Kingdom',       ratePerKwh: 0.293 },
 ]
 
-type Platform = 'windows' | 'linux' | 'macos'
+type Platform = InstallTarget
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface ProviderRegistrationWizardProps {
@@ -55,6 +56,14 @@ interface RegistrationFormState {
   phone: string
   referralCode: string
   pdplConsent: boolean
+}
+
+const REGION_COUNTRY_CODE: Record<string, string> = {
+  'Saudi Arabia (CCSEZ)': 'SA',
+  'Saudi Arabia (Industrial)': 'SA',
+  'USA': 'US',
+  'EU Average': 'DE',
+  'United Kingdom': 'GB',
 }
 
 export default function ProviderRegistrationWizard({ onComplete }: ProviderRegistrationWizardProps) {
@@ -116,10 +125,7 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
   // ── Install command ────────────────────────────────────────────────────────
   const installCommand = useMemo(() => {
     if (!apiKey) return ''
-    if (platform === 'windows') {
-      return `powershell -c "iwr https://api.dcp.sa/api/providers/download/installer -OutF setup.ps1; .\\setup.ps1 ${apiKey}"`
-    }
-    return `curl -fsSL https://api.dcp.sa/api/providers/daemon/linux | bash -s ${apiKey}`
+    return buildProviderInstallCommand(platform, getProviderInstallApiBase(), apiKey)
   }, [apiKey, platform])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
@@ -142,17 +148,18 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
     setSubmitError('')
     try {
       const selectedGpu = GPU_SPECS.find(g => g.model === gpuForm.model) ?? GPU_SPECS[2]
+      const countryCode = REGION_COUNTRY_CODE[gpuForm.regionLabel] ?? 'US'
       const res = await fetch('/api/dc1/providers/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fullName: regForm.fullName,
+          name: regForm.fullName,
           email: regForm.email,
-          phone: regForm.phone,
-          gpuModel: selectedGpu.model,
-          gpuCount: gpuForm.gpuCount,
-          operatingSystem: platform,
-          pdplConsent: regForm.pdplConsent,
+          phone: regForm.phone || undefined,
+          gpu_model: selectedGpu.model,
+          vram_gb: selectedGpu.vramGb,
+          location_country: countryCode,
+          os: normalizeProviderOs(platform),
         }),
       })
       if (!res.ok) {
