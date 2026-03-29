@@ -178,6 +178,12 @@ function savingsPerMonth(dcpFloor: number, vastTypical: number): number {
   return (vastTypical - dcpFloor) * utilHours
 }
 
+function formatSavingsBadge(discount: number): string {
+  if (discount < 0) return `Save ${Math.abs(discount).toFixed(1)}%`
+  if (discount === 0) return 'At parity'
+  return `${discount.toFixed(1)}% higher`
+}
+
 type FilterCategory = 'all' | 'consumer' | 'prosumer' | 'datacenter'
 
 // ── Main Page ────────────────────────────────────────────────────────────────
@@ -251,6 +257,21 @@ export default function PricingPage() {
   ]
 
   const filtered = gpuTiers.filter(g => filterCategory === 'all' || g.category === filterCategory)
+  const trackPricingEvent = (event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = {
+      event,
+      source_page: 'renter_pricing',
+      ...payload,
+    }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & {
+      dataLayer?: Array<Record<string, unknown>>
+      gtag?: (...args: unknown[]) => void
+    }
+    if (Array.isArray(win.dataLayer)) win.dataLayer.push(detail)
+    if (typeof win.gtag === 'function') win.gtag('event', event, detail)
+  }
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName="Renter">
@@ -265,6 +286,48 @@ export default function PricingPage() {
           {priceError && (
             <p className="text-xs text-dc1-text-muted mt-2 font-medium">{priceError}</p>
           )}
+        </div>
+
+        <div className="card border-dc1-amber/30 bg-dc1-surface-l1">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+                Provider Lane
+              </p>
+              <h2 className="mt-1 text-xl font-bold text-dc1-text-primary">
+                Have GPUs? Start provider onboarding in under 5 minutes.
+              </h2>
+              <p className="mt-1 text-sm text-dc1-text-secondary">
+                See earnings assumptions, register your machine, and receive setup commands in one guided flow.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link
+                href="/provider/register?source=pricing_provider_cta"
+                className="btn btn-primary"
+                onClick={() =>
+                  trackPricingEvent('pricing_provider_cta_clicked', {
+                    destination: '/provider/register?source=pricing_provider_cta',
+                    cta_variant: 'primary',
+                  })
+                }
+              >
+                Become a Provider
+              </Link>
+              <Link
+                href="/provider/register?source=pricing_provider_cta&lane=earnings_model"
+                className="btn btn-secondary"
+                onClick={() =>
+                  trackPricingEvent('pricing_provider_cta_clicked', {
+                    destination: '/provider/register?source=pricing_provider_cta&lane=earnings_model',
+                    cta_variant: 'secondary',
+                  })
+                }
+              >
+                See Earnings Model
+              </Link>
+            </div>
+          </div>
         </div>
 
         {/* Value-prop banner */}
@@ -310,7 +373,7 @@ export default function PricingPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-dc1-border">
@@ -366,7 +429,7 @@ export default function PricingPage() {
                       </td>
                       <td className="py-3 pl-4 text-right">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${discountBadgeClass(tier.discountVsVast)}`}>
-                          {tier.discountVsVast.toFixed(1)}%
+                          {formatSavingsBadge(tier.discountVsVast)}
                         </span>
                       </td>
                       <td className="py-3 pl-4 text-right">
@@ -379,6 +442,45 @@ export default function PricingPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div className="space-y-3 md:hidden">
+            {filtered.map((tier) => {
+              const monthlySavings = savingsPerMonth(tier.dcpFloor, tier.vastTypical)
+              return (
+                <div key={`${tier.gpu}-mobile`} className="rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-semibold text-dc1-text-primary">{tier.gpu}</p>
+                      <p className="text-xs text-dc1-text-secondary">{tier.vram}</p>
+                    </div>
+                    <span className={`inline-block px-2 py-1 rounded-full text-[11px] font-semibold ${discountBadgeClass(tier.discountVsVast)}`}>
+                      {formatSavingsBadge(tier.discountVsVast)}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-dc1-surface-l1 p-2">
+                      <p className="text-dc1-text-muted">DCP Floor</p>
+                      <p className="mt-1 text-sm font-bold text-dc1-amber">{fmtUSD(tier.dcpFloor)}/hr</p>
+                    </div>
+                    <div className="rounded-lg bg-dc1-surface-l1 p-2">
+                      <p className="text-dc1-text-muted">Vast.ai</p>
+                      <p className="mt-1 text-sm font-semibold text-dc1-text-primary">{fmtUSD(tier.vastTypical)}/hr</p>
+                    </div>
+                    <div className="rounded-lg bg-dc1-surface-l1 p-2">
+                      <p className="text-dc1-text-muted">RunPod</p>
+                      <p className="mt-1 text-sm font-semibold text-dc1-text-primary">{fmtUSD(tier.runpodCommunity)}/hr</p>
+                    </div>
+                    <div className="rounded-lg bg-dc1-surface-l1 p-2">
+                      <p className="text-dc1-text-muted">vs Vast /mo</p>
+                      <p className={`mt-1 text-sm font-semibold ${discountColor(tier.discountVsVast)}`}>
+                        ${monthlySavings.toFixed(0)}/mo
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
 
           <p className="text-xs text-dc1-text-muted mt-4">
