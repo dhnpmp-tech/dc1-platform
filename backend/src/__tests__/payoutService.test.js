@@ -48,6 +48,7 @@ function buildDb() {
       amount_usd    REAL    NOT NULL,
       amount_sar    REAL    NOT NULL,
       amount_halala INTEGER NOT NULL,
+      escrow_tx_hash TEXT,
       status        TEXT    NOT NULL DEFAULT 'pending'
                     CHECK(status IN ('pending','processing','paid','rejected')),
       requested_at  TEXT    NOT NULL,

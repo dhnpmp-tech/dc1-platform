@@ -1590,6 +1590,7 @@ db.exec(`
     amount_usd    REAL    NOT NULL,
     amount_sar    REAL    NOT NULL,
     amount_halala INTEGER NOT NULL,
+    escrow_tx_hash TEXT,
     status        TEXT    NOT NULL DEFAULT 'pending'
                   CHECK(status IN ('pending','processing','paid','rejected')),
     requested_at  TEXT    NOT NULL,
@@ -1598,6 +1599,10 @@ db.exec(`
     FOREIGN KEY (provider_id) REFERENCES providers(id)
   )
 `);
+// Backfill migration for databases created before escrow_tx_hash existed.
+try {
+  db.prepare('ALTER TABLE payout_requests ADD COLUMN escrow_tx_hash TEXT').run();
+} catch (_) {}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payout_requests_provider ON payout_requests(provider_id, requested_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payout_requests_status ON payout_requests(status, requested_at DESC)`);
 
