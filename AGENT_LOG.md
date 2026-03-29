@@ -1,3 +1,8 @@
+## [2026-03-29 21:28 UTC] Codex — Restored Payout Rejection Emails On Mainline Branch
+- **Commit**: `pending` - Rebased the DCP-29 payout rejection email fix onto a fresh branch from `origin/main`, restored rejection email delivery on `POST /api/admin/payouts/:id/reject`, and kept response behavior resilient when email delivery fails.
+- **Files**: `backend/src/routes/payouts.js`, `backend/src/services/emailService.js`, `backend/src/__tests__/payouts-reject-email.test.js`, `backend/src/__tests__/payoutService.test.js`, `AGENT_LOG.md`
+- **Impact**: Admin payout rejection now sends bilingual provider email notifications (when provider email exists) and logs failures without blocking the API response. Added focused regression coverage for reject-email behavior and aligned payout service unit-test schema with `escrow_tx_hash` so payout suites pass in clean environments.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
