@@ -23,7 +23,9 @@ test.describe('Provider Registration Flow', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should register provider and receive API key', async () => {
@@ -90,7 +92,9 @@ test.describe('Renter Registration Flow', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should register renter successfully', async () => {
@@ -150,7 +154,9 @@ test.describe('Job Submission Flow', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should navigate to job submission page', async () => {
@@ -197,7 +203,9 @@ test.describe('Job Status Polling and Completion', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should display job status updates', async () => {
@@ -267,7 +275,9 @@ test.describe('Earnings Calculation Verification', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should display provider earnings page', async () => {
@@ -326,7 +336,9 @@ test.describe('Error Handling - Invalid API Keys', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should show error for invalid renter credentials', async () => {
@@ -367,7 +379,9 @@ test.describe('Error Handling - Missing Parameters', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should validate job submission parameters', async () => {
@@ -447,7 +461,9 @@ test.describe('OpenRouter Compatibility Verification', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should verify /v1/models endpoint accessibility', async () => {

@@ -17,7 +17,9 @@ test.describe('Renter Registration and Marketplace Access', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should complete renter registration successfully', async () => {
@@ -97,7 +99,9 @@ test.describe('Renter Marketplace Access', () => {
   });
 
   test.afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      await page.close();
+    }
   });
 
   test('should display available providers in marketplace', async () => {
