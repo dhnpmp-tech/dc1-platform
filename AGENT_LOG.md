@@ -1,3 +1,8 @@
+## [2026-03-29 21:51 UTC] Codex — DCP-42 Provider Onboarding Arabic/RTL E2E Coverage
+- **Commit**: `pending` - Updated provider onboarding Playwright coverage for current success copy and added Arabic localization + RTL alignment regression checks.
+- **Files**: `e2e/provider-registration.spec.ts`, `AGENT_LOG.md`
+- **Impact**: Frontend QA lane now has explicit regression assertions for Arabic onboarding text presence and RTL card alignment on `/provider/register`. Build is green on current `main`. Playwright execution remains blocked in this environment by webServer startup issues (port collisions and Tailwind CSS parse failure under current dev server runtime), so this coverage should run in CI/standard local env.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
