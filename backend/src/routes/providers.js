@@ -35,6 +35,7 @@ const {
     getAttemptLogPath,
 } = require('../services/job-execution-logs');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
+const { normalizeProviderOs } = require('../lib/provider-os');
 const { validateBody } = require('../middleware/validate');
 const { providerRegisterSchema, providerBenchmarkSchema } = require('../schemas/providers.schema');
 const analytics = require('../services/analyticsService');
@@ -302,14 +303,14 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
         const cleanName = normalizeString(name, { maxLen: 120 });
         const cleanEmail = normalizeEmail(email);
         const cleanGpuModel = normalizeString(gpu_model, { maxLen: 120 });
-        const cleanOs = normalizeString(os, { maxLen: 40 });
+        const rawOs = normalizeString(os, { maxLen: 40 });
+        const cleanOs = normalizeProviderOs(rawOs || '');
 
         // Validate inputs
-        if (!cleanName || !cleanEmail || !cleanGpuModel || !cleanOs) {
+        if (!cleanName || !cleanEmail || !cleanGpuModel || !rawOs) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
-        const validOs = new Set(['windows', 'linux', 'mac', 'darwin']);
-        if (!validOs.has(cleanOs.toLowerCase())) {
+        if (!cleanOs) {
             return res.status(400).json({ error: 'Invalid OS value' });
         }
 
@@ -348,8 +349,8 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
         );
         
-        // Generate installer URL
-        const installer_url = `/api/providers/installer?key=${api_key}&os=${encodeURIComponent(cleanOs)}`;
+        // Return canonical setup download route so clients can follow the URL directly.
+        const installer_url = `/api/providers/download/setup?key=${api_key}&os=${encodeURIComponent(cleanOs)}`;
         
         res.json({
             success: true,

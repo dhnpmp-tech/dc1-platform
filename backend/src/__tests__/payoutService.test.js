@@ -197,6 +197,42 @@ describe('getPayoutHistory()', () => {
     const { payouts } = getPayoutHistory(db, 99999);
     expect(payouts).toHaveLength(0);
   });
+
+  it('returns legacy payout rows even when escrow_tx_hash is absent', () => {
+    db.exec('ALTER TABLE payout_requests RENAME TO payout_requests_with_escrow');
+    db.exec(`
+      CREATE TABLE payout_requests (
+        id            TEXT    PRIMARY KEY,
+        provider_id   INTEGER NOT NULL,
+        amount_usd    REAL    NOT NULL,
+        amount_sar    REAL    NOT NULL,
+        amount_halala INTEGER NOT NULL,
+        status        TEXT    NOT NULL DEFAULT 'pending'
+                      CHECK(status IN ('pending','processing','paid','rejected')),
+        requested_at  TEXT    NOT NULL,
+        processed_at  TEXT,
+        payment_ref   TEXT,
+        FOREIGN KEY (provider_id) REFERENCES providers(id)
+      )
+    `);
+    db.exec(`
+      INSERT INTO payout_requests (
+        id, provider_id, amount_usd, amount_sar, amount_halala,
+        status, requested_at, processed_at, payment_ref
+      )
+      SELECT
+        id, provider_id, amount_usd, amount_sar, amount_halala,
+        status, requested_at, processed_at, payment_ref
+      FROM payout_requests_with_escrow
+    `);
+    db.exec('DROP TABLE payout_requests_with_escrow');
+
+    const { payouts, pagination } = getPayoutHistory(db, providerId);
+
+    expect(payouts).toHaveLength(3);
+    expect(pagination.total).toBe(3);
+    expect(payouts[0].escrow_tx_hash).toBeNull();
+  });
 });
 
 // ── getEarningsSummary ────────────────────────────────────────────────────────

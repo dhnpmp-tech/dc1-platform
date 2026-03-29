@@ -16,6 +16,27 @@ import {
 
 const API_BASE = '/api/dc1'
 
+function normalizeOperatingSystemForApi(value: string): 'windows' | 'linux' | 'mac' | 'darwin' | null {
+  const raw = value.trim().toLowerCase()
+  if (!raw) return null
+
+  if (raw === 'darwin') return 'darwin'
+
+  if (raw === 'windows' || raw === 'windows 10' || raw === 'windows 11' || raw === 'windows 10/11') {
+    return 'windows'
+  }
+
+  if (raw === 'linux' || raw === 'other linux' || raw.startsWith('ubuntu') || raw.includes('linux')) {
+    return 'linux'
+  }
+
+  if (raw === 'mac' || raw === 'macos' || raw === 'mac os' || raw === 'mac os x' || raw === 'osx') {
+    return 'mac'
+  }
+
+  return null
+}
+
 interface RegistrationFormData {
   fullName: string
   email: string
@@ -253,10 +274,13 @@ function ProviderRegisterPageContent() {
   const readinessPercent = Math.round((readinessCompleteCount / readinessChecklist.length) * 100)
   const selectedGpuLabel = formData.gpuModel || 'Select your GPU'
   const selectedOsLabel = formData.operatingSystem || 'Choose your operating system'
-  const setupExpectation = formData.operatingSystem
-    ? formData.operatingSystem.includes('Windows')
+  const normalizedOperatingSystem = normalizeOperatingSystemForApi(formData.operatingSystem)
+  const setupExpectation = normalizedOperatingSystem
+    ? normalizedOperatingSystem === 'windows'
       ? 'Windows PowerShell installer'
-      : 'Linux shell installer'
+      : normalizedOperatingSystem === 'mac' || normalizedOperatingSystem === 'darwin'
+        ? 'macOS installer'
+        : 'Linux shell installer'
     : 'Installer shown after registration'
   const canSubmit = readinessCompleteCount === readinessChecklist.length && !isLoading
 
@@ -290,7 +314,7 @@ function ProviderRegisterPageContent() {
           vram_gb: formData.vram ? parseFloat(formData.vram) : undefined,
           location_city: formData.locationCity || undefined,
           location_country: formData.locationCountry || undefined,
-          os: formData.operatingSystem,
+          os: normalizedOperatingSystem || formData.operatingSystem,
           phone: formData.phone || undefined,
         }),
       })

@@ -21,6 +21,7 @@ const crypto = require('crypto');
 const MIN_PAYOUT_USD = 50;
 const USD_TO_SAR = 3.75;
 const HALALA_PER_SAR = 100;
+const payoutHistoryEscrowColumnCache = new WeakMap();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,17 @@ function pendingHoldsHalala(db, providerId) {
     WHERE provider_id = ? AND status IN ('pending', 'processing')
   `).get(providerId);
   return row ? Number(row.on_hold) : 0;
+}
+
+function hasPayoutEscrowTxHashColumn(db) {
+  if (payoutHistoryEscrowColumnCache.has(db)) {
+    return payoutHistoryEscrowColumnCache.get(db);
+  }
+
+  const columns = db.prepare('PRAGMA table_info(payout_requests)').all();
+  const hasColumn = columns.some((column) => column.name === 'escrow_tx_hash');
+  payoutHistoryEscrowColumnCache.set(db, hasColumn);
+  return hasColumn;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -130,13 +142,16 @@ function requestPayout(db, providerId, amountUsd) {
 function getPayoutHistory(db, providerId, { limit = 20, offset = 0 } = {}) {
   const safeLimit  = Math.min(Number(limit)  || 20, 100);
   const safeOffset = Math.max(Number(offset) || 0,  0);
+  const escrowTxHashSelect = hasPayoutEscrowTxHashColumn(db)
+    ? 'escrow_tx_hash'
+    : 'NULL AS escrow_tx_hash';
 
   const rows = db.prepare(`
     SELECT id, provider_id, amount_usd, amount_sar, amount_halala,
-           status, requested_at, processed_at, payment_ref, escrow_tx_hash
+           status, requested_at, processed_at, payment_ref, ${escrowTxHashSelect}
     FROM payout_requests
     WHERE provider_id = ?
-    ORDER BY requested_at DESC
+    ORDER BY requested_at DESC, rowid DESC
     LIMIT ? OFFSET ?
   `).all(providerId, safeLimit, safeOffset);
 
