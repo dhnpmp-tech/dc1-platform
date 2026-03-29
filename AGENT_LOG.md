@@ -1,5 +1,5 @@
 ## [2026-03-29 21:41 UTC] Codex — DCP-47 Installer URL Handoff Normalized To Canonical Download Route
-- **Commit**: `pending` - Updated provider registration to emit the canonical `/api/providers/download/setup` installer handoff URL (instead of legacy `/api/providers/installer`) and added integration regression coverage that follows the returned URL for lowercase OS registration.
+- **Commit**: `5399d10` - Updated provider registration to emit the canonical `/api/providers/download/setup` installer handoff URL (instead of legacy `/api/providers/installer`) and added integration regression coverage that follows the returned URL for lowercase OS registration.
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: `POST /api/providers/register` now returns an immediately usable installer URL for normalized OS values (including lowercase `linux`), aligned with the documented provider download surface. Regression test now enforces both route shape and successful fetch of the returned setup script.
 
