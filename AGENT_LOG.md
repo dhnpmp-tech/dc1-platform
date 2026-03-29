@@ -1,3 +1,8 @@
+## [2026-03-29 22:17 UTC] Codex — DCP-49 Playwright QA Runtime Stabilization (Port/Env)
+- **Commit**: `pending` - Stabilized Playwright web server defaults to deterministic host/port and explicit dev env values, plus guarded provider registration test teardown when browser launch fails.
+- **Files**: `playwright.config.ts`, `e2e/provider-registration.spec.ts`, `AGENT_LOG.md`
+- **Impact**: Local QA startup no longer depends on ambient `PORT`/`NODE_ENV` values and avoids noisy secondary `page.close()` crashes when Chromium cannot launch. Remaining blocker is system dependency availability (`libglib-2.0.so.0`) in this execution environment.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
