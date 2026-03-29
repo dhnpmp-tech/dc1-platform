@@ -176,6 +176,7 @@ describe('getPayoutHistory()', () => {
     const { payouts, pagination } = getPayoutHistory(db, providerId);
     expect(payouts).toHaveLength(3);
     expect(pagination.total).toBe(3);
+    expect(payouts[0]).toHaveProperty('escrow_tx_hash', null);
   });
 
   it('respects limit and offset', () => {
@@ -196,6 +197,20 @@ describe('getPayoutHistory()', () => {
   it('returns empty list for unknown provider', () => {
     const { payouts } = getPayoutHistory(db, 99999);
     expect(payouts).toHaveLength(0);
+  });
+
+  it('returns escrow_tx_hash when schema includes it', () => {
+    db.exec('ALTER TABLE payout_requests ADD COLUMN escrow_tx_hash TEXT');
+    const latest = db.prepare(`
+      SELECT id FROM payout_requests
+      WHERE provider_id = ?
+      ORDER BY requested_at DESC
+      LIMIT 1
+    `).get(providerId);
+    db.prepare('UPDATE payout_requests SET escrow_tx_hash = ? WHERE id = ?').run('0xabc123', latest.id);
+
+    const { payouts } = getPayoutHistory(db, providerId);
+    expect(payouts[0].escrow_tx_hash).toBe('0xabc123');
   });
 });
 

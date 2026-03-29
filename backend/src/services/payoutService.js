@@ -36,6 +36,11 @@ function pendingHoldsHalala(db, providerId) {
   return row ? Number(row.on_hold) : 0;
 }
 
+function tableHasColumn(db, tableName, columnName) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  return columns.some((column) => column.name === columnName);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -130,10 +135,12 @@ function requestPayout(db, providerId, amountUsd) {
 function getPayoutHistory(db, providerId, { limit = 20, offset = 0 } = {}) {
   const safeLimit  = Math.min(Number(limit)  || 20, 100);
   const safeOffset = Math.max(Number(offset) || 0,  0);
+  const hasEscrowTxHash = tableHasColumn(db, 'payout_requests', 'escrow_tx_hash');
+  const escrowTxHashSelect = hasEscrowTxHash ? 'escrow_tx_hash' : 'NULL AS escrow_tx_hash';
 
   const rows = db.prepare(`
     SELECT id, provider_id, amount_usd, amount_sar, amount_halala,
-           status, requested_at, processed_at, payment_ref, escrow_tx_hash
+           status, requested_at, processed_at, payment_ref, ${escrowTxHashSelect}
     FROM payout_requests
     WHERE provider_id = ?
     ORDER BY requested_at DESC
