@@ -19,6 +19,54 @@ function runStatement(sql, ...params) {
   return db.prepare(sql).run(...flattenRunParams(params));
 }
 
+function persistServeSessionMetering({
+  jobId,
+  providerId,
+  modelId,
+  nowIso,
+  totalTokens,
+  billedHalala,
+}) {
+  const updateResult = runStatement(
+    `UPDATE serve_sessions SET
+       total_inferences = total_inferences + 1,
+       total_tokens = total_tokens + ?,
+       total_billed_halala = total_billed_halala + ?,
+       last_inference_at = ?,
+       updated_at = ?
+     WHERE job_id = ?`,
+    totalTokens,
+    billedHalala,
+    nowIso,
+    nowIso,
+    jobId
+  );
+
+  if (updateResult.changes > 0) {
+    return;
+  }
+
+  // If a session row was never created earlier, upsert a synthetic one now so metering is not lost.
+  const expiresAt = new Date(Date.parse(nowIso) + 3600000).toISOString();
+  runStatement(
+    `INSERT OR IGNORE INTO serve_sessions (
+      id, job_id, provider_id, model, port, status, started_at, expires_at,
+      total_inferences, total_tokens, total_billed_halala, last_inference_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 0, 'serving', ?, ?, 1, ?, ?, ?, ?, ?)`,
+    `session-${jobId}`,
+    jobId,
+    providerId != null ? providerId : null,
+    modelId,
+    nowIso,
+    expiresAt,
+    totalTokens,
+    billedHalala,
+    nowIso,
+    nowIso,
+    nowIso
+  );
+}
+
 function normalizeString(value, { maxLen = 500, trim = true } = {}) {
   if (typeof value !== 'string') return null;
   const next = trim ? value.trim() : value;
@@ -823,15 +871,14 @@ async function submitAndAwait(req) {
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
         ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
         const tokenRateHalala = rateRecord?.token_rate_halala || 1;
-        runStatement(
-          `UPDATE serve_sessions SET
-             total_inferences = total_inferences + 1,
-             total_tokens = total_tokens + ?,
-             total_billed_halala = total_billed_halala + ?,
-             last_inference_at = ?
-           WHERE job_id = ?`,
-          totalTokens, Math.max(1, totalTokens * tokenRateHalala), nowProxy, jobId
-        );
+        persistServeSessionMetering({
+          jobId,
+          providerId: candidate.id,
+          modelId: modelReq.model_id,
+          nowIso: nowProxy,
+          totalTokens,
+          billedHalala: Math.max(1, totalTokens * tokenRateHalala),
+        });
       } catch (_) { /* non-fatal */ }
 
       return {
@@ -902,18 +949,14 @@ async function submitAndAwait(req) {
     const inferenceCostHalala = Math.max(1, totalTokensActual * tokenRateHalala);
 
     // Update serve_sessions with metering data
-    runStatement(
-      `UPDATE serve_sessions SET
-         total_inferences = total_inferences + 1,
-         total_tokens = total_tokens + ?,
-         total_billed_halala = total_billed_halala + ?,
-         last_inference_at = ?
-       WHERE job_id = ?`,
-      totalTokensActual,
-      inferenceCostHalala,
-      now,
-      jobId
-    );
+    persistServeSessionMetering({
+      jobId,
+      providerId: assignedProvider.id,
+      modelId: modelReq.model_id,
+      nowIso: now,
+      totalTokens: totalTokensActual,
+      billedHalala: inferenceCostHalala,
+    });
   } catch (_) {
     // Non-fatal — metering update failure must not block the inference response
     // (billing audit will catch missing serve_sessions updates)

@@ -353,6 +353,55 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
 
         return res.json(proxyResult.body);
       }
+
+      // If selected provider endpoint exists but failed to produce a valid payload,
+      // retry once through other capable providers before returning upstream failure.
+      const fallbackCapable = getCapableProviders(minVramMb)
+        .filter((provider) => provider.id !== assignedProvider.id && provider.vllm_endpoint_url)
+        .sort((a, b) => (a.gpu_util_pct ?? 0) - (b.gpu_util_pct ?? 0))
+        .slice(0, 2);
+
+      for (const fallbackProvider of fallbackCapable) {
+        const fallbackResult = await proxyToProvider({
+          endpointUrl: fallbackProvider.vllm_endpoint_url,
+          modelId: modelReq.model_id,
+          messages,
+          maxTokens,
+          temperature,
+          stream: wantsStream,
+        });
+
+        if (fallbackResult.proxyError) continue;
+
+        if (wantsStream && fallbackResult.streamResponse) {
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          res.setHeader('Connection', 'keep-alive');
+          res.setHeader('X-Accel-Buffering', 'no');
+          fallbackResult.streamResponse.body.pipe(res);
+          return;
+        }
+
+        if (fallbackResult.body) {
+          const usage = fallbackResult.body?.usage || {};
+          const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
+          const rateRecord = db.get(
+            'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
+          ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
+          const tokenRate = rateRecord?.token_rate_halala || 1;
+          const actualCost = Math.max(1, actualTokens * tokenRate);
+          try {
+            db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
+              .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
+          } catch (_) { /* best-effort */ }
+
+          return res.json(fallbackResult.body);
+        }
+      }
+
+      return res.status(502).json({
+        error: { message: 'Provider failover exhausted', type: 'upstream_error', code: 502 }
+      });
     }
 
     // Fallback: create job in queue (non-streaming only for job-based flow)
