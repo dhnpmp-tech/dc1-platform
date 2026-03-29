@@ -153,7 +153,7 @@ function buildJobCompleteTemplate({ jobId, costSar, model, durationMinutes, prov
         <p><a href="${jobDetailUrl}">View job details</a></p>
         <hr />
         <h2>اكتمل الطلب</h2>
-        <p>تم اكتمال الطلب <strong>#${escapeHtml(jobId)}</strong>.</p>
+        <p>اكتمل الطلب <strong>#${escapeHtml(jobId)}</strong>.</p>
         <ul>
           <li><strong>النموذج:</strong> ${escapeHtml(safeModel)}</li>
           <li><strong>المدة:</strong> ${escapeHtml(durationLabel)}</li>
@@ -186,7 +186,7 @@ function buildJobQueuedTemplate({
   const footer = notificationFooterText();
 
   return {
-    subject: `Job queued on DCP — #${jobId} | تم إدراج الطلب في طابور DCP`,
+    subject: `Job queued on DCP — #${jobId} | تم إدراج الطلب في قائمة انتظار DCP`,
     text: [
       `Your job #${jobId} has been queued on DCP.`,
       `Job type: ${safeJobType}`,
@@ -196,7 +196,7 @@ function buildJobQueuedTemplate({
       `Estimated duration: ${durationLabel}`,
       `Track job: ${jobDetailUrl}`,
       '',
-      `تم إدراج الطلب #${jobId} في طابور DCP.`,
+      `تم إدراج الطلب #${jobId} في قائمة انتظار DCP.`,
       `نوع المهمة: ${safeJobType}`,
       `نوع الحاوية: ${safeImageType}`,
       `التكلفة التقديرية: ${quotedCostLabel} ريال`,
@@ -219,8 +219,8 @@ function buildJobQueuedTemplate({
         </ul>
         <p><a href="${jobDetailUrl}">Track this job</a></p>
         <hr />
-        <h2>تم إدراج الطلب في الطابور</h2>
-        <p>تم إدراج الطلب <strong>#${escapeHtml(jobId)}</strong> في الطابور.</p>
+        <h2>تم إدراج الطلب في قائمة الانتظار</h2>
+        <p>تم إدراج الطلب <strong>#${escapeHtml(jobId)}</strong> في قائمة الانتظار.</p>
         <ul>
           <li><strong>نوع المهمة:</strong> ${escapeHtml(safeJobType)}</li>
           <li><strong>نوع الحاوية:</strong> ${escapeHtml(safeImageType)}</li>
@@ -339,7 +339,7 @@ function buildJobCompletedTemplate({
         <p><a href="${jobDetailUrl}">Open results</a></p>
         <hr />
         <h2>اكتمل الطلب</h2>
-        <p>تم اكتمال الطلب <strong>#${escapeHtml(jobId)}</strong> والنتائج جاهزة.</p>
+        <p>اكتمل الطلب <strong>#${escapeHtml(jobId)}</strong> والنتائج جاهزة.</p>
         <ul>
           <li><strong>نوع المهمة:</strong> ${escapeHtml(safeJobType)}</li>
           <li><strong>نوع الحاوية:</strong> ${escapeHtml(safeImageType)}</li>
@@ -367,7 +367,7 @@ function buildJobFailedTemplate({
   const footer = notificationFooterText();
 
   return {
-    subject: `Job failed — funds refunded (#${jobId}) | فشل الطلب وتم رد المبلغ`,
+    subject: `Job failed — funds refunded (#${jobId}) | فشل الطلب وأُعيد المبلغ إلى رصيدك`,
     text: [
       `Your job #${jobId} failed and funds were refunded.`,
       `Last error: ${safeError}`,
@@ -375,7 +375,7 @@ function buildJobFailedTemplate({
       `Retry attempts: ${retryLabel}`,
       `Job details: ${jobDetailUrl}`,
       '',
-      `فشل الطلب #${jobId} وتم رد المبلغ.`,
+      `فشل الطلب #${jobId} وأُعيد المبلغ إلى رصيدك في DCP.`,
       `آخر خطأ: ${safeError}`,
       `المبلغ المرتجع: ${refundLabel} ريال`,
       `عدد محاولات إعادة التشغيل: ${retryLabel}`,
@@ -394,8 +394,8 @@ function buildJobFailedTemplate({
         </ul>
         <p><a href="${jobDetailUrl}">View job details</a></p>
         <hr />
-        <h2>فشل الطلب وتم رد المبلغ</h2>
-        <p>الطلب <strong>#${escapeHtml(jobId)}</strong> فشل وتم رد الرصيد.</p>
+        <h2>فشل الطلب وأُعيد المبلغ إلى رصيدك</h2>
+        <p>فشل الطلب <strong>#${escapeHtml(jobId)}</strong> وأُعيد المبلغ إلى رصيدك في DCP.</p>
         <ul>
           <li><strong>آخر خطأ:</strong> ${escapeHtml(safeError)}</li>
           <li><strong>المبلغ المرتجع:</strong> ${escapeHtml(refundLabel)} ريال</li>
@@ -626,4 +626,13 @@ module.exports = {
   sendJobCompleteEmail,
   sendWithdrawalApprovedEmail,
   sendDataExportReady,
+};
+
+module.exports.__private = {
+  buildWelcomeTemplate,
+  buildJobQueuedTemplate,
+  buildJobStartedTemplate,
+  buildJobCompletedTemplate,
+  buildJobFailedTemplate,
+  buildWithdrawalApprovedTemplate,
 };
