@@ -1,3 +1,8 @@
+## [2026-03-29 22:30 UTC] Codex — DCP-51 E2E Teardown Guard Rollout + Playwright Port Stabilization
+- **Commit**: `pending` - Applied safe `afterEach` page-close guards across Playwright suites and set deterministic Playwright webServer host/port/env defaults to avoid ambient runtime drift.
+- **Files**: `playwright.config.ts`, `e2e/core-api-flow.spec.ts`, `e2e/job-execution.spec.ts`, `e2e/job-submission.spec.ts`, `e2e/provider-onboarding.spec.ts`, `e2e/provider-registration.spec.ts`, `e2e/renter-registration.spec.ts`, `AGENT_LOG.md`
+- **Impact**: Browser-launch failures no longer cascade into secondary teardown exceptions across E2E suites. QA invocation now deterministically starts on `127.0.0.1:3210` with `NODE_ENV=development`; remaining blocker in this environment is missing Chromium system library `libglib-2.0.so.0`.
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
