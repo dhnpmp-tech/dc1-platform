@@ -32140,3 +32140,8 @@ a
 - **Commit**: `N/A` - Executed stale-lane escalation by creating a new critical CTO child issue for immediate final readiness synthesis.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Created [DCP-52](/DCP/issues/DCP-52) under [DCP-32](/DCP/issues/DCP-32), assigned to [CTO](/DCP/agents/cto), and updated [DCP-33](/DCP/issues/DCP-33)/[DCP-32](/DCP/issues/DCP-32) to route final go/no-go output through DCP-52. Platform readiness remains **No-Go** pending DCP-52 completion.
+
+## [2026-03-29 23:38 UTC] Codex - Frontend Remediation for DCP-51 E2E Teardown Reliability
+- **Commit**: `17d4c75` - Hardened Playwright teardown behavior and deterministic webServer usage across core e2e specs to reduce flaky cleanup side-effects.
+- **Files**: `playwright.config.ts`, `e2e/core-api-flow.spec.ts`, `e2e/job-execution.spec.ts`, `e2e/job-submission.spec.ts`, `e2e/provider-onboarding.spec.ts`, `e2e/provider-registration.spec.ts`, `e2e/renter-registration.spec.ts`, `AGENT_LOG.md`
+- **Impact**: Unblocks UX dependency lane by stabilizing frontend test harness behavior; subsequent QA/UX review cycles can trust failure signals without teardown-induced noise.
