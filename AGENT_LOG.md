@@ -1,3 +1,8 @@
+## [2026-03-29 21:52 UTC] Codex — DCP-48 Payout History Schema Compatibility Fix Landed
+- **Commit**: `pending` - Made `getPayoutHistory()` tolerate legacy payout schemas that do not yet have `escrow_tx_hash` by selecting `NULL AS escrow_tx_hash` fallback instead of throwing SQL errors.
+- **Files**: `backend/src/services/payoutService.js`, `backend/src/__tests__/payoutService.test.js`, `AGENT_LOG.md`
+- **Impact**: Payout history no longer 500s on older schema states during tests/rollouts. Verified with `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js` (27 passed) and `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js -t "requests a payout|rejects payout below $50 minimum|rejects payout when claimable balance is insufficient"` (subset passed).
+
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
 - **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`

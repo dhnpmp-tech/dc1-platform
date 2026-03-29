@@ -22,6 +22,11 @@ const MIN_PAYOUT_USD = 50;
 const USD_TO_SAR = 3.75;
 const HALALA_PER_SAR = 100;
 
+function hasTableColumn(db, tableName, columnName) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  return columns.some((column) => column.name === columnName);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -130,10 +135,12 @@ function requestPayout(db, providerId, amountUsd) {
 function getPayoutHistory(db, providerId, { limit = 20, offset = 0 } = {}) {
   const safeLimit  = Math.min(Number(limit)  || 20, 100);
   const safeOffset = Math.max(Number(offset) || 0,  0);
+  const hasEscrowTxHash = hasTableColumn(db, 'payout_requests', 'escrow_tx_hash');
+  const escrowSelectExpr = hasEscrowTxHash ? 'escrow_tx_hash' : 'NULL AS escrow_tx_hash';
 
   const rows = db.prepare(`
     SELECT id, provider_id, amount_usd, amount_sar, amount_halala,
-           status, requested_at, processed_at, payment_ref, escrow_tx_hash
+           status, requested_at, processed_at, payment_ref, ${escrowSelectExpr}
     FROM payout_requests
     WHERE provider_id = ?
     ORDER BY requested_at DESC

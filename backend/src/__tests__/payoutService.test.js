@@ -178,6 +178,12 @@ describe('getPayoutHistory()', () => {
     expect(pagination.total).toBe(3);
   });
 
+  it('returns escrow_tx_hash as null when schema does not have that column', () => {
+    const { payouts } = getPayoutHistory(db, providerId);
+    expect(payouts).toHaveLength(3);
+    expect(payouts[0]).toHaveProperty('escrow_tx_hash', null);
+  });
+
   it('respects limit and offset', () => {
     const { payouts, pagination } = getPayoutHistory(db, providerId, { limit: 2, offset: 0 });
     expect(payouts).toHaveLength(2);
