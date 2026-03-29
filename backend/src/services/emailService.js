@@ -433,6 +433,37 @@ function buildWithdrawalApprovedTemplate({ amountSar }) {
   };
 }
 
+function buildWithdrawalRejectedTemplate({ amountSar, reason }) {
+  const amountLabel = formatSar(amountSar);
+  const safeReason = (reason || '').trim() || 'Not specified';
+  const safeReasonAr = (reason || '').trim() || 'غير محدد';
+  return {
+    subject: `DCP: Withdrawal of ${amountLabel} SAR rejected | تم رفض طلب السحب`,
+    text: [
+      `Your withdrawal request for ${amountLabel} SAR was rejected.`,
+      `Reason: ${safeReason}`,
+      'The amount has been returned to your DCP balance.',
+      '',
+      `تم رفض طلب السحب بمبلغ ${amountLabel} ريال.`,
+      `السبب: ${safeReasonAr}`,
+      'تمت إعادة المبلغ إلى رصيدك في DCP.',
+    ].join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#111;line-height:1.6">
+        <h2>Withdrawal Rejected</h2>
+        <p>Your withdrawal request for <strong>${escapeHtml(amountLabel)} SAR</strong> was rejected.</p>
+        <p><strong>Reason:</strong> ${escapeHtml(safeReason)}</p>
+        <p>The amount has been returned to your DCP balance.</p>
+        <hr />
+        <h2>تم رفض طلب السحب</h2>
+        <p>تم رفض طلب السحب بقيمة <strong>${escapeHtml(amountLabel)} ريال</strong>.</p>
+        <p><strong>السبب:</strong> ${escapeHtml(safeReasonAr)}</p>
+        <p>تمت إعادة المبلغ إلى رصيدك في DCP.</p>
+      </div>
+    `,
+  };
+}
+
 function buildDataExportReadyTemplate({ accountType, requestedAt, deliveryMode }) {
   const safeAccountType = accountType === 'provider' ? 'provider' : 'renter';
   const requestedLabel = requestedAt || new Date().toISOString();
@@ -506,6 +537,20 @@ async function sendWithdrawalApprovedEmail(to, amountSar) {
   }
 
   const template = buildWithdrawalApprovedTemplate({ amountSar });
+  return sendEmail({
+    to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  });
+}
+
+async function sendWithdrawalRejectedEmail(to, amountSar, reason) {
+  if (!to) {
+    return { ok: false, reason: 'invalid_arguments' };
+  }
+
+  const template = buildWithdrawalRejectedTemplate({ amountSar, reason });
   return sendEmail({
     to,
     subject: template.subject,
@@ -625,5 +670,6 @@ module.exports = {
   sendJobFailed,
   sendJobCompleteEmail,
   sendWithdrawalApprovedEmail,
+  sendWithdrawalRejectedEmail,
   sendDataExportReady,
 };
