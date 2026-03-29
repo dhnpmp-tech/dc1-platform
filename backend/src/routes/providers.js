@@ -52,10 +52,6 @@ function runStatement(sql, ...params) {
 // Daemons sign the raw request body with HMAC-SHA256 using DC1_HMAC_SECRET.
 // Header format: X-DC1-Signature: sha256=<hex>
 //
-// Enforcement controlled by DC1_REQUIRE_HEARTBEAT_HMAC env var:
-//   unset / "0" — warn only (backward-compatible, existing daemons work)
-//   "1"         — reject requests without a valid signature
-//
 function verifyHeartbeatHmac(req) {
     const hmacSecret = process.env.DC1_HMAC_SECRET;
     if (!hmacSecret) return { valid: false, reason: 'DC1_HMAC_SECRET not configured' };
@@ -79,6 +75,11 @@ function verifyHeartbeatHmac(req) {
     } catch {
         return { valid: false, reason: 'HMAC comparison failed' };
     }
+}
+
+function shouldEnforceHeartbeatHmac() {
+    if ((process.env.NODE_ENV || '').toLowerCase() === 'production') return true;
+    return process.env.DC1_REQUIRE_HEARTBEAT_HMAC === '1';
 }
 
 // Import shared billing rates from jobs module
@@ -585,7 +586,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
     // HMAC-SHA256 signature validation — prevents spoofed provider status updates.
     // Daemons set X-DC1-Signature: sha256=<hex> using DC1_HMAC_SECRET.
     const hmacResult = verifyHeartbeatHmac(req);
-    const requireHmac = process.env.DC1_REQUIRE_HEARTBEAT_HMAC === '1';
+    const requireHmac = shouldEnforceHeartbeatHmac();
     if (!hmacResult.valid) {
         if (requireHmac) {
             console.warn(`[providers/heartbeat] HMAC rejected: ${hmacResult.reason}`);
@@ -4958,6 +4959,7 @@ module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
     inferVramGb,
     activateProviderById,
+    shouldEnforceHeartbeatHmac,
     _providerEventEmitter,
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,
@@ -5751,6 +5753,7 @@ module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
     inferVramGb,
     activateProviderById,
+    shouldEnforceHeartbeatHmac,
     _providerEventEmitter,
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,

@@ -149,8 +149,14 @@ describe('verifyHeartbeatHmac', () => {
 // ── Enforcement mode integration tests (no SQLite required) ──────────────────
 
 describe('heartbeat HMAC enforcement (middleware behaviour)', () => {
+  function shouldEnforceHeartbeatHmac({ nodeEnv, requireFlag }) {
+    if ((nodeEnv || '').toLowerCase() === 'production') return true;
+    return requireFlag === '1';
+  }
+
   // Simulate the middleware decision logic from providers.js router.post('/heartbeat')
-  function runMiddleware(req, requireHmac, hmacSecret) {
+  function runMiddleware(req, { nodeEnv = 'development', requireFlag = '0', hmacSecret = HMAC_SECRET } = {}) {
+    const requireHmac = shouldEnforceHeartbeatHmac({ nodeEnv, requireFlag });
     const result = verifyHeartbeatHmac(req, hmacSecret || '');
     if (!result.valid && requireHmac) {
       return { rejected: true, status: 401, body: { error: 'Invalid heartbeat signature', detail: result.reason } };
@@ -163,27 +169,27 @@ describe('heartbeat HMAC enforcement (middleware behaviour)', () => {
 
   test('enforcement OFF: passes valid signature', () => {
     const req = fakeReq({ headers: { 'x-dc1-signature': validSig }, rawBody: body });
-    expect(runMiddleware(req, false, HMAC_SECRET).rejected).toBe(false);
+    expect(runMiddleware(req, { requireFlag: '0' }).rejected).toBe(false);
   });
 
   test('enforcement OFF: passes missing signature', () => {
     const req = fakeReq({ headers: {}, rawBody: body });
-    expect(runMiddleware(req, false, HMAC_SECRET).rejected).toBe(false);
+    expect(runMiddleware(req, { requireFlag: '0' }).rejected).toBe(false);
   });
 
   test('enforcement OFF: passes invalid signature', () => {
     const req = fakeReq({ headers: { 'x-dc1-signature': 'sha256=' + 'a'.repeat(64) }, rawBody: body });
-    expect(runMiddleware(req, false, HMAC_SECRET).rejected).toBe(false);
+    expect(runMiddleware(req, { requireFlag: '0' }).rejected).toBe(false);
   });
 
   test('enforcement ON: accepts valid signature', () => {
     const req = fakeReq({ headers: { 'x-dc1-signature': validSig }, rawBody: body });
-    expect(runMiddleware(req, true, HMAC_SECRET).rejected).toBe(false);
+    expect(runMiddleware(req, { requireFlag: '1' }).rejected).toBe(false);
   });
 
   test('enforcement ON: rejects missing signature', () => {
     const req = fakeReq({ headers: {}, rawBody: body });
-    const result = runMiddleware(req, true, HMAC_SECRET);
+    const result = runMiddleware(req, { requireFlag: '1' });
     expect(result.rejected).toBe(true);
     expect(result.status).toBe(401);
     expect(result.body.error).toMatch(/signature/i);
@@ -192,15 +198,30 @@ describe('heartbeat HMAC enforcement (middleware behaviour)', () => {
   test('enforcement ON: rejects wrong secret', () => {
     const badSig = makeSignature(body, 'wrong-secret');
     const req = fakeReq({ headers: { 'x-dc1-signature': badSig }, rawBody: body });
-    const result = runMiddleware(req, true, HMAC_SECRET);
+    const result = runMiddleware(req, { requireFlag: '1' });
     expect(result.rejected).toBe(true);
     expect(result.status).toBe(401);
   });
 
   test('enforcement ON: rejects when DC1_HMAC_SECRET not configured', () => {
     const req = fakeReq({ headers: { 'x-dc1-signature': validSig }, rawBody: body });
-    const result = runMiddleware(req, true, ''); // no secret
+    const result = runMiddleware(req, { requireFlag: '1', hmacSecret: '' }); // no secret
     expect(result.rejected).toBe(true);
     expect(result.body.detail).toMatch(/not configured/i);
+  });
+
+  test('production mode rejects spoofed signature even when require flag is disabled', () => {
+    const spoofedSig = makeSignature(body, 'attacker-secret');
+    const req = fakeReq({ headers: { 'x-dc1-signature': spoofedSig }, rawBody: body });
+    const result = runMiddleware(req, { nodeEnv: 'production', requireFlag: '0' });
+    expect(result.rejected).toBe(true);
+    expect(result.status).toBe(401);
+  });
+
+  test('production mode rejects missing signature even when require flag is disabled', () => {
+    const req = fakeReq({ headers: {}, rawBody: body });
+    const result = runMiddleware(req, { nodeEnv: 'production', requireFlag: '0' });
+    expect(result.rejected).toBe(true);
+    expect(result.status).toBe(401);
   });
 });
