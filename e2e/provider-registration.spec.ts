@@ -89,4 +89,20 @@ test.describe('Provider Registration Flow', () => {
     await expect(submitButton).toBeDisabled();
     await expect(page.locator('text=VRAM is required when you choose Other.')).toBeVisible();
   });
+
+  test('should keep submit disabled when custom GPU VRAM is zero', async () => {
+    const email = generateTestEmail('provider');
+
+    await fillInput(page, '#fullName', 'Custom GPU Provider');
+    await fillInput(page, '#email', email);
+    await page.selectOption('#gpuModel', 'Other');
+    await fillInput(page, '#vram', '0');
+    await page.selectOption('#locationCountry', 'US');
+    await page.selectOption('#operatingSystem', 'Ubuntu 22.04');
+    await page.locator('input[name="pdplConsent"]').check();
+
+    const submitButton = page.locator('button[type="submit"]').first();
+    await expect(submitButton).toBeDisabled();
+    await expect(page.locator('text=VRAM must be greater than 0.')).toBeVisible();
+  });
 });

@@ -223,6 +223,8 @@ function ProviderRegisterPageContent() {
     return true
   }, [formData, validateField])
 
+  const customVramReady = formData.gpuModel !== 'Other' || Number(formData.vram) > 0
+
   const readinessChecklist = useMemo(
     () => [
       {
@@ -235,7 +237,7 @@ function ProviderRegisterPageContent() {
         id: 'hardware',
         label: 'Hardware profile',
         helper: 'Choose the GPU you will actually connect. Custom cards need a VRAM value.',
-        complete: Boolean(formData.gpuModel) && (formData.gpuModel !== 'Other' || Boolean(formData.vram)),
+        complete: Boolean(formData.gpuModel) && customVramReady,
       },
       {
         id: 'runtime',
@@ -244,7 +246,7 @@ function ProviderRegisterPageContent() {
         complete: Boolean(formData.operatingSystem) && Boolean(formData.locationCountry) && formData.pdplConsent,
       },
     ],
-    [formData, emailPattern]
+    [customVramReady, formData, emailPattern]
   )
 
   const readinessCompleteCount = readinessChecklist.filter((item) => item.complete).length

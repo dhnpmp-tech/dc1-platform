@@ -1,3 +1,8 @@
+## [2026-03-29 16:29 UTC] Codex — Release Follow-Up: Provider VRAM Gate Review Fix
+- **Commit**: `pending` - Addressed the open PR #87 review comment by aligning the provider onboarding readiness checklist with the existing custom-GPU VRAM validation rule and adding regression coverage for `vram=0`.
+- **Files**: `app/provider/register/page.tsx`, `e2e/provider-registration.spec.ts`, `AGENT_LOG.md`
+- **Impact**: PR #87 no longer enables submit for invalid custom GPU VRAM values. For `gpuModel=Other`, the readiness gate now requires `Number(vram) > 0`, matching `validateField('vram')`. Added regression coverage so the provider registration spec keeps submit disabled and shows the inline error when custom VRAM is `0`.
+
 ## [2026-03-29 16:19 UTC] Codex — Release Prep: Provider Onboarding UX PR Ready
 - **Commit**: `pending` - Synced `agent/staff-engineer/provider-onboarding-ux` with `origin/main`, prepared release evidence for the branch head, and advanced the branch into PR-open state for merge review.
 - **Files**: `AGENT_LOG.md`
