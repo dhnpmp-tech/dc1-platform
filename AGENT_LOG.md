@@ -31973,3 +31973,8 @@ a
 - **Commit**: `300d09d` - Patched P2P rate-limit key generation to use `ipKeyGenerator` with IPv4/IPv6-safe namespaced keys and added regression coverage for startup warning regression.
 - **Files**: `backend/src/routes/p2p.js`, `backend/src/__tests__/p2p-rate-limit-ipv6.test.js`, `AGENT_LOG.md`
 - **Impact**: Removes the `ERR_ERL_KEY_GEN_IPV6` validation/warning path triggered by P2P limiter initialization while preserving existing throttle limits (`announce` 20/min, `lookup` 60/min). Added tests now guard key normalization behavior (IPv4 raw, IPv6 subnet-normalized) and verify route initialization no longer emits the IPv6 key-generator warning. Verification run: `NODE_ENV=test npx jest --runInBand src/__tests__/p2p-rate-limit-ipv6.test.js` (pass), `npm test -- --runTestsByPath tests/integration/v1-server-wiring.test.js` (pass), `SUPABASE_URL=http://localhost SUPABASE_SERVICE_KEY=test node backend/tests/dcp-922-vllm-inference-proxy.test.js` (pass), and startup probe with required env stubs showed no `ERR_ERL_KEY_GEN_IPV6` output.
+
+## [2026-03-29 19:14 UTC] Codex — Backend Queue Refill Escalation (No Assignable Work)
+- **Commit**: `pending` - Ran Paperclip heartbeat (`/api/agents/me/inbox-lite` + company todo/in_progress scan), found no assigned or self-assignable backend execution issues, and created [DCP-25](/DCP/issues/DCP-25) assigned to CTO for immediate queue refill.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Prevents backend execution lane idle time by explicitly requesting the next ship-ready backend implementation task with acceptance criteria.
