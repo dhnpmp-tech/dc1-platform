@@ -454,8 +454,8 @@ app.use('/api/models', modelsRouter);
 const pricingRouter = require('./routes/pricing');
 app.use('/api/pricing', pricingRouter);
 
-const vllmRouter = require('./routes/vllm');
-app.use('/v1', vllmRouter);
+const v1Router = require('./routes/v1');
+app.use('/v1', v1Router);
 
 const verificationRouter = require('./routes/verification');
 app.use('/api/verification', verificationRouter);
@@ -807,8 +807,12 @@ providerLivenessMonitor.start();
 const cleanup = require('./services/cleanup');
 cleanup.schedule();
 
-app.listen(PORT, () => {
-  console.log(`DC1 Platform API (headless) running on port ${PORT}`);
-  console.log(`API:  http://localhost:${PORT}/api`);
-  console.log(`Health: http://localhost:${PORT}/api/health`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`DC1 Platform API (headless) running on port ${PORT}`);
+    console.log(`API:  http://localhost:${PORT}/api`);
+    console.log(`Health: http://localhost:${PORT}/api/health`);
+  });
+}
+
+module.exports = app;

@@ -320,26 +320,8 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         stream: wantsStream,
       });
 
-      if (proxyResult.proxyError) {
-        return res.status(502).json({
-          error: { message: `Provider error: ${proxyResult.proxyError}`, type: 'upstream_error', code: 502 }
-        });
-      }
-
-      // Streaming passthrough
-      if (wantsStream && proxyResult.streamResponse) {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache, no-transform');
-        res.setHeader('Connection', 'keep-alive');
-        res.setHeader('X-Accel-Buffering', 'no');
-        proxyResult.streamResponse.body.pipe(res);
-        return;
-      }
-
-      // Non-streaming: return OpenAI-formatted response
-      if (proxyResult.body) {
-        // Debit renter balance based on actual usage
-        const usage = proxyResult.body?.usage || {};
+      const debitAndReturnProxyResult = (resultBody) => {
+        const usage = resultBody?.usage || {};
         const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
@@ -351,8 +333,64 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
             .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
         } catch (_) { /* best-effort */ }
 
-        return res.json(proxyResult.body);
+        return res.json(resultBody);
+      };
+
+      const writeStreamingResponse = (streamResponse) => {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        streamResponse.body.pipe(res);
+      };
+
+      if (wantsStream && proxyResult.streamResponse) {
+        writeStreamingResponse(proxyResult.streamResponse);
+        return;
       }
+
+      if (proxyResult.body) {
+        return debitAndReturnProxyResult(proxyResult.body);
+      }
+
+      // If selected provider endpoint exists but failed to produce a valid payload,
+      // retry once through other capable providers before returning upstream failure.
+      const fallbackCapable = getCapableProviders(minVramMb)
+        .filter((provider) => provider.id !== assignedProvider.id && provider.vllm_endpoint_url)
+        .sort((a, b) => (a.gpu_util_pct ?? 0) - (b.gpu_util_pct ?? 0))
+        .slice(0, 2);
+
+      for (const fallbackProvider of fallbackCapable) {
+        const fallbackResult = await proxyToProvider({
+          endpointUrl: fallbackProvider.vllm_endpoint_url,
+          modelId: modelReq.model_id,
+          messages,
+          maxTokens,
+          temperature,
+          stream: wantsStream,
+        });
+
+        if (fallbackResult.proxyError) continue;
+
+        if (wantsStream && fallbackResult.streamResponse) {
+          writeStreamingResponse(fallbackResult.streamResponse);
+          return;
+        }
+
+        if (fallbackResult.body) {
+          return debitAndReturnProxyResult(fallbackResult.body);
+        }
+      }
+
+      return res.status(502).json({
+        error: {
+          message: proxyResult.proxyError
+            ? `Provider failover exhausted after initial error: ${proxyResult.proxyError}`
+            : 'Provider failover exhausted',
+          type: 'upstream_error',
+          code: 502
+        }
+      });
     }
 
     // Fallback: create job in queue (non-streaming only for job-based flow)

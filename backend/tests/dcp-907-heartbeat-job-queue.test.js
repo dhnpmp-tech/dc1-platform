@@ -282,6 +282,48 @@ async function run() {
     }
   });
 
+  await test('POST /api/providers/heartbeat capacity_report counts reserved inference jobs and exposes index-backed fields', async () => {
+    db.run(`UPDATE providers SET gpu_count = 2 WHERE id = ?`, providerId);
+
+    for (const [status, model] of [
+      ['pending', 'qwen2.5-7b'],
+      ['assigned', 'qwen2.5-7b'],
+      ['pulling', 'llama3-8b'],
+      ['running', 'llama3-8b'],
+      ['completed', 'ignored-model'],
+    ]) {
+      db.run(
+        `INSERT INTO jobs (job_id, renter_id, provider_id, job_type, model, status, submitted_at, created_at)
+         VALUES (?, 1, ?, 'vllm', ?, ?, datetime('now'), datetime('now'))`,
+        `cap-${status}-${Math.random().toString(36).slice(2, 8)}`,
+        providerId,
+        model,
+        status
+      );
+    }
+
+    const res = await request('POST', '/api/providers/heartbeat', {
+      api_key: providerKey,
+      gpu_status: { gpu_name: 'RTX 4090', gpu_vram_mib: 24576, gpu_count: 2 },
+      provider_ip: '127.0.0.1',
+    });
+
+    assertEqual(res.status, 200, `Expected 200, got ${res.status}: ${res.text}`);
+    assert(res.body.capacity_report, 'Expected capacity_report in heartbeat response');
+    assertEqual(res.body.capacity_report.active_inference_jobs, 4, 'Should count pending/assigned/pulling/running as reserved');
+    assertEqual(res.body.capacity_report.available_gpu_slots, 0, 'Should not overstate free GPU slots');
+    assertEqual(res.body.capacity_report.estimated_wait_seconds, 240, 'Should scale wait estimate from reserved jobs');
+    assertEqual(res.body.capacity_report.queue_depth_by_model['qwen2.5-7b'], 2, 'Should group reserved jobs by model');
+    assertEqual(res.body.capacity_report.queue_depth_by_model['llama3-8b'], 2, 'Should include pulling/running jobs in grouped depth');
+
+    const indexRow = db.get(
+      `SELECT name
+       FROM sqlite_master
+       WHERE type = 'index' AND name = 'idx_jobs_provider_type_status_model'`
+    );
+    assert(indexRow && indexRow.name === 'idx_jobs_provider_type_status_model', 'Expected provider/type/status/model index to exist');
+  });
+
   await teardown();
 
   console.log(`\nResults: ${passed} passed, ${failed} failed`);
