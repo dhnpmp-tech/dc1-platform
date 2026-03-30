@@ -15,10 +15,10 @@ function retryAfterSeconds(req, windowMs) {
 }
 
 function createRateLimiter({ windowMs, max, keyGenerator }) {
-  const isTestEnv = process.env.DISABLE_RATE_LIMIT === '1' || process.env.NODE_ENV === 'test';
+  const isRateLimitDisabled = process.env.DISABLE_RATE_LIMIT === '1';
   return rateLimit({
     windowMs,
-    max: isTestEnv ? Number.MAX_SAFE_INTEGER : max,
+    max: isRateLimitDisabled ? Number.MAX_SAFE_INTEGER : max,
     keyGenerator,
     standardHeaders: true,
     legacyHeaders: false,
