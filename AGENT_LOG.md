@@ -1,3 +1,8 @@
+## [2026-03-30 03:52 UTC] Codex — DCP-42 Full Provider Register Arabic Localization Sweep
+- **Commit**: `9e2a27d` - Localized remaining hardcoded provider registration copy into i18n for English/Arabic across readiness checklist states, success/install panel labels, validation and field hints, referral UX text, earnings explainer copy, and post-submit info cards; also localized country option labels in Arabic mode.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: `/provider/register` no longer relies on English fallback for the major Arabic onboarding surfaces previously flagged in DCP-42, including install-command panel labels/tooltips and readiness helper copy. Verification: `npm run build` passed in this workspace.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
