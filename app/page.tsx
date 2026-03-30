@@ -1,14 +1,15 @@
 'use client'
 
 import Link from 'next/link'
+import { Space_Grotesk } from 'next/font/google'
 import { useState, useEffect, useRef } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
 import { persistRoleIntent, readRoleIntent, RoleIntent, trackRoleIntentApplied } from './lib/role-intent'
 
-const GPU_RATES: { model: string; rate: number }[] = []
 const RELIABILITY_POLL_MS = 30_000
+const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], weight: ['500', '600', '700'] })
 
 interface AvailabilityProvider {
   gpu_model?: string | null
@@ -111,6 +112,8 @@ function ProviderCountWidget({ health }: { health: DetailedHealth | null }) {
 
 export default function HomePage() {
   const { t } = useLanguage()
+  const [heroRevealed, setHeroRevealed] = useState(false)
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
   const [liveGpuCount, setLiveGpuCount] = useState<number | null>(null)
   const [gpuFamilyCoverage, setGpuFamilyCoverage] = useState<number | null>(null)
   const [reliabilityUpdatedAt, setReliabilityUpdatedAt] = useState<Date | null>(null)
@@ -256,6 +259,25 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setHeroRevealed(true), 30)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const apply = () => setPrefersReducedMotion(media.matches)
+    apply()
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', apply)
+      return () => media.removeEventListener('change', apply)
+    }
+
+    media.addListener(apply)
+    return () => media.removeListener(apply)
+  }, [])
+
+  useEffect(() => {
     const node = billingExplainerRef.current
     if (!node || hasTrackedBillingExplainerView.current) return
 
@@ -279,16 +301,6 @@ export default function HomePage() {
     return () => observer.disconnect()
   }, [])
 
-  const liveStats = [
-    { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
-    { value: gpuFamilyCoverage !== null ? `${gpuFamilyCoverage}` : '—', label: t('landing.reliability_gpu_families'), live: gpuFamilyCoverage !== null },
-    {
-      value: reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable'),
-      label: t('landing.live_stat_last_updated'),
-      live: reliabilityUpdatedAt !== null,
-    },
-  ]
-
   const trustPolicies = [
     {
       title: t('landing.trust_settlement_title'),
@@ -308,36 +320,20 @@ export default function HomePage() {
     t('proof.segment.item_models'),
     t('proof.segment.item_execution'),
   ]
-  const modeStripItems = [
-    { key: 'marketplace', label: t('mode.label.marketplace'), description: t('mode.desc.marketplace'), href: '/renter/marketplace' },
-    { key: 'playground', label: t('mode.label.playground'), description: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api-reference' },
-    { key: 'enterprise_support', label: t('mode.label.enterprise_support'), description: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=landing-mode-strip' },
-  ]
   const pathChooserLanes = [
     {
-      key: 'self_serve_renter',
-      label: t('path_chooser.self_serve.label'),
-      description: t('path_chooser.self_serve.desc'),
-      href: '/renter/register?source=landing_path_chooser&lane=self_serve_renter',
+      key: 'build_on_dcp',
+      label: 'Build on DCP',
+      description: 'Launch inference quickly with Arabic-ready models, API access, and clear per-token settlement.',
+      href: '/renter/register?source=landing_path_chooser&lane=build_on_dcp',
+      cta: 'Start as Renter',
     },
     {
-      key: 'provider_onboarding',
-      label: t('path_chooser.provider.label'),
-      description: t('path_chooser.provider.desc'),
-      href: '/provider/register?source=landing_path_chooser&lane=provider_onboarding',
-    },
-    {
-      key: 'enterprise_intake',
-      label: t('path_chooser.enterprise.label'),
-      description: t('path_chooser.enterprise.desc'),
-      href: '/support?category=enterprise&source=landing_path_chooser&lane=enterprise_intake#contact-form',
-    },
-    {
-      key: 'arabic_model_docs',
-      label: t('path_chooser.arabic.label'),
-      description: t('path_chooser.arabic.desc'),
-      href: '/docs?source=landing_path_chooser&lane=arabic_model_docs',
+      key: 'earn_as_provider',
+      label: 'Earn as Provider',
+      description: 'Register your GPU, stay online with heartbeat reporting, and receive workload-based earnings.',
+      href: '/provider/register?source=landing_path_chooser&lane=earn_as_provider',
+      cta: 'Start as Provider',
     },
   ]
   const howDcpWorksSteps = [
@@ -357,33 +353,65 @@ export default function HomePage() {
       description: 'Monitor usage and costs in real-time. Pay per token with SAR billing.',
     },
   ]
+  const revealVisible = heroRevealed || prefersReducedMotion
 
   return (
     <div className="min-h-screen flex flex-col">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-dc1-amber focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-dc1-void"
+      >
+        Skip to main content
+      </a>
       <Header />
       <LaunchBanner health={detailedHealth} />
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-dc1-amber/5 via-transparent to-transparent pointer-events-none" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 lg:py-36 relative">
-          <div className="text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
-              <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY
+      <section
+        id="main-content"
+        tabIndex={-1}
+        className="relative min-h-[72dvh] overflow-hidden border-b border-dc1-border/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-dc1-amber focus-visible:ring-offset-2 focus-visible:ring-offset-dc1-void md:min-h-[86dvh]"
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(245,165,36,0.16),transparent_38%),radial-gradient(circle_at_88%_12%,rgba(245,165,36,0.08),transparent_30%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-dc1-amber/10 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-dc1-void to-transparent" />
+
+        <div className="relative mx-auto grid max-w-[1240px] gap-8 px-4 py-10 sm:px-6 md:py-20 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)] lg:gap-12 lg:px-8">
+          <div>
+            <div
+              className={`mb-6 inline-flex items-center gap-2 rounded-full border border-dc1-amber/25 bg-dc1-amber/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber transition-all duration-300 ${
+                revealVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+              }`}
+            >
+              <span className="h-2 w-2 animate-pulse rounded-full bg-dc1-amber" />
+              Inference API Marketplace
             </div>
-            <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
+            <h1
+              className={`${spaceGrotesk.className} max-w-[14ch] text-4xl font-semibold leading-[0.95] tracking-[-0.03em] text-dc1-amber transition-all delay-75 duration-500 sm:text-5xl lg:text-6xl ${
+                revealVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+              }`}
+            >
               {t('landing.hero_title')}
             </h1>
-            <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
+            <p
+              className={`mt-5 max-w-2xl text-base leading-relaxed text-dc1-text-secondary transition-all delay-100 duration-500 sm:text-lg ${
+                revealVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+              }`}
+            >
               {t('landing.hero_desc')}
             </p>
-            <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
-              OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.
+            <p
+              className={`mt-4 hidden max-w-2xl text-sm leading-relaxed text-dc1-text-secondary/90 transition-all delay-150 duration-500 sm:block ${
+                revealVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+              }`}
+            >
+              OpenAI-compatible inference with Arabic model support, Saudi data residency, and per-token billing on Saudi energy-powered GPU infrastructure.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
+
+            <div className={`mt-7 flex flex-col gap-3 transition-all delay-200 duration-500 sm:flex-row ${revealVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`}>
               <Link
                 href="/renter/register?source=landing_first_fold&intent=renter"
+                aria-label="Start as renter on DCP"
                 onClick={() => {
                   updateIntent('renter', 'landing_first_fold', 'primary_cta')
                   trackLandingEvent('landing_primary_cta_clicked', {
@@ -393,12 +421,13 @@ export default function HomePage() {
                     step: 'primary_cta',
                   })
                 }}
-                className="btn btn-primary btn-lg w-full sm:w-auto min-w-[240px]"
+                className="btn btn-primary btn-lg inline-flex min-h-[44px] w-full items-center justify-center transition-transform duration-200 hover:-translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dc1-amber focus-visible:ring-offset-2 focus-visible:ring-offset-dc1-void sm:w-auto"
               >
                 {t('landing.cta_renter')}
               </Link>
               <Link
                 href="/provider/register?source=landing_first_fold&intent=provider"
+                aria-label="Start as provider on DCP"
                 onClick={() => {
                   updateIntent('provider', 'landing_first_fold', 'primary_cta')
                   trackLandingEvent('landing_primary_cta_clicked', {
@@ -408,181 +437,127 @@ export default function HomePage() {
                     step: 'primary_cta',
                   })
                 }}
-                className="btn btn-secondary btn-lg w-full sm:w-auto min-w-[240px]"
+                className="btn btn-secondary btn-lg inline-flex min-h-[44px] w-full items-center justify-center transition-transform duration-200 hover:-translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dc1-amber focus-visible:ring-offset-2 focus-visible:ring-offset-dc1-void sm:w-auto"
               >
                 {t('landing.cta_provider')}
               </Link>
             </div>
-            <p className="text-xs text-dc1-text-muted mb-3">
-              {t('landing.cta_alt_prefix')}{' '}
-              <Link href="/support?category=enterprise&source=landing-first-fold" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold">
-                {t('landing.cta_enterprise')}
-              </Link>
-            </p>
-            <div className="mb-8 flex justify-center">
+
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-dc1-text-muted">
               <ProviderCountWidget health={detailedHealth} />
+              <span className="hidden h-1 w-1 rounded-full bg-dc1-text-muted sm:inline-block" />
+              <span className="hidden sm:inline">
+                {t('landing.cta_alt_prefix')}{' '}
+                <Link href="/support?category=enterprise&source=landing-first-fold" className="font-semibold text-dc1-amber hover:text-dc1-amber/80">
+                  {t('landing.cta_enterprise')}
+                </Link>
+              </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>
-                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_energy_desc')}</p>
-              </div>
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_models_title')}</p>
-                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_models_desc')}</p>
-              </div>
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_container_title')}</p>
-                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
-              </div>
-            </div>
-            <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                How DCP works
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {howDcpWorksSteps.map((item, index) => (
-                  <div key={item.key} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-3">
-                    <p className="text-xs font-semibold text-dc1-amber">{index + 1}. {item.title}</p>
-                    <p className="mt-1 text-xs text-dc1-text-secondary leading-relaxed">{item.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <details className="max-w-4xl mx-auto w-full mb-4 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-left">
-              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                Explore all paths and tools
-              </summary>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                    {t('mode.strip.title')}
-                  </p>
-                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('mode.strip.subtitle')}</p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {modeStripItems.map((item) => (
-                      <Link
-                        key={item.key}
-                        href={item.href}
-                        onClick={() =>
-                          trackLandingEvent('mode_strip_clicked', {
-                            surface: 'mode_strip',
-                            destination: item.href,
-                            step: 'mode_click',
-                            mode_key: item.key,
-                            mode_label: item.label,
-                          })
-                        }
-                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
-                      >
-                        <p className="text-sm font-semibold text-dc1-text-primary">{item.label}</p>
-                        <p className="mt-1 text-xs text-dc1-text-secondary">{item.description}</p>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                    {t('path_chooser.title')}
-                  </p>
-                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('path_chooser.subtitle')}</p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {pathChooserLanes.map((lane) => (
-                      <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber">
-                        <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
-                        <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </details>
-            <div className="w-full rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-2 text-xs text-dc1-text-secondary text-center">
-              {t('landing.hero_settlement_proof')}
-            </div>
-            <p className="text-xs text-dc1-text-muted mt-4">{t('landing.hero_helper')}</p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
-              <Link
-                href="/marketplace"
-                className="inline-flex items-center gap-2 text-sm font-medium text-dc1-amber hover:text-dc1-amber/80 transition-colors"
-              >
-                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                {t('landing.browse_live')}
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-              <Link
-                href="/earn"
-                className="inline-flex items-center gap-2 text-sm font-medium text-dc1-text-secondary hover:text-dc1-amber transition-colors"
-              >
-                {t('landing.earn_calc')}
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-            </div>
-            <div className="mt-5 mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                {t('landing.reliability_strip_label')}
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{liveGpuCount ?? '—'}</span> {t('landing.reliability_live_providers')}
-                </p>
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{gpuFamilyCoverage ?? '—'}</span> {t('landing.reliability_gpu_families')}
-                </p>
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable')}</span>
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 mx-auto max-w-3xl rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                {t('proof.segment.title')}
-              </p>
-              <ul className="list-disc ps-5 space-y-1 text-sm text-dc1-text-secondary">
-                {segmentProofItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-            <p className="text-dc1-text-secondary text-sm mt-6">
+
+            <p className="mt-6 hidden text-sm text-dc1-text-secondary sm:block">
               {t('landing.already_account')}{' '}
-              <Link href="/login" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold underline underline-offset-2">
+              <Link href="/login" className="font-semibold text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80">
                 {t('landing.sign_in_here')}
               </Link>
             </p>
           </div>
-        </div>
-      </section>
 
-
-
-      {/* Live telemetry */}
-      <section className="border-y border-dc1-border bg-dc1-surface-l1/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
-            {liveStats.map((stat) => (
-              <div key={stat.label} className="text-center">
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl sm:text-3xl font-bold text-dc1-amber">{stat.value}</p>
-                  {stat.live && (
-                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" title={t('landing.live_metric_badge')} />
-                  )}
+          <div className={`space-y-4 transition-all delay-300 duration-500 ${revealVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`}>
+            <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">{t('landing.reliability_strip_label')}</p>
+              <div className="mt-3 divide-y divide-dc1-border rounded-xl border border-dc1-border bg-dc1-surface-l2">
+                <div className="flex items-center justify-between px-3 py-3">
+                  <p className="text-xs uppercase tracking-[0.1em] text-dc1-text-secondary">{t('landing.reliability_live_providers')}</p>
+                  <p aria-live="polite" aria-atomic="true" className="text-xl font-bold text-dc1-text-primary">
+                    {liveGpuCount !== null ? (
+                      liveGpuCount
+                    ) : (
+                      <>
+                        <span className="inline-block h-6 w-10 animate-pulse rounded bg-dc1-surface-l3" aria-hidden="true" />
+                        <span className="sr-only">{t('landing.live_stat_loading')}</span>
+                      </>
+                    )}
+                  </p>
                 </div>
-                <p className="text-sm text-dc1-text-secondary mt-1">{stat.label}</p>
+                <div className="flex items-center justify-between px-3 py-3">
+                  <p className="text-xs uppercase tracking-[0.1em] text-dc1-text-secondary">{t('landing.reliability_gpu_families')}</p>
+                  <p aria-live="polite" aria-atomic="true" className="text-xl font-bold text-dc1-text-primary">
+                    {gpuFamilyCoverage !== null ? (
+                      gpuFamilyCoverage
+                    ) : (
+                      <>
+                        <span className="inline-block h-6 w-10 animate-pulse rounded bg-dc1-surface-l3" aria-hidden="true" />
+                        <span className="sr-only">{t('landing.live_stat_loading')}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between px-3 py-3">
+                  <p className="text-xs uppercase tracking-[0.1em] text-dc1-text-secondary">{t('landing.live_stat_last_updated')}</p>
+                  <p aria-live="polite" aria-atomic="true" className="text-xs font-semibold text-dc1-text-primary">
+                    {reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.live_stat_loading')}
+                  </p>
+                </div>
               </div>
-            ))}
+            </div>
+
+            <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">How DCP works</p>
+              <div className="mt-3 space-y-2">
+                {howDcpWorksSteps.map((item, index) => (
+                  <div key={item.key} className="flex gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-dc1-amber/35 bg-dc1-amber/10 text-xs font-semibold text-dc1-amber">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-dc1-text-primary">{item.title}</p>
+                      <p className="mt-0.5 text-xs text-dc1-text-secondary">{item.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
+      <section className="mx-auto w-full max-w-[1240px] px-4 py-12 sm:px-6 md:py-16 lg:px-8">
+        <div className="mb-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">Choose your path</p>
+          <p className="mt-2 max-w-2xl text-sm text-dc1-text-secondary">Pick one lane to start quickly. You can switch roles later from your account.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+          {pathChooserLanes.map((lane) => (
+            <Link
+              key={lane.key}
+              href={lane.href}
+              aria-label={`${lane.label}: ${lane.cta}`}
+              className="flex min-h-[220px] flex-col rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5 transition-all hover:-translate-y-0.5 hover:border-dc1-amber/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dc1-amber focus-visible:ring-offset-2 focus-visible:ring-offset-dc1-void"
+            >
+              <p className="text-lg font-medium text-dc1-text-primary">{lane.label}</p>
+              <p className="mt-2 text-sm leading-relaxed text-dc1-text-secondary">{lane.description}</p>
+              <span className="mt-auto pt-6 text-sm font-semibold text-dc1-amber">{lane.cta} →</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-[1240px] px-4 pb-10 sm:px-6 lg:px-8">
+        <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">{t('proof.segment.title')}</p>
+          <ul className="mt-2 grid list-disc gap-1 ps-5 text-sm text-dc1-text-secondary sm:grid-cols-3 sm:gap-3 sm:list-none sm:ps-0">
+            {segmentProofItems.map((item) => (
+              <li key={item} className="sm:before:me-2 sm:before:content-['•']">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
       {/* Trust policy module */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-6">
-          <h2 className="text-xl font-semibold text-dc1-text-primary mb-2">{t('landing.trust_module_title')}</h2>
+          <h2 className={`${spaceGrotesk.className} text-xl font-semibold text-dc1-text-primary mb-2`}>{t('landing.trust_module_title')}</h2>
           <p className="text-sm text-dc1-text-secondary mb-4">{t('landing.trust_module_intro')}</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {trustPolicies.map((item) => (
@@ -598,7 +573,7 @@ export default function HomePage() {
       {/* Billing transparency */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div ref={billingExplainerRef} className="rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-6">
-          <h2 className="text-xl font-semibold text-dc1-text-primary mb-3">{t('billing.explainer.title')}</h2>
+          <h2 className={`${spaceGrotesk.className} text-xl font-semibold text-dc1-text-primary mb-3`}>{t('billing.explainer.title')}</h2>
           <ul className="space-y-2 text-sm text-dc1-text-secondary">
             <li>{t('billing.explainer.step1')}</li>
             <li>{t('billing.explainer.step2')}</li>
@@ -619,7 +594,7 @@ export default function HomePage() {
         <div className="relative w-full">
           <div className="absolute left-0 top-0 bottom-0 w-24 sm:w-40 bg-gradient-to-r from-[#0d1117] to-transparent z-10 pointer-events-none" />
           <div className="absolute right-0 top-0 bottom-0 w-24 sm:w-40 bg-gradient-to-l from-[#0d1117] to-transparent z-10 pointer-events-none" />
-          <div className="flex animate-marquee">
+          <div className={prefersReducedMotion ? 'flex' : 'flex animate-marquee'}>
             {[0, 1].map((copy) => (
               <div key={copy} className="flex items-center gap-14 sm:gap-20 px-7 sm:px-10 shrink-0">
                 {[
@@ -638,6 +613,10 @@ export default function HomePage() {
                     key={`${copy}-${i}`}
                     src={logo.src}
                     alt={logo.alt}
+                    width={180}
+                    height={36}
+                    loading="lazy"
+                    decoding="async"
                     className="h-7 sm:h-9 w-auto object-contain brightness-0 invert opacity-50 hover:opacity-90 transition-opacity duration-300 shrink-0"
                   />
                 ))}
@@ -645,40 +624,22 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
-          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1/90 p-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_energy_title')}</p>
-                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_energy_desc')}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_models_title')}</p>
-                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_models_desc')}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_container_title')}</p>
-                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_container_desc')}</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
       {/* Pricing section removed — rates not yet finalized */}
 
       {/* Usage Paths */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+      <section className="mx-auto w-full max-w-[1240px] px-4 py-14 sm:px-6 md:py-20 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
+          <h2 className={`${spaceGrotesk.className} text-3xl font-semibold tracking-[-0.02em] text-dc1-text-primary sm:text-[2.1rem] mb-4`}>
             Choose your workflow
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
             Validate quickly in-browser, then move to API-driven container jobs for repeatable integration.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-10">
           {/* Playground */}
-          <div className="bg-dc1-surface-l2 border border-dc1-border rounded-lg p-8 transition-all duration-200 hover:border-dc1-border-light hover:shadow-md group">
+          <div className="lg:col-span-6 bg-dc1-surface-l2 border border-dc1-border rounded-lg p-8 transition-all duration-200 hover:border-dc1-border-light hover:shadow-md group">
             <div className="w-12 h-12 rounded-lg bg-dc1-amber/10 flex items-center justify-center text-dc1-amber mb-6 group-hover:bg-dc1-amber/20 transition-colors">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -701,13 +662,13 @@ export default function HomePage() {
                 </li>
               ))}
             </ul>
-            <Link href="/renter/register" className="btn btn-primary btn-sm">
+            <Link href="/renter/register" aria-label="Open browser playground registration" className="btn btn-primary btn-sm inline-flex min-h-[44px] items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dc1-amber focus-visible:ring-offset-2 focus-visible:ring-offset-dc1-void">
               Try the playground
             </Link>
           </div>
 
           {/* Custom Jobs */}
-          <div className="bg-dc1-surface-l2 border border-dc1-border rounded-lg p-8 transition-all duration-200 hover:border-dc1-border-light hover:shadow-md group">
+          <div className="lg:col-span-4 bg-dc1-surface-l2 border border-dc1-border rounded-lg p-8 transition-all duration-200 hover:border-dc1-border-light hover:shadow-md group">
             <div className="w-12 h-12 rounded-lg bg-dc1-amber/10 flex items-center justify-center text-dc1-amber mb-6 group-hover:bg-dc1-amber/20 transition-colors">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -729,7 +690,7 @@ export default function HomePage() {
                 </li>
               ))}
             </ul>
-            <Link href="/docs" className="btn btn-secondary btn-sm">
+            <Link href="/docs" aria-label="View DCP API documentation for container jobs" className="btn btn-secondary btn-sm inline-flex min-h-[44px] items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dc1-amber focus-visible:ring-offset-2 focus-visible:ring-offset-dc1-void">
               View API docs
             </Link>
           </div>
@@ -739,7 +700,7 @@ export default function HomePage() {
       {/* Features */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
-          <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
+          <h2 className={`${spaceGrotesk.className} text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4`}>
             {t('landing.features_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
@@ -772,7 +733,7 @@ export default function HomePage() {
       {/* How it works */}
       <section className="bg-dc1-surface-l1 border-y border-dc1-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <h2 className="text-3xl font-bold text-dc1-text-primary text-center mb-16">{t('landing.how_title')}</h2>
+          <h2 className={`${spaceGrotesk.className} text-3xl font-bold text-dc1-text-primary text-center mb-16`}>{t('landing.how_title')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             {[
               { step: '01', title: t('landing.how_step1_title'), desc: t('landing.how_step1_desc') },
@@ -795,7 +756,7 @@ export default function HomePage() {
       {/* Provider Setup Demo */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
-          <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
+          <h2 className={`${spaceGrotesk.className} text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4`}>
             {t('landing.setup_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
@@ -861,7 +822,7 @@ Invoke-WebRequest \`
       </section>
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
-          <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
+          <h2 className={`${spaceGrotesk.className} text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4`}>
             {t('landing.run_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
@@ -957,7 +918,7 @@ Invoke-WebRequest \`
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
                 {t('landing.vscode_badge')}
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-6">
+              <h2 className={`${spaceGrotesk.className} text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-6`}>
                 {t('landing.vscode_title')}
               </h2>
               <p className="text-dc1-text-secondary mb-6 leading-relaxed">
@@ -1024,7 +985,7 @@ provider.start()  # initialize, heartbeat, and run assigned container workloads`
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
               {t('landing.api_badge')}
             </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-6">
+            <h2 className={`${spaceGrotesk.className} text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-6`}>
               {t('landing.api_title')}
             </h2>
             <p className="text-dc1-text-secondary mb-6 leading-relaxed">
@@ -1080,7 +1041,7 @@ provider.start()  # initialize, heartbeat, and run assigned container workloads`
       {/* CTA */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="card border-dc1-amber/20 text-center py-12 px-8 glow-amber">
-          <h2 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-4">
+          <h2 className={`${spaceGrotesk.className} text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-4`}>
             {t('landing.cta_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-xl mx-auto mb-8">
