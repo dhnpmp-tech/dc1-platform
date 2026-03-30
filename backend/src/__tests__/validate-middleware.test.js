@@ -186,6 +186,16 @@ describe('providerRegisterSchema', () => {
     });
     expect(result.passed).toBe(true);
   });
+
+  test('accepts location_country alias and maps it to location', () => {
+    const result = runMiddleware(providerRegisterSchema, {
+      ...validBody,
+      location_country: 'Saudi Arabia',
+    });
+    expect(result.passed).toBe(true);
+    expect(result.parsedBody.location).toBe('Saudi Arabia');
+    expect(result.parsedBody.location_country).toBeUndefined();
+  });
 });
 
 describe('providerBenchmarkSchema', () => {
