@@ -23,6 +23,7 @@ describe('providerActivationEvidenceService', () => {
   test('buildEvidenceBundle surfaces IDs and stream completion summary', () => {
     const bundle = buildEvidenceBundle({
       route: '/v1/chat/completions',
+      endpointUrl: 'https://dcp.sa/v1/chat/completions',
       utcTimestamp: '2026-03-30T19:30:00.000Z',
       model: 'meta-llama/Llama-3.1-8B-Instruct',
       requestHeaders: {
@@ -40,15 +41,22 @@ describe('providerActivationEvidenceService', () => {
       providerAvailability: { id: 42, status: 'online' },
       git: { branch: 'agent/backend-dev/dcp-153', sha: 'abc123' },
       command: 'node backend/scripts/export-provider-activation-evidence.js',
+      commandPack: 'echo check',
+      duplicateChargeChecks: [{ title: 'check-a', command: 'echo a' }],
+      nearbyWindowMinutes: 15,
       outputPath: '/tmp/stream.txt',
       prompt: 'hello world',
     });
 
+    expect(bundle.endpoint_url).toBe('https://dcp.sa/v1/chat/completions');
     expect(bundle.request_id).toBe('req-abc');
     expect(bundle.trace_id).toBe('trace-123');
     expect(bundle.provider_id).toBe('42');
     expect(bundle.session_id).toBe('session-xyz');
     expect(bundle.stream_completed).toBe(true);
+    expect(bundle.raw_output_snippets.total_lines).toBe(2);
+    expect(bundle.duplicate_charge_checks).toHaveLength(1);
+    expect(bundle.nearby_window_minutes).toBe(15);
     expect(bundle.summary).toContain('request_id=req-abc');
   });
 
