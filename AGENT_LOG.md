@@ -1,3 +1,8 @@
+## [2026-03-30 15:06 UTC] Codex — DCP-133 Added Rate Limiting For Provider Benchmark Submissions
+- **Commit**: `1e5e8a6965b5` - Applied existing `benchmarkLimiter` middleware to `POST /api/providers/:id/benchmark-submit` and added integration coverage that enforces a 30-per-minute cap with a 429 response on the 31st request.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: The benchmark submit activation path now has explicit abuse protection in line with security checklist expectations, with regression coverage proving throttle behavior while preserving normal benchmark submission flow.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
