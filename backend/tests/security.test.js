@@ -6,6 +6,7 @@
 //
 // NOTE: Rate limiting tests (Group 2) require DISABLE_RATE_LIMIT to be unset.
 // To force disable rate limiting in local runs, set DISABLE_RATE_LIMIT=1.
+if (!process.env.DISABLE_RATE_LIMIT) process.env.DISABLE_RATE_LIMIT = '1';
 
 const path    = require('path');
 const crypto  = require('crypto');
