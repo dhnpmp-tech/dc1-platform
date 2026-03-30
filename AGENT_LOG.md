@@ -1,3 +1,8 @@
+## [2026-03-30 01:27 UTC] Codex — Arabic Provider Onboarding Label Cleanup
+- **Commit**: `ed759ba` - Replaced the remaining hardcoded onboarding step label on `/provider/register` with i18n and localized the Arabic-facing fallback labels for `Other`/`Other Linux` in the provider registration flow.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic mode no longer shows English "Step:" or "Other Linux" in this flow, keeping DCP-51 localization quality aligned for UX re-review and downstream QA.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
