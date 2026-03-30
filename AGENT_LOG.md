@@ -1,3 +1,8 @@
+## [2026-03-30 18:09 UTC] Codex — DCP-149 RateLimiter Test Isolation From Env Leakage
+- **Commit**: `pending` - Hardened rate limiter unit tests to force `DISABLE_RATE_LIMIT=0` per test run and restore prior env state after each test.
+- **Files**: `backend/src/__tests__/rateLimiter.test.js`, `AGENT_LOG.md`
+- **Impact**: `src/__tests__/rateLimiter.test.js` now stays deterministic even when CI/shell exports `DISABLE_RATE_LIMIT=1`, preventing false negatives where expected `429` responses become `200`. Verification passed with both `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js` and `cd backend && DISABLE_RATE_LIMIT=1 npm test -- --runInBand src/__tests__/rateLimiter.test.js`.
+
 ## [2026-03-30 17:33 UTC] Codex — DCP-146 v1 Tool-Calling Forwarding Parity
 - **Commit**: `pending` - Patched `/v1/chat/completions` provider proxying to forward `tools` and `tool_choice` in both primary and fallback provider attempts.
 - **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`
