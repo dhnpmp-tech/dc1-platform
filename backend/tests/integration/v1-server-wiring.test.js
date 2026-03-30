@@ -38,7 +38,7 @@ describe('server /v1 wiring', () => {
   let intervalSpy;
   let renterKey;
 
-  function startMockProvider(responseBody) {
+  function startMockProvider(responseBody, { onRequest } = {}) {
     return new Promise((resolve, reject) => {
       const server = http.createServer((req, res) => {
         if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
@@ -46,9 +46,13 @@ describe('server /v1 wiring', () => {
           res.end(JSON.stringify({ error: 'not found' }));
           return;
         }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(responseBody));
+        let body = '';
+        req.on('data', (chunk) => { body += chunk.toString('utf8'); });
+        req.on('end', () => {
+          if (typeof onRequest === 'function') onRequest(body);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(responseBody));
+        });
       });
 
       server.listen(0, '127.0.0.1', () => resolve(server));
@@ -132,5 +136,53 @@ describe('server /v1 wiring', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.choices?.[0]?.message?.content).toBe('mounted v1 router works');
+  });
+
+  test('POST /v1/chat/completions forwards tools and tool_choice to provider', async () => {
+    let capturedBody = null;
+    if (providerServer) {
+      await new Promise((resolve) => providerServer.close(resolve));
+    }
+
+    const providerResponse = {
+      id: 'chatcmpl-tools',
+      object: 'chat.completion',
+      model: 'server-wiring-model',
+      choices: [{ index: 0, message: { role: 'assistant', content: 'tool forwarding verified' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 },
+    };
+    providerServer = await startMockProvider(providerResponse, {
+      onRequest: (rawBody) => {
+        capturedBody = JSON.parse(rawBody || '{}');
+      },
+    });
+    const { port } = providerServer.address();
+    db.run('UPDATE providers SET vllm_endpoint_url = ?, updated_at = datetime(\'now\') WHERE email = ?', `http://127.0.0.1:${port}`, 'provider-wiring@test.com');
+
+    const toolPayload = [{
+      type: 'function',
+      function: {
+        name: 'lookup_rate',
+        description: 'Lookup a pricing rate',
+        parameters: { type: 'object', properties: { model: { type: 'string' } }, required: ['model'] },
+      },
+    }];
+    const toolChoicePayload = { type: 'function', function: { name: 'lookup_rate' } };
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', `Bearer ${renterKey}`)
+      .send({
+        model: 'server-wiring-model',
+        messages: [{ role: 'user', content: 'What is the current price?' }],
+        max_tokens: 48,
+        tools: toolPayload,
+        tool_choice: toolChoicePayload,
+      });
+
+    expect(res.status).toBe(200);
+    expect(capturedBody).toBeTruthy();
+    expect(capturedBody.tools).toEqual(toolPayload);
+    expect(capturedBody.tool_choice).toEqual(toolChoicePayload);
   });
 });
