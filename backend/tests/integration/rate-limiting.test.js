@@ -136,6 +136,28 @@ describe('Rate limiting — renter registration (max: 5/hr)', () => {
   });
 });
 
+describe('Rate limiting — provider health endpoint (max: 30/min)', () => {
+  it('blocks 31st provider health request from same IP (429)', async () => {
+    const app = express();
+    app.use(express.json());
+    const providersRoute = (() => {
+      const p = require.resolve('../../src/routes/providers');
+      delete require.cache[p];
+      return require('../../src/routes/providers');
+    })();
+    app.use('/api/providers', providersRoute);
+
+    const statuses = [];
+    for (let i = 0; i < 31; i++) {
+      const res = await request(app).get('/api/providers/123/health');
+      statuses.push(res.status);
+    }
+
+    expect(statuses.slice(0, 30).every((s) => s === 401)).toBe(true);
+    expect(statuses[30]).toBe(429);
+  });
+});
+
 describe('Rate limiting — job submission (max: 30/min)', () => {
   it('limits job submissions and returns 429 + error message', async () => {
     const limiter = rateLimit({
