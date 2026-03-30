@@ -131,6 +131,9 @@ QA should use this checklist after backend confirms a stable window:
    - no unexpected alert rows were written for the clean run.
 4. Archive the exact request payloads and all three JSON responses in the release evidence bundle.
 
+## Related Artifacts
+- `docs/ops/openrouter-settlement-traceability-matrix.md` (DCP-105): usage-to-settlement traceability matrix, control thresholds, and failure ownership map.
+
 ## Dependency Notes
 - [DCP-84](/DCP/issues/DCP-84) supplies the ledger, reconciliation, settlement APIs, and alert writes this runbook depends on.
 - [DCP-98](/DCP/issues/DCP-98) supplies the metering normalization that makes the dry-run totals trustworthy for operator review.
