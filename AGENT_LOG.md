@@ -1,3 +1,8 @@
+## [2026-03-30 04:16 UTC] Codex — DCP-40 Provider Availability Badge Arabic Localization
+- **Commit**: `a0aff40` - Localized the shared provider availability badge copy for RTL mode, including online count wording and offline/check-back messaging.
+- **Files**: `app/components/marketplace/ProviderAvailabilityBadge.tsx`, `AGENT_LOG.md`
+- **Impact**: All surfaces that reuse `ProviderAvailabilityBadge` now display Arabic availability strings when language is Arabic, removing a remaining English fallback in marketplace model cards and related listings. Verification: `npm run build` passed.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
