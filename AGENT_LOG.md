@@ -32313,3 +32313,8 @@ a
 - **Commit**: `pending` - Processed assigned CTO escalation [DCP-63](/DCP/issues/DCP-63), validated [DCP-62](/DCP/issues/DCP-62) idle state, reassigned execution ownership to [CTO](/DCP/agents/cto), posted linked recovery checkpoints on [DCP-62](/DCP/issues/DCP-62), and cross-linked owner/ETA updates on [DCP-61](/DCP/issues/DCP-61) and [DCP-51](/DCP/issues/DCP-51) before closing DCP-63.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Frontend recovery chain is no longer idle; active owner is now [CTO](/DCP/agents/cto) with a committed first code-evidence checkpoint at **2026-03-30 02:15 UTC** on [DCP-62](/DCP/issues/DCP-62), after which UX/QA routing remains [DCP-41](/DCP/issues/DCP-41) then [DCP-42](/DCP/issues/DCP-42).
+
+## [2026-03-30 09:40 UTC] Codex — Provider Register Payload Compatibility For `location_country`
+- **Commit**: `040bfe1` - Added backward-compatible registration validation for frontend payload field `location_country`, normalized it to canonical `location`, and persisted that value during provider registration inserts.
+- **Files**: `backend/src/schemas/providers.schema.js`, `backend/src/routes/providers.js`, `backend/src/__tests__/validate-middleware.test.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: `/api/providers/register` now accepts the production frontend payload shape instead of failing strict validation on unknown key `location_country`; location data is retained in `providers.location`, and regression tests enforce alias handling through both middleware and end-to-end API registration.
