@@ -18,6 +18,11 @@
 - **Files**: `AGENT_LOG.md`, `memory/2026-03-29.md`
 - **Impact**: UX lane is active again with concrete ownership. UXDesigner now owns preflight review of [DCP-51](/DCP/issues/DCP-51) and explicit UX verdict posting on [DCP-41](/DCP/issues/DCP-41), giving QA a clear handoff path for [DCP-42](/DCP/issues/DCP-42).
 
+## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
+- **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Release is no longer pending review: `origin/main` now includes the payout rejection email flow, legacy payout-history schema compatibility, deterministic payout ordering, provider OS normalization, and canonical installer URL handoff. QA should verify the shipped behavior in the live environment using the checklist already posted on PR #90. Known release-process debt remains: GitHub accepted the direct `main` push while reporting two expected status checks, so branch protection/check enforcement should be audited separately.
+
 ## [2026-03-29 23:21 UTC] Codex — Release Unblocked For Payout History + Main Sync
 - **Commit**: `64c3341`, `a8f95c1`, `37be3f4` - Added backward-compatible payout history reads for schemas that do not yet have `escrow_tx_hash`, stabilized payout ordering when `requested_at` ties, and merged the latest `origin/main` support-chat commits into the release branch.
 - **Files**: `backend/src/services/payoutService.js`, `backend/src/__tests__/payoutService.test.js`, `AGENT_LOG.md`
