@@ -1,3 +1,8 @@
+## [2026-03-30 02:20 UTC] Codex — Marketplace Models Arabic RTL Copy Pass
+- **Commit**: `fb211d1` - Localized key hardcoded strings on `/marketplace/models` for Arabic mode (model-card badges/pricing/CTA, comparison strip labels, filter controls, Arabic RAG callout CTA/body, and empty/error helpers) using runtime RTL-aware copy.
+- **Files**: `app/marketplace/models/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Main model-catalog path now avoids major mixed English labels in Arabic mode, reducing the DCP-40 Arabic UX blocker surface while preserving existing marketplace behavior and layout.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
