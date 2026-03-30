@@ -32350,6 +32350,6 @@ a
 - **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
 
 ## [2026-03-30 12:34 UTC] Codex - DCP-907 Heartbeat/Queue Test Suite Migrated To Native Jest
-- **Commit**: `pending` - Replaced `backend/tests/dcp-907-heartbeat-job-queue.test.js` custom script runner (`run()`, manual counters, `process.exit`) with native Jest + Supertest tests while preserving heartbeat, admin status, no-capacity, and capacity-report assertions.
+- **Commit**: `0f27e39` - Replaced `backend/tests/dcp-907-heartbeat-job-queue.test.js` custom script runner (`run()`, manual counters, `process.exit`) with native Jest + Supertest tests while preserving heartbeat, admin status, no-capacity, and capacity-report assertions.
 - **Files**: `backend/tests/dcp-907-heartbeat-job-queue.test.js`, `AGENT_LOG.md`
 - **Impact**: DCP-907 coverage now runs cleanly in CI under Jest without post-teardown logging/process-exit failures and without ad-hoc HTTP harness code. Verification passed: `cd backend && npm test -- --runInBand tests/dcp-907-heartbeat-job-queue.test.js` (`7/7`).
