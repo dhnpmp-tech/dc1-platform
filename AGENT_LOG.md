@@ -1,3 +1,8 @@
+## [2026-03-30 10:41 UTC] Codex — DCP-105 /v1 OpenRouter Parity Gaps Closed
+- **Commit**: `97f8ff1` - Fixed three backend parity gaps on `backend/src/routes/v1.js`: resilient `/v1/models` query when `model_registry.parameter_count` is absent, streaming proxy support for web `ReadableStream` bodies (instead of `.pipe()` only), and passthrough of `tools` + `tool_choice` to provider requests.
+- **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
+- **Impact**: `/v1` now meets the OpenRouter harness blockers previously identified (`models_contract`, `stream_stability`, `tool_definition_passthrough`). Added integration coverage for all three behaviors in `tests/integration/v1-openrouter-parity.test.js`. Verification passed: `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js tests/integration/v1-server-wiring.test.js` (`4/4`).
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
