@@ -1,3 +1,8 @@
+## [2026-03-30 14:39 UTC] Codex — DCP-130 Added IPv6 Limiter Regression Guard For P2P Route
+- **Commit**: `1993324f5bf3` - Hardened P2P route limiter key generation with `ipKeyGenerator` and added a server-wiring regression assertion that fails if `ERR_ERL_KEY_GEN_IPV6` appears during backend bootstrap.
+- **Files**: `backend/src/routes/p2p.js`, `backend/tests/integration/v1-server-wiring.test.js`, `AGENT_LOG.md`
+- **Impact**: IPv6-safe rate-limit keying is now both implemented and test-guarded, preventing silent reintroduction of unsafe `req.ip` key generators in the P2P surface.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
