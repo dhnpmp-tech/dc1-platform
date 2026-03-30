@@ -25,8 +25,17 @@ const providerRegisterSchema = z.object({
   os: providerOsSchema,
   phone: z.string().max(40).optional(),
   location: z.string().max(200).optional(),
+  location_country: z.string().max(200).optional(),
   resource_spec: z.union([z.string().max(4096), z.record(z.string(), z.unknown())]).optional(),
-}).strict();
+}).strict().transform((body) => {
+  const normalizedLocation = body.location ?? body.location_country;
+  const nextBody = { ...body };
+  delete nextBody.location_country;
+  if (normalizedLocation !== undefined) {
+    nextBody.location = normalizedLocation;
+  }
+  return nextBody;
+});
 
 /**
  * POST /api/providers/:id/benchmark — GPU benchmark submission body.

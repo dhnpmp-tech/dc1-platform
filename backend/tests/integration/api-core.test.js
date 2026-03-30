@@ -127,6 +127,14 @@ describe('Provider API — POST /api/providers/register', () => {
     expect(typeof setupRes.text).toBe('string');
     expect(setupRes.text.length).toBeGreaterThan(0);
   });
+
+  it('accepts location_country payload and persists it as location', async () => {
+    const res = await registerProvider({ location_country: 'Saudi Arabia' });
+    expect(res.status).toBe(200);
+
+    const row = db.get('SELECT location FROM providers WHERE id = ?', res.body.provider_id);
+    expect(row.location).toBe('Saudi Arabia');
+  });
 });
 
 describe('Provider API — GET /api/providers/me', () => {

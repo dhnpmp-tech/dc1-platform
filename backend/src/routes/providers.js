@@ -299,12 +299,13 @@ async function notifyRenterJobWebhook(job, eventName, details = {}) {
 // ============================================================================
 router.post('/register', registerLimiter, validateBody(providerRegisterSchema), async (req, res) => {
     try {
-        const { name, email, gpu_model, os, phone, resource_spec } = req.body;
+        const { name, email, gpu_model, os, phone, location, resource_spec } = req.body;
         const cleanName = normalizeString(name, { maxLen: 120 });
         const cleanEmail = normalizeEmail(email);
         const cleanGpuModel = normalizeString(gpu_model, { maxLen: 120 });
         const rawOs = normalizeString(os, { maxLen: 40 });
         const cleanOs = normalizeProviderOs(rawOs || '');
+        const cleanLocation = normalizeString(location, { maxLen: 200 });
 
         // Validate inputs
         if (!cleanName || !cleanEmail || !cleanGpuModel || !rawOs) {
@@ -344,9 +345,9 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
 
         // Save to database
         const result = await runStatement(
-            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, resource_spec)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), resourceSpecJson]
+            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, location, resource_spec)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), cleanLocation, resourceSpecJson]
         );
         
         // Return canonical setup download route so clients can follow the URL directly.
