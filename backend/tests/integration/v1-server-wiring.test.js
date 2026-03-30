@@ -127,6 +127,7 @@ describe('server /v1 wiring', () => {
     const res = await request(app)
       .post('/v1/chat/completions')
       .set('Authorization', `Bearer ${renterKey}`)
+      .set('X-DCP-Trace-Id', 'trace-wiring-test')
       .send({
         model: 'server-wiring-model',
         messages: [{ role: 'user', content: 'hello' }],
@@ -135,6 +136,12 @@ describe('server /v1 wiring', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.choices?.[0]?.message?.content).toBe('mounted v1 router works');
+    expect(res.headers['x-dcp-route']).toBe('/v1/chat/completions');
+    expect(res.headers['x-dcp-request-id']).toBeTruthy();
+    expect(res.headers['x-dcp-trace-id']).toBe('trace-wiring-test');
+    expect(res.headers['x-dcp-provider-id']).toBeTruthy();
+    expect(res.headers['x-dcp-session-id']).toBeTruthy();
+    expect(res.headers['x-dcp-model-id']).toBe('server-wiring-model');
 
     const ipv6LimiterValidationLogged = errorSpy.mock.calls.some((call) =>
       call.some((entry) => String(entry).includes('ERR_ERL_KEY_GEN_IPV6'))
