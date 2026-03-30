@@ -1,3 +1,8 @@
+## [2026-03-30 02:44 UTC] Codex — Provider Register Helper Text i18n Wiring
+- **Commit**: `ee852ee` - Replaced hardcoded helper copy in `/provider/register` with localized keys for GPU hinting, VRAM labels/placeholders/help text, location field labels/help text, operating-system helper text, and referral helper/placeholder/status copy.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic onboarding now has localized helper guidance across core form fields instead of mixed English fallback text, further reducing DCP-42 no-go risk on copy/RTL QA.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
