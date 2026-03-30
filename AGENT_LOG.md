@@ -1,3 +1,8 @@
+## [2026-03-30 18:20 UTC] Codex — DCP-150 v1 Streaming Proxy Parity Restored On Mainline
+- **Commit**: `pending` - Added web-stream compatibility in `/v1/chat/completions` SSE proxying so provider responses from `fetch` work across Node and WHATWG stream types.
+- **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`
+- **Impact**: The previously known `streamResponse.body.pipe is not a function` failure is resolved on top of merged tool-forwarding code. Verification passed with `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js` (`3 passed`).
+
 ## [2026-03-30 17:33 UTC] Codex — DCP-146 v1 Tool-Calling Forwarding Parity
 - **Commit**: `pending` - Patched `/v1/chat/completions` provider proxying to forward `tools` and `tool_choice` in both primary and fallback provider attempts.
 - **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`

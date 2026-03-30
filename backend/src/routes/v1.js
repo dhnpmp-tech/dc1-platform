@@ -15,6 +15,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 
@@ -407,7 +408,17 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        streamResponse.body.pipe(res);
+        const body = streamResponse?.body;
+        if (!body) throw new TypeError('Provider stream body missing');
+        if (typeof body.pipe === 'function') {
+          body.pipe(res);
+          return;
+        }
+        if (typeof Readable.fromWeb === 'function') {
+          Readable.fromWeb(body).pipe(res);
+          return;
+        }
+        throw new TypeError('Unsupported provider stream body type');
       };
 
       if (wantsStream && proxyResult.streamResponse) {
