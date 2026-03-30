@@ -1,3 +1,8 @@
+## [2026-03-30 03:40 UTC] Codex — DCP-40 Arabic Marketplace + Onboarding Copy Localization
+- **Commit**: `bf38b5a` - Localized Arabic-mode marketplace and onboarding UX copy across model catalog hero/filters/cards/comparison/CTAs, fixed mixed-language Featured Arabic Models pricing + learn-more strings, and localized onboarding template tags with VRAM unit text.
+- **Files**: `app/marketplace/models/page.tsx`, `app/components/marketplace/FeaturedArabicModels.tsx`, `app/components/OnboardingWizard.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic users no longer see English fallback for core `/marketplace/models` product copy, filter controls, pricing/comparison labels, or primary CTAs; onboarding recommendation tags and VRAM chips are now Arabic in RTL mode. Verification in this workspace: `npm run build` passed.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
