@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 19:10 UTC] Codex — DCP-152 Homepage CTA Accessibility Labeling
-- **Commit**: `pending` - Added explicit `aria-label` attributes to homepage primary CTAs, path chooser cards, and workflow action buttons to improve screen-reader navigation clarity.
+- **Commit**: `9b0496a` - Added explicit `aria-label` attributes to homepage primary CTAs, path chooser cards, and workflow action buttons to improve screen-reader navigation clarity.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Accessibility semantics are clearer for assistive technologies while links and analytics behavior remain unchanged.
