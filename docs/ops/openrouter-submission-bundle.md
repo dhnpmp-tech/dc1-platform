@@ -19,6 +19,8 @@ This document defines the final artifact bundle that Release can submit once QA 
 - Latency summary (p50/p95/p99 or nearest available percentile approximation)
 - Error-class breakdown
 - Extraction query template: `scripts/sql/openrouter_reliability_metrics.sql`
+- Reproducible local `/v1` SLO artifact (machine-readable): `docs/reports/openrouter/reliability/latest.json`
+- Generation command: `cd backend && npm run test:openrouter:reliability`
 
 4. Runtime compatibility evidence
 - `/v1/models` sample output (sanitized)
@@ -36,5 +38,5 @@ This document defines the final artifact bundle that Release can submit once QA 
 ## Current Status
 - Registration baseline: ready
 - Code updates for gaps 1/3/4: ready (awaiting QA validation)
-- Reliability evidence: blocked on data-source access in current sandbox
+- Reliability evidence: local reproducible harness available; attach latest JSON artifact in release thread
 - Final submission package: pending QA + reliability attachments

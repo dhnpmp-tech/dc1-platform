@@ -211,15 +211,56 @@ async function fetchJson(url, options) {
 }
 
 function createCheck(id, title, severity) {
-  return { id, title, severity, status: 'fail', details: '', evidence: [] };
+  return { id, title, severity, status: 'fail', details: '', evidence: [], startedAtMs: Date.now() };
 }
 
 function finalizeCheck(check, ok, details, evidence = []) {
+  const finishedAtMs = Date.now();
   return {
     ...check,
     status: ok ? 'pass' : 'fail',
     details,
     evidence,
+    latencyMs: Math.max(0, finishedAtMs - (check.startedAtMs || finishedAtMs)),
+    finishedAtMs,
+  };
+}
+
+function percentile(values, pct) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.ceil((pct / 100) * sorted.length) - 1;
+  const idx = Math.min(sorted.length - 1, Math.max(0, rank));
+  return sorted[idx];
+}
+
+function buildTelemetry(checks, startedAtIso) {
+  const startedAtMs = Date.parse(startedAtIso);
+  const endedAtIso = nowIso();
+  const endedAtMs = Date.parse(endedAtIso);
+  const durations = checks.map((check) => Number(check.latencyMs || 0));
+  const failures = checks.filter((check) => check.status !== 'pass').length;
+  const blockingChecks = checks.filter((check) => check.severity === 'blocking');
+  const blockingPassed = blockingChecks.filter((check) => check.status === 'pass').length;
+  const streamChecks = checks.filter((check) => check.id === 'stream_stability');
+  const streamPassed = streamChecks.filter((check) => check.status === 'pass').length;
+
+  return {
+    window: {
+      startedAt: startedAtIso,
+      endedAt: endedAtIso,
+      durationSeconds: Math.max(0, Number(((endedAtMs - startedAtMs) / 1000).toFixed(3))),
+    },
+    sampleCount: checks.length,
+    latencyMs: {
+      min: durations.length ? Math.min(...durations) : 0,
+      p50: percentile(durations, 50),
+      p95: percentile(durations, 95),
+      max: durations.length ? Math.max(...durations) : 0,
+    },
+    errorRatePct: checks.length ? Number(((failures / checks.length) * 100).toFixed(2)) : 0,
+    streamCompletionRatePct: streamChecks.length ? Number(((streamPassed / streamChecks.length) * 100).toFixed(2)) : 0,
+    uptimePct: blockingChecks.length ? Number(((blockingPassed / blockingChecks.length) * 100).toFixed(2)) : 0,
   };
 }
 
@@ -273,6 +314,7 @@ function formatComplianceReport(report) {
 }
 
 async function runOpenRouterComplianceHarness() {
+  const startedAtIso = nowIso();
   resetDb();
   const app = createApp();
   const server = http.createServer(app);
@@ -538,6 +580,7 @@ async function runOpenRouterComplianceHarness() {
     generatedAt: nowIso(),
     summary: buildSummary(checks),
     checks,
+    telemetry: buildTelemetry(checks, startedAtIso),
   };
 }
 

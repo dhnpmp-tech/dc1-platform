@@ -1,0 +1,152 @@
+{
+  "generatedAt": "2026-03-30T20:23:17.753Z",
+  "command": "NODE_ENV=test node backend/tests/openrouter-reliability-telemetry.js",
+  "source": {
+    "harness": "backend/tests/helpers/openrouterComplianceHarness.js",
+    "db": ":memory:",
+    "requiresProductionAccess": false
+  },
+  "metrics": {
+    "latencyMs": {
+      "min": 5,
+      "p50": 8,
+      "p95": 49,
+      "max": 49
+    },
+    "errorRatePct": 0,
+    "streamCompletionRatePct": 100,
+    "uptimePct": 100,
+    "uptimeWindow": {
+      "startedAt": "2026-03-30T20:23:17.753Z",
+      "endedAt": "2026-03-30T20:23:17.880Z",
+      "durationSeconds": 0.127
+    },
+    "sampleCount": 8
+  },
+  "thresholds": {
+    "latencyP50MsMax": 1200,
+    "latencyP95MsMax": 2000,
+    "errorRatePctMax": 0,
+    "streamCompletionRatePctMin": 100,
+    "uptimePctMin": 100
+  },
+  "evaluation": {
+    "checks": {
+      "latency_p50": true,
+      "latency_p95": true,
+      "error_rate": true,
+      "stream_completion_rate": true,
+      "uptime": true
+    },
+    "overall": "PASS",
+    "failingChecks": []
+  },
+  "complianceSummary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "blockingFailures": 0,
+    "nonBlockingFailures": 0,
+    "readiness": "pass"
+  },
+  "checkResults": [
+    {
+      "id": "models_contract",
+      "title": "GET /v1/models returns an OpenAI-compatible list payload",
+      "severity": "blocking",
+      "status": "pass",
+      "latencyMs": 49,
+      "details": "Model catalog contract matches the OpenAI list shape expected by OpenRouter.",
+      "evidence": [
+        "status=200",
+        "model_present=true"
+      ]
+    },
+    {
+      "id": "auth_required",
+      "title": "POST /v1/chat/completions rejects requests without a renter API key",
+      "severity": "blocking",
+      "status": "pass",
+      "latencyMs": 23,
+      "details": "Auth guard correctly rejects anonymous requests with an OpenAI-style authentication error.",
+      "evidence": [
+        "status=401",
+        "error_type=authentication_error"
+      ]
+    },
+    {
+      "id": "billing_guard",
+      "title": "POST /v1/chat/completions rejects renters without enough balance",
+      "severity": "blocking",
+      "status": "pass",
+      "latencyMs": 10,
+      "details": "Billing guard correctly returns a 402 billing error before proxying the request.",
+      "evidence": [
+        "status=402",
+        "error_type=billing_error"
+      ]
+    },
+    {
+      "id": "chat_completion_proxy",
+      "title": "POST /v1/chat/completions proxies a healthy completion response",
+      "severity": "blocking",
+      "status": "pass",
+      "latencyMs": 6,
+      "details": "Healthy OpenRouter-style completion requests reach the provider proxy and return a standard chat completion payload.",
+      "evidence": [
+        "status=200",
+        "content=mock provider response"
+      ]
+    },
+    {
+      "id": "stream_stability",
+      "title": "Streaming responses preserve SSE headers and emit a DONE terminator",
+      "severity": "blocking",
+      "status": "pass",
+      "latencyMs": 8,
+      "details": "Healthy streaming requests keep the SSE content type and terminate cleanly with [DONE].",
+      "evidence": [
+        "status=200",
+        "content_type=text/event-stream",
+        "done_seen=true"
+      ]
+    },
+    {
+      "id": "tool_result_roundtrip",
+      "title": "Assistant tool_calls and tool result messages survive the proxy transform",
+      "severity": "non_blocking",
+      "status": "pass",
+      "latencyMs": 6,
+      "details": "Conversation history with tool calls and tool outputs is preserved when the request is proxied.",
+      "evidence": [
+        "assistant_tool_calls=1",
+        "tool_message_seen=true"
+      ]
+    },
+    {
+      "id": "tool_definition_passthrough",
+      "title": "Tool definitions and tool_choice are forwarded to the provider",
+      "severity": "blocking",
+      "status": "pass",
+      "latencyMs": 5,
+      "details": "Tool definitions reach the provider proxy intact.",
+      "evidence": [
+        "tools_forwarded=1",
+        "tool_choice_forwarded=true"
+      ]
+    },
+    {
+      "id": "mid_stream_failure_handling",
+      "title": "Mid-stream provider failures are surfaced cleanly to QA",
+      "severity": "blocking",
+      "status": "pass",
+      "latencyMs": 8,
+      "details": "The harness observed a cleanly surfaced mid-stream failure mode.",
+      "evidence": [
+        "fetch_error=none",
+        "done_seen=false",
+        "body_prefix={\"error\":{\"message\":\"Provider failover exhausted after initial error: connection"
+      ]
+    }
+  ]
+}
