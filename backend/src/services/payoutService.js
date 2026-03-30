@@ -151,7 +151,7 @@ function getPayoutHistory(db, providerId, { limit = 20, offset = 0 } = {}) {
            status, requested_at, processed_at, payment_ref, ${escrowTxHashSelect}
     FROM payout_requests
     WHERE provider_id = ?
-    ORDER BY requested_at DESC, rowid DESC
+    ORDER BY requested_at DESC, id DESC
     LIMIT ? OFFSET ?
   `).all(providerId, safeLimit, safeOffset);
 
