@@ -32455,6 +32455,6 @@ a
 - **Impact**: DCP-152 evidence artifacts now include `usage_rows`, `charge_rows`, and `ledger_rows` snapshots plus explicit joinability status, improving DCP-150 reconciliation readiness and reducing operator turnaround when validating first paid inference candidates.
 
 ## [2026-03-30 19:40 UTC] Codex — DCP-152 Offline Evidence Mode + Duplicate-Check SQL Fix
-- **Commit**: `pending` - Added transcript-driven offline export mode for provider evidence generation (no live renter key required at runtime) and fixed provider duplicate-check SQL quoting in generated command packs.
+- **Commit**: `0cc9142` - Added transcript-driven offline export mode for provider evidence generation (no live renter key required at runtime) and fixed provider duplicate-check SQL quoting in generated command packs.
 - **Files**: `backend/scripts/export-provider-activation-evidence.js`, `docs/ops/provider-activation-evidence.md`, `AGENT_LOG.md`
 - **Impact**: FinOps can now produce DCP-152 evidence bundles from previously captured stream transcripts/headers and still get joinability + duplicate-charge checks; generated SQL for provider-window retry checks is now syntactically valid (`CAST(provider_id AS TEXT)='...'`), reducing operator friction during DCP-150 evidence posting.
