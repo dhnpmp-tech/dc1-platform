@@ -1,3 +1,8 @@
+## [2026-03-30 03:38 UTC] Codex — Release Gate Cleared For Provider Register + Payout Branch
+- **Commit**: `e7137ef` - Fixed two production-only import resolution failures in the docs and renter playground pages, then reran the release gate successfully.
+- **Files**: `AGENT_LOG.md`, `app/docs/[[...slug]]/page.tsx`, `app/renter/playground/page.tsx`
+- **Impact**: Release branch `agent/backend-dev/dcp-26-payout-reject-email` is synced with `main`, `npm run build` passes, and the focused backend release suite passed (`104/104`). Branch is ready for PR merge; QA can verify the shipped provider registration Arabic flow plus payout rejection email behavior in a live environment.
+
 ## [2026-03-30 02:00 UTC] Codex — QA Hold On Provider Register Localization Sign-Off
 - **Commit**: `pending` - Ran diff-aware QA against `agent/backend-dev/dcp-26-payout-reject-email`, confirmed `npm run build` passes, and attempted the targeted Playwright provider-registration suite before documenting the remaining QA blockers.
 - **Files**: `AGENT_LOG.md`
