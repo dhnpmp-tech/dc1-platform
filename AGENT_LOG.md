@@ -1,6 +1,6 @@
 ## [2026-03-30 13:42 UTC] Codex — DCP-110 V1 Model Registry Legacy Schema Compatibility Hardening
-- **Commit**: `0fe3d1a` - Hardened  and  against legacy/missing  schemas, including safe fallbacks for absent columns and missing tables.
-- **Files**: , , 
+- **Commit**: `0fe3d1a` - Hardened `/v1/models` and `/v1/chat/completions` against legacy/missing `model_registry` schemas, including safe fallbacks for absent columns and missing tables.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
 - **Impact**: OpenAI-compatible v1 inference paths now fail open to safe defaults on legacy databases instead of returning 500s; targeted compatibility coverage exists for list + chat paths.
 
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
