@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 19:00 UTC] Codex — DCP-150 Homepage CTA Touch-Target Compliance
-- **Commit**: `pending` - Enforced explicit `min-h-[44px]` touch targets on homepage hero CTAs and workflow tile action buttons, with centered inline-flex alignment for consistent tap ergonomics.
+- **Commit**: `c6ef098` - Enforced explicit `min-h-[44px]` touch targets on homepage hero CTAs and workflow tile action buttons, with centered inline-flex alignment for consistent tap ergonomics.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Mobile and tablet users get more reliable CTA tapping without changing routing or analytics behavior.
