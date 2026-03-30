@@ -4732,7 +4732,7 @@ function activateProviderById(providerId) {
 // ============================================================================
 // POST /api/providers/:id/benchmark-submit — Benchmark submission + activation
 // ============================================================================
-router.post('/:id/benchmark-submit', function(req, res) {
+router.post('/:id/benchmark-submit', benchmarkLimiter, function(req, res) {
     try {
         const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
         if (!providerId) return res.status(400).json({ error: 'Provider ID required' });

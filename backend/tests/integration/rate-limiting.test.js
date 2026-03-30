@@ -122,6 +122,30 @@ describe('Rate limiting — provider registration (max: 5/hr)', () => {
   });
 });
 
+describe('Rate limiting — provider benchmark submission (max: 30/min)', () => {
+  it('blocks 31st benchmark submit attempt from same IP (429)', async () => {
+    const app = express();
+    app.use(express.json());
+    const providersRoute = (() => {
+      const p = require.resolve('../../src/routes/providers');
+      delete require.cache[p];
+      return require('../../src/routes/providers');
+    })();
+    app.use('/api/providers', providersRoute);
+
+    const statuses = [];
+    for (let i = 0; i < 31; i++) {
+      const res = await request(app)
+        .post('/api/providers/provider-123/benchmark-submit')
+        .send({});
+      statuses.push(res.status);
+    }
+
+    expect(statuses.slice(0, 30).every((s) => s === 401)).toBe(true);
+    expect(statuses[30]).toBe(429);
+  });
+});
+
 describe('Rate limiting — renter registration (max: 5/hr)', () => {
   it('blocks 6th renter registration from same IP (429)', async () => {
     const limiter = rateLimit({
