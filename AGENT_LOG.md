@@ -32350,6 +32350,6 @@ a
 - **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
 
 ## [2026-03-30 12:08 UTC] Codex — DCP-114 /v1 Chat Limiter Selection Correctness
-- **Commit**: `pending` - Added request-aware limiter selection for `/v1/chat/completions` so streaming requests use `vllmStreamLimiter` and non-streaming requests use `vllmCompleteLimiter`, plus focused unit coverage for the selection logic.
+- **Commit**: `f3efb71` - Added request-aware limiter selection for `/v1/chat/completions` so streaming requests use `vllmStreamLimiter` and non-streaming requests use `vllmCompleteLimiter`, plus focused unit coverage for the selection logic.
 - **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-rate-limiter-selection.test.js`, `AGENT_LOG.md`
 - **Impact**: Streaming traffic now follows the intended stricter rate-limit policy instead of sharing the non-stream limiter path. Verification: `cd backend && npm test -- --runInBand src/__tests__/v1-rate-limiter-selection.test.js` and `cd backend && npm test -- --runInBand tests/integration/v1-server-wiring.test.js` both pass.
