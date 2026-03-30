@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const { z } = require('zod');
 const router = express.Router();
 
 // Database (use existing connection)
@@ -3531,9 +3532,17 @@ function extractProviderModels(provider) {
             : item?.model_id || item?.model || item?.id || item?.name;
         const modelId = normalizeModelId(rawModelId);
         if (!modelId) return;
+        const optionalFields = (item && typeof item === 'object' && !Array.isArray(item))
+            ? {
+                deprecation_date: item.deprecation_date,
+                datacenters: item.datacenters,
+                openrouter: item.openrouter,
+            }
+            : null;
         normalized.set(modelId, {
             model_id: modelId,
             display_name: (item && item.display_name) || toDisplayName(modelId),
+            ...(optionalFields || {}),
         });
     });
 
@@ -3571,6 +3580,199 @@ function computeProviderStatus(lastHeartbeat, now) {
     }
     return { status: 'offline', heartbeat_age_seconds: ageSecs, degraded_since: null };
 }
+
+function toCatalogModelKey(modelId) {
+    return String(modelId || '').trim().toLowerCase();
+}
+
+function parseUseCases(value) {
+    if (Array.isArray(value)) return value.map((entry) => String(entry || '').toLowerCase().trim()).filter(Boolean);
+    const parsed = safeJsonParse(value);
+    if (Array.isArray(parsed)) return parsed.map((entry) => String(entry || '').toLowerCase().trim()).filter(Boolean);
+    return [];
+}
+
+function toUsdStringFromHalalaPerMinute(halalaPerMinute) {
+    const halala = Number(halalaPerMinute || 0);
+    if (!Number.isFinite(halala) || halala <= 0) return '0.000000';
+    const sarPerMinute = halala / 100;
+    const usdPerMinute = sarPerMinute / 3.75;
+    return usdPerMinute.toFixed(6);
+}
+
+function inferModalitiesFromUseCases(useCases) {
+    const set = new Set(['text']);
+    useCases.forEach((entry) => {
+        if (entry.includes('image')) set.add('image');
+        if (entry.includes('audio') || entry.includes('speech') || entry.includes('voice')) set.add('audio');
+    });
+    return Array.from(set);
+}
+
+function inferSupportedFeaturesFromUseCases(useCases) {
+    const featureSet = new Set(['chat.completions']);
+    useCases.forEach((entry) => {
+        if (entry.includes('reason')) featureSet.add('reasoning');
+        if (entry.includes('code')) featureSet.add('code_generation');
+        if (entry.includes('tool')) featureSet.add('tool_calling');
+        if (entry.includes('embed')) featureSet.add('embeddings');
+        if (entry.includes('image')) featureSet.add('image_generation');
+        if (entry.includes('arabic') || entry.includes('translation')) featureSet.add('multilingual');
+    });
+    return Array.from(featureSet);
+}
+
+const providerCatalogOptionalFieldsSchema = z.object({
+    deprecation_date: z.string().trim().regex(
+        /^(\d{4}-\d{2}-\d{2}|(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z))$/,
+        'deprecation_date must be ISO date or datetime'
+    ).optional(),
+    datacenters: z.array(
+        z.string().trim().min(2).max(64).regex(/^[a-z0-9-]+$/)
+    ).max(16).optional(),
+    openrouter: z.object({
+        slug: z.string().trim().min(2).max(120).regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/),
+    }).strict().optional(),
+}).strict();
+
+function normalizeOpenRouterSlug(value, fallbackModelId) {
+    if (typeof value === 'string' && value.trim()) return value.trim().toLowerCase();
+    return String(fallbackModelId || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9/._-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/\/-+/g, '/')
+        .replace(/^-+|-+$/g, '');
+}
+
+function extractOptionalCatalogFields(rawModelMetadata, canonicalModelId) {
+    if (!rawModelMetadata || typeof rawModelMetadata !== 'object' || Array.isArray(rawModelMetadata)) {
+        return {};
+    }
+
+    const candidate = {};
+    if (rawModelMetadata.deprecation_date != null) candidate.deprecation_date = rawModelMetadata.deprecation_date;
+    if (rawModelMetadata.datacenters != null) candidate.datacenters = rawModelMetadata.datacenters;
+    if (rawModelMetadata.openrouter && typeof rawModelMetadata.openrouter === 'object') {
+        candidate.openrouter = {
+            slug: normalizeOpenRouterSlug(rawModelMetadata.openrouter.slug, canonicalModelId),
+        };
+    }
+
+    if (Object.keys(candidate).length === 0) return {};
+    const parsed = providerCatalogOptionalFieldsSchema.safeParse(candidate);
+    if (!parsed.success) return {};
+    return parsed.data;
+}
+
+function toModelCatalogContractItem({ model, providerCount, maxVramGb, sourceMetadata }) {
+    const modelId = String(model.model_id || '').trim();
+    const useCases = parseUseCases(model.use_cases);
+    const modalities = inferModalitiesFromUseCases(useCases);
+    const supportedFeatures = inferSupportedFeaturesFromUseCases(useCases);
+    const contextWindow = Number(model.context_window) > 0 ? Number(model.context_window) : 4096;
+    const maxOutputTokens = Math.max(512, Math.min(16384, Math.floor(contextWindow / 2)));
+    const usdPerMinute = toUsdStringFromHalalaPerMinute(model.default_price_halala_per_min);
+    const optionalFields = extractOptionalCatalogFields(sourceMetadata, modelId);
+
+    const payload = {
+        id: modelId,
+        name: model.display_name || toDisplayName(modelId),
+        created: model.created_at || new Date().toISOString(),
+        modalities,
+        context_length: contextWindow,
+        max_output_tokens: maxOutputTokens,
+        quantization: model.quantization || 'unknown',
+        pricing: {
+            usd_per_minute: usdPerMinute,
+            usd_per_1m_input_tokens: usdPerMinute,
+            usd_per_1m_output_tokens: usdPerMinute,
+        },
+        sampling_parameters: {
+            temperature: { min: 0, max: 2, default: 0.7 },
+            top_p: { min: 0, max: 1, default: 1 },
+            top_k: { min: 1, max: 200, default: 50 },
+        },
+        supported_features: supportedFeatures,
+        provider_count: providerCount,
+        max_vram_gb: Number((maxVramGb || Number(model.vram_gb) || 0).toFixed(1)),
+    };
+
+    if (optionalFields.deprecation_date) payload.deprecation_date = optionalFields.deprecation_date;
+    if (optionalFields.datacenters) payload.datacenters = optionalFields.datacenters;
+    if (optionalFields.openrouter) payload.openrouter = optionalFields.openrouter;
+
+    return payload;
+}
+
+// ============================================================================
+// GET /api/providers/model-catalog — OpenRouter provider model contract feed
+// ============================================================================
+router.get('/model-catalog', (req, res) => {
+    try {
+        const activeModels = db.all(
+            `SELECT model_id, display_name, quantization, context_window, default_price_halala_per_min, vram_gb, created_at
+             FROM model_registry
+             WHERE is_active = 1`
+        );
+
+        const providers = db.all(
+            `SELECT id, is_paused, gpu_vram_mib, vram_gb, cached_models, resource_spec, last_heartbeat
+             FROM providers
+             WHERE is_paused = 0 AND last_heartbeat IS NOT NULL`
+        );
+
+        const now = Date.now();
+        const providerCoverage = new Map();
+
+        providers.forEach((provider) => {
+            const { status: providerStatus } = computeProviderStatus(provider.last_heartbeat, now);
+            if (providerStatus === 'offline') return;
+
+            const providerVramGb = inferVramGb(provider);
+            const providerModels = extractProviderModels(provider);
+            providerModels.forEach((item) => {
+                const joinKey = toCatalogModelKey(item.model_id);
+                if (!joinKey) return;
+                const existing = providerCoverage.get(joinKey);
+                if (!existing) {
+                    providerCoverage.set(joinKey, {
+                        providerIds: new Set([provider.id]),
+                        maxVramGb: providerVramGb || 0,
+                        sourceMetadata: (item && typeof item === 'object') ? item : null,
+                    });
+                    return;
+                }
+                existing.providerIds.add(provider.id);
+                existing.maxVramGb = Math.max(existing.maxVramGb || 0, providerVramGb || 0);
+                if (!existing.sourceMetadata && item && typeof item === 'object') {
+                    existing.sourceMetadata = item;
+                }
+            });
+        });
+
+        const models = activeModels.map((model) => {
+            const coverage = providerCoverage.get(toCatalogModelKey(model.model_id));
+            return toModelCatalogContractItem({
+                model,
+                providerCount: coverage?.providerIds?.size || 0,
+                maxVramGb: coverage?.maxVramGb || Number(model.vram_gb) || 0,
+                sourceMetadata: coverage?.sourceMetadata || null,
+            });
+        }).sort((a, b) => a.id.localeCompare(b.id));
+
+        return res.json({
+            object: 'list',
+            data: models,
+            total: models.length,
+            generated_at: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('Provider model catalog error:', error);
+        return res.status(500).json({ error: 'Failed to fetch provider model catalog' });
+    }
+});
 
 // ============================================================================
 // GET /api/providers/models — Public aggregate of available vLLM models
