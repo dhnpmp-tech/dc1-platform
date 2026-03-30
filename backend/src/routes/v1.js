@@ -15,7 +15,6 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 
@@ -202,11 +201,16 @@ function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
 }
 
-async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
+function v1ChatRateLimiter(req, res, next) {
+  if (req.body?.stream) {
+    return vllmStreamLimiter(req, res, next);
+  }
+  return vllmCompleteLimiter(req, res, next);
+}
+
+async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
-  if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
-  if (toolChoice !== null && toolChoice !== undefined) body.tool_choice = toolChoice;
   let response;
   try {
     response = await fetch(url, {
@@ -230,7 +234,7 @@ async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temp
   return { body: parsed };
 }
 
-router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, res) => {
+router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res) => {
   try {
     const model = normalizeString(req.body?.model, { maxLen: 200 });
     if (!model) return res.status(400).json({
@@ -321,8 +325,6 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         maxTokens,
         temperature,
         stream: wantsStream,
-        tools,
-        toolChoice,
       });
 
       const debitAndReturnProxyResult = (resultBody) => {
@@ -341,35 +343,16 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         return res.json(resultBody);
       };
 
-      const writeStreamingResponse = async (streamResponse) => {
+      const writeStreamingResponse = (streamResponse) => {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        const upstreamBody = streamResponse?.body;
-        if (!upstreamBody) throw new Error('Upstream stream body missing');
-
-        if (typeof upstreamBody.pipe === 'function') {
-          upstreamBody.pipe(res);
-          return;
-        }
-
-        if (typeof Readable.fromWeb === 'function') {
-          Readable.fromWeb(upstreamBody).pipe(res);
-          return;
-        }
-
-        const reader = upstreamBody.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) res.write(Buffer.from(value));
-        }
-        res.end();
+        streamResponse.body.pipe(res);
       };
 
       if (wantsStream && proxyResult.streamResponse) {
-        await writeStreamingResponse(proxyResult.streamResponse);
+        writeStreamingResponse(proxyResult.streamResponse);
         return;
       }
 
@@ -392,14 +375,12 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
           maxTokens,
           temperature,
           stream: wantsStream,
-          tools,
-          toolChoice,
         });
 
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
-          await writeStreamingResponse(fallbackResult.streamResponse);
+          writeStreamingResponse(fallbackResult.streamResponse);
           return;
         }
 
