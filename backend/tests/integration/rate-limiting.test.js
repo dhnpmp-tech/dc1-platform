@@ -198,3 +198,20 @@ describe('Rate limiting — admin endpoints (max: 100/min)', () => {
     expect(statuses[2]).toBe(429);
   });
 });
+
+describe('Rate limiting — providers available route (max: 60/min)', () => {
+  it('returns 429 on the 61st request to /api/providers/available', async () => {
+    const app = express();
+    app.use(express.json());
+    const providersRoute = (() => {
+      const p = require.resolve('../../src/routes/providers');
+      delete require.cache[p];
+      return require('../../src/routes/providers');
+    })();
+    app.use('/api/providers', providersRoute);
+
+    const statuses = await hitNTimes(app, 'get', '/api/providers/available', 61);
+    expect(statuses.slice(0, 60).every((status) => status === 200)).toBe(true);
+    expect(statuses[60]).toBe(429);
+  });
+});

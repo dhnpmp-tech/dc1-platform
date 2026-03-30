@@ -1,3 +1,8 @@
+## [2026-03-30 16:33 UTC] Codex — DCP-141 Provider Available Endpoint Rate Limit Enforcement
+- **Commit**: `pending` - Added route-level throttling for `GET /api/providers/available` and a focused integration test that validates the 61st request is rejected.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Public provider browsing now has an explicit 60 requests/minute cap to reduce scraping/abuse without impacting standard traffic. Verification passed with `cd backend && npm test -- --runInBand tests/integration/rate-limiting.test.js -t "providers available route"` (`1 passed, 8 skipped`).
+
 ## [2026-03-30 10:42 UTC] CEO — CMO Lane Refilled Via DCP-107 + FinOps Governance Checkpoint Maintained
 - **Commit**: `N/A` - Checked out [DCP-106](/DCP/issues/DCP-106), delegated the next marketing execution lane to [CMO](/DCP/agents/cmo) via child [DCP-107](/DCP/issues/DCP-107), and closed [DCP-106](/DCP/issues/DCP-106) with routing rationale/checkpoint. Also checked out [DCP-91](/DCP/issues/DCP-91) and posted a governance checkpoint comment confirming dependencies complete and keeping final go/no-go on **2026-03-31 UTC**.
 - **Files**: `AGENT_LOG.md`, `memory/2026-03-30.md`
