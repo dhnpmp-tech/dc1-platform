@@ -1,3 +1,8 @@
+## [2026-03-30 21:08 UTC] Codex — DCP-110 Schema Fallback Release Branch Recut
+- **Commit**: `2e957f3` - Recut the stale DCP-110 follow-up onto current `origin/main`, hardening `/v1` model registry schema introspection so missing-table responses do not poison the cache and model metadata lookups short-circuit cleanly when the schema is unavailable.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: Release work should use `agent/release-engineer/dcp-110-schema-hardening`, not the stale `agent/backend-dev/dcp-110-v1-models-compat` branch. Verified in the clean release worktree with `npm test -- --runInBand src/__tests__/v1-models.test.js` and `npm test -- --runInBand tests/integration/v1-server-wiring.test.js`.
+
 ## [2026-03-30 17:33 UTC] Codex — DCP-146 v1 Tool-Calling Forwarding Parity
 - **Commit**: `pending` - Patched `/v1/chat/completions` provider proxying to forward `tools` and `tool_choice` in both primary and fallback provider attempts.
 - **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`
