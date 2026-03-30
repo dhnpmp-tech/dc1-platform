@@ -60,8 +60,8 @@ function createAdminIpAllowlist() {
 // Provider registration: 5 per IP per hour (DCP-855)
 const registerLimiter = createRateLimiter({ windowMs: 60*60*1000, max: 5, keyGenerator: (req) => ipFallbackKey(req) });
 
-// Job submission legacy: 30 per IP per minute
-const jobSubmitLimiter = createRateLimiter({ windowMs: 60*1000, max: 30, keyGenerator: (req) => ipFallbackKey(req) });
+// Job submission: 20 per renter key per minute (DCP-855)
+const jobSubmitLimiter = createRateLimiter({ windowMs: 60*1000, max: 20, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
 
 // Job creation: 10 per renter key per minute (DCP-855)
 const jobCreateLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
