@@ -88,7 +88,7 @@ function ModelCard({ model, isRTL, showSar }: { model: ArabicModel; isRTL: boole
   const category = isRTL ? model.categoryAr : model.category
   const description = isRTL ? model.descriptionAr : model.description
   const badge = isRTL ? model.arabicBadgeAr : model.arabicBadge
-  const deployLabel = isRTL ? 'نشر' : 'Deploy'
+  const deployLabel = isRTL ? 'انشر النموذج' : 'Deploy'
 
   return (
     <article className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5 flex flex-col gap-3 hover:border-dc1-amber/40 hover:shadow-amber transition-all duration-200 group">
@@ -112,8 +112,8 @@ function ModelCard({ model, isRTL, showSar }: { model: ArabicModel; isRTL: boole
           {showSar ? (
             <>
               <span className="text-lg font-bold text-dc1-text-primary">{priceSar}</span>
-              <span className="text-xs text-dc1-text-muted">SAR/min</span>
-              <span className="text-xs text-dc1-text-muted">(${priceUsd.toFixed(2)}/min)</span>
+              <span className="text-xs text-dc1-text-muted">{isRTL ? 'ريال/دقيقة' : 'SAR/min'}</span>
+              <span className="text-xs text-dc1-text-muted">{isRTL ? `(≈ ${priceUsd.toFixed(2)} دولار/دقيقة)` : `($${priceUsd.toFixed(2)}/min)`}</span>
             </>
           ) : (
             <>
@@ -151,7 +151,7 @@ export default function FeaturedArabicModels() {
   const subheading = isRTL
     ? 'محسّنة للشرق الأوسط — نماذج مُدرَّبة على العربية وجاهزة للنشر'
     : 'Optimized for the Middle East — Arabic-trained models ready to deploy'
-  const learnMoreLabel = isRTL ? 'تعرف على Arabic RAG ←' : 'Learn about Arabic RAG →'
+  const learnMoreLabel = isRTL ? 'تعرّف على RAG العربي ←' : 'Learn about Arabic RAG →'
 
   return (
     <section

@@ -107,7 +107,7 @@ const RECOMMENDATIONS: Record<UseCase, RecommendedTemplate[]> = {
       name: 'QLoRA Fine-Tuning',
       nameAr: 'ضبط دقيق QLoRA',
       description: 'Quantized LoRA for fine-tuning large models on consumer GPUs. Train 13B+ models on 16 GB VRAM.',
-      descriptionAr: 'LoRA مكمّم لضبط النماذج الكبيرة على وحدات GPU للمستهلكين. تدريب نماذج 13+ مليار معامل على 16 GB VRAM.',
+      descriptionAr: 'LoRA مكمّم لضبط النماذج الكبيرة على وحدات GPU للمستهلكين. تدريب نماذج 13+ مليار معامل على 16 جيجابايت VRAM.',
       tags: ['training', 'qlora', 'quantized'],
       minVramGb: 16,
       emoji: '🔬',
@@ -261,6 +261,35 @@ function markOnboarded() {
   } catch {
     // ignore
   }
+}
+
+function localizeTag(tag: string, isRTL: boolean) {
+  if (!isRTL) return tag
+  const map: Record<string, string> = {
+    arabic: 'عربي',
+    rag: 'استرجاع معزّز',
+    enterprise: 'مؤسسات',
+    embedding: 'تضمين',
+    multilingual: 'متعدد اللغات',
+    llm: 'نموذج لغوي',
+    inference: 'استدلال',
+    coding: 'برمجة',
+    reasoning: 'استدلال منطقي',
+    efficient: 'فعّال',
+    training: 'تدريب',
+    lora: 'لورا',
+    qlora: 'كيو-لورا',
+    quantized: 'مكمّم',
+    notebook: 'دفتر',
+    interactive: 'تفاعلي',
+    research: 'بحث',
+    scientific: 'علمي',
+    batch: 'دفعي',
+    pytorch: 'باي-تورش',
+    'image-gen': 'توليد صور',
+    diffusion: 'انتشار',
+  }
+  return map[tag] ?? tag
 }
 
 // ── Step components ───────────────────────────────────────────────────────────
@@ -619,11 +648,11 @@ function StepTemplates({
               <div className="flex items-center gap-2 flex-wrap">
                 {tpl.tags.slice(0, 3).map((tag) => (
                   <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-white/8 text-white/40">
-                    {tag}
+                    {localizeTag(tag, isRTL)}
                   </span>
                 ))}
                 <span className="text-[10px] text-white/30">
-                  {tpl.minVramGb} GB VRAM
+                  {isRTL ? `${tpl.minVramGb} جيجابايت VRAM` : `${tpl.minVramGb} GB VRAM`}
                 </span>
               </div>
             </div>
