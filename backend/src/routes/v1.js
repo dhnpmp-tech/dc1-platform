@@ -263,9 +263,11 @@ function v1ChatRateLimiter(req, res, next) {
   return vllmCompleteLimiter(req, res, next);
 }
 
-async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream }) {
+async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
+  if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
+  if (toolChoice != null) body.tool_choice = toolChoice;
   let response;
   try {
     response = await fetch(url, {
@@ -348,7 +350,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     // Extract function calling params (Gap 4)
     const tools = Array.isArray(req.body?.tools) ? req.body.tools : null;
-    const toolChoice = req.body?.tool_choice || null;
+    const toolChoiceRaw = req.body?.tool_choice;
+    const toolChoice = (
+      typeof toolChoiceRaw === 'string'
+      || (toolChoiceRaw && typeof toolChoiceRaw === 'object' && !Array.isArray(toolChoiceRaw))
+    ) ? toolChoiceRaw : null;
 
     const modelReq = resolveModelRequirements(model);
     const minVramMb = modelReq.min_vram_gb * 1024;
@@ -380,6 +386,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         maxTokens,
         temperature,
         stream: wantsStream,
+        tools,
+        toolChoice,
       });
 
       const debitAndReturnProxyResult = (resultBody) => {
@@ -430,6 +438,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           maxTokens,
           temperature,
           stream: wantsStream,
+          tools,
+          toolChoice,
         });
 
         if (fallbackResult.proxyError) continue;
