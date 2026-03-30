@@ -263,6 +263,40 @@ function markOnboarded() {
   }
 }
 
+const TAG_LABELS_AR: Record<string, string> = {
+  arabic: 'عربي',
+  rag: 'استرجاع معزز (RAG)',
+  enterprise: 'مؤسسي',
+  embedding: 'تضمين',
+  llm: 'نموذج لغوي',
+  multilingual: 'متعدد اللغات',
+  inference: 'استدلال',
+  coding: 'برمجة',
+  reasoning: 'استدلال منطقي',
+  efficient: 'فعّال',
+  training: 'تدريب',
+  lora: 'LoRA',
+  qlora: 'QLoRA',
+  quantized: 'مكمّم',
+  notebook: 'دفتر',
+  interactive: 'تفاعلي',
+  research: 'بحثي',
+  scientific: 'علمي',
+  batch: 'دفعي',
+  pytorch: 'PyTorch',
+  'image-gen': 'توليد صور',
+  diffusion: 'انتشار',
+}
+
+function localizeTemplateTag(tag: string, isRTL: boolean): string {
+  if (!isRTL) return tag
+  return TAG_LABELS_AR[tag] ?? tag
+}
+
+function formatVramRequirement(minVramGb: number, isRTL: boolean): string {
+  return isRTL ? `${minVramGb} جيجابايت VRAM` : `${minVramGb} GB VRAM`
+}
+
 // ── Step components ───────────────────────────────────────────────────────────
 
 function StepIndicator({ current, total, isRTL }: { current: number; total: number; isRTL: boolean }) {
@@ -619,11 +653,11 @@ function StepTemplates({
               <div className="flex items-center gap-2 flex-wrap">
                 {tpl.tags.slice(0, 3).map((tag) => (
                   <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-white/8 text-white/40">
-                    {tag}
+                    {localizeTemplateTag(tag, isRTL)}
                   </span>
                 ))}
                 <span className="text-[10px] text-white/30">
-                  {tpl.minVramGb} GB VRAM
+                  {formatVramRequirement(tpl.minVramGb, isRTL)}
                 </span>
               </div>
             </div>
