@@ -100,6 +100,7 @@ npm --prefix backend run provider:evidence -- \
 ```
 
 This mode still attaches duplicate-charge checks and SQLite joinability snapshots for reconciliation.
+Provider liveness/availability probes are skipped automatically in offline transcript mode to avoid noisy fetch failures in disconnected runtimes. Use `--probe-provider=false` explicitly in live mode when needed.
 
 ## Remaining Gaps Before Scaling to 10 Active Providers
 

@@ -28,6 +28,7 @@ function parseArgs(argv) {
     windowMinutes: 15,
     transcriptPath: null,
     responseHeadersJson: null,
+    probeProvider: true,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -63,6 +64,8 @@ function parseArgs(argv) {
     } else if (token === '--response-headers-json' && next) {
       args.responseHeadersJson = next;
       i += 1;
+    } else if (token === '--probe-provider=false') {
+      args.probeProvider = false;
     } else if (token === '--max-tokens' && next) {
       const parsed = Number(next);
       if (Number.isFinite(parsed) && parsed > 0) args.maxTokens = Math.floor(parsed);
@@ -100,6 +103,7 @@ function usage() {
     '  --session-id <id>       Override session ID in evidence when using --transcript-path',
     '  --transcript-path <p>   Use an existing raw transcript file instead of sending a live request',
     '  --response-headers-json <json|path>  JSON map (or file path) of response headers for offline mode',
+    '  --probe-provider=false  Skip provider liveness/availability probe calls',
     '  --max-tokens <n>        max_tokens payload value (default: 64)',
     '  --temperature <n>       temperature payload value (default: 0.2)',
     '  --window-minutes <n>    Duplicate-charge/failure check window around candidate timestamp (default: 15)',
@@ -342,8 +346,13 @@ async function main() {
     'x-dcp-trace-id': args.traceId,
   };
 
-  const livenessRes = await fetchJsonOrNull(livenessUrl, { method: 'GET' });
-  const availabilityRes = await fetchJsonOrNull(availabilityUrl, { method: 'GET' });
+  const shouldProbeProvider = args.probeProvider && !args.transcriptPath;
+  const livenessRes = shouldProbeProvider
+    ? await fetchJsonOrNull(livenessUrl, { method: 'GET' })
+    : { ok: false, status: 0, body: null };
+  const availabilityRes = shouldProbeProvider
+    ? await fetchJsonOrNull(availabilityUrl, { method: 'GET' })
+    : { ok: false, status: 0, body: null };
 
   const providerAvailability = (() => {
     const body = availabilityRes.body;
