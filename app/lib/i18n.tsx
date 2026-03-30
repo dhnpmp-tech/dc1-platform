@@ -1268,6 +1268,13 @@ const translations: Record<Language, Record<string, string>> = {
     'register.provider.status_in_progress': 'In progress...',
     'register.provider.status_pending': 'Pending',
     'register.provider.go_dashboard': 'Go to Dashboard',
+    'register.provider.progress.title': 'Registration Progress',
+    'register.provider.progress.step_1.title': 'Profile',
+    'register.provider.progress.step_1.description': 'Provider details',
+    'register.provider.progress.step_2.title': 'Setup',
+    'register.provider.progress.step_2.description': 'Daemon install',
+    'register.provider.progress.step_3.title': 'Activation',
+    'register.provider.progress.step_3.description': 'Go live',
 
     // Renter registration
     'register.renter.title': 'Access GPU Compute Power',
@@ -3394,6 +3401,13 @@ const translations: Record<Language, Record<string, string>> = {
     'register.provider.status_in_progress': 'جارٍ...',
     'register.provider.status_pending': 'قيد الانتظار',
     'register.provider.go_dashboard': 'الذهاب إلى لوحة التحكم',
+    'register.provider.progress.title': 'تقدم التسجيل',
+    'register.provider.progress.step_1.title': 'الملف',
+    'register.provider.progress.step_1.description': 'بيانات المزوّد',
+    'register.provider.progress.step_2.title': 'الإعداد',
+    'register.provider.progress.step_2.description': 'تثبيت البرنامج الخدمي',
+    'register.provider.progress.step_3.title': 'التفعيل',
+    'register.provider.progress.step_3.description': 'بدء التشغيل',
 
     // Renter registration
     'register.renter.title': 'احصل على قوة GPU الحوسبية',

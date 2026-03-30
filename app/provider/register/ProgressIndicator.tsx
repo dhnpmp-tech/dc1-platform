@@ -1,18 +1,24 @@
+'use client'
+
+import { useLanguage } from '../../lib/i18n'
+
 interface ProgressIndicatorProps {
   currentStep?: 1 | 2 | 3
 }
 
 const STEPS = [
-  { id: 1, title: 'Profile', description: 'Provider details' },
-  { id: 2, title: 'Setup', description: 'Daemon install' },
-  { id: 3, title: 'Activation', description: 'Go live' },
+  { id: 1, titleKey: 'register.provider.progress.step_1.title', descriptionKey: 'register.provider.progress.step_1.description' },
+  { id: 2, titleKey: 'register.provider.progress.step_2.title', descriptionKey: 'register.provider.progress.step_2.description' },
+  { id: 3, titleKey: 'register.provider.progress.step_3.title', descriptionKey: 'register.provider.progress.step_3.description' },
 ] as const
 
 export default function ProgressIndicator({ currentStep = 1 }: ProgressIndicatorProps) {
+  const { t, isRTL } = useLanguage()
+
   return (
-    <div className="mb-8 rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-5 sm:p-6">
+    <div className={`mb-8 rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-5 sm:p-6 ${isRTL ? 'text-right' : 'text-left'}`}>
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-text-muted">
-        Registration Progress
+        {t('register.provider.progress.title')}
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {STEPS.map((step) => {
@@ -36,8 +42,8 @@ export default function ProgressIndicator({ currentStep = 1 }: ProgressIndicator
                   {isComplete ? '✓' : step.id}
                 </span>
                 <div>
-                  <p className="text-sm font-semibold text-dc1-text-primary">{step.title}</p>
-                  <p className="text-xs text-dc1-text-secondary">{step.description}</p>
+                  <p className="text-sm font-semibold text-dc1-text-primary">{t(step.titleKey)}</p>
+                  <p className="text-xs text-dc1-text-secondary">{t(step.descriptionKey)}</p>
                 </div>
               </div>
             </div>
