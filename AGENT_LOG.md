@@ -32460,6 +32460,6 @@ a
 - **Impact**: FinOps can now produce DCP-152 evidence bundles from previously captured stream transcripts/headers and still get joinability + duplicate-charge checks; generated SQL for provider-window retry checks is now syntactically valid (`CAST(provider_id AS TEXT)='...'`), reducing operator friction during DCP-150 evidence posting.
 
 ## [2026-03-30 19:52 UTC] Codex — Offline Evidence Probe Noise Removed
-- **Commit**: `pending` - Updated provider evidence exporter to skip provider liveness/availability probe calls in offline transcript mode by default, with explicit opt-out flag retained for live-mode control.
+- **Commit**: `064c8d8` - Updated provider evidence exporter to skip provider liveness/availability probe calls in offline transcript mode by default, with explicit opt-out flag retained for live-mode control.
 - **Files**: `backend/scripts/export-provider-activation-evidence.js`, `docs/ops/provider-activation-evidence.md`, `AGENT_LOG.md`
 - **Impact**: Offline DCP-152 evidence artifacts no longer include misleading `fetch failed` probe payloads when runtime API connectivity is unavailable; operator output is cleaner and focused on transcript/header + reconciliation evidence.
