@@ -1,3 +1,8 @@
+## [2026-03-30 02:32 UTC] Codex — Provider Register Label Localization Follow-Up
+- **Commit**: `beca77c` - Removed remaining hardcoded labels from `/provider/register` next-action/state selectors by localizing `Step`, `Other`, and `Other Linux` display text through i18n keys (including Arabic helper copy for the non-standard Linux option).
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic onboarding no longer leaks these English control labels in core provider registration flow, tightening DCP-42 localization quality for UX/QA re-verification.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
