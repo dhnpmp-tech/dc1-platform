@@ -39,7 +39,7 @@ describe('server /v1 wiring', () => {
   let errorSpy;
   let renterKey;
 
-  function startMockProvider(responseBody) {
+  function startMockProvider(responseBody, { statusCode = 200 } = {}) {
     return new Promise((resolve, reject) => {
       const server = http.createServer((req, res) => {
         if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
@@ -48,7 +48,7 @@ describe('server /v1 wiring', () => {
           return;
         }
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(responseBody));
       });
 
@@ -140,6 +140,28 @@ describe('server /v1 wiring', () => {
       call.some((entry) => String(entry).includes('ERR_ERL_KEY_GEN_IPV6'))
     );
     expect(ipv6LimiterValidationLogged).toBe(false);
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ?', renterKey);
+    const usageLedger = db.get(
+      `SELECT request_id, provider_response_id, prompt_tokens, completion_tokens, total_tokens,
+              unit_price_halala, cost_halala, billing_outcome, settlement_status, failure_code
+         FROM openrouter_usage_ledger
+        WHERE renter_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      renter.id
+    );
+    expect(usageLedger).toBeTruthy();
+    expect(usageLedger.request_id).toMatch(/^orreq_/);
+    expect(usageLedger.provider_response_id).toBe('chatcmpl-mock');
+    expect(usageLedger.prompt_tokens).toBe(10);
+    expect(usageLedger.completion_tokens).toBe(4);
+    expect(usageLedger.total_tokens).toBe(14);
+    expect(usageLedger.unit_price_halala).toBeGreaterThanOrEqual(1);
+    expect(usageLedger.cost_halala).toBeGreaterThanOrEqual(1);
+    expect(usageLedger.billing_outcome).toBe('succeeded');
+    expect(usageLedger.settlement_status).toBe('pending');
+    expect(usageLedger.failure_code).toBeNull();
   });
 
   test('GET /v1/models returns OpenAI list shape without 500 on current schema', async () => {
@@ -152,5 +174,44 @@ describe('server /v1 wiring', () => {
     expect(Array.isArray(res.body.data)).toBe(true);
     expect(res.body.data.length).toBeGreaterThan(0);
     expect(res.body.data[0]).toHaveProperty('parameter_count');
+  });
+
+  test('POST /v1/chat/completions persists a failed billable ledger row when provider returns non-2xx', async () => {
+    if (providerServer) {
+      await new Promise((resolve) => providerServer.close(resolve));
+    }
+
+    providerServer = await startMockProvider(
+      { error: { message: 'provider down' } },
+      { statusCode: 503 }
+    );
+    const { port } = providerServer.address();
+    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE email = ?', `http://127.0.0.1:${port}`, 'provider-wiring@test.com');
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', `Bearer ${renterKey}`)
+      .send({
+        model: 'server-wiring-model',
+        messages: [{ role: 'user', content: 'will fail' }],
+        max_tokens: 32,
+      });
+
+    expect(res.status).toBe(502);
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ?', renterKey);
+    const usageLedger = db.get(
+      `SELECT request_id, billing_outcome, settlement_status, cost_halala, failure_code, failure_detail
+         FROM openrouter_usage_ledger
+        WHERE renter_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      renter.id
+    );
+    expect(usageLedger.request_id).toMatch(/^orreq_/);
+    expect(usageLedger.billing_outcome).toBe('failed');
+    expect(usageLedger.settlement_status).toBe('failed');
+    expect(usageLedger.cost_halala).toBe(0);
+    expect(usageLedger.failure_code).toBe('provider_http_503');
+    expect(String(usageLedger.failure_detail || '')).toContain('503');
   });
 });

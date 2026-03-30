@@ -27,20 +27,35 @@ function recordOpenRouterUsage(db, {
   providerId = null,
   model,
   source = 'v1',
+  requestId = null,
+  providerResponseId = null,
+  jobId = null,
   promptTokens = 0,
   completionTokens = 0,
   totalTokens = null,
+  unitPriceHalala = 0,
   costHalala,
   currency = 'SAR',
+  billingOutcome = 'succeeded',
+  failureCode = null,
+  failureDetail = null,
 }) {
   const cleanRenterId = toInt(renterId, { min: 1 });
   const cleanProviderId = providerId == null ? null : toInt(providerId, { min: 1 });
   const cleanModel = typeof model === 'string' ? model.trim().slice(0, 200) : '';
   const cleanSource = typeof source === 'string' ? source.trim().slice(0, 80) : 'v1';
+  const cleanRequestId = typeof requestId === 'string' ? requestId.trim().slice(0, 120) : null;
+  const cleanProviderResponseId = typeof providerResponseId === 'string' ? providerResponseId.trim().slice(0, 160) : null;
+  const cleanJobId = typeof jobId === 'string' ? jobId.trim().slice(0, 120) : null;
   const cleanPrompt = toInt(promptTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanCompletion = toInt(completionTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanTotal = toInt(totalTokens, { min: 0, max: 1_000_000_000 }) ?? (cleanPrompt + cleanCompletion);
+  const cleanUnitPrice = toInt(unitPriceHalala, { min: 0, max: 100_000_000 }) ?? 0;
   const cleanCost = toInt(costHalala, { min: 0, max: 100_000_000_000 });
+  const cleanOutcome = billingOutcome === 'failed' ? 'failed' : 'succeeded';
+  const cleanFailureCode = typeof failureCode === 'string' ? failureCode.trim().slice(0, 120) : null;
+  const cleanFailureDetail = typeof failureDetail === 'string' ? failureDetail.trim().slice(0, 500) : null;
+  const settlementStatus = cleanOutcome === 'failed' ? 'failed' : 'pending';
 
   if (!cleanRenterId) throw new Error('renterId must be a positive integer');
   if (!cleanModel) throw new Error('model is required');
@@ -49,19 +64,29 @@ function recordOpenRouterUsage(db, {
   const id = `oru_${crypto.randomUUID()}`;
   db.prepare(
     `INSERT INTO openrouter_usage_ledger
-      (id, renter_id, provider_id, model, source, prompt_tokens, completion_tokens, total_tokens, cost_halala, currency, settlement_status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+      (id, request_id, renter_id, provider_id, model, source, provider_response_id, job_id,
+       prompt_tokens, completion_tokens, total_tokens, unit_price_halala, cost_halala,
+       currency, billing_outcome, failure_code, failure_detail, settlement_status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
+    cleanRequestId || id,
     cleanRenterId,
     cleanProviderId,
     cleanModel,
     cleanSource || 'v1',
+    cleanProviderResponseId,
+    cleanJobId,
     cleanPrompt,
     cleanCompletion,
     cleanTotal,
+    cleanUnitPrice,
     cleanCost,
     currency || 'SAR',
+    cleanOutcome,
+    cleanFailureCode,
+    cleanFailureDetail,
+    settlementStatus,
     nowIso()
   );
 

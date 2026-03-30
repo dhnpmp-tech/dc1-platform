@@ -973,6 +973,14 @@ const migrations = [
   "ALTER TABLE model_registry ADD COLUMN prewarm_class TEXT DEFAULT 'warm'",
   // OpenRouter model metadata compatibility — DCP-112
   'ALTER TABLE model_registry ADD COLUMN parameter_count TEXT',
+  // OpenRouter usage metering persistence + reconciliation keys — DCP-171
+  'ALTER TABLE openrouter_usage_ledger ADD COLUMN request_id TEXT',
+  'ALTER TABLE openrouter_usage_ledger ADD COLUMN provider_response_id TEXT',
+  'ALTER TABLE openrouter_usage_ledger ADD COLUMN job_id TEXT',
+  'ALTER TABLE openrouter_usage_ledger ADD COLUMN unit_price_halala INTEGER DEFAULT 0',
+  'ALTER TABLE openrouter_usage_ledger ADD COLUMN billing_outcome TEXT DEFAULT \'succeeded\'',
+  'ALTER TABLE openrouter_usage_ledger ADD COLUMN failure_code TEXT',
+  'ALTER TABLE openrouter_usage_ledger ADD COLUMN failure_detail TEXT',
   // Actual elapsed seconds for sub-minute billing accuracy — Sprint 25 Gap 3
   'ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER',
   // Template-based job submission — Sprint 27
@@ -1651,15 +1659,23 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_i
 db.exec(`
   CREATE TABLE IF NOT EXISTS openrouter_usage_ledger (
     id                 TEXT PRIMARY KEY,
+    request_id         TEXT NOT NULL,
     renter_id          INTEGER NOT NULL,
     provider_id        INTEGER,
     model              TEXT NOT NULL,
     source             TEXT NOT NULL DEFAULT 'v1',
+    provider_response_id TEXT,
+    job_id             TEXT,
     prompt_tokens      INTEGER NOT NULL DEFAULT 0,
     completion_tokens  INTEGER NOT NULL DEFAULT 0,
     total_tokens       INTEGER NOT NULL DEFAULT 0,
+    unit_price_halala  INTEGER NOT NULL DEFAULT 0,
     cost_halala        INTEGER NOT NULL,
     currency           TEXT NOT NULL DEFAULT 'SAR',
+    billing_outcome    TEXT NOT NULL DEFAULT 'succeeded'
+                       CHECK(billing_outcome IN ('succeeded','failed')),
+    failure_code       TEXT,
+    failure_detail     TEXT,
     settlement_status  TEXT NOT NULL DEFAULT 'pending'
                        CHECK(settlement_status IN ('pending','settled','failed')),
     settlement_id      TEXT,
@@ -1669,6 +1685,8 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_pending ON openrouter_usage_ledger(settlement_status, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_settlement ON openrouter_usage_ledger(settlement_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_renter ON openrouter_usage_ledger(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_request ON openrouter_usage_ledger(request_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_job ON openrouter_usage_ledger(job_id, created_at DESC)`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS openrouter_settlements (

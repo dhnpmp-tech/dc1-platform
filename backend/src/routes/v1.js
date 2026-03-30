@@ -15,8 +15,10 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
+const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 
 const router = express.Router();
 
@@ -247,6 +249,25 @@ function resolveModelRequirements(model) {
   };
 }
 
+function resolveTokenRateHalala(modelId) {
+  const row = db.get(
+    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+    modelId
+  ) || db.get(
+    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+    '__default__'
+  );
+  return toFiniteInt(row?.token_rate_halala, { min: 0, max: 100_000_000 }) ?? 1;
+}
+
+function persistUsageLedgerSafe(payload) {
+  try {
+    recordOpenRouterUsage(db._db || db, payload);
+  } catch (error) {
+    console.error('[v1/chat/completions] usage ledger persist failed:', error?.message || error);
+  }
+}
+
 function approximateTokenCount(text) {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
@@ -367,6 +388,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const promptTokens = approximateTokenCount(mergedPrompt);
     const durationMinutes = Math.max(1, Math.ceil(maxTokens / 350));
     const estimatedCostHalala = Math.max(1, Math.round(durationMinutes * modelReq.fallback_rate_halala_per_min));
+    const tokenRateHalala = resolveTokenRateHalala(modelReq.model_id);
+    const meteringRequestId = `orreq_${crypto.randomUUID()}`;
     if (Number(req.renter.balance_halala || 0) < estimatedCostHalala) {
       return res.status(402).json({
         error: { message: 'Insufficient balance', type: 'billing_error', code: 402 }
@@ -386,18 +409,33 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         toolChoice,
       });
 
-      const debitAndReturnProxyResult = (resultBody) => {
+      const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
         const usage = resultBody?.usage || {};
-        const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
-        const rateRecord = db.get(
-          'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
-        ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
-        const tokenRate = rateRecord?.token_rate_halala || 1;
-        const actualCost = Math.max(1, actualTokens * tokenRate);
+        const billedPromptTokens = toFiniteInt(usage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? promptTokens;
+        const billedCompletionTokens = toFiniteInt(usage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+        const billedTotalTokens = toFiniteInt(usage.total_tokens, { min: 0, max: 1_000_000_000 })
+          ?? (billedPromptTokens + billedCompletionTokens);
+        const actualCost = Math.max(1, billedTotalTokens * tokenRateHalala);
         try {
           db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
             .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
         } catch (_) { /* best-effort */ }
+
+        persistUsageLedgerSafe({
+          requestId: meteringRequestId,
+          renterId: req.renter.id,
+          providerId: providerForUsage?.id || null,
+          model: modelReq.model_id,
+          source: 'v1',
+          providerResponseId: normalizeString(resultBody?.id, { maxLen: 160 }),
+          promptTokens: billedPromptTokens,
+          completionTokens: billedCompletionTokens,
+          totalTokens: billedTotalTokens,
+          unitPriceHalala: tokenRateHalala,
+          costHalala: actualCost,
+          currency: 'SAR',
+          billingOutcome: 'succeeded',
+        });
 
         return res.json(resultBody);
       };
@@ -407,7 +445,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        streamResponse.body.pipe(res);
+        const upstreamBody = streamResponse?.body;
+        if (!upstreamBody) {
+          return res.end();
+        }
+        if (typeof upstreamBody.pipe === 'function') {
+          upstreamBody.pipe(res);
+          return;
+        }
+        if (typeof Readable.fromWeb === 'function') {
+          Readable.fromWeb(upstreamBody).pipe(res);
+          return;
+        }
+        return res.end();
       };
 
       if (wantsStream && proxyResult.streamResponse) {
@@ -416,7 +466,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       }
 
       if (proxyResult.body) {
-        return debitAndReturnProxyResult(proxyResult.body);
+        return debitAndReturnProxyResult(proxyResult.body, assignedProvider);
       }
 
       // If selected provider endpoint exists but failed to produce a valid payload,
@@ -446,9 +496,26 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         }
 
         if (fallbackResult.body) {
-          return debitAndReturnProxyResult(fallbackResult.body);
+          return debitAndReturnProxyResult(fallbackResult.body, fallbackProvider);
         }
       }
+
+      persistUsageLedgerSafe({
+        requestId: meteringRequestId,
+        renterId: req.renter.id,
+        providerId: assignedProvider.id,
+        model: modelReq.model_id,
+        source: 'v1',
+        promptTokens,
+        completionTokens: 0,
+        totalTokens: promptTokens,
+        unitPriceHalala: tokenRateHalala,
+        costHalala: 0,
+        currency: 'SAR',
+        billingOutcome: 'failed',
+        failureCode: proxyResult.proxyError || 'provider_failover_exhausted',
+        failureDetail: proxyResult.detail || 'All candidate providers failed to produce a valid response',
+      });
 
       return res.status(502).json({
         error: {
@@ -490,6 +557,23 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         JSON.stringify(containerSpec), now, now
       );
     } catch (error) {
+      persistUsageLedgerSafe({
+        requestId: meteringRequestId,
+        renterId: req.renter.id,
+        providerId: assignedProvider.id,
+        model: modelReq.model_id,
+        source: 'v1',
+        jobId,
+        promptTokens,
+        completionTokens: 0,
+        totalTokens: promptTokens,
+        unitPriceHalala: tokenRateHalala,
+        costHalala: estimatedCostHalala,
+        currency: 'SAR',
+        billingOutcome: 'failed',
+        failureCode: 'queue_submit_failed',
+        failureDetail: error?.message || 'Failed to submit inference job',
+      });
       return res.status(500).json({
         error: { message: 'Failed to submit inference job', type: 'server_error', code: 500 }
       });
@@ -507,6 +591,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       if (job.status === 'completed') {
         const text = job.result_text || '';
         const cTokens = job.completion_tokens || approximateTokenCount(text);
+        const totalTokens = promptTokens + cTokens;
 
         // If streaming was requested, simulate SSE from completed text
         if (wantsStream) {
@@ -532,14 +617,48 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             id: completionId, object: 'chat.completion.chunk',
             created: Math.floor(Date.now() / 1000), model: modelReq.model_id,
             choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-            usage: { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens: promptTokens + cTokens },
+            usage: { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens },
           })}\n\n`);
           res.write('data: [DONE]\n\n');
+          persistUsageLedgerSafe({
+            requestId: meteringRequestId,
+            renterId: req.renter.id,
+            providerId: assignedProvider.id,
+            model: modelReq.model_id,
+            source: 'v1',
+            providerResponseId: completionId,
+            jobId,
+            promptTokens,
+            completionTokens: cTokens,
+            totalTokens,
+            unitPriceHalala: tokenRateHalala,
+            costHalala: estimatedCostHalala,
+            currency: 'SAR',
+            billingOutcome: 'succeeded',
+          });
           return res.end();
         }
 
+        const completionId = `chatcmpl-${jobId}`;
+        persistUsageLedgerSafe({
+          requestId: meteringRequestId,
+          renterId: req.renter.id,
+          providerId: assignedProvider.id,
+          model: modelReq.model_id,
+          source: 'v1',
+          providerResponseId: completionId,
+          jobId,
+          promptTokens,
+          completionTokens: cTokens,
+          totalTokens,
+          unitPriceHalala: tokenRateHalala,
+          costHalala: estimatedCostHalala,
+          currency: 'SAR',
+          billingOutcome: 'succeeded',
+        });
+
         return res.json({
-          id: `chatcmpl-${jobId}`,
+          id: completionId,
           object: 'chat.completion',
           created: Math.floor(Date.now() / 1000),
           model: modelReq.model_id,
@@ -548,11 +667,28 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             message: { role: 'assistant', content: text },
             finish_reason: 'stop',
           }],
-          usage: { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens: promptTokens + cTokens },
+          usage: { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens },
         });
       }
 
       if (['failed', 'cancelled', 'permanently_failed', 'timed_out'].includes(job.status)) {
+        persistUsageLedgerSafe({
+          requestId: meteringRequestId,
+          renterId: req.renter.id,
+          providerId: assignedProvider.id,
+          model: modelReq.model_id,
+          source: 'v1',
+          jobId,
+          promptTokens,
+          completionTokens: 0,
+          totalTokens: promptTokens,
+          unitPriceHalala: tokenRateHalala,
+          costHalala: estimatedCostHalala,
+          currency: 'SAR',
+          billingOutcome: 'failed',
+          failureCode: `job_${job.status}`,
+          failureDetail: job.error || 'unknown',
+        });
         return res.status(502).json({
           error: { message: `Inference ${job.status}: ${job.error || 'unknown'}`, type: 'upstream_error', code: 502 }
         });
@@ -560,6 +696,24 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
       await new Promise(r => setTimeout(r, POLL_MS));
     }
+
+    persistUsageLedgerSafe({
+      requestId: meteringRequestId,
+      renterId: req.renter.id,
+      providerId: assignedProvider.id,
+      model: modelReq.model_id,
+      source: 'v1',
+      jobId,
+      promptTokens,
+      completionTokens: 0,
+      totalTokens: promptTokens,
+      unitPriceHalala: tokenRateHalala,
+      costHalala: estimatedCostHalala,
+      currency: 'SAR',
+      billingOutcome: 'failed',
+      failureCode: 'job_timeout',
+      failureDetail: 'Inference did not complete within timeout',
+    });
 
     return res.status(504).json({
       error: { message: 'Inference did not complete within timeout', type: 'timeout_error', code: 504 }
