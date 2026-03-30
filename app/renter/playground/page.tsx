@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense, Component, ErrorInfo, ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useLanguage } from '@/app/lib/i18n';
+import { useLanguage } from '../../lib/i18n';
 
 // ErrorBoundary to capture the actual crash error
 class PlaygroundErrorBoundary extends Component<

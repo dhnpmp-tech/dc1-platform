@@ -11,7 +11,7 @@ import {
   getDocBySlug,
   getDocsCatalog,
   normalizeDocSlug,
-} from '@/app/lib/docs'
+} from '../../lib/docs'
 
 interface DocsPageProps {
   params: {
