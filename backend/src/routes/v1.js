@@ -106,13 +106,27 @@ function requireAuth(req, res, next) {
 
 router.get('/models', (req, res) => {
   try {
-    const rows = db.all(`
-      SELECT id, model_id, display_name, parameter_count, context_window,
-             min_gpu_vram_gb, use_cases
-      FROM model_registry
-      WHERE is_active = 1
-      ORDER BY display_name ASC
-    `);
+    let rows = [];
+    try {
+      rows = db.all(`
+        SELECT id, model_id, display_name, parameter_count, context_window,
+               min_gpu_vram_gb, use_cases
+        FROM model_registry
+        WHERE is_active = 1
+        ORDER BY display_name ASC
+      `);
+    } catch (innerError) {
+      const missingParameterCount = innerError?.code === 'SQLITE_ERROR'
+        && /no such column:\s*parameter_count/i.test(String(innerError?.message || ''));
+      if (!missingParameterCount) throw innerError;
+      rows = db.all(`
+        SELECT id, model_id, display_name, context_window,
+               min_gpu_vram_gb, use_cases
+        FROM model_registry
+        WHERE is_active = 1
+        ORDER BY display_name ASC
+      `).map((row) => ({ ...row, parameter_count: null }));
+    }
 
     const nowSecs = Math.floor(Date.now() / 1000);
 
@@ -201,9 +215,11 @@ function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
 }
 
-async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream }) {
+async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
+  if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
+  if (toolChoice != null) body.tool_choice = toolChoice;
   let response;
   try {
     response = await fetch(url, {
@@ -318,6 +334,8 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         maxTokens,
         temperature,
         stream: wantsStream,
+        tools,
+        toolChoice,
       });
 
       const debitAndReturnProxyResult = (resultBody) => {
@@ -336,16 +354,60 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         return res.json(resultBody);
       };
 
-      const writeStreamingResponse = (streamResponse) => {
+      const writeStreamingResponse = async (streamResponse) => {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        streamResponse.body.pipe(res);
+        if (res.flushHeaders) res.flushHeaders();
+
+        const upstreamBody = streamResponse.body;
+        if (!upstreamBody) {
+          res.write(`data: ${JSON.stringify({
+            error: { message: 'Provider returned empty stream body', type: 'upstream_error', code: 502 }
+          })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          return res.end();
+        }
+
+        if (typeof upstreamBody.pipe === 'function') {
+          upstreamBody.on('error', (error) => {
+            res.write(`data: ${JSON.stringify({
+              error: { message: `Provider stream failed: ${error.message}`, type: 'upstream_error', code: 502 }
+            })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+          });
+          upstreamBody.pipe(res);
+          return;
+        }
+
+        if (typeof upstreamBody.getReader === 'function') {
+          const reader = upstreamBody.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value) res.write(Buffer.from(value));
+            }
+          } catch (error) {
+            res.write(`data: ${JSON.stringify({
+              error: { message: `Provider stream failed: ${error.message}`, type: 'upstream_error', code: 502 }
+            })}\n\n`);
+            res.write('data: [DONE]\n\n');
+          }
+          return res.end();
+        }
+
+        res.write(`data: ${JSON.stringify({
+          error: { message: 'Provider stream type is unsupported', type: 'upstream_error', code: 502 }
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
       };
 
       if (wantsStream && proxyResult.streamResponse) {
-        writeStreamingResponse(proxyResult.streamResponse);
+        await writeStreamingResponse(proxyResult.streamResponse);
         return;
       }
 
@@ -368,12 +430,14 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
           maxTokens,
           temperature,
           stream: wantsStream,
+          tools,
+          toolChoice,
         });
 
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
-          writeStreamingResponse(fallbackResult.streamResponse);
+          await writeStreamingResponse(fallbackResult.streamResponse);
           return;
         }
 
