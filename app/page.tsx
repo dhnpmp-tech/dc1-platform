@@ -7,7 +7,6 @@ import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
 import { persistRoleIntent, readRoleIntent, RoleIntent, trackRoleIntentApplied } from './lib/role-intent'
 
-const GPU_RATES: { model: string; rate: number }[] = []
 const RELIABILITY_POLL_MS = 30_000
 
 interface AvailabilityProvider {
@@ -308,36 +307,20 @@ export default function HomePage() {
     t('proof.segment.item_models'),
     t('proof.segment.item_execution'),
   ]
-  const modeStripItems = [
-    { key: 'marketplace', label: t('mode.label.marketplace'), description: t('mode.desc.marketplace'), href: '/renter/marketplace' },
-    { key: 'playground', label: t('mode.label.playground'), description: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api-reference' },
-    { key: 'enterprise_support', label: t('mode.label.enterprise_support'), description: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=landing-mode-strip' },
-  ]
   const pathChooserLanes = [
     {
-      key: 'self_serve_renter',
-      label: t('path_chooser.self_serve.label'),
-      description: t('path_chooser.self_serve.desc'),
-      href: '/renter/register?source=landing_path_chooser&lane=self_serve_renter',
+      key: 'build_on_dcp',
+      label: 'Build on DCP',
+      description: 'Launch inference quickly with Arabic-ready models, API access, and clear per-token settlement.',
+      href: '/renter/register?source=landing_path_chooser&lane=build_on_dcp',
+      cta: 'Start as Renter',
     },
     {
-      key: 'provider_onboarding',
-      label: t('path_chooser.provider.label'),
-      description: t('path_chooser.provider.desc'),
-      href: '/provider/register?source=landing_path_chooser&lane=provider_onboarding',
-    },
-    {
-      key: 'enterprise_intake',
-      label: t('path_chooser.enterprise.label'),
-      description: t('path_chooser.enterprise.desc'),
-      href: '/support?category=enterprise&source=landing_path_chooser&lane=enterprise_intake#contact-form',
-    },
-    {
-      key: 'arabic_model_docs',
-      label: t('path_chooser.arabic.label'),
-      description: t('path_chooser.arabic.desc'),
-      href: '/docs?source=landing_path_chooser&lane=arabic_model_docs',
+      key: 'earn_as_provider',
+      label: 'Earn as Provider',
+      description: 'Register your GPU, stay online with heartbeat reporting, and receive workload-based earnings.',
+      href: '/provider/register?source=landing_path_chooser&lane=earn_as_provider',
+      cta: 'Start as Provider',
     },
   ]
   const howDcpWorksSteps = [
@@ -364,24 +347,28 @@ export default function HomePage() {
       <LaunchBanner health={detailedHealth} />
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-dc1-amber/5 via-transparent to-transparent pointer-events-none" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 lg:py-36 relative">
-          <div className="text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
-              <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY
+      <section className="relative overflow-hidden border-b border-dc1-border/80">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(245,165,36,0.16),transparent_38%),radial-gradient(circle_at_88%_12%,rgba(245,165,36,0.08),transparent_30%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-dc1-amber/10 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-dc1-void to-transparent" />
+
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)] lg:gap-12 lg:px-8 lg:py-24">
+          <div>
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-dc1-amber/25 bg-dc1-amber/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-dc1-amber" />
+              Inference API Marketplace
             </div>
-            <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
+            <h1 className="text-4xl font-black leading-[1.05] tracking-tight text-dc1-amber sm:text-6xl lg:text-7xl">
               {t('landing.hero_title')}
             </h1>
-            <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
+            <p className="mt-5 max-w-2xl text-base leading-relaxed text-dc1-text-secondary sm:text-lg">
               {t('landing.hero_desc')}
             </p>
-            <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
-              OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.
+            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-dc1-text-secondary/90">
+              OpenAI-compatible inference with Arabic model support, Saudi data residency, and per-token billing on Saudi energy-powered GPU infrastructure.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
+
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/renter/register?source=landing_first_fold&intent=renter"
                 onClick={() => {
@@ -393,7 +380,7 @@ export default function HomePage() {
                     step: 'primary_cta',
                   })
                 }}
-                className="btn btn-primary btn-lg w-full sm:w-auto min-w-[240px]"
+                className="btn btn-primary btn-lg w-full sm:w-auto"
               >
                 {t('landing.cta_renter')}
               </Link>
@@ -408,153 +395,117 @@ export default function HomePage() {
                     step: 'primary_cta',
                   })
                 }}
-                className="btn btn-secondary btn-lg w-full sm:w-auto min-w-[240px]"
+                className="btn btn-secondary btn-lg w-full sm:w-auto"
               >
                 {t('landing.cta_provider')}
               </Link>
             </div>
-            <p className="text-xs text-dc1-text-muted mb-3">
-              {t('landing.cta_alt_prefix')}{' '}
-              <Link href="/support?category=enterprise&source=landing-first-fold" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold">
-                {t('landing.cta_enterprise')}
-              </Link>
-            </p>
-            <div className="mb-8 flex justify-center">
+
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-dc1-text-muted">
               <ProviderCountWidget health={detailedHealth} />
+              <span className="hidden h-1 w-1 rounded-full bg-dc1-text-muted sm:inline-block" />
+              <span>
+                {t('landing.cta_alt_prefix')}{' '}
+                <Link href="/support?category=enterprise&source=landing-first-fold" className="font-semibold text-dc1-amber hover:text-dc1-amber/80">
+                  {t('landing.cta_enterprise')}
+                </Link>
+              </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>
+
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-dc1-amber">{t('landing.diff_energy_title')}</p>
                 <p className="text-xs text-dc1-text-secondary">{t('landing.diff_energy_desc')}</p>
               </div>
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_models_title')}</p>
+              <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-dc1-amber">{t('landing.diff_models_title')}</p>
                 <p className="text-xs text-dc1-text-secondary">{t('landing.diff_models_desc')}</p>
               </div>
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_container_title')}</p>
+              <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-dc1-amber">{t('landing.diff_container_title')}</p>
                 <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
               </div>
             </div>
-            <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                How DCP works
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {howDcpWorksSteps.map((item, index) => (
-                  <div key={item.key} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-3">
-                    <p className="text-xs font-semibold text-dc1-amber">{index + 1}. {item.title}</p>
-                    <p className="mt-1 text-xs text-dc1-text-secondary leading-relaxed">{item.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <details className="max-w-4xl mx-auto w-full mb-4 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-left">
-              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                Explore all paths and tools
-              </summary>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                    {t('mode.strip.title')}
-                  </p>
-                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('mode.strip.subtitle')}</p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {modeStripItems.map((item) => (
-                      <Link
-                        key={item.key}
-                        href={item.href}
-                        onClick={() =>
-                          trackLandingEvent('mode_strip_clicked', {
-                            surface: 'mode_strip',
-                            destination: item.href,
-                            step: 'mode_click',
-                            mode_key: item.key,
-                            mode_label: item.label,
-                          })
-                        }
-                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
-                      >
-                        <p className="text-sm font-semibold text-dc1-text-primary">{item.label}</p>
-                        <p className="mt-1 text-xs text-dc1-text-secondary">{item.description}</p>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                    {t('path_chooser.title')}
-                  </p>
-                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('path_chooser.subtitle')}</p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {pathChooserLanes.map((lane) => (
-                      <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber">
-                        <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
-                        <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </details>
-            <div className="w-full rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-2 text-xs text-dc1-text-secondary text-center">
-              {t('landing.hero_settlement_proof')}
-            </div>
-            <p className="text-xs text-dc1-text-muted mt-4">{t('landing.hero_helper')}</p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
-              <Link
-                href="/marketplace"
-                className="inline-flex items-center gap-2 text-sm font-medium text-dc1-amber hover:text-dc1-amber/80 transition-colors"
-              >
-                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                {t('landing.browse_live')}
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-              <Link
-                href="/earn"
-                className="inline-flex items-center gap-2 text-sm font-medium text-dc1-text-secondary hover:text-dc1-amber transition-colors"
-              >
-                {t('landing.earn_calc')}
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-            </div>
-            <div className="mt-5 mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                {t('landing.reliability_strip_label')}
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{liveGpuCount ?? '—'}</span> {t('landing.reliability_live_providers')}
-                </p>
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{gpuFamilyCoverage ?? '—'}</span> {t('landing.reliability_gpu_families')}
-                </p>
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable')}</span>
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 mx-auto max-w-3xl rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                {t('proof.segment.title')}
-              </p>
-              <ul className="list-disc ps-5 space-y-1 text-sm text-dc1-text-secondary">
-                {segmentProofItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-            <p className="text-dc1-text-secondary text-sm mt-6">
+
+            <p className="mt-6 text-sm text-dc1-text-secondary">
               {t('landing.already_account')}{' '}
-              <Link href="/login" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold underline underline-offset-2">
+              <Link href="/login" className="font-semibold text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80">
                 {t('landing.sign_in_here')}
               </Link>
             </p>
           </div>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">{t('landing.reliability_strip_label')}</p>
+              <div className="mt-3 divide-y divide-dc1-border rounded-xl border border-dc1-border bg-dc1-surface-l2">
+                <div className="flex items-center justify-between px-3 py-3">
+                  <p className="text-xs uppercase tracking-[0.1em] text-dc1-text-secondary">{t('landing.reliability_live_providers')}</p>
+                  <p className="text-xl font-bold text-dc1-text-primary">{liveGpuCount ?? '—'}</p>
+                </div>
+                <div className="flex items-center justify-between px-3 py-3">
+                  <p className="text-xs uppercase tracking-[0.1em] text-dc1-text-secondary">{t('landing.reliability_gpu_families')}</p>
+                  <p className="text-xl font-bold text-dc1-text-primary">{gpuFamilyCoverage ?? '—'}</p>
+                </div>
+                <div className="flex items-center justify-between px-3 py-3">
+                  <p className="text-xs uppercase tracking-[0.1em] text-dc1-text-secondary">{t('landing.live_stat_last_updated')}</p>
+                  <p className="text-xs font-semibold text-dc1-text-primary">
+                    {reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable')}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1/90 p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">How DCP works</p>
+              <div className="mt-3 space-y-2">
+                {howDcpWorksSteps.map((item, index) => (
+                  <div key={item.key} className="flex gap-3 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-dc1-amber/35 bg-dc1-amber/10 text-xs font-semibold text-dc1-amber">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-dc1-text-primary">{item.title}</p>
+                      <p className="mt-0.5 text-xs text-dc1-text-secondary">{item.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-[1240px] px-4 py-12 sm:px-6 md:py-16 lg:px-8">
+        <div className="mb-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">Choose your path</p>
+          <p className="mt-2 max-w-2xl text-sm text-dc1-text-secondary">Pick one lane to start quickly. You can switch roles later from your account.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+          {pathChooserLanes.map((lane) => (
+            <Link
+              key={lane.key}
+              href={lane.href}
+              className="flex min-h-[220px] flex-col rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5 transition-all hover:-translate-y-0.5 hover:border-dc1-amber/40"
+            >
+              <p className="text-lg font-medium text-dc1-text-primary">{lane.label}</p>
+              <p className="mt-2 text-sm leading-relaxed text-dc1-text-secondary">{lane.description}</p>
+              <span className="mt-auto pt-6 text-sm font-semibold text-dc1-amber">{lane.cta} →</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-[1240px] px-4 pb-10 sm:px-6 lg:px-8">
+        <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">{t('proof.segment.title')}</p>
+          <ul className="mt-2 grid list-disc gap-1 ps-5 text-sm text-dc1-text-secondary sm:grid-cols-3 sm:gap-3 sm:list-none sm:ps-0">
+            {segmentProofItems.map((item) => (
+              <li key={item} className="sm:before:me-2 sm:before:content-['•']">
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
