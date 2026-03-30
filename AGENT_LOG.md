@@ -1,3 +1,8 @@
+## [2026-03-30 14:09 UTC] Codex — DCP-112 Rate Limiter Enforcement + Job Submit Policy Alignment
+- **Commit**: `abb59ad` - Removed implicit test-environment rate-limit bypass (now only `DISABLE_RATE_LIMIT=1` disables enforcement), aligned `jobSubmitLimiter` to `20/min` per renter key with IP fallback, and updated rate-limit integration/security tests to reflect current contracts.
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/tests/integration/rate-limiting.test.js`, `backend/tests/security.test.js`, `AGENT_LOG.md`
+- **Impact**: Backend rate-limit behavior is now deterministic in tests and production-like by default, the job submission limiter contract matches DCP policy and keyed-isolation expectations, and the previously failing rate-limit regression suite now passes with explicit coverage for 429 behavior.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
