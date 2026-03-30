@@ -81,6 +81,7 @@ function trackAnalytics(event: string, props: Record<string, unknown>) {
 }
 
 function ModelCard({ model, isRTL, showSar }: { model: ArabicModel; isRTL: boolean; showSar: boolean }) {
+  const { t } = useLanguage()
   const priceUsd = model.priceUsdPerMin
   const priceSar = (priceUsd * USD_TO_SAR).toFixed(2)
 
@@ -88,7 +89,7 @@ function ModelCard({ model, isRTL, showSar }: { model: ArabicModel; isRTL: boole
   const category = isRTL ? model.categoryAr : model.category
   const description = isRTL ? model.descriptionAr : model.description
   const badge = isRTL ? model.arabicBadgeAr : model.arabicBadge
-  const deployLabel = isRTL ? 'نشر' : 'Deploy'
+  const deployLabel = t('marketplace.featured_arabic_models.deploy')
 
   return (
     <article className="bg-dc1-surface-l2 border border-dc1-border rounded-xl p-5 flex flex-col gap-3 hover:border-dc1-amber/40 hover:shadow-amber transition-all duration-200 group">
@@ -112,14 +113,14 @@ function ModelCard({ model, isRTL, showSar }: { model: ArabicModel; isRTL: boole
           {showSar ? (
             <>
               <span className="text-lg font-bold text-dc1-text-primary">{priceSar}</span>
-              <span className="text-xs text-dc1-text-muted">SAR/min</span>
-              <span className="text-xs text-dc1-text-muted">(${priceUsd.toFixed(2)}/min)</span>
+              <span className="text-xs text-dc1-text-muted">{t('marketplace.featured_arabic_models.price_sar_min')}</span>
+              <span className="text-xs text-dc1-text-muted">{t('marketplace.featured_arabic_models.price_usd_min').replace('{price}', priceUsd.toFixed(2))}</span>
             </>
           ) : (
             <>
               <span className="text-lg font-bold text-dc1-text-primary">${priceUsd.toFixed(2)}</span>
-              <span className="text-xs text-dc1-text-muted">/min</span>
-              <span className="text-xs text-dc1-text-muted">≈ {priceSar} SAR</span>
+              <span className="text-xs text-dc1-text-muted">{t('marketplace.featured_arabic_models.price_per_min')}</span>
+              <span className="text-xs text-dc1-text-muted">{t('marketplace.featured_arabic_models.price_sar_approx').replace('{price}', priceSar)}</span>
             </>
           )}
         </div>
@@ -144,14 +145,12 @@ function ModelCard({ model, isRTL, showSar }: { model: ArabicModel; isRTL: boole
 }
 
 export default function FeaturedArabicModels() {
-  const { isRTL, language } = useLanguage()
+  const { isRTL, language, t } = useLanguage()
   const showSar = isRTL
 
-  const heading = isRTL ? 'النماذج العربية' : 'Arabic Models'
-  const subheading = isRTL
-    ? 'محسّنة للشرق الأوسط — نماذج مُدرَّبة على العربية وجاهزة للنشر'
-    : 'Optimized for the Middle East — Arabic-trained models ready to deploy'
-  const learnMoreLabel = isRTL ? 'تعرف على Arabic RAG ←' : 'Learn about Arabic RAG →'
+  const heading = t('marketplace.featured_arabic_models.heading')
+  const subheading = t('marketplace.featured_arabic_models.subheading')
+  const learnMoreLabel = t('marketplace.featured_arabic_models.learn_more')
 
   return (
     <section
@@ -187,9 +186,7 @@ export default function FeaturedArabicModels() {
 
       {/* SAR conversion note */}
       <p className="text-xs text-dc1-text-muted mt-4 text-center">
-        {isRTL
-          ? 'سعر الصرف: 1 دولار = 3.75 ريال سعودي • الأسعار تقريبية'
-          : '1 USD = 3.75 SAR • Prices shown in SAR for reference'}
+        {t('marketplace.featured_arabic_models.fx_note')}
       </p>
     </section>
   )

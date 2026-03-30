@@ -149,6 +149,15 @@ const translations: Record<Language, Record<string, string>> = {
     'marketplace.models_tab': 'Models',
     'marketplace.arabic_support': 'Arabic support',
     'marketplace.no_providers_for_model': 'No online providers currently meet this model requirement.',
+    'marketplace.featured_arabic_models.heading': 'Arabic Models',
+    'marketplace.featured_arabic_models.subheading': 'Optimized for the Middle East — Arabic-trained models ready to deploy',
+    'marketplace.featured_arabic_models.learn_more': 'Learn about Arabic RAG →',
+    'marketplace.featured_arabic_models.deploy': 'Deploy',
+    'marketplace.featured_arabic_models.price_sar_min': 'SAR/min',
+    'marketplace.featured_arabic_models.price_usd_min': '(${price}/min)',
+    'marketplace.featured_arabic_models.price_per_min': '/min',
+    'marketplace.featured_arabic_models.price_sar_approx': '≈ {price} SAR',
+    'marketplace.featured_arabic_models.fx_note': '1 USD = 3.75 SAR • Prices shown in SAR for reference',
 
     // Marketplace public browse — new filter keys
     'marketplace.filter_compute_type': 'Compute Type',
@@ -2297,6 +2306,15 @@ const translations: Record<Language, Record<string, string>> = {
     'marketplace.models_tab': 'النماذج',
     'marketplace.arabic_support': 'دعم اللغة العربية',
     'marketplace.no_providers_for_model': 'لا يوجد مزودون متصلون يلبون متطلبات هذا النموذج حالياً.',
+    'marketplace.featured_arabic_models.heading': 'النماذج العربية',
+    'marketplace.featured_arabic_models.subheading': 'محسّنة للشرق الأوسط — نماذج مُدرَّبة على العربية وجاهزة للنشر',
+    'marketplace.featured_arabic_models.learn_more': 'تعرّف على RAG العربي ←',
+    'marketplace.featured_arabic_models.deploy': 'نشر',
+    'marketplace.featured_arabic_models.price_sar_min': 'ريال/دقيقة',
+    'marketplace.featured_arabic_models.price_usd_min': '(${price}/دقيقة)',
+    'marketplace.featured_arabic_models.price_per_min': '/دقيقة',
+    'marketplace.featured_arabic_models.price_sar_approx': '≈ {price} ريال',
+    'marketplace.featured_arabic_models.fx_note': 'سعر الصرف: 1 دولار = 3.75 ريال سعودي • الأسعار تقريبية',
 
     // Marketplace public browse — new filter keys
     'marketplace.filter_compute_type': 'نوع الحوسبة',
