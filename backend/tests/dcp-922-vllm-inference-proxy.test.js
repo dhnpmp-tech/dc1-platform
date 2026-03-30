@@ -1,17 +1,6 @@
 /**
  * DCP-922: vLLM inference proxy routing to active providers
- *
- * Tests:
- *   1. Heartbeat stores vllm_endpoint_url in providers table
- *   2. Heartbeat rejects invalid vllm_endpoint_url format (non-http URL)
- *   3. POST /api/vllm/complete proxies to provider vLLM endpoint when registered
- *   4. Token counts extracted from provider vLLM response (not approximated)
- *   5. Fallback to next provider when primary fails (connection refused)
- *   6. Returns 503 when all providers fail
- *   7. Phase 1 graceful degradation: no endpoint_url → job polling path (no_capacity fallback)
- *   8. Metering persists even when provider usage payload is malformed
  */
-
 'use strict';
 
 const http = require('http');
@@ -24,29 +13,6 @@ process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost';
 process.env.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'test';
 
 const db = require('../src/db');
-
-let passed = 0;
-let failed = 0;
-
-async function test(name, fn) {
-  try {
-    await fn();
-    console.log(`✅ ${name}`);
-    passed++;
-  } catch (e) {
-    console.log(`❌ ${name}: ${e.message}`);
-    if (process.env.VERBOSE) console.error(e);
-    failed++;
-  }
-}
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg || 'Assertion failed');
-}
-
-function assertEqual(actual, expected, msg) {
-  if (actual !== expected) throw new Error(msg || `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-}
 
 function request(server, method, path, body, headers = {}) {
   const { port } = server.address();
@@ -73,7 +39,6 @@ function request(server, method, path, body, headers = {}) {
   });
 }
 
-// Spin up a minimal mock vLLM server that returns an OpenAI-compatible response.
 function createMockVllmServer({ port, modelId, responseText, usage, statusCode = 200, delay = 0 }) {
   return new Promise((resolve, reject) => {
     const srv = http.createServer((req, res) => {
@@ -90,7 +55,7 @@ function createMockVllmServer({ port, modelId, responseText, usage, statusCode =
         res.end(JSON.stringify({ error: `mock error ${statusCode}` }));
         return;
       }
-      const body = {
+      const payload = {
         id: 'chatcmpl-mock',
         object: 'chat.completion',
         model: modelId || 'test-model',
@@ -98,7 +63,7 @@ function createMockVllmServer({ port, modelId, responseText, usage, statusCode =
         usage: usage || { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
       };
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(body));
+      res.end(JSON.stringify(payload));
     }
 
     srv.listen(port, '127.0.0.1', () => resolve(srv));
@@ -109,74 +74,73 @@ function createMockVllmServer({ port, modelId, responseText, usage, statusCode =
 const MAIN_PORT = 19922;
 const VLLM_PORT = 19923;
 const VLLM_PORT2 = 19924;
+const MODEL_ID = 'test-model-dcp922';
 
 let mainServer;
 let providerId;
 let providerKey;
 let renterKey;
-const MODEL_ID = 'test-model-dcp922';
 
-async function setup() {
-  const express = require('express');
-  const app = express();
+describe('DCP-922 vLLM inference proxy', () => {
+  beforeAll(async () => {
+    const express = require('express');
+    const app = express();
 
-  // Raw body needed for HMAC heartbeat middleware
-  app.use('/api/providers/heartbeat', express.raw({ type: 'application/json' }), (req, _res, next) => {
-    if (Buffer.isBuffer(req.body)) {
-      req.rawBody = req.body;
-      try { req.body = JSON.parse(req.body.toString('utf8')); } catch { req.body = {}; }
+    app.use('/api/providers/heartbeat', express.raw({ type: 'application/json' }), (req, _res, next) => {
+      if (Buffer.isBuffer(req.body)) {
+        req.rawBody = req.body;
+        try { req.body = JSON.parse(req.body.toString('utf8')); } catch { req.body = {}; }
+      }
+      next();
+    });
+    app.use(express.json());
+
+    const providersRouter = require('../src/routes/providers');
+    const vllmRouter = require('../src/routes/vllm');
+    app.use('/api/providers', providersRouter);
+    app.use('/api/vllm', vllmRouter);
+
+    await new Promise((resolve) => {
+      mainServer = app.listen(MAIN_PORT, '127.0.0.1', resolve);
+    });
+
+    providerKey = `dcp-provider-dcp922-${crypto.randomBytes(8).toString('hex')}`;
+    const provResult = db.run(
+      `INSERT INTO providers (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib,
+         approval_status, status, supported_compute_types, last_heartbeat, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'approved', 'online', '["inference"]',
+         datetime('now'), datetime('now'), datetime('now'))`,
+      'DCP922 Provider', 'provider922@test.com', providerKey, 'RTX 4090', 24, 24576
+    );
+    providerId = provResult.lastInsertRowid;
+
+    renterKey = `dcp-renter-dcp922-${crypto.randomBytes(8).toString('hex')}`;
+    db.run(
+      `INSERT INTO renters (name, email, api_key, status, balance_halala, total_spent_halala, total_jobs, created_at)
+       VALUES (?, ?, ?, 'active', 9999999, 0, 0, datetime('now'))`,
+      'DCP922 Renter', 'renter922@test.com', renterKey
+    );
+
+    db.run(
+      `INSERT OR REPLACE INTO model_registry
+       (model_id, display_name, family, vram_gb, quantization, context_window, use_cases,
+        min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
+      MODEL_ID, 'DCP922 Test Model', 'test', 8, 'fp16', 4096, '[]', 4, 20
+    );
+  });
+
+  afterAll(async () => {
+    if (mainServer) {
+      await new Promise((resolve) => mainServer.close(resolve));
     }
-    next();
-  });
-  app.use(express.json());
-
-  const providersRouter = require('../src/routes/providers');
-  const vllmRouter = require('../src/routes/vllm');
-  app.use('/api/providers', providersRouter);
-  app.use('/api/vllm', vllmRouter);
-
-  await new Promise((resolve) => {
-    mainServer = app.listen(MAIN_PORT, '127.0.0.1', resolve);
   });
 
-  // Seed a provider with a known API key
-  providerKey = 'dcp-provider-dcp922-' + crypto.randomBytes(8).toString('hex');
-  const provResult = db.run(
-    `INSERT INTO providers (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib,
-       approval_status, status, supported_compute_types, last_heartbeat, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'approved', 'online', '["inference"]',
-       datetime('now'), datetime('now'), datetime('now'))`,
-    'DCP922 Provider', 'provider922@test.com', providerKey, 'RTX 4090', 24, 24576
-  );
-  providerId = provResult.lastInsertRowid;
+  beforeEach(() => {
+    db.run("UPDATE providers SET status = 'online', vllm_endpoint_url = NULL WHERE id = ?", providerId);
+  });
 
-  // Seed a renter with plenty of balance
-  renterKey = 'dcp-renter-dcp922-' + crypto.randomBytes(8).toString('hex');
-  db.run(
-    `INSERT INTO renters (name, email, api_key, status, balance_halala, total_spent_halala, total_jobs, created_at)
-     VALUES (?, ?, ?, 'active', 9999999, 0, 0, datetime('now'))`,
-    'DCP922 Renter', 'renter922@test.com', renterKey
-  );
-
-  // Register a test model with low VRAM requirement so the provider qualifies
-  db.run(
-    `INSERT OR REPLACE INTO model_registry
-     (model_id, display_name, family, vram_gb, quantization, context_window, use_cases,
-      min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
-    MODEL_ID, 'DCP922 Test Model', 'test', 8, 'fp16', 4096, '[]', 4, 20
-  );
-}
-
-async function teardown() {
-  if (mainServer) mainServer.close();
-}
-
-async function run() {
-  await setup();
-
-  // ── Test 1: heartbeat stores vllm_endpoint_url ────────────────────────────
-  await test('Heartbeat with vllm_endpoint_url stores it in providers table', async () => {
+  test('heartbeat with vllm_endpoint_url stores it in providers table', async () => {
     const endpointUrl = `http://127.0.0.1:${VLLM_PORT}`;
     const res = await request(mainServer, 'POST', '/api/providers/heartbeat', {
       api_key: providerKey,
@@ -184,31 +148,25 @@ async function run() {
       provider_ip: '127.0.0.1',
       vllm_endpoint_url: endpointUrl,
     });
-    assertEqual(res.status, 200, `Expected 200, got ${res.status}: ${res.text}`);
 
+    expect(res.status).toBe(200);
     const row = db.get('SELECT vllm_endpoint_url FROM providers WHERE id = ?', providerId);
-    assertEqual(row.vllm_endpoint_url, endpointUrl, `Expected endpoint stored, got ${row.vllm_endpoint_url}`);
+    expect(row.vllm_endpoint_url).toBe(endpointUrl);
   });
 
-  // ── Test 2: invalid URL format is ignored ─────────────────────────────────
-  await test('Heartbeat ignores malformed vllm_endpoint_url (no http scheme)', async () => {
-    // Reset endpoint first
-    db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
-
+  test('heartbeat ignores malformed vllm_endpoint_url (no http scheme)', async () => {
     const res = await request(mainServer, 'POST', '/api/providers/heartbeat', {
       api_key: providerKey,
       gpu_status: { gpu_name: 'RTX 4090', gpu_vram_mib: 24576 },
       vllm_endpoint_url: 'not-a-valid-url',
     });
-    assertEqual(res.status, 200, `Expected 200, got ${res.status}`);
 
+    expect(res.status).toBe(200);
     const row = db.get('SELECT vllm_endpoint_url FROM providers WHERE id = ?', providerId);
-    assert(row.vllm_endpoint_url == null, `Expected null for invalid URL, got ${row.vllm_endpoint_url}`);
+    expect(row.vllm_endpoint_url).toBeNull();
   });
 
-  // ── Test 3: POST /api/vllm/complete proxies to provider endpoint ──────────
-  await test('POST /api/vllm/complete proxies request to provider vLLM endpoint', async () => {
-    // Set up mock vLLM server
+  test('POST /api/vllm/complete proxies request to provider vLLM endpoint', async () => {
     const mockVllm = await createMockVllmServer({
       port: VLLM_PORT,
       modelId: MODEL_ID,
@@ -216,9 +174,7 @@ async function run() {
       usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
     });
 
-    // Register the endpoint on the provider
-    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?',
-      `http://127.0.0.1:${VLLM_PORT}`, providerId);
+    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?', `http://127.0.0.1:${VLLM_PORT}`, providerId);
 
     try {
       const res = await request(mainServer, 'POST', '/api/vllm/complete', {
@@ -227,17 +183,14 @@ async function run() {
         max_tokens: 50,
       }, { 'x-renter-key': renterKey });
 
-      assertEqual(res.status, 200, `Expected 200, got ${res.status}: ${res.text}`);
-      assert(res.body && res.body.choices, 'Response should have choices');
-      assertEqual(res.body.choices[0].message.content, 'Marhaba from provider',
-        `Expected proxy response text, got: ${res.body.choices[0].message.content}`);
+      expect(res.status).toBe(200);
+      expect(res.body?.choices?.[0]?.message?.content).toBe('Marhaba from provider');
     } finally {
-      mockVllm.close();
+      await new Promise((resolve) => mockVllm.close(resolve));
     }
   });
 
-  // ── Test 4: token counts come from provider response ──────────────────────
-  await test('Token counts in response come from provider vLLM usage field', async () => {
+  test('token counts in response come from provider vLLM usage field', async () => {
     const mockVllm = await createMockVllmServer({
       port: VLLM_PORT,
       modelId: MODEL_ID,
@@ -245,8 +198,7 @@ async function run() {
       usage: { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 },
     });
 
-    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?',
-      `http://127.0.0.1:${VLLM_PORT}`, providerId);
+    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?', `http://127.0.0.1:${VLLM_PORT}`, providerId);
 
     try {
       const res = await request(mainServer, 'POST', '/api/vllm/complete', {
@@ -254,25 +206,19 @@ async function run() {
         messages: [{ role: 'user', content: 'Count my tokens please' }],
       }, { 'x-renter-key': renterKey });
 
-      assertEqual(res.status, 200, `Expected 200, got ${res.status}: ${res.text}`);
-      assert(res.body.usage, 'Response should include usage');
-      assertEqual(res.body.usage.prompt_tokens, 25, `Expected prompt_tokens=25, got ${res.body.usage.prompt_tokens}`);
-      assertEqual(res.body.usage.completion_tokens, 10, `Expected completion_tokens=10, got ${res.body.usage.completion_tokens}`);
-      assertEqual(res.body.usage.total_tokens, 35, `Expected total_tokens=35, got ${res.body.usage.total_tokens}`);
+      expect(res.status).toBe(200);
+      expect(res.body?.usage?.prompt_tokens).toBe(25);
+      expect(res.body?.usage?.completion_tokens).toBe(10);
+      expect(res.body?.usage?.total_tokens).toBe(35);
     } finally {
-      mockVllm.close();
+      await new Promise((resolve) => mockVllm.close(resolve));
     }
   });
 
-  // ── Test 5: fallback to next provider when primary fails ──────────────────
-  await test('Falls back to next provider when primary refuses connection', async () => {
-    // Provider 1: no endpoint (primary will fail connection)
-    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?',
-      'http://127.0.0.1:19999', // nothing listening here
-      providerId);
+  test('falls back to next provider when primary refuses connection', async () => {
+    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?', 'http://127.0.0.1:19999', providerId);
 
-    // Provider 2: has a working endpoint
-    const provider2Key = 'dcp-provider2-dcp922-' + crypto.randomBytes(8).toString('hex');
+    const provider2Key = `dcp-provider2-dcp922-${crypto.randomBytes(8).toString('hex')}`;
     const prov2Result = db.run(
       `INSERT INTO providers (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib,
          approval_status, status, supported_compute_types, last_heartbeat,
@@ -298,35 +244,24 @@ async function run() {
         messages: [{ role: 'user', content: 'Will you fallback?' }],
       }, { 'x-renter-key': renterKey });
 
-      // Could be 200 (fallback worked) or 503 (both failed — race condition if
-      // provider2 wasn't returned by getCapableProviders in time). Accept 200.
       if (res.status === 200) {
-        assert(res.body.choices[0].message.content === 'Response from fallback provider',
-          `Expected fallback provider response, got: ${res.body.choices[0].message.content}`);
+        expect(res.body?.choices?.[0]?.message?.content).toBe('Response from fallback provider');
       } else {
-        // Fallback didn't trigger — acceptable in unit test as provider2 might not
-        // have been selected by assignProvider. At minimum, no crash.
-        assert(res.status === 503, `Expected 200 or 503, got ${res.status}: ${res.text}`);
+        expect(res.status).toBe(503);
       }
     } finally {
-      mockVllm2.close();
+      await new Promise((resolve) => mockVllm2.close(resolve));
       db.run('DELETE FROM providers WHERE id = ?', provider2Id);
     }
-
-    // Restore provider1 endpoint
-    db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
   });
 
-  // ── Test 6: 503 when all providers fail ───────────────────────────────────
-  await test('Returns 503 when all providers return errors', async () => {
-    // Mock that returns 500
+  test('returns 503 when all providers return errors', async () => {
     const mockVllm = await createMockVllmServer({
       port: VLLM_PORT,
       statusCode: 500,
     });
 
-    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?',
-      `http://127.0.0.1:${VLLM_PORT}`, providerId);
+    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?', `http://127.0.0.1:${VLLM_PORT}`, providerId);
 
     try {
       const res = await request(mainServer, 'POST', '/api/vllm/complete', {
@@ -334,21 +269,14 @@ async function run() {
         messages: [{ role: 'user', content: 'Will you fail?' }],
       }, { 'x-renter-key': renterKey });
 
-      assertEqual(res.status, 503, `Expected 503 when provider errors, got ${res.status}: ${res.text}`);
-      assert(res.body && res.body.error === 'no_providers_available',
-        `Expected error='no_providers_available', got ${JSON.stringify(res.body)}`);
+      expect(res.status).toBe(503);
+      expect(res.body?.error).toBe('no_providers_available');
     } finally {
-      mockVllm.close();
+      await new Promise((resolve) => mockVllm.close(resolve));
     }
-
-    db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
   });
 
-  // ── Test 7: Phase 1 graceful degradation (no endpoint → no_capacity path) ─
-  await test('Phase 1: no vllm_endpoint_url returns 503 no_capacity (legacy path, no live providers)', async () => {
-    // Ensure no endpoint registered on provider
-    db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
-    // Mark provider as offline so getCapableProviders returns empty
+  test('phase 1: no vllm_endpoint_url returns 503 no_capacity (legacy path, no live providers)', async () => {
     db.run("UPDATE providers SET status = 'offline' WHERE id = ?", providerId);
 
     const res = await request(mainServer, 'POST', '/api/vllm/complete', {
@@ -356,16 +284,11 @@ async function run() {
       messages: [{ role: 'user', content: 'Anybody home?' }],
     }, { 'x-renter-key': renterKey });
 
-    assertEqual(res.status, 503, `Expected 503 no_capacity, got ${res.status}: ${res.text}`);
-    assert(res.body && res.body.error === 'no_capacity',
-      `Expected error='no_capacity', got ${JSON.stringify(res.body)}`);
-
-    // Restore provider for any follow-up
-    db.run("UPDATE providers SET status = 'online' WHERE id = ?", providerId);
+    expect(res.status).toBe(503);
+    expect(res.body?.error).toBe('no_capacity');
   });
 
-  // ── Test 8: malformed provider usage still persists metering ──────────────
-  await test('Malformed provider usage still persists serve_sessions metering', async () => {
+  test('malformed provider usage still persists serve_sessions metering', async () => {
     const mockVllm = await createMockVllmServer({
       port: VLLM_PORT,
       modelId: MODEL_ID,
@@ -373,8 +296,7 @@ async function run() {
       usage: { prompt_tokens: 'not-a-number', completion_tokens: null, total_tokens: 'bad' },
     });
 
-    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?',
-      `http://127.0.0.1:${VLLM_PORT}`, providerId);
+    db.run('UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?', `http://127.0.0.1:${VLLM_PORT}`, providerId);
 
     try {
       const res = await request(mainServer, 'POST', '/api/vllm/complete', {
@@ -382,37 +304,29 @@ async function run() {
         messages: [{ role: 'user', content: 'Persist metering even with malformed usage fields' }],
       }, { 'x-renter-key': renterKey });
 
-      assertEqual(res.status, 200, `Expected 200, got ${res.status}: ${res.text}`);
-      assert(res.body.usage && res.body.usage.total_tokens > 0, `Expected positive usage tokens, got ${JSON.stringify(res.body.usage)}`);
+      expect(res.status).toBe(200);
+      expect(res.body?.usage?.total_tokens).toBeGreaterThan(0);
 
-      const completionId = typeof res.body.id === 'string' ? res.body.id : '';
+      const completionId = typeof res.body?.id === 'string' ? res.body.id : '';
       const idDerivedJobIdRaw = completionId.startsWith('chatcmpl-') ? completionId.replace(/^chatcmpl-/, '') : null;
       const idDerivedJobId = idDerivedJobIdRaw && idDerivedJobIdRaw !== 'undefined' ? idDerivedJobIdRaw : null;
       const latestJob = db.get('SELECT job_id FROM jobs ORDER BY rowid DESC LIMIT 1');
       const jobId = idDerivedJobId || latestJob?.job_id;
-      assert(jobId, `Expected to resolve persisted job id, got completion id: ${completionId}`);
+
+      expect(jobId).toBeTruthy();
+
       const session = db.get(
         `SELECT total_inferences, total_tokens, total_billed_halala, last_inference_at
          FROM serve_sessions WHERE job_id = ?`,
         jobId
       );
-      assert(session, `Expected serve_session for job ${jobId}`);
-      assert(session.total_inferences >= 1, `Expected total_inferences >= 1, got ${session.total_inferences}`);
-      assert(session.total_tokens > 0, `Expected total_tokens > 0, got ${session.total_tokens}`);
-      assert(session.total_billed_halala > 0, `Expected total_billed_halala > 0, got ${session.total_billed_halala}`);
-      assert(session.last_inference_at, 'Expected last_inference_at to be set');
+      expect(session).toBeTruthy();
+      expect(session.total_inferences).toBeGreaterThanOrEqual(1);
+      expect(session.total_tokens).toBeGreaterThan(0);
+      expect(session.total_billed_halala).toBeGreaterThan(0);
+      expect(session.last_inference_at).toBeTruthy();
     } finally {
-      mockVllm.close();
+      await new Promise((resolve) => mockVllm.close(resolve));
     }
   });
-
-  await teardown();
-
-  console.log(`\nResults: ${passed} passed, ${failed} failed`);
-  if (failed > 0) process.exit(1);
-}
-
-run().catch((err) => {
-  console.error('Test runner error:', err);
-  process.exit(1);
 });
