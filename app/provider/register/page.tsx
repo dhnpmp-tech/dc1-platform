@@ -920,7 +920,7 @@ function ProviderRegisterPageContent() {
                 </h2>
                 <div className="rounded-lg border border-dc1-amber/25 bg-dc1-amber/5 p-4">
                   <p className="text-xs text-dc1-text-muted mb-2">
-                    Step: {getProviderOnboardingStep(nextActionState)}
+                    {t('register.provider.next_action_step_label')}: {getProviderOnboardingStep(nextActionState)}
                   </p>
                   <p className="text-xs uppercase tracking-[0.12em] text-dc1-amber font-semibold mb-2">
                     {t('register.provider.next_action_now')}
@@ -1447,7 +1447,7 @@ function ProviderRegisterPageContent() {
                   <option value="RTX 3090">NVIDIA RTX 3090 (24 GB)</option>
                   <option value="H100">NVIDIA H100 (80 GB)</option>
                   <option value="H200">NVIDIA H200 (141 GB)</option>
-                  <option value="Other">Other</option>
+                  <option value="Other">{t('register.provider.vram.hint_required_other')}</option>
                 </select>
                 {fieldErrors.gpuModel ? (
                   <p id="gpuModel-error" className="mt-2 text-sm text-red-400">{fieldErrors.gpuModel}</p>
