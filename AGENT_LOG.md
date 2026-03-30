@@ -1,3 +1,8 @@
+## [2026-03-30 18:43 UTC] Codex — DCP-152 Provider Online Endpoint Rate Limit Enforcement (Mainline)
+- **Commit**: `pending` - Added benchmark throttling to `GET /api/providers/online` and a focused integration test validating the 31st request is rejected.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Online-provider listing now has an explicit 30 requests/minute cap in mainline route wiring, reducing polling/scraping abuse risk while preserving current public response behavior. Verification passed with `cd backend && npm test -- --runInBand tests/integration/rate-limiting.test.js -t "providers online route"` (`1 passed, 8 skipped`).
+
 ## [2026-03-30 17:33 UTC] Codex — DCP-146 v1 Tool-Calling Forwarding Parity
 - **Commit**: `pending` - Patched `/v1/chat/completions` provider proxying to forward `tools` and `tool_choice` in both primary and fallback provider attempts.
 - **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`

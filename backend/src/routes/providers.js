@@ -4753,7 +4753,7 @@ router.delete('/me', providerAccountDeletionLimiter, (req, res) => {
 
 const { getProviderHealthStatus, getOnlineProviders } = require('../workers/providerHealthWorker');
 
-router.get('/online', (req, res) => {
+router.get('/online', benchmarkLimiter, (req, res) => {
     try {
         const isAdmin = isAdminRequest(req);
 
