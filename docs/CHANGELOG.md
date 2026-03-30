@@ -1,5 +1,10 @@
 # DCP Changelog
 
+## [Unreleased]
+
+### Infrastructure
+- ✅ Instant-tier Docker workflow now publishes `dc1/base-worker`, `dc1/llm-worker`, and `dc1/sd-worker` with mutable `latest` plus immutable `sha-*` tags, emits a machine-readable digest manifest artifact, and smoke-validates pull/startup in CI.
+
 ## [1.0.0] — 2026-03-23 — Public Launch
 
 **DCP is live.** The GPU marketplace built for Arabic AI goes public today.
