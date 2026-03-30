@@ -43,6 +43,12 @@ describe('providerActivationEvidenceService', () => {
       command: 'node backend/scripts/export-provider-activation-evidence.js',
       commandPack: 'echo check',
       duplicateChargeChecks: [{ title: 'check-a', command: 'echo a' }],
+      linkageSnapshots: {
+        usage_rows: [{ request_id: 'req-abc' }],
+        charge_rows: [],
+        ledger_rows: [],
+        warnings: [],
+      },
       nearbyWindowMinutes: 15,
       outputPath: '/tmp/stream.txt',
       prompt: 'hello world',
@@ -56,8 +62,11 @@ describe('providerActivationEvidenceService', () => {
     expect(bundle.stream_completed).toBe(true);
     expect(bundle.raw_output_snippets.total_lines).toBe(2);
     expect(bundle.duplicate_charge_checks).toHaveLength(1);
+    expect(bundle.joinability_has_candidate).toBe(true);
     expect(bundle.nearby_window_minutes).toBe(15);
+    expect(bundle.linkage_snapshots.usage_rows).toHaveLength(1);
     expect(bundle.summary).toContain('request_id=req-abc');
+    expect(bundle.summary).toContain('joinable rows usage=1');
   });
 
   test('buildEvidenceMarkdown redacts renter bearer token', () => {
@@ -84,6 +93,7 @@ describe('providerActivationEvidenceService', () => {
     const markdown = buildEvidenceMarkdown(bundle);
     expect(markdown).toContain('Bear***oken');
     expect(markdown).not.toContain('renter-secret-token');
+    expect(markdown).toContain('Joinability Snapshots');
   });
 
   test('maskSecret handles short and empty values', () => {

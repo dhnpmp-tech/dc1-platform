@@ -72,6 +72,7 @@ The bundle includes:
 - raw stream output path proving `[DONE]` completion
 - raw stream first/last snippets for quick review in issue comments
 - duplicate-charge check pack (nearby retries/failures + ledger/payment joins)
+- automatic SQLite joinability snapshots (`usage_rows`, `charge_rows`, `ledger_rows`) for immediate candidate-ID reconciliation
 - provider liveness + availability snapshots
 
 ## 5) Repeat for Next Providers

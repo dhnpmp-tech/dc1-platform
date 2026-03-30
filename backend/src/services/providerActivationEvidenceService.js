@@ -60,6 +60,7 @@ function buildEvidenceBundle({
   command,
   commandPack,
   duplicateChargeChecks,
+  linkageSnapshots,
   nearbyWindowMinutes,
   outputPath,
   prompt,
@@ -71,6 +72,11 @@ function buildEvidenceBundle({
   const sse = parseSseTranscript(streamRaw || '');
   const snippets = buildRawOutputSnippets(streamRaw || '');
   const checks = Array.isArray(duplicateChargeChecks) ? duplicateChargeChecks : [];
+  const snapshots = linkageSnapshots || null;
+  const usageRows = Array.isArray(snapshots?.usage_rows) ? snapshots.usage_rows.length : 0;
+  const chargeRows = Array.isArray(snapshots?.charge_rows) ? snapshots.charge_rows.length : 0;
+  const ledgerRows = Array.isArray(snapshots?.ledger_rows) ? snapshots.ledger_rows.length : 0;
+  const hasJoinableCandidate = usageRows > 0 || chargeRows > 0 || ledgerRows > 0;
 
   return {
     generated_at: utcTimestamp,
@@ -91,13 +97,15 @@ function buildEvidenceBundle({
     command_pack: commandPack || null,
     nearby_window_minutes: Number(nearbyWindowMinutes) || null,
     duplicate_charge_checks: checks,
+    linkage_snapshots: snapshots,
+    joinability_has_candidate: hasJoinableCandidate,
     output_path: outputPath,
     raw_output_snippets: snippets,
     request_headers: requestHeaders,
     response_headers: responseHeaders,
     prompt_sha256: digestPrompt(prompt),
     summary: sse.done
-      ? `Authenticated stream completed on ${route} with request_id=${requestId || 'n/a'} provider_id=${providerId || 'n/a'}; duplicate-charge checks attached (${checks.length}).`
+      ? `Authenticated stream completed on ${route} with request_id=${requestId || 'n/a'} provider_id=${providerId || 'n/a'}; duplicate-charge checks attached (${checks.length}); joinable rows usage=${usageRows} charge=${chargeRows} ledger=${ledgerRows}.`
       : `Stream completion marker was not observed on ${route}; investigate provider/runtime logs.`,
   };
 }
@@ -162,6 +170,15 @@ function buildEvidenceMarkdown(bundle) {
     lines.push('```');
     lines.push('');
   }
+
+  lines.push('## Joinability Snapshots');
+  lines.push('');
+  lines.push('```json');
+  lines.push(JSON.stringify(bundle.linkage_snapshots || null, null, 2));
+  lines.push('```');
+  lines.push('');
+  lines.push(`- Joinability candidate present: ${Boolean(bundle.joinability_has_candidate)}`);
+  lines.push('');
 
   lines.push('## Provider Online Evidence');
   lines.push('');

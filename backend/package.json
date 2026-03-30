@@ -6,7 +6,6 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "finops:evidence": "node scripts/export-finops-evidence.js",
     "provider:evidence": "node scripts/export-provider-activation-evidence.js",
     "renters:backfill": "node src/scripts/backfill-renters-from-supabase.js",
     "renters:verify-login-email": "node src/scripts/verify-renter-login-email.js",

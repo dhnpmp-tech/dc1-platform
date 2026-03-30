@@ -32448,3 +32448,8 @@ a
 - **Commit**: `pending (agent/backend-dev/dcp-152-paid-inference-evidence)` - Extended provider evidence export with endpoint capture, raw stream snippets, and duplicate-charge risk command pack for nearby retry/failure analysis.
 - **Files**: backend/scripts/export-provider-activation-evidence.js, backend/src/services/providerActivationEvidenceService.js, backend/src/__tests__/provider-activation-evidence-service.test.js, docs/ops/provider-activation-evidence.md
 - **Impact**: DCP-152/DCP-150 can now receive one postable artifact bundle containing route+endpoint, UTC timestamp, request/trace/provider/session IDs, branch/SHA, stream completion proof snippets, and explicit nearby-window duplicate-charge checks once live provider+renter credentials are provided.
+
+## [2026-03-30 19:34 UTC] Codex — DCP-152 Evidence Linkage Snapshots Added For Immediate Joinability
+- **Commit**: `pending` - Added automatic SQLite joinability snapshots to provider activation evidence bundles so candidate IDs are directly tied to usage/charge/ledger rows without requiring manual SQL execution, including schema-drift-safe query handling.
+- **Files**: `backend/scripts/export-provider-activation-evidence.js`, `backend/src/services/providerActivationEvidenceService.js`, `backend/src/__tests__/provider-activation-evidence-service.test.js`, `backend/package.json`, `docs/ops/provider-activation-evidence.md`, `AGENT_LOG.md`
+- **Impact**: DCP-152 evidence artifacts now include `usage_rows`, `charge_rows`, and `ledger_rows` snapshots plus explicit joinability status, improving DCP-150 reconciliation readiness and reducing operator turnaround when validating first paid inference candidates.

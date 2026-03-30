@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const Database = require('better-sqlite3');
 const {
   buildEvidenceBundle,
   buildEvidenceMarkdown,
@@ -105,6 +106,163 @@ function getGitInfo() {
     return { branch, sha };
   } catch (_) {
     return { branch: null, sha: null };
+  }
+}
+
+function loadLinkageSnapshots({
+  dbPath,
+  utcTimestamp,
+  windowMinutes,
+  requestId,
+  traceId,
+  providerId,
+  sessionId,
+}) {
+  const result = {
+    db_path: dbPath,
+    timestamp_utc: utcTimestamp,
+    window_minutes: Number(windowMinutes) || 15,
+    usage_rows: [],
+    charge_rows: [],
+    ledger_rows: [],
+    warnings: [],
+  };
+
+  if (!fs.existsSync(dbPath)) {
+    result.warnings.push(`SQLite database missing at ${dbPath}`);
+    return result;
+  }
+
+  let db;
+  try {
+    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const tables = new Set(
+      db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => row.name)
+    );
+    const columnsFor = (tableName) => {
+      if (!tables.has(tableName)) return new Set();
+      try {
+        return new Set(db.prepare(`PRAGMA table_info(${tableName})`).all().map((row) => row.name));
+      } catch (_) {
+        return new Set();
+      }
+    };
+    const safeQueryAll = (sql, params, warningTitle) => {
+      try {
+        return db.prepare(sql).all(params);
+      } catch (error) {
+        result.warnings.push(`${warningTitle}: ${error.message}`);
+        return [];
+      }
+    };
+    const buildIdentityWhere = (columns, aliases) => {
+      const clauses = [];
+      if (aliases.requestId && columns.has(aliases.requestId)) clauses.push(`(@requestId <> '' AND COALESCE(${aliases.requestId}, '') = @requestId)`);
+      if (aliases.traceId && columns.has(aliases.traceId)) clauses.push(`(@traceId <> '' AND COALESCE(${aliases.traceId}, '') = @traceId)`);
+      if (aliases.providerId && columns.has(aliases.providerId)) clauses.push(`(@providerId <> '' AND CAST(${aliases.providerId} AS TEXT) = @providerId)`);
+      if (aliases.sessionId && columns.has(aliases.sessionId)) clauses.push(`(@sessionId <> '' AND COALESCE(${aliases.sessionId}, '') = @sessionId)`);
+      return clauses;
+    };
+    const firstTimestampColumn = (columns) =>
+      ['created_at', 'updated_at', 'occurred_at', 'timestamp_utc'].find((name) => columns.has(name)) || null;
+    const minusWindow = `-${result.window_minutes} minutes`;
+    const plusWindow = `+${result.window_minutes} minutes`;
+    const usageTable =
+      ['openrouter_usage_ledger', 'openrouter_usage_events', 'openrouter_usage'].find((name) => tables.has(name)) || null;
+    const chargeTable =
+      ['openrouter_charge_events', 'openrouter_charges', 'payments'].find((name) => tables.has(name)) || null;
+
+    if (usageTable) {
+      const columns = columnsFor(usageTable);
+      const idClauses = buildIdentityWhere(columns, {
+        requestId: 'request_id',
+        traceId: 'trace_id',
+        providerId: 'provider_id',
+        sessionId: 'session_id',
+      });
+      const tsColumn = firstTimestampColumn(columns);
+      if (tsColumn) idClauses.push(`(${tsColumn} BETWEEN datetime(@ts, @minusWindow) AND datetime(@ts, @plusWindow))`);
+      const whereSql = idClauses.length > 0 ? idClauses.join(' OR ') : '1=1';
+      const orderColumn = tsColumn || 'rowid';
+      result.usage_rows = safeQueryAll(
+        `SELECT * FROM ${usageTable} WHERE ${whereSql} ORDER BY ${orderColumn} DESC LIMIT 30`,
+        {
+        requestId: String(requestId || ''),
+        traceId: String(traceId || ''),
+        providerId: String(providerId || ''),
+        sessionId: String(sessionId || ''),
+        ts: utcTimestamp,
+        minusWindow,
+        plusWindow,
+        },
+        `Usage snapshot query failed for ${usageTable}`
+      );
+    } else {
+      result.warnings.push('No openrouter usage table found (expected openrouter_usage_ledger/openrouter_usage_events/openrouter_usage).');
+    }
+
+    if (chargeTable) {
+      const columns = columnsFor(chargeTable);
+      const idClauses = buildIdentityWhere(columns, {
+        requestId: 'request_id',
+        traceId: 'trace_id',
+        providerId: 'provider_id',
+        sessionId: 'session_id',
+      });
+      const tsColumn = firstTimestampColumn(columns);
+      if (tsColumn) idClauses.push(`(${tsColumn} BETWEEN datetime(@ts, @minusWindow) AND datetime(@ts, @plusWindow))`);
+      const whereSql = idClauses.length > 0 ? idClauses.join(' OR ') : '1=1';
+      const orderColumn = tsColumn || 'rowid';
+      result.charge_rows = safeQueryAll(
+        `SELECT * FROM ${chargeTable} WHERE ${whereSql} ORDER BY ${orderColumn} DESC LIMIT 30`,
+        {
+          requestId: String(requestId || ''),
+          traceId: String(traceId || ''),
+          providerId: String(providerId || ''),
+          sessionId: String(sessionId || ''),
+          ts: utcTimestamp,
+          minusWindow,
+          plusWindow,
+        },
+        `Charge snapshot query failed for ${chargeTable}`
+      );
+    } else {
+      result.warnings.push('No charge table found (expected openrouter_charge_events/openrouter_charges/payments).');
+    }
+
+    if (tables.has('renter_credit_ledger')) {
+      const columns = columnsFor('renter_credit_ledger');
+      const tsColumn = firstTimestampColumn(columns);
+      const clauses = [];
+      if (columns.has('payment_ref')) {
+        clauses.push(`(@requestId <> '' AND COALESCE(payment_ref, '') LIKE '%' || @requestId || '%')`);
+        clauses.push(`(@traceId <> '' AND COALESCE(payment_ref, '') LIKE '%' || @traceId || '%')`);
+      }
+      if (columns.has('job_id')) clauses.push(`(@requestId <> '' AND CAST(job_id AS TEXT) LIKE '%' || @requestId || '%')`);
+      if (tsColumn) clauses.push(`(${tsColumn} BETWEEN datetime(@ts, @minusWindow) AND datetime(@ts, @plusWindow))`);
+      const whereSql = clauses.length > 0 ? clauses.join(' OR ') : '1=1';
+      result.ledger_rows = safeQueryAll(
+        `SELECT * FROM renter_credit_ledger WHERE ${whereSql} ORDER BY ${(tsColumn || 'rowid')} DESC LIMIT 30`,
+        {
+          requestId: String(requestId || ''),
+          traceId: String(traceId || ''),
+          ts: utcTimestamp,
+          minusWindow,
+          plusWindow,
+        },
+        'Ledger snapshot query failed for renter_credit_ledger'
+      );
+    } else {
+      result.warnings.push('No renter_credit_ledger table found.');
+    }
+
+    result.tables_detected = Array.from(tables).sort();
+    return result;
+  } catch (error) {
+    result.warnings.push(`Failed to load linkage snapshots: ${error.message}`);
+    return result;
+  } finally {
+    if (db) db.close();
   }
 }
 
@@ -241,6 +399,16 @@ async function main() {
     ...duplicateChargeChecks.map((entry, idx) => `${idx + 1}. ${entry.title}\n${entry.command}`),
   ].join('\n');
 
+  const linkageSnapshots = loadLinkageSnapshots({
+    dbPath: path.resolve(__dirname, '..', 'data', 'providers.db'),
+    utcTimestamp,
+    windowMinutes: args.windowMinutes,
+    requestId: responseHeaders['x-dcp-request-id'] || '',
+    traceId: responseHeaders['x-dcp-trace-id'] || args.traceId || '',
+    providerId: responseHeaders['x-dcp-provider-id'] || args.providerId || '',
+    sessionId: responseHeaders['x-dcp-session-id'] || '',
+  });
+
   const bundle = buildEvidenceBundle({
     route: args.route,
     endpointUrl: routeUrl,
@@ -259,6 +427,7 @@ async function main() {
     command,
     commandPack,
     duplicateChargeChecks,
+    linkageSnapshots,
     nearbyWindowMinutes: args.windowMinutes,
     outputPath: streamPath,
     prompt: args.prompt,
