@@ -1,3 +1,8 @@
+## [2026-03-30 11:51 UTC] Codex — DCP-108 Limiter Checkout Fix Reapplied On Main-Based Branch
+- **Commit**: `c24bffc` - Reapplied the checkout-effective limiter fix on a fresh `main` branch by keeping rate limiting enabled during Jest runs unless `DISABLE_RATE_LIMIT=1`, and by switching the P2P announce/lookup limiters plus the focused rate limiter test harness to IPv6-safe `ipKeyGenerator` keys.
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/src/routes/p2p.js`, `backend/src/__tests__/rateLimiter.test.js`, `AGENT_LOG.md`
+- **Impact**: QA should validate `agent/staff-engineer/dcp-108-limiter-checkout` at or after `c24bffc` for the backend unblock lane. Required evidence is green on this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js` (`15/15`) and `cd backend && npm test -- --runInBand tests/integration/v1-server-wiring.test.js` (`1/1`). Expected non-blocking warnings remain environment-related (`SEGMENT_WRITE_KEY` unset, `ethers` unavailable, `SUPABASE_SERVICE_ROLE_KEY` unset).
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
