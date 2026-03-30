@@ -14,12 +14,30 @@ function retryAfterSeconds(req, windowMs) {
   return Math.max(1, Math.ceil(windowMs / 1000));
 }
 
+function normalizeLimiterKey(req, rawKey) {
+  if (rawKey == null || rawKey === '') return ipFallbackKey(req);
+
+  const normalized = String(rawKey);
+  const requestIp = req.ip || req.socket?.remoteAddress || '0.0.0.0';
+
+  // Guard against custom key generators that return raw IPs and trigger
+  // express-rate-limit IPv6 safety warnings.
+  if (normalized === requestIp || normalized === `ip:${requestIp}`) {
+    return ipFallbackKey(req);
+  }
+
+  return normalized;
+}
+
 function createRateLimiter({ windowMs, max, keyGenerator }) {
-  const isTestEnv = process.env.DISABLE_RATE_LIMIT === '1' || process.env.NODE_ENV === 'test';
+  const disableRateLimit = process.env.DISABLE_RATE_LIMIT === '1';
   return rateLimit({
     windowMs,
-    max: isTestEnv ? Number.MAX_SAFE_INTEGER : max,
-    keyGenerator,
+    max: disableRateLimit ? Number.MAX_SAFE_INTEGER : max,
+    keyGenerator: (req, res) => {
+      const generated = typeof keyGenerator === 'function' ? keyGenerator(req, res) : null;
+      return normalizeLimiterKey(req, generated);
+    },
     standardHeaders: true,
     legacyHeaders: false,
     handler: (req, res) => {
