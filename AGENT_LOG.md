@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 18:27 UTC] Codex — DCP-143 Homepage Spec-Compliance Polish
-- **Commit**: `pending` - Tightened homepage spec compliance by introducing Space Grotesk hero typography, applying the approved hero viewport/container rhythm, and removing duplicated differentiator card clusters so proof/trust messaging appears in a single canonical surface.
+- **Commit**: `8c79398` - Tightened homepage spec compliance by introducing Space Grotesk hero typography, applying the approved hero viewport/container rhythm, and removing duplicated differentiator card clusters so proof/trust messaging appears in a single canonical surface.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: First-fold hierarchy is cleaner and more focused, with less repeated trust messaging and a more obvious path-to-action flow. QA should validate hero readability and section progression on 390/768/1440 breakpoints.
