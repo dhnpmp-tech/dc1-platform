@@ -25,3 +25,10 @@ Recovery steps:
 1. `npm run build`
 2. `cd backend && npm run test:smoke`
 3. `cd backend && npm run test:integration -- --runInBand`
+
+## OpenRouter readiness gate
+
+- Single-command readiness report:
+  `cd backend && npm run test:openrouter:compliance`
+- The harness exercises the real `/v1` router against mock providers and reports:
+  model-list contract, auth/billing failures, streaming stability, tool-call roundtrip behavior, tool-definition passthrough, and mid-stream failure handling.

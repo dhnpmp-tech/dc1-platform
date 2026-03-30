@@ -1,5 +1,5 @@
 const express = require('express');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db');
 const { getApiKeyFromReq } = require('../middleware/auth');
 const {
@@ -21,7 +21,7 @@ const announceLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many discovery announce requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
 });
 
 const lookupLimiter = rateLimit({
@@ -30,7 +30,7 @@ const lookupLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many P2P lookup requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
 });
 
 function parseBool(value) {

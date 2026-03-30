@@ -17,6 +17,7 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
+const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 
 const router = express.Router();
 
@@ -340,7 +341,9 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
 
       const debitAndReturnProxyResult = (resultBody) => {
         const usage = resultBody?.usage || {};
-        const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
+        const promptUsed = Number(usage.prompt_tokens || 0);
+        const completionUsed = Number(usage.completion_tokens || 0);
+        const actualTokens = promptUsed + completionUsed;
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
         ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
@@ -350,6 +353,22 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
           db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
             .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
         } catch (_) { /* best-effort */ }
+
+        try {
+          recordOpenRouterUsage(db._db || db, {
+            renterId: req.renter.id,
+            providerId: assignedProvider.id,
+            model: modelReq.model_id,
+            source: 'v1_proxy',
+            promptTokens: promptUsed,
+            completionTokens: completionUsed,
+            totalTokens: actualTokens,
+            costHalala: actualCost,
+            currency: 'SAR',
+          });
+        } catch (ledgerError) {
+          console.error('[v1/chat/completions] OpenRouter usage ledger write failed:', ledgerError.message);
+        }
 
         return res.json(resultBody);
       };
@@ -503,6 +522,21 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
       if (job.status === 'completed') {
         const text = job.result_text || '';
         const cTokens = job.completion_tokens || approximateTokenCount(text);
+        try {
+          recordOpenRouterUsage(db._db || db, {
+            renterId: req.renter.id,
+            providerId: assignedProvider.id,
+            model: modelReq.model_id,
+            source: 'v1_queue',
+            promptTokens,
+            completionTokens: cTokens,
+            totalTokens: promptTokens + cTokens,
+            costHalala: estimatedCostHalala,
+            currency: 'SAR',
+          });
+        } catch (ledgerError) {
+          console.error('[v1/chat/completions] OpenRouter queued usage ledger write failed:', ledgerError.message);
+        }
 
         // If streaming was requested, simulate SSE from completed text
         if (wantsStream) {
