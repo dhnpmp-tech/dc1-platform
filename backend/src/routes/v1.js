@@ -29,6 +29,20 @@ function normalizeString(value, { maxLen = 500, trim = true } = {}) {
   return next.slice(0, maxLen);
 }
 
+function generateContextId(prefix) {
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+}
+
+function applyRequestContextHeaders(res, context) {
+  if (!context) return;
+  if (context.route) res.setHeader('X-DCP-Route', context.route);
+  if (context.requestId) res.setHeader('X-DCP-Request-Id', context.requestId);
+  if (context.traceId) res.setHeader('X-DCP-Trace-Id', context.traceId);
+  if (context.providerId != null) res.setHeader('X-DCP-Provider-Id', String(context.providerId));
+  if (context.sessionId) res.setHeader('X-DCP-Session-Id', context.sessionId);
+  if (context.modelId) res.setHeader('X-DCP-Model-Id', context.modelId);
+}
+
 function toFiniteNumber(value, { min = null, max = null } = {}) {
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) return null;
@@ -293,10 +307,24 @@ async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temp
 
 router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res) => {
   try {
+    const requestId = generateContextId('dcpreq');
+    const incomingTrace = normalizeString(req.headers['x-dcp-trace-id'], { maxLen: 120 });
+    const requestContext = {
+      route: '/v1/chat/completions',
+      requestId,
+      traceId: incomingTrace || requestId,
+      providerId: null,
+      sessionId: generateContextId('dcpsession'),
+      modelId: null,
+    };
+    applyRequestContextHeaders(res, requestContext);
+
     const model = normalizeString(req.body?.model, { maxLen: 200 });
     if (!model) return res.status(400).json({
       error: { message: '`model` is required', type: 'invalid_request_error', code: 400 }
     });
+    requestContext.modelId = model;
+    applyRequestContextHeaders(res, requestContext);
 
     const messagesRaw = req.body?.messages;
     if (!Array.isArray(messagesRaw) || messagesRaw.length === 0) {
@@ -361,6 +389,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
       });
     }
+    requestContext.providerId = assignedProvider.id;
+    requestContext.modelId = modelReq.model_id;
+    applyRequestContextHeaders(res, requestContext);
 
     // Check balance
     const mergedPrompt = estimatePromptFromMessages(messages);
@@ -403,6 +434,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       };
 
       const writeStreamingResponse = (streamResponse) => {
+        applyRequestContextHeaders(res, requestContext);
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
@@ -441,11 +473,15 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
+          requestContext.providerId = fallbackProvider.id;
+          applyRequestContextHeaders(res, requestContext);
           writeStreamingResponse(fallbackResult.streamResponse);
           return;
         }
 
         if (fallbackResult.body) {
+          requestContext.providerId = fallbackProvider.id;
+          applyRequestContextHeaders(res, requestContext);
           return debitAndReturnProxyResult(fallbackResult.body);
         }
       }
