@@ -109,15 +109,17 @@ function isMissingModelRegistryError(error) {
 }
 
 function getModelRegistryColumns() {
-  if (modelRegistryColumnsCache) return modelRegistryColumnsCache;
+  if (modelRegistryColumnsCache && modelRegistryColumnsCache.size > 0) return modelRegistryColumnsCache;
   try {
     const pragmaRows = db.all('PRAGMA table_info(model_registry)');
-    modelRegistryColumnsCache = new Set((pragmaRows || []).map((row) => String(row.name || '')));
+    const resolved = new Set((pragmaRows || []).map((row) => String(row.name || '')));
+    modelRegistryColumnsCache = resolved.size > 0 ? resolved : null;
+    return resolved;
   } catch (error) {
     if (!isMissingModelRegistryError(error)) throw error;
-    modelRegistryColumnsCache = new Set();
+    modelRegistryColumnsCache = null;
+    return new Set();
   }
-  return modelRegistryColumnsCache;
 }
 
 function buildModelRegistryListQuery(columns) {
@@ -159,6 +161,10 @@ function buildModelRequirementsQuery(columns) {
 router.get('/models', (req, res) => {
   try {
     const columns = getModelRegistryColumns();
+    if (columns.size === 0) {
+      return res.json({ object: 'list', data: [] });
+    }
+
     let rows = [];
     try {
       rows = db.all(buildModelRegistryListQuery(columns));
@@ -233,6 +239,15 @@ function assignProvider(minVramMb) {
 
 function resolveModelRequirements(model) {
   const columns = getModelRegistryColumns();
+  if (columns.size === 0) {
+    return {
+      model_id: model,
+      min_vram_gb: 0,
+      context_window: 4096,
+      fallback_rate_halala_per_min: 2,
+    };
+  }
+
   let row = null;
   try {
     row = db.get(buildModelRequirementsQuery(columns), model);
