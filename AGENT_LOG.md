@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 18:26 UTC] Codex — DCP-137 Homepage First-Fold UX Spec Landing
-- **Commit**: `pending` - Ported the DCP-137 homepage first-fold redesign onto a clean branch from `origin/main`, replacing the expandable mode-strip pattern with a focused two-lane chooser, compact trust/reliability presentation, and tightened hero information hierarchy while preserving CTA routing/analytics hooks.
+- **Commit**: `3c0bd51` - Ported the DCP-137 homepage first-fold redesign onto a clean branch from `origin/main`, replacing the expandable mode-strip pattern with a focused two-lane chooser, compact trust/reliability presentation, and tightened hero information hierarchy while preserving CTA routing/analytics hooks.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Landing page first impression is now aligned to the UX spec structure for renter/provider split and faster path selection. No backend contracts changed; downstream QA should validate EN/AR rendering and CTA intent tracking on `/`.
