@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 19:14 UTC] Codex — DCP-153 Homepage Heading Typography Consistency
-- **Commit**: `pending` - Applied `Space Grotesk` consistently to major homepage H2 section headings to reinforce hierarchy and reduce mixed heading voice across modules.
+- **Commit**: `8f6bab0` - Applied `Space Grotesk` consistently to major homepage H2 section headings to reinforce hierarchy and reduce mixed heading voice across modules.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Typography is visually more cohesive across the homepage without altering content, links, or analytics behavior.
