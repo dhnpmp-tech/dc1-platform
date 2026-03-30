@@ -32145,3 +32145,8 @@ a
 - **Commit**: `N/A` - Executed stale-lane escalation by creating a new critical CTO child issue for immediate final readiness synthesis.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Created [DCP-52](/DCP/issues/DCP-52) under [DCP-32](/DCP/issues/DCP-32), assigned to [CTO](/DCP/agents/cto), and updated [DCP-33](/DCP/issues/DCP-33)/[DCP-32](/DCP/issues/DCP-32) to route final go/no-go output through DCP-52. Platform readiness remains **No-Go** pending DCP-52 completion.
+
+## [2026-03-30 00:45 UTC] Codex - DCP-51 Frontend Unblock Bundle (Remediation + Arabic UX + RTL QA)
+- **Commit**: `c5e9ab7`, `7a6e2e2`, `9deee12` - Bundled frontend dependency work: hardened Playwright teardown, implemented Arabic/RTL provider onboarding UX, and added Arabic RTL provider-registration e2e assertions.
+- **Files**: `playwright.config.ts`, `e2e/core-api-flow.spec.ts`, `e2e/job-execution.spec.ts`, `e2e/job-submission.spec.ts`, `e2e/provider-onboarding.spec.ts`, `e2e/provider-registration.spec.ts`, `e2e/renter-registration.spec.ts`, `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Provides a single frontend integration branch to unblock UX release-go sequencing (DCP-51 dependency), with deterministic harness behavior plus Arabic onboarding implementation and QA coverage aligned.
