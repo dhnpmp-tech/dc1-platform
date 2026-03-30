@@ -32350,6 +32350,6 @@ a
 - **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
 
 ## [2026-03-30 12:24 UTC] Codex - DCP-922 vLLM Proxy Test Suite Migrated To Native Jest
-- **Commit**: `pending` - Replaced `backend/tests/dcp-922-vllm-inference-proxy.test.js` custom script runner (`run()`, manual pass/fail counters, `process.exit`) with native Jest lifecycle/hooks while preserving all 8 proxy-routing scenarios.
+- **Commit**: `c0c2030` - Replaced `backend/tests/dcp-922-vllm-inference-proxy.test.js` custom script runner (`run()`, manual pass/fail counters, `process.exit`) with native Jest lifecycle/hooks while preserving all 8 proxy-routing scenarios.
 - **Files**: `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
 - **Impact**: The DCP-922 suite is now CI-compatible under Jest and no longer fails with "Your test suite must contain at least one test" / post-teardown logging errors. Verification passed: `cd backend && npm test -- --runInBand tests/dcp-922-vllm-inference-proxy.test.js` (`8/8`).
