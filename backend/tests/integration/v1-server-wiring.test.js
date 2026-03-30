@@ -36,6 +36,7 @@ describe('server /v1 wiring', () => {
   let app;
   let providerServer;
   let intervalSpy;
+  let errorSpy;
   let renterKey;
 
   function startMockProvider(responseBody) {
@@ -59,6 +60,7 @@ describe('server /v1 wiring', () => {
   beforeEach(async () => {
     jest.resetModules();
     intervalSpy = jest.spyOn(global, 'setInterval').mockImplementation(() => 0);
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     db = require('../../src/db');
     app = require('../../src/server');
@@ -115,6 +117,7 @@ describe('server /v1 wiring', () => {
 
   afterEach(async () => {
     intervalSpy.mockRestore();
+    errorSpy.mockRestore();
     if (providerServer) {
       await new Promise((resolve) => providerServer.close(resolve));
     }
@@ -132,5 +135,10 @@ describe('server /v1 wiring', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.choices?.[0]?.message?.content).toBe('mounted v1 router works');
+
+    const ipv6LimiterValidationLogged = errorSpy.mock.calls.some((call) =>
+      call.some((entry) => String(entry).includes('ERR_ERL_KEY_GEN_IPV6'))
+    );
+    expect(ipv6LimiterValidationLogged).toBe(false);
   });
 });
