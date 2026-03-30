@@ -201,6 +201,13 @@ function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
 }
 
+function v1ChatRateLimiter(req, res, next) {
+  if (req.body?.stream) {
+    return vllmStreamLimiter(req, res, next);
+  }
+  return vllmCompleteLimiter(req, res, next);
+}
+
 async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
@@ -227,7 +234,7 @@ async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temp
   return { body: parsed };
 }
 
-router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, res) => {
+router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res) => {
   try {
     const model = normalizeString(req.body?.model, { maxLen: 200 });
     if (!model) return res.status(400).json({
