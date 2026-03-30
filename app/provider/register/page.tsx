@@ -1449,7 +1449,7 @@ function ProviderRegisterPageContent() {
                   <p id="gpuModel-error" className="mt-2 text-sm text-red-400">{fieldErrors.gpuModel}</p>
                 ) : (
                   <p id="gpuModel-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    Pick the card that will run the DC1 daemon first. You can refine your fleet later.
+                    {t('register.provider.hint.gpu_model')}
                   </p>
                 )}
               </div>
@@ -1457,7 +1457,7 @@ function ProviderRegisterPageContent() {
               {/* VRAM (auto-filled from GPU model) */}
               <div>
                 <label htmlFor="vram" className="label">
-                  VRAM (GB)
+                  {t('register.provider.vram.label')}
                 </label>
                 <input
                   id="vram"
@@ -1465,7 +1465,7 @@ function ProviderRegisterPageContent() {
                   name="vram"
                   value={formData.vram}
                   onChange={handleInputChange}
-                  placeholder={formData.gpuModel === 'Other' ? 'Enter VRAM for your GPU' : 'Auto-filled from GPU model'}
+                  placeholder={formData.gpuModel === 'Other' ? t('register.provider.vram.placeholder_other') : t('register.provider.vram.placeholder_auto')}
                   className={`input ${fieldErrors.vram ? 'border-red-400 focus:border-red-400' : ''}`}
                   aria-invalid={Boolean(fieldErrors.vram)}
                   aria-describedby={fieldErrors.vram ? 'vram-error' : 'vram-hint'}
@@ -1476,11 +1476,11 @@ function ProviderRegisterPageContent() {
                   <p id="vram-error" className="mt-2 text-sm text-red-400">{fieldErrors.vram}</p>
                 ) : formData.gpuModel && formData.vram ? (
                   <p id="vram-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    {formData.gpuModel === 'Other' ? 'Custom GPU profile captured for registration review.' : `Auto-detected from ${formData.gpuModel}.`}
+                    {formData.gpuModel === 'Other' ? t('register.provider.vram.hint_other') : `${t('register.provider.vram.hint_auto')} ${formData.gpuModel}.`}
                   </p>
                 ) : (
                   <p id="vram-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    Required only when you choose <span className="font-semibold text-dc1-text-primary">Other</span>.
+                    {t('register.provider.vram.hint_required_prefix')} <span className="font-semibold text-dc1-text-primary">{t('register.provider.vram.hint_required_other')}</span>.
                   </p>
                 )}
               </div>
@@ -1489,7 +1489,7 @@ function ProviderRegisterPageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="locationCity" className="label">
-                    City
+                    {t('register.provider.location.city')}
                   </label>
                   <input
                     id="locationCity"
@@ -1497,13 +1497,13 @@ function ProviderRegisterPageContent() {
                     name="locationCity"
                     value={formData.locationCity}
                     onChange={handleInputChange}
-                    placeholder="Riyadh"
+                    placeholder={t('register.provider.location.city_placeholder')}
                     className="input"
                   />
                 </div>
                 <div>
                   <label htmlFor="locationCountry" className="label">
-                    Country
+                    {t('register.provider.location.country')}
                   </label>
                   <select
                     id="locationCountry"
@@ -1514,7 +1514,7 @@ function ProviderRegisterPageContent() {
                     aria-invalid={Boolean(fieldErrors.locationCountry)}
                     aria-describedby={fieldErrors.locationCountry ? 'locationCountry-error' : 'locationCountry-hint'}
                   >
-                    <option value="">Select country</option>
+                    <option value="">{t('register.provider.location.select_country')}</option>
                     <option value="SA">Saudi Arabia</option>
                     <option value="AE">United Arab Emirates</option>
                     <option value="US">United States</option>
@@ -1530,7 +1530,7 @@ function ProviderRegisterPageContent() {
                     <p id="locationCountry-error" className="mt-2 text-sm text-red-400">{fieldErrors.locationCountry}</p>
                   ) : (
                     <p id="locationCountry-hint" className="mt-2 text-xs text-dc1-text-muted">
-                      We use this to localize support instructions and compliance notes.
+                      {t('register.provider.hint.location_country')}
                     </p>
                   )}
                 </div>
@@ -1587,7 +1587,7 @@ function ProviderRegisterPageContent() {
                   <p id="operatingSystem-error" className="mt-2 text-sm text-red-400">{fieldErrors.operatingSystem}</p>
                 ) : (
                   <p id="operatingSystem-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    This determines which install command is shown immediately after signup.
+                    {t('register.provider.hint.operating_system')}
                   </p>
                 )}
               </div>
@@ -1611,7 +1611,7 @@ function ProviderRegisterPageContent() {
               {/* Referral Code */}
               <div>
                 <label className="label" htmlFor="referralCode">
-                  Referral Code <span className="text-dc1-text-muted font-normal">(optional)</span>
+                  {t('register.provider.referral.label')} <span className="text-dc1-text-muted font-normal">{t('register.provider.phone_optional')}</span>
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -1619,12 +1619,12 @@ function ProviderRegisterPageContent() {
                     type="text"
                   value={referralCode}
                   onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. DCP-ABC123"
+                  placeholder={t('register.provider.referral.placeholder')}
                   className="input flex-1"
                   disabled={referralStatus === 'applied'}
                   />
                   {referralCode && referralStatus === 'idle' && (
-                    <span className="flex items-center text-xs text-dc1-text-muted px-2">Applied at registration</span>
+                    <span className="flex items-center text-xs text-dc1-text-muted px-2">{t('register.provider.referral.applied_at_registration')}</span>
                   )}
                 </div>
                 {referralStatus === 'applied' && (
@@ -1637,7 +1637,7 @@ function ProviderRegisterPageContent() {
                   <p className="mt-1.5 text-sm text-red-400">{referralMessage}</p>
                 )}
                 <p className="mt-1 text-xs text-dc1-text-muted">
-                  Have a referral code from another provider? Enter it here to earn bonus rewards.
+                  {t('register.provider.referral.helper')}
                 </p>
               </div>
 
