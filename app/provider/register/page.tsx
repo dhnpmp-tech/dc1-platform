@@ -273,6 +273,8 @@ function ProviderRegisterPageContent() {
 
   const readinessCompleteCount = readinessChecklist.filter((item) => item.complete).length
   const readinessPercent = Math.round((readinessCompleteCount / readinessChecklist.length) * 100)
+  const registrationProgressStep: 1 | 2 | 3 =
+    readinessCompleteCount === 0 ? 1 : readinessCompleteCount < readinessChecklist.length ? 2 : 3
   const selectedGpuLabel = formData.gpuModel || 'Select your GPU'
   const selectedOsLabel = formData.operatingSystem || 'Choose your operating system'
   const normalizedOperatingSystem = normalizeOperatingSystemForApi(formData.operatingSystem)
@@ -1258,7 +1260,7 @@ function ProviderRegisterPageContent() {
 
         {/* Registration Form */}
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <ProgressIndicator currentStep={1} />
+          <ProgressIndicator currentStep={registrationProgressStep} />
           <div className="mb-6 rounded-2xl border border-dc1-amber/20 bg-dc1-surface-l1 p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>

@@ -75,6 +75,35 @@ test.describe('Provider Registration Flow', () => {
     await expect(page.locator('button[type="submit"]').first()).toBeEnabled();
   });
 
+  test('should render 3-step progress indicator on provider registration', async () => {
+    await expect(page.getByTestId('registration-progress')).toBeVisible();
+    await expect(page.getByTestId('registration-progress-step-1')).toBeVisible();
+    await expect(page.getByTestId('registration-progress-step-2')).toBeVisible();
+    await expect(page.getByTestId('registration-progress-step-3')).toBeVisible();
+    await expect(page.getByTestId('registration-progress-step-1')).toHaveAttribute('data-state', 'current');
+  });
+
+  test('should advance progress state as readiness checklist is completed', async () => {
+    const email = generateTestEmail('provider');
+
+    // Initial state
+    await expect(page.getByTestId('registration-progress-step-1')).toHaveAttribute('data-state', 'current');
+    await expect(page.getByTestId('registration-progress-step-2')).toHaveAttribute('data-state', 'upcoming');
+
+    // Complete identity step
+    await fillInput(page, '#fullName', 'Progress Provider');
+    await fillInput(page, '#email', email);
+    await expect(page.getByTestId('registration-progress-step-2')).toHaveAttribute('data-state', 'current');
+
+    // Complete all required fields
+    await page.selectOption('#gpuModel', 'RTX 4090');
+    await page.selectOption('#locationCountry', 'US');
+    await page.selectOption('#operatingSystem', 'Ubuntu 22.04');
+    await page.locator('input[name="pdplConsent"]').check();
+
+    await expect(page.getByTestId('registration-progress-step-3')).toHaveAttribute('data-state', 'current');
+  });
+
   test('should show inline error when custom GPU has no VRAM value', async () => {
     const email = generateTestEmail('provider');
 
