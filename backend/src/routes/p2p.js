@@ -1,5 +1,5 @@
 const express = require('express');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db');
 const { getApiKeyFromReq } = require('../middleware/auth');
 const {
@@ -15,13 +15,28 @@ const {
 
 const router = express.Router();
 
+function getIpv6SafeRateLimitKey(req) {
+  return `ip:${ipKeyGenerator(req.ip || req.socket?.remoteAddress || '0.0.0.0')}`;
+}
+
+function getProviderRateLimitKey(req) {
+  const providerKey = getApiKeyFromReq(req, {
+    headerName: 'x-provider-key',
+    queryNames: ['key', 'api_key'],
+    bodyNames: ['api_key', 'key'],
+    maxLen: 128,
+  });
+  if (providerKey) return `provider:${providerKey}`;
+  return getIpv6SafeRateLimitKey(req);
+}
+
 const announceLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many discovery announce requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => getProviderRateLimitKey(req),
 });
 
 const lookupLimiter = rateLimit({
@@ -30,7 +45,7 @@ const lookupLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many P2P lookup requests. Slow down.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => getIpv6SafeRateLimitKey(req),
 });
 
 function parseBool(value) {
