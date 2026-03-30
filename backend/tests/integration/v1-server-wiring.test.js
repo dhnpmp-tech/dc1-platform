@@ -133,4 +133,16 @@ describe('server /v1 wiring', () => {
     expect(res.status).toBe(200);
     expect(res.body.choices?.[0]?.message?.content).toBe('mounted v1 router works');
   });
+
+  test('GET /v1/models returns OpenAI list shape without 500 on current schema', async () => {
+    const res = await request(app)
+      .get('/v1/models')
+      .set('Authorization', `Bearer ${renterKey}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.object).toBe('list');
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(res.body.data[0]).toHaveProperty('parameter_count');
+  });
 });

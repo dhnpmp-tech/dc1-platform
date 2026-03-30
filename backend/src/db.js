@@ -971,6 +971,8 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN completion_tokens INTEGER',
   // Model cache tier for provider job routing — Sprint 25 Gap 5
   "ALTER TABLE model_registry ADD COLUMN prewarm_class TEXT DEFAULT 'warm'",
+  // OpenRouter model metadata compatibility — DCP-112
+  'ALTER TABLE model_registry ADD COLUMN parameter_count TEXT',
   // Actual elapsed seconds for sub-minute billing accuracy — Sprint 25 Gap 3
   'ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER',
   // Template-based job submission — Sprint 27
@@ -1643,6 +1645,109 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_renter   ON invoices(renter_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_job      ON invoices(job_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_id, created_at DESC)`);
+
+// ─── OPENROUTER SETTLEMENT TABLES ─── (DCP-84)
+// Usage-level immutable ledger for OpenRouter-billed traffic.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS openrouter_usage_ledger (
+    id                 TEXT PRIMARY KEY,
+    renter_id          INTEGER NOT NULL,
+    provider_id        INTEGER,
+    model              TEXT NOT NULL,
+    source             TEXT NOT NULL DEFAULT 'v1',
+    prompt_tokens      INTEGER NOT NULL DEFAULT 0,
+    completion_tokens  INTEGER NOT NULL DEFAULT 0,
+    total_tokens       INTEGER NOT NULL DEFAULT 0,
+    cost_halala        INTEGER NOT NULL,
+    currency           TEXT NOT NULL DEFAULT 'SAR',
+    settlement_status  TEXT NOT NULL DEFAULT 'pending'
+                       CHECK(settlement_status IN ('pending','settled','failed')),
+    settlement_id      TEXT,
+    created_at         TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_pending ON openrouter_usage_ledger(settlement_status, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_settlement ON openrouter_usage_ledger(settlement_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_renter ON openrouter_usage_ledger(renter_id, created_at DESC)`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS openrouter_settlements (
+    id                    TEXT PRIMARY KEY,
+    period_start          TEXT NOT NULL,
+    period_end            TEXT NOT NULL,
+    cadence               TEXT NOT NULL DEFAULT 'daily',
+    settlement_mode       TEXT NOT NULL
+                          CHECK(settlement_mode IN ('invoice','auto_topup')),
+    expected_total_halala INTEGER NOT NULL,
+    reconciled_halala     INTEGER NOT NULL,
+    discrepancy_halala    INTEGER NOT NULL DEFAULT 0,
+    usage_count           INTEGER NOT NULL DEFAULT 0,
+    currency              TEXT NOT NULL DEFAULT 'SAR',
+    status                TEXT NOT NULL DEFAULT 'pending'
+                          CHECK(status IN ('pending','processing','completed','partial','failed')),
+    failure_reason        TEXT,
+    created_at            TEXT NOT NULL,
+    completed_at          TEXT
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_settlements_created ON openrouter_settlements(created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_settlements_status ON openrouter_settlements(status, created_at DESC)`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS openrouter_settlement_items (
+    id             TEXT PRIMARY KEY,
+    settlement_id  TEXT NOT NULL,
+    usage_id       TEXT NOT NULL UNIQUE,
+    renter_id      INTEGER NOT NULL,
+    provider_id    INTEGER,
+    cost_halala    INTEGER NOT NULL,
+    created_at     TEXT NOT NULL,
+    FOREIGN KEY (settlement_id) REFERENCES openrouter_settlements(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_items_settlement ON openrouter_settlement_items(settlement_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_items_renter ON openrouter_settlement_items(renter_id, created_at DESC)`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS openrouter_settlement_invoices (
+    id             TEXT PRIMARY KEY,
+    settlement_id  TEXT NOT NULL UNIQUE,
+    amount_halala  INTEGER NOT NULL,
+    currency       TEXT NOT NULL DEFAULT 'SAR',
+    due_at         TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'issued'
+                   CHECK(status IN ('issued','paid','void')),
+    created_at     TEXT NOT NULL,
+    FOREIGN KEY (settlement_id) REFERENCES openrouter_settlements(id)
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS openrouter_settlement_topups (
+    id             TEXT PRIMARY KEY,
+    settlement_id  TEXT NOT NULL UNIQUE,
+    amount_halala  INTEGER NOT NULL,
+    currency       TEXT NOT NULL DEFAULT 'SAR',
+    status         TEXT NOT NULL DEFAULT 'queued'
+                   CHECK(status IN ('queued','processed','failed')),
+    created_at     TEXT NOT NULL,
+    FOREIGN KEY (settlement_id) REFERENCES openrouter_settlements(id)
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS openrouter_settlement_alerts (
+    id             TEXT PRIMARY KEY,
+    settlement_id  TEXT,
+    severity       TEXT NOT NULL DEFAULT 'warning'
+                   CHECK(severity IN ('warning','critical')),
+    code           TEXT NOT NULL,
+    message        TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    FOREIGN KEY (settlement_id) REFERENCES openrouter_settlements(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_alerts_created ON openrouter_settlement_alerts(created_at DESC)`);
 
 // ─── RENTER WEBHOOKS TABLE — DCP-861 ───
 db.exec(`
