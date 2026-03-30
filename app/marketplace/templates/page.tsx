@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -61,6 +62,15 @@ const CATEGORIES: { key: CategoryKey; label: string; emoji: string }[] = [
   { key: 'notebook', label: 'Notebooks & Dev', emoji: '📓' },
 ]
 
+const CATEGORIES_AR: { key: CategoryKey; label: string }[] = [
+  { key: 'all', label: 'كل القوالب' },
+  { key: 'llm', label: 'نماذج اللغة / الاستدلال' },
+  { key: 'embedding', label: 'تضمين وRAG' },
+  { key: 'image', label: 'توليد الصور' },
+  { key: 'training', label: 'التدريب والضبط' },
+  { key: 'notebook', label: 'دفاتر التطوير' },
+]
+
 function getCategoryForTemplate(t: DockerTemplate): CategoryKey {
   const tags = (t.tags ?? []).map(x => x.toLowerCase())
   const id = t.id?.toLowerCase() ?? ''
@@ -72,16 +82,16 @@ function getCategoryForTemplate(t: DockerTemplate): CategoryKey {
   return 'llm'
 }
 
-function getDifficultyBadge(difficulty?: string) {
-  if (difficulty === 'advanced') return { label: 'Advanced', cls: 'bg-status-error/10 text-status-error border-status-error/20' }
-  if (difficulty === 'medium') return { label: 'Intermediate', cls: 'bg-dc1-amber/10 text-dc1-amber border-dc1-amber/20' }
-  return { label: 'Easy', cls: 'bg-status-success/10 text-status-success border-status-success/20' }
+function getDifficultyBadge(difficulty?: string, isRTL = false) {
+  if (difficulty === 'advanced') return { label: isRTL ? 'متقدم' : 'Advanced', cls: 'bg-status-error/10 text-status-error border-status-error/20' }
+  if (difficulty === 'medium') return { label: isRTL ? 'متوسط' : 'Intermediate', cls: 'bg-dc1-amber/10 text-dc1-amber border-dc1-amber/20' }
+  return { label: isRTL ? 'سهل' : 'Easy', cls: 'bg-status-success/10 text-status-success border-status-success/20' }
 }
 
-function getTierBadge(tier?: string) {
-  if (tier === 'instant') return { label: '⚡ Instant', cls: 'bg-status-success/10 text-status-success border-status-success/20' }
-  if (tier === 'cached') return { label: '🚀 Cached', cls: 'bg-status-info/10 text-status-info border-status-info/20' }
-  return { label: 'On-Demand', cls: 'bg-dc1-surface-l3 text-dc1-text-secondary border-dc1-border' }
+function getTierBadge(tier?: string, isRTL = false) {
+  if (tier === 'instant') return { label: isRTL ? '⚡ فوري' : '⚡ Instant', cls: 'bg-status-success/10 text-status-success border-status-success/20' }
+  if (tier === 'cached') return { label: isRTL ? '🚀 مُخزّن' : '🚀 Cached', cls: 'bg-status-info/10 text-status-info border-status-info/20' }
+  return { label: isRTL ? 'حسب الطلب' : 'On-Demand', cls: 'bg-dc1-surface-l3 text-dc1-text-secondary border-dc1-border' }
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────────
@@ -105,10 +115,10 @@ function SkeletonCard() {
 }
 
 // ── Template Card ─────────────────────────────────────────────────────────────
-function TemplateCard({ template }: { template: DockerTemplate }) {
+function TemplateCard({ template, isRTL }: { template: DockerTemplate; isRTL: boolean }) {
   const [expanded, setExpanded] = useState(false)
-  const difficulty = getDifficultyBadge(template.difficulty)
-  const tierBadge = getTierBadge(template.tier)
+  const difficulty = getDifficultyBadge(template.difficulty, isRTL)
+  const tierBadge = getTierBadge(template.tier, isRTL)
   const hasArabic = (template.tags ?? []).some(t => t.toLowerCase().includes('arabic'))
   const priceHr = template.estimated_price_sar_per_hour ?? null
   const { savingsPct } = getVramSavings(template.min_vram_gb)
@@ -141,7 +151,7 @@ function TemplateCard({ template }: { template: DockerTemplate }) {
         </span>
         {hasArabic && (
           <span className="text-[10px] px-2 py-0.5 rounded-full border font-medium bg-dc1-amber/10 text-dc1-amber border-dc1-amber/20">
-            🌙 Arabic
+            🌙 {isRTL ? 'عربي' : 'Arabic'}
           </span>
         )}
         {(template.tags ?? []).slice(0, 3).map((tag) => (
@@ -157,12 +167,12 @@ function TemplateCard({ template }: { template: DockerTemplate }) {
           {template.min_vram_gb && (
             <div>
               <span className="text-dc1-text-muted">VRAM</span>
-              <span className="ml-1 font-semibold text-dc1-text-primary">{template.min_vram_gb} GB</span>
+              <span className="ml-1 font-semibold text-dc1-text-primary">{template.min_vram_gb} {isRTL ? 'جيجابايت' : 'GB'}</span>
             </div>
           )}
           {template.job_type && (
             <div>
-              <span className="text-dc1-text-muted">Type</span>
+              <span className="text-dc1-text-muted">{isRTL ? 'النوع' : 'Type'}</span>
               <span className="ml-1 font-mono text-[10px] text-dc1-text-secondary">{template.job_type}</span>
             </div>
           )}
@@ -171,7 +181,7 @@ function TemplateCard({ template }: { template: DockerTemplate }) {
           <div className="text-right">
             <p className="text-lg font-extrabold text-dc1-amber leading-none">
               {priceHr.toFixed(2)}
-              <span className="text-xs font-normal text-dc1-text-secondary ml-1">SAR/hr</span>
+              <span className="text-xs font-normal text-dc1-text-secondary ml-1">{isRTL ? 'ريال/ساعة' : 'SAR/hr'}</span>
             </p>
           </div>
         )}
@@ -182,14 +192,14 @@ function TemplateCard({ template }: { template: DockerTemplate }) {
         <div className="rounded-lg border border-status-success/20 bg-status-success/5 px-3 py-2.5">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="text-[10px] text-dc1-text-muted uppercase tracking-wide mb-0.5">vs Vast.ai equivalent</p>
+              <p className="text-[10px] text-dc1-text-muted uppercase tracking-wide mb-0.5">{isRTL ? 'مقارنة بسعر Vast.ai المكافئ' : 'vs Vast.ai equivalent'}</p>
               <p className="text-xs text-dc1-text-secondary">
-                <span className="line-through">{vastEquivPrice.toFixed(2)} SAR/hr</span>
-                <span className="ml-1 text-dc1-text-muted text-[10px]">(est.)</span>
+                <span className="line-through">{vastEquivPrice.toFixed(2)} {isRTL ? 'ريال/ساعة' : 'SAR/hr'}</span>
+                <span className="ml-1 text-dc1-text-muted text-[10px]">{isRTL ? '(تقديري)' : '(est.)'}</span>
               </p>
             </div>
             <span className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-status-success/10 border border-status-success/30 text-status-success text-xs font-bold">
-              ↓ {savingsPct}% cheaper
+              {isRTL ? `↓ أوفر بنسبة ${savingsPct}%` : `↓ ${savingsPct}% cheaper`}
             </span>
           </div>
         </div>
@@ -204,7 +214,7 @@ function TemplateCard({ template }: { template: DockerTemplate }) {
           <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
-          {expanded ? 'Hide' : 'View'} parameters
+          {expanded ? (isRTL ? 'إخفاء' : 'Hide') : (isRTL ? 'عرض' : 'View')} {isRTL ? 'المعلمات' : 'parameters'}
         </button>
       )}
       {expanded && template.params && (
@@ -218,7 +228,7 @@ function TemplateCard({ template }: { template: DockerTemplate }) {
         href={deployHref}
         className="btn btn-primary w-full text-center text-sm mt-auto"
       >
-        Deploy Now
+        {isRTL ? 'انشر الآن' : 'Deploy Now'}
       </Link>
     </article>
   )
@@ -226,6 +236,7 @@ function TemplateCard({ template }: { template: DockerTemplate }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MarketplaceTemplatesPage() {
+  const { isRTL } = useLanguage()
   const [templates, setTemplates] = useState<DockerTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -270,7 +281,7 @@ export default function MarketplaceTemplatesPage() {
   }, [templates, activeCategory, filterVram, filterArabic, filterTier, search])
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" dir={isRTL ? 'rtl' : 'ltr'}>
       <Header />
 
       <main className="flex-1">
@@ -278,29 +289,30 @@ export default function MarketplaceTemplatesPage() {
         <section className="border-b border-dc1-border bg-gradient-to-b from-dc1-amber/5 to-transparent">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="flex items-center gap-2 mb-3">
-              <Link href="/marketplace" className="text-sm text-dc1-text-muted hover:text-dc1-amber transition-colors">Marketplace</Link>
+              <Link href="/marketplace" className="text-sm text-dc1-text-muted hover:text-dc1-amber transition-colors">{isRTL ? 'السوق' : 'Marketplace'}</Link>
               <span className="text-dc1-text-muted">/</span>
-              <span className="text-sm text-dc1-text-primary font-medium">Templates</span>
+              <span className="text-sm text-dc1-text-primary font-medium">{isRTL ? 'القوالب' : 'Templates'}</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-3">
-              GPU Workload Templates
+              {isRTL ? 'قوالب أحمال GPU' : 'GPU Workload Templates'}
             </h1>
             <p className="text-dc1-text-secondary text-lg mb-6 max-w-2xl">
-              20 pre-configured templates for LLM inference, Arabic RAG, image generation, fine-tuning, and more.
-              One-click deploy on Saudi GPUs at up to 51% below hyperscaler prices.
+              {isRTL
+                ? '20 قالبًا جاهزًا للاستدلال ونماذج RAG العربية وتوليد الصور والضبط الدقيق وغير ذلك. نشر بنقرة واحدة على وحدات GPU سعودية مع توفير يصل إلى 51%.'
+                : '20 pre-configured templates for LLM inference, Arabic RAG, image generation, fine-tuning, and more. One-click deploy on Saudi GPUs at up to 51% below hyperscaler prices.'}
             </p>
             <div className="flex flex-wrap gap-4 text-sm">
               <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
                 <span className="text-dc1-amber font-bold">{templates.length}</span>
-                <span className="text-dc1-text-secondary">templates available</span>
+                <span className="text-dc1-text-secondary">{isRTL ? 'قالب متاح' : 'templates available'}</span>
               </div>
               <div className="flex items-center gap-2 bg-dc1-amber/10 rounded-lg px-3 py-2 border border-dc1-amber/20">
                 <span className="text-dc1-amber font-bold">🌙</span>
-                <span className="text-dc1-amber font-medium">Arabic-capable models included</span>
+                <span className="text-dc1-amber font-medium">{isRTL ? 'يشمل نماذج داعمة للعربية' : 'Arabic-capable models included'}</span>
               </div>
               <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
                 <span className="text-status-success font-bold">⚡</span>
-                <span className="text-dc1-text-secondary">Instant-tier pre-warmed</span>
+                <span className="text-dc1-text-secondary">{isRTL ? 'فئة فورية مسبقة التسخين' : 'Instant-tier pre-warmed'}</span>
               </div>
             </div>
           </div>
@@ -322,7 +334,7 @@ export default function MarketplaceTemplatesPage() {
                   }`}
                 >
                   <span className="mr-1">{cat.emoji}</span>
-                  {cat.label}
+                  {isRTL ? CATEGORIES_AR.find((c) => c.key === cat.key)?.label ?? cat.label : cat.label}
                   {cat.key !== 'all' && (
                     <span className="ml-1 opacity-60 text-xs">
                       ({templates.filter(t => getCategoryForTemplate(t) === cat.key).length})
@@ -339,7 +351,7 @@ export default function MarketplaceTemplatesPage() {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search templates…"
+                  placeholder={isRTL ? 'ابحث عن قالب…' : 'Search templates…'}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="input ps-9 w-full text-sm"
@@ -349,7 +361,7 @@ export default function MarketplaceTemplatesPage() {
                 type="number"
                 min="0"
                 step="4"
-                placeholder="Min VRAM (GB)"
+                placeholder={isRTL ? 'الحد الأدنى VRAM (جيجابايت)' : 'Min VRAM (GB)'}
                 value={filterVram}
                 onChange={e => setFilterVram(e.target.value)}
                 className="input text-sm w-36"
@@ -358,12 +370,12 @@ export default function MarketplaceTemplatesPage() {
                 value={filterTier}
                 onChange={e => setFilterTier(e.target.value as typeof filterTier)}
                 className="input text-sm w-40"
-                aria-label="Deployment speed"
+                aria-label={isRTL ? 'سرعة النشر' : 'Deployment speed'}
               >
-                <option value="all">⚡ All speeds</option>
-                <option value="instant">⚡ Instant (0-2s)</option>
-                <option value="cached">🚀 Cached (2-10s)</option>
-                <option value="on-demand">⏱ On-Demand (10s+)</option>
+                <option value="all">{isRTL ? '⚡ كل السرعات' : '⚡ All speeds'}</option>
+                <option value="instant">{isRTL ? '⚡ فوري (0-2ث)' : '⚡ Instant (0-2s)'}</option>
+                <option value="cached">{isRTL ? '🚀 مُخزّن (2-10ث)' : '🚀 Cached (2-10s)'}</option>
+                <option value="on-demand">{isRTL ? '⏱ حسب الطلب (10ث+)' : '⏱ On-Demand (10s+)'}</option>
               </select>
               <label className="flex items-center gap-2 text-sm text-dc1-text-secondary cursor-pointer select-none">
                 <input
@@ -372,16 +384,16 @@ export default function MarketplaceTemplatesPage() {
                   onChange={e => setFilterArabic(e.target.checked)}
                   className="rounded"
                 />
-                🌙 Arabic only
+                🌙 {isRTL ? 'العربية فقط' : 'Arabic only'}
               </label>
               <button
                 onClick={() => { setSearch(''); setFilterVram(''); setFilterArabic(false); setFilterTier('all'); setActiveCategory('all') }}
                 className="text-xs text-dc1-text-muted hover:text-dc1-amber transition-colors whitespace-nowrap"
               >
-                Reset
+                {isRTL ? 'إعادة ضبط' : 'Reset'}
               </button>
               <span className="text-xs text-dc1-text-muted whitespace-nowrap ms-auto">
-                {loading ? 'Loading…' : `${filtered.length} of ${templates.length}`}
+                {loading ? (isRTL ? 'جارٍ التحميل…' : 'Loading…') : isRTL ? `${filtered.length} من ${templates.length}` : `${filtered.length} of ${templates.length}`}
               </span>
             </div>
           </div>
@@ -395,22 +407,22 @@ export default function MarketplaceTemplatesPage() {
             </div>
           ) : error ? (
             <div className="text-center py-20">
-              <p className="text-dc1-text-secondary mb-2">Failed to load templates.</p>
-              <button onClick={() => window.location.reload()} className="btn btn-secondary btn-sm mt-2">Retry</button>
+              <p className="text-dc1-text-secondary mb-2">{isRTL ? 'تعذر تحميل القوالب.' : 'Failed to load templates.'}</p>
+              <button onClick={() => window.location.reload()} className="btn btn-secondary btn-sm mt-2">{isRTL ? 'إعادة المحاولة' : 'Retry'}</button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-20">
-              <p className="text-dc1-text-secondary mb-1">No templates match your filters.</p>
+              <p className="text-dc1-text-secondary mb-1">{isRTL ? 'لا توجد قوالب تطابق عوامل التصفية.' : 'No templates match your filters.'}</p>
               <button
                 onClick={() => { setSearch(''); setFilterVram(''); setFilterArabic(false); setActiveCategory('all') }}
                 className="btn btn-outline btn-sm mt-3"
               >
-                Clear filters
+                {isRTL ? 'مسح عوامل التصفية' : 'Clear filters'}
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filtered.map(t => <TemplateCard key={t.id} template={t} />)}
+              {filtered.map(t => <TemplateCard key={t.id} template={t} isRTL={isRTL} />)}
             </div>
           )}
         </section>
@@ -419,17 +431,19 @@ export default function MarketplaceTemplatesPage() {
         <section className="border-t border-dc1-border bg-dc1-surface-l1">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
             <h2 className="text-2xl font-bold text-dc1-text-primary mb-3">
-              Don't see what you need?
+              {isRTL ? 'لم تجد ما تحتاجه؟' : "Don't see what you need?"}
             </h2>
             <p className="text-dc1-text-secondary mb-6 max-w-lg mx-auto">
-              Deploy any custom Docker container or contact us for enterprise Arabic AI deployments with PDPL compliance.
+              {isRTL
+                ? 'يمكنك نشر أي حاوية Docker مخصصة أو التواصل معنا لنشر حلول عربية مؤسسية متوافقة مع PDPL.'
+                : 'Deploy any custom Docker container or contact us for enterprise Arabic AI deployments with PDPL compliance.'}
             </p>
             <div className="flex justify-center gap-3 flex-wrap">
               <Link href="/renter/register?template=custom-container" className="btn btn-primary">
-                Custom Container Deploy
+                {isRTL ? 'نشر حاوية مخصصة' : 'Custom Container Deploy'}
               </Link>
               <Link href="/marketplace/models" className="btn btn-secondary">
-                Browse Model Catalog
+                {isRTL ? 'تصفح كتالوج النماذج' : 'Browse Model Catalog'}
               </Link>
             </div>
           </div>
