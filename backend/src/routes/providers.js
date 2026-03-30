@@ -13,6 +13,7 @@ const {
     providerAccountDeletionLimiter,
     providerDataExportLimiter,
     heartbeatProviderLimiter,
+    providerActivateLimiter,
     authLimiter,
     registerLimiter,
 } = require('../middleware/rateLimiter');
@@ -5028,7 +5029,7 @@ router.post('/:id/benchmark-submit', function(req, res) {
 // ============================================================================
 // POST /api/providers/:id/activate — Explicit provider activation (admin/internal)
 // ============================================================================
-router.post('/:id/activate', function(req, res) {
+router.post('/:id/activate', providerActivateLimiter, function(req, res) {
     try {
         const providerId = normalizeString(req.params.id, { maxLen: 128, trim: true });
         if (!providerId) return res.status(400).json({ error: 'Provider ID required' });

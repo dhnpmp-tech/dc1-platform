@@ -198,3 +198,20 @@ describe('Rate limiting — admin endpoints (max: 100/min)', () => {
     expect(statuses[2]).toBe(429);
   });
 });
+
+describe('Rate limiting — provider activate route (max: 3/hr)', () => {
+  it('returns 429 on the 4th unauthenticated request to /api/providers/:id/activate', async () => {
+    const app = express();
+    app.use(express.json());
+    const providersRoute = (() => {
+      const p = require.resolve('../../src/routes/providers');
+      delete require.cache[p];
+      return require('../../src/routes/providers');
+    })();
+    app.use('/api/providers', providersRoute);
+
+    const statuses = await hitNTimes(app, 'post', '/api/providers/1/activate', 4, {});
+    expect(statuses.slice(0, 3).every((status) => status === 401)).toBe(true);
+    expect(statuses[3]).toBe(429);
+  });
+});
