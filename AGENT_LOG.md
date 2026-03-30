@@ -1,7 +1,7 @@
 ## [2026-03-30 14:27 UTC] Codex — DCP-129 IPv6-Safe P2P Rate Limiter Keys
 - **Commit**: `f4ef63c678b7` - Switched P2P discovery announce/providers rate limiters from raw `req.ip` keying to Express Rate Limit’s `ipKeyGenerator` helper with a stable prefix, eliminating IPv6 bypass-risk validation errors while preserving per-IP throttling behavior.
 - **Files**: `backend/src/routes/p2p.js`, `AGENT_LOG.md`
-- **Impact**: Backend startup/test flows no longer emit  from P2P route limiter configuration, reducing operational noise and ensuring IPv6-safe rate-limit key normalization.
+- **Impact**: Backend startup/test flows no longer emit `ERR_ERL_KEY_GEN_IPV6` from P2P route limiter configuration, reducing operational noise and ensuring IPv6-safe rate-limit key normalization.
 
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
