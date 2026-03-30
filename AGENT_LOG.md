@@ -32145,3 +32145,8 @@ a
 - **Commit**: `N/A` - Executed stale-lane escalation by creating a new critical CTO child issue for immediate final readiness synthesis.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Created [DCP-52](/DCP/issues/DCP-52) under [DCP-32](/DCP/issues/DCP-32), assigned to [CTO](/DCP/agents/cto), and updated [DCP-33](/DCP/issues/DCP-33)/[DCP-32](/DCP/issues/DCP-32) to route final go/no-go output through DCP-52. Platform readiness remains **No-Go** pending DCP-52 completion.
+
+## [2026-03-30 00:38 UTC] Codex - Installer OS Normalization Across Provider Registration Surfaces
+- **Commit**: `176a4a2` - Applied provider OS normalization updates across installer URL/command derivation and wizard/register flows while preserving current mainline onboarding behavior.
+- **Files**: `app/lib/provider-install.ts`, `app/provider/components/ProviderRegistrationWizard.tsx`, `app/provider/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend now emits consistent canonical OS values through registration/install paths, reducing mismatch risk between UI selections and backend installer expectations.
