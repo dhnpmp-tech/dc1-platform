@@ -55,7 +55,8 @@ DCP_MODEL_ID="<model-id>" \
 npm --prefix backend run provider:evidence -- \
   --provider-id "$DCP_PROVIDER_ID" \
   --renter-key "$DCP_RENTER_KEY" \
-  --model "$DCP_MODEL_ID"
+  --model "$DCP_MODEL_ID" \
+  --window-minutes 15
 ```
 
 Artifacts are written to:
@@ -65,9 +66,12 @@ Artifacts are written to:
 
 The bundle includes:
 - route + UTC timestamp
+- locked endpoint URL used for the paid candidate
 - request/trace/provider/session IDs (`X-DCP-*` headers)
 - branch + SHA
 - raw stream output path proving `[DONE]` completion
+- raw stream first/last snippets for quick review in issue comments
+- duplicate-charge check pack (nearby retries/failures + ledger/payment joins)
 - provider liveness + availability snapshots
 
 ## 5) Repeat for Next Providers

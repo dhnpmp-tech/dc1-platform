@@ -14,24 +14,41 @@ function parseSseTranscript(rawText) {
   const lines = String(rawText || '').split(/\r?\n/);
   const dataLines = [];
   let done = false;
+  let done_line_index = null;
 
   for (const line of lines) {
     if (!line.startsWith('data:')) continue;
     const payload = line.slice(5).trim();
     if (!payload) continue;
     dataLines.push(payload);
-    if (payload === '[DONE]') done = true;
+    if (payload === '[DONE]') {
+      done = true;
+      done_line_index = dataLines.length - 1;
+    }
   }
 
   return {
     done,
+    done_line_index,
     data_line_count: dataLines.length,
     preview: dataLines.slice(0, 6),
   };
 }
 
+function buildRawOutputSnippets(rawText, clipLines = 6) {
+  const lines = String(rawText || '')
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0);
+  return {
+    total_lines: lines.length,
+    first_lines: lines.slice(0, clipLines),
+    last_lines: lines.slice(Math.max(0, lines.length - clipLines)),
+  };
+}
+
 function buildEvidenceBundle({
   route,
+  endpointUrl,
   utcTimestamp,
   model,
   requestHeaders,
@@ -41,6 +58,9 @@ function buildEvidenceBundle({
   providerAvailability,
   git,
   command,
+  commandPack,
+  duplicateChargeChecks,
+  nearbyWindowMinutes,
   outputPath,
   prompt,
 }) {
@@ -49,10 +69,13 @@ function buildEvidenceBundle({
   const providerId = responseHeaders['x-dcp-provider-id'] || null;
   const sessionId = responseHeaders['x-dcp-session-id'] || null;
   const sse = parseSseTranscript(streamRaw || '');
+  const snippets = buildRawOutputSnippets(streamRaw || '');
+  const checks = Array.isArray(duplicateChargeChecks) ? duplicateChargeChecks : [];
 
   return {
     generated_at: utcTimestamp,
     route,
+    endpoint_url: endpointUrl || null,
     model,
     request_id: requestId,
     trace_id: traceId,
@@ -65,12 +88,16 @@ function buildEvidenceBundle({
     provider_availability: providerAvailability || null,
     git: git || null,
     command,
+    command_pack: commandPack || null,
+    nearby_window_minutes: Number(nearbyWindowMinutes) || null,
+    duplicate_charge_checks: checks,
     output_path: outputPath,
+    raw_output_snippets: snippets,
     request_headers: requestHeaders,
     response_headers: responseHeaders,
     prompt_sha256: digestPrompt(prompt),
     summary: sse.done
-      ? `Authenticated stream completed on ${route} with request_id=${requestId || 'n/a'} provider_id=${providerId || 'n/a'}.`
+      ? `Authenticated stream completed on ${route} with request_id=${requestId || 'n/a'} provider_id=${providerId || 'n/a'}; duplicate-charge checks attached (${checks.length}).`
       : `Stream completion marker was not observed on ${route}; investigate provider/runtime logs.`,
   };
 }
@@ -81,6 +108,7 @@ function buildEvidenceMarkdown(bundle) {
   lines.push('');
   lines.push(`- Generated at (UTC): ${bundle.generated_at}`);
   lines.push(`- Route: ${bundle.route}`);
+  lines.push(`- Endpoint: ${bundle.endpoint_url || 'n/a'}`);
   lines.push(`- Model: ${bundle.model}`);
   lines.push(`- Request ID: ${bundle.request_id || 'n/a'}`);
   lines.push(`- Trace ID: ${bundle.trace_id || 'n/a'}`);
@@ -103,6 +131,37 @@ function buildEvidenceMarkdown(bundle) {
   lines.push(bundle.output_path || '(missing stream output path)');
   lines.push('```');
   lines.push('');
+
+  lines.push('## Raw Stream Snippets');
+  lines.push('');
+  lines.push('```json');
+  lines.push(JSON.stringify(bundle.raw_output_snippets || null, null, 2));
+  lines.push('```');
+  lines.push('');
+
+  lines.push('## Duplicate-Charge Risk Checks');
+  lines.push('');
+  if (!Array.isArray(bundle.duplicate_charge_checks) || bundle.duplicate_charge_checks.length === 0) {
+    lines.push('No duplicate-charge checks were attached.');
+  } else {
+    for (const check of bundle.duplicate_charge_checks) {
+      lines.push(`### ${check.title}`);
+      lines.push('');
+      lines.push('```bash');
+      lines.push(check.command || '');
+      lines.push('```');
+      lines.push('');
+    }
+  }
+
+  if (bundle.command_pack) {
+    lines.push('## Command Pack');
+    lines.push('');
+    lines.push('```bash');
+    lines.push(bundle.command_pack);
+    lines.push('```');
+    lines.push('');
+  }
 
   lines.push('## Provider Online Evidence');
   lines.push('');

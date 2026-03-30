@@ -22,6 +22,7 @@ function parseArgs(argv) {
     renterKey: process.env.DCP_RENTER_KEY || null,
     model: process.env.DCP_MODEL_ID || null,
     traceId: process.env.DCP_TRACE_ID || `trace_${Date.now()}`,
+    windowMinutes: 15,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -56,6 +57,10 @@ function parseArgs(argv) {
     } else if (token === '--out-dir' && next) {
       args.outDir = path.resolve(next);
       i += 1;
+    } else if (token === '--window-minutes' && next) {
+      const parsed = Number(next);
+      if (Number.isFinite(parsed) && parsed > 0) args.windowMinutes = Math.floor(parsed);
+      i += 1;
     } else if (token === '--stream=false') {
       args.stream = false;
     } else if (token === '--help' || token === '-h') {
@@ -76,6 +81,7 @@ function usage() {
     '  --trace-id <id>         Trace ID forwarded as X-DCP-Trace-Id',
     '  --max-tokens <n>        max_tokens payload value (default: 64)',
     '  --temperature <n>       temperature payload value (default: 0.2)',
+    '  --window-minutes <n>    Duplicate-charge/failure check window around candidate timestamp (default: 15)',
     '  --stream=false          Disable streaming request mode',
     '  --out-dir <path>        Output directory for JSON/MD/TXT artifacts',
   ].join('\n'));
@@ -189,9 +195,55 @@ async function main() {
     'DCP_PROVIDER_ID=<provider-id> DCP_RENTER_KEY=<renter-key> DCP_MODEL_ID=<model-id>',
     `node backend/scripts/export-provider-activation-evidence.js --base-url ${JSON.stringify(args.baseUrl)} --provider-id <provider-id> --model <model-id> --trace-id ${JSON.stringify(args.traceId)}`,
   ].join('\n');
+  const sqlUtc = utcTimestamp.replace(/'/g, "''");
+  const sqlProviderId = String(responseHeaders['x-dcp-provider-id'] || args.providerId || '').replace(/'/g, "''");
+  const sqlRequestId = String(responseHeaders['x-dcp-request-id'] || '').replace(/'/g, "''");
+  const duplicateChargeChecks = [
+    {
+      title: 'SSE completion marker verification',
+      command: `grep -n "\\[DONE\\]" ${JSON.stringify(streamPath)}`,
+    },
+    {
+      title: 'Nearby job retries/failures for provider window',
+      command: [
+        `node -e "const Database=require('better-sqlite3');`,
+        `const db=new Database('backend/data/providers.db');`,
+        `const sql=\\\"SELECT job_id,status,retry_count,max_retries,created_at,completed_at,error FROM jobs`,
+        `WHERE provider_id=${JSON.stringify(sqlProviderId)} `,
+        `AND created_at BETWEEN datetime('${sqlUtc}','-${args.windowMinutes} minutes') AND datetime('${sqlUtc}','+${args.windowMinutes} minutes')`,
+        `ORDER BY created_at ASC;\\\";`,
+        `console.log(JSON.stringify(db.prepare(sql).all(), null, 2));\\"`,
+      ].join(' '),
+    },
+    {
+      title: 'Potential duplicate charge rows in candidate window',
+      command: [
+        `node -e "const Database=require('better-sqlite3');`,
+        `const db=new Database('backend/data/providers.db');`,
+        `const sql=\\\"SELECT l.id,l.renter_id,l.job_id,l.payment_ref,l.amount_halala,l.direction,l.created_at,p.id AS payment_row_id,p.payment_id,p.status AS payment_status`,
+        `FROM renter_credit_ledger l LEFT JOIN payments p ON (p.payment_id=l.payment_ref OR p.moyasar_id=l.payment_ref)`,
+        `WHERE l.created_at BETWEEN datetime('${sqlUtc}','-${args.windowMinutes} minutes') AND datetime('${sqlUtc}','+${args.windowMinutes} minutes')`,
+        `ORDER BY l.created_at ASC;\\\";`,
+        `console.log(JSON.stringify(db.prepare(sql).all(), null, 2));\\"`,
+      ].join(' '),
+    },
+    {
+      title: 'Lookup by request id (if persisted externally)',
+      command: sqlRequestId
+        ? `echo "request_id=${sqlRequestId} (check telemetry sink / logs if request_id persistence is external to SQLite)"`
+        : 'echo "request_id missing from response headers; verify upstream logs and proxy path"',
+    },
+  ];
+  const commandPack = [
+    command,
+    '',
+    `# Duplicate-charge risk checks (window ±${args.windowMinutes}m around ${utcTimestamp})`,
+    ...duplicateChargeChecks.map((entry, idx) => `${idx + 1}. ${entry.title}\n${entry.command}`),
+  ].join('\n');
 
   const bundle = buildEvidenceBundle({
     route: args.route,
+    endpointUrl: routeUrl,
     utcTimestamp,
     model: args.model,
     requestHeaders: {
@@ -205,6 +257,9 @@ async function main() {
     providerAvailability,
     git: getGitInfo(),
     command,
+    commandPack,
+    duplicateChargeChecks,
+    nearbyWindowMinutes: args.windowMinutes,
     outputPath: streamPath,
     prompt: args.prompt,
   });
