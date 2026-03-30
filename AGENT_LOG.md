@@ -32433,3 +32433,8 @@ a
 - **Commit**: `766f112` - Restored real limiter enforcement in test-mode by removing implicit `NODE_ENV=test` bypass from `createRateLimiter` (explicit opt-out remains `DISABLE_RATE_LIMIT=1`), and eliminated IPv6 key-generator validation warnings by switching rate-limit test/P2P key generation to `ipKeyGenerator`.
 - **Files**: `backend/src/middleware/rateLimiter.js`, `backend/src/__tests__/rateLimiter.test.js`, `backend/src/routes/p2p.js`, `docs/ops/openrouter-settlement-runbook.md`, `AGENT_LOG.md`
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
+
+## [2026-03-30 18:49 UTC] Codex — DCP-148 Reduced-Motion Support For Homepage Motion
+- **Commit**: `pending` - Added `prefers-reduced-motion` handling to homepage motion surfaces so hero reveal transitions and logo marquee animation reduce gracefully for users who opt out of motion.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Homepage keeps the same structure/CTAs while improving accessibility and motion comfort. QA should verify both standard and reduced-motion behaviors.
