@@ -4,10 +4,8 @@
 // These tests require a running backend (use test DB)
 // Add to CI: runs on every PR touching backend/src/
 //
-// NOTE: Rate limiting tests (Group 2) require that NODE_ENV is NOT set to 'test'
-// and DISABLE_RATE_LIMIT is unset for the 429 assertions to take effect.
-// When running via `npm test` the rate limiter is in warn-only mode (max = Infinity).
-// To run rate limit tests with enforcement: DISABLE_RATE_LIMIT= NODE_ENV= jest tests/security.test.js
+// NOTE: Rate limiting tests (Group 2) require DISABLE_RATE_LIMIT to be unset.
+// To force disable rate limiting in local runs, set DISABLE_RATE_LIMIT=1.
 
 const path    = require('path');
 const crypto  = require('crypto');
@@ -77,23 +75,20 @@ async function registerProvider(overrides = {}) {
 }
 
 // ── Rate limiter helpers ───────────────────────────────────────────────────────
-// Build a fresh rate limiter while temporarily removing NODE_ENV=test so the
-// factory uses the real max (not Number.MAX_SAFE_INTEGER).
+// Build a fresh rate limiter while temporarily clearing DISABLE_RATE_LIMIT so the
+// factory uses the configured max (not Number.MAX_SAFE_INTEGER).
 function makeRealLimiter(config) {
   const rlPath = require.resolve('../src/middleware/rateLimiter');
   const cached = require.cache[rlPath];
   delete require.cache[rlPath];
 
-  const savedEnv     = process.env.NODE_ENV;
   const savedDisable = process.env.DISABLE_RATE_LIMIT;
-  delete process.env.NODE_ENV;
   delete process.env.DISABLE_RATE_LIMIT;
 
   const RL = require(rlPath);
   const limiter = RL.createRateLimiter(config);
 
   // Restore environment and module cache
-  process.env.NODE_ENV = savedEnv;
   if (savedDisable !== undefined) process.env.DISABLE_RATE_LIMIT = savedDisable;
   if (cached) require.cache[rlPath] = cached;
   else delete require.cache[rlPath];
