@@ -1,7 +1,7 @@
 ## [2026-03-30 13:55 UTC] Codex — DCP-111 P2P IPv6-Safe Rate Limiter Keys
-- **Commit**: `a265b56` - Updated P2P announce/lookup rate-limit key generation to use  and provider-key bucketing, eliminating IPv6 key-generator validation errors in server wiring startup.
-- **Files**: , 
-- **Impact**:  is now rate-limited primarily by provider API key (with IPv6-safe IP fallback), and  now uses IPv6-safe IP keys; this removes the noisy  runtime validation warnings from this route path.
+- **Commit**: `a265b56` - Updated P2P announce/lookup rate-limit key generation to use `ipKeyGenerator` and provider-key bucketing, eliminating IPv6 key-generator validation errors in server wiring startup.
+- **Files**: `backend/src/routes/p2p.js`, `AGENT_LOG.md`
+- **Impact**: `/api/p2p/announce` is now rate-limited primarily by provider API key (with IPv6-safe IP fallback), and `/api/p2p/providers` now uses IPv6-safe IP keys; this removes the noisy `ERR_ERL_KEY_GEN_IPV6` runtime validation warnings from this route path.
 
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
