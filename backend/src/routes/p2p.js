@@ -15,13 +15,17 @@ const {
 
 const router = express.Router();
 
+function ipRateLimitKey(req) {
+  return `ip:${ipKeyGenerator(req.ip || req.socket?.remoteAddress || '0.0.0.0')}`;
+}
+
 const announceLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many discovery announce requests. Slow down.' },
-  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  keyGenerator: (req) => ipRateLimitKey(req),
 });
 
 const lookupLimiter = rateLimit({
@@ -30,7 +34,7 @@ const lookupLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many P2P lookup requests. Slow down.' },
-  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  keyGenerator: (req) => ipRateLimitKey(req),
 });
 
 function parseBool(value) {
