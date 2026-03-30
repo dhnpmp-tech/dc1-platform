@@ -3903,7 +3903,7 @@ function computeReputationTier({ uptimePct, successRate, totalJobs }) {
 // Returns only "online" providers (heartbeat within the last 2 minutes).
 // Launch gate: DCP-613 noted this endpoint must require auth.
 // ============================================================================
-router.get('/active', (req, res) => {
+router.get('/active', benchmarkLimiter, (req, res) => {
     const token = getBearerToken(req);
     if (!token) {
         return res.status(401).json({ error: 'Authorization required. Use: Authorization: Bearer <api_key>' });
