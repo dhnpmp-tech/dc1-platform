@@ -398,6 +398,10 @@ function seedProvider(overrides = {}) {
     total_earnings: 0,
     total_jobs:     0,
     claimable_earnings_halala: 0,
+    gpu_tier: overrides.gpu_tier || null,
+    available_gpu_tiers: overrides.available_gpu_tiers || null,
+    cached_models: overrides.cached_models || null,
+    vllm_models: overrides.vllm_models || null,
     created_at: new Date().toISOString(),
     last_heartbeat: new Date().toISOString(),
   };
@@ -700,6 +704,52 @@ describe('Job lifecycle — submit → assign → complete', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.jobs)).toBe(true);
     expect(res.body.jobs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('GET /api/jobs/assigned rejects pending job with explicit tier_unavailable reason', async () => {
+    const { key: renterKey } = seedRenter(50_000);
+    const { id: providerId, key: providerKey } = seedProvider({
+      gpu_tier: 'C',
+      available_gpu_tiers: JSON.stringify(['C']),
+    });
+
+    const submitRes = await submitJob(renterKey, providerId, {
+      _body: {
+        gpu_requirements: { min_vram_gb: 24 }, // maps to required tier B
+      },
+    });
+
+    expect(submitRes.status).toBe(201);
+    const pollRes = await request(app).get(`/api/jobs/assigned?key=${providerKey}`);
+    expect(pollRes.status).toBe(200);
+    expect(pollRes.body.job).toBeNull();
+    expect(pollRes.body.rejection).toBeTruthy();
+    expect(pollRes.body.rejection.reason).toBe('tier_unavailable');
+    expect(pollRes.body.rejection.required_tier).toBe('B');
+
+    const jobRow = mockDb._tables.jobs.find((job) => job.job_id === submitRes.body.job.job_id);
+    expect(jobRow.status).toBe('queued');
+    expect(String(jobRow.notes || '')).toMatch(/tier_unavailable/i);
+  });
+
+  test('GET /api/jobs/assigned rejects inference job with explicit model_unavailable reason', async () => {
+    const { key: renterKey } = seedRenter(50_000);
+    const { id: providerId, key: providerKey } = seedProvider({
+      cached_models: JSON.stringify(['meta-llama/Meta-Llama-3-8B-Instruct']),
+      available_gpu_tiers: JSON.stringify(['A', 'B', 'C']),
+    });
+
+    const submitRes = await submitJob(renterKey, providerId, {
+      params: { prompt: 'hello', model: 'mistralai/Mistral-7B-Instruct-v0.2' },
+    });
+    expect(submitRes.status).toBe(201);
+
+    const pollRes = await request(app).get(`/api/jobs/assigned?key=${providerKey}`);
+    expect(pollRes.status).toBe(200);
+    expect(pollRes.body.job).toBeNull();
+    expect(pollRes.body.rejection).toBeTruthy();
+    expect(pollRes.body.rejection.reason).toBe('model_unavailable');
+    expect(pollRes.body.rejection.requested_model).toBe('mistralai/Mistral-7B-Instruct-v0.2');
   });
 });
 

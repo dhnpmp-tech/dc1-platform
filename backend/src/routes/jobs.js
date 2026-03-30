@@ -1084,6 +1084,18 @@ const ALLOWED_GPU_TYPES = new Set([
   'RTX4090', 'RTX4080',    // consumer high-end tier
   'RTX3090', 'RTX3080',    // consumer previous-gen tier
 ]);
+const GPU_TYPE_TIER_MAP = Object.freeze({
+  H200: 'A',
+  H100: 'A',
+  A100: 'A',
+  L40S: 'B',
+  L40: 'B',
+  RTX4090: 'B',
+  RTX4080: 'B',
+  RTX3090: 'C',
+  RTX3080: 'C',
+});
+const MODEL_GATED_JOB_TYPES = new Set(['llm-inference', 'llm_inference', 'vllm_serve', 'rag-pipeline']);
 
 /**
  * Normalise a gpu_type value for allowlist comparison.
@@ -1105,6 +1117,122 @@ function validateGpuType(gpuType) {
   if (!normalized) return null;     // empty string after normalisation → treat as omitted
   if (ALLOWED_GPU_TYPES.has(normalized)) return null;
   return `Invalid gpu_requirements.gpu_type '${gpuType}'. Allowed values: ${[...ALLOWED_GPU_TYPES].join(', ')}`;
+}
+
+function parseJsonObject(raw) {
+  if (!raw) return null;
+  if (isPlainObject(raw)) return raw;
+  if (typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseJsonStringArray(raw) {
+  if (!raw) return [];
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_) {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((value) => normalizeString(String(value), { maxLen: 200 }))
+    .filter(Boolean);
+}
+
+function getProviderAdvertisedTiers(provider) {
+  const availableTiers = parseJsonStringArray(provider?.available_gpu_tiers)
+    .map((tier) => normalizeString(tier.toUpperCase(), { maxLen: 1 }))
+    .filter((tier) => tier === 'A' || tier === 'B' || tier === 'C');
+
+  if (availableTiers.length > 0) {
+    return [...new Set(availableTiers)];
+  }
+
+  const singleTier = normalizeString(String(provider?.gpu_tier || '').toUpperCase(), { maxLen: 1 });
+  if (singleTier === 'A' || singleTier === 'B' || singleTier === 'C') {
+    return [singleTier];
+  }
+  return [];
+}
+
+function inferRequiredTierFromGpuRequirements(gpuRequirementsRaw) {
+  const gpuRequirements = parseJsonObject(gpuRequirementsRaw);
+  if (!gpuRequirements) return null;
+
+  const normalizedGpuType = normalizeGpuType(gpuRequirements.gpu_type);
+  if (normalizedGpuType && GPU_TYPE_TIER_MAP[normalizedGpuType]) {
+    return GPU_TYPE_TIER_MAP[normalizedGpuType];
+  }
+
+  const minVramGb = toFiniteNumber(gpuRequirements.min_vram_gb, { min: 0, max: 1024 });
+  if (minVramGb == null) return null;
+  if (minVramGb >= 40) return 'A';
+  if (minVramGb >= 20) return 'B';
+  return 'C';
+}
+
+function inferRequestedModelFromTaskSpec(taskSpecRaw) {
+  const parsed = parseJsonObject(taskSpecRaw);
+  if (!parsed) return null;
+  return normalizeModelField(parsed.model || parsed.model_name);
+}
+
+function getProviderAdvertisedModels(provider) {
+  const models = new Set();
+  for (const modelName of parseJsonStringArray(provider?.vllm_models)) {
+    models.add(modelName.toLowerCase());
+  }
+  for (const modelName of parseJsonStringArray(provider?.cached_models)) {
+    models.add(modelName.toLowerCase());
+  }
+  return models;
+}
+
+function validateProviderCanAcceptJob(provider, job) {
+  const requiredTier = inferRequiredTierFromGpuRequirements(job?.gpu_requirements);
+  const providerTiers = getProviderAdvertisedTiers(provider);
+  if (requiredTier && providerTiers.length > 0 && !providerTiers.includes(requiredTier)) {
+    return {
+      ok: false,
+      code: 'tier_unavailable',
+      message: `provider tiers [${providerTiers.join(', ')}] do not include required tier ${requiredTier}`,
+      required_tier: requiredTier,
+      provider_tiers: providerTiers,
+      requested_model: null,
+    };
+  }
+
+  if (MODEL_GATED_JOB_TYPES.has(String(job?.job_type || '').toLowerCase())) {
+    const requestedModel = normalizeModelField(job?.model) || inferRequestedModelFromTaskSpec(job?.task_spec);
+    const advertisedModels = getProviderAdvertisedModels(provider);
+    if (requestedModel && advertisedModels.size > 0 && !advertisedModels.has(requestedModel.toLowerCase())) {
+      return {
+        ok: false,
+        code: 'model_unavailable',
+        message: `provider does not advertise requested model ${requestedModel}`,
+        required_tier: null,
+        provider_tiers: providerTiers,
+        requested_model: requestedModel,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    code: null,
+    message: null,
+    required_tier: requiredTier || null,
+    provider_tiers: providerTiers,
+    requested_model: null,
+  };
 }
 
 // Lazy-load jobRouter to avoid module-load ordering issues
@@ -1988,7 +2116,10 @@ router.post('/:job_id/retry', retryJobLimiter, requireRenter, (req, res) => {
 // GET /api/jobs/assigned?key=API_KEY
 // Daemon polls this to check if it has a running job with a task to execute
 function fetchAndAssignNextJob(providerId) {
-  const job = db.get(
+  const provider = db.get('SELECT * FROM providers WHERE id = ?', [providerId]);
+  if (!provider) return { job: null, rejection: null };
+
+  const candidates = db.all(
     `SELECT * FROM jobs
      WHERE provider_id = ?
        AND status IN ('pending', 'queued')
@@ -1999,48 +2130,80 @@ function fetchAndAssignNextJob(providerId) {
        ${PRICING_CLASS_SORT_SQL} ASC,
        COALESCE(priority, ${DEFAULT_JOB_PRIORITY}) DESC,
        created_at ASC
-     LIMIT 1`,
+     LIMIT 25`,
     [providerId]
   );
 
-  if (!job) return null;
+  if (!candidates || candidates.length === 0) return { job: null, rejection: null };
 
-  const now = new Date().toISOString();
-  const timeout = job.max_duration_seconds || 1800;
-  const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
-  runStatement(
-    `UPDATE jobs
-     SET status = 'assigned',
-         assigned_at = ?,
-         picked_up_at = ?,
-         timeout_at = ?
-     WHERE id = ?`,
-    [now, now, timeoutAt, job.id]
-  );
-  recordLifecycleEvent(job, 'job.status.changed', {
-    status: 'assigned',
-    source: 'daemon',
-    message: 'Job assigned to provider daemon',
-    payload: {
-      from_status: job.status,
-      to_status: 'assigned',
-      provider_id: providerId,
-      timeout_at: timeoutAt,
-    },
-  });
+  let firstRejection = null;
+  for (const job of candidates) {
+    const gate = validateProviderCanAcceptJob(provider, job);
+    if (!gate.ok) {
+      const now = new Date().toISOString();
+      const reasonMessage = `[daemon-gate] ${gate.code}: ${gate.message}`;
+      runStatement(
+        `UPDATE jobs
+         SET status = 'queued',
+             notes = ?,
+             updated_at = ?
+         WHERE id = ?`,
+        reasonMessage,
+        now,
+        job.id
+      );
+      if (!firstRejection) {
+        firstRejection = {
+          job_id: job.job_id,
+          reason: gate.code,
+          message: gate.message,
+          required_tier: gate.required_tier,
+          provider_tiers: gate.provider_tiers,
+          requested_model: gate.requested_model,
+        };
+      }
+      continue;
+    }
 
-  runStatement(
-    `UPDATE escrow_holds SET status = 'locked' WHERE job_id = ? AND status = 'held'`,
-    job.job_id
-  );
+    const now = new Date().toISOString();
+    const timeout = job.max_duration_seconds || 1800;
+    const timeoutAt = new Date(Date.now() + timeout * 1000).toISOString().replace('T', ' ').replace('Z', '');
+    runStatement(
+      `UPDATE jobs
+       SET status = 'assigned',
+           assigned_at = ?,
+           picked_up_at = ?,
+           timeout_at = ?
+       WHERE id = ?`,
+      [now, now, timeoutAt, job.id]
+    );
+    recordLifecycleEvent(job, 'job.status.changed', {
+      status: 'assigned',
+      source: 'daemon',
+      message: 'Job assigned to provider daemon',
+      payload: {
+        from_status: job.status,
+        to_status: 'assigned',
+        provider_id: providerId,
+        timeout_at: timeoutAt,
+      },
+    });
 
-  const updated = db.get('SELECT * FROM jobs WHERE id = ?', [job.id]);
-  if (!updated) return null;
-  fireAndForgetJobEmail('started', updated, {
-    estimated_duration_minutes: Number(updated.duration_minutes || 0),
-  });
-  updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
-  return updated;
+    runStatement(
+      `UPDATE escrow_holds SET status = 'locked' WHERE job_id = ? AND status = 'held'`,
+      job.job_id
+    );
+
+    const updated = db.get('SELECT * FROM jobs WHERE id = ?', [job.id]);
+    if (!updated) return { job: null, rejection: firstRejection };
+    fireAndForgetJobEmail('started', updated, {
+      estimated_duration_minutes: Number(updated.duration_minutes || 0),
+    });
+    updated.gpu_requirements = updated.gpu_requirements ? JSON.parse(updated.gpu_requirements) : null;
+    return { job: updated, rejection: firstRejection };
+  }
+
+  return { job: null, rejection: firstRejection };
 }
 
 router.get('/assigned', (req, res) => {
@@ -2051,10 +2214,10 @@ router.get('/assigned', (req, res) => {
     const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-    const job = fetchAndAssignNextJob(provider.id);
-    if (!job) return res.json({ job: null });
+    const result = fetchAndAssignNextJob(provider.id);
+    if (!result.job) return res.json({ job: null, rejection: result.rejection || null });
 
-    res.json({ job });
+    res.json({ job: result.job, rejection: result.rejection || null });
   } catch (error) {
     console.error('Assigned job fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch assigned job' });
@@ -2071,8 +2234,8 @@ router.get('/queue', (req, res) => {
     const provider = db.get('SELECT id FROM providers WHERE api_key = ?', [key]);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-    const job = fetchAndAssignNextJob(provider.id);
-    res.json({ job: job || null });
+    const result = fetchAndAssignNextJob(provider.id);
+    res.json({ job: result.job || null, rejection: result.rejection || null });
   } catch (error) {
     console.error('Queue fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch queue job' });
