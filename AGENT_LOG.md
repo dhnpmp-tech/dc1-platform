@@ -1,3 +1,8 @@
+## [2026-03-30 02:57 UTC] Codex — Provider Register Country/OS/Referral i18n Expansion
+- **Commit**: `d218ed4` - Localized additional `/provider/register` form content: country field labels/options, OS helper-card copy, VRAM helper snippets, phone placeholder, and referral label/placeholder/helper states via new EN/AR i18n keys.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic provider onboarding form now has much broader copy parity across location/runtime/referral controls, further shrinking DCP-42 mixed-language QA blockers.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
