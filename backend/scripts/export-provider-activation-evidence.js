@@ -23,7 +23,11 @@ function parseArgs(argv) {
     renterKey: process.env.DCP_RENTER_KEY || null,
     model: process.env.DCP_MODEL_ID || null,
     traceId: process.env.DCP_TRACE_ID || `trace_${Date.now()}`,
+    requestId: process.env.DCP_REQUEST_ID || null,
+    sessionId: process.env.DCP_SESSION_ID || null,
     windowMinutes: 15,
+    transcriptPath: null,
+    responseHeadersJson: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -46,6 +50,18 @@ function parseArgs(argv) {
       i += 1;
     } else if (token === '--trace-id' && next) {
       args.traceId = next;
+      i += 1;
+    } else if (token === '--request-id' && next) {
+      args.requestId = next;
+      i += 1;
+    } else if (token === '--session-id' && next) {
+      args.sessionId = next;
+      i += 1;
+    } else if (token === '--transcript-path' && next) {
+      args.transcriptPath = path.resolve(next);
+      i += 1;
+    } else if (token === '--response-headers-json' && next) {
+      args.responseHeadersJson = next;
       i += 1;
     } else if (token === '--max-tokens' && next) {
       const parsed = Number(next);
@@ -80,6 +96,10 @@ function usage() {
     '  --base-url <url>        API base URL (default: http://127.0.0.1:8083)',
     '  --prompt <text>         Prompt text for /v1/chat/completions',
     '  --trace-id <id>         Trace ID forwarded as X-DCP-Trace-Id',
+    '  --request-id <id>       Override request ID in evidence when using --transcript-path',
+    '  --session-id <id>       Override session ID in evidence when using --transcript-path',
+    '  --transcript-path <p>   Use an existing raw transcript file instead of sending a live request',
+    '  --response-headers-json <json|path>  JSON map (or file path) of response headers for offline mode',
     '  --max-tokens <n>        max_tokens payload value (default: 64)',
     '  --temperature <n>       temperature payload value (default: 0.2)',
     '  --window-minutes <n>    Duplicate-charge/failure check window around candidate timestamp (default: 15)',
@@ -292,9 +312,14 @@ async function main() {
     process.exit(0);
   }
 
-  if (!args.providerId || !args.renterKey || !args.model) {
+  if (!args.providerId || !args.model) {
     usage();
-    console.error('[provider-evidence] Missing required args: --provider-id, --renter-key, --model');
+    console.error('[provider-evidence] Missing required args: --provider-id, --model');
+    process.exit(2);
+  }
+  if (!args.transcriptPath && !args.renterKey) {
+    usage();
+    console.error('[provider-evidence] Missing required args for live mode: --renter-key (or use --transcript-path for offline mode)');
     process.exit(2);
   }
 
@@ -312,7 +337,7 @@ async function main() {
   };
 
   const requestHeaders = {
-    authorization: `Bearer ${args.renterKey}`,
+    authorization: args.renterKey ? `Bearer ${args.renterKey}` : '',
     'content-type': 'application/json',
     'x-dcp-trace-id': args.traceId,
   };
@@ -332,14 +357,52 @@ async function main() {
     return body;
   })();
 
-  const response = await fetch(routeUrl, {
-    method: 'POST',
-    headers: requestHeaders,
-    body: JSON.stringify(requestBody),
-  });
+  let responseText = '';
+  let responseHeaders = {};
+  let responseStatus = 0;
+  let responseOk = false;
 
-  const responseText = await response.text();
-  const responseHeaders = toHeaderMap(response.headers);
+  if (args.transcriptPath) {
+    if (!fs.existsSync(args.transcriptPath)) {
+      console.error(`[provider-evidence] transcript file not found: ${args.transcriptPath}`);
+      process.exit(2);
+    }
+    responseText = fs.readFileSync(args.transcriptPath, 'utf8');
+    if (args.responseHeadersJson) {
+      try {
+        const maybePath = path.resolve(args.responseHeadersJson);
+        const raw = fs.existsSync(maybePath)
+          ? fs.readFileSync(maybePath, 'utf8')
+          : args.responseHeadersJson;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          for (const [key, value] of Object.entries(parsed)) {
+            responseHeaders[String(key).toLowerCase()] = String(value);
+          }
+        }
+      } catch (error) {
+        console.error('[provider-evidence] --response-headers-json must be valid JSON or a path to valid JSON');
+        console.error(error.message);
+        process.exit(2);
+      }
+    }
+    if (args.requestId) responseHeaders['x-dcp-request-id'] = args.requestId;
+    if (args.traceId) responseHeaders['x-dcp-trace-id'] = args.traceId;
+    if (args.providerId) responseHeaders['x-dcp-provider-id'] = String(args.providerId);
+    if (args.sessionId) responseHeaders['x-dcp-session-id'] = args.sessionId;
+    responseStatus = responseText.includes('[DONE]') ? 200 : 206;
+    responseOk = responseStatus === 200;
+  } else {
+    const response = await fetch(routeUrl, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify(requestBody),
+    });
+    responseText = await response.text();
+    responseHeaders = toHeaderMap(response.headers);
+    responseStatus = response.status;
+    responseOk = response.ok;
+  }
 
   fs.mkdirSync(args.outDir, { recursive: true });
   const stamp = toStamp(utcTimestamp);
@@ -349,10 +412,15 @@ async function main() {
 
   fs.writeFileSync(streamPath, `${responseText}\n`, 'utf8');
 
-  const command = [
-    'DCP_PROVIDER_ID=<provider-id> DCP_RENTER_KEY=<renter-key> DCP_MODEL_ID=<model-id>',
-    `node backend/scripts/export-provider-activation-evidence.js --base-url ${JSON.stringify(args.baseUrl)} --provider-id <provider-id> --model <model-id> --trace-id ${JSON.stringify(args.traceId)}`,
-  ].join('\n');
+  const command = args.transcriptPath
+    ? [
+      'DCP_PROVIDER_ID=<provider-id> DCP_MODEL_ID=<model-id>',
+      `node backend/scripts/export-provider-activation-evidence.js --base-url ${JSON.stringify(args.baseUrl)} --provider-id <provider-id> --model <model-id> --trace-id ${JSON.stringify(args.traceId)} --transcript-path ${JSON.stringify(args.transcriptPath)}`,
+    ].join('\n')
+    : [
+      'DCP_PROVIDER_ID=<provider-id> DCP_RENTER_KEY=<renter-key> DCP_MODEL_ID=<model-id>',
+      `node backend/scripts/export-provider-activation-evidence.js --base-url ${JSON.stringify(args.baseUrl)} --provider-id <provider-id> --model <model-id> --trace-id ${JSON.stringify(args.traceId)}`,
+    ].join('\n');
   const sqlUtc = utcTimestamp.replace(/'/g, "''");
   const sqlProviderId = String(responseHeaders['x-dcp-provider-id'] || args.providerId || '').replace(/'/g, "''");
   const sqlRequestId = String(responseHeaders['x-dcp-request-id'] || '').replace(/'/g, "''");
@@ -367,7 +435,7 @@ async function main() {
         `node -e "const Database=require('better-sqlite3');`,
         `const db=new Database('backend/data/providers.db');`,
         `const sql=\\\"SELECT job_id,status,retry_count,max_retries,created_at,completed_at,error FROM jobs`,
-        `WHERE provider_id=${JSON.stringify(sqlProviderId)} `,
+        `WHERE CAST(provider_id AS TEXT)='${sqlProviderId}' `,
         `AND created_at BETWEEN datetime('${sqlUtc}','-${args.windowMinutes} minutes') AND datetime('${sqlUtc}','+${args.windowMinutes} minutes')`,
         `ORDER BY created_at ASC;\\\";`,
         `console.log(JSON.stringify(db.prepare(sql).all(), null, 2));\\"`,
@@ -433,8 +501,8 @@ async function main() {
     prompt: args.prompt,
   });
 
-  bundle.http_status = response.status;
-  bundle.http_ok = response.ok;
+  bundle.http_status = responseStatus;
+  bundle.http_ok = responseOk;
   bundle.stream_output_path = streamPath;
   bundle.request_payload = {
     ...requestBody,
@@ -445,7 +513,7 @@ async function main() {
   fs.writeFileSync(mdPath, `${buildEvidenceMarkdown(bundle)}\n`, 'utf8');
 
   console.log(`[provider-evidence] Route: ${args.route}`);
-  console.log(`[provider-evidence] HTTP status: ${response.status}`);
+  console.log(`[provider-evidence] HTTP status: ${responseStatus}`);
   console.log(`[provider-evidence] Trace: ${args.traceId}`);
   console.log(`[provider-evidence] Request ID: ${responseHeaders['x-dcp-request-id'] || 'n/a'}`);
   console.log(`[provider-evidence] Provider ID: ${responseHeaders['x-dcp-provider-id'] || 'n/a'}`);
@@ -453,9 +521,10 @@ async function main() {
   console.log(`[provider-evidence] Stream output: ${streamPath}`);
   console.log(`[provider-evidence] JSON: ${jsonPath}`);
   console.log(`[provider-evidence] Markdown: ${mdPath}`);
-  console.log(`[provider-evidence] Renter key used: ${maskSecret(args.renterKey)}`);
+  if (args.renterKey) console.log(`[provider-evidence] Renter key used: ${maskSecret(args.renterKey)}`);
+  if (args.transcriptPath) console.log(`[provider-evidence] Offline transcript mode: ${args.transcriptPath}`);
 
-  if (!response.ok) {
+  if (!responseOk) {
     console.error('[provider-evidence] Inference request failed; artifacts were still written for debugging.');
     process.exit(1);
   }

@@ -84,6 +84,23 @@ For each additional provider, repeat in order:
 4. Run `provider:evidence` using an active renter key and target model.
 5. Attach generated markdown/json/stream artifacts to task evidence.
 
+## 6) Offline Evidence Mode (No Live Renter Key In Runtime)
+
+If a successful `/v1/chat/completions` stream transcript was captured elsewhere, you can still generate a full DCP-152 evidence bundle without sending another live request:
+
+```bash
+npm --prefix backend run provider:evidence -- \
+  --provider-id "<provider-id>" \
+  --model "<model-id>" \
+  --trace-id "<trace-id>" \
+  --request-id "<request-id>" \
+  --session-id "<session-id>" \
+  --transcript-path "docs/ops/provider-activation-evidence/provider-activation-stream-raw.txt" \
+  --response-headers-json '{"x-dcp-request-id":"<request-id>","x-dcp-trace-id":"<trace-id>","x-dcp-provider-id":"<provider-id>","x-dcp-session-id":"<session-id>"}'
+```
+
+This mode still attaches duplicate-charge checks and SQLite joinability snapshots for reconciliation.
+
 ## Remaining Gaps Before Scaling to 10 Active Providers
 
 - No automated fleet orchestration for daemon rollout/key rotation; still manual per host.

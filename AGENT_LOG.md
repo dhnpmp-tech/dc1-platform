@@ -32453,3 +32453,8 @@ a
 - **Commit**: `d3f31ed` - Added automatic SQLite joinability snapshots to provider activation evidence bundles so candidate IDs are directly tied to usage/charge/ledger rows without requiring manual SQL execution, including schema-drift-safe query handling.
 - **Files**: `backend/scripts/export-provider-activation-evidence.js`, `backend/src/services/providerActivationEvidenceService.js`, `backend/src/__tests__/provider-activation-evidence-service.test.js`, `backend/package.json`, `docs/ops/provider-activation-evidence.md`, `AGENT_LOG.md`
 - **Impact**: DCP-152 evidence artifacts now include `usage_rows`, `charge_rows`, and `ledger_rows` snapshots plus explicit joinability status, improving DCP-150 reconciliation readiness and reducing operator turnaround when validating first paid inference candidates.
+
+## [2026-03-30 19:40 UTC] Codex — DCP-152 Offline Evidence Mode + Duplicate-Check SQL Fix
+- **Commit**: `pending` - Added transcript-driven offline export mode for provider evidence generation (no live renter key required at runtime) and fixed provider duplicate-check SQL quoting in generated command packs.
+- **Files**: `backend/scripts/export-provider-activation-evidence.js`, `docs/ops/provider-activation-evidence.md`, `AGENT_LOG.md`
+- **Impact**: FinOps can now produce DCP-152 evidence bundles from previously captured stream transcripts/headers and still get joinability + duplicate-charge checks; generated SQL for provider-window retry checks is now syntactically valid (`CAST(provider_id AS TEXT)='...'`), reducing operator friction during DCP-150 evidence posting.
