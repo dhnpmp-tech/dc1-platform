@@ -2,6 +2,7 @@
 
 const express = require('express');
 const request = require('supertest');
+const Database = require('better-sqlite3');
 const db = require('../db');
 const {
   recordOpenRouterUsage,
@@ -111,6 +112,52 @@ describe('openrouterSettlementService', () => {
     expect(result.settlement.discrepancy_halala).toBe(300);
     expect((result.alerts || []).some((alert) => alert.code === 'SETTLEMENT_DISCREPANCY')).toBe(true);
     expect(result.topup).toBeTruthy();
+  });
+
+  test('recordOpenRouterUsage works with legacy openrouter_usage_ledger schema lacking request-id columns', () => {
+    const legacyDb = new Database(':memory:');
+    legacyDb.exec(`
+      CREATE TABLE openrouter_usage_ledger (
+        id TEXT PRIMARY KEY,
+        renter_id INTEGER NOT NULL,
+        provider_id INTEGER,
+        model TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'v1',
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_halala INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'SAR',
+        settlement_status TEXT NOT NULL DEFAULT 'pending',
+        settlement_id TEXT,
+        created_at TEXT NOT NULL
+      )
+    `);
+
+    const usage = recordOpenRouterUsage(legacyDb, {
+      renterId: 99,
+      providerId: 12,
+      requestId: 'orreq_legacy_missing_cols',
+      upstreamRequestId: 'chatcmpl_legacy_missing_cols',
+      model: 'openai/gpt-4o-mini',
+      promptTokens: 44,
+      completionTokens: 11,
+      totalTokens: 55,
+      costHalala: 123,
+      settlementStatus: 'pending',
+    });
+
+    expect(usage).toBeTruthy();
+    expect(usage.prompt_tokens).toBe(44);
+    expect(usage.completion_tokens).toBe(11);
+    expect(usage.total_tokens).toBe(55);
+    expect(usage.cost_halala).toBe(123);
+
+    const cols = legacyDb.prepare('PRAGMA table_info(openrouter_usage_ledger)').all().map((row) => row.name);
+    expect(cols).not.toContain('request_id');
+    expect(cols).not.toContain('upstream_request_id');
+
+    legacyDb.close();
   });
 });
 

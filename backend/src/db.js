@@ -1653,6 +1653,8 @@ db.exec(`
     id                 TEXT PRIMARY KEY,
     renter_id          INTEGER NOT NULL,
     provider_id        INTEGER,
+    request_id         TEXT,
+    upstream_request_id TEXT,
     model              TEXT NOT NULL,
     source             TEXT NOT NULL DEFAULT 'v1',
     prompt_tokens      INTEGER NOT NULL DEFAULT 0,
@@ -1669,6 +1671,9 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_pending ON openrouter_usage_ledger(settlement_status, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_settlement ON openrouter_usage_ledger(settlement_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_renter ON openrouter_usage_ledger(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_request_id ON openrouter_usage_ledger(request_id, created_at DESC)`);
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN request_id TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN upstream_request_id TEXT').run(); } catch (_) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS openrouter_settlements (

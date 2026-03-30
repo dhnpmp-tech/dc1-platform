@@ -39,7 +39,7 @@ describe('server /v1 wiring', () => {
   let errorSpy;
   let renterKey;
 
-  function startMockProvider(responseBody) {
+  function startMockProvider(responseBody, { statusCode = 200 } = {}) {
     return new Promise((resolve, reject) => {
       const server = http.createServer((req, res) => {
         if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
@@ -48,7 +48,7 @@ describe('server /v1 wiring', () => {
           return;
         }
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(responseBody));
       });
 
@@ -135,11 +135,88 @@ describe('server /v1 wiring', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.choices?.[0]?.message?.content).toBe('mounted v1 router works');
+    expect(typeof res.headers['x-request-id']).toBe('string');
 
     const ipv6LimiterValidationLogged = errorSpy.mock.calls.some((call) =>
       call.some((entry) => String(entry).includes('ERR_ERL_KEY_GEN_IPV6'))
     );
     expect(ipv6LimiterValidationLogged).toBe(false);
+
+    const usageRow = db.get(
+      `SELECT request_id, upstream_request_id, prompt_tokens, completion_tokens, total_tokens, settlement_status, cost_halala
+       FROM openrouter_usage_ledger
+       ORDER BY created_at DESC
+       LIMIT 1`
+    );
+    expect(usageRow).toBeTruthy();
+    expect(usageRow.request_id).toBe(res.headers['x-request-id']);
+    expect(usageRow.upstream_request_id).toBe('chatcmpl-mock');
+    expect(usageRow.prompt_tokens).toBe(10);
+    expect(usageRow.completion_tokens).toBe(4);
+    expect(usageRow.total_tokens).toBe(14);
+    expect(usageRow.settlement_status).toBe('pending');
+    expect(usageRow.cost_halala).toBeGreaterThan(0);
+  });
+
+  test('POST /v1/chat/completions records failed metering row when provider routing fails', async () => {
+    const failedProvider = await startMockProvider(
+      { error: 'provider down' },
+      { statusCode: 500 }
+    );
+    try {
+      db.run('DELETE FROM providers');
+      const failingRenterKey = `plain-bearer-fail-${crypto.randomBytes(4).toString('hex')}`;
+      const now = new Date().toISOString();
+      db.run(
+        `INSERT INTO renters (name, email, api_key, status, balance_halala, total_spent_halala, total_jobs, created_at)
+         VALUES (?, ?, ?, 'active', 9999999, 0, 0, ?)`,
+        'Server Wiring Failure Renter',
+        `wiring-fail-${Date.now()}@test.com`,
+        failingRenterKey,
+        now
+      );
+      db.run(
+        `INSERT INTO providers (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib,
+           approval_status, status, supported_compute_types, vllm_endpoint_url, last_heartbeat, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'approved', 'online', '["inference"]', ?, datetime('now'), datetime('now'), datetime('now'))`,
+        'Server Wiring Failed Provider',
+        `provider-fail-${Date.now()}@test.com`,
+        `provider-fail-${crypto.randomBytes(4).toString('hex')}`,
+        'RTX 4090',
+        24,
+        24576,
+        `http://127.0.0.1:${failedProvider.address().port}`
+      );
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${failingRenterKey}`)
+        .send({
+          model: 'server-wiring-model',
+          messages: [{ role: 'user', content: 'this should fail' }],
+          max_tokens: 32,
+        });
+
+      expect(res.status).toBe(502);
+      expect(typeof res.headers['x-request-id']).toBe('string');
+
+      const failureRow = db.get(
+        `SELECT request_id, prompt_tokens, completion_tokens, total_tokens, settlement_status, cost_halala
+         FROM openrouter_usage_ledger
+         WHERE request_id = ?
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        res.headers['x-request-id']
+      );
+      expect(failureRow).toBeTruthy();
+      expect(failureRow.prompt_tokens).toBeGreaterThan(0);
+      expect(failureRow.completion_tokens).toBe(0);
+      expect(failureRow.total_tokens).toBe(failureRow.prompt_tokens);
+      expect(failureRow.settlement_status).toBe('failed');
+      expect(failureRow.cost_halala).toBe(0);
+    } finally {
+      await new Promise((resolve) => failedProvider.close(resolve));
+    }
   });
 
   test('GET /v1/models returns OpenAI list shape without 500 on current schema', async () => {

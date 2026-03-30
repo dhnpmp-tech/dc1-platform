@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const usageLedgerColumnsCache = new WeakMap();
 
 function nowIso() {
   return new Date().toISOString();
@@ -22,9 +23,28 @@ function toInt(value, { min = null, max = null } = {}) {
   return num;
 }
 
+function normalizeText(value, maxLen = 255) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLen);
+}
+
+function getUsageLedgerColumns(db) {
+  const cached = usageLedgerColumnsCache.get(db);
+  if (cached && cached.size > 0) return cached;
+
+  const rows = db.prepare('PRAGMA table_info(openrouter_usage_ledger)').all();
+  const cols = new Set((rows || []).map((row) => String(row.name || '')));
+  usageLedgerColumnsCache.set(db, cols);
+  return cols;
+}
+
 function recordOpenRouterUsage(db, {
   renterId,
   providerId = null,
+  requestId = null,
+  upstreamRequestId = null,
   model,
   source = 'v1',
   promptTokens = 0,
@@ -32,38 +52,45 @@ function recordOpenRouterUsage(db, {
   totalTokens = null,
   costHalala,
   currency = 'SAR',
+  settlementStatus = 'pending',
 }) {
   const cleanRenterId = toInt(renterId, { min: 1 });
   const cleanProviderId = providerId == null ? null : toInt(providerId, { min: 1 });
   const cleanModel = typeof model === 'string' ? model.trim().slice(0, 200) : '';
   const cleanSource = typeof source === 'string' ? source.trim().slice(0, 80) : 'v1';
+  const cleanRequestId = normalizeText(requestId, 160);
+  const cleanUpstreamRequestId = normalizeText(upstreamRequestId, 160);
   const cleanPrompt = toInt(promptTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanCompletion = toInt(completionTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanTotal = toInt(totalTokens, { min: 0, max: 1_000_000_000 }) ?? (cleanPrompt + cleanCompletion);
   const cleanCost = toInt(costHalala, { min: 0, max: 100_000_000_000 });
+  const cleanSettlementStatus = settlementStatus === 'failed' ? 'failed' : (settlementStatus === 'settled' ? 'settled' : 'pending');
 
   if (!cleanRenterId) throw new Error('renterId must be a positive integer');
   if (!cleanModel) throw new Error('model is required');
   if (cleanCost == null) throw new Error('costHalala must be an integer >= 0');
 
   const id = `oru_${crypto.randomUUID()}`;
-  db.prepare(
-    `INSERT INTO openrouter_usage_ledger
-      (id, renter_id, provider_id, model, source, prompt_tokens, completion_tokens, total_tokens, cost_halala, currency, settlement_status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
-  ).run(
+  const cols = getUsageLedgerColumns(db);
+  const payload = {
     id,
-    cleanRenterId,
-    cleanProviderId,
-    cleanModel,
-    cleanSource || 'v1',
-    cleanPrompt,
-    cleanCompletion,
-    cleanTotal,
-    cleanCost,
-    currency || 'SAR',
-    nowIso()
-  );
+    renter_id: cleanRenterId,
+    provider_id: cleanProviderId,
+    request_id: cleanRequestId,
+    upstream_request_id: cleanUpstreamRequestId,
+    model: cleanModel,
+    source: cleanSource || 'v1',
+    prompt_tokens: cleanPrompt,
+    completion_tokens: cleanCompletion,
+    total_tokens: cleanTotal,
+    cost_halala: cleanCost,
+    currency: currency || 'SAR',
+    settlement_status: cleanSettlementStatus,
+    created_at: nowIso(),
+  };
+  const activeKeys = Object.keys(payload).filter((key) => cols.has(key));
+  const insertSql = `INSERT INTO openrouter_usage_ledger (${activeKeys.join(', ')}) VALUES (${activeKeys.map(() => '?').join(', ')})`;
+  db.prepare(insertSql).run(...activeKeys.map((key) => payload[key]));
 
   return db.prepare('SELECT * FROM openrouter_usage_ledger WHERE id = ?').get(id);
 }

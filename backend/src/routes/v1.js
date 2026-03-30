@@ -17,6 +17,7 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
+const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 
 const router = express.Router();
 
@@ -278,6 +279,14 @@ function v1ChatRateLimiter(req, res, next) {
   return vllmCompleteLimiter(req, res, next);
 }
 
+function persistOpenRouterUsage(payload) {
+  try {
+    recordOpenRouterUsage(db._db || db, payload);
+  } catch (error) {
+    console.error('[v1/chat/completions] metering persistence failed:', error?.message || error);
+  }
+}
+
 async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
@@ -308,6 +317,9 @@ async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temp
 
 router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res) => {
   try {
+    const requestId = normalizeString(req.headers['x-request-id'], { maxLen: 160 }) || `orreq_${crypto.randomUUID()}`;
+    res.setHeader('x-request-id', requestId);
+
     const model = normalizeString(req.body?.model, { maxLen: 200 });
     if (!model) return res.status(400).json({
       error: { message: '`model` is required', type: 'invalid_request_error', code: 400 }
@@ -403,7 +415,10 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
       const debitAndReturnProxyResult = (resultBody) => {
         const usage = resultBody?.usage || {};
-        const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
+        const promptTokenCount = toFiniteInt(usage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? promptTokens;
+        const completionTokenCount = toFiniteInt(usage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+        const totalTokenCount = toFiniteInt(usage.total_tokens, { min: 0, max: 1_000_000_000 }) ?? (promptTokenCount + completionTokenCount);
+        const actualTokens = totalTokenCount;
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
         ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
@@ -413,6 +428,21 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
             .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
         } catch (_) { /* best-effort */ }
+
+        persistOpenRouterUsage({
+          renterId: req.renter.id,
+          providerId: assignedProvider.id,
+          requestId,
+          upstreamRequestId: normalizeString(resultBody?.id, { maxLen: 160 }) || null,
+          model: modelReq.model_id,
+          source: wantsStream ? 'v1_proxy_stream' : 'v1_proxy',
+          promptTokens: promptTokenCount,
+          completionTokens: completionTokenCount,
+          totalTokens: totalTokenCount,
+          costHalala: actualCost,
+          currency: 'SAR',
+          settlementStatus: 'pending',
+        });
 
         return res.json(resultBody);
       };
@@ -426,6 +456,20 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       };
 
       if (wantsStream && proxyResult.streamResponse) {
+        persistOpenRouterUsage({
+          renterId: req.renter.id,
+          providerId: assignedProvider.id,
+          requestId,
+          upstreamRequestId: null,
+          model: modelReq.model_id,
+          source: 'v1_proxy_stream',
+          promptTokens,
+          completionTokens: 0,
+          totalTokens: promptTokens,
+          costHalala: 0,
+          currency: 'SAR',
+          settlementStatus: 'failed',
+        });
         writeStreamingResponse(proxyResult.streamResponse);
         return;
       }
@@ -456,6 +500,20 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
+          persistOpenRouterUsage({
+            renterId: req.renter.id,
+            providerId: fallbackProvider.id,
+            requestId,
+            upstreamRequestId: null,
+            model: modelReq.model_id,
+            source: 'v1_proxy_stream',
+            promptTokens,
+            completionTokens: 0,
+            totalTokens: promptTokens,
+            costHalala: 0,
+            currency: 'SAR',
+            settlementStatus: 'failed',
+          });
           writeStreamingResponse(fallbackResult.streamResponse);
           return;
         }
@@ -464,6 +522,21 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           return debitAndReturnProxyResult(fallbackResult.body);
         }
       }
+
+      persistOpenRouterUsage({
+        renterId: req.renter.id,
+        providerId: assignedProvider.id,
+        requestId,
+        upstreamRequestId: null,
+        model: modelReq.model_id,
+        source: 'v1_proxy',
+        promptTokens,
+        completionTokens: 0,
+        totalTokens: promptTokens,
+        costHalala: 0,
+        currency: 'SAR',
+        settlementStatus: 'failed',
+      });
 
       return res.status(502).json({
         error: {
@@ -522,6 +595,20 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       if (job.status === 'completed') {
         const text = job.result_text || '';
         const cTokens = job.completion_tokens || approximateTokenCount(text);
+        persistOpenRouterUsage({
+          renterId: req.renter.id,
+          providerId: assignedProvider.id,
+          requestId,
+          upstreamRequestId: jobId,
+          model: modelReq.model_id,
+          source: wantsStream ? 'v1_job_stream' : 'v1_job_queue',
+          promptTokens,
+          completionTokens: cTokens,
+          totalTokens: promptTokens + cTokens,
+          costHalala: estimatedCostHalala,
+          currency: 'SAR',
+          settlementStatus: 'pending',
+        });
 
         // If streaming was requested, simulate SSE from completed text
         if (wantsStream) {
@@ -568,6 +655,20 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       }
 
       if (['failed', 'cancelled', 'permanently_failed', 'timed_out'].includes(job.status)) {
+        persistOpenRouterUsage({
+          renterId: req.renter.id,
+          providerId: assignedProvider.id,
+          requestId,
+          upstreamRequestId: jobId,
+          model: modelReq.model_id,
+          source: 'v1_job_queue',
+          promptTokens,
+          completionTokens: 0,
+          totalTokens: promptTokens,
+          costHalala: estimatedCostHalala,
+          currency: 'SAR',
+          settlementStatus: 'failed',
+        });
         return res.status(502).json({
           error: { message: `Inference ${job.status}: ${job.error || 'unknown'}`, type: 'upstream_error', code: 502 }
         });
@@ -575,6 +676,21 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
       await new Promise(r => setTimeout(r, POLL_MS));
     }
+
+    persistOpenRouterUsage({
+      renterId: req.renter.id,
+      providerId: assignedProvider.id,
+      requestId,
+      upstreamRequestId: jobId,
+      model: modelReq.model_id,
+      source: 'v1_job_queue',
+      promptTokens,
+      completionTokens: 0,
+      totalTokens: promptTokens,
+      costHalala: estimatedCostHalala,
+      currency: 'SAR',
+      settlementStatus: 'failed',
+    });
 
     return res.status(504).json({
       error: { message: 'Inference did not complete within timeout', type: 'timeout_error', code: 504 }
