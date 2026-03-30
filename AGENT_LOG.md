@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 18:49 UTC] Codex — DCP-148 Reduced-Motion Support For Homepage Motion
-- **Commit**: `pending` - Added `prefers-reduced-motion` handling to homepage motion surfaces so hero reveal transitions and logo marquee animation reduce gracefully for users who opt out of motion.
+- **Commit**: `40a3564` - Added `prefers-reduced-motion` handling to homepage motion surfaces so hero reveal transitions and logo marquee animation reduce gracefully for users who opt out of motion.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Homepage keeps the same structure/CTAs while improving accessibility and motion comfort. QA should verify both standard and reduced-motion behaviors.
