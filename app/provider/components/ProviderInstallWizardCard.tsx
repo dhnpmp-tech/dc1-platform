@@ -78,6 +78,8 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
   const [liveSnapshot, setLiveSnapshot] = useState<ProviderLiveSnapshot>(initialSnapshot)
   const [pollError, setPollError] = useState('')
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string>('')
+  const [refreshTick, setRefreshTick] = useState(0)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [prerequisites, setPrerequisites] = useState<Record<PrereqKey, boolean>>(DEFAULT_PREREQUISITES)
 
   const installApiBase = useMemo(() => getProviderInstallApiBase(), [])
@@ -165,6 +167,9 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
     const API_BASE = '/api/dc1'
 
     const pollLiveStatus = async () => {
+      if (!cancelled) {
+        setIsRefreshing(true)
+      }
       try {
         const res = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(apiKey)}`, {
           cache: 'no-store',
@@ -191,6 +196,11 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
         if (!cancelled) {
           setPollError('Unable to refresh live readiness right now. Retrying...')
         }
+      } finally {
+        if (!cancelled) {
+          setLastUpdatedAt(new Date().toISOString())
+          setIsRefreshing(false)
+        }
       }
     }
 
@@ -201,7 +211,7 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
       cancelled = true
       clearInterval(interval)
     }
-  }, [apiKey])
+  }, [apiKey, refreshTick])
 
   useEffect(() => {
     if (!copied) return
@@ -301,9 +311,14 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
             <button
               type="button"
               onClick={handleCopy}
-              className="rounded-lg bg-dc1-amber px-4 py-2 text-sm font-semibold text-dc1-void hover:brightness-110 min-h-[40px]"
+              disabled={!prerequisitesComplete}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold min-h-[40px] ${
+                prerequisitesComplete
+                  ? 'bg-dc1-amber text-dc1-void hover:brightness-110'
+                  : 'bg-dc1-border text-dc1-text-muted cursor-not-allowed'
+              }`}
             >
-              {copied ? 'Copied command' : 'Copy command'}
+              {copied ? 'Copied command' : prerequisitesComplete ? 'Copy command' : 'Confirm prerequisites to copy'}
             </button>
             <span className="text-xs text-dc1-text-muted">
               Uses canonical route: <code className="font-mono">/api/providers/download/setup?key=...&os=...</code>
@@ -315,9 +330,23 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
       <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-4 mt-5">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-dc1-text-muted">3) Live readiness checklist (auto-refresh every 10s)</p>
-          <span className="text-xs text-dc1-text-muted">
-            {lastUpdatedAt ? `Last update: ${new Date(lastUpdatedAt).toLocaleTimeString()}` : 'Awaiting first refresh...'}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-dc1-text-muted">
+              {lastUpdatedAt ? `Last update: ${new Date(lastUpdatedAt).toLocaleTimeString()}` : 'Awaiting first refresh...'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRefreshTick((prev) => prev + 1)}
+              disabled={isRefreshing}
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium min-h-[30px] ${
+                isRefreshing
+                  ? 'border-dc1-border text-dc1-text-muted cursor-not-allowed'
+                  : 'border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary'
+              }`}
+            >
+              {isRefreshing ? 'Refreshing...' : 'Refresh now'}
+            </button>
+          </div>
         </div>
 
         {pollError && <p className="text-xs text-status-warning mb-2">{pollError}</p>}
