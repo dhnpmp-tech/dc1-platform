@@ -1449,7 +1449,7 @@ function ProviderRegisterPageContent() {
                   <p id="gpuModel-error" className="mt-2 text-sm text-red-400">{fieldErrors.gpuModel}</p>
                 ) : (
                   <p id="gpuModel-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    Pick the card that will run the DC1 daemon first. You can refine your fleet later.
+                    {t('register.provider.gpu_model_hint')}
                   </p>
                 )}
               </div>
@@ -1603,7 +1603,7 @@ function ProviderRegisterPageContent() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleInputChange}
-                  placeholder="+1 (555) 000-0000"
+                  placeholder={t('register.provider.phone_placeholder')}
                   className="input"
                 />
               </div>
@@ -1611,7 +1611,8 @@ function ProviderRegisterPageContent() {
               {/* Referral Code */}
               <div>
                 <label className="label" htmlFor="referralCode">
-                  Referral Code <span className="text-dc1-text-muted font-normal">(optional)</span>
+                  {t('register.provider.referral_label')}{' '}
+                  <span className="text-dc1-text-muted font-normal">{t('register.provider.referral_optional')}</span>
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -1619,12 +1620,12 @@ function ProviderRegisterPageContent() {
                     type="text"
                   value={referralCode}
                   onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. DCP-ABC123"
+                  placeholder={t('register.provider.referral_placeholder')}
                   className="input flex-1"
                   disabled={referralStatus === 'applied'}
                   />
                   {referralCode && referralStatus === 'idle' && (
-                    <span className="flex items-center text-xs text-dc1-text-muted px-2">Applied at registration</span>
+                    <span className="flex items-center text-xs text-dc1-text-muted px-2">{t('register.provider.referral_applied_hint')}</span>
                   )}
                 </div>
                 {referralStatus === 'applied' && (
@@ -1637,7 +1638,7 @@ function ProviderRegisterPageContent() {
                   <p className="mt-1.5 text-sm text-red-400">{referralMessage}</p>
                 )}
                 <p className="mt-1 text-xs text-dc1-text-muted">
-                  Have a referral code from another provider? Enter it here to earn bonus rewards.
+                  {t('register.provider.referral_help')}
                 </p>
               </div>
 
