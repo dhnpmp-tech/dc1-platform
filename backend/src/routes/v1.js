@@ -102,33 +102,55 @@ function requireAuth(req, res, next) {
   return next();
 }
 
+let modelRegistryColumnsCache = null;
+
+function getModelRegistryColumns() {
+  if (modelRegistryColumnsCache) return modelRegistryColumnsCache;
+  const pragmaRows = db.all('PRAGMA table_info(model_registry)');
+  modelRegistryColumnsCache = new Set((pragmaRows || []).map((row) => String(row.name || '')));
+  return modelRegistryColumnsCache;
+}
+
+function buildModelRegistryListQuery(columns) {
+  const selectColumns = [
+    'model_id',
+    columns.has('display_name') ? 'display_name' : 'model_id AS display_name',
+    columns.has('context_window') ? 'context_window' : '4096 AS context_window',
+    columns.has('parameter_count') ? 'parameter_count' : 'NULL AS parameter_count',
+    columns.has('min_gpu_vram_gb')
+      ? 'min_gpu_vram_gb'
+      : (columns.has('vram_gb') ? 'vram_gb AS min_gpu_vram_gb' : '0 AS min_gpu_vram_gb'),
+    columns.has('use_cases') ? 'use_cases' : "NULL AS use_cases",
+  ];
+
+  const whereActive = columns.has('is_active') ? ' WHERE is_active = 1' : '';
+  const orderBy = columns.has('display_name') ? 'display_name' : 'model_id';
+
+  return `
+    SELECT ${selectColumns.join(', ')}
+    FROM model_registry${whereActive}
+    ORDER BY ${orderBy} ASC
+  `;
+}
+
+function buildModelRequirementsQuery(columns) {
+  const selectColumns = [
+    'model_id',
+    columns.has('context_window') ? 'context_window' : '4096 AS context_window',
+    columns.has('min_gpu_vram_gb')
+      ? 'min_gpu_vram_gb'
+      : (columns.has('vram_gb') ? 'vram_gb AS min_gpu_vram_gb' : '0 AS min_gpu_vram_gb'),
+  ];
+  const whereActive = columns.has('is_active') ? ' AND is_active = 1' : '';
+  return `SELECT ${selectColumns.join(', ')} FROM model_registry WHERE model_id = ?${whereActive}`;
+}
+
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
 
 router.get('/models', (req, res) => {
   try {
-    let rows;
-    try {
-      rows = db.all(`
-        SELECT id, model_id, display_name, parameter_count, context_window,
-               min_gpu_vram_gb, use_cases
-        FROM model_registry
-        WHERE is_active = 1
-        ORDER BY display_name ASC
-      `);
-    } catch (error) {
-      // Backward compatibility for deployed SQLite schemas that predate
-      // model_registry.parameter_count.
-      if (!String(error?.message || '').includes('no such column: parameter_count')) {
-        throw error;
-      }
-      rows = db.all(`
-        SELECT id, model_id, display_name, context_window,
-               min_gpu_vram_gb, use_cases
-        FROM model_registry
-        WHERE is_active = 1
-        ORDER BY display_name ASC
-      `);
-    }
+    const columns = getModelRegistryColumns();
+    const rows = db.all(buildModelRegistryListQuery(columns));
 
     const nowSecs = Math.floor(Date.now() / 1000);
 
@@ -196,10 +218,8 @@ function assignProvider(minVramMb) {
 }
 
 function resolveModelRequirements(model) {
-  const row = db.get(
-    'SELECT model_id, min_gpu_vram_gb, context_window FROM model_registry WHERE model_id = ? AND is_active = 1',
-    model
-  );
+  const columns = getModelRegistryColumns();
+  const row = db.get(buildModelRequirementsQuery(columns), model);
   return {
     model_id: row?.model_id || model,
     min_vram_gb: Number(row?.min_gpu_vram_gb || 0),
