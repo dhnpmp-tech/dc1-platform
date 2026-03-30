@@ -202,10 +202,10 @@ function ProviderRegisterPageContent() {
           return String(value) ? '' : t('register.provider.validation.gpu')
         case 'vram':
           if (snapshot.gpuModel !== 'Other') return ''
-          if (!String(value).trim()) return 'VRAM is required when you choose Other.'
-          return Number(value) > 0 ? '' : 'VRAM must be greater than 0.'
+          if (!String(value).trim()) return t('register.provider.validation.vram')
+          return Number(value) > 0 ? '' : t('register.provider.validation.vram_positive')
         case 'locationCountry':
-          return String(value) ? '' : 'Country helps us route support and compliance guidance.'
+          return String(value) ? '' : t('register.provider.validation.locationCountry')
         case 'operatingSystem':
           return String(value) ? '' : t('register.provider.validation.os')
         case 'pdplConsent':
@@ -250,38 +250,38 @@ function ProviderRegisterPageContent() {
     () => [
       {
         id: 'identity',
-        label: 'Identity details',
-        helper: 'Add your name and a valid email so we can create the provider record.',
+        label: t('register.provider.readiness.identity_label'),
+        helper: t('register.provider.readiness.identity_helper'),
         complete: Boolean(formData.fullName.trim()) && emailPattern.test(formData.email.trim()),
       },
       {
         id: 'hardware',
-        label: 'Hardware profile',
-        helper: 'Choose the GPU you will actually connect. Custom cards need a VRAM value.',
+        label: t('register.provider.readiness.hardware_label'),
+        helper: t('register.provider.readiness.hardware_helper'),
         complete: Boolean(formData.gpuModel) && customVramReady,
       },
       {
         id: 'runtime',
-        label: 'Machine setup',
-        helper: 'Select your OS, country, and consent so the install guide matches your machine.',
+        label: t('register.provider.readiness.runtime_label'),
+        helper: t('register.provider.readiness.runtime_helper'),
         complete: Boolean(formData.operatingSystem) && Boolean(formData.locationCountry) && formData.pdplConsent,
       },
     ],
-    [customVramReady, formData, emailPattern]
+    [customVramReady, formData, emailPattern, t]
   )
 
   const readinessCompleteCount = readinessChecklist.filter((item) => item.complete).length
   const readinessPercent = Math.round((readinessCompleteCount / readinessChecklist.length) * 100)
-  const selectedGpuLabel = formData.gpuModel || 'Select your GPU'
-  const selectedOsLabel = formData.operatingSystem || 'Choose your operating system'
+  const selectedGpuLabel = formData.gpuModel || t('register.provider.gpu_model_placeholder')
+  const selectedOsLabel = formData.operatingSystem || t('register.provider.os_placeholder')
   const normalizedOperatingSystem = normalizeOperatingSystemForApi(formData.operatingSystem)
   const setupExpectation = normalizedOperatingSystem
     ? normalizedOperatingSystem === 'windows'
-      ? 'Windows PowerShell installer'
+      ? t('register.provider.setup_expectation.windows')
       : normalizedOperatingSystem === 'mac' || normalizedOperatingSystem === 'darwin'
-        ? 'macOS installer'
-        : 'Linux shell installer'
-    : 'Installer shown after registration'
+        ? t('register.provider.setup_expectation.mac')
+        : t('register.provider.setup_expectation.linux')
+    : t('register.provider.setup_expectation.default')
   const canSubmit = readinessCompleteCount === readinessChecklist.length && !isLoading
 
   useEffect(() => {
@@ -1261,19 +1261,21 @@ function ProviderRegisterPageContent() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-dc1-amber">
-                  Provider readiness
+                  {t('register.provider.readiness.title')}
                 </p>
                 <h2 className="mt-2 text-xl font-bold text-dc1-text-primary">
-                  Finish the three items below to unlock the install command
+                  {t('register.provider.readiness.subtitle')}
                 </h2>
                 <p className="mt-1 text-sm text-dc1-text-secondary">
-                  The backend payload stays the same. This checklist only reduces setup friction before submission.
+                  {t('register.provider.readiness.description')}
                 </p>
               </div>
               <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2 px-4 py-3 text-center sm:min-w-[144px]">
-                <p className="text-xs uppercase tracking-[0.16em] text-dc1-text-muted">Ready</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-dc1-text-muted">{t('register.provider.readiness.ready')}</p>
                 <p className="mt-1 text-3xl font-bold text-dc1-text-primary">{readinessPercent}%</p>
-                <p className="text-xs text-dc1-text-secondary">{readinessCompleteCount} of {readinessChecklist.length} complete</p>
+                <p className="text-xs text-dc1-text-secondary">
+                  {readinessCompleteCount} / {readinessChecklist.length} {t('register.provider.readiness.progress_suffix')}
+                </p>
               </div>
             </div>
 
@@ -1310,15 +1312,15 @@ function ProviderRegisterPageContent() {
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-dc1-text-muted">GPU</p>
+                <p className="text-xs uppercase tracking-[0.14em] text-dc1-text-muted">{t('register.provider.readiness.summary_gpu')}</p>
                 <p className="mt-2 text-sm font-semibold text-dc1-text-primary">{selectedGpuLabel}</p>
               </div>
               <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-dc1-text-muted">Installer</p>
+                <p className="text-xs uppercase tracking-[0.14em] text-dc1-text-muted">{t('register.provider.readiness.summary_installer')}</p>
                 <p className="mt-2 text-sm font-semibold text-dc1-text-primary">{selectedOsLabel}</p>
               </div>
               <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-dc1-text-muted">Expected next step</p>
+                <p className="text-xs uppercase tracking-[0.14em] text-dc1-text-muted">{t('register.provider.readiness.summary_next_step')}</p>
                 <p className="mt-2 text-sm font-semibold text-dc1-text-primary">{setupExpectation}</p>
               </div>
             </div>
@@ -1366,7 +1368,7 @@ function ProviderRegisterPageContent() {
                 {fieldErrors.fullName ? (
                   <p id="fullName-error" className="mt-2 text-sm text-red-400">{fieldErrors.fullName}</p>
                 ) : (
-                  <p className="mt-2 text-xs text-dc1-text-muted">Use the operator or business name tied to this machine.</p>
+                  <p className="mt-2 text-xs text-dc1-text-muted">{t('register.provider.full_name_hint')}</p>
                 )}
               </div>
 
@@ -1391,7 +1393,7 @@ function ProviderRegisterPageContent() {
                   <p id="email-error" className="mt-2 text-sm text-red-400">{fieldErrors.email}</p>
                 ) : (
                   <p id="email-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    We send the daemon setup instructions and provider key to this address.
+                    {t('register.provider.email_hint')}
                   </p>
                 )}
               </div>
@@ -1416,7 +1418,7 @@ function ProviderRegisterPageContent() {
                           target: { name: 'gpuModel', value: gpu.value },
                         } as React.ChangeEvent<HTMLSelectElement>)
                       }
-                      className={`rounded-xl border px-4 py-3 text-left transition-colors ${
+                      className={`rounded-xl border px-4 py-3 ${isRTL ? 'text-right' : 'text-left'} transition-colors ${
                         formData.gpuModel === gpu.value
                           ? 'border-dc1-amber bg-dc1-amber/10'
                           : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-amber/50'
@@ -1449,7 +1451,7 @@ function ProviderRegisterPageContent() {
                   <p id="gpuModel-error" className="mt-2 text-sm text-red-400">{fieldErrors.gpuModel}</p>
                 ) : (
                   <p id="gpuModel-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    Pick the card that will run the DC1 daemon first. You can refine your fleet later.
+                    {t('register.provider.gpu_model_hint')}
                   </p>
                 )}
               </div>
@@ -1457,7 +1459,7 @@ function ProviderRegisterPageContent() {
               {/* VRAM (auto-filled from GPU model) */}
               <div>
                 <label htmlFor="vram" className="label">
-                  VRAM (GB)
+                  {t('register.provider.vram')}
                 </label>
                 <input
                   id="vram"
@@ -1465,7 +1467,7 @@ function ProviderRegisterPageContent() {
                   name="vram"
                   value={formData.vram}
                   onChange={handleInputChange}
-                  placeholder={formData.gpuModel === 'Other' ? 'Enter VRAM for your GPU' : 'Auto-filled from GPU model'}
+                  placeholder={formData.gpuModel === 'Other' ? t('register.provider.vram_placeholder_other') : t('register.provider.vram_placeholder_auto')}
                   className={`input ${fieldErrors.vram ? 'border-red-400 focus:border-red-400' : ''}`}
                   aria-invalid={Boolean(fieldErrors.vram)}
                   aria-describedby={fieldErrors.vram ? 'vram-error' : 'vram-hint'}
@@ -1476,11 +1478,12 @@ function ProviderRegisterPageContent() {
                   <p id="vram-error" className="mt-2 text-sm text-red-400">{fieldErrors.vram}</p>
                 ) : formData.gpuModel && formData.vram ? (
                   <p id="vram-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    {formData.gpuModel === 'Other' ? 'Custom GPU profile captured for registration review.' : `Auto-detected from ${formData.gpuModel}.`}
+                    {formData.gpuModel === 'Other' ? t('register.provider.vram_hint_other') : `${t('register.provider.vram_hint_auto_prefix')} ${formData.gpuModel}.`}
                   </p>
                 ) : (
                   <p id="vram-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    Required only when you choose <span className="font-semibold text-dc1-text-primary">Other</span>.
+                    {t('register.provider.vram_hint_default')}{' '}
+                    <span className="font-semibold text-dc1-text-primary">{t('register.provider.gpu_other')}</span>.
                   </p>
                 )}
               </div>
@@ -1489,7 +1492,7 @@ function ProviderRegisterPageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="locationCity" className="label">
-                    City
+                    {t('register.provider.location_city')}
                   </label>
                   <input
                     id="locationCity"
@@ -1497,13 +1500,13 @@ function ProviderRegisterPageContent() {
                     name="locationCity"
                     value={formData.locationCity}
                     onChange={handleInputChange}
-                    placeholder="Riyadh"
+                    placeholder={t('register.provider.location_city_placeholder')}
                     className="input"
                   />
                 </div>
                 <div>
                   <label htmlFor="locationCountry" className="label">
-                    Country
+                    {t('register.provider.location_country')}
                   </label>
                   <select
                     id="locationCountry"
@@ -1514,23 +1517,23 @@ function ProviderRegisterPageContent() {
                     aria-invalid={Boolean(fieldErrors.locationCountry)}
                     aria-describedby={fieldErrors.locationCountry ? 'locationCountry-error' : 'locationCountry-hint'}
                   >
-                    <option value="">Select country</option>
-                    <option value="SA">Saudi Arabia</option>
-                    <option value="AE">United Arab Emirates</option>
-                    <option value="US">United States</option>
-                    <option value="GB">United Kingdom</option>
-                    <option value="DE">Germany</option>
-                    <option value="FR">France</option>
-                    <option value="NL">Netherlands</option>
-                    <option value="SG">Singapore</option>
-                    <option value="JP">Japan</option>
-                    <option value="Other">Other</option>
+                    <option value="">{t('register.provider.location_country_placeholder')}</option>
+                    <option value="SA">{t('register.provider.country.sa')}</option>
+                    <option value="AE">{t('register.provider.country.ae')}</option>
+                    <option value="US">{t('register.provider.country.us')}</option>
+                    <option value="GB">{t('register.provider.country.gb')}</option>
+                    <option value="DE">{t('register.provider.country.de')}</option>
+                    <option value="FR">{t('register.provider.country.fr')}</option>
+                    <option value="NL">{t('register.provider.country.nl')}</option>
+                    <option value="SG">{t('register.provider.country.sg')}</option>
+                    <option value="JP">{t('register.provider.country.jp')}</option>
+                    <option value="Other">{t('register.provider.country.other')}</option>
                   </select>
                   {fieldErrors.locationCountry ? (
                     <p id="locationCountry-error" className="mt-2 text-sm text-red-400">{fieldErrors.locationCountry}</p>
                   ) : (
                     <p id="locationCountry-hint" className="mt-2 text-xs text-dc1-text-muted">
-                      We use this to localize support instructions and compliance notes.
+                      {t('register.provider.location_country_hint')}
                     </p>
                   )}
                 </div>
@@ -1556,7 +1559,7 @@ function ProviderRegisterPageContent() {
                           target: { name: 'operatingSystem', value: os.value },
                         } as React.ChangeEvent<HTMLSelectElement>)
                       }
-                      className={`rounded-xl border px-4 py-3 text-left transition-colors ${
+                      className={`rounded-xl border px-4 py-3 ${isRTL ? 'text-right' : 'text-left'} transition-colors ${
                         formData.operatingSystem === os.value
                           ? 'border-dc1-amber bg-dc1-amber/10'
                           : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-amber/50'
@@ -1587,7 +1590,7 @@ function ProviderRegisterPageContent() {
                   <p id="operatingSystem-error" className="mt-2 text-sm text-red-400">{fieldErrors.operatingSystem}</p>
                 ) : (
                   <p id="operatingSystem-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    This determines which install command is shown immediately after signup.
+                    {t('register.provider.os_hint')}
                   </p>
                 )}
               </div>
@@ -1611,7 +1614,7 @@ function ProviderRegisterPageContent() {
               {/* Referral Code */}
               <div>
                 <label className="label" htmlFor="referralCode">
-                  Referral Code <span className="text-dc1-text-muted font-normal">(optional)</span>
+                  {t('register.provider.referral.label')} <span className="text-dc1-text-muted font-normal">{t('register.provider.phone_optional')}</span>
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -1619,12 +1622,12 @@ function ProviderRegisterPageContent() {
                     type="text"
                   value={referralCode}
                   onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. DCP-ABC123"
+                  placeholder={t('register.provider.referral.placeholder')}
                   className="input flex-1"
                   disabled={referralStatus === 'applied'}
                   />
                   {referralCode && referralStatus === 'idle' && (
-                    <span className="flex items-center text-xs text-dc1-text-muted px-2">Applied at registration</span>
+                    <span className="flex items-center text-xs text-dc1-text-muted px-2">{t('register.provider.referral.applied')}</span>
                   )}
                 </div>
                 {referralStatus === 'applied' && (
@@ -1637,7 +1640,7 @@ function ProviderRegisterPageContent() {
                   <p className="mt-1.5 text-sm text-red-400">{referralMessage}</p>
                 )}
                 <p className="mt-1 text-xs text-dc1-text-muted">
-                  Have a referral code from another provider? Enter it here to earn bonus rewards.
+                  {t('register.provider.referral.hint')}
                 </p>
               </div>
 
@@ -1681,11 +1684,11 @@ function ProviderRegisterPageContent() {
 
               {/* Submit Button */}
               <p className="text-xs text-dc1-text-muted">
-                Earnings shown in this flow are illustrative scenarios, not payout guarantees.
+                {t('register.provider.earnings_disclaimer')}
               </p>
               {!canSubmit && (
                 <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-3 text-sm text-dc1-text-secondary">
-                  Complete the readiness checklist above to enable registration. The missing fields will highlight automatically.
+                  {t('register.provider.readiness.locked_hint')}
                 </div>
               )}
               <button
@@ -1713,7 +1716,7 @@ function ProviderRegisterPageContent() {
                     {t('register.provider.submitting')}
                   </>
                 ) : (
-                  canSubmit ? t('register.provider.submit') : 'Complete required fields to continue'
+                  canSubmit ? t('register.provider.submit') : t('register.provider.submit_locked')
                 )}
               </button>
 
