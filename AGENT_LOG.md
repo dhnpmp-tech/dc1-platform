@@ -1,3 +1,8 @@
+## [2026-03-30 18:55 UTC] Codex — DCP-153 Provider Available Endpoint Rate Limit Enforcement (Mainline)
+- **Commit**: `pending` - Added dedicated 60 requests/minute throttling to `GET /api/providers/available` and a focused integration test validating the 61st request is rejected.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Public provider marketplace listing now has explicit anti-scraping/abuse controls in route wiring while preserving regular browse behavior. Verification passed with `cd backend && npm test -- --runInBand tests/integration/rate-limiting.test.js -t "providers available route"` (`1 passed, 8 skipped`).
+
 ## [2026-03-30 17:33 UTC] Codex — DCP-146 v1 Tool-Calling Forwarding Parity
 - **Commit**: `pending` - Patched `/v1/chat/completions` provider proxying to forward `tools` and `tool_choice` in both primary and fallback provider attempts.
 - **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`

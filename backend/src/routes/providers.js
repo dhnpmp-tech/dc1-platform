@@ -216,6 +216,13 @@ const benchmarkLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+const availableProvidersLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    message: { error: 'Too many requests. Limit is 60 requests per minute.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // Semantic version comparison: returns -1 (v1<v2), 0 (equal), 1 (v1>v2)
 function compareVersions(v1, v2) {
@@ -4086,7 +4093,7 @@ router.get('/active', (req, res) => {
     }
 });
 
-router.get('/available', (req, res) => {
+router.get('/available', availableProvidersLimiter, (req, res) => {
     try {
         const { COST_RATES } = require('./jobs');
         // Fetch all non-paused providers that have ever sent a heartbeat.
