@@ -1,27 +1,37 @@
-name: Build & Push Instant-Tier Worker Images
+name: Build & Publish Instant-Tier Worker Images
 
 on:
   push:
     branches:
       - main
     paths:
+      - 'docker-templates/nemotron-nano.json'
+      - 'docker-templates/sdxl.json'
+      - 'docker-templates/stable-diffusion.json'
+      - 'backend/docker/Dockerfile.base'
       - 'backend/docker/Dockerfile.llm-worker'
       - 'backend/docker/Dockerfile.sd-worker'
-      - 'backend/docker/base-worker/**'
+      - 'scripts/emit-instant-tier-manifest.mjs'
       - '.github/workflows/docker-instant-tier.yml'
   schedule:
-    # Daily nightly build with full model pre-bake (2 AM UTC)
     - cron: '0 2 * * *'
   workflow_dispatch:
 
 env:
   REGISTRY: docker.io
-  IMAGE_REGISTRY_PATH: dc1
+  IMAGE_NAMESPACE: dc1
+
+concurrency:
+  group: docker-instant-tier-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-llm-worker:
+  publish-instant-tier:
     runs-on: ubuntu-latest
-    name: Build LLM Worker
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    name: Publish instant-tier worker images
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -36,83 +46,109 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Determine build args
-        id: buildargs
+      - name: Prepare image refs
+        id: refs
         run: |
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            echo "skip_prebake=0" >> $GITHUB_OUTPUT
-            echo "build_tag=latest-fullbake" >> $GITHUB_OUTPUT
-          else
-            echo "skip_prebake=1" >> $GITHUB_OUTPUT
-            echo "build_tag=latest" >> $GITHUB_OUTPUT
-          fi
+          echo "immutable_tag=sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "base_ref=${REGISTRY}/${IMAGE_NAMESPACE}/base-worker" >> "$GITHUB_OUTPUT"
+          echo "llm_ref=${REGISTRY}/${IMAGE_NAMESPACE}/llm-worker" >> "$GITHUB_OUTPUT"
+          echo "sd_ref=${REGISTRY}/${IMAGE_NAMESPACE}/sd-worker" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push base worker
+        id: build_base
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/docker
+          file: ./backend/docker/Dockerfile.base
+          push: true
+          tags: |
+            ${{ steps.refs.outputs.base_ref }}:latest
+            ${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
+          cache-from: type=gha,scope=instant-tier-base
+          cache-to: type=gha,mode=max,scope=instant-tier-base
 
       - name: Build and push LLM worker
+        id: build_llm
         uses: docker/build-push-action@v5
         with:
           context: ./backend/docker
           file: ./backend/docker/Dockerfile.llm-worker
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REGISTRY_PATH }}/llm-worker:${{ steps.buildargs.outputs.build_tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REGISTRY_PATH }}/llm-worker:latest
+            ${{ steps.refs.outputs.llm_ref }}:latest
+            ${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.immutable_tag }}
           build-args: |
-            SKIP_MODEL_PREBAKE=${{ steps.buildargs.outputs.skip_prebake }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  build-sd-worker:
-    runs-on: ubuntu-latest
-    name: Build SD Worker
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
-      - name: Determine build args
-        id: buildargs
-        run: |
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            echo "skip_prebake=0" >> $GITHUB_OUTPUT
-            echo "build_tag=latest-fullbake" >> $GITHUB_OUTPUT
-          else
-            echo "skip_prebake=1" >> $GITHUB_OUTPUT
-            echo "build_tag=latest" >> $GITHUB_OUTPUT
-          fi
+            BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
+            SKIP_MODEL_PREBAKE=0
+            PREBAKE_MODEL=nvidia/Nemotron-Mini-4B-Instruct
+          cache-from: type=gha,scope=instant-tier-llm
+          cache-to: type=gha,mode=max,scope=instant-tier-llm
 
       - name: Build and push SD worker
+        id: build_sd
         uses: docker/build-push-action@v5
         with:
           context: ./backend/docker
           file: ./backend/docker/Dockerfile.sd-worker
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REGISTRY_PATH }}/sd-worker:${{ steps.buildargs.outputs.build_tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REGISTRY_PATH }}/sd-worker:latest
+            ${{ steps.refs.outputs.sd_ref }}:latest
+            ${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.immutable_tag }}
           build-args: |
-            SKIP_MODEL_PREBAKE=${{ steps.buildargs.outputs.skip_prebake }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
+            SKIP_MODEL_PREBAKE=0
+            PREBAKE_MODEL=stabilityai/stable-diffusion-xl-base-1.0
+          cache-from: type=gha,scope=instant-tier-sd
+          cache-to: type=gha,mode=max,scope=instant-tier-sd
 
-  notify:
-    needs: [build-llm-worker, build-sd-worker]
-    runs-on: ubuntu-latest
-    if: always()
-    name: Notify build status
-    steps:
-      - name: Check build results
+      - name: Emit manifest
         run: |
-          if [[ "${{ needs.build-llm-worker.result }}" != "success" ]] || [[ "${{ needs.build-sd-worker.result }}" != "success" ]]; then
-            echo "Build failed — check logs"
-            exit 1
-          fi
-          echo "✅ Instant-tier worker images built and pushed successfully"
+          mkdir -p artifacts
+          node scripts/emit-instant-tier-manifest.mjs artifacts/instant-tier-images.json
+        env:
+          IMAGE_REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          BASE_WORKER_DIGEST: ${{ steps.build_base.outputs.digest }}
+          BASE_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
+          LLM_WORKER_DIGEST: ${{ steps.build_llm.outputs.digest }}
+          LLM_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
+          SD_WORKER_DIGEST: ${{ steps.build_sd.outputs.digest }}
+          SD_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
+          LLM_TEMPLATE_IDS: nemotron-nano
+          SD_TEMPLATE_IDS: sdxl,stable-diffusion
+
+      - name: Upload manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant-tier-image-manifest
+          path: artifacts/instant-tier-images.json
+
+      - name: Smoke pull and bootstrap LLM worker
+        run: |
+          docker pull "${{ steps.refs.outputs.llm_ref }}@${{ steps.build_llm.outputs.digest }}"
+          docker run --rm \
+            --entrypoint python \
+            "${{ steps.refs.outputs.llm_ref }}@${{ steps.build_llm.outputs.digest }}" \
+            -c "import torch, vllm; print('llm-worker smoke ok')"
+
+      - name: Smoke pull and bootstrap SD worker
+        run: |
+          docker pull "${{ steps.refs.outputs.sd_ref }}@${{ steps.build_sd.outputs.digest }}"
+          docker run --rm \
+            --entrypoint python \
+            "${{ steps.refs.outputs.sd_ref }}@${{ steps.build_sd.outputs.digest }}" \
+            -c "import torch, diffusers; print('sd-worker smoke ok')"
+
+      - name: Publish summary
+        run: |
+          {
+            echo "## Instant-tier publish"
+            echo ""
+            echo "| Image | Mutable tag | Immutable ref | Digest | Templates |"
+            echo "|---|---|---|---|---|"
+            echo "| base-worker | \`${{ steps.refs.outputs.base_ref }}:latest\` | \`${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_base.outputs.digest }}\` | runtime base |"
+            echo "| llm-worker | \`${{ steps.refs.outputs.llm_ref }}:latest\` | \`${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_llm.outputs.digest }}\` | nemotron-nano |"
+            echo "| sd-worker | \`${{ steps.refs.outputs.sd_ref }}:latest\` | \`${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_sd.outputs.digest }}\` | sdxl, stable-diffusion |"
+            echo ""
+            echo "Manifest artifact: \`instant-tier-image-manifest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
