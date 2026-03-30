@@ -1,3 +1,8 @@
+## [2026-03-30 02:00 UTC] Codex — QA Hold On Provider Register Localization Sign-Off
+- **Commit**: `pending` - Ran diff-aware QA against `agent/backend-dev/dcp-26-payout-reject-email`, confirmed `npm run build` passes, and attempted the targeted Playwright provider-registration suite before documenting the remaining QA blockers.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: QA is still `BLOCKED` for visual sign-off in this container because `PORT=3100` in the shell conflicted with an occupied port on the first run and, after rerunning with `PORT=3000 NODE_ENV=development`, Playwright Chromium still failed to launch due to missing `libglib-2.0.so.0`, so no screenshots or browser-flow evidence could be captured. Static audit of `app/provider/register/page.tsx` shows the new readiness block is localized, but `/provider/register` still contains user-visible English in the Arabic flow outside the new translations, including success/install copy (`title="Copy API key"`, `Linux (Ubuntu/Debian)`, `Windows PowerShell`) and GPU/OS helper cards (`best for premium inference`, `Fastest path for Linux hosts`), so CTO/frontend should treat Arabic UX sign-off as `DONE_WITH_CONCERNS` at best until a dependency-complete QA environment and a follow-up copy sweep are available.
+
 ## [2026-03-30 01:59 UTC] Codex — DCP-62 Provider Register Arabic i18n + RTL Critical-Path Remediation
 - **Commit**: `3b338fc` - Localized remaining critical-path provider register strings into i18n, added missing validation keys for `vram` and `locationCountry` in both locales, and made GPU/OS selectable-card alignment RTL-aware in Arabic mode while preserving existing analytics event names/payloads.
 - **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
