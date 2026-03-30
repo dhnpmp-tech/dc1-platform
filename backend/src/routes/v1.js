@@ -15,6 +15,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 
@@ -201,9 +202,11 @@ function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
 }
 
-async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream }) {
+async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
+  if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
+  if (toolChoice !== null && toolChoice !== undefined) body.tool_choice = toolChoice;
   let response;
   try {
     response = await fetch(url, {
@@ -318,6 +321,8 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         maxTokens,
         temperature,
         stream: wantsStream,
+        tools,
+        toolChoice,
       });
 
       const debitAndReturnProxyResult = (resultBody) => {
@@ -336,16 +341,35 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         return res.json(resultBody);
       };
 
-      const writeStreamingResponse = (streamResponse) => {
+      const writeStreamingResponse = async (streamResponse) => {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        streamResponse.body.pipe(res);
+        const upstreamBody = streamResponse?.body;
+        if (!upstreamBody) throw new Error('Upstream stream body missing');
+
+        if (typeof upstreamBody.pipe === 'function') {
+          upstreamBody.pipe(res);
+          return;
+        }
+
+        if (typeof Readable.fromWeb === 'function') {
+          Readable.fromWeb(upstreamBody).pipe(res);
+          return;
+        }
+
+        const reader = upstreamBody.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) res.write(Buffer.from(value));
+        }
+        res.end();
       };
 
       if (wantsStream && proxyResult.streamResponse) {
-        writeStreamingResponse(proxyResult.streamResponse);
+        await writeStreamingResponse(proxyResult.streamResponse);
         return;
       }
 
@@ -368,12 +392,14 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
           maxTokens,
           temperature,
           stream: wantsStream,
+          tools,
+          toolChoice,
         });
 
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
-          writeStreamingResponse(fallbackResult.streamResponse);
+          await writeStreamingResponse(fallbackResult.streamResponse);
           return;
         }
 
