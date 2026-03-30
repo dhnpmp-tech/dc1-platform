@@ -1,3 +1,8 @@
+## [2026-03-30 19:06 UTC] Codex — DCP-154 Provider Health Endpoint Rate Limit Enforcement (Mainline)
+- **Commit**: `pending` - Added benchmark throttling to `GET /api/providers/:id/health` and a focused integration test validating the 31st unauthenticated request is rejected.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Provider health polling route now has explicit 30 requests/minute protection in mainline wiring, reducing brute-force/enumeration pressure while preserving auth semantics on allowed requests. Verification passed with `cd backend && npm test -- --runInBand tests/integration/rate-limiting.test.js -t "provider health route"` (`1 passed, 8 skipped`).
+
 ## [2026-03-30 17:33 UTC] Codex — DCP-146 v1 Tool-Calling Forwarding Parity
 - **Commit**: `pending` - Patched `/v1/chat/completions` provider proxying to forward `tools` and `tool_choice` in both primary and fallback provider attempts.
 - **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`
