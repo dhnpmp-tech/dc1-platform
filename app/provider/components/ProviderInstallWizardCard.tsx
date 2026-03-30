@@ -22,6 +22,7 @@ interface ProviderInstallWizardCardProps {
 }
 
 const HEARTBEAT_FRESH_SECONDS = 90
+const WIZARD_STORAGE_KEY = 'dc1_provider_install_wizard_v1'
 
 const OS_OPTIONS: Array<{ id: InstallTarget; label: string }> = [
   { id: 'linux', label: 'Linux' },
@@ -34,6 +35,13 @@ const PREREQUISITE_LABELS: Record<PrereqKey, string> = {
   docker: 'Docker is installed and daemon is running',
   python: 'Python 3.10+ is installed',
   network: 'Machine can reach api.dcp.sa over HTTPS',
+}
+
+const DEFAULT_PREREQUISITES: Record<PrereqKey, boolean> = {
+  nvidia: false,
+  docker: false,
+  python: false,
+  network: false,
 }
 
 function getHeartbeatAgeSeconds(lastHeartbeat: string): number | null {
@@ -70,12 +78,7 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
   const [liveSnapshot, setLiveSnapshot] = useState<ProviderLiveSnapshot>(initialSnapshot)
   const [pollError, setPollError] = useState('')
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string>('')
-  const [prerequisites, setPrerequisites] = useState<Record<PrereqKey, boolean>>({
-    nvidia: false,
-    docker: false,
-    python: false,
-    network: false,
-  })
+  const [prerequisites, setPrerequisites] = useState<Record<PrereqKey, boolean>>(DEFAULT_PREREQUISITES)
 
   const installApiBase = useMemo(() => getProviderInstallApiBase(), [])
 
@@ -121,6 +124,39 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
       detail: liveSnapshot.isPaused ? 'Paused' : 'Active',
     },
   ]
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(WIZARD_STORAGE_KEY)
+      if (!raw) return
+      const saved = JSON.parse(raw) as { selectedOs?: InstallTarget; prerequisites?: Partial<Record<PrereqKey, boolean>> }
+
+      if (saved?.selectedOs && OS_OPTIONS.some((option) => option.id === saved.selectedOs)) {
+        setSelectedOs(saved.selectedOs)
+      }
+
+      if (saved?.prerequisites) {
+        setPrerequisites({
+          ...DEFAULT_PREREQUISITES,
+          ...saved.prerequisites,
+        })
+      }
+    } catch {
+      // Ignore malformed persisted state and continue with defaults.
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(
+      WIZARD_STORAGE_KEY,
+      JSON.stringify({
+        selectedOs,
+        prerequisites,
+      })
+    )
+  }, [prerequisites, selectedOs])
 
   useEffect(() => {
     if (!apiKey) return
@@ -173,6 +209,10 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
     return () => clearTimeout(timer)
   }, [copied])
 
+  useEffect(() => {
+    setCopied(false)
+  }, [selectedOs])
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(installCommand)
@@ -187,6 +227,10 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
       ...prev,
       [key]: !prev[key],
     }))
+  }
+
+  const handleResetChecklist = () => {
+    setPrerequisites(DEFAULT_PREREQUISITES)
   }
 
   return (
@@ -221,6 +265,13 @@ export default function ProviderInstallWizardCard({ apiKey, initialSnapshot }: P
           <p className="text-xs mt-3 text-dc1-text-muted">
             {prerequisitesComplete ? 'All prerequisites confirmed.' : 'Confirm all four items before running installer.'}
           </p>
+          <button
+            type="button"
+            onClick={handleResetChecklist}
+            className="mt-3 rounded-lg border border-dc1-border px-3 py-1.5 text-xs font-medium text-dc1-text-secondary hover:text-dc1-text-primary min-h-[34px]"
+          >
+            Reset checklist
+          </button>
         </div>
 
         <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-4 xl:col-span-2">
