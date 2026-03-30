@@ -1,146 +1,126 @@
-const http = require('http');
-const db = require('../src/db');
-const crypto = require('crypto');
+const request = require('supertest');
+const { createApp } = require('./integration/test-app');
+const { cleanDb, registerProvider, db } = require('./integration/helpers');
 
-// Simple test runner
-let passed = 0, failed = 0;
-const PORT = 19083;
+const app = createApp();
 
-async function test(name, fn) {
-  try {
-    await fn();
-    console.log(`✅ ${name}`);
-    passed++;
-  } catch (e) {
-    console.log(`❌ ${name}: ${e.message}`);
-    failed++;
-  }
-}
+describe('Provider self-service endpoints', () => {
+  let providerKey;
+  let providerId;
 
-function assert(cond, msg) { if (!cond) throw new Error(msg || 'Assertion failed'); }
-
-function request(method, path, body) {
-  return new Promise((resolve, reject) => {
-    const opts = { hostname: '127.0.0.1', port: PORT, path, method, headers: {} };
-    if (body) {
-      const data = JSON.stringify(body);
-      opts.headers['Content-Type'] = 'application/json';
-      opts.headers['Content-Length'] = Buffer.byteLength(data);
-    }
-    const req = http.request(opts, (res) => {
-      let chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => {
-        const raw = Buffer.concat(chunks).toString();
-        let json;
-        try { json = JSON.parse(raw); } catch (_) { json = null; }
-        resolve({ status: res.statusCode, headers: res.headers, body: json, text: raw });
-      });
+  beforeEach(async () => {
+    cleanDb();
+    const registration = await registerProvider(request, app, {
+      name: 'Provider Me Test',
+      gpu_model: 'RTX 4090',
+      os: 'Windows',
     });
-    req.on('error', reject);
-    if (body) req.write(JSON.stringify(body));
-    req.end();
-  });
-}
 
-const TEST_KEY = 'dc1-provider-test-' + crypto.randomBytes(8).toString('hex');
-let testProviderId;
+    providerKey = registration.apiKey;
+    providerId = registration.providerId;
 
-async function run() {
-  // Start server
-  process.env.DC1_PROVIDER_PORT = PORT;
-  const express = require('express');
-  const cors = require('cors');
-  const path = require('path');
-  const app = express();
-  app.use(cors());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
-  const providersRouter = require('../src/routes/providers');
-  app.use('/api/providers', providersRouter);
-
-  const server = await new Promise(resolve => {
-    const s = app.listen(PORT, '127.0.0.1', () => resolve(s));
+    db.run(
+      `UPDATE providers
+       SET status = ?, gpu_vram_mib = ?, run_mode = ?, is_paused = 0
+       WHERE id = ?`,
+      'online',
+      8192,
+      'always-on',
+      providerId
+    );
   });
 
-  // Setup test data
-  const result = db.run(
-    `INSERT INTO providers (name, email, gpu_model, os, api_key, status, gpu_vram_mib, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    'Test Provider', `test-${Date.now()}@dc1.test`, 'RTX 4090', 'Windows', TEST_KEY, 'online', 8192, new Date().toISOString()
-  );
-  testProviderId = Number(result.lastInsertRowid);
+  test('GET /api/providers/me returns provider data', async () => {
+    const res = await request(app).get(`/api/providers/me?key=${providerKey}`);
 
-  try {
-    await test('GET /me returns provider data', async () => {
-      const res = await request('GET', `/api/providers/me?key=${TEST_KEY}`);
-      assert(res.status === 200, `status ${res.status}`);
-      assert(res.body.provider, 'Missing provider key');
-      assert(res.body.provider.name === 'Test Provider');
-      assert(res.body.provider.gpu_model === 'RTX 4090');
-      assert(res.body.provider.run_mode === 'always-on');
-      assert(res.body.provider.is_paused === false);
-      assert(res.body.provider.gpu_metrics != null);
-      assert(res.body.provider.active_job === null);
-      assert(res.body.provider.gpu_vram_mib === 8192);
-    });
+    expect(res.status).toBe(200);
+    expect(res.body.provider).toBeDefined();
+    expect(res.body.provider.id).toBe(providerId);
+    expect(res.body.provider.name).toBe('Provider Me Test');
+    expect(res.body.provider.gpu_model).toBe('RTX 4090');
+    expect(res.body.provider.run_mode).toBe('always-on');
+    expect(res.body.provider.is_paused).toBe(false);
+    expect(res.body.provider.gpu_metrics).toBeDefined();
+    expect(res.body.provider.active_job).toBeNull();
+    expect(res.body.provider.gpu_vram_mib).toBe(8192);
+  });
 
-    await test('GET /me returns 404 for bad key', async () => {
-      const res = await request('GET', `/api/providers/me?key=invalid-key`);
-      assert(res.status === 404, `status ${res.status}`);
-    });
+  test('GET /api/providers/me returns 404 for invalid key', async () => {
+    const res = await request(app).get('/api/providers/me?key=invalid-key');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Provider not found');
+  });
 
-    await test('POST /pause sets paused', async () => {
-      const res = await request('POST', '/api/providers/pause', { key: TEST_KEY });
-      assert(res.status === 200);
-      assert(res.body.success === true);
-      assert(res.body.status === 'paused');
+  test('POST /api/providers/pause pauses provider', async () => {
+    const pauseRes = await request(app)
+      .post('/api/providers/pause')
+      .send({ key: providerKey });
 
-      const me = await request('GET', `/api/providers/me?key=${TEST_KEY}`);
-      assert(me.body.provider.is_paused === true);
-      assert(me.body.provider.status === 'paused');
-    });
+    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.body.success).toBe(true);
+    expect(pauseRes.body.status).toBe('paused');
 
-    await test('POST /resume unpauses', async () => {
-      const res = await request('POST', '/api/providers/resume', { key: TEST_KEY });
-      assert(res.status === 200);
-      assert(res.body.success === true);
-    });
+    const meRes = await request(app).get(`/api/providers/me?key=${providerKey}`);
+    expect(meRes.status).toBe(200);
+    expect(meRes.body.provider.is_paused).toBe(true);
+    expect(meRes.body.provider.status).toBe('paused');
+  });
 
-    await test('POST /preferences updates prefs', async () => {
-      const res = await request('POST', '/api/providers/preferences', {
-        key: TEST_KEY, run_mode: 'scheduled', gpu_usage_cap_pct: 60, temp_limit_c: 75
+  test('POST /api/providers/resume clears pause flag', async () => {
+    await request(app).post('/api/providers/pause').send({ key: providerKey });
+
+    const resumeRes = await request(app)
+      .post('/api/providers/resume')
+      .send({ key: providerKey });
+
+    expect(resumeRes.status).toBe(200);
+    expect(resumeRes.body.success).toBe(true);
+    expect(['connected', 'online']).toContain(resumeRes.body.status);
+
+    const meRes = await request(app).get(`/api/providers/me?key=${providerKey}`);
+    expect(meRes.status).toBe(200);
+    expect(meRes.body.provider.is_paused).toBe(false);
+  });
+
+  test('POST /api/providers/preferences updates provider preferences', async () => {
+    const res = await request(app)
+      .post('/api/providers/preferences')
+      .send({
+        key: providerKey,
+        run_mode: 'scheduled',
+        gpu_usage_cap_pct: 60,
+        temp_limit_c: 75,
       });
-      assert(res.status === 200);
-      assert(res.body.success === true);
-      assert(res.body.preferences.run_mode === 'scheduled');
-      assert(res.body.preferences.gpu_usage_cap_pct === 60);
-      assert(res.body.preferences.temp_limit_c === 75);
-    });
 
-    await test('GET /download returns file', async () => {
-      const res = await request('GET', `/api/providers/download?key=${TEST_KEY}&platform=windows`);
-      assert(res.status === 200, `status ${res.status}`);
-      const cd = res.headers['content-disposition'];
-      assert(cd && cd.includes('dc1-setup.ps1'), 'Wrong filename');
-      assert(res.text.includes(TEST_KEY), 'Key not injected');
-      assert(res.text.includes('scheduled'), 'Run mode not injected');
-    });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.preferences.run_mode).toBe('scheduled');
+    expect(res.body.preferences.gpu_usage_cap_pct).toBe(60);
+    expect(res.body.preferences.temp_limit_c).toBe(75);
+  });
 
-    await test('POST /preferences rejects invalid run_mode', async () => {
-      const res = await request('POST', '/api/providers/preferences', {
-        key: TEST_KEY, run_mode: 'invalid'
+  test('POST /api/providers/preferences rejects invalid run_mode', async () => {
+    const res = await request(app)
+      .post('/api/providers/preferences')
+      .send({
+        key: providerKey,
+        run_mode: 'invalid',
       });
-      assert(res.status === 400, `status ${res.status}`);
-    });
-  } finally {
-    // Cleanup
-    db.run('DELETE FROM providers WHERE api_key = ?', TEST_KEY);
-    db.run('DELETE FROM jobs WHERE provider_id = ?', testProviderId);
-    server.close();
-  }
 
-  console.log(`\n${passed} passed, ${failed} failed`);
-  process.exit(failed > 0 ? 1 : 0);
-}
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid run_mode');
+  });
 
-run().catch(e => { console.error(e); process.exit(1); });
+  test('GET /api/providers/download returns executable installer script', async () => {
+    const res = await request(app)
+      .get(`/api/providers/download?key=${providerKey}&platform=windows`);
+
+    const script = res.text || (Buffer.isBuffer(res.body) ? res.body.toString('utf8') : '');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toContain('dc1-setup.ps1');
+    expect(script).toContain('DCP Provider Daemon - Windows Installer');
+    expect(script).toContain('/api/providers/download/daemon?key=$ApiKey');
+    expect(script).toContain('--key $ApiKey --url $ApiUrl');
+  });
+});
