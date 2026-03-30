@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 18:44 UTC] Codex — DCP-147 Removed Duplicate Live Telemetry Surface
-- **Commit**: `pending` - Removed the standalone homepage “Live telemetry” band and its supporting aggregate array so live trust metrics are presented in one canonical place (hero trust rail), reducing repeated messaging.
+- **Commit**: `215d0bc` - Removed the standalone homepage “Live telemetry” band and its supporting aggregate array so live trust metrics are presented in one canonical place (hero trust rail), reducing repeated messaging.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Homepage scanning is cleaner and trust data hierarchy is less repetitive. QA should confirm no missing metric regressions in the hero trust rail.
