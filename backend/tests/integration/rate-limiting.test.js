@@ -9,7 +9,7 @@
  * Rate limiter config tested (mirroring server.js):
  *   - Provider registration: 5/hr → 429 on 6th request
  *   - Renter registration:   5/hr → same
- *   - Job submission:        30/min → tested via low-max fixture
+ *   - Job submission:        20/min per renter key
  *   - Admin endpoints:       100/min → tested via low-max fixture
  */
 
@@ -100,23 +100,10 @@ describe('Rate limiting — provider registration (max: 5/hr)', () => {
       message: { error: 'Too many registration attempts. Try again in 1 hour.' },
       standardHeaders: true, legacyHeaders: false,
     });
+    const app = buildLimitedApp('post', '/api/providers/register', limiter, makeOkHandler());
+    const statuses = await hitNTimes(app, 'post', '/api/providers/register', 6, {});
 
-    const app = express();
-    app.use(express.json());
-    app.use('/api/providers/register', limiter);
-    // Fresh routes for isolation
-    const provRoute = (() => { const p = require.resolve('../../src/routes/providers'); delete require.cache[p]; return require('../../src/routes/providers'); })();
-    app.use('/api/providers', provRoute);
-
-    const base = { name: 'T', email: 'x@x.com', gpu_model: 'RTX', os: 'Linux' };
-    const statuses = [];
-    for (let i = 0; i < 6; i++) {
-      const payload = { ...base, email: `reg-${i}-${Date.now()}@dc1.test` };
-      const res = await request(app).post('/api/providers/register').send(payload);
-      statuses.push(res.status);
-    }
-
-    // First 5 succeed (200), 6th is rate limited (429)
+    // First 5 succeed, 6th is rate limited
     expect(statuses.slice(0, 5).every(s => s === 200)).toBe(true);
     expect(statuses[5]).toBe(429);
   });
@@ -164,12 +151,12 @@ describe('Rate limiting — job submission (max: 30/min)', () => {
 });
 
 describe('Rate limiting — per API key policy (DCP-270)', () => {
-  it('enforces 10 requests/minute per renter key and returns retryAfterMs', async () => {
+  it('enforces 20 requests/minute per renter key and returns retryAfterMs', async () => {
     const app = buildLimitedApp('post', '/api/jobs/submit', jobSubmitLimiter, makeOkHandler());
     const keyA = 'dc1-renter-key-a';
     const keyB = 'dc1-renter-key-b';
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       const res = await request(app)
         .post('/api/jobs/submit')
         .set('x-renter-key', keyA)
