@@ -32343,3 +32343,8 @@ a
 - **Commit**: `65abb0e` - Verified the branch head is already synced with `origin/main`, reran the targeted backend release gate for the `location_country` compatibility fix, and prepared the branch for PR creation against `main`.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Release branch `agent/backend-dev/dcp-82-register-location-country-compat` is ready for merge review with backend verification green: `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js` passed (`75/75`). No repo-specific `VERSION` bump was required because the repository does not maintain a standalone version file for branch releases, and `docs/CHANGELOG.md` remains the launch changelog rather than an active per-PR ledger.
+
+## [2026-03-30 10:08 UTC] Codex — Release Landed: PR #92 Merged To Main
+- **Commit**: `6bc4ba7` - Merged PR #92 from `agent/backend-dev/dcp-82-register-location-country-compat` into `main` after confirming the PR was mergeable and Vercel reported the head commit `c896700` as `success`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
