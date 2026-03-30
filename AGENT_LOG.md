@@ -1,3 +1,8 @@
+## [2026-03-30 04:45 UTC] Codex — DCP-40 Component Fallback Localization Repair
+- **Commit**: `30062b2` - Replaced brittle `t(key) || fallback` usage in marketplace shared components with language-aware fallback helpers so missing translation keys no longer leak raw keys/English text in Arabic mode.
+- **Files**: `app/components/marketplace/ModelBrowsing.tsx`, `app/components/marketplace/TemplateCatalog.tsx`, `AGENT_LOG.md`
+- **Impact**: Marketplace model browsing/template catalog now render intentional Arabic copy for loading/error/filter/status and catalog metadata fallback strings even when a translation key is absent, reducing mixed-language UI regressions in RTL flows.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
