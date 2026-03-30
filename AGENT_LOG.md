@@ -32435,6 +32435,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 18:40 UTC] Codex — DCP-146 Mobile First-Fold Density Reduction
-- **Commit**: `pending` - Reduced above-the-fold mobile content density by tightening hero spacing, hiding secondary explanatory copy and tertiary links on small breakpoints, and keeping the primary CTA path visible earlier without removing desktop information.
+- **Commit**: `b5bb541` - Reduced above-the-fold mobile content density by tightening hero spacing, hiding secondary explanatory copy and tertiary links on small breakpoints, and keeping the primary CTA path visible earlier without removing desktop information.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Mobile first viewport is cleaner and reaches action faster, while desktop retains full context. QA should verify 390x844 readability and no regression on sm+ breakpoints.
