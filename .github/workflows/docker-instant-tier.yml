@@ -49,7 +49,7 @@ jobs:
       - name: Prepare image refs
         id: refs
         run: |
-          echo "sha_tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "immutable_tag=sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
           echo "base_ref=${REGISTRY}/${IMAGE_NAMESPACE}/base-worker" >> "$GITHUB_OUTPUT"
           echo "llm_ref=${REGISTRY}/${IMAGE_NAMESPACE}/llm-worker" >> "$GITHUB_OUTPUT"
           echo "sd_ref=${REGISTRY}/${IMAGE_NAMESPACE}/sd-worker" >> "$GITHUB_OUTPUT"
@@ -63,7 +63,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.refs.outputs.base_ref }}:latest
-            ${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.sha_tag }}
+            ${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
           cache-from: type=gha,scope=instant-tier-base
           cache-to: type=gha,mode=max,scope=instant-tier-base
 
@@ -76,9 +76,9 @@ jobs:
           push: true
           tags: |
             ${{ steps.refs.outputs.llm_ref }}:latest
-            ${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.sha_tag }}
+            ${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.immutable_tag }}
           build-args: |
-            BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.sha_tag }}
+            BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
             SKIP_MODEL_PREBAKE=0
             PREBAKE_MODEL=nvidia/Nemotron-Mini-4B-Instruct
           cache-from: type=gha,scope=instant-tier-llm
@@ -93,9 +93,9 @@ jobs:
           push: true
           tags: |
             ${{ steps.refs.outputs.sd_ref }}:latest
-            ${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.sha_tag }}
+            ${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.immutable_tag }}
           build-args: |
-            BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.sha_tag }}
+            BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
             SKIP_MODEL_PREBAKE=0
             PREBAKE_MODEL=stabilityai/stable-diffusion-xl-base-1.0
           cache-from: type=gha,scope=instant-tier-sd
@@ -109,11 +109,11 @@ jobs:
           IMAGE_REGISTRY: ${{ env.REGISTRY }}
           IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
           BASE_WORKER_DIGEST: ${{ steps.build_base.outputs.digest }}
-          BASE_WORKER_SHA_TAG: ${{ steps.refs.outputs.sha_tag }}
+          BASE_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
           LLM_WORKER_DIGEST: ${{ steps.build_llm.outputs.digest }}
-          LLM_WORKER_SHA_TAG: ${{ steps.refs.outputs.sha_tag }}
+          LLM_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
           SD_WORKER_DIGEST: ${{ steps.build_sd.outputs.digest }}
-          SD_WORKER_SHA_TAG: ${{ steps.refs.outputs.sha_tag }}
+          SD_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
           LLM_TEMPLATE_IDS: nemotron-nano
           SD_TEMPLATE_IDS: sdxl,stable-diffusion
 
@@ -146,9 +146,9 @@ jobs:
             echo ""
             echo "| Image | Mutable tag | Immutable ref | Digest | Templates |"
             echo "|---|---|---|---|---|"
-            echo "| base-worker | \`${{ steps.refs.outputs.base_ref }}:latest\` | \`${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.sha_tag }}\` | \`${{ steps.build_base.outputs.digest }}\` | runtime base |"
-            echo "| llm-worker | \`${{ steps.refs.outputs.llm_ref }}:latest\` | \`${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.sha_tag }}\` | \`${{ steps.build_llm.outputs.digest }}\` | nemotron-nano |"
-            echo "| sd-worker | \`${{ steps.refs.outputs.sd_ref }}:latest\` | \`${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.sha_tag }}\` | \`${{ steps.build_sd.outputs.digest }}\` | sdxl, stable-diffusion |"
+            echo "| base-worker | \`${{ steps.refs.outputs.base_ref }}:latest\` | \`${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_base.outputs.digest }}\` | runtime base |"
+            echo "| llm-worker | \`${{ steps.refs.outputs.llm_ref }}:latest\` | \`${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_llm.outputs.digest }}\` | nemotron-nano |"
+            echo "| sd-worker | \`${{ steps.refs.outputs.sd_ref }}:latest\` | \`${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_sd.outputs.digest }}\` | sdxl, stable-diffusion |"
             echo ""
             echo "Manifest artifact: \`instant-tier-image-manifest\`"
           } >> "$GITHUB_STEP_SUMMARY"
