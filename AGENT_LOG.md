@@ -1,3 +1,8 @@
+## [2026-03-30 13:42 UTC] Codex — DCP-110 V1 Model Registry Legacy Schema Compatibility Hardening
+- **Commit**: `0fe3d1a` - Hardened  and  against legacy/missing  schemas, including safe fallbacks for absent columns and missing tables.
+- **Files**: , , 
+- **Impact**: OpenAI-compatible v1 inference paths now fail open to safe defaults on legacy databases instead of returning 500s; targeted compatibility coverage exists for list + chat paths.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
