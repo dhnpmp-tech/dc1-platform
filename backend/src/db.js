@@ -971,6 +971,8 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN completion_tokens INTEGER',
   // Model cache tier for provider job routing — Sprint 25 Gap 5
   "ALTER TABLE model_registry ADD COLUMN prewarm_class TEXT DEFAULT 'warm'",
+  // OpenRouter model metadata compatibility — DCP-112
+  'ALTER TABLE model_registry ADD COLUMN parameter_count TEXT',
   // Actual elapsed seconds for sub-minute billing accuracy — Sprint 25 Gap 3
   'ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER',
   // Template-based job submission — Sprint 27
