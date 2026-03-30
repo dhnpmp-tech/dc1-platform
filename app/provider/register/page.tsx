@@ -349,11 +349,11 @@ function ProviderRegisterPageContent() {
           } else {
             const refErr = await refRes.json().catch(() => ({}))
             setReferralStatus('error')
-            setReferralMessage((refErr as { error?: string }).error || 'Could not apply referral code')
+            setReferralMessage((refErr as { error?: string }).error || t('register.provider.referral.error_apply'))
           }
         } catch {
           setReferralStatus('error')
-          setReferralMessage('Could not apply referral code')
+          setReferralMessage(t('register.provider.referral.error_apply'))
         }
       }
 
@@ -676,7 +676,7 @@ function ProviderRegisterPageContent() {
                   <button
                     onClick={() => copyToClipboard(apiKey, 0)}
                     className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
-                    title="Copy API key"
+                    title={t('register.provider.copy_api_key')}
                   >
                     {copiedIndex === 0 ? (
                       <svg
@@ -725,14 +725,14 @@ function ProviderRegisterPageContent() {
                   {/* Linux Instructions */}
                   <div>
                     <h3 className="text-sm font-semibold text-dc1-text-primary mb-2">
-                      Linux (Ubuntu/Debian)
+                      {t('register.provider.install_linux_title')}
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
                       <code className="text-dc1-amber">{linuxInstallCommand}</code>
                       <button
                         onClick={() => copyToClipboard(linuxInstallCommand, 1)}
                         className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
-                        title="Copy installation command"
+                        title={t('register.provider.copy_install_command')}
                       >
                         {copiedIndex === 1 ? (
                           <svg
@@ -768,14 +768,14 @@ function ProviderRegisterPageContent() {
                   {/* Windows Instructions */}
                   <div>
                     <h3 className="text-sm font-semibold text-dc1-text-primary mb-2">
-                      Windows PowerShell
+                      {t('register.provider.install_windows_title')}
                     </h3>
                     <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-border p-4 font-mono text-xs overflow-x-auto">
                       <code className="text-dc1-amber">{windowsInstallCommand}</code>
                       <button
                         onClick={() => copyToClipboard(windowsInstallCommand, 2)}
                         className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
-                        title="Copy installation command"
+                        title={t('register.provider.copy_install_command')}
                       >
                         {copiedIndex === 2 ? (
                           <svg
@@ -1227,30 +1227,30 @@ function ProviderRegisterPageContent() {
         {/* Earnings Transparency */}
         <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="card border-dc1-amber/20">
-            <h2 className="text-xl font-bold text-dc1-text-primary mb-1">How provider earnings work</h2>
+            <h2 className="text-xl font-bold text-dc1-text-primary mb-1">{t('register.provider.earnings.title')}</h2>
             <p className="text-dc1-text-secondary text-sm mb-6">
-              Earnings are based on completed workload demand and machine availability, not fixed guarantees.
+              {t('register.provider.earnings.description')}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
-                <p className="text-sm font-semibold text-dc1-text-primary mb-2">What increases earnings</p>
+                <p className="text-sm font-semibold text-dc1-text-primary mb-2">{t('register.provider.earnings.increase_title')}</p>
                 <ul className="space-y-2 text-sm text-dc1-text-secondary">
-                  <li>Consistent daemon uptime and heartbeat health</li>
-                  <li>Fast job acceptance and completion reliability</li>
-                  <li>Popular GPU availability when demand is high</li>
+                  <li>{t('register.provider.earnings.increase_item_1')}</li>
+                  <li>{t('register.provider.earnings.increase_item_2')}</li>
+                  <li>{t('register.provider.earnings.increase_item_3')}</li>
                 </ul>
               </div>
               <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
-                <p className="text-sm font-semibold text-dc1-text-primary mb-2">How to validate performance</p>
+                <p className="text-sm font-semibold text-dc1-text-primary mb-2">{t('register.provider.earnings.validate_title')}</p>
                 <ul className="space-y-2 text-sm text-dc1-text-secondary">
-                  <li>Track completed jobs and realized earnings in your dashboard</li>
-                  <li>Review heartbeat status to avoid offline gaps</li>
-                  <li>Use provider docs for optimization and troubleshooting</li>
+                  <li>{t('register.provider.earnings.validate_item_1')}</li>
+                  <li>{t('register.provider.earnings.validate_item_2')}</li>
+                  <li>{t('register.provider.earnings.validate_item_3')}</li>
                 </ul>
               </div>
             </div>
             <p className="text-xs text-dc1-text-muted mt-4">
-              DCP does not guarantee fixed income outcomes. Realized earnings vary by demand, uptime, and accepted jobs.
+              {t('register.provider.earnings.disclaimer')}
             </p>
           </div>
         </section>
@@ -1405,10 +1405,10 @@ function ProviderRegisterPageContent() {
                 </label>
                 <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {[
-                    { value: 'RTX 4090', label: 'RTX 4090', helper: '24 GB, best for premium inference' },
-                    { value: 'RTX 4080', label: 'RTX 4080', helper: '16 GB, efficient entry point' },
-                    { value: 'RTX 3090', label: 'RTX 3090', helper: '24 GB, widely available' },
-                    { value: 'H100', label: 'H100', helper: '80 GB, top-tier data center card' },
+                    { value: 'RTX 4090', label: 'RTX 4090', helper: t('register.provider.gpu_option.rtx4090_helper') },
+                    { value: 'RTX 4080', label: 'RTX 4080', helper: t('register.provider.gpu_option.rtx4080_helper') },
+                    { value: 'RTX 3090', label: 'RTX 3090', helper: t('register.provider.gpu_option.rtx3090_helper') },
+                    { value: 'H100', label: 'H100', helper: t('register.provider.gpu_option.h100_helper') },
                   ].map((gpu) => (
                     <button
                       key={gpu.value}
@@ -1546,10 +1546,10 @@ function ProviderRegisterPageContent() {
                 </label>
                 <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {[
-                    { value: 'Ubuntu 22.04', label: 'Ubuntu 22.04', helper: 'Fastest path for Linux hosts' },
-                    { value: 'Ubuntu 20.04', label: 'Ubuntu 20.04', helper: 'Supported for existing fleets' },
-                    { value: 'Windows 10/11', label: 'Windows 10/11', helper: 'PowerShell installer flow' },
-                    { value: 'Other Linux', label: 'Other Linux', helper: 'Use when you manage another distro' },
+                    { value: 'Ubuntu 22.04', label: 'Ubuntu 22.04', helper: t('register.provider.os_option.ubuntu_2204_helper') },
+                    { value: 'Ubuntu 20.04', label: 'Ubuntu 20.04', helper: t('register.provider.os_option.ubuntu_2004_helper') },
+                    { value: 'Windows 10/11', label: 'Windows 10/11', helper: t('register.provider.os_option.windows_helper') },
+                    { value: 'Other Linux', label: 'Other Linux', helper: t('register.provider.os_option.other_linux_helper') },
                   ].map((os) => (
                     <button
                       key={os.value}
