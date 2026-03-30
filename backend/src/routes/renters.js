@@ -111,6 +111,99 @@ function parseCachedModels(rawCachedModels) {
   }
 }
 
+function parseAvailableProvidersQuery(query = {}) {
+  const pageRaw = query.page;
+  const limitRaw = query.limit;
+  const minVramRaw = query.min_vram_gb;
+  const gpuModelRaw = query.gpu_model;
+  const locationRaw = query.location;
+
+  let page = 1;
+  if (pageRaw != null) {
+    const parsedPage = toFiniteInt(pageRaw, { min: 1, max: 1_000_000 });
+    if (parsedPage == null) return { error: 'page must be a positive integer' };
+    page = parsedPage;
+  }
+
+  let limit = 20;
+  if (limitRaw != null) {
+    const parsedLimit = toFiniteInt(limitRaw, { min: 1, max: 1_000_000 });
+    if (parsedLimit == null) return { error: 'limit must be a positive integer' };
+    limit = Math.min(parsedLimit, 100);
+  }
+
+  let minVramGb = null;
+  if (minVramRaw != null) {
+    const parsedMinVram = toFiniteNumber(minVramRaw, { min: 0, max: 1024 });
+    if (parsedMinVram == null) {
+      return { error: 'min_vram_gb must be a number between 0 and 1024' };
+    }
+    minVramGb = parsedMinVram;
+  }
+
+  let gpuModel = null;
+  if (gpuModelRaw != null) {
+    const normalizedGpuModel = normalizeString(gpuModelRaw, { maxLen: 120 });
+    if (!normalizedGpuModel) return { error: 'gpu_model must be a non-empty string' };
+    gpuModel = normalizedGpuModel.toLowerCase();
+  }
+
+  let location = null;
+  if (locationRaw != null) {
+    const normalizedLocation = normalizeString(locationRaw, { maxLen: 120 });
+    if (!normalizedLocation) return { error: 'location must be a non-empty string' };
+    location = normalizedLocation.toLowerCase();
+  }
+
+  return {
+    value: {
+      page,
+      limit,
+      minVramGb,
+      gpuModel,
+      location,
+    },
+  };
+}
+
+function providerVramGb(provider) {
+  const vramGb = Number(provider?.vram_gb);
+  if (Number.isFinite(vramGb) && vramGb >= 0) return vramGb;
+  const vramMib = Number(provider?.vram_mib);
+  if (Number.isFinite(vramMib) && vramMib >= 0) return vramMib / 1024;
+  return null;
+}
+
+function applyAvailableProviderFilters(providers, filters) {
+  const { minVramGb, gpuModel, location } = filters;
+  return providers.filter((provider) => {
+    if (minVramGb != null) {
+      const vramGb = providerVramGb(provider);
+      if (vramGb == null || vramGb < minVramGb) return false;
+    }
+    if (gpuModel) {
+      const providerGpuModel = normalizeString(provider?.gpu_model, { maxLen: 200 })?.toLowerCase() || '';
+      if (!providerGpuModel.includes(gpuModel)) return false;
+    }
+    if (location) {
+      const providerLocation = normalizeString(provider?.location, { maxLen: 200 })?.toLowerCase() || '';
+      if (!providerLocation.includes(location)) return false;
+    }
+    return true;
+  });
+}
+
+function paginateProviders(providers, page, limit) {
+  const total = providers.length;
+  const pages = total > 0 ? Math.ceil(total / limit) : 0;
+  const offset = (page - 1) * limit;
+  return {
+    providers: providers.slice(offset, offset + limit),
+    total,
+    pages,
+  };
+}
+
 function buildProviderShapeFromSQLiteRow(row, now) {
   const heartbeatAge = row.last_heartbeat
     ? Math.floor((now - new Date(row.last_heartbeat).getTime()) / 1000)
@@ -577,6 +670,10 @@ router.get('/me/invoices/:id/csv', (req, res) => {
 // Public-ish endpoint for renters to see what GPUs are available
 router.get('/available-providers', async (req, res) => {
   try {
+    const parsedQuery = parseAvailableProvidersQuery(req.query);
+    if (parsedQuery.error) return res.status(400).json({ error: parsedQuery.error });
+    const queryFilters = parsedQuery.value;
+
     const discoveryStatus = getDiscoveryStatus();
     const requestedMode = parseDiscoveryMode(req.query.discovery || req.query.discovery_mode);
     const effectiveMode = requestedMode || discoveryStatus.mode;
@@ -590,11 +687,17 @@ router.get('/available-providers', async (req, res) => {
         allowStale,
         maxAgeMs,
       });
+      const strictProviders = resolvedProviders
+        .filter((entry) => entry?.found)
+        .map((entry) => buildProviderShapeFromDHTRecord(entry));
+      const filteredProviders = applyAvailableProviderFilters(strictProviders, queryFilters);
+      const paginated = paginateProviders(filteredProviders, queryFilters.page, queryFilters.limit);
       return res.json({
-        providers: resolvedProviders
-          .filter((entry) => entry?.found)
-          .map((entry) => buildProviderShapeFromDHTRecord(entry)),
-        total: resolvedProviders.filter((entry) => entry?.found).length,
+        providers: paginated.providers,
+        total: paginated.total,
+        page: queryFilters.page,
+        limit: queryFilters.limit,
+        pages: paginated.pages,
         discovery_mode: effectiveMode,
         discovery_health: {
           mode: discoveryStatus.mode,
@@ -636,15 +739,22 @@ router.get('/available-providers', async (req, res) => {
     }
 
     const now = Date.now();
+    const providerShapes = providers.map((provider) => {
+      const discovery = discoveryByPeerId.get(String(provider.p2p_peer_id || ''));
+      if (includeP2p && discovery?.found && discovery.provider) {
+        return buildProviderShapeFromDHT(provider, discovery, now);
+      }
+      return buildProviderShapeFromSQLiteRow(provider, now);
+    });
+    const filteredProviders = applyAvailableProviderFilters(providerShapes, queryFilters);
+    const paginated = paginateProviders(filteredProviders, queryFilters.page, queryFilters.limit);
+
     res.json({
-      providers: providers.map((provider) => {
-        const discovery = discoveryByPeerId.get(String(provider.p2p_peer_id || ''));
-        if (includeP2p && discovery?.found && discovery.provider) {
-          return buildProviderShapeFromDHT(provider, discovery, now);
-        }
-        return buildProviderShapeFromSQLiteRow(provider, now);
-      }),
-      total: providers.length,
+      providers: paginated.providers,
+      total: paginated.total,
+      page: queryFilters.page,
+      limit: queryFilters.limit,
+      pages: paginated.pages,
       discovery_mode: effectiveMode,
       discovery_health: {
         mode: discoveryStatus.mode,
