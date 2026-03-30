@@ -1,3 +1,8 @@
+## [2026-03-30 01:55 UTC] Codex — Featured Arabic Models Copy Fully Localized
+- **Commit**: `e799fd9` - Replaced mixed-language strings in `FeaturedArabicModels` with EN/AR i18n keys, including Arabic RAG CTA text and pricing/unit labels that previously showed English fragments in Arabic mode.
+- **Files**: `app/components/marketplace/FeaturedArabicModels.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic marketplace surfaces no longer show mixed English snippets like `Arabic RAG`, `SAR/min`, and `($0.xx/min)` in the featured Arabic models section, improving DCP-40 readiness for UX/QA sign-off.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
