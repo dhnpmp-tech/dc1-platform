@@ -32440,6 +32440,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 19:34 UTC] Codex — DCP-157 Homepage Focus-Visible Accessibility Polish
-- **Commit**: `pending` - Added consistent `focus-visible` ring treatments to homepage hero CTAs, path chooser cards, and workflow action buttons to improve keyboard navigation clarity.
+- **Commit**: `55fd19e` - Added consistent `focus-visible` ring treatments to homepage hero CTAs, path chooser cards, and workflow action buttons to improve keyboard navigation clarity.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Keyboard users now get clear high-contrast focus indication on primary conversion actions without affecting click/tap behavior.
