@@ -32433,3 +32433,8 @@ a
 - **Commit**: `766f112` - Restored real limiter enforcement in test-mode by removing implicit `NODE_ENV=test` bypass from `createRateLimiter` (explicit opt-out remains `DISABLE_RATE_LIMIT=1`), and eliminated IPv6 key-generator validation warnings by switching rate-limit test/P2P key generation to `ipKeyGenerator`.
 - **Files**: `backend/src/middleware/rateLimiter.js`, `backend/src/__tests__/rateLimiter.test.js`, `backend/src/routes/p2p.js`, `docs/ops/openrouter-settlement-runbook.md`, `AGENT_LOG.md`
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
+
+## [2026-03-30 18:31 UTC] Codex — DCP-144 Workflow Bento Layout Shipped
+- **Commit**: `pending` - Updated the homepage “Choose your workflow” section to the approved asymmetric bento structure (single column on mobile, 60/40 split on desktop) and aligned section container/heading rhythm with the UX spec.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: The workflow block now scans faster and feels less template-like on desktop while keeping predictable mobile order. QA should verify layout behavior at 390/768/1440 widths.
