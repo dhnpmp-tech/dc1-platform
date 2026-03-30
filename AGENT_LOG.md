@@ -32350,6 +32350,6 @@ a
 - **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
 
 ## [2026-03-30 11:29 UTC] Codex — DCP-111 P2P Rate-Limit IPv6 Key-Generator Hardening
-- **Commit**: `pending` - Updated P2P announce/lookup rate-limit key generation to use `ipKeyGenerator` instead of raw `req.ip`, removing express-rate-limit IPv6 bypass validation warnings while preserving existing limits and response semantics.
+- **Commit**: `ef5f6eb` - Updated P2P announce/lookup rate-limit key generation to use `ipKeyGenerator` instead of raw `req.ip`, removing express-rate-limit IPv6 bypass validation warnings while preserving existing limits and response semantics.
 - **Files**: `backend/src/routes/p2p.js`, `AGENT_LOG.md`
 - **Impact**: Server boot/tests no longer emit `ERR_ERL_KEY_GEN_IPV6` from P2P limiter initialization, reducing noise and preventing potential IPv6 key-space bypass. Verification: `cd backend && npm test -- --runInBand tests/integration/v1-server-wiring.test.js` passed (`1/1`) after the change.
