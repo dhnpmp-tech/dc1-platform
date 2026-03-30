@@ -1,3 +1,8 @@
+## [2026-03-30 14:53 UTC] Codex — DCP-132 Synced Rate-Limit Policy Hardening + Test Stability
+- **Commit**: `62e7148`, `93c7073` - Enforced explicit test toggle behavior in `createRateLimiter` (only `DISABLE_RATE_LIMIT=1` disables enforcement), aligned `jobSubmitLimiter` to `20/min`, updated rate-limiting/security suite expectations, and isolated `security.test` non-limiter groups from route-level limiter saturation by defaulting `DISABLE_RATE_LIMIT=1` within that suite.
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/tests/integration/rate-limiting.test.js`, `backend/tests/security.test.js`, `AGENT_LOG.md`
+- **Impact**: Mainline policy now matches current backend contract (`20/min` keyed job submit with explicit limiter enablement semantics) while keeping regression suites deterministic and non-flaky under real limiter behavior.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
