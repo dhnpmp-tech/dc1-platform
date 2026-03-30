@@ -1476,11 +1476,11 @@ function ProviderRegisterPageContent() {
                   <p id="vram-error" className="mt-2 text-sm text-red-400">{fieldErrors.vram}</p>
                 ) : formData.gpuModel && formData.vram ? (
                   <p id="vram-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    {formData.gpuModel === 'Other' ? 'Custom GPU profile captured for registration review.' : `Auto-detected from ${formData.gpuModel}.`}
+                    {formData.gpuModel === 'Other' ? t('register.provider.vram.hint_other') : `${t('register.provider.vram.hint_auto')} ${formData.gpuModel}.`}
                   </p>
                 ) : (
                   <p id="vram-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    Required only when you choose <span className="font-semibold text-dc1-text-primary">Other</span>.
+                    {t('register.provider.vram.hint_required_prefix')} <span className="font-semibold text-dc1-text-primary">{t('register.provider.vram.hint_required_other')}</span>.
                   </p>
                 )}
               </div>
@@ -1489,7 +1489,7 @@ function ProviderRegisterPageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="locationCity" className="label">
-                    City
+                    {t('register.provider.location.city')}
                   </label>
                   <input
                     id="locationCity"
@@ -1497,13 +1497,13 @@ function ProviderRegisterPageContent() {
                     name="locationCity"
                     value={formData.locationCity}
                     onChange={handleInputChange}
-                    placeholder="Riyadh"
+                    placeholder={t('register.provider.location.city_placeholder')}
                     className="input"
                   />
                 </div>
                 <div>
                   <label htmlFor="locationCountry" className="label">
-                    Country
+                    {t('register.provider.location.country')}
                   </label>
                   <select
                     id="locationCountry"
@@ -1514,23 +1514,23 @@ function ProviderRegisterPageContent() {
                     aria-invalid={Boolean(fieldErrors.locationCountry)}
                     aria-describedby={fieldErrors.locationCountry ? 'locationCountry-error' : 'locationCountry-hint'}
                   >
-                    <option value="">Select country</option>
-                    <option value="SA">Saudi Arabia</option>
-                    <option value="AE">United Arab Emirates</option>
-                    <option value="US">United States</option>
-                    <option value="GB">United Kingdom</option>
-                    <option value="DE">Germany</option>
-                    <option value="FR">France</option>
-                    <option value="NL">Netherlands</option>
-                    <option value="SG">Singapore</option>
-                    <option value="JP">Japan</option>
-                    <option value="Other">Other</option>
+                    <option value="">{t('register.provider.location.select_country')}</option>
+                    <option value="SA">{t('register.provider.location.country_sa')}</option>
+                    <option value="AE">{t('register.provider.location.country_ae')}</option>
+                    <option value="US">{t('register.provider.location.country_us')}</option>
+                    <option value="GB">{t('register.provider.location.country_gb')}</option>
+                    <option value="DE">{t('register.provider.location.country_de')}</option>
+                    <option value="FR">{t('register.provider.location.country_fr')}</option>
+                    <option value="NL">{t('register.provider.location.country_nl')}</option>
+                    <option value="SG">{t('register.provider.location.country_sg')}</option>
+                    <option value="JP">{t('register.provider.location.country_jp')}</option>
+                    <option value="Other">{t('register.provider.location.country_other')}</option>
                   </select>
                   {fieldErrors.locationCountry ? (
                     <p id="locationCountry-error" className="mt-2 text-sm text-red-400">{fieldErrors.locationCountry}</p>
                   ) : (
                     <p id="locationCountry-hint" className="mt-2 text-xs text-dc1-text-muted">
-                      We use this to localize support instructions and compliance notes.
+                      {t('register.provider.hint.location_country')}
                     </p>
                   )}
                 </div>
@@ -1543,10 +1543,10 @@ function ProviderRegisterPageContent() {
                 </label>
                 <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {[
-                    { value: 'Ubuntu 22.04', label: 'Ubuntu 22.04', helper: 'Fastest path for Linux hosts' },
-                    { value: 'Ubuntu 20.04', label: 'Ubuntu 20.04', helper: 'Supported for existing fleets' },
-                    { value: 'Windows 10/11', label: 'Windows 10/11', helper: 'PowerShell installer flow' },
-                    { value: 'Other Linux', label: 'Other Linux', helper: 'Use when you manage another distro' },
+                    { value: 'Ubuntu 22.04', label: 'Ubuntu 22.04', helper: t('register.provider.os.ubuntu2204') },
+                    { value: 'Ubuntu 20.04', label: 'Ubuntu 20.04', helper: t('register.provider.os.ubuntu2004') },
+                    { value: 'Windows 10/11', label: 'Windows 10/11', helper: t('register.provider.os.windows1011') },
+                    { value: 'Other Linux', label: t('register.provider.os.other_linux_label'), helper: t('register.provider.os.other_linux_helper') },
                   ].map((os) => (
                     <button
                       key={os.value}
@@ -1587,7 +1587,7 @@ function ProviderRegisterPageContent() {
                   <p id="operatingSystem-error" className="mt-2 text-sm text-red-400">{fieldErrors.operatingSystem}</p>
                 ) : (
                   <p id="operatingSystem-hint" className="mt-2 text-xs text-dc1-text-muted">
-                    This determines which install command is shown immediately after signup.
+                    {t('register.provider.hint.operating_system')}
                   </p>
                 )}
               </div>
@@ -1603,7 +1603,7 @@ function ProviderRegisterPageContent() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleInputChange}
-                  placeholder="+1 (555) 000-0000"
+                  placeholder={t('register.provider.phone_placeholder')}
                   className="input"
                 />
               </div>
@@ -1611,7 +1611,7 @@ function ProviderRegisterPageContent() {
               {/* Referral Code */}
               <div>
                 <label className="label" htmlFor="referralCode">
-                  Referral Code <span className="text-dc1-text-muted font-normal">(optional)</span>
+                  {t('register.provider.referral.label')} <span className="text-dc1-text-muted font-normal">{t('register.provider.phone_optional')}</span>
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -1619,12 +1619,12 @@ function ProviderRegisterPageContent() {
                     type="text"
                   value={referralCode}
                   onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. DCP-ABC123"
+                  placeholder={t('register.provider.referral.placeholder')}
                   className="input flex-1"
                   disabled={referralStatus === 'applied'}
                   />
                   {referralCode && referralStatus === 'idle' && (
-                    <span className="flex items-center text-xs text-dc1-text-muted px-2">Applied at registration</span>
+                    <span className="flex items-center text-xs text-dc1-text-muted px-2">{t('register.provider.referral.applied_at_registration')}</span>
                   )}
                 </div>
                 {referralStatus === 'applied' && (
@@ -1637,7 +1637,7 @@ function ProviderRegisterPageContent() {
                   <p className="mt-1.5 text-sm text-red-400">{referralMessage}</p>
                 )}
                 <p className="mt-1 text-xs text-dc1-text-muted">
-                  Have a referral code from another provider? Enter it here to earn bonus rewards.
+                  {t('register.provider.referral.helper')}
                 </p>
               </div>
 
