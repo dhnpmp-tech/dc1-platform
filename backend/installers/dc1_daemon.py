@@ -97,6 +97,11 @@ VRAM_REQUIREMENTS = {
 }
 VRAM_DEFAULT_REQUIREMENT = 2000  # Default if job type unknown
 
+# Preflight doctor failure taxonomy (backend + daemon aligned)
+DOCTOR_OK = "OK"
+DOCTOR_UNREACHABLE = "API_UNREACHABLE"
+DOCTOR_INTERNAL = "DOCTOR_INTERNAL_ERROR"
+
 # ─── POWER COST AWARENESS ────────────────────────────────────────────────────
 # Provider can set electricity cost in config.json to skip unprofitable jobs
 POWER_COST_CONFIG_FILE = Path.home() / "dc1-provider" / "power_config.json"
@@ -1216,6 +1221,115 @@ def report_readiness(checks):
     except Exception as e:
         log.error(f"Readiness report failed: {e}")
         return None
+
+def _normalize_model_id(value):
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    return text or None
+
+def _parse_json_maybe(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+def extract_requested_model(job):
+    """Extract requested model id from assigned job payload."""
+    if not isinstance(job, dict):
+        return None
+
+    direct_candidates = [
+        job.get("model_id"),
+        job.get("model"),
+        job.get("requested_model"),
+    ]
+    for value in direct_candidates:
+        normalized = _normalize_model_id(value)
+        if normalized:
+            return normalized
+
+    task_spec = job.get("task_spec")
+    task_spec_obj = _parse_json_maybe(task_spec)
+    for key in ("model_id", "model", "requested_model"):
+        normalized = _normalize_model_id(task_spec_obj.get(key))
+        if normalized:
+            return normalized
+
+    container_spec = job.get("container_spec")
+    container_spec_obj = _parse_json_maybe(container_spec)
+    for key in ("model_id", "model", "requested_model"):
+        normalized = _normalize_model_id(container_spec_obj.get(key))
+        if normalized:
+            return normalized
+
+    return None
+
+def run_activation_doctor(job=None):
+    """
+    Call backend preflight doctor and return deterministic diagnostics.
+    This is used before daemon accepts jobs.
+    """
+    gpu = detect_gpu()
+    payload = {
+        "api_key": API_KEY,
+        "gpu_visible": gpu is not None,
+        "gpu_count": len(gpu.get("all_gpus", [])) if isinstance(gpu, dict) and isinstance(gpu.get("all_gpus"), list) else (1 if gpu else 0),
+        "gpu_vram_mib": int(gpu.get("gpu_vram_mib", 0)) if isinstance(gpu, dict) and gpu.get("gpu_vram_mib") else 0,
+    }
+    requested_model = extract_requested_model(job)
+    if requested_model:
+        payload["requested_model"] = requested_model
+
+    try:
+        code, response = http_post(f"{API_URL}/api/providers/doctor", payload, timeout=15)
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": DOCTOR_UNREACHABLE,
+            "remediation": "Check outbound HTTPS connectivity to API_URL and retry.",
+            "details": str(e),
+            "response": {},
+            "http_status": None,
+        }
+
+    response = response or {}
+    failures = response.get("failures") if isinstance(response.get("failures"), list) else []
+    first_failure = failures[0] if failures else {}
+    if code >= 500:
+        return {
+            "ok": False,
+            "code": DOCTOR_INTERNAL,
+            "remediation": "Backend doctor failed. Check backend logs and retry.",
+            "details": f"doctor_http_status={code}",
+            "response": response,
+            "http_status": code,
+        }
+
+    if response.get("ok") is True:
+        return {
+            "ok": True,
+            "code": DOCTOR_OK,
+            "remediation": "No action required.",
+            "details": "All preflight checks passed.",
+            "response": response,
+            "http_status": code,
+        }
+
+    return {
+        "ok": False,
+        "code": first_failure.get("code") or ("AUTH_INVALID_API_KEY" if code == 401 else DOCTOR_INTERNAL),
+        "remediation": first_failure.get("remediation") or "Review diagnostics and remediate failed preflight checks.",
+        "details": first_failure.get("details") or f"doctor_http_status={code}",
+        "response": response,
+        "http_status": code,
+    }
 
 # ─── OCEAN-STYLE RESOURCE SPEC ───────────────────────────────────────────────
 
@@ -2493,6 +2607,32 @@ def poll_and_execute():
     if is_duplicate_job(job_id):
         return  # Already processed this job
 
+    # ── Guard: provider preflight doctor (auth/gpu/api/model-tier) ──
+    doctor = run_activation_doctor(job)
+    if not doctor.get("ok"):
+        failure_code = doctor.get("code") or DOCTOR_INTERNAL
+        remediation = doctor.get("remediation") or "See daemon diagnostics."
+        details = doctor.get("details") or "preflight failed"
+        log.warning(f"Job {job_id} rejected pre-execution [{failure_code}]: {details}")
+        report_event(
+            "job_failure",
+            f"Preflight rejected [{failure_code}]: {remediation} | {details}",
+            job_id=job_id,
+            severity="warning",
+        )
+        try:
+            http_post(f"{API_URL}/api/providers/job-result", {
+                "api_key": API_KEY,
+                "job_id": job_id,
+                "success": False,
+                "error": f"{failure_code}: {remediation}",
+                "last_error": details,
+                "gpu_seconds_used": 0,
+            }, timeout=15)
+        except Exception:
+            pass
+        return
+
     # ── Guard: VRAM check ──
     vram_ok, free_vram, required_vram = check_vram_available(job_type)
     if not vram_ok:
@@ -2837,6 +2977,21 @@ def main():
         if not checks["cuda"]: missing.append("CUDA")
         if not checks["pytorch"]: missing.append("PyTorch")
         log.warning(f"Readiness: PARTIAL — missing: {', '.join(missing)}")
+
+    # Step 3b: Provider activation doctor (daemon-side preflight taxonomy)
+    doctor = run_activation_doctor()
+    if doctor.get("ok"):
+        log.info(f"Preflight doctor: PASSED [{doctor.get('code')}]")
+    else:
+        code = doctor.get("code") or DOCTOR_INTERNAL
+        remediation = doctor.get("remediation") or "Review preflight diagnostics."
+        details = doctor.get("details") or "preflight failed"
+        log.warning(f"Preflight doctor: FAILED [{code}] {details}")
+        report_event(
+            "preflight_failed",
+            f"[{code}] {details}. Remediation: {remediation}",
+            severity="warning",
+        )
 
     # Step 4: Pre-cache LLM models (so first inference is fast)
     log.info("Pre-caching LLM models...")

@@ -5168,6 +5168,216 @@ module.exports.__private = {
 };
 
 // ============================================================================
+// POST /api/providers/doctor — Provider activation / preflight diagnostics
+// ============================================================================
+const DOCTOR_FAILURE_CODES = Object.freeze({
+    ok: 'OK',
+    authMissing: 'AUTH_MISSING_API_KEY',
+    authInvalid: 'AUTH_INVALID_API_KEY',
+    gpuMissing: 'GPU_NOT_VISIBLE',
+    apiReachability: 'API_REACHABILITY_STALE_HEARTBEAT',
+    modelUnavailable: 'MODEL_NOT_AVAILABLE',
+    tierInsufficient: 'MODEL_TIER_UNSUPPORTED',
+});
+
+const DOCTOR_REMEDIATION = Object.freeze({
+    [DOCTOR_FAILURE_CODES.ok]: 'No action required.',
+    [DOCTOR_FAILURE_CODES.authMissing]: 'Provide a provider API key using Authorization: Bearer <key> or x-provider-key.',
+    [DOCTOR_FAILURE_CODES.authInvalid]: 'Rotate/regenerate your provider API key and restart daemon with the new credential.',
+    [DOCTOR_FAILURE_CODES.gpuMissing]: 'Confirm NVIDIA drivers and runtime are installed, then verify nvidia-smi detects at least one GPU.',
+    [DOCTOR_FAILURE_CODES.apiReachability]: 'Check outbound HTTPS reachability to the API host and confirm daemon heartbeat freshness.',
+    [DOCTOR_FAILURE_CODES.modelUnavailable]: 'Cache the requested model on this provider or route the workload to a provider that advertises it.',
+    [DOCTOR_FAILURE_CODES.tierInsufficient]: 'Use a model tier that matches this GPU VRAM or move the workload to a higher-VRAM provider.',
+});
+
+const DOCTOR_CHECK_NAMES = Object.freeze({
+    auth: 'auth_valid',
+    gpu: 'gpu_visible',
+    api: 'api_reachable',
+    model: 'model_available',
+    tier: 'tier_capacity',
+});
+
+const MODEL_MIN_VRAM_GB = (() => {
+    const out = {};
+    Object.entries(MODEL_TIERS).forEach(([tierName, models]) => {
+        const minVramGb = tierName === 'tier40' ? 40 : tierName === 'tier24' ? 24 : 8;
+        (models || []).forEach((model) => {
+            const normalized = normalizeModelId(model?.model_id);
+            if (normalized) out[normalized] = minVramGb;
+        });
+    });
+    return out;
+})();
+
+function toBool(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value !== 'string') return false;
+    const lowered = value.trim().toLowerCase();
+    return lowered === '1' || lowered === 'true' || lowered === 'yes' || lowered === 'y';
+}
+
+function toNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildProviderDoctorDiagnostics({ provider, authCode, context = {}, nowMs = Date.now() }) {
+    const checks = [];
+    const normalizedModelId = normalizeModelId(context.requested_model || context.requestedModel || context.model_id || context.model);
+
+    const daemonGpuVisible = context.gpu_visible != null ? toBool(context.gpu_visible) : null;
+    const daemonGpuCount = toNumber(context.gpu_count);
+    const daemonVramMib = toNumber(context.gpu_vram_mib);
+    const providerVramGb = provider ? inferVramGb(provider) : 0;
+    const observedVramGb = daemonVramMib != null && daemonVramMib > 0
+        ? daemonVramMib / 1024
+        : providerVramGb;
+
+    const providerLastHeartbeatMs = provider?.last_heartbeat ? Date.parse(provider.last_heartbeat) : NaN;
+    const heartbeatAgeSeconds = Number.isFinite(providerLastHeartbeatMs)
+        ? Math.max(0, Math.floor((nowMs - providerLastHeartbeatMs) / 1000))
+        : null;
+    const apiReachable = heartbeatAgeSeconds != null && heartbeatAgeSeconds < 300;
+
+    const gpuVisible = daemonGpuVisible != null
+        ? daemonGpuVisible
+        : (
+            (daemonGpuCount != null && daemonGpuCount > 0)
+            || !!normalizeString(provider?.gpu_model, { maxLen: 200 })
+            || observedVramGb > 0
+        );
+
+    const providerModelIds = new Set((extractProviderModels(provider || {}))
+        .map((entry) => normalizeModelId(entry?.model_id))
+        .filter(Boolean));
+    const modelAvailable = !normalizedModelId || providerModelIds.has(normalizedModelId);
+
+    const requestedMinVram = toNumber(context.required_vram_gb) || MODEL_MIN_VRAM_GB[normalizedModelId] || 0;
+    const tierSufficient = requestedMinVram <= 0 || observedVramGb >= requestedMinVram;
+
+    checks.push({
+        check: DOCTOR_CHECK_NAMES.auth,
+        ok: authCode === DOCTOR_FAILURE_CODES.ok,
+        code: authCode,
+        remediation: DOCTOR_REMEDIATION[authCode],
+        details: authCode === DOCTOR_FAILURE_CODES.ok ? 'API key is valid for provider access.' : 'API key validation failed.',
+    });
+    checks.push({
+        check: DOCTOR_CHECK_NAMES.gpu,
+        ok: gpuVisible,
+        code: gpuVisible ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.gpuMissing,
+        remediation: DOCTOR_REMEDIATION[gpuVisible ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.gpuMissing],
+        details: gpuVisible
+            ? `GPU detected (observed_vram_gb=${Number(observedVramGb || 0).toFixed(1)}).`
+            : 'No visible GPU metrics were supplied by daemon or stored provider profile.',
+    });
+    checks.push({
+        check: DOCTOR_CHECK_NAMES.api,
+        ok: apiReachable,
+        code: apiReachable ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.apiReachability,
+        remediation: DOCTOR_REMEDIATION[apiReachable ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.apiReachability],
+        details: apiReachable
+            ? `Recent heartbeat age ${heartbeatAgeSeconds}s (<300s).`
+            : `Heartbeat missing or stale (age=${heartbeatAgeSeconds == null ? 'none' : heartbeatAgeSeconds + 's'}).`,
+    });
+    checks.push({
+        check: DOCTOR_CHECK_NAMES.model,
+        ok: modelAvailable,
+        code: modelAvailable ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.modelUnavailable,
+        remediation: DOCTOR_REMEDIATION[modelAvailable ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.modelUnavailable],
+        details: modelAvailable
+            ? (normalizedModelId ? `Model ${normalizedModelId} is advertised by provider.` : 'No specific model requested.')
+            : `Requested model ${normalizedModelId} is not in provider advertised model set.`,
+    });
+    checks.push({
+        check: DOCTOR_CHECK_NAMES.tier,
+        ok: tierSufficient,
+        code: tierSufficient ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.tierInsufficient,
+        remediation: DOCTOR_REMEDIATION[tierSufficient ? DOCTOR_FAILURE_CODES.ok : DOCTOR_FAILURE_CODES.tierInsufficient],
+        details: tierSufficient
+            ? `Observed VRAM ${Number(observedVramGb || 0).toFixed(1)}GB satisfies requirement ${requestedMinVram || 0}GB.`
+            : `Observed VRAM ${Number(observedVramGb || 0).toFixed(1)}GB below required ${requestedMinVram}GB.`,
+    });
+
+    const failures = checks.filter((entry) => !entry.ok);
+    const allPassed = failures.length === 0;
+    return {
+        ok: allPassed,
+        preflight_ok: allPassed,
+        failure_count: failures.length,
+        checks,
+        failures,
+        requested_model: normalizedModelId || null,
+        observed_vram_gb: Number((observedVramGb || 0).toFixed(2)),
+        heartbeat_age_seconds: heartbeatAgeSeconds,
+        generated_at: new Date(nowMs).toISOString(),
+    };
+}
+
+router.post('/doctor', (req, res) => {
+    try {
+        const apiKey = normalizeString(
+            req.body?.api_key || req.headers['x-provider-key'] || getBearerToken(req),
+            { maxLen: 128, trim: false }
+        );
+
+        if (!apiKey) {
+            const diagnostics = buildProviderDoctorDiagnostics({
+                provider: null,
+                authCode: DOCTOR_FAILURE_CODES.authMissing,
+                context: req.body || {},
+            });
+            return res.status(401).json(diagnostics);
+        }
+
+        const provider = db.get(
+            `SELECT id, gpu_model, vram_mb, vram_gb, gpu_vram_mib, resource_spec,
+                    cached_models, last_heartbeat, status
+             FROM providers
+             WHERE api_key = ? AND deleted_at IS NULL`,
+            apiKey
+        );
+
+        if (!provider) {
+            const diagnostics = buildProviderDoctorDiagnostics({
+                provider: null,
+                authCode: DOCTOR_FAILURE_CODES.authInvalid,
+                context: req.body || {},
+            });
+            return res.status(401).json(diagnostics);
+        }
+
+        const diagnostics = buildProviderDoctorDiagnostics({
+            provider,
+            authCode: DOCTOR_FAILURE_CODES.ok,
+            context: req.body || {},
+        });
+        return res.status(200).json({
+            ...diagnostics,
+            provider_id: provider.id,
+            provider_status: provider.status || null,
+        });
+    } catch (error) {
+        console.error('[providers/doctor POST]', error);
+        return res.status(500).json({
+            ok: false,
+            preflight_ok: false,
+            failure_count: 1,
+            checks: [],
+            failures: [{
+                check: 'internal',
+                code: 'INTERNAL_DOCTOR_ERROR',
+                remediation: 'Retry doctor request. If persistent, inspect backend logs.',
+                details: error.message,
+            }],
+            generated_at: new Date().toISOString(),
+        });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/self-test — Provider readiness validation (DCP-802)
 // ============================================================================
 // Purpose: Provider calls this endpoint to validate they are ready to go live.
@@ -5954,6 +6164,8 @@ module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
     inferVramGb,
+    buildProviderDoctorDiagnostics,
+    DOCTOR_FAILURE_CODES,
     activateProviderById,
     _providerEventEmitter,
     ACTIVATION_MIN_VRAM_GB,

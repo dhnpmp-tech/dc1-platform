@@ -152,6 +152,93 @@ describe('Provider Self-Test & Activation Endpoints (DCP-802)', () => {
         });
     });
 
+    describe('POST /api/providers/doctor', () => {
+        it('returns AUTH_MISSING_API_KEY when key is not provided', async () => {
+            const res = await request(app)
+                .post('/api/providers/doctor')
+                .send({})
+                .expect(401);
+
+            expect(res.body.ok).toBe(false);
+            expect(res.body.failures[0].code).toBe('AUTH_MISSING_API_KEY');
+        });
+
+        it('returns AUTH_INVALID_API_KEY when key is invalid', async () => {
+            const res = await request(app)
+                .post('/api/providers/doctor')
+                .send({ api_key: 'invalid_key' })
+                .expect(401);
+
+            expect(res.body.ok).toBe(false);
+            expect(res.body.failures[0].code).toBe('AUTH_INVALID_API_KEY');
+        });
+
+        it('returns pass diagnostics when all checks pass', async () => {
+            db.run('UPDATE providers SET cached_models = ? WHERE id = ?', JSON.stringify(['codellama-34b']), testProvider.id);
+
+            const res = await request(app)
+                .post('/api/providers/doctor')
+                .send({ api_key: testApiKey, requested_model: 'codellama-34b', gpu_vram_mib: 24576 })
+                .expect(200);
+
+            expect(res.body.ok).toBe(true);
+            expect(res.body.failure_count).toBe(0);
+            expect(res.body.checks.every((entry) => entry.ok)).toBe(true);
+        });
+
+        it('returns GPU_NOT_VISIBLE when daemon reports no visible GPU', async () => {
+            const res = await request(app)
+                .post('/api/providers/doctor')
+                .send({ api_key: testApiKey, gpu_visible: false })
+                .expect(200);
+
+            const gpuCheck = res.body.checks.find((entry) => entry.check === 'gpu_visible');
+            expect(gpuCheck.ok).toBe(false);
+            expect(gpuCheck.code).toBe('GPU_NOT_VISIBLE');
+        });
+
+        it('returns API_REACHABILITY_STALE_HEARTBEAT when heartbeat is stale', async () => {
+            const stale = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+            db.run('UPDATE providers SET last_heartbeat = ? WHERE id = ?', stale, testProvider.id);
+
+            const res = await request(app)
+                .post('/api/providers/doctor')
+                .send({ api_key: testApiKey })
+                .expect(200);
+
+            const apiCheck = res.body.checks.find((entry) => entry.check === 'api_reachable');
+            expect(apiCheck.ok).toBe(false);
+            expect(apiCheck.code).toBe('API_REACHABILITY_STALE_HEARTBEAT');
+        });
+
+        it('returns MODEL_NOT_AVAILABLE when requested model is not advertised', async () => {
+            db.run('UPDATE providers SET cached_models = ? WHERE id = ?', JSON.stringify(['mistral-7b']), testProvider.id);
+
+            const res = await request(app)
+                .post('/api/providers/doctor')
+                .send({ api_key: testApiKey, requested_model: 'llama-3-8b' })
+                .expect(200);
+
+            const modelCheck = res.body.checks.find((entry) => entry.check === 'model_available');
+            expect(modelCheck.ok).toBe(false);
+            expect(modelCheck.code).toBe('MODEL_NOT_AVAILABLE');
+        });
+
+        it('returns MODEL_TIER_UNSUPPORTED when requested model tier exceeds provider VRAM', async () => {
+            db.run('UPDATE providers SET vram_mb = ?, gpu_vram_mib = ? WHERE id = ?', 24576, 24576, testProvider.id);
+            db.run('UPDATE providers SET cached_models = ? WHERE id = ?', JSON.stringify(['llama-3-70b']), testProvider.id);
+
+            const res = await request(app)
+                .post('/api/providers/doctor')
+                .send({ api_key: testApiKey, requested_model: 'llama-3-70b' })
+                .expect(200);
+
+            const tierCheck = res.body.checks.find((entry) => entry.check === 'tier_capacity');
+            expect(tierCheck.ok).toBe(false);
+            expect(tierCheck.code).toBe('MODEL_TIER_UNSUPPORTED');
+        });
+    });
+
     describe('POST /api/providers/activate', () => {
         it('should return 401 when no API key provided', async () => {
             const res = await request(app)
