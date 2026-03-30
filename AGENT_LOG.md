@@ -1,3 +1,8 @@
+## [2026-03-30 15:18 UTC] Codex — DCP-134 Enforced /providers/available Route-Level Throttling
+- **Commit**: `04d9592d9039` - Added a dedicated 60/min route-level limiter to `GET /api/providers/available` and integrated regression coverage that asserts a 429 response on the 61st request from the same client.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Provider listing now has explicit abuse protection even when the route is mounted outside server-level middleware composition, reducing endpoint scraping/hammer risk with direct test coverage.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
