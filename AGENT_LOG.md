@@ -1,3 +1,8 @@
+## [2026-03-30 03:47 UTC] Codex — Release Branch Resynced With Main And Reverified
+- **Commit**: `cfa0e9e` - Merged the latest `origin/main` into `agent/backend-dev/dcp-26-payout-reject-email`, resolved the expected `AGENT_LOG.md` conflict by preserving both histories, and reran the release gate successfully on the merged tree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: PR #91 is no longer behind `main`. Release verification is green on the resynced head: `npm run build` passed, and `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js src/__tests__/payouts-reject-email.test.js src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js tests/integration/provider-lifecycle.test.js` passed (`104/104`). QA can verify the live preview against the current branch head once the refreshed deploy finishes.
+
 ## [2026-03-30 03:38 UTC] Codex — Release Gate Cleared For Provider Register + Payout Branch
 - **Commit**: `e7137ef` - Fixed two production-only import resolution failures in the docs and renter playground pages, then reran the release gate successfully.
 - **Files**: `AGENT_LOG.md`, `app/docs/[[...slug]]/page.tsx`, `app/renter/playground/page.tsx`
