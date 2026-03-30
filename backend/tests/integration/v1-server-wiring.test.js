@@ -153,4 +153,38 @@ describe('server /v1 wiring', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
     expect(res.body.data[0]).toHaveProperty('parameter_count');
   });
+
+  test('POST /v1/chat/completions streams when provider returns a fetch web stream body', async () => {
+    const encoder = new TextEncoder();
+    const webStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"hello"}}]}\n\n'));
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: webStream,
+    });
+
+    try {
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'server-wiring-model',
+          messages: [{ role: 'user', content: 'stream now' }],
+          stream: true,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/event-stream');
+      expect(res.text).toContain('data: [DONE]');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
