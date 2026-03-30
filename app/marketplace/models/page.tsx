@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import ProviderAvailabilityBadge from '../../components/marketplace/ProviderAvailabilityBadge'
+import { useLanguage } from '../../lib/i18n'
 
 const API_BASE = '/api/dc1'
 
@@ -134,7 +135,7 @@ function SkeletonCard() {
 }
 
 // ── Model Card ────────────────────────────────────────────────────────────────
-function ModelCard({ model }: { model: ModelListItem }) {
+function ModelCard({ model, isRTL }: { model: ModelListItem; isRTL: boolean }) {
   const arabic = isArabicModel(model)
   const arabicSubtitle = arabic ? getArabicSubtitle(model.model_id) : null
   const tierBadge = getTierBadge(model.tier)
@@ -164,7 +165,7 @@ function ModelCard({ model }: { model: ModelListItem }) {
         </div>
         {arabic && (
           <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full border font-medium bg-dc1-amber/10 text-dc1-amber border-dc1-amber/20">
-            🌙 Arabic
+            🌙 {isRTL ? 'عربي' : 'Arabic'}
           </span>
         )}
       </div>
@@ -210,7 +211,7 @@ function ModelCard({ model }: { model: ModelListItem }) {
         {vram && (
           <div>
             <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">VRAM</p>
-            <p className="font-semibold text-dc1-text-primary">{vram} GB</p>
+            <p className="font-semibold text-dc1-text-primary">{vram} {isRTL ? 'جيجابايت' : 'GB'}</p>
           </div>
         )}
         {model.context_window && (
@@ -221,8 +222,8 @@ function ModelCard({ model }: { model: ModelListItem }) {
         )}
         {priceHr !== null && (
           <div className="col-span-2">
-            <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">DCP Price</p>
-            <p className="font-extrabold text-dc1-amber">{priceHr} <span className="text-[9px] font-normal text-dc1-text-muted">SAR/hr</span></p>
+            <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">{isRTL ? 'سعر DCP' : 'DCP Price'}</p>
+            <p className="font-extrabold text-dc1-amber">{priceHr} <span className="text-[9px] font-normal text-dc1-text-muted">{isRTL ? 'ريال/ساعة' : 'SAR/hr'}</span></p>
           </div>
         )}
       </div>
@@ -230,26 +231,26 @@ function ModelCard({ model }: { model: ModelListItem }) {
       {/* Savings vs AWS (if arabic) */}
       {arabic && (
         <div className="bg-status-success/5 border border-status-success/20 rounded-lg px-3 py-2 text-xs">
-          <span className="text-status-success font-semibold">Save up to 51%</span>
-          <span className="text-dc1-text-muted ml-1">vs AWS Bedrock</span>
+          <span className="text-status-success font-semibold">{isRTL ? 'وفّر حتى 51%' : 'Save up to 51%'}</span>
+          <span className="text-dc1-text-muted ml-1">{isRTL ? 'مقابل AWS Bedrock' : 'vs AWS Bedrock'}</span>
         </div>
       )}
 
       {/* CTA */}
       <Link href={deployHref} className="btn btn-primary w-full text-center text-sm mt-auto">
-        Deploy Model
+        {isRTL ? 'انشر النموذج' : 'Deploy Model'}
       </Link>
     </article>
   )
 }
 
 // ── Pricing Table ─────────────────────────────────────────────────────────────
-function PricingComparisonBar() {
+function PricingComparisonBar({ isRTL }: { isRTL: boolean }) {
   return (
     <section className="border-b border-dc1-border bg-dc1-surface-l1/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
         <p className="text-xs font-semibold text-dc1-text-muted uppercase tracking-wider mb-3">
-          DCP vs Competitors (SAR/hr)
+          {isRTL ? 'DCP مقابل المنافسين (ريال/ساعة)' : 'DCP vs Competitors (SAR/hr)'}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {PRICING_COMPARISON.map(row => (
@@ -257,15 +258,15 @@ function PricingComparisonBar() {
               <p className="text-sm font-bold text-dc1-text-primary mb-3">{row.gpu}</p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-dc1-amber">DCP (Saudi)</span>
-                  <span className="font-extrabold text-dc1-amber">{row.dcp_sar_hr.toFixed(2)} SAR</span>
+                  <span className="font-semibold text-dc1-amber">{isRTL ? 'DCP (السعودية)' : 'DCP (Saudi)'}</span>
+                  <span className="font-extrabold text-dc1-amber">{row.dcp_sar_hr.toFixed(2)} {isRTL ? 'ريال' : 'SAR'}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-dc1-text-muted">
                   <span>Vast.ai</span>
-                  <span className="line-through">{row.vast_sar_hr.toFixed(2)} SAR</span>
+                  <span className="line-through">{row.vast_sar_hr.toFixed(2)} {isRTL ? 'ريال' : 'SAR'}</span>
                 </div>
                 <div className="mt-2 pt-2 border-t border-dc1-border flex items-center justify-between">
-                  <span className="text-xs text-dc1-text-muted">Your savings</span>
+                  <span className="text-xs text-dc1-text-muted">{isRTL ? 'توفيرك' : 'Your savings'}</span>
                   <span className="text-sm font-bold text-status-success">-{row.savings_pct}%</span>
                 </div>
               </div>
@@ -279,6 +280,7 @@ function PricingComparisonBar() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MarketplaceModelsPage() {
+  const { isRTL } = useLanguage()
   const [models, setModels] = useState<ModelListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -339,7 +341,7 @@ export default function MarketplaceModelsPage() {
             <div className="flex items-center gap-2 mb-3">
               <Link href="/marketplace" className="text-sm text-dc1-text-muted hover:text-dc1-amber transition-colors">Marketplace</Link>
               <span className="text-dc1-text-muted">/</span>
-              <span className="text-sm text-dc1-text-primary font-medium">Models</span>
+              <span className="text-sm text-dc1-text-primary font-medium">{isRTL ? 'النماذج' : 'Models'}</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-3">
               Arabic AI Model Catalog
@@ -351,25 +353,25 @@ export default function MarketplaceModelsPage() {
             <div className="flex flex-wrap gap-4 text-sm">
               <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
                 <span className="text-dc1-amber font-bold">{loading ? '…' : models.length}</span>
-                <span className="text-dc1-text-secondary">models available</span>
+                <span className="text-dc1-text-secondary">{isRTL ? 'نموذج متاح' : 'models available'}</span>
               </div>
               <div className="flex items-center gap-2 bg-dc1-amber/10 rounded-lg px-3 py-2 border border-dc1-amber/20">
                 <span className="text-dc1-amber font-bold">🌙 {loading ? '…' : arabicCount}</span>
-                <span className="text-dc1-amber font-medium">Arabic-capable</span>
+                <span className="text-dc1-amber font-medium">{isRTL ? 'يدعم العربية' : 'Arabic-capable'}</span>
               </div>
               <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
                 <span className="text-dc1-amber font-bold">⭐ {loading ? '…' : tierACount}</span>
-                <span className="text-dc1-text-secondary">Tier A (pre-warmed)</span>
+                <span className="text-dc1-text-secondary">{isRTL ? 'الفئة A (مُسخّن)' : 'Tier A (pre-warmed)'}</span>
               </div>
               <div className="flex items-center gap-2 bg-status-success/10 rounded-lg px-3 py-2 border border-status-success/20">
-                <span className="text-status-success font-bold">Save 33–51%</span>
-                <span className="text-dc1-text-secondary">vs AWS Bedrock</span>
+                <span className="text-status-success font-bold">{isRTL ? 'وفّر 33–51%' : 'Save 33–51%'}</span>
+                <span className="text-dc1-text-secondary">{isRTL ? 'مقابل AWS Bedrock' : 'vs AWS Bedrock'}</span>
               </div>
               {liveProviderCount !== null && (
                 <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
                   <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${liveProviderCount > 0 ? 'bg-status-success animate-pulse' : 'bg-dc1-text-muted/40'}`} />
                   <span className={`font-bold ${liveProviderCount > 0 ? 'text-status-success' : 'text-dc1-text-muted'}`}>{liveProviderCount}</span>
-                  <span className="text-dc1-text-secondary">providers live now</span>
+                  <span className="text-dc1-text-secondary">{isRTL ? 'مزودون متصلون الآن' : 'providers live now'}</span>
                 </div>
               )}
             </div>
@@ -377,7 +379,7 @@ export default function MarketplaceModelsPage() {
         </section>
 
         {/* Pricing comparison bar */}
-        <PricingComparisonBar />
+        <PricingComparisonBar isRTL={isRTL} />
 
         {/* Filters */}
         <section className="border-b border-dc1-border bg-dc1-surface-l1/50 sticky top-0 z-10 backdrop-blur-sm">
@@ -388,7 +390,7 @@ export default function MarketplaceModelsPage() {
               </svg>
               <input
                 type="text"
-                placeholder="Search models…"
+                placeholder={isRTL ? 'ابحث في النماذج…' : 'Search models…'}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="input ps-9 w-full text-sm"
@@ -399,26 +401,26 @@ export default function MarketplaceModelsPage() {
               onChange={e => setFilterTask(e.target.value as TaskFilter)}
               className="input text-sm w-auto"
             >
-              <option value="all">All Tasks</option>
-              <option value="chat">Chat / Inference</option>
-              <option value="embedding">Embeddings</option>
-              <option value="reranking">Reranking</option>
-              <option value="image">Image Generation</option>
+              <option value="all">{isRTL ? 'كل المهام' : 'All Tasks'}</option>
+              <option value="chat">{isRTL ? 'دردشة / استدلال' : 'Chat / Inference'}</option>
+              <option value="embedding">{isRTL ? 'تضمين' : 'Embeddings'}</option>
+              <option value="reranking">{isRTL ? 'إعادة ترتيب' : 'Reranking'}</option>
+              <option value="image">{isRTL ? 'توليد صور' : 'Image Generation'}</option>
             </select>
             <select
               value={filterTier}
               onChange={e => setFilterTier(e.target.value as 'all' | 'tier_a' | 'tier_b')}
               className="input text-sm w-auto"
             >
-              <option value="all">All Tiers</option>
-              <option value="tier_a">⭐ Tier A</option>
-              <option value="tier_b">✦ Tier B</option>
+              <option value="all">{isRTL ? 'كل الفئات' : 'All Tiers'}</option>
+              <option value="tier_a">⭐ {isRTL ? 'الفئة A' : 'Tier A'}</option>
+              <option value="tier_b">✦ {isRTL ? 'الفئة B' : 'Tier B'}</option>
             </select>
             <input
               type="number"
               min="0"
               step="8"
-              placeholder="Min VRAM (GB)"
+              placeholder={isRTL ? 'أدنى VRAM (GB)' : 'Min VRAM (GB)'}
               value={filterVram}
               onChange={e => setFilterVram(e.target.value)}
               className="input text-sm w-36"
@@ -430,10 +432,10 @@ export default function MarketplaceModelsPage() {
                 onChange={e => setFilterArabic(e.target.checked)}
                 className="rounded"
               />
-              🌙 Arabic only
+              🌙 {isRTL ? 'العربية فقط' : 'Arabic only'}
             </label>
             <span className="text-xs text-dc1-text-muted whitespace-nowrap ms-auto">
-              {loading ? 'Loading…' : `${filtered.length} of ${models.length} models`}
+              {loading ? (isRTL ? 'جاري التحميل…' : 'Loading…') : isRTL ? `${filtered.length} من ${models.length} نموذج` : `${filtered.length} of ${models.length} models`}
             </span>
           </div>
         </section>
@@ -445,14 +447,15 @@ export default function MarketplaceModelsPage() {
             <div className="mb-8 bg-dc1-amber/5 border border-dc1-amber/30 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <div className="text-3xl">🌙</div>
               <div className="flex-1">
-                <h3 className="font-bold text-dc1-text-primary mb-1">One-Click Arabic RAG Pipeline</h3>
+                <h3 className="font-bold text-dc1-text-primary mb-1">{isRTL ? 'مسار RAG عربي بنقرة واحدة' : 'One-Click Arabic RAG Pipeline'}</h3>
                 <p className="text-sm text-dc1-text-secondary">
-                  Bundle BGE-M3 embeddings + BGE reranker + ALLaM/JAIS into a complete PDPL-compliant Arabic document retrieval stack.
-                  Saudi government, legal, and financial services — no other provider offers this locally.
+                  {isRTL
+                    ? 'ادمج تضمين BGE-M3 مع BGE Reranker ونماذج ALLaM/JAIS للحصول على حزمة استرجاع وثائق عربية متوافقة مع PDPL.'
+                    : 'Bundle BGE-M3 embeddings + BGE reranker + ALLaM/JAIS into a complete PDPL-compliant Arabic document retrieval stack.'}
                 </p>
               </div>
               <Link href="/marketplace/templates?category=embedding" className="btn btn-primary shrink-0 text-sm">
-                View Arabic RAG Templates
+                {isRTL ? 'عرض قوالب RAG العربية' : 'View Arabic RAG Templates'}
               </Link>
             </div>
           )}
@@ -463,22 +466,22 @@ export default function MarketplaceModelsPage() {
             </div>
           ) : error ? (
             <div className="text-center py-20">
-              <p className="text-dc1-text-secondary mb-2">Failed to load model catalog.</p>
-              <button onClick={() => window.location.reload()} className="btn btn-secondary btn-sm mt-2">Retry</button>
+              <p className="text-dc1-text-secondary mb-2">{isRTL ? 'تعذر تحميل فهرس النماذج.' : 'Failed to load model catalog.'}</p>
+              <button onClick={() => window.location.reload()} className="btn btn-secondary btn-sm mt-2">{isRTL ? 'إعادة المحاولة' : 'Retry'}</button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-20">
-              <p className="text-dc1-text-secondary mb-1">No models match your filters.</p>
+              <p className="text-dc1-text-secondary mb-1">{isRTL ? 'لا توجد نماذج تطابق عوامل التصفية.' : 'No models match your filters.'}</p>
               <button
                 onClick={() => { setSearch(''); setFilterArabic(false); setFilterTask('all'); setFilterTier('all'); setFilterVram('') }}
                 className="btn btn-outline btn-sm mt-3"
               >
-                Clear filters
+                {isRTL ? 'مسح عوامل التصفية' : 'Clear filters'}
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filtered.map(m => <ModelCard key={m.model_id} model={m} />)}
+              {filtered.map(m => <ModelCard key={m.model_id} model={m} isRTL={isRTL} />)}
             </div>
           )}
         </section>
