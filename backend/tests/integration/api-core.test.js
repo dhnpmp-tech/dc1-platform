@@ -107,6 +107,26 @@ describe('Provider API — POST /api/providers/register', () => {
       .send({ name: 'Test', email: 'test@dc1.test', os: 'Linux' });
     expect(res.status).toBe(400);
   });
+
+  it('accepts human-readable OS labels and stores canonical OS values', async () => {
+    const res = await registerProvider({ os: 'Ubuntu 22.04' });
+    expect(res.status).toBe(200);
+    const row = db.get('SELECT os FROM providers WHERE id = ?', res.body.provider_id);
+    expect(row.os).toBe('linux');
+  });
+
+  it('returns installer_url on canonical setup download route that works for lowercase os', async () => {
+    const res = await registerProvider({ os: 'linux' });
+    expect(res.status).toBe(200);
+    expect(res.body.installer_url).toMatch(
+      /^\/api\/providers\/download\/setup\?key=dc1-provider-[a-f0-9]+&os=linux$/
+    );
+
+    const setupRes = await request(app).get(res.body.installer_url);
+    expect(setupRes.status).toBe(200);
+    expect(typeof setupRes.text).toBe('string');
+    expect(setupRes.text.length).toBeGreaterThan(0);
+  });
 });
 
 describe('Provider API — GET /api/providers/me', () => {
