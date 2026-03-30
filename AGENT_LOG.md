@@ -32440,11 +32440,11 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 23:35 UTC] Codex — DCP-184 Install Wizard Progress Persistence + Checklist Reset
-- **Commit**: `pending` - Persisted provider install wizard progress in browser storage (selected OS + prerequisite checklist), restored state on reload, reset copy confirmation when OS changes, and added a one-click checklist reset action for clean reruns.
+- **Commit**: `f8f714e` - Persisted provider install wizard progress in browser storage (selected OS + prerequisite checklist), restored state on reload, reset copy confirmation when OS changes, and added a one-click checklist reset action for clean reruns.
 - **Files**: `app/provider/components/ProviderInstallWizardCard.tsx`, `AGENT_LOG.md`
 - **Impact**: Providers can resume setup without losing progress after refresh/navigation, reducing repeated setup friction while preserving a fast reset path for troubleshooting/reinstall flows.
 
 ## [2026-03-30 23:38 UTC] Codex — DCP-185 Install Wizard Guardrails (Prereq Gate + Manual Refresh)
-- **Commit**: `pending` - Added action guardrails to the provider install wizard: command copy is disabled until all prerequisites are confirmed, and live readiness checks now support explicit manual refresh with in-flight button state.
+- **Commit**: `ba3d6b3` - Added action guardrails to the provider install wizard: command copy is disabled until all prerequisites are confirmed, and live readiness checks now support explicit manual refresh with in-flight button state.
 - **Files**: `app/provider/components/ProviderInstallWizardCard.tsx`, `AGENT_LOG.md`
 - **Impact**: Providers now follow the intended setup order with less accidental misconfiguration, and operators can force immediate readiness rechecks during bring-up/troubleshooting without waiting for the 10s poll interval.
