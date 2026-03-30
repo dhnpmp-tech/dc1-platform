@@ -1,3 +1,8 @@
+## [2026-03-30 04:30 UTC] Codex — DCP-40 Marketplace Templates Arabic RTL Localization
+- **Commit**: `e177c3e` - Localized `/marketplace/templates` for Arabic mode by adding RTL-aware copy for hero text, category tabs, filter labels/placeholders, card badges/spec/pricing/comparison text, empty/error states, and CTA block messaging.
+- **Files**: `app/marketplace/templates/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic users now get localized templates-catalog UX (matching the marketplace/models and provider-register remediation direction) instead of English-heavy fallback text across key browsing and deploy decision surfaces. Verification: `npm run build` passed.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
