@@ -32350,6 +32350,6 @@ a
 - **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
 
 ## [2026-03-30 12:11 UTC] Codex - Provider Me Test Suite Migrated To Jest
-- **Commit**: `pending` - Replaced the legacy script-style `backend/tests/provider-me.test.js` runner (manual HTTP server + `process.exit`) with proper Jest/Supertest tests that exercise provider self-service endpoints under the shared integration harness.
+- **Commit**: `7f97613` - Replaced the legacy script-style `backend/tests/provider-me.test.js` runner (manual HTTP server + `process.exit`) with proper Jest/Supertest tests that exercise provider self-service endpoints under the shared integration harness.
 - **Files**: `backend/tests/provider-me.test.js`, `AGENT_LOG.md`
 - **Impact**: `tests/provider-me.test.js` is now CI-compatible and stable under Jest, covering `/api/providers/me`, pause/resume, preferences validation, and installer download contract assertions without post-test teardown errors. Verification passed: `cd backend && npm test -- --runInBand tests/provider-me.test.js` (`7/7`).
