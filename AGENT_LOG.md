@@ -1,3 +1,8 @@
+## [2026-03-30 03:11 UTC] Codex — DCP-42 Provider Register Referral + GPU Hint Localization
+- **Commit**: `cb270db` - Localized remaining provider onboarding hardcoded strings for GPU selection guidance and referral capture, wiring them through shared i18n keys for both English and Arabic.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: `/provider/register` no longer ships hardcoded English for GPU helper text, phone placeholder, or referral UX copy in Arabic mode. Added dedicated `register.provider.*` translation keys and reused existing phone placeholder key to keep localization centralized. Verification: `npm run build` (Next.js production build) passed before push.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
