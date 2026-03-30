@@ -1,3 +1,8 @@
+## [2026-03-30 04:04 UTC] Codex — Combined Arabic UX Localization Ship (DCP-40 + DCP-42)
+- **Commit**: `b6a224b`, `d3eafa2` - Landed a combined frontend localization pass from `main`: Arabic marketplace/catalog/onboarding wording fixes (DCP-40 scope) plus provider registration full Arabic copy/i18n remediation (DCP-42 scope).
+- **Files**: `app/marketplace/models/page.tsx`, `app/components/marketplace/FeaturedArabicModels.tsx`, `app/components/OnboardingWizard.tsx`, `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic-mode users now get localized copy across both major blocked UX surfaces identified by QA: `/marketplace/models` + featured/onboarding components and `/provider/register` readiness/install/referral/info-card flows. Verification in this workspace: `npm run build` passed on the combined branch.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
