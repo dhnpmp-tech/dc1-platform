@@ -32348,3 +32348,8 @@ a
 - **Commit**: `6bc4ba7` - Merged PR #92 from `agent/backend-dev/dcp-82-register-location-country-compat` into `main` after confirming the PR was mergeable and Vercel reported the head commit `c896700` as `success`.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
+
+## [2026-03-30 11:06 UTC] Codex — DCP-110 /v1/models Backward-Compatibility Guard For Legacy Schemas
+- **Commit**: `pending` - Hardened `/v1/models` to gracefully handle SQLite schemas missing `model_registry.parameter_count` by retrying with a compatible select and preserving `parameter_count: null` in the response; added a focused unit test for the missing-column path.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: OpenAI-format model listing no longer fails with `500` on older DBs that predate the `parameter_count` column. Verification: `cd backend && npm test -- --runInBand src/__tests__/v1-models.test.js` and `cd backend && npm test -- --runInBand tests/integration/v1-server-wiring.test.js` both pass.

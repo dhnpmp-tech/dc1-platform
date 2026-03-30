@@ -106,13 +106,29 @@ function requireAuth(req, res, next) {
 
 router.get('/models', (req, res) => {
   try {
-    const rows = db.all(`
-      SELECT id, model_id, display_name, parameter_count, context_window,
-             min_gpu_vram_gb, use_cases
-      FROM model_registry
-      WHERE is_active = 1
-      ORDER BY display_name ASC
-    `);
+    let rows;
+    try {
+      rows = db.all(`
+        SELECT id, model_id, display_name, parameter_count, context_window,
+               min_gpu_vram_gb, use_cases
+        FROM model_registry
+        WHERE is_active = 1
+        ORDER BY display_name ASC
+      `);
+    } catch (error) {
+      // Backward compatibility for deployed SQLite schemas that predate
+      // model_registry.parameter_count.
+      if (!String(error?.message || '').includes('no such column: parameter_count')) {
+        throw error;
+      }
+      rows = db.all(`
+        SELECT id, model_id, display_name, context_window,
+               min_gpu_vram_gb, use_cases
+        FROM model_registry
+        WHERE is_active = 1
+        ORDER BY display_name ASC
+      `);
+    }
 
     const nowSecs = Math.floor(Date.now() / 1000);
 
@@ -127,7 +143,7 @@ router.get('/models', (req, res) => {
       // Extra DC1 fields (safe to include — OpenRouter ignores unknown keys)
       display_name: row.display_name || row.model_id,
       context_window: Number(row.context_window || 0),
-      parameter_count: row.parameter_count || null,
+      parameter_count: row.parameter_count ?? null,
     }));
 
     return res.json({ object: 'list', data });
