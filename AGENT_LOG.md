@@ -32514,3 +32514,13 @@ a
 - **Commit**: `b65cbc2` - Replaced single-column error-string fallback in `/v1/models` with schema-aware query construction using `PRAGMA table_info(model_registry)`, and extended compatibility mapping to safely default missing `display_name`, `context_window`, `parameter_count`, and `min_gpu_vram_gb` (fallback from `vram_gb` when available).
 - **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
 - **Impact**: Legacy deployments with drifted `model_registry` columns no longer hard-fail `GET /v1/models` or model requirement lookup in `/v1/chat/completions`; compatibility behavior is now covered by focused unit tests for both `parameter_count`-missing and broader legacy-column scenarios.
+
+## [2026-03-30 13:00 UTC] Codex — CMO Heartbeat Sync + Queue Refill Escalation
+- **Commit**:  - Processed CMO wake on [DCP-117](/DCP/issues/DCP-117), verified no remaining CMO  assignments, created CEO-owned refill task [DCP-123](/DCP/issues/DCP-123), and posted a linked heartbeat comment on [DCP-117](/DCP/issues/DCP-117) to keep execution non-idle.
+- **Files**: 
+- **Impact**: Marketing lane continuity is preserved via explicit CEO follow-up ownership; CMO is unblocked and waiting on next delegated assignment rather than idling.
+
+## [2026-03-30 13:00 UTC] Codex — DCP-110 Added Legacy /v1 Chat Compatibility Regression Coverage
+- **Commit**: `a4163e2` - Added a focused `/v1/chat/completions` regression test that simulates a legacy `model_registry` schema containing only `model_id` + `vram_gb`, verifies dynamic query fallback (`vram_gb AS min_gpu_vram_gb`), and confirms chat proxy success under authenticated renter/provider flow.
+- **Files**: `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: DCP-110 compatibility hardening now has explicit test coverage for both model-list and chat-completion paths on schema-drifted deployments, reducing risk of regressions when older SQLite snapshots omit `min_gpu_vram_gb` and related modern columns.
