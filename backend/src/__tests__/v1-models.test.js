@@ -83,6 +83,26 @@ describe('v1 models route', () => {
     expect(res.body.data[0].parameter_count).toBeNull();
   });
 
+  test('returns empty list when model_registry table is missing', async () => {
+    mockDb.all.mockImplementation((sql) => {
+      if (String(sql).includes('PRAGMA table_info(model_registry)')) {
+        const err = new Error('no such table: model_registry');
+        throw err;
+      }
+      if (String(sql).includes('FROM model_registry')) {
+        const err = new Error('no such table: model_registry');
+        throw err;
+      }
+      return [];
+    });
+
+    const res = await request(app).get('/v1/models');
+
+    expect(res.status).toBe(200);
+    expect(res.body.object).toBe('list');
+    expect(res.body.data).toEqual([]);
+  });
+
   test('chat completions resolves legacy vram_gb-only model_registry schema', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
@@ -143,6 +163,71 @@ describe('v1 models route', () => {
     expect(res.body.model).toBe('legacy-chat-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('vram_gb AS min_gpu_vram_gb'))).toBe(true);
+
+    fetchSpy.mockRestore();
+  });
+
+  test('chat completions falls back to requested model when model_registry table is missing', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'chatcmpl-no-table',
+        object: 'chat.completion',
+        model: 'requested-model',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'fallback works' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
+      }),
+    });
+
+    mockDb.all.mockImplementation((sql) => {
+      if (String(sql).includes('PRAGMA table_info(model_registry)')) {
+        const err = new Error('no such table: model_registry');
+        throw err;
+      }
+      if (String(sql).includes('FROM providers')) {
+        return [{
+          id: 77,
+          status: 'online',
+          is_paused: 0,
+          deleted_at: null,
+          supported_compute_types: '["inference"]',
+          vram_gb: 24,
+          last_heartbeat: new Date().toISOString(),
+          vllm_endpoint_url: 'http://provider.test',
+          gpu_util_pct: 5,
+        }];
+      }
+      return [];
+    });
+
+    mockDb.get.mockImplementation((sql) => {
+      const query = String(sql);
+      if (query.includes('FROM renter_api_keys')) return null;
+      if (query.includes('FROM renters WHERE api_key')) {
+        return { id: 8, api_key: 'test-key', balance_halala: 5000, status: 'active' };
+      }
+      if (query.includes('FROM model_registry WHERE model_id = ?')) {
+        const err = new Error('no such table: model_registry');
+        throw err;
+      }
+      if (query.includes('FROM cost_rates')) {
+        return { token_rate_halala: 1 };
+      }
+      return null;
+    });
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', 'Bearer test-key')
+      .send({
+        model: 'requested-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        max_tokens: 64,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.model).toBe('requested-model');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     fetchSpy.mockRestore();
   });

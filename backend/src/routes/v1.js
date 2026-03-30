@@ -104,10 +104,19 @@ function requireAuth(req, res, next) {
 
 let modelRegistryColumnsCache = null;
 
+function isMissingModelRegistryError(error) {
+  return String(error?.message || '').includes('no such table: model_registry');
+}
+
 function getModelRegistryColumns() {
   if (modelRegistryColumnsCache) return modelRegistryColumnsCache;
-  const pragmaRows = db.all('PRAGMA table_info(model_registry)');
-  modelRegistryColumnsCache = new Set((pragmaRows || []).map((row) => String(row.name || '')));
+  try {
+    const pragmaRows = db.all('PRAGMA table_info(model_registry)');
+    modelRegistryColumnsCache = new Set((pragmaRows || []).map((row) => String(row.name || '')));
+  } catch (error) {
+    if (!isMissingModelRegistryError(error)) throw error;
+    modelRegistryColumnsCache = new Set();
+  }
   return modelRegistryColumnsCache;
 }
 
@@ -150,7 +159,12 @@ function buildModelRequirementsQuery(columns) {
 router.get('/models', (req, res) => {
   try {
     const columns = getModelRegistryColumns();
-    const rows = db.all(buildModelRegistryListQuery(columns));
+    let rows = [];
+    try {
+      rows = db.all(buildModelRegistryListQuery(columns));
+    } catch (error) {
+      if (!isMissingModelRegistryError(error)) throw error;
+    }
 
     const nowSecs = Math.floor(Date.now() / 1000);
 
@@ -219,7 +233,12 @@ function assignProvider(minVramMb) {
 
 function resolveModelRequirements(model) {
   const columns = getModelRegistryColumns();
-  const row = db.get(buildModelRequirementsQuery(columns), model);
+  let row = null;
+  try {
+    row = db.get(buildModelRequirementsQuery(columns), model);
+  } catch (error) {
+    if (!isMissingModelRegistryError(error)) throw error;
+  }
   return {
     model_id: row?.model_id || model,
     min_vram_gb: Number(row?.min_gpu_vram_gb || 0),
