@@ -219,6 +219,33 @@ try {
 db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_provider ON serve_sessions(provider_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_serve_sessions_expiry ON serve_sessions(status, expires_at)`);
 
+// ─── USAGE METERING RECORDS TABLE ───
+// Durable, normalized token usage records for settlement/reconciliation.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS usage_metering_records (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    renter_id INTEGER NOT NULL,
+    provider_id INTEGER,
+    model TEXT NOT NULL,
+    usage_source TEXT NOT NULL DEFAULT 'openrouter_v1',
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    token_rate_halala INTEGER NOT NULL DEFAULT 0,
+    billed_halala INTEGER NOT NULL DEFAULT 0,
+    usage_unit TEXT NOT NULL DEFAULT 'token',
+    currency TEXT NOT NULL DEFAULT 'SAR',
+    raw_usage_json TEXT,
+    normalized_usage_json TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (renter_id) REFERENCES renters(id),
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_metering_records_provider_model ON usage_metering_records(provider_id, model, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_metering_records_renter_created ON usage_metering_records(renter_id, created_at DESC)`);
+
 // ─── COST RATES TABLE ───
 // Supports model-specific token rates for vLLM serve billing.
 db.exec(`

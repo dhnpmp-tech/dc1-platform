@@ -201,6 +201,79 @@ function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
 }
 
+function normalizeUsageForSettlement(rawUsage, { fallbackPromptTokens = 0, fallbackCompletionTokens = 0 } = {}) {
+  const maxTokenBound = 1000000000;
+  const fallbackPrompt = toFiniteInt(fallbackPromptTokens, { min: 0, max: maxTokenBound }) || 0;
+  const fallbackCompletion = toFiniteInt(fallbackCompletionTokens, { min: 0, max: maxTokenBound }) || 0;
+
+  let promptTokens = toFiniteInt(rawUsage?.prompt_tokens, { min: 0, max: maxTokenBound });
+  let completionTokens = toFiniteInt(rawUsage?.completion_tokens, { min: 0, max: maxTokenBound });
+  let totalTokens = toFiniteInt(rawUsage?.total_tokens, { min: 0, max: maxTokenBound });
+
+  if (totalTokens == null) {
+    promptTokens = promptTokens != null ? promptTokens : fallbackPrompt;
+    completionTokens = completionTokens != null ? completionTokens : fallbackCompletion;
+    totalTokens = promptTokens + completionTokens;
+  } else if (promptTokens == null && completionTokens == null) {
+    promptTokens = Math.min(fallbackPrompt, totalTokens);
+    completionTokens = Math.max(0, totalTokens - promptTokens);
+  } else if (promptTokens == null) {
+    completionTokens = completionTokens != null ? completionTokens : 0;
+    promptTokens = Math.max(0, totalTokens - completionTokens);
+  } else if (completionTokens == null) {
+    completionTokens = Math.max(0, totalTokens - promptTokens);
+  }
+
+  if (promptTokens > totalTokens) {
+    promptTokens = totalTokens;
+    completionTokens = 0;
+  } else if ((promptTokens + completionTokens) !== totalTokens) {
+    completionTokens = Math.max(0, totalTokens - promptTokens);
+  }
+
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+function persistNormalizedUsageRecord({
+  requestId,
+  renterId,
+  providerId,
+  model,
+  rawUsage,
+  normalizedUsage,
+  tokenRateHalala,
+  billedHalala,
+  nowIso,
+}) {
+  const payloadRaw = (() => {
+    try { return JSON.stringify(rawUsage || {}); } catch (_) { return '{}'; }
+  })();
+  const payloadNormalized = (() => {
+    try { return JSON.stringify(normalizedUsage || {}); } catch (_) { return '{}'; }
+  })();
+  db.prepare(
+    `INSERT INTO usage_metering_records (
+      id, request_id, renter_id, provider_id, model, usage_source,
+      prompt_tokens, completion_tokens, total_tokens, token_rate_halala, billed_halala,
+      usage_unit, currency, raw_usage_json, normalized_usage_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, 'openrouter_v1', ?, ?, ?, ?, ?, 'token', 'SAR', ?, ?, ?)`
+  ).run(
+    `meter-${requestId}`,
+    requestId,
+    renterId,
+    providerId != null ? providerId : null,
+    model,
+    normalizedUsage.promptTokens,
+    normalizedUsage.completionTokens,
+    normalizedUsage.totalTokens,
+    tokenRateHalala,
+    billedHalala,
+    payloadRaw,
+    payloadNormalized,
+    nowIso
+  );
+}
+
 async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
@@ -322,16 +395,40 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
 
       const debitAndReturnProxyResult = (resultBody) => {
         const usage = resultBody?.usage || {};
-        const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
+        const completionText = resultBody?.choices?.[0]?.message?.content || '';
+        const fallbackCompletionTokens = approximateTokenCount(completionText);
+        const normalizedUsage = normalizeUsageForSettlement(usage, {
+          fallbackPromptTokens: promptTokens,
+          fallbackCompletionTokens,
+        });
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
         ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
-        const tokenRate = rateRecord?.token_rate_halala || 1;
-        const actualCost = Math.max(1, actualTokens * tokenRate);
+        const tokenRate = toFiniteInt(rateRecord?.token_rate_halala, { min: 0, max: 1000000000 }) || 1;
+        const actualCost = Math.max(1, normalizedUsage.totalTokens * tokenRate);
+        const nowIso = new Date().toISOString();
+        const requestId = normalizeString(resultBody?.id, { maxLen: 200 }) || `v1-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+
         try {
+          persistNormalizedUsageRecord({
+            requestId,
+            renterId: req.renter.id,
+            providerId: assignedProvider.id,
+            model: modelReq.model_id,
+            rawUsage: usage,
+            normalizedUsage,
+            tokenRateHalala: tokenRate,
+            billedHalala: actualCost,
+            nowIso,
+          });
           db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
-            .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
-        } catch (_) { /* best-effort */ }
+            .run(actualCost, nowIso, req.renter.id, actualCost);
+        } catch (meteringError) {
+          console.error('[v1/chat/completions] metering persistence failed:', meteringError?.message || meteringError);
+          return res.status(500).json({
+            error: { message: 'Failed to persist usage metering', type: 'server_error', code: 500 }
+          });
+        }
 
         return res.json(resultBody);
       };
