@@ -39,9 +39,36 @@ function cleanDb() {
   try { db.prepare('PRAGMA foreign_keys = OFF').run(); } catch (_) {}
   for (const t of [
     'heartbeat_log', 'provider_gpu_telemetry', 'provider_health_log',
-    'provider_benchmarks', 'jobs', 'providers',
+    'provider_benchmarks', 'jobs', 'providers', 'model_registry',
   ]) { safe(t); }
   try { db.prepare('PRAGMA foreign_keys = ON').run(); } catch (_) {}
+}
+
+function insertCatalogModel(overrides = {}) {
+  const now = new Date().toISOString();
+  const model = {
+    model_id: overrides.model_id || `model-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    display_name: overrides.display_name || 'Catalog Test Model',
+    family: overrides.family || 'llm',
+    vram_gb: overrides.vram_gb ?? 16,
+    quantization: overrides.quantization || 'fp16',
+    context_window: overrides.context_window ?? 8192,
+    use_cases: overrides.use_cases || JSON.stringify(['chat', 'reasoning']),
+    min_gpu_vram_gb: overrides.min_gpu_vram_gb ?? 16,
+    default_price_halala_per_min: overrides.default_price_halala_per_min ?? 120,
+    is_active: overrides.is_active ?? 1,
+  };
+  db.prepare(`
+    INSERT INTO model_registry
+      (model_id, display_name, family, vram_gb, quantization, context_window,
+       use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    model.model_id, model.display_name, model.family, model.vram_gb, model.quantization,
+    model.context_window, model.use_cases, model.min_gpu_vram_gb,
+    model.default_price_halala_per_min, model.is_active, now, now,
+  );
+  return model;
 }
 
 async function registerProvider(overrides = {}) {
@@ -310,6 +337,99 @@ describe('GET /api/providers/online (public)', () => {
     expect(provider).toBeDefined();
     expect(Array.isArray(provider.loaded_models)).toBe(true);
     expect(provider.loaded_models).toContain('allam-7b-instruct');
+  });
+});
+
+describe('GET /api/providers/model-catalog', () => {
+  test('returns OpenRouter-style required contract fields for active models', async () => {
+    insertCatalogModel({
+      model_id: 'catalog-required-model',
+      display_name: 'Catalog Required',
+      quantization: 'bf16',
+      context_window: 32768,
+      default_price_halala_per_min: 90,
+      use_cases: JSON.stringify(['chat', 'reasoning', 'code']),
+    });
+
+    const res = await request(app).get('/api/providers/model-catalog');
+    expect(res.status).toBe(200);
+    expect(res.body.object).toBe('list');
+    expect(Array.isArray(res.body.data)).toBe(true);
+
+    const model = res.body.data.find((entry) => entry.id === 'catalog-required-model');
+    expect(model).toBeDefined();
+    expect(model).toHaveProperty('name', 'Catalog Required');
+    expect(model).toHaveProperty('created');
+    expect(model).toHaveProperty('modalities');
+    expect(model).toHaveProperty('context_length', 32768);
+    expect(model).toHaveProperty('max_output_tokens');
+    expect(model).toHaveProperty('quantization', 'bf16');
+    expect(model).toHaveProperty('pricing');
+    expect(model.pricing).toHaveProperty('usd_per_minute');
+    expect(model.pricing).toHaveProperty('usd_per_1m_input_tokens');
+    expect(model.pricing).toHaveProperty('usd_per_1m_output_tokens');
+    expect(model).toHaveProperty('sampling_parameters');
+    expect(model).toHaveProperty('supported_features');
+  });
+
+  test('includes valid optional fields from provider metadata', async () => {
+    const model = insertCatalogModel({
+      model_id: 'catalog-optional-model',
+      display_name: 'Catalog Optional',
+      use_cases: JSON.stringify(['chat']),
+    });
+    const { id, apiKey } = await registerProvider();
+    await request(app)
+      .post(`/api/providers/${id}/online`)
+      .set('x-provider-key', apiKey)
+      .send({ loadedModels: [model.model_id], gpuModel: 'RTX 4090', vramGb: 24 });
+
+    db.prepare('UPDATE providers SET cached_models = ? WHERE id = ?').run(JSON.stringify([{
+      model_id: model.model_id,
+      display_name: model.display_name,
+      deprecation_date: '2027-12-31',
+      datacenters: ['sa-neom-1', 'eu-frankfurt-1'],
+      openrouter: { slug: 'dcp/catalog-optional-model' },
+    }]), id);
+
+    const res = await request(app).get('/api/providers/model-catalog');
+    expect(res.status).toBe(200);
+    const item = res.body.data.find((entry) => entry.id === model.model_id);
+    expect(item).toBeDefined();
+    expect(item).toHaveProperty('deprecation_date', '2027-12-31');
+    expect(item).toHaveProperty('datacenters');
+    expect(item.datacenters).toEqual(expect.arrayContaining(['sa-neom-1', 'eu-frankfurt-1']));
+    expect(item).toHaveProperty('openrouter');
+    expect(item.openrouter).toHaveProperty('slug', 'dcp/catalog-optional-model');
+  });
+
+  test('drops invalid optional fields that fail validation', async () => {
+    const model = insertCatalogModel({
+      model_id: 'catalog-invalid-optional-model',
+      display_name: 'Catalog Invalid Optional',
+      use_cases: JSON.stringify(['chat']),
+    });
+    const { id, apiKey } = await registerProvider();
+    await request(app)
+      .post(`/api/providers/${id}/online`)
+      .set('x-provider-key', apiKey)
+      .send({ loadedModels: [model.model_id], gpuModel: 'RTX 4090', vramGb: 24 });
+
+    db.prepare('UPDATE providers SET cached_models = ? WHERE id = ?').run(JSON.stringify([{
+      model_id: model.model_id,
+      display_name: model.display_name,
+      deprecation_date: 'not-a-date',
+      datacenters: ['SA-NEOM-1'],
+      openrouter: { slug: 'Invalid Slug' },
+    }]), id);
+
+    const res = await request(app).get('/api/providers/model-catalog');
+    expect(res.status).toBe(200);
+    const item = res.body.data.find((entry) => entry.id === model.model_id);
+    expect(item).toBeDefined();
+    expect(item).not.toHaveProperty('deprecation_date');
+    expect(item).not.toHaveProperty('datacenters');
+    expect(item).not.toHaveProperty('openrouter');
   });
 });
 
