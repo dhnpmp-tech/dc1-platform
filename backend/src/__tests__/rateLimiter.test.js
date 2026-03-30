@@ -4,6 +4,7 @@
 
 const express = require('express');
 const request = require('supertest');
+const { ipKeyGenerator } = require('express-rate-limit');
 const { createRateLimiter, createAdminIpAllowlist } = require('../middleware/rateLimiter');
 
 function makeApp({ max = 2, adminToken = 'test-token', allowlist = '' } = {}) {
@@ -14,7 +15,7 @@ function makeApp({ max = 2, adminToken = 'test-token', allowlist = '' } = {}) {
   const limiter = createRateLimiter({
     windowMs: 60000,
     max,
-    keyGenerator: (req) => req.ip || '127.0.0.1',
+    keyGenerator: (req) => ipKeyGenerator(req.ip || '127.0.0.1'),
   });
 
   const savedToken = process.env.DC1_ADMIN_TOKEN;
