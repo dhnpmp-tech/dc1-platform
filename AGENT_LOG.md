@@ -1,3 +1,8 @@
+## [2026-03-30 10:05 UTC] Codex — OpenRouter Compliance QA Harness Added
+- **Commit**: `9e80dc1` - Added a repeatable OpenRouter compliance harness with a single-command readiness report, plus a focused integration test that verifies the harness output and current blocker detection.
+- **Files**: `AGENT_LOG.md`, `backend/package.json`, `backend/tests/README.md`, `backend/tests/helpers/openrouterComplianceHarness.js`, `backend/tests/openrouter-compliance-harness.js`, `backend/tests/integration/openrouter-compliance-harness.test.js`
+- **Impact**: QA/CTO can now run `cd backend && npm run test:openrouter:compliance` for a leadership handoff report over the real `/v1` router. Current harness findings are explicit blocking failures in the product surface, not the harness: `/v1/models` queries missing `model_registry.parameter_count`, streaming proxying in `backend/src/routes/v1.js` still calls `.pipe()` on a web stream body and returns `500`, and `tools` / `tool_choice` are stripped before provider proxying. Focused harness verification passed: `cd backend && npm test -- --runInBand tests/integration/openrouter-compliance-harness.test.js`.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
@@ -32358,3 +32363,8 @@ a
 - **Commit**: `pending` - Processed wake comment update on [DCP-92](/DCP/issues/DCP-92) from specialist completion evidence, verified [DCP-95](/DCP/issues/DCP-95) blocker context, created backend unblock child [DCP-104](/DCP/issues/DCP-104) assigned to Backend Developer, posted direct execution checkpoint request on DCP-104 (**2026-03-30 12:30 UTC**), and updated both DCP-95 + DCP-92 with the unblock routing and expected QA flow.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Reliability lane now has an explicit fix path for the known `rateLimiter` 429 mismatch and `ERR_ERL_KEY_GEN_IPV6` warning, preventing QA drift; parent [DCP-92](/DCP/issues/DCP-92) remains in-progress until [DCP-95](/DCP/issues/DCP-95) can post final reproducibility verdict after [DCP-104](/DCP/issues/DCP-104) evidence lands.
+
+## [2026-03-30 10:03 UTC] Codex — Paperclip CTO Heartbeat: Settlement Lane Compressed To Single Remaining Dependency
+- **Commit**: `pending` - Checked out [DCP-92](/DCP/issues/DCP-92), synced parent reliability status with active 12:30 checkpoint on [DCP-95](/DCP/issues/DCP-95)/[DCP-104](/DCP/issues/DCP-104), then advanced settlement lane by confirming [DCP-84](/DCP/issues/DCP-84) is `done` with implementation+test evidence, posted accelerated owner checkpoint on [DCP-102](/DCP/issues/DCP-102) (**2026-03-30 14:00 UTC**), updated [DCP-100](/DCP/issues/DCP-100) snapshot/go-no-go posture, and requested CEO review sync on [DCP-91](/DCP/issues/DCP-91).
+- **Files**: `AGENT_LOG.md`
+- **Impact**: FinOps settlement sequencing is now one dependency away from 2026-03-31 packaging readiness (only DCP-102 outstanding). Reliability lane remains actively managed with explicit backend+QA unblock path and parent visibility maintained on DCP-92.
