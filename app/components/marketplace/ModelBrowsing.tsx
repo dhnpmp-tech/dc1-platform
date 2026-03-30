@@ -57,6 +57,10 @@ interface ModelBrowsingProps {
 
 export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
   const { language, t, dir } = useLanguage()
+  const tx = (key: string, en: string, ar: string) => {
+    const value = t(key)
+    return value === key ? (language === 'ar' ? ar : en) : value
+  }
   const [models, setModels] = useState<Model[]>([])
   const [modelCards, setModelCards] = useState<Map<string, ModelCardFeed>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -171,7 +175,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-gray-400">{t('marketplace.loading') || 'Loading models...'}</div>
+        <div className="text-gray-400">{tx('marketplace.loading', 'Loading models...', 'جارٍ تحميل النماذج...')}</div>
       </div>
     )
   }
@@ -179,7 +183,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
   if (error) {
     return (
       <div className="p-4 bg-status-error/10 border border-status-error/20 rounded-lg text-status-error">
-        {t('marketplace.error_loading_models') || 'Error loading models:'} {error}
+        {tx('marketplace.error_loading_models', 'Error loading models:', 'خطأ أثناء تحميل النماذج:')} {error}
       </div>
     )
   }
@@ -191,14 +195,14 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
         {/* Tier Filter */}
         <div>
           <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
-            {t('marketplace.tier') || 'Tier'}
+            {tx('marketplace.tier', 'Tier', 'الفئة')}
           </label>
           <select
             value={filters.tier || ''}
             onChange={e => setFilters({ ...filters, tier: e.target.value || null })}
             className="input w-full text-sm"
           >
-            <option value="">{t('marketplace.all') || 'All'}</option>
+            <option value="">{tx('marketplace.all', 'All', 'الكل')}</option>
             <option value="tier_a">Tier A</option>
             <option value="tier_b">Tier B</option>
             <option value="tier_c">Tier C</option>
@@ -208,7 +212,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
         {/* Min VRAM Filter */}
         <div>
           <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
-            {t('marketplace.min_vram') || 'Min VRAM (GB)'}
+            {tx('marketplace.min_vram', 'Min VRAM (GB)', 'الحد الأدنى VRAM (جيجابايت)')}
           </label>
           <select
             value={filters.minVram}
@@ -217,7 +221,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
           >
             {vramOptions.map(vram => (
               <option key={vram} value={vram}>
-                {vram === 0 ? t('marketplace.any') || 'Any' : `${vram} GB`}
+                {vram === 0 ? tx('marketplace.any', 'Any', 'أي') : `${vram} ${language === 'ar' ? 'جيجابايت' : 'GB'}`}
               </option>
             ))}
           </select>
@@ -226,14 +230,14 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
         {/* Compute Type Filter */}
         <div>
           <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
-            {t('marketplace.compute_type') || 'Compute Type'}
+            {tx('marketplace.compute_type', 'Compute Type', 'نوع الحوسبة')}
           </label>
           <select
             value={filters.computeType || ''}
             onChange={e => setFilters({ ...filters, computeType: e.target.value || null })}
             className="input w-full text-sm"
           >
-            <option value="">{t('marketplace.all') || 'All'}</option>
+            <option value="">{tx('marketplace.all', 'All', 'الكل')}</option>
             {computeTypes.map(type => (
               <option key={type} value={type}>
                 {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -245,7 +249,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
         {/* Arabic Capability */}
         <div>
           <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
-            {t('marketplace.language') || 'Language'}
+            {tx('marketplace.language', 'Language', 'اللغة')}
           </label>
           <button
             onClick={() => setFilters({ ...filters, arabicCapability: !filters.arabicCapability })}
@@ -255,25 +259,25 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
                 : 'btn-secondary'
             }`}
           >
-            {t('marketplace.arabic_only') || 'Arabic'}
+            {tx('marketplace.arabic_only', 'Arabic', 'العربية فقط')}
           </button>
         </div>
 
         {/* Sort */}
         <div>
           <label className="block text-sm font-medium text-dc1-text-secondary mb-2">
-            {t('marketplace.sort_by') || 'Sort By'}
+            {tx('marketplace.sort_by', 'Sort By', 'الترتيب حسب')}
           </label>
           <select
             value={sortBy}
             onChange={e => setSortBy(e.target.value as SortOption)}
             className="input w-full text-sm"
           >
-            <option value="availability">{t('marketplace.sort_availability') || 'Availability'}</option>
-            <option value="price-asc">{t('marketplace.sort_price_low') || 'Price (Low)'}</option>
-            <option value="price-desc">{t('marketplace.sort_price_high') || 'Price (High)'}</option>
-            <option value="latency-asc">{t('marketplace.sort_latency') || 'Latency'}</option>
-            <option value="launch-priority">{t('marketplace.sort_priority') || 'Priority'}</option>
+            <option value="availability">{tx('marketplace.sort_availability', 'Availability', 'التوفر')}</option>
+            <option value="price-asc">{tx('marketplace.sort_price_low', 'Price (Low)', 'السعر (منخفض)')}</option>
+            <option value="price-desc">{tx('marketplace.sort_price_high', 'Price (High)', 'السعر (مرتفع)')}</option>
+            <option value="latency-asc">{tx('marketplace.sort_latency', 'Latency', 'زمن الاستجابة')}</option>
+            <option value="launch-priority">{tx('marketplace.sort_priority', 'Priority', 'الأولوية')}</option>
           </select>
         </div>
       </div>
@@ -299,21 +303,21 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
             {/* Metadata */}
             <div className="space-y-2 mb-3 text-xs">
               <div className="flex justify-between">
-                <span className="text-gray-600">{t('marketplace.vram') || 'VRAM'}:</span>
-                <span className="font-medium">{model.vram_gb} GB</span>
+                <span className="text-gray-600">{tx('marketplace.vram', 'VRAM', 'VRAM')}:</span>
+                <span className="font-medium">{model.vram_gb} {language === 'ar' ? 'جيجابايت' : 'GB'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">{t('marketplace.price_per_min') || 'Price/min'}:</span>
+                <span className="text-gray-600">{tx('marketplace.price_per_min', 'Price/min', 'السعر/دقيقة')}:</span>
                 <span className="font-medium text-green-600">
-                  SAR {model.avg_price_sar_per_min.toFixed(4)}
+                  {language === 'ar' ? 'ريال' : 'SAR'} {model.avg_price_sar_per_min.toFixed(4)}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">{t('marketplace.context_window') || 'Context'}:</span>
-                <span className="font-medium">{model.context_window} tokens</span>
+                <span className="text-gray-600">{tx('marketplace.context_window', 'Context', 'السياق')}:</span>
+                <span className="font-medium">{model.context_window} {language === 'ar' ? 'رمز' : 'tokens'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">{t('marketplace.providers_online') || 'Providers'}</span>
+                <span className="text-gray-600">{tx('marketplace.providers_online', 'Providers', 'المزوّدون')}</span>
                 <span className={`font-medium ${model.providers_online > 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {model.providers_online}
                 </span>
@@ -338,11 +342,11 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
             <div className="mb-3">
               {model.status === 'available' ? (
                 <span className="inline-block px-2 py-1 bg-status-success/10 text-status-success border border-status-success/20 rounded text-xs font-medium">
-                  {t('marketplace.available') || 'Available'}
+                  {tx('marketplace.available', 'Available', 'متاح')}
                 </span>
               ) : (
                 <span className="inline-block px-2 py-1 bg-status-error/10 text-status-error border border-status-error/20 rounded text-xs font-medium">
-                  {t('marketplace.no_providers') || 'No Providers'}
+                  {tx('marketplace.no_providers', 'No Providers', 'لا يوجد مزوّدون')}
                 </span>
               )}
             </div>
@@ -353,7 +357,7 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
               disabled={model.status !== 'available'}
               className="btn btn-primary w-full text-sm disabled:cursor-not-allowed"
             >
-              {t('marketplace.deploy_model') || 'Deploy Model'}
+              {tx('marketplace.deploy_model', 'Deploy Model', 'انشر النموذج')}
             </button>
           </div>
         ))}
@@ -361,13 +365,13 @@ export default function ModelBrowsing({ onSelectModel }: ModelBrowsingProps) {
 
       {filteredAndSorted.length === 0 && (
         <div className="text-center py-8">
-          <p className="text-gray-500">{t('marketplace.no_models') || 'No models found'}</p>
+          <p className="text-gray-500">{tx('marketplace.no_models', 'No models found', 'لم يتم العثور على نماذج')}</p>
         </div>
       )}
 
       {/* Results Count */}
       <div className="text-sm text-gray-600 text-center">
-        {t('marketplace.showing') || 'Showing'} {filteredAndSorted.length} {t('marketplace.of') || 'of'} {models.length} {t('marketplace.models') || 'models'}
+        {tx('marketplace.showing', 'Showing', 'عرض')} {filteredAndSorted.length} {tx('marketplace.of', 'of', 'من')} {models.length} {tx('marketplace.models', 'models', 'نماذج')}
       </div>
     </div>
   )
