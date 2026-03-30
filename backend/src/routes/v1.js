@@ -126,6 +126,8 @@ function buildModelRegistryListQuery(columns) {
     columns.has('display_name') ? 'display_name' : 'model_id AS display_name',
     columns.has('context_window') ? 'context_window' : '4096 AS context_window',
     columns.has('parameter_count') ? 'parameter_count' : 'NULL AS parameter_count',
+    columns.has('default_price_halala_per_min') ? 'default_price_halala_per_min' : '0 AS default_price_halala_per_min',
+    columns.has('created_at') ? 'created_at' : 'NULL AS created_at',
     columns.has('min_gpu_vram_gb')
       ? 'min_gpu_vram_gb'
       : (columns.has('vram_gb') ? 'vram_gb AS min_gpu_vram_gb' : '0 AS min_gpu_vram_gb'),
@@ -154,6 +156,21 @@ function buildModelRequirementsQuery(columns) {
   return `SELECT ${selectColumns.join(', ')} FROM model_registry WHERE model_id = ?${whereActive}`;
 }
 
+function toUsdStringFromHalalaPerMinute(halalaPerMinute) {
+  const halala = Number(halalaPerMinute || 0);
+  if (!Number.isFinite(halala) || halala <= 0) return '0.000000';
+  const sarPerMinute = halala / 100;
+  const usdPerMinute = sarPerMinute / 3.75;
+  return usdPerMinute.toFixed(6);
+}
+
+function toCreatedSeconds(value) {
+  if (!value) return 0;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms) || ms < 0) return 0;
+  return Math.floor(ms / 1000);
+}
+
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
 
 router.get('/models', (req, res) => {
@@ -166,16 +183,21 @@ router.get('/models', (req, res) => {
       if (!isMissingModelRegistryError(error)) throw error;
     }
 
-    const nowSecs = Math.floor(Date.now() / 1000);
-
     const data = (rows || []).map(row => ({
       id: row.model_id,
       object: 'model',
-      created: nowSecs,
+      created: toCreatedSeconds(row.created_at),
       owned_by: 'dc1-platform',
       permission: [],
       root: row.model_id,
       parent: null,
+      name: row.display_name || row.model_id,
+      context_length: Number(row.context_window || 0),
+      pricing: {
+        usd_per_minute: toUsdStringFromHalalaPerMinute(row.default_price_halala_per_min),
+        usd_per_1m_input_tokens: toUsdStringFromHalalaPerMinute(row.default_price_halala_per_min),
+        usd_per_1m_output_tokens: toUsdStringFromHalalaPerMinute(row.default_price_halala_per_min),
+      },
       // Extra DC1 fields (safe to include — OpenRouter ignores unknown keys)
       display_name: row.display_name || row.model_id,
       context_window: Number(row.context_window || 0),

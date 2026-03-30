@@ -43,6 +43,8 @@ describe('v1 models route', () => {
           display_name: 'Fallback Model',
           context_window: 4096,
           min_gpu_vram_gb: 8,
+          default_price_halala_per_min: 20,
+          created_at: '2026-03-30T00:00:00.000Z',
           use_cases: '[]',
         },
       ]));
@@ -53,6 +55,14 @@ describe('v1 models route', () => {
     expect(res.body.object).toBe('list');
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].id).toBe('fallback-model');
+    expect(res.body.data[0].root).toBe('fallback-model');
+    expect(res.body.data[0].name).toBe('Fallback Model');
+    expect(res.body.data[0].created).toBe(1774828800);
+    expect(res.body.data[0].pricing).toEqual({
+      usd_per_minute: '0.053333',
+      usd_per_1m_input_tokens: '0.053333',
+      usd_per_1m_output_tokens: '0.053333',
+    });
     expect(res.body.data[0]).toHaveProperty('parameter_count', null);
     expect(mockDb.all).toHaveBeenCalledTimes(2);
   });
@@ -70,6 +80,8 @@ describe('v1 models route', () => {
           display_name: 'legacy-model',
           context_window: 4096,
           parameter_count: null,
+          default_price_halala_per_min: null,
+          created_at: null,
         },
       ]));
 
@@ -81,6 +93,12 @@ describe('v1 models route', () => {
     expect(res.body.data[0].display_name).toBe('legacy-model');
     expect(res.body.data[0].context_window).toBe(4096);
     expect(res.body.data[0].parameter_count).toBeNull();
+    expect(res.body.data[0].created).toBe(0);
+    expect(res.body.data[0].pricing).toEqual({
+      usd_per_minute: '0.000000',
+      usd_per_1m_input_tokens: '0.000000',
+      usd_per_1m_output_tokens: '0.000000',
+    });
   });
 
   test('returns empty list when model_registry table is missing', async () => {

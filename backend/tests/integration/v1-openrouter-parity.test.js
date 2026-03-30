@@ -161,8 +161,15 @@ describe('/v1 OpenRouter parity', () => {
     expect(parityModel).toMatchObject({
       id: 'parity-model',
       object: 'model',
+      root: 'parity-model',
       display_name: 'Parity Model',
+      pricing: {
+        usd_per_minute: expect.any(String),
+        usd_per_1m_input_tokens: expect.any(String),
+        usd_per_1m_output_tokens: expect.any(String),
+      },
     });
+    expect(parityModel.created).toBeGreaterThan(0);
     expect(parityModel).toHaveProperty('parameter_count');
   });
 

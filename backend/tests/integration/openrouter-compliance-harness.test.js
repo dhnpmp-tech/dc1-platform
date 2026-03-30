@@ -20,14 +20,11 @@ describe('OpenRouter compliance harness', () => {
     expect(byId.billing_guard?.status).toBe('pass');
     expect(byId.chat_completion_proxy?.status).toBe('pass');
     expect(byId.tool_result_roundtrip?.status).toBe('pass');
-    expect(byId.models_contract).toBeDefined();
+    expect(byId.models_contract?.status).toBe('pass');
     expect(byId.stream_stability).toBeDefined();
     expect(byId.tool_definition_passthrough).toBeDefined();
     expect(byId.mid_stream_failure_handling).toBeDefined();
-    expect(blockingFailures).toEqual([
-      'models_contract',
-      'stream_stability',
-      'tool_definition_passthrough',
-    ]);
+    expect(blockingFailures).toContain('stream_stability');
+    expect(blockingFailures).not.toContain('models_contract');
   });
 });

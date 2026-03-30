@@ -297,13 +297,32 @@ async function runOpenRouterComplianceHarness() {
         const check = createCheck('models_contract', 'GET /v1/models returns an OpenAI-compatible list payload', 'blocking');
         const { response, json } = await fetchJson(`${baseUrl}/v1/models`);
         const model = json?.data?.find((entry) => entry.id === DEFAULT_MODEL_ID);
+        const pricing = model?.pricing || {};
+        const hasRequiredShape = response.status === 200
+          && json?.object === 'list'
+          && model?.object === 'model'
+          && model?.root === DEFAULT_MODEL_ID
+          && model?.name === 'OpenRouter QA Model'
+          && typeof model?.created === 'number'
+          && model.created > 0
+          && typeof pricing.usd_per_minute === 'string'
+          && typeof pricing.usd_per_1m_input_tokens === 'string'
+          && typeof pricing.usd_per_1m_output_tokens === 'string';
         checks.push(finalizeCheck(
           check,
-          response.status === 200 && json?.object === 'list' && model?.object === 'model',
-          response.status === 200
-            ? 'Model catalog contract matches the OpenAI list shape expected by OpenRouter.'
-            : 'Model catalog contract is not returning the expected OpenAI list shape.',
-          [`status=${response.status}`, `model_present=${Boolean(model)}`]
+          hasRequiredShape,
+          hasRequiredShape
+            ? 'Model catalog contract includes required IDs and USD pricing fields serialized as strings.'
+            : 'Model catalog contract is missing required OpenRouter-compatible fields or string pricing values.',
+          [
+            `status=${response.status}`,
+            `model_present=${Boolean(model)}`,
+            `root=${model?.root || 'missing'}`,
+            `created_type=${typeof model?.created}`,
+            `usd_per_minute_type=${typeof pricing.usd_per_minute}`,
+            `usd_per_1m_input_tokens_type=${typeof pricing.usd_per_1m_input_tokens}`,
+            `usd_per_1m_output_tokens_type=${typeof pricing.usd_per_1m_output_tokens}`,
+          ]
         ));
       }
 
