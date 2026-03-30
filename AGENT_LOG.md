@@ -1,3 +1,8 @@
+## [2026-03-30 02:07 UTC] Codex — Onboarding Wizard Arabic Tag/VRAM Localization
+- **Commit**: `905c592` - Localized technical template tag chips and VRAM unit labels in `OnboardingWizard` for Arabic mode by adding explicit tag translation mapping and Arabic VRAM formatting in the recommendations step.
+- **Files**: `app/components/OnboardingWizard.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic onboarding recommendations no longer show raw English tag chips or `GB VRAM`, reducing mixed-language friction in the DCP-40 Arabic UX verification path.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
