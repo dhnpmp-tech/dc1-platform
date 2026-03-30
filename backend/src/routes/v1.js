@@ -104,15 +104,41 @@ function requireAuth(req, res, next) {
 
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
 
+function getTableColumns(tableName) {
+  const rows = db.all(`PRAGMA table_info(${tableName})`);
+  return new Set((rows || []).map((row) => row.name).filter(Boolean));
+}
+
+function buildModelListQuery(columns) {
+  if (!columns.has('model_id')) {
+    throw new Error('model_registry schema missing required column: model_id');
+  }
+
+  const select = [
+    'model_id',
+    columns.has('display_name') ? 'display_name' : 'model_id AS display_name',
+    columns.has('parameter_count') ? 'parameter_count' : 'NULL AS parameter_count',
+    columns.has('context_window') ? 'context_window' : 'NULL AS context_window',
+    columns.has('min_gpu_vram_gb') ? 'min_gpu_vram_gb' : 'NULL AS min_gpu_vram_gb',
+    columns.has('use_cases') ? 'use_cases' : "'[]' AS use_cases",
+  ].join(', ');
+
+  const activeFilter = columns.has('is_active') ? 'WHERE is_active = 1' : '';
+  const orderBy = columns.has('display_name') ? 'display_name' : 'model_id';
+
+  return `
+    SELECT ${select}
+    FROM model_registry
+    ${activeFilter}
+    ORDER BY ${orderBy} ASC
+  `;
+}
+
 router.get('/models', (req, res) => {
   try {
-    const rows = db.all(`
-      SELECT id, model_id, display_name, parameter_count, context_window,
-             min_gpu_vram_gb, use_cases
-      FROM model_registry
-      WHERE is_active = 1
-      ORDER BY display_name ASC
-    `);
+    const columns = getTableColumns('model_registry');
+    const query = buildModelListQuery(columns);
+    const rows = db.all(query);
 
     const nowSecs = Math.floor(Date.now() / 1000);
 
@@ -127,7 +153,7 @@ router.get('/models', (req, res) => {
       // Extra DC1 fields (safe to include — OpenRouter ignores unknown keys)
       display_name: row.display_name || row.model_id,
       context_window: Number(row.context_window || 0),
-      parameter_count: row.parameter_count || null,
+      parameter_count: row.parameter_count ?? null,
     }));
 
     return res.json({ object: 'list', data });
