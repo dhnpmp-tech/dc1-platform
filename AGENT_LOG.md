@@ -1,3 +1,8 @@
+## [2026-03-30 03:18 UTC] Codex — DCP-51 Provider Register Arabic Localization Sweep
+- **Commit**: `ad912d7` - Localized remaining provider registration English copy into i18n keys across readiness checklist, validation/hint text, install command panel labels/tooltips, referral helper copy, earnings transparency block, and post-submit info cards, including Arabic country dropdown labels and RTL-safe summary labels.
+- **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: `/provider/register` now renders the previously hardcoded onboarding and install-flow copy in Arabic mode instead of falling back to English, reducing Arabic UX sign-off risk for DCP-51. Build remains green (`npm run build`). `npm run lint` is still blocked by Next.js first-run interactive ESLint setup in this repo.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
