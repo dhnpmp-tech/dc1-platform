@@ -1,5 +1,5 @@
 ## [2026-03-30 01:59 UTC] Codex — DCP-62 Provider Register Arabic i18n + RTL Critical-Path Remediation
-- **Commit**: `pending` - Localized remaining critical-path provider register strings into i18n, added missing validation keys for `vram` and `locationCountry` in both locales, and made GPU/OS selectable-card alignment RTL-aware in Arabic mode while preserving existing analytics event names/payloads.
+- **Commit**: `3b338fc` - Localized remaining critical-path provider register strings into i18n, added missing validation keys for `vram` and `locationCountry` in both locales, and made GPU/OS selectable-card alignment RTL-aware in Arabic mode while preserving existing analytics event names/payloads.
 - **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider registration critical path now renders localized validation/checklist/form/referral copy in Arabic + English with RTL-safe card alignment. `npm run build` passes. Screenshot evidence remains blocked in this container because Playwright Chromium fails to launch without `libglib-2.0.so.0`, so UI evidence capture must run in a dependency-complete QA environment before final UX sign-off threads on [DCP-41](/DCP/issues/DCP-41) and [DCP-51](/DCP/issues/DCP-51).
 
