@@ -15,9 +15,9 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
-const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 
 const router = express.Router();
 
@@ -107,27 +107,13 @@ function requireAuth(req, res, next) {
 
 router.get('/models', (req, res) => {
   try {
-    let rows = [];
-    try {
-      rows = db.all(`
-        SELECT id, model_id, display_name, parameter_count, context_window,
-               min_gpu_vram_gb, use_cases
-        FROM model_registry
-        WHERE is_active = 1
-        ORDER BY display_name ASC
-      `);
-    } catch (innerError) {
-      const missingParameterCount = innerError?.code === 'SQLITE_ERROR'
-        && /no such column:\s*parameter_count/i.test(String(innerError?.message || ''));
-      if (!missingParameterCount) throw innerError;
-      rows = db.all(`
-        SELECT id, model_id, display_name, context_window,
-               min_gpu_vram_gb, use_cases
-        FROM model_registry
-        WHERE is_active = 1
-        ORDER BY display_name ASC
-      `).map((row) => ({ ...row, parameter_count: null }));
-    }
+    const rows = db.all(`
+      SELECT id, model_id, display_name, parameter_count, context_window,
+             min_gpu_vram_gb, use_cases
+      FROM model_registry
+      WHERE is_active = 1
+      ORDER BY display_name ASC
+    `);
 
     const nowSecs = Math.floor(Date.now() / 1000);
 
@@ -220,7 +206,7 @@ async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temp
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
   if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
-  if (toolChoice != null) body.tool_choice = toolChoice;
+  if (toolChoice !== null && toolChoice !== undefined) body.tool_choice = toolChoice;
   let response;
   try {
     response = await fetch(url, {
@@ -341,9 +327,7 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
 
       const debitAndReturnProxyResult = (resultBody) => {
         const usage = resultBody?.usage || {};
-        const promptUsed = Number(usage.prompt_tokens || 0);
-        const completionUsed = Number(usage.completion_tokens || 0);
-        const actualTokens = promptUsed + completionUsed;
+        const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
         const rateRecord = db.get(
           'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
         ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
@@ -354,22 +338,6 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
             .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
         } catch (_) { /* best-effort */ }
 
-        try {
-          recordOpenRouterUsage(db._db || db, {
-            renterId: req.renter.id,
-            providerId: assignedProvider.id,
-            model: modelReq.model_id,
-            source: 'v1_proxy',
-            promptTokens: promptUsed,
-            completionTokens: completionUsed,
-            totalTokens: actualTokens,
-            costHalala: actualCost,
-            currency: 'SAR',
-          });
-        } catch (ledgerError) {
-          console.error('[v1/chat/completions] OpenRouter usage ledger write failed:', ledgerError.message);
-        }
-
         return res.json(resultBody);
       };
 
@@ -378,51 +346,26 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        if (res.flushHeaders) res.flushHeaders();
-
-        const upstreamBody = streamResponse.body;
-        if (!upstreamBody) {
-          res.write(`data: ${JSON.stringify({
-            error: { message: 'Provider returned empty stream body', type: 'upstream_error', code: 502 }
-          })}\n\n`);
-          res.write('data: [DONE]\n\n');
-          return res.end();
-        }
+        const upstreamBody = streamResponse?.body;
+        if (!upstreamBody) throw new Error('Upstream stream body missing');
 
         if (typeof upstreamBody.pipe === 'function') {
-          upstreamBody.on('error', (error) => {
-            res.write(`data: ${JSON.stringify({
-              error: { message: `Provider stream failed: ${error.message}`, type: 'upstream_error', code: 502 }
-            })}\n\n`);
-            res.write('data: [DONE]\n\n');
-            res.end();
-          });
           upstreamBody.pipe(res);
           return;
         }
 
-        if (typeof upstreamBody.getReader === 'function') {
-          const reader = upstreamBody.getReader();
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              if (value) res.write(Buffer.from(value));
-            }
-          } catch (error) {
-            res.write(`data: ${JSON.stringify({
-              error: { message: `Provider stream failed: ${error.message}`, type: 'upstream_error', code: 502 }
-            })}\n\n`);
-            res.write('data: [DONE]\n\n');
-          }
-          return res.end();
+        if (typeof Readable.fromWeb === 'function') {
+          Readable.fromWeb(upstreamBody).pipe(res);
+          return;
         }
 
-        res.write(`data: ${JSON.stringify({
-          error: { message: 'Provider stream type is unsupported', type: 'upstream_error', code: 502 }
-        })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        return res.end();
+        const reader = upstreamBody.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) res.write(Buffer.from(value));
+        }
+        res.end();
       };
 
       if (wantsStream && proxyResult.streamResponse) {
@@ -522,21 +465,6 @@ router.post('/chat/completions', vllmCompleteLimiter, requireAuth, async (req, r
       if (job.status === 'completed') {
         const text = job.result_text || '';
         const cTokens = job.completion_tokens || approximateTokenCount(text);
-        try {
-          recordOpenRouterUsage(db._db || db, {
-            renterId: req.renter.id,
-            providerId: assignedProvider.id,
-            model: modelReq.model_id,
-            source: 'v1_queue',
-            promptTokens,
-            completionTokens: cTokens,
-            totalTokens: promptTokens + cTokens,
-            costHalala: estimatedCostHalala,
-            currency: 'SAR',
-          });
-        } catch (ledgerError) {
-          console.error('[v1/chat/completions] OpenRouter queued usage ledger write failed:', ledgerError.message);
-        }
 
         // If streaming was requested, simulate SSE from completed text
         if (wantsStream) {
