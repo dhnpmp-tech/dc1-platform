@@ -409,6 +409,8 @@ app.use('/api/providers', providersRouter);
 
 const adminRouter = require('./routes/admin');
 app.use('/api/admin', adminRouter);
+const openRouterSettlementRouter = require('./routes/openrouter-settlement');
+app.use('/api/admin/openrouter', openRouterSettlementRouter);
 
 const { providerEarningsRouter, adminStatsRouter } = require('./routes/earnings');
 app.use('/api/providers', providerEarningsRouter);
