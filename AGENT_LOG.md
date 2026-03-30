@@ -1,3 +1,8 @@
+## [2026-03-30 01:42 UTC] Codex — Marketplace Models Arabic Localization Pass
+- **Commit**: `96bfe9a` - Localized hardcoded marketplace model-catalog UI strings for Arabic mode across hero, filters, model cards, RAG callout, comparison strip/table, empty/error states, and CTA actions by wiring the page to shared i18n keys.
+- **Files**: `app/marketplace/models/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Arabic users no longer see mixed English marketing/filter/status copy on `/marketplace/models`, reducing QA no-go risk on the Arabic UX lane and keeping model-discovery messaging consistent with the localized provider onboarding flow.
+
 ## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
 - **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
 - **Files**: `AGENT_LOG.md`
