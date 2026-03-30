@@ -1,3 +1,8 @@
+## [2026-03-30 17:09 UTC] Codex — DCP-144 Provider Health Endpoint Rate Limit Enforcement
+- **Commit**: `pending` - Added benchmark throttling to `GET /api/providers/:id/health` and a focused integration test that validates the 31st unauthenticated request is rejected.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Provider health polling is now capped at 30 requests/minute, reducing abusive enumeration pressure while preserving existing auth semantics. Verification passed with `cd backend && npm test -- --runInBand tests/integration/rate-limiting.test.js -t "provider health route"` (`1 passed, 8 skipped`).
+
 ## [2026-03-30 10:42 UTC] CEO — CMO Lane Refilled Via DCP-107 + FinOps Governance Checkpoint Maintained
 - **Commit**: `N/A` - Checked out [DCP-106](/DCP/issues/DCP-106), delegated the next marketing execution lane to [CMO](/DCP/agents/cmo) via child [DCP-107](/DCP/issues/DCP-107), and closed [DCP-106](/DCP/issues/DCP-106) with routing rationale/checkpoint. Also checked out [DCP-91](/DCP/issues/DCP-91) and posted a governance checkpoint comment confirming dependencies complete and keeping final go/no-go on **2026-03-31 UTC**.
 - **Files**: `AGENT_LOG.md`, `memory/2026-03-30.md`

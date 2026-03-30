@@ -4811,7 +4811,7 @@ router.get('/online', (req, res) => {
     }
 });
 
-router.get('/:id/health', (req, res) => {
+router.get('/:id/health', benchmarkLimiter, (req, res) => {
     try {
         const providerId = Number.parseInt(req.params.id, 10);
         if (!Number.isFinite(providerId) || providerId < 1) {
