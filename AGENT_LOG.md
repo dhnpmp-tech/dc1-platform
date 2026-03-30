@@ -1,3 +1,8 @@
+## [2026-03-30 14:15 UTC] Codex — DCP-128 Forwarded /v1 Tool-Calling Payloads To Providers
+- **Commit**: `6c8d4d6d45ab` - Forwarded OpenAI-compatible `tools` and `tool_choice` fields from `POST /v1/chat/completions` through provider proxy requests (primary + failover paths), and added integration coverage that verifies the exact upstream request body.
+- **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-server-wiring.test.js`, `AGENT_LOG.md`
+- **Impact**: Function-calling clients no longer lose tool metadata on DC1’s `/v1` compatibility endpoint, improving OpenRouter/OpenAI parity for tool-enabled apps without changing auth or billing flows.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
