@@ -37,6 +37,7 @@ describe('server /v1 wiring', () => {
   let providerServer;
   let intervalSpy;
   let renterKey;
+  let lastProviderPayload;
 
   function startMockProvider(responseBody) {
     return new Promise((resolve, reject) => {
@@ -47,8 +48,32 @@ describe('server /v1 wiring', () => {
           return;
         }
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(responseBody));
+        let raw = '';
+        req.on('data', (chunk) => {
+          raw += chunk.toString('utf8');
+        });
+        req.on('end', () => {
+          try {
+            lastProviderPayload = JSON.parse(raw || '{}');
+          } catch {
+            lastProviderPayload = {};
+          }
+
+          if (lastProviderPayload.stream) {
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+            });
+            res.write('data: {"id":"chatcmpl-stream","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(responseBody));
+        });
       });
 
       server.listen(0, '127.0.0.1', () => resolve(server));
@@ -59,6 +84,7 @@ describe('server /v1 wiring', () => {
   beforeEach(async () => {
     jest.resetModules();
     intervalSpy = jest.spyOn(global, 'setInterval').mockImplementation(() => 0);
+    lastProviderPayload = null;
 
     db = require('../../src/db');
     app = require('../../src/server');
@@ -132,5 +158,55 @@ describe('server /v1 wiring', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.choices?.[0]?.message?.content).toBe('mounted v1 router works');
+  });
+
+  test('POST /v1/chat/completions forwards tools and tool_choice to provider', async () => {
+    const tools = [{
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
+      },
+    }];
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', `Bearer ${renterKey}`)
+      .send({
+        model: 'server-wiring-model',
+        messages: [{ role: 'user', content: 'weather in Riyadh?' }],
+        tools,
+        tool_choice: 'auto',
+      });
+
+    expect(res.status).toBe(200);
+    expect(lastProviderPayload).toBeTruthy();
+    expect(lastProviderPayload.tools).toEqual(tools);
+    expect(lastProviderPayload.tool_choice).toBe('auto');
+  });
+
+  test('POST /v1/chat/completions streams provider SSE response without 500', async () => {
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', `Bearer ${renterKey}`)
+      .buffer(true)
+      .parse((stream, callback) => {
+        let body = '';
+        stream.setEncoding('utf8');
+        stream.on('data', (chunk) => {
+          body += chunk;
+        });
+        stream.on('end', () => callback(null, body));
+      })
+      .send({
+        model: 'server-wiring-model',
+        messages: [{ role: 'user', content: 'hello stream' }],
+        stream: true,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+    expect(String(res.body)).toContain('data: [DONE]');
   });
 });
