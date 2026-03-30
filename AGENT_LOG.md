@@ -1,3 +1,8 @@
+## [2026-03-30 10:34 UTC] Codex — DCP-104 Rate-Limiter Enforcement + IPv6 Keygen Validation Fix
+- **Commit**: `6ce13ff` - Removed automatic `NODE_ENV=test` limiter bypass so tests enforce real rate limits unless `DISABLE_RATE_LIMIT=1`, and updated limiter tests to use `ipKeyGenerator(...)` in the custom key generator path to satisfy IPv6 validation.
+- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/src/__tests__/rateLimiter.test.js`, `AGENT_LOG.md`
+- **Impact**: Reliability unblock command now passes: `cd backend && npm test -- --runInBand tests/integration/v1-server-wiring.test.js src/__tests__/rateLimiter.test.js` (`16/16`). The prior three `429` assertion failures in `rateLimiter.test.js` are resolved, and `ERR_ERL_KEY_GEN_IPV6` warnings from that test’s custom key generator are eliminated.
+
 ## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
 - **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
 - **Files**: `AGENT_LOG.md`
