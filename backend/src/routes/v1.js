@@ -15,6 +15,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 
@@ -422,7 +423,22 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        streamResponse.body.pipe(res);
+        const source = streamResponse?.body;
+        if (!source) {
+          throw new Error('Upstream stream body missing');
+        }
+
+        if (typeof source.pipe === 'function') {
+          source.pipe(res);
+          return;
+        }
+
+        if (typeof Readable.fromWeb === 'function') {
+          Readable.fromWeb(source).pipe(res);
+          return;
+        }
+
+        throw new Error('Unsupported upstream stream body type');
       };
 
       if (wantsStream && proxyResult.streamResponse) {

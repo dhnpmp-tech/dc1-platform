@@ -1,0 +1,4 @@
+canary-*.json
+canary-*.md
+!README.md
+!*.gitignore
