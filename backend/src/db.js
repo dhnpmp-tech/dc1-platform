@@ -50,6 +50,12 @@ db.exec(`
     total_jobs INTEGER DEFAULT 0,
     claimable_earnings_halala INTEGER DEFAULT 0,
     container_restart_count INTEGER DEFAULT 0,
+    dispatch_latency_p50_ms REAL,
+    dispatch_latency_p95_ms REAL,
+    dispatch_success_rate REAL DEFAULT 1,
+    dispatch_sample_count INTEGER DEFAULT 0,
+    dispatch_score REAL DEFAULT 50,
+    dispatch_metrics_updated_at TEXT,
     model_cache_disk_mb INTEGER DEFAULT 0,
     model_cache_disk_total_mb INTEGER DEFAULT 0,
     model_cache_disk_used_pct REAL DEFAULT 0,
@@ -764,6 +770,19 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_dispatch_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    observed_at TEXT NOT NULL,
+    success INTEGER NOT NULL CHECK(success IN (0,1)),
+    latency_ms REAL,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_dispatch_samples_provider_time ON provider_dispatch_samples(provider_id, observed_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_providers_dispatch_score ON providers(dispatch_score DESC, dispatch_success_rate DESC)`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS bottleneck_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider_id INTEGER NOT NULL,
@@ -808,6 +827,12 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN total_jobs INTEGER DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN uptime_percent REAL DEFAULT 0',
   'ALTER TABLE providers ADD COLUMN reliability_score INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN dispatch_latency_p50_ms REAL',
+  'ALTER TABLE providers ADD COLUMN dispatch_latency_p95_ms REAL',
+  'ALTER TABLE providers ADD COLUMN dispatch_success_rate REAL DEFAULT 1',
+  'ALTER TABLE providers ADD COLUMN dispatch_sample_count INTEGER DEFAULT 0',
+  'ALTER TABLE providers ADD COLUMN dispatch_score REAL DEFAULT 50',
+  'ALTER TABLE providers ADD COLUMN dispatch_metrics_updated_at TEXT',
   'ALTER TABLE providers ADD COLUMN rotated_at TEXT',
   'ALTER TABLE providers ADD COLUMN cost_per_gpu_second_halala REAL DEFAULT 0.25',
   // jobs columns (for existing DBs that had the old narrow schema)

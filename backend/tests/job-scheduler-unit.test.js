@@ -354,6 +354,38 @@ test('scoreProvider - exact GPU match vs compatible fallback', () => {
   assert(exactScore > compatibleScore, 'Exact GPU match should score higher than fallback');
 });
 
+test('scoreProvider - lower latency and higher success rate score higher', () => {
+  const now = Date.now();
+  const jobReq = { min_vram_gb: 8, gpu_type: 'A100' };
+
+  const fastHealthyProvider = {
+    gpu_model: 'A100',
+    vram_gb: 40,
+    last_heartbeat: new Date(now - 45 * 1000).toISOString(),
+    uptime_percent: 95,
+    price_per_min_halala: 10,
+    dispatch_latency_p50_ms: 240,
+    dispatch_latency_p95_ms: 650,
+    dispatch_success_rate: 0.99,
+  };
+
+  const slowFlakyProvider = {
+    gpu_model: 'A100',
+    vram_gb: 40,
+    last_heartbeat: new Date(now - 45 * 1000).toISOString(),
+    uptime_percent: 95,
+    price_per_min_halala: 10,
+    dispatch_latency_p50_ms: 1400,
+    dispatch_latency_p95_ms: 4200,
+    dispatch_success_rate: 0.72,
+  };
+
+  const fastHealthyScore = scheduler.scoreProvider(fastHealthyProvider, jobReq);
+  const slowFlakyScore = scheduler.scoreProvider(slowFlakyProvider, jobReq);
+
+  assert(fastHealthyScore > slowFlakyScore, 'Lower-latency and healthier provider should score higher');
+});
+
 // ─── UTILITY FUNCTIONS ───
 
 test('normalizeGpuModel - uppercase conversion', () => {
@@ -451,5 +483,5 @@ test('scoring scenario - multiple factors combined', () => {
   assert(idealScore > 5000, 'Ideal provider should score quite well');
   assert(marginalScore > 0, 'Marginal provider should still have positive score');
   // Marginal is degraded (not offline) so it can still score reasonably well
-  assert(idealScore > marginalScore * 1.5, 'Ideal should score significantly higher');
+  assert(idealScore > marginalScore * 1.3, 'Ideal should score significantly higher');
 });

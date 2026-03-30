@@ -35,6 +35,11 @@ const {
     appendAttemptRawText,
     getAttemptLogPath,
 } = require('../services/job-execution-logs');
+const {
+    extractLatencyMs,
+    recordDispatchSample,
+    recomputeProviderDispatchRanking,
+} = require('../services/providerRanking');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 const { normalizeProviderOs } = require('../lib/provider-os');
 const { validateBody } = require('../middleware/validate');
@@ -2498,6 +2503,19 @@ router.post('/job-result', (req, res) => {
             );
         } else {
             runStatement(`UPDATE providers SET current_job_id = NULL WHERE id = ?`, provider.id);
+        }
+
+        // Update rolling dispatch ranking metrics used by marketplace + scheduler.
+        try {
+            const latencyMs = extractLatencyMs(metrics);
+            recordDispatchSample(db, provider.id, {
+                observedAt: now,
+                success: successFlag,
+                latencyMs,
+            });
+            recomputeProviderDispatchRanking(db, provider.id, { now });
+        } catch (rankingError) {
+            console.warn('[providers/job-result] ranking metrics update failed:', rankingError.message);
         }
 
         // ── Release escrow to provider (or back to renter on failure) ──

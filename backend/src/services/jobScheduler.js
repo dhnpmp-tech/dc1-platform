@@ -14,6 +14,10 @@
  */
 
 'use strict';
+const {
+  computeLatencyWeightedScore,
+  normalizeSuccessRate,
+} = require('./providerRanking');
 
 // Lazy-load db to allow pure unit testing of scoring functions
 let _db;
@@ -184,8 +188,22 @@ function scoreProvider(provider, jobRequirements, globalRateHalala = 10) {
   const normalizedPrice = Math.max(minPrice, Math.min(maxPrice, effectivePrice));
   const priceScore = ((maxPrice - normalizedPrice) / (maxPrice - minPrice)) * 1000;
 
+  // Latency + success score (0-2000)
+  const latencySuccessScore = computeLatencyWeightedScore({
+    latencyP50Ms: provider.dispatch_latency_p50_ms,
+    latencyP95Ms: provider.dispatch_latency_p95_ms,
+    successRate: provider.dispatch_success_rate,
+  }) * 20;
+
   // Combine scores
-  const totalScore = statusScore + gpuScore + vramScore + uptimeScore + pricingClassScore + priceScore;
+  const totalScore =
+    statusScore +
+    gpuScore +
+    vramScore +
+    uptimeScore +
+    pricingClassScore +
+    priceScore +
+    latencySuccessScore;
 
   return Math.round(totalScore);
 }
@@ -206,7 +224,9 @@ function findMatchingProviders(jobRequirements, globalRateHalala = 10) {
   const candidates = getDb().all(
     `SELECT id, name, gpu_model, gpu_vram_mib, vram_gb,
             last_heartbeat, uptime_percent, reputation_score,
-            price_per_min_halala, status, is_paused
+            price_per_min_halala, status, is_paused,
+            dispatch_latency_p50_ms, dispatch_latency_p95_ms,
+            dispatch_success_rate, dispatch_sample_count, dispatch_score
      FROM providers
      WHERE is_paused = 0 AND status NOT IN ('offline', 'banned', 'suspended', 'paused')`
   );
@@ -232,11 +252,27 @@ function findMatchingProviders(jobRequirements, globalRateHalala = 10) {
           provider_status: liveStatus,
           effective_price_halala: provider.price_per_min_halala || globalRateHalala,
           provider_vram_gb: providerVramGb,
+          dispatch_ranking: {
+            latency_p50_ms: provider.dispatch_latency_p50_ms,
+            latency_p95_ms: provider.dispatch_latency_p95_ms,
+            success_rate: normalizeSuccessRate(provider.dispatch_success_rate),
+            sample_count: Number(provider.dispatch_sample_count || 0),
+            score: provider.dispatch_score != null
+              ? Number(provider.dispatch_score)
+              : computeLatencyWeightedScore({
+                latencyP50Ms: provider.dispatch_latency_p50_ms,
+                latencyP95Ms: provider.dispatch_latency_p95_ms,
+                successRate: provider.dispatch_success_rate,
+              }),
+          },
         },
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.score - a.score); // descending score
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return Number(a.provider.id || 0) - Number(b.provider.id || 0);
+    });
 
   return results;
 }

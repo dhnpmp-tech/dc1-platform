@@ -12,6 +12,7 @@ const {
   listProviders,
   buildShadowCycleSummary,
 } = require('../services/p2p-discovery');
+const { computeLatencyWeightedScore, normalizeSuccessRate } = require('../services/providerRanking');
 const { reconcileRenterByEmailFromSupabase } = require('../services/renter-identity-reconciliation');
 const { isPublicWebhookUrl } = require('../lib/webhook-security');
 const { validateWebhookUrl, validateWebhookUrlValue } = require('../middleware/validateWebhookUrl');
@@ -131,6 +132,19 @@ function buildProviderShapeFromSQLiteRow(row, now) {
     is_live: heartbeatAge !== null && heartbeatAge < 120,
     location: row.location,
     reliability_score: row.reliability_score,
+    dispatch_ranking: {
+      latency_p50_ms: row.dispatch_latency_p50_ms ?? null,
+      latency_p95_ms: row.dispatch_latency_p95_ms ?? null,
+      success_rate: normalizeSuccessRate(row.dispatch_success_rate),
+      sample_count: Number(row.dispatch_sample_count || 0),
+      score: row.dispatch_score != null
+        ? Number(row.dispatch_score)
+        : computeLatencyWeightedScore({
+          latencyP50Ms: row.dispatch_latency_p50_ms,
+          latencyP95Ms: row.dispatch_latency_p95_ms,
+          successRate: row.dispatch_success_rate,
+        }),
+    },
     cached_models: parseCachedModels(row.cached_models),
     discovery_source: 'sqlite',
     discovered_at: null,
@@ -166,6 +180,19 @@ function buildProviderShapeFromDHT(row, resolution, now) {
     is_live: heartbeatLive && !dhtStale,
     location: env.region || row.location,
     reliability_score: Number(env.reliability_score ?? row.reliability_score ?? 0),
+    dispatch_ranking: {
+      latency_p50_ms: row.dispatch_latency_p50_ms ?? null,
+      latency_p95_ms: row.dispatch_latency_p95_ms ?? null,
+      success_rate: normalizeSuccessRate(row.dispatch_success_rate),
+      sample_count: Number(row.dispatch_sample_count || 0),
+      score: row.dispatch_score != null
+        ? Number(row.dispatch_score)
+        : computeLatencyWeightedScore({
+          latencyP50Ms: row.dispatch_latency_p50_ms,
+          latencyP95Ms: row.dispatch_latency_p95_ms,
+          successRate: row.dispatch_success_rate,
+        }),
+    },
     cached_models: cachedModels,
     discovery_source: 'dht',
     discovered_at: providerRecord.announced_at || null,
@@ -199,6 +226,13 @@ function buildProviderShapeFromDHTRecord(resolution) {
     is_live: !dhtStale,
     location: env.region || null,
     reliability_score: Number(env.reliability_score || 0),
+    dispatch_ranking: {
+      latency_p50_ms: null,
+      latency_p95_ms: null,
+      success_rate: 1,
+      sample_count: 0,
+      score: 50,
+    },
     cached_models: cachedModels,
     discovery_source: 'dht',
     discovered_at: providerRecord.announced_at || null,
@@ -608,9 +642,16 @@ router.get('/available-providers', async (req, res) => {
     const providers = db.all(
       `SELECT id, name, gpu_model, gpu_name_detected, gpu_vram_mib, gpu_driver,
               gpu_compute_capability, gpu_cuda_version, gpu_count_reported,
-              status, location, run_mode, reliability_score, cached_models, last_heartbeat, p2p_peer_id
+              status, location, run_mode, reliability_score, cached_models, last_heartbeat, p2p_peer_id,
+              dispatch_latency_p50_ms, dispatch_latency_p95_ms, dispatch_success_rate,
+              dispatch_sample_count, dispatch_score
        FROM providers WHERE status = 'online' AND is_paused = 0
-       ORDER BY gpu_vram_mib DESC NULLS LAST`
+       ORDER BY
+         COALESCE(dispatch_score, 50) DESC,
+         COALESCE(dispatch_success_rate, 1) DESC,
+         COALESCE(dispatch_latency_p95_ms, 999999) ASC,
+         COALESCE(dispatch_latency_p50_ms, 999999) ASC,
+         gpu_vram_mib DESC NULLS LAST`
     );
 
     let discoveryByPeerId = new Map();
