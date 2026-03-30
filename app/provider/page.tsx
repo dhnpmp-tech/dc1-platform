@@ -9,6 +9,7 @@ import StatCard from '../components/ui/StatCard'
 import { useLanguage } from '../lib/i18n'
 import ProviderWizard from './components/ProviderWizard'
 import ProviderActivationCard from './components/ProviderActivationCard'
+import ProviderInstallWizardCard from './components/ProviderInstallWizardCard'
 
 interface ProviderData {
   id: string
@@ -528,6 +529,16 @@ export default function ProviderDashboard() {
             </Link>
           </div>
         </div>
+
+        <ProviderInstallWizardCard
+          apiKey={providerApiKey}
+          initialSnapshot={{
+            status: providerData.status,
+            isPaused: providerData.isPaused,
+            approvalStatus: providerData.approvalStatus,
+            lastHeartbeat: providerData.lastHeartbeat,
+          }}
+        />
 
         {/* Provider activation onboarding — DCP-679 3-screen flow */}
         {providerData.status === 'offline' && providerData.jobsCompleted === 0 && !providerData.lastHeartbeat && (
