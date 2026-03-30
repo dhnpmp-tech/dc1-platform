@@ -89,10 +89,6 @@ describe('v1 models route', () => {
         const err = new Error('no such table: model_registry');
         throw err;
       }
-      if (String(sql).includes('FROM model_registry')) {
-        const err = new Error('no such table: model_registry');
-        throw err;
-      }
       return [];
     });
 
@@ -102,49 +98,6 @@ describe('v1 models route', () => {
     expect(res.body.object).toBe('list');
     expect(res.body.data).toEqual([]);
     expect(mockDb.all.mock.calls.some(([sql]) => String(sql).includes('FROM model_registry'))).toBe(false);
-  });
-
-  test('retries schema introspection after missing-table response and recovers', async () => {
-    let pragmaCalls = 0;
-    mockDb.all.mockImplementation((sql) => {
-      const query = String(sql);
-      if (query.includes('PRAGMA table_info(model_registry)')) {
-        pragmaCalls += 1;
-        if (pragmaCalls === 1) {
-          const err = new Error('no such table: model_registry');
-          throw err;
-        }
-        return [
-          { name: 'model_id' },
-          { name: 'display_name' },
-          { name: 'parameter_count' },
-          { name: 'is_active' },
-        ];
-      }
-      if (query.includes('FROM model_registry')) {
-        if (pragmaCalls === 1) {
-          const err = new Error('no such table: model_registry');
-          throw err;
-        }
-        return [{
-          model_id: 'recovered-model',
-          display_name: 'Recovered Model',
-          context_window: 4096,
-          parameter_count: 12345,
-        }];
-      }
-      return [];
-    });
-
-    const first = await request(app).get('/v1/models');
-    expect(first.status).toBe(200);
-    expect(first.body.data).toEqual([]);
-
-    const second = await request(app).get('/v1/models');
-    expect(second.status).toBe(200);
-    expect(second.body.data).toHaveLength(1);
-    expect(second.body.data[0].id).toBe('recovered-model');
-    expect(second.body.data[0].parameter_count).toBe(12345);
   });
 
   test('retries schema introspection after missing-table response and recovers', async () => {
