@@ -68,6 +68,32 @@ describe('openrouterSettlementService', () => {
     expect(summary.top_renters[0].renter_id).toBe(renter.id);
   });
 
+  test('deduplicates usage writes by request_id', () => {
+    const { renter, provider } = seedRenterAndProvider();
+    const first = recordOpenRouterUsage(db._db || db, {
+      requestId: 'req-fixed-123',
+      renterId: renter.id,
+      providerId: provider.id,
+      model: 'openai/gpt-4o-mini',
+      promptTokens: 12,
+      completionTokens: 8,
+      costHalala: 40,
+    });
+    const second = recordOpenRouterUsage(db._db || db, {
+      requestId: 'req-fixed-123',
+      renterId: renter.id,
+      providerId: provider.id,
+      model: 'openai/gpt-4o-mini',
+      promptTokens: 12,
+      completionTokens: 8,
+      costHalala: 40,
+    });
+
+    expect(second.id).toBe(first.id);
+    const count = db.get('SELECT COUNT(*) AS n FROM openrouter_usage_ledger WHERE request_id = ?', 'req-fixed-123');
+    expect(count.n).toBe(1);
+  });
+
   test('executes invoice-mode settlement and marks usage settled', () => {
     const { renter, provider } = seedRenterAndProvider();
     recordOpenRouterUsage(db._db || db, {
