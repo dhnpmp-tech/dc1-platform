@@ -32440,6 +32440,11 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 23:54 UTC] Codex — DCP-186 ESLint Baseline Bootstrapped For Non-Interactive CI Checks
-- **Commit**: `pending` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
+- **Commit**: `e76d4a6` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
+
+## [2026-03-31 00:09 UTC] Codex — DCP-187 Provider Hook Dependency Warnings Reduced
+- **Commit**: `pending` - Fixed provider-surface lint warnings by adding missing `t` dependencies in provider dashboard/job detail refresh effects and stabilizing provider registration email validation regex outside render scope.
+- **Files**: `app/provider/page.tsx`, `app/provider/jobs/[id]/page.tsx`, `app/provider/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider flows no longer emit these stale-closure warnings under `react-hooks/exhaustive-deps`; lint/build remain green with lower warning count and no behavioral change to polling/validation logic.
