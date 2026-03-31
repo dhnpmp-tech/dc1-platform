@@ -32440,11 +32440,16 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 23:54 UTC] Codex — DCP-186 ESLint Baseline Bootstrapped For Non-Interactive CI Checks
-- **Commit**: `f735327` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
+- **Commit**: `6ac055b` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 00:40 UTC] Codex — DCP-189 Renter Hook Dependency Warnings Reduced
-- **Commit**: `pending` - Stabilized renter dashboard, renter jobs, and renter billing data-loading/auth functions with `useCallback` and aligned effect dependency arrays to remove stale-closure warnings.
+- **Commit**: `4566c1b` - Stabilized renter dashboard, renter jobs, and renter billing data-loading/auth functions with `useCallback` and aligned effect dependency arrays to remove stale-closure warnings.
 - **Files**: `app/renter/page.tsx`, `app/renter/jobs/page.tsx`, `app/renter/billing/page.tsx`, `AGENT_LOG.md`
 - **Impact**: These renter surfaces no longer produce the previous `react-hooks/exhaustive-deps` warnings, while preserving existing polling/login redirect behavior and dashboard/jobs/billing refresh flow.
+
+## [2026-03-31 02:08 UTC] Codex — DCP-192 Renter Hook-Dependency Cleanup Recut On Fresh Main
+- **Commit**: `pending` - Recut renter dashboard/jobs/billing hook-dependency warning fixes together with lint bootstrap on a fresh `main` branch for an independent merge path.
+- **Files**: `app/renter/page.tsx`, `app/renter/jobs/page.tsx`, `app/renter/billing/page.tsx`, `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
+- **Impact**: Branch is independently mergeable with renter warning reductions preserved; `lint` passed and `build` remained non-terminating in this runtime after startup despite extended polling.
