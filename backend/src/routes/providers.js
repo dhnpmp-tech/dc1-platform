@@ -3884,6 +3884,58 @@ function computeReputationTier({ uptimePct, successRate, totalJobs }) {
     return 'new';
 }
 
+function normalizeLatencyMs(rawValue) {
+    if (rawValue == null || rawValue === '') return null;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) return null;
+    return Math.round(parsed * 10) / 10;
+}
+
+function toLatencyContract(row, heartbeatAgeSeconds = null) {
+    const benchmarkLatencyMs = normalizeLatencyMs(row?.best_latency_ms);
+    if (benchmarkLatencyMs != null) {
+        return {
+            latency_ms: benchmarkLatencyMs,
+            latency_source: 'benchmark',
+            latency_sample_count: Number(row?.latency_sample_count || 0),
+            latency_measured_at: row?.latest_latency_completed_at || null,
+            latency_sort_ms: benchmarkLatencyMs,
+        };
+    }
+
+    if (Number.isFinite(heartbeatAgeSeconds) && heartbeatAgeSeconds >= 0) {
+        const fallbackLatencyMs = normalizeLatencyMs(heartbeatAgeSeconds * 1000);
+        return {
+            latency_ms: fallbackLatencyMs,
+            latency_source: 'heartbeat_age',
+            latency_sample_count: 0,
+            latency_measured_at: null,
+            latency_sort_ms: fallbackLatencyMs,
+        };
+    }
+
+    return {
+        latency_ms: null,
+        latency_source: 'none',
+        latency_sample_count: 0,
+        latency_measured_at: null,
+        latency_sort_ms: Number.POSITIVE_INFINITY,
+    };
+}
+
+function compareByLatencyThenDeterministic(a, b) {
+    const latencyDelta = (a.latency_sort_ms ?? Number.POSITIVE_INFINITY) - (b.latency_sort_ms ?? Number.POSITIVE_INFINITY);
+    if (latencyDelta !== 0) return latencyDelta;
+
+    const reputationDelta = (b.reputation_score ?? 100) - (a.reputation_score ?? 100);
+    if (reputationDelta !== 0) return reputationDelta;
+
+    const uptimeDelta = (b.uptime_pct ?? 0) - (a.uptime_pct ?? 0);
+    if (uptimeDelta !== 0) return uptimeDelta;
+
+    return (a.id ?? 0) - (b.id ?? 0);
+}
+
 // ============================================================================
 // GET /api/providers/active — Authenticated view of online-only providers
 // Requires: Authorization: Bearer <renter_api_key|provider_api_key>
@@ -3927,7 +3979,10 @@ router.get('/active', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3943,6 +3998,15 @@ router.get('/active', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
                    AND COALESCE(p.approval_status, 'pending') = 'approved'
                  ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
@@ -3960,7 +4024,10 @@ router.get('/active', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3976,6 +4043,15 @@ router.get('/active', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
                  ORDER BY p.id DESC`
             );
@@ -3985,6 +4061,7 @@ router.get('/active', (req, res) => {
         const mapped = providers.reduce((acc, p) => {
             const { status: computedStatus, heartbeat_age_seconds } =
                 computeProviderStatus(p.last_heartbeat, now);
+            const latency = toLatencyContract(p, heartbeat_age_seconds);
 
             // /active returns only fully-online providers (not degraded)
             if (computedStatus !== 'online') return acc;
@@ -4053,13 +4130,18 @@ router.get('/active', (req, res) => {
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
                 cached_models: cachedModels,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
                 cost_rates_halala_per_min: COST_RATES,
             });
 
             return acc;
         }, []);
 
-        mapped.sort((a, b) => (b.reputation_score ?? 100) - (a.reputation_score ?? 100));
+        mapped.sort(compareByLatencyThenDeterministic);
 
         res.json({
             providers: mapped,
@@ -4091,7 +4173,10 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -4107,6 +4192,15 @@ router.get('/available', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
                    AND COALESCE(p.approval_status, 'pending') = 'approved'
                  ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
@@ -4125,7 +4219,10 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -4141,6 +4238,15 @@ router.get('/available', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
                  ORDER BY p.id DESC`
             );
@@ -4150,6 +4256,7 @@ router.get('/available', (req, res) => {
         const mapped = providers.reduce((acc, p) => {
             const { status: computedStatus, heartbeat_age_seconds, degraded_since } =
                 computeProviderStatus(p.last_heartbeat, now);
+            const latency = toLatencyContract(p, heartbeat_age_seconds);
 
             // Exclude truly offline providers from the marketplace listing
             if (computedStatus === 'offline') return acc;
@@ -4217,17 +4324,21 @@ router.get('/available', (req, res) => {
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
                 cached_models: cachedModels,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
                 // Pricing (halala per minute by job type)
                 cost_rates_halala_per_min: COST_RATES,
             });
 
             return acc;
         }, []);
-
         // Degrade sort: online providers first, then degraded, both sub-sorted by reputation
         mapped.sort((a, b) => {
             if (a.status !== b.status) return a.status === 'online' ? -1 : 1;
-            return (b.reputation_score ?? 100) - (a.reputation_score ?? 100);
+            return compareByLatencyThenDeterministic(a, b);
         });
 
         res.json({
@@ -4252,11 +4363,15 @@ router.get('/marketplace', (req, res) => {
         const defaultRateHalalaPerHour = 500;
         const providers = db.all(
             `SELECT p.id, p.gpu_model, p.gpu_name_detected, p.gpu_vram_mib, p.vram_gb, p.uptime_percent, p.total_jobs, p.created_at,
+                    p.last_heartbeat, p.reputation_score,
                     gp.rate_halala AS marketplace_rate_halala,
                     COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                     COALESCE(js.completed_jobs, 0) AS completed_jobs,
                     COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                    COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                    COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                    bl.best_latency_ms,
+                    bl.latest_latency_completed_at,
+                    COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
              FROM providers p
              LEFT JOIN gpu_pricing gp
                ON LOWER(TRIM(gp.gpu_model)) = LOWER(TRIM(COALESCE(p.gpu_name_detected, p.gpu_model)))
@@ -4274,6 +4389,15 @@ router.get('/marketplace', (req, res) => {
                 FROM jobs
                 GROUP BY provider_id
              ) js ON js.provider_id = p.id
+             LEFT JOIN (
+                SELECT provider_id,
+                       MIN(latency_ms) AS best_latency_ms,
+                       MAX(completed_at) AS latest_latency_completed_at,
+                       COUNT(*) AS latency_sample_count
+                FROM benchmark_runs
+                WHERE status = 'completed' AND latency_ms IS NOT NULL
+                GROUP BY provider_id
+             ) bl ON bl.provider_id = p.id
              WHERE p.status = 'online' AND COALESCE(p.is_paused, 0) = 0
                AND COALESCE(p.approval_status, 'pending') = 'approved'
              ORDER BY COALESCE(p.reputation_score, 0) DESC, p.id DESC`
@@ -4297,6 +4421,10 @@ router.get('/marketplace', (req, res) => {
                 successRate: jobSuccessRate,
                 totalJobs,
             });
+            const heartbeatAgeSeconds = p.last_heartbeat
+                ? Math.max(0, Math.floor((Date.now() - new Date(p.last_heartbeat).getTime()) / 1000))
+                : null;
+            const latency = toLatencyContract(p, heartbeatAgeSeconds);
 
             const rateHalalaPerHour = Number.isInteger(p.marketplace_rate_halala)
                 ? p.marketplace_rate_halala
@@ -4313,8 +4441,16 @@ router.get('/marketplace', (req, res) => {
                 job_success_rate: jobSuccessRate,
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
+                reputation_score: p.reputation_score ?? 0,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
             };
         });
+
+        payload.sort(compareByLatencyThenDeterministic);
 
         res.json(payload);
     } catch (error) {
