@@ -32445,6 +32445,6 @@ a
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 00:09 UTC] Codex — DCP-187 Provider Hook Dependency Warnings Reduced
-- **Commit**: `pending` - Fixed provider-surface lint warnings by adding missing `t` dependencies in provider dashboard/job detail refresh effects and stabilizing provider registration email validation regex outside render scope.
+- **Commit**: `7e39a82` - Fixed provider-surface lint warnings by adding missing `t` dependencies in provider dashboard/job detail refresh effects and stabilizing provider registration email validation regex outside render scope.
 - **Files**: `app/provider/page.tsx`, `app/provider/jobs/[id]/page.tsx`, `app/provider/register/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider flows no longer emit these stale-closure warnings under `react-hooks/exhaustive-deps`; lint/build remain green with lower warning count and no behavioral change to polling/validation logic.
