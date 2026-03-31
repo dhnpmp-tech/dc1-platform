@@ -32450,6 +32450,6 @@ a
 - **Impact**: These renter surfaces no longer produce the previous `react-hooks/exhaustive-deps` warnings, while preserving existing polling/login redirect behavior and dashboard/jobs/billing refresh flow.
 
 ## [2026-03-31 02:08 UTC] Codex — DCP-192 Renter Hook-Dependency Cleanup Recut On Fresh Main
-- **Commit**: `pending` - Recut renter dashboard/jobs/billing hook-dependency warning fixes together with lint bootstrap on a fresh `main` branch for an independent merge path.
+- **Commit**: `40efa51` - Recut renter dashboard/jobs/billing hook-dependency warning fixes together with lint bootstrap on a fresh `main` branch for an independent merge path.
 - **Files**: `app/renter/page.tsx`, `app/renter/jobs/page.tsx`, `app/renter/billing/page.tsx`, `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: Branch is independently mergeable with renter warning reductions preserved; `lint` passed and `build` remained non-terminating in this runtime after startup despite extended polling.
