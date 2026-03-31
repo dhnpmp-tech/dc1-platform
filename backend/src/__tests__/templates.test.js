@@ -6,8 +6,12 @@
 const Database = require('better-sqlite3');
 const express = require('express');
 const request = require('supertest');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 let app;
+let manifestPath;
 
 // ── DB mock shared across test and module ────────────────────────────────────
 // flatParams is defined inside the factory via hoisting (function declaration after return)
@@ -124,6 +128,31 @@ function insertProvider(db, { vramGb = 24, heartbeatOffsetMs = -60 * 1000 } = {}
 // ── Setup / teardown ─────────────────────────────────────────────────────────
 beforeEach(() => {
   global.__testDb = buildDb();
+  manifestPath = path.join(os.tmpdir(), `instant-tier-test-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  fs.writeFileSync(manifestPath, JSON.stringify({
+    images: [
+      {
+        name: 'llm-worker',
+        templates: ['nemotron-nano'],
+        published_refs: {
+          mutable: 'docker.io/dc1/llm-worker:latest',
+          immutable: 'docker.io/dc1/llm-worker:sha-test',
+          canonical: 'docker.io/dc1/llm-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      },
+      {
+        name: 'sd-worker',
+        templates: ['sdxl', 'stable-diffusion'],
+        published_refs: {
+          mutable: 'docker.io/dc1/sd-worker:latest',
+          immutable: 'docker.io/dc1/sd-worker:sha-test',
+          canonical: 'docker.io/dc1/sd-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      },
+    ],
+  }), 'utf8');
+  process.env.DISABLE_RATE_LIMIT = '1';
+  process.env.INSTANT_TIER_MANIFEST_PATH = manifestPath;
 
   // Re-require the router each time to pick up fresh DB mock state
   const routerPath = require.resolve('../routes/templates');
@@ -140,6 +169,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.DISABLE_RATE_LIMIT;
+  delete process.env.INSTANT_TIER_MANIFEST_PATH;
+  if (manifestPath && fs.existsSync(manifestPath)) fs.unlinkSync(manifestPath);
   try { global.__testDb.close(); } catch {}
 });
 
@@ -195,6 +227,13 @@ describe('GET /api/templates', () => {
     for (const t of res.body.templates) {
       expect(t.tags).toContain('arabic');
     }
+  });
+
+  it('includes instant-tier manifest refs in whitelist response', async () => {
+    const res = await request(app).get('/api/templates/whitelist');
+    expect(res.status).toBe(200);
+    expect(res.body.approved_images).toContain('docker.io/dc1/llm-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(res.body.approved_images).toContain('docker.io/dc1/sd-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   });
 });
 
@@ -324,6 +363,21 @@ describe('POST /api/templates/:id/deploy', () => {
     expect(res.body.totalCost.halala).toBeGreaterThan(0);
     expect(typeof res.body.totalCost.sar).toBe('string');
     expect(res.body.template.id).toBe('llama3-8b');
+  });
+
+  it('uses manifest canonical image ref for instant-tier template deploys', async () => {
+    insertRenter(global.__testDb, { apiKey: RENTER_KEY, balanceHalala: 100000 });
+    insertProvider(global.__testDb, { vramGb: 24 });
+
+    const res = await request(app)
+      .post('/api/templates/nemotron-nano/deploy')
+      .set('x-renter-key', RENTER_KEY)
+      .send({ duration_minutes: 30 });
+
+    expect(res.status).toBe(201);
+    const job = global.__testDb.prepare(`SELECT container_spec FROM jobs WHERE job_id = ?`).get(res.body.jobId);
+    const parsedSpec = JSON.parse(job.container_spec);
+    expect(parsedSpec.image_override).toBe('docker.io/dc1/llm-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   });
 
   it('deducts cost from renter balance on success', async () => {
