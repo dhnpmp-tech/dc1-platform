@@ -32440,6 +32440,11 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 23:54 UTC] Codex — DCP-186 ESLint Baseline Bootstrapped For Non-Interactive CI Checks
-- **Commit**: `pending` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
+- **Commit**: `10cbf59` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
+
+## [2026-03-31 03:13 UTC] Codex — DCP-196 Admin Jobs Hook Dependency Warning Removed
+- **Commit**: `pending` - Wrapped admin jobs fetch in `useCallback` and aligned initialization effect dependencies to remove stale-closure warnings while preserving polling behavior.
+- **Files**: `app/admin/jobs/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Admin jobs page no longer emits this `react-hooks/exhaustive-deps` warning; real-time queue refresh behavior and login redirect flow remain intact.
