@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "report:growth-kpi-daily": "node scripts/growth-kpi-daily-export.mjs",
     "report:quickstart-funnel": "node scripts/quickstart-weekly-rollup.mjs",
     "smoke:gpu-job": "node scripts/gpu-job-lifecycle-smoke.mjs",
     "smoke:template-catalog": "node scripts/smoke-template-catalog-wiring.mjs",
