@@ -343,11 +343,12 @@ export default function GpuPlaygroundPage() {
 }
 
 function GpuPlayground() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const searchParams = useSearchParams();
   const preselectedProvider = searchParams.get('provider');
   const preselectedModel = searchParams.get('model');
   const preselectedMode = searchParams.get('mode');
+  const quickstartSource = searchParams.get('source') || 'direct';
 
   // Auth
   const [renterKey, setRenterKey] = useState('');
@@ -434,6 +435,7 @@ function GpuPlayground() {
   const blockedReasonTrackedRef = useRef<Set<string>>(new Set());
   const submitWasBlockedRef = useRef(false);
   const viewedHistorySummaryRef = useRef<Set<number>>(new Set());
+  const hasTrackedQuickstartFirstChatSuccess = useRef(false);
 
   const isFirstTimeRenter = jobHistory.length === 0;
   const showFirstJobWizard = viewMode === 'new' && isFirstTimeRenter && phase === 'idle';
@@ -1006,6 +1008,17 @@ function GpuPlayground() {
           if (res.ok) {
             const data = await res.json();
             if (data.type === 'text' && data.response) {
+              if (!hasTrackedQuickstartFirstChatSuccess.current) {
+                hasTrackedQuickstartFirstChatSuccess.current = true;
+                trackPlaygroundEvent('quickstart_first_chat_success', {
+                  locale: language,
+                  source: quickstartSource,
+                  job_id: jobId,
+                  provider_id: providerId,
+                  model: llmModel,
+                  job_type: jobType,
+                });
+              }
               setResult(data);
               if (jobId) fetchProof(jobId!);
               setPhase('done');
@@ -1036,7 +1049,7 @@ function GpuPlayground() {
     poll();
     pollRef.current = setInterval(poll, 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [phase, jobId, jobType]);
+  }, [jobType, jobId, language, llmModel, phase, providerId, quickstartSource, trackPlaygroundEvent]);
 
   // Stop polling after 15 minutes (image gen can take longer)
   useEffect(() => {
