@@ -32445,6 +32445,6 @@ a
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 00:24 UTC] Codex — DCP-188 Auth + Support Hook Dependency Warnings Reduced
-- **Commit**: `pending` - Wrapped login reason resolver in `useCallback` and used it in the auth-param effect dependencies; memoized support category options and included them in the sync effect dependencies to remove stale-closure warnings.
+- **Commit**: `7699b0c` - Wrapped login reason resolver in `useCallback` and used it in the auth-param effect dependencies; memoized support category options and included them in the sync effect dependencies to remove stale-closure warnings.
 - **Files**: `app/login/page.tsx`, `app/support/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `login` and `support` no longer emit their previous `react-hooks/exhaustive-deps` warnings while keeping behavior stable for role/method/reason query handling and support form category initialization.
