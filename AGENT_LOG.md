@@ -32512,3 +32512,8 @@ a
 - **Commit**: `pending` - Added deterministic USD-string pricing fields to `/v1/models`, `/v1/chat/completions` usage payloads (including SSE final chunks), and OpenRouter settlement admin response surfaces.
 - **Files**: `backend/src/lib/model-catalog-contract.js`, `backend/src/routes/v1.js`, `backend/src/routes/openrouter-settlement.js`, `backend/src/__tests__/v1-models.test.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-settlement.test.js`
 - **Impact**: Provider/OpenRouter integrations now receive explicit USD string pricing fields across model metadata and usage/settlement payloads; regression tests now fail on missing/non-string pricing contract fields.
+
+## [2026-03-31 18:13 UTC] Codex — DCP-208 Monitor Hook Dependency Fix
+- **Commit**: `pending` - Fixed monitor page hook dependency warning by including `router` in the `checkAll` callback dependency array.
+- **Files**: `app/monitor/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/monitor/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` require Suspense boundaries for `useSearchParams`.
