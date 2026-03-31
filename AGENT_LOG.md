@@ -32453,3 +32453,8 @@ a
 - **Commit**: `pending` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
+
+## [2026-03-31 11:01 UTC] Codex — DCP-205 Admin Settings Hook Dependency Updated
+- **Commit**: `pending` - Added missing `t` dependency to the admin settings initialization effect so translation-dependent default values stay synchronized.
+- **Files**: `app/admin/settings/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Reduces React hook lint debt on admin settings initialization without changing settings behavior.
