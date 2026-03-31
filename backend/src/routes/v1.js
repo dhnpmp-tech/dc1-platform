@@ -15,6 +15,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 
@@ -417,16 +418,40 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         return res.json(resultBody);
       };
 
-      const writeStreamingResponse = (streamResponse) => {
+      const writeStreamingResponse = async (streamResponse) => {
+        if (!streamResponse?.body) {
+          throw new Error('Provider streaming response missing body');
+        }
+
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        streamResponse.body.pipe(res);
+
+        if (typeof streamResponse.body.pipe === 'function') {
+          streamResponse.body.pipe(res);
+          return;
+        }
+
+        if (typeof Readable.fromWeb === 'function') {
+          Readable.fromWeb(streamResponse.body).pipe(res);
+          return;
+        }
+
+        const reader = streamResponse.body.getReader?.();
+        if (!reader) {
+          throw new Error('Unsupported provider stream body');
+        }
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) res.write(Buffer.from(value));
+        }
+        res.end();
       };
 
       if (wantsStream && proxyResult.streamResponse) {
-        writeStreamingResponse(proxyResult.streamResponse);
+        await writeStreamingResponse(proxyResult.streamResponse);
         return;
       }
 
@@ -456,7 +481,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
-          writeStreamingResponse(fallbackResult.streamResponse);
+          await writeStreamingResponse(fallbackResult.streamResponse);
           return;
         }
 
