@@ -1,6 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getProviderActivationNarrative } from '../../lib/provider-activation-narrative'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const API_BASE = '/api/dc1'
@@ -1037,6 +1039,7 @@ export default function ProviderOnboardingWizard({
 }: ProviderOnboardingWizardProps) {
   const [step, setStep] = useState<WizardStep>(1)
   const [wizardState, setWizardState] = useState<WizardState>(() => loadWizardState())
+  const narrative = getProviderActivationNarrative(isRTL)
 
   // Persist state changes
   useEffect(() => { saveWizardState(wizardState) }, [wizardState])
@@ -1080,6 +1083,23 @@ export default function ProviderOnboardingWizard({
   return (
     <div className="mx-auto w-full max-w-2xl" dir={isRTL ? 'rtl' : 'ltr'}>
       <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6 shadow-lg">
+        <section className="mb-6 rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-4">
+          <h2 className="text-base font-semibold text-dc1-text-primary">{narrative.headline}</h2>
+          <p className="mt-1 text-sm text-dc1-text-secondary">{narrative.subheadline}</p>
+          <ul className="mt-3 space-y-1 text-xs text-dc1-text-secondary">
+            {narrative.objections.map((point) => (
+              <li key={point}>• {point}</li>
+            ))}
+          </ul>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {narrative.ctaFlow.map((cta) => (
+              <Link key={cta.href} href={cta.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 text-xs font-semibold text-dc1-text-primary hover:border-dc1-amber/40">
+                {cta.label}
+              </Link>
+            ))}
+          </div>
+        </section>
+
         <WizardProgress step={step} isRTL={isRTL} />
 
         {step === 1 && (
