@@ -22,7 +22,7 @@ export default function RenterRegisterPage() {
     name: '',
     email: '',
     organization: '',
-    useCase: 'AI Training',
+    useCase: '',
     phone: '',
     pdplConsent: false,
   })
@@ -58,12 +58,13 @@ export default function RenterRegisterPage() {
   }, [])
 
   const useCaseOptions = [
-    'AI Training',
-    'Inference',
-    'Image Generation',
-    'Scientific Computing',
-    'Other',
+    { value: 'AI Training', label: t('register.renter.use_case_option.ai_training') },
+    { value: 'Inference', label: t('register.renter.use_case_option.inference') },
+    { value: 'Image Generation', label: t('register.renter.use_case_option.image_generation') },
+    { value: 'Scientific Computing', label: t('register.renter.use_case_option.scientific_computing') },
+    { value: 'Other', label: t('register.renter.use_case_option.other') },
   ]
+  const quickstartHref = '/docs/api/openrouter-60s-quickstart?source=renter_register_success'
   const modelDocsHref = language === 'ar' ? '/docs/ar/models' : '/docs/models'
   const firstWorkloadActions = useMemo(
     () => [
@@ -80,7 +81,7 @@ export default function RenterRegisterPage() {
       {
         title: t('conversion.first_workload.step3_title'),
         description: t('conversion.first_workload.step3_desc'),
-        href: '/docs/quickstart?source=renter_register_first_workload&step=quickstart_docs',
+        href: '/docs/api/openrouter-60s-quickstart?source=renter_register_first_workload&step=quickstart_docs',
       },
     ],
     [t]
@@ -273,6 +274,29 @@ export default function RenterRegisterPage() {
               <p className="text-sm text-status-warning bg-status-warning/5 border border-status-warning/20 rounded-lg p-4 mb-6">
                 {t('register.renter.key_security')}
               </p>
+
+              <div className={`rounded-lg border border-dc1-amber/30 bg-dc1-amber/5 p-4 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <h3 className="text-sm font-semibold text-dc1-text-primary mb-2">
+                  {t('register.renter.success_quickstart_title')}
+                </h3>
+                <p className="text-xs text-dc1-text-secondary mb-3">
+                  {t('register.renter.success_quickstart_subtitle')}
+                </p>
+                <a
+                  href={quickstartHref}
+                  onClick={() =>
+                    trackRegisterEvent('renter_register_quickstart_opened', {
+                      source_page: 'renter_register_success',
+                      surface: 'success_quickstart',
+                      destination: quickstartHref,
+                      step: 'open_quickstart',
+                    })
+                  }
+                  className="btn btn-primary btn-sm w-full sm:w-auto"
+                >
+                  {t('register.renter.success_quickstart_cta')}
+                </a>
+              </div>
 
               <div className={`bg-dc1-surface-l2 border border-dc1-border rounded-lg p-5 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
                 <h3 className="text-base font-semibold text-dc1-text-primary mb-3">
@@ -481,7 +505,20 @@ export default function RenterRegisterPage() {
             <p className="text-xs text-dc1-text-secondary mb-3">{t('path_chooser.subtitle')}</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {pathChooserLanes.map((lane) => (
-                <a key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 hover:border-dc1-amber transition-colors">
+                <a
+                  key={lane.key}
+                  href={lane.href}
+                  onClick={() =>
+                    trackRegisterEvent('renter_register_path_lane_clicked', {
+                      source_page: 'renter_register',
+                      surface: 'path_chooser',
+                      destination: lane.href,
+                      step: 'lane_click',
+                      lane_key: lane.key,
+                    })
+                  }
+                  className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 hover:border-dc1-amber transition-colors"
+                >
                   <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
                   <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
                 </a>
@@ -514,6 +551,16 @@ export default function RenterRegisterPage() {
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
           <div className="card bg-dc1-surface-l1 border border-dc1-border rounded-lg p-8">
             <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">{t('register.renter.form_title')}</h2>
+            <div className={`mb-6 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4 text-xs ${isRTL ? 'text-right' : 'text-left'}`}>
+              <p className="text-dc1-text-secondary">
+                <span className="font-semibold text-dc1-text-primary">{t('register.renter.contract_required_label')}:</span>{' '}
+                {t('register.renter.contract_required_fields')}
+              </p>
+              <p className="mt-1 text-dc1-text-secondary">
+                <span className="font-semibold text-dc1-text-primary">{t('register.renter.contract_optional_label')}:</span>{' '}
+                {t('register.renter.contract_optional_fields')}
+              </p>
+            </div>
 
             {error && (
               <div className="alert-error mb-6">
@@ -578,19 +625,19 @@ export default function RenterRegisterPage() {
               {/* Use Case */}
               <div>
                 <label htmlFor="useCase" className="label">
-                  {t('register.renter.use_case')} <span className="text-status-error">*</span>
+                  {t('register.renter.use_case')} <span className="text-dc1-text-muted">{t('register.renter.optional')}</span>
                 </label>
                 <select
                   id="useCase"
                   name="useCase"
                   value={formData.useCase}
                   onChange={handleChange}
-                  required
                   className="input"
                 >
-                  {useCaseOptions.map(option => (
-                    <option key={option} value={option}>
-                      {option}
+                  <option value="">{t('register.renter.use_case_placeholder')}</option>
+                  {useCaseOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
