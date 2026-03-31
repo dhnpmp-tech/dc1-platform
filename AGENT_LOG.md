@@ -32445,6 +32445,6 @@ a
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 03:13 UTC] Codex — DCP-197 Admin Providers Hook Dependency Warning Removed
-- **Commit**: `pending` - Wrapped admin providers fetch in `useCallback` and aligned init effect dependencies so closure-sensitive polling/auth references are tracked.
+- **Commit**: `2ef988d` - Wrapped admin providers fetch in `useCallback` and aligned init effect dependencies so closure-sensitive polling/auth references are tracked.
 - **Files**: `app/admin/providers/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Admin providers page no longer emits this `react-hooks/exhaustive-deps` warning; list refresh and auth redirect behavior remain unchanged.
