@@ -32440,11 +32440,16 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-30 23:54 UTC] Codex — DCP-186 ESLint Baseline Bootstrapped For Non-Interactive CI Checks
-- **Commit**: `03010d7` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
+- **Commit**: `ca58a48` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 00:24 UTC] Codex — DCP-188 Auth + Support Hook Dependency Warnings Reduced
-- **Commit**: `pending` - Wrapped login reason resolver in `useCallback` and used it in the auth-param effect dependencies; memoized support category options and included them in the sync effect dependencies to remove stale-closure warnings.
+- **Commit**: `c734a28` - Wrapped login reason resolver in `useCallback` and used it in the auth-param effect dependencies; memoized support category options and included them in the sync effect dependencies to remove stale-closure warnings.
 - **Files**: `app/login/page.tsx`, `app/support/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `login` and `support` no longer emit their previous `react-hooks/exhaustive-deps` warnings while keeping behavior stable for role/method/reason query handling and support form category initialization.
+
+## [2026-03-31 00:55 UTC] Codex — DCP-191 Auth/Support Hook-Dependency Cleanup Recut On Fresh Main
+- **Commit**: `pending` - Recut the auth/support hook-dependency warning fixes with lint bootstrap on a fresh `main` branch to provide a standalone merge path.
+- **Files**: `app/login/page.tsx`, `app/support/page.tsx`, `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
+- **Impact**: This branch carries the same auth/support warning reduction work in an independent lineage; `lint` completed successfully, while `build` command stalled in this runtime after startup despite repeated polls.
