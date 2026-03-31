@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Header from '../components/layout/Header'
@@ -57,15 +57,18 @@ function ContactForm({
   const buildMailtoUrl = (payload: typeof form) =>
     `mailto:support@dcp.sa?subject=[${payload.category}] Support Request from ${payload.name}&body=${encodeURIComponent(payload.message)}`;
 
-  const categoryOptions = [
-    { value: 'general', label: t('support.form.category.general') },
-    { value: 'account', label: t('support.form.category.account') },
-    { value: 'billing', label: t('support.form.category.billing') },
-    { value: 'provider', label: t('support.form.category.provider') },
-    { value: 'renter', label: t('support.form.category.renter') },
-    { value: 'bug', label: t('support.form.category.bug') },
-    { value: 'enterprise', label: t('support.form.category.enterprise') },
-  ]
+  const categoryOptions = useMemo(
+    () => [
+      { value: 'general', label: t('support.form.category.general') },
+      { value: 'account', label: t('support.form.category.account') },
+      { value: 'billing', label: t('support.form.category.billing') },
+      { value: 'provider', label: t('support.form.category.provider') },
+      { value: 'renter', label: t('support.form.category.renter') },
+      { value: 'bug', label: t('support.form.category.bug') },
+      { value: 'enterprise', label: t('support.form.category.enterprise') },
+    ],
+    [t]
+  )
 
   useEffect(() => {
     const hasCategory = categoryOptions.some((option) => option.value === initialCategory)
@@ -75,7 +78,7 @@ function ContactForm({
       category: nextCategory,
       message: initialMessage || prev.message,
     }))
-  }, [initialCategory, initialMessage])
+  }, [categoryOptions, initialCategory, initialMessage])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
