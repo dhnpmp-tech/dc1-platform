@@ -13,6 +13,11 @@
 - **Files**: `AGENT_LOG.md`
 - **Impact**: `main` now includes the admin/rate-limit test stabilization, the vLLM backup-validation routing fix, and three additional admin hook dependency fixes. The still-open older branch `agent/backend-dev/dcp-226-provider-reactivation-queue` remains a stale duplicate and should stay unmerged unless rebased to preserve the already-landed schema-compat DCP-226 changes.
 
+## [2026-03-31 15:03 UTC] Codex — DCP-198 Template Catalog Wired To Live API + Smoke Gate
+- **Commit**: `pending` - Removed renter template-catalog dependence on hardcoded in-file template data so `/renter/marketplace/templates` is now fully driven by live `/api/dc1/templates` catalog payloads, preserved one-screen deploy flow through `/api/dc1/templates/:id/deploy`, and added a dedicated smoke script (`npm run smoke:template-catalog`) that asserts catalog/deploy route wiring + no static array fallback.
+- **Files**: `app/renter/marketplace/templates/page.tsx`, `scripts/smoke-template-catalog-wiring.mjs`, `package.json`, `AGENT_LOG.md`
+- **Impact**: Frontend catalog visibility now reflects real `docker-templates` API data only, with explicit empty/error states instead of silent placeholder fallback. Verification evidence is now a repeatable command for CTO/QA handoff: `npm run smoke:template-catalog` (pass).
+
 ## [2026-03-31 11:00 UTC] Codex — Release Heartbeat Landed Four Agent Branches On Main
 - **Commit**: `598dfc1` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks) and created PRs for the first five qualifying branches. Landed `agent/frontend-dev/dcp-204-admin-security-hook-deps`, `agent/backend-dev/dcp-226-reactivation-queue-schema-compat`, `agent/frontend-dev/dcp-203-admin-jobs-detail-page-hook-deps`, and `agent/frontend-dev/dcp-202-admin-jobs-list-hook-deps` onto `main` via the release worktree, resolving only `AGENT_LOG.md` conflicts by keeping `main`. Skipped `agent/backend-dev/dcp-226-provider-reactivation-queue` because it was an older duplicate of the newer schema-compat DCP-226 branch and would have replayed stale changes on the same backend files.
 - **Files**: `AGENT_LOG.md`
