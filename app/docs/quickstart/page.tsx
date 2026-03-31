@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -496,15 +497,18 @@ export API_BASE="https://dcp.sa/api/dc1"`,
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function QuickstartPage() {
   const { language, setLanguage, t: tr } = useLanguage()
+  const searchParams = useSearchParams()
   const isRTL = language === 'ar'
   const t = copy[language]
   const [activeSdk, setActiveSdk] = useState<SdkKey>('node')
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
+  const hasTrackedQuickstartView = useRef(false)
+  const source = searchParams.get('source') || 'direct'
 
   const trackQuickstartEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
-    const detail = { event, source: 'docs_quickstart', ...payload }
+    const detail = { event, surface: 'docs_quickstart', ...payload }
     window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
     const win = window as typeof window & {
       dataLayer?: Array<Record<string, unknown>>
@@ -517,6 +521,16 @@ export default function QuickstartPage() {
       win.gtag('event', event, detail)
     }
   }, [])
+
+  useEffect(() => {
+    if (hasTrackedQuickstartView.current) return
+    hasTrackedQuickstartView.current = true
+    trackQuickstartEvent('quickstart_page_view', {
+      page: 'quickstart',
+      locale: language,
+      source,
+    })
+  }, [language, source, trackQuickstartEvent])
 
   const sdkCards = useMemo<Record<SdkKey, SdkCard>>(() => {
     return {

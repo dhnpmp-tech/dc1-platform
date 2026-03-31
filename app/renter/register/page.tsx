@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -15,7 +16,9 @@ interface RegistrationResult {
 
 export default function RenterRegisterPage() {
   const { t, language } = useLanguage()
+  const searchParams = useSearchParams()
   const isRTL = language === 'ar'
+  const source = searchParams.get('source') || 'direct'
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
   const [formData, setFormData] = useState({
@@ -42,6 +45,8 @@ export default function RenterRegisterPage() {
       surface: 'registration',
       destination: 'none',
       step: 'view',
+      locale: language,
+      source,
       ...payload,
     }
     window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
@@ -55,7 +60,7 @@ export default function RenterRegisterPage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }, [])
+  }, [language, source])
 
   const useCaseOptions = [
     { value: 'AI Training', label: t('register.renter.use_case_option.ai_training') },
@@ -172,6 +177,13 @@ export default function RenterRegisterPage() {
         surface: 'registration_form',
         destination: '/api/dc1/renters/register',
         step: 'submit_success',
+      })
+      trackRegisterEvent('quickstart_api_key_created', {
+        surface: 'registration_form',
+        destination: '/api/dc1/renters/register',
+        step: 'api_key_created',
+        renter_id: data.renter_id ?? null,
+        api_key_prefix: typeof data.api_key === 'string' ? data.api_key.slice(0, 11) : null,
       })
     } catch (err) {
       trackRegisterEvent('renter_register_failed', {
