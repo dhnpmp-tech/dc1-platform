@@ -30,18 +30,23 @@ const EN_COPY: LocaleCopy = {
   troubleItems: [
     {
       key: 'auth',
-      title: '401 / invalid key',
-      body: 'Confirm your key starts with `dcp-renter-` and send it in `Authorization: Bearer <key>`.',
+      title: '401 / 403 invalid or missing key',
+      body: 'Confirm your key starts with `dcp-renter-` and send `Authorization: Bearer <key>` on every request.',
     },
     {
-      key: 'quota',
-      title: '402 / insufficient balance',
-      body: 'Top up your renter wallet before retrying. Settlement remains usage-based.',
+      key: 'path',
+      title: '404 wrong base URL or model path',
+      body: 'Use `https://api.dcp.sa/v1/chat/completions` and a published model id from the DCP catalog.',
     },
     {
-      key: 'model',
-      title: '404 / model not found',
-      body: 'Use a currently published model id from the DCP model catalog before submitting the request.',
+      key: 'rate',
+      title: '429 capacity or rate limit',
+      body: 'Retry with exponential backoff and avoid concurrent burst retries from the same client.',
+    },
+    {
+      key: 'server',
+      title: '5xx transient upstream failure',
+      body: 'Treat as retriable. Wait briefly, retry idempotently, and check DCP status if failures persist.',
     },
   ],
   copyLabel: 'Copy cURL',
@@ -60,18 +65,23 @@ const AR_COPY: LocaleCopy = {
   troubleItems: [
     {
       key: 'auth',
-      title: '401 / مفتاح غير صالح',
-      body: 'تأكد أن المفتاح يبدأ بـ `dcp-renter-` وأنه مرسَل في `Authorization: Bearer <key>`.',
+      title: '401 / 403 مفتاح مفقود أو غير صالح',
+      body: 'تأكد أن المفتاح يبدأ بـ `dcp-renter-` وأن ترويسة `Authorization: Bearer <key>` موجودة في كل طلب.',
     },
     {
-      key: 'quota',
-      title: '402 / الرصيد غير كافٍ',
-      body: 'اشحن محفظة المستأجر ثم أعد المحاولة. التسوية تبقى حسب الاستخدام الفعلي.',
+      key: 'path',
+      title: '404 مسار خاطئ أو نموذج غير صحيح',
+      body: 'استخدم `https://api.dcp.sa/v1/chat/completions` ومعرّف نموذج منشور في كتالوج DCP.',
     },
     {
-      key: 'model',
-      title: '404 / النموذج غير موجود',
-      body: 'استخدم معرّف نموذج منشور حاليًا في كتالوج نماذج DCP قبل إرسال الطلب.',
+      key: 'rate',
+      title: '429 سعة أو حد معدل',
+      body: 'أعد المحاولة بأسلوب backoff تدريجي وتجنب إرسال دفعات متزامنة كبيرة من نفس العميل.',
+    },
+    {
+      key: 'server',
+      title: '5xx فشل مؤقت في الخدمة',
+      body: 'تعامل معه كفشل مؤقت قابل لإعادة المحاولة. انتظر قليلًا ثم أعد الطلب وتحقق من صفحة الحالة عند التكرار.',
     },
   ],
   copyLabel: 'نسخ cURL',
@@ -119,6 +129,11 @@ export default function OpenRouter60sQuickstartPage() {
       destination: 'clipboard',
       step: 'copy',
     })
+    trackEvent('developer_flow_first_call_copy', {
+      surface: 'first_call_snippet',
+      destination: 'clipboard',
+      step: 'copy',
+    })
     setTimeout(() => setCopied(false), 1800)
   }
 
@@ -150,17 +165,24 @@ export default function OpenRouter60sQuickstartPage() {
 
         <section className="mt-6 rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6 sm:p-8">
           <h2 className={`text-lg font-semibold text-dc1-text-primary ${isRTL ? 'text-right' : ''}`}>{copy.troubleTitle}</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {troubleList.map((item) => (
               <button
                 key={item.key}
                 className={`rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4 text-left transition-colors hover:border-dc1-amber ${isRTL ? 'text-right' : ''}`}
                 onClick={() =>
-                  trackEvent('openrouter_quickstart_troubleshooting_opened', {
-                    surface: 'troubleshooting_panel',
-                    destination: item.key,
-                    step: 'open_issue',
-                  })
+                  {
+                    trackEvent('openrouter_quickstart_troubleshooting_opened', {
+                      surface: 'troubleshooting_panel',
+                      destination: item.key,
+                      step: 'open_issue',
+                    })
+                    trackEvent('developer_flow_first_call_failed', {
+                      surface: 'troubleshooting_panel',
+                      destination: item.key,
+                      step: 'open_issue',
+                    })
+                  }
                 }
               >
                 <p className="text-sm font-semibold text-dc1-text-primary">{item.title}</p>
@@ -176,11 +198,18 @@ export default function OpenRouter60sQuickstartPage() {
             href="/docs/quickstart?source=openrouter_60s_quickstart"
             className="btn btn-primary btn-sm mt-3"
             onClick={() =>
-              trackEvent('openrouter_quickstart_next_clicked', {
-                surface: 'next_step',
-                destination: '/docs/quickstart',
-                step: 'open_full_quickstart',
-              })
+              {
+                trackEvent('openrouter_quickstart_next_clicked', {
+                  surface: 'next_step',
+                  destination: '/docs/quickstart',
+                  step: 'open_full_quickstart',
+                })
+                trackEvent('developer_flow_first_call_success', {
+                  surface: 'next_step',
+                  destination: '/docs/quickstart',
+                  step: 'open_full_quickstart',
+                })
+              }
             }
           >
             {copy.nextCta}

@@ -392,6 +392,12 @@ export default function HomePage() {
                     destination: '/renter/register?source=landing_first_fold&intent=renter',
                     step: 'primary_cta',
                   })
+                  trackLandingEvent('developer_flow_landing_cta_click', {
+                    role_intent: 'renter',
+                    surface: 'hero_primary_cta',
+                    destination: '/renter/register?source=landing_first_fold&intent=renter',
+                    step: 'primary_cta',
+                  })
                 }}
                 className="btn btn-primary btn-lg w-full sm:w-auto min-w-[240px]"
               >
@@ -402,6 +408,12 @@ export default function HomePage() {
                 onClick={() => {
                   updateIntent('provider', 'landing_first_fold', 'primary_cta')
                   trackLandingEvent('landing_primary_cta_clicked', {
+                    role_intent: 'provider',
+                    surface: 'hero_primary_cta',
+                    destination: '/provider/register?source=landing_first_fold&intent=provider',
+                    step: 'primary_cta',
+                  })
+                  trackLandingEvent('developer_flow_landing_cta_click', {
                     role_intent: 'provider',
                     surface: 'hero_primary_cta',
                     destination: '/provider/register?source=landing_first_fold&intent=provider',

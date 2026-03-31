@@ -142,6 +142,11 @@ export default function RenterRegisterPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    trackRegisterEvent('developer_flow_register_submit', {
+      surface: 'registration_form',
+      destination: '/api/dc1/renters/register',
+      step: 'submit_start',
+    })
 
     if (!formData.pdplConsent) {
       setError(t('register.renter.pdpl_error'))
@@ -174,6 +179,11 @@ export default function RenterRegisterPage() {
       setSuccess(true)
       localStorage.setItem('dc1_renter_key', data.api_key)
       trackRegisterEvent('renter_register_success', {
+        surface: 'registration_form',
+        destination: '/api/dc1/renters/register',
+        step: 'submit_success',
+      })
+      trackRegisterEvent('developer_flow_register_success', {
         surface: 'registration_form',
         destination: '/api/dc1/renters/register',
         step: 'submit_success',
@@ -297,12 +307,20 @@ export default function RenterRegisterPage() {
                 <a
                   href={quickstartHref}
                   onClick={() =>
-                    trackRegisterEvent('renter_register_quickstart_opened', {
-                      source_page: 'renter_register_success',
-                      surface: 'success_quickstart',
-                      destination: quickstartHref,
-                      step: 'open_quickstart',
-                    })
+                    {
+                      trackRegisterEvent('renter_register_quickstart_opened', {
+                        source_page: 'renter_register_success',
+                        surface: 'success_quickstart',
+                        destination: quickstartHref,
+                        step: 'open_quickstart',
+                      })
+                      trackRegisterEvent('developer_flow_quickstart_open', {
+                        source_page: 'renter_register_success',
+                        surface: 'success_quickstart',
+                        destination: quickstartHref,
+                        step: 'open_quickstart',
+                      })
+                    }
                   }
                   className="btn btn-primary btn-sm w-full sm:w-auto"
                 >
