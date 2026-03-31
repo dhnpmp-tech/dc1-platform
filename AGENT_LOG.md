@@ -32468,3 +32468,8 @@ a
 - **Commit**: `pending` - Updated backend integration tests to match strict provider registration schema, avoid flaky elapsed-time assumptions in rate-limit assertions, and increase admin integration timeout budget for slow CI/runtime environments.
 - **Files**: `backend/tests/integration/admin-endpoints.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
 - **Impact**: Mainline backend verification is now deterministic for these suites: targeted run `cd backend && npm test -- --runInBand tests/integration/admin-endpoints.test.js tests/integration/rate-limiting.test.js` passes `33/33`, preventing false negatives from schema drift and timing jitter.
+
+## [2026-03-31 12:02 UTC] Codex — DCP-206 Admin Containers Hook Dependency Updated
+- **Commit**: `pending` - Added missing `t` dependency to `fetchSecurityStatus` callback on admin containers page so translated error state remains in sync with hook dependencies.
+- **Files**: `app/admin/containers/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Reduces React hook lint debt on containers security status loading path without changing behavior.
