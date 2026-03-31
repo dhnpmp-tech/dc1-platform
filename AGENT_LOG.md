@@ -32445,6 +32445,6 @@ a
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 03:13 UTC] Codex — DCP-195 Admin Settings Hook Dependency Warning Removed
-- **Commit**: `pending` - Added missing `t` dependency to admin settings initialization effect to remove stale-closure warning while preserving existing initialization behavior.
+- **Commit**: `2294cca` - Added missing `t` dependency to admin settings initialization effect to remove stale-closure warning while preserving existing initialization behavior.
 - **Files**: `app/admin/settings/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Admin settings page no longer emits this `react-hooks/exhaustive-deps` warning; lane is standalone and mergeable with lint baseline.
