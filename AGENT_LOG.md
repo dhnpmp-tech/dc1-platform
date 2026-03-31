@@ -32445,6 +32445,6 @@ a
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 03:13 UTC] Codex — DCP-196 Admin Jobs Hook Dependency Warning Removed
-- **Commit**: `pending` - Wrapped admin jobs fetch in `useCallback` and aligned initialization effect dependencies to remove stale-closure warnings while preserving polling behavior.
+- **Commit**: `119f702` - Wrapped admin jobs fetch in `useCallback` and aligned initialization effect dependencies to remove stale-closure warnings while preserving polling behavior.
 - **Files**: `app/admin/jobs/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Admin jobs page no longer emits this `react-hooks/exhaustive-deps` warning; real-time queue refresh behavior and login redirect flow remain intact.
