@@ -169,7 +169,7 @@ export default function AdminSettingsPage() {
     }
 
     load()
-  }, [router])
+  }, [router, t])
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/admin', icon: <HomeIcon /> },
