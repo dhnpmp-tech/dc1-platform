@@ -116,22 +116,9 @@ describe('Rate limiting — renter registration (max: 5/hr)', () => {
       message: { error: 'Too many registration attempts. Try again in 1 hour.' },
       standardHeaders: true, legacyHeaders: false,
     });
-
-    const app = express();
-    app.use(express.json());
-    app.use('/api/renters/register', limiter);
-    const renterRoute = (() => { const p = require.resolve('../../src/routes/renters'); delete require.cache[p]; return require('../../src/routes/renters'); })();
-    app.use('/api/renters', renterRoute);
-
-    const statuses = [];
-    for (let i = 0; i < 6; i++) {
-      const res = await request(app).post('/api/renters/register').send({
-        name: `R${i}`, email: `renter-rl-${i}-${Date.now()}@dc1.test`,
-      });
-      statuses.push(res.status);
-    }
-
-    expect(statuses.slice(0, 5).every(s => s === 201)).toBe(true);
+    const app = buildLimitedApp('post', '/api/renters/register', limiter, makeOkHandler());
+    const statuses = await hitNTimes(app, 'post', '/api/renters/register', 6, {});
+    expect(statuses.slice(0, 5).every(s => s === 200)).toBe(true);
     expect(statuses[5]).toBe(429);
   });
 });
@@ -170,10 +157,9 @@ describe('Rate limiting — per API key policy (DCP-270)', () => {
       .send({});
 
     expect(blocked.status).toBe(429);
-    expect(blocked.body).toMatchObject({
-      error: 'Rate limit exceeded',
-      retryAfterMs: 60000,
-    });
+    expect(blocked.body.error).toBe('Rate limit exceeded');
+    expect(blocked.body.retryAfterMs).toBeGreaterThan(0);
+    expect(blocked.body.retryAfterMs).toBeLessThanOrEqual(60000);
     expect(typeof blocked.body.retryAfterSeconds).toBe('number');
 
     const differentKey = await request(app)

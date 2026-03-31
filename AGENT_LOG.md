@@ -32458,3 +32458,8 @@ a
 - **Commit**: `pending` - Fixed `/v1/chat/completions` streaming proxy bridge to handle WHATWG `fetch` streams (Node/Jest) without crashing, and updated OpenRouter compliance harness assertions to enforce passing provider-facing tool-definition passthrough + stream stability checks.
 - **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/openrouter-compliance-harness.test.js`, `AGENT_LOG.md`
 - **Impact**: Provider e2e parity gate for OpenRouter is now enforceable in CI: `tool_definition_passthrough` and `stream_stability` are both required passing checks, and the stream path no longer throws `streamResponse.body.pipe is not a function` under Node fetch WebStream responses.
+
+## [2026-03-31 11:25 UTC] Codex — Stabilized Admin/Rate-Limit Integration Coverage On Mainline
+- **Commit**: `pending` - Updated backend integration tests to match strict provider registration schema, avoid flaky elapsed-time assumptions in rate-limit assertions, and increase admin integration timeout budget for slow CI/runtime environments.
+- **Files**: `backend/tests/integration/admin-endpoints.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Mainline backend verification is now deterministic for these suites: targeted run `cd backend && npm test -- --runInBand tests/integration/admin-endpoints.test.js tests/integration/rate-limiting.test.js` passes `33/33`, preventing false negatives from schema drift and timing jitter.
