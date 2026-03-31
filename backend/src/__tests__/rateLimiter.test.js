@@ -9,11 +9,17 @@ const { createRateLimiter, createAdminIpAllowlist } = require('../middleware/rat
 
 jest.setTimeout(30_000);
 
+let savedDisableRateLimit;
+
 beforeEach(() => {
+  savedDisableRateLimit = process.env.DISABLE_RATE_LIMIT;
+  process.env.DISABLE_RATE_LIMIT = '0';
   jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
 afterEach(() => {
+  if (savedDisableRateLimit === undefined) delete process.env.DISABLE_RATE_LIMIT;
+  else process.env.DISABLE_RATE_LIMIT = savedDisableRateLimit;
   jest.restoreAllMocks();
 });
 
