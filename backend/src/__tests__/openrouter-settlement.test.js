@@ -161,6 +161,13 @@ describe('openrouter-settlement admin routes', () => {
       .send({});
     expect(dryRunRes.status).toBe(200);
     expect(dryRunRes.body.summary.usage_count).toBe(1);
+    expect(dryRunRes.body.summary.pricing).toEqual({
+      currency: 'USD',
+      usd_expected_total: expect.any(String),
+      usd_reconciled_total: expect.any(String),
+      usd_discrepancy_total: expect.any(String),
+    });
+    expect(typeof dryRunRes.body.summary.pricing.usd_reconciled_total).toBe('string');
 
     const runRes = await request(app)
       .post('/api/admin/openrouter/settlements/run')
@@ -168,12 +175,39 @@ describe('openrouter-settlement admin routes', () => {
       .send({ mode: 'invoice' });
     expect(runRes.status).toBe(200);
     expect(runRes.body.settlement.status).toBe('completed');
+    expect(runRes.body.settlement.pricing).toEqual({
+      currency: 'USD',
+      usd_expected_total: expect.any(String),
+      usd_reconciled_total: expect.any(String),
+      usd_discrepancy_total: expect.any(String),
+    });
+    expect(runRes.body.invoice.pricing).toEqual({
+      currency: 'USD',
+      usd: expect.any(String),
+    });
+    expect(typeof runRes.body.invoice.pricing.usd).toBe('string');
 
     const listRes = await request(app)
       .get('/api/admin/openrouter/settlements')
       .set('x-admin-token', token);
     expect(listRes.status).toBe(200);
     expect(listRes.body.count).toBeGreaterThanOrEqual(1);
+    expect(listRes.body.settlements[0].pricing).toEqual({
+      currency: 'USD',
+      usd_expected_total: expect.any(String),
+      usd_reconciled_total: expect.any(String),
+      usd_discrepancy_total: expect.any(String),
+    });
+
+    const detailRes = await request(app)
+      .get(`/api/admin/openrouter/settlements/${runRes.body.settlement.id}`)
+      .set('x-admin-token', token);
+    expect(detailRes.status).toBe(200);
+    expect(detailRes.body.items[0].pricing).toEqual({
+      currency: 'USD',
+      usd: expect.any(String),
+    });
+    expect(typeof detailRes.body.items[0].pricing.usd).toBe('string');
   });
 
   test('rejects access without admin token', async () => {

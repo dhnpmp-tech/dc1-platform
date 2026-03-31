@@ -86,6 +86,7 @@ describe('v1 chat metering ledger persistence', () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('data: [DONE]');
+    expect(res.text).toContain('"pricing":{"currency":"USD","usd_prompt":"0.058667","usd_completion":"0.037333","usd_total":"0.096000"}');
     expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     const payload = mockRecordOpenRouterUsage.mock.calls[0][1];
     expect(payload.requestId).toBe('req-stream-123');

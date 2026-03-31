@@ -17,7 +17,7 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
-const { toCatalogContractCore } = require('../lib/model-catalog-contract');
+const { toCatalogContractCore, toUsdStringFromHalala } = require('../lib/model-catalog-contract');
 const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 
 const router = express.Router();
@@ -304,6 +304,30 @@ function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
 }
 
+function withUsdUsagePricing(rawUsage = {}, tokenRateHalala = 1) {
+  const promptTokens = toFiniteInt(rawUsage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+  const completionTokens = toFiniteInt(rawUsage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+  const totalTokens = toFiniteInt(rawUsage.total_tokens, { min: 0, max: 1_000_000_000 })
+    ?? (promptTokens + completionTokens);
+  const safeTokenRate = toFiniteInt(tokenRateHalala, { min: 0, max: 100_000_000 }) ?? 0;
+  const promptCostHalala = promptTokens * safeTokenRate;
+  const completionCostHalala = completionTokens * safeTokenRate;
+  const totalCostHalala = totalTokens * safeTokenRate;
+
+  return {
+    ...rawUsage,
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: totalTokens,
+    pricing: {
+      currency: 'USD',
+      usd_prompt: toUsdStringFromHalala(promptCostHalala),
+      usd_completion: toUsdStringFromHalala(completionCostHalala),
+      usd_total: toUsdStringFromHalala(totalCostHalala),
+    },
+  };
+}
+
 function v1ChatRateLimiter(req, res, next) {
   if (req.body?.stream) {
     return vllmStreamLimiter(req, res, next);
@@ -488,12 +512,16 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
 
       const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
+        const usageForResponse = withUsdUsagePricing(resultBody?.usage || {}, tokenRateHalala);
         debitAndPersistUsage({
           providerForUsage,
           providerResponseId: normalizeString(resultBody?.id, { maxLen: 200 }),
-          usage: resultBody?.usage || {},
+          usage: usageForResponse,
         });
-        return res.json(resultBody);
+        return res.json({
+          ...resultBody,
+          usage: usageForResponse,
+        });
       };
 
       const writeStreamingResponse = async (streamResponse, providerForUsage) => {
@@ -512,37 +540,47 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         let completionText = '';
         let sseBuffer = '';
 
-        const parseSseText = (chunkText) => {
+        const transformSseText = (chunkText) => {
           sseBuffer += chunkText;
           const lines = sseBuffer.split('\n');
           sseBuffer = lines.pop() || '';
-          for (const rawLine of lines) {
+          if (lines.length === 0) return '';
+
+          const transformedLines = lines.map((rawLine) => {
             const line = rawLine.trimEnd();
-            if (!line.startsWith('data:')) continue;
+            if (!line.startsWith('data:')) return rawLine;
             const payload = line.slice(5).trim();
-            if (!payload || payload === '[DONE]') continue;
+            if (!payload || payload === '[DONE]') return rawLine;
+
             try {
               const parsed = JSON.parse(payload);
               if (parsed && typeof parsed.id === 'string' && parsed.id.trim()) {
                 providerResponseId = parsed.id.trim().slice(0, 200);
               }
-              if (parsed && parsed.usage && typeof parsed.usage === 'object') {
-                finalUsage = parsed.usage;
-              }
               const delta = parsed?.choices?.[0]?.delta?.content;
               if (typeof delta === 'string' && delta) {
                 completionText += delta;
               }
-            } catch (_) {}
-          }
+              if (parsed && parsed.usage && typeof parsed.usage === 'object') {
+                const usageWithPricing = withUsdUsagePricing(parsed.usage, tokenRateHalala);
+                parsed.usage = usageWithPricing;
+                finalUsage = usageWithPricing;
+              }
+              return `data: ${JSON.stringify(parsed)}`;
+            } catch (_) {
+              return rawLine;
+            }
+          });
+
+          return `${transformedLines.join('\n')}\n`;
         };
 
         const body = streamResponse.body;
         if (typeof body[Symbol.asyncIterator] === 'function') {
           for await (const chunk of body) {
             const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-            res.write(bufferChunk);
-            parseSseText(bufferChunk.toString('utf8'));
+            const transformed = transformSseText(bufferChunk.toString('utf8'));
+            if (transformed) res.write(transformed);
           }
         } else if (typeof body.getReader === 'function') {
           const reader = body.getReader();
@@ -551,11 +589,15 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             if (done) break;
             if (!value) continue;
             const bufferChunk = Buffer.from(value);
-            res.write(bufferChunk);
-            parseSseText(bufferChunk.toString('utf8'));
+            const transformed = transformSseText(bufferChunk.toString('utf8'));
+            if (transformed) res.write(transformed);
           }
         } else {
           throw new Error('Unsupported provider stream body');
+        }
+
+        if (sseBuffer) {
+          res.write(sseBuffer);
         }
 
         debitAndPersistUsage({
@@ -664,7 +706,10 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       if (job.status === 'completed') {
         const text = job.result_text || '';
         const cTokens = job.completion_tokens || approximateTokenCount(text);
-        const usage = { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens: promptTokens + cTokens };
+        const usage = withUsdUsagePricing(
+          { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens: promptTokens + cTokens },
+          tokenRateHalala
+        );
         const completionId = `chatcmpl-${jobId}`;
 
         // If streaming was requested, simulate SSE from completed text

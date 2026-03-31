@@ -32488,3 +32488,7 @@ a
 - **Commit**: `pending` - Stabilized backend rate-limiter test suites by increasing integration-appropriate Jest timeouts and mocking noisy warning logs per test to prevent timeout flakiness under slower CI/runtime conditions.
 - **Files**: `backend/src/__tests__/rateLimiter.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
 - **Impact**: Rate-limit verification is now reliable in this environment; targeted command `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/rate-limiting.test.js` passes `23/23` without timeout regressions.
+## [2026-03-31 15:47 UTC] Codex - Enforce OpenRouter USD string pricing contract on v1 + settlement outputs
+- **Commit**: `pending` - Added deterministic USD-string pricing fields to `/v1/models`, `/v1/chat/completions` usage payloads (including SSE final chunks), and OpenRouter settlement admin response surfaces.
+- **Files**: `backend/src/lib/model-catalog-contract.js`, `backend/src/routes/v1.js`, `backend/src/routes/openrouter-settlement.js`, `backend/src/__tests__/v1-models.test.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-settlement.test.js`
+- **Impact**: Provider/OpenRouter integrations now receive explicit USD string pricing fields across model metadata and usage/settlement payloads; regression tests now fail on missing/non-string pricing contract fields.
