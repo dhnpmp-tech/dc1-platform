@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const { Readable } = require('stream');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
+const { toCatalogContractCore } = require('../lib/model-catalog-contract');
 
 const router = express.Router();
 
@@ -127,7 +128,11 @@ function buildModelRegistryListQuery(columns) {
   const selectColumns = [
     'model_id',
     columns.has('display_name') ? 'display_name' : 'model_id AS display_name',
+    columns.has('created_at') ? 'created_at' : 'NULL AS created_at',
     columns.has('context_window') ? 'context_window' : '4096 AS context_window',
+    columns.has('quantization') ? 'quantization' : "'unknown' AS quantization",
+    columns.has('vram_gb') ? 'vram_gb' : '0 AS vram_gb',
+    columns.has('default_price_halala_per_min') ? 'default_price_halala_per_min' : '0 AS default_price_halala_per_min',
     columns.has('parameter_count') ? 'parameter_count' : 'NULL AS parameter_count',
     columns.has('min_gpu_vram_gb')
       ? 'min_gpu_vram_gb'
@@ -174,20 +179,27 @@ router.get('/models', (req, res) => {
     }
 
     const nowSecs = Math.floor(Date.now() / 1000);
+    const data = (rows || []).map((row) => {
+      const contractCore = toCatalogContractCore({
+        model: row,
+        providerCount: 0,
+        maxVramGb: Number(row.vram_gb || row.min_gpu_vram_gb || 0),
+        created: nowSecs,
+      });
 
-    const data = (rows || []).map(row => ({
-      id: row.model_id,
-      object: 'model',
-      created: nowSecs,
-      owned_by: 'dc1-platform',
-      permission: [],
-      root: row.model_id,
-      parent: null,
-      // Extra DC1 fields (safe to include — OpenRouter ignores unknown keys)
-      display_name: row.display_name || row.model_id,
-      context_window: Number(row.context_window || 0),
-      parameter_count: row.parameter_count ?? null,
-    }));
+      return {
+        ...contractCore,
+        object: 'model',
+        owned_by: 'dc1-platform',
+        permission: [],
+        root: row.model_id,
+        parent: null,
+        // Legacy aliases kept for existing clients while catalog parity migrates.
+        display_name: contractCore.name,
+        context_window: contractCore.context_length,
+        parameter_count: row.parameter_count ?? null,
+      };
+    });
 
     return res.json({ object: 'list', data });
   } catch (error) {

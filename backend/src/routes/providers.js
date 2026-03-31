@@ -37,6 +37,7 @@ const {
 } = require('../services/job-execution-logs');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 const { normalizeProviderOs } = require('../lib/provider-os');
+const { toCatalogContractCore } = require('../lib/model-catalog-contract');
 const { validateBody } = require('../middleware/validate');
 const { providerRegisterSchema, providerBenchmarkSchema } = require('../schemas/providers.schema');
 const analytics = require('../services/analyticsService');
@@ -3669,35 +3670,21 @@ function extractOptionalCatalogFields(rawModelMetadata, canonicalModelId) {
 
 function toModelCatalogContractItem({ model, providerCount, maxVramGb, sourceMetadata }) {
     const modelId = String(model.model_id || '').trim();
-    const useCases = parseUseCases(model.use_cases);
-    const modalities = inferModalitiesFromUseCases(useCases);
-    const supportedFeatures = inferSupportedFeaturesFromUseCases(useCases);
-    const contextWindow = Number(model.context_window) > 0 ? Number(model.context_window) : 4096;
-    const maxOutputTokens = Math.max(512, Math.min(16384, Math.floor(contextWindow / 2)));
-    const usdPerMinute = toUsdStringFromHalalaPerMinute(model.default_price_halala_per_min);
+    const contractCore = toCatalogContractCore({
+        model,
+        providerCount,
+        maxVramGb,
+        created: model.created_at ? Math.floor(new Date(model.created_at).getTime() / 1000) : null,
+        nameFallback: toDisplayName(modelId),
+    });
     const optionalFields = extractOptionalCatalogFields(sourceMetadata, modelId);
-
     const payload = {
-        id: modelId,
-        name: model.display_name || toDisplayName(modelId),
-        created: model.created_at || new Date().toISOString(),
-        modalities,
-        context_length: contextWindow,
-        max_output_tokens: maxOutputTokens,
-        quantization: model.quantization || 'unknown',
-        pricing: {
-            usd_per_minute: usdPerMinute,
-            usd_per_1m_input_tokens: usdPerMinute,
-            usd_per_1m_output_tokens: usdPerMinute,
-        },
+        ...contractCore,
         sampling_parameters: {
             temperature: { min: 0, max: 2, default: 0.7 },
             top_p: { min: 0, max: 1, default: 1 },
             top_k: { min: 1, max: 200, default: 50 },
         },
-        supported_features: supportedFeatures,
-        provider_count: providerCount,
-        max_vram_gb: Number((maxVramGb || Number(model.vram_gb) || 0).toFixed(1)),
     };
 
     if (optionalFields.deprecation_date) payload.deprecation_date = optionalFields.deprecation_date;
@@ -3713,7 +3700,7 @@ function toModelCatalogContractItem({ model, providerCount, maxVramGb, sourceMet
 router.get('/model-catalog', (req, res) => {
     try {
         const activeModels = db.all(
-            `SELECT model_id, display_name, quantization, context_window, default_price_halala_per_min, vram_gb, created_at
+            `SELECT model_id, display_name, quantization, context_window, default_price_halala_per_min, vram_gb, created_at, use_cases
              FROM model_registry
              WHERE is_active = 1`
         );
