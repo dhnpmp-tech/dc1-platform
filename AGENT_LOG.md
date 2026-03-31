@@ -32450,6 +32450,6 @@ a
 - **Impact**: Provider flows no longer emit these stale-closure warnings under `react-hooks/exhaustive-deps`; lint/build remain green with lower warning count and no behavioral change to polling/validation logic.
 
 ## [2026-03-31 00:55 UTC] Codex — DCP-190 Provider Hook-Dependency Cleanup Recut On Fresh Main
-- **Commit**: `pending` - Recut provider hook-dependency warning fixes on a fresh `main` branch together with non-interactive lint baseline to keep the lane independently mergeable.
+- **Commit**: `270822b` - Recut provider hook-dependency warning fixes on a fresh `main` branch together with non-interactive lint baseline to keep the lane independently mergeable.
 - **Files**: `app/provider/page.tsx`, `app/provider/jobs/[id]/page.tsx`, `app/provider/register/page.tsx`, `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: Provider lint warning reductions and lint/bootstrap infrastructure are now available in a clean, standalone branch lineage for direct review/merge without dependency on prior frontend side branches.
