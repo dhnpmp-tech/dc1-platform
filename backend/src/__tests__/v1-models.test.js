@@ -59,6 +59,12 @@ describe('v1 models route', () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].id).toBe('fallback-model');
     expect(res.body.data[0]).toHaveProperty('parameter_count', null);
+    expect(res.body.data[0].pricing).toEqual({
+      usd_per_minute: expect.any(String),
+      usd_per_1m_input_tokens: expect.any(String),
+      usd_per_1m_output_tokens: expect.any(String),
+    });
+    expect(typeof res.body.data[0].pricing.usd_per_minute).toBe('string');
     expect(mockDb.all).toHaveBeenCalledTimes(2);
   });
 
@@ -86,6 +92,11 @@ describe('v1 models route', () => {
     expect(res.body.data[0].display_name).toBe('legacy-model');
     expect(res.body.data[0].context_window).toBe(4096);
     expect(res.body.data[0].parameter_count).toBeNull();
+    expect(res.body.data[0].pricing).toEqual({
+      usd_per_minute: expect.any(String),
+      usd_per_1m_input_tokens: expect.any(String),
+      usd_per_1m_output_tokens: expect.any(String),
+    });
   });
 
   test('returns empty list when model_registry table is missing', async () => {
@@ -209,6 +220,13 @@ describe('v1 models route', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('vram_gb AS min_gpu_vram_gb'))).toBe(true);
+    expect(res.body.usage.pricing).toEqual({
+      currency: 'USD',
+      usd_prompt: expect.any(String),
+      usd_completion: expect.any(String),
+      usd_total: expect.any(String),
+    });
+    expect(typeof res.body.usage.pricing.usd_total).toBe('string');
 
     fetchSpy.mockRestore();
   });
@@ -276,6 +294,13 @@ describe('v1 models route', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('FROM model_registry WHERE model_id = ?'))).toBe(false);
+    expect(res.body.usage.pricing).toEqual({
+      currency: 'USD',
+      usd_prompt: expect.any(String),
+      usd_completion: expect.any(String),
+      usd_total: expect.any(String),
+    });
+    expect(typeof res.body.usage.pricing.usd_total).toBe('string');
 
     fetchSpy.mockRestore();
   });
