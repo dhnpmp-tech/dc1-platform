@@ -32450,6 +32450,6 @@ a
 - **Impact**: `login` and `support` no longer emit their previous `react-hooks/exhaustive-deps` warnings while keeping behavior stable for role/method/reason query handling and support form category initialization.
 
 ## [2026-03-31 00:55 UTC] Codex — DCP-191 Auth/Support Hook-Dependency Cleanup Recut On Fresh Main
-- **Commit**: `pending` - Recut the auth/support hook-dependency warning fixes with lint bootstrap on a fresh `main` branch to provide a standalone merge path.
+- **Commit**: `7b65dfe` - Recut the auth/support hook-dependency warning fixes with lint bootstrap on a fresh `main` branch to provide a standalone merge path.
 - **Files**: `app/login/page.tsx`, `app/support/page.tsx`, `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: This branch carries the same auth/support warning reduction work in an independent lineage; `lint` completed successfully, while `build` command stalled in this runtime after startup despite repeated polls.
