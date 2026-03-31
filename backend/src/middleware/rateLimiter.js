@@ -1,5 +1,5 @@
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
-const { getAdminTokenFromReq } = require('./auth');
+const { getAdminTokenFromReq, getBearerToken } = require('./auth');
 
 function ipFallbackKey(req) {
   return `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`;
@@ -32,7 +32,11 @@ function createRateLimiter({ windowMs, max, keyGenerator }) {
 }
 
 function getRenterKey(req) {
-  const renterKey = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
+  const renterKey =
+    req.headers['x-renter-key'] ||
+    req.query.renter_key ||
+    req.query.key ||
+    getBearerToken(req);
   if (renterKey) return `renter:${String(renterKey)}`;
   return null;
 }
