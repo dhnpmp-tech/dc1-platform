@@ -488,7 +488,25 @@ export default function HomePage() {
                   <p className="mt-1 text-xs text-dc1-text-secondary">{t('path_chooser.subtitle')}</p>
                   <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {pathChooserLanes.map((lane) => (
-                      <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber">
+                      <Link
+                        key={lane.key}
+                        href={lane.href}
+                        onClick={() => {
+                          if (lane.key === 'self_serve_renter') {
+                            updateIntent('renter', 'landing_path_chooser', 'lane_click')
+                          } else if (lane.key === 'provider_onboarding') {
+                            updateIntent('provider', 'landing_path_chooser', 'lane_click')
+                          }
+                          trackLandingEvent('landing_path_lane_clicked', {
+                            surface: 'path_chooser',
+                            destination: lane.href,
+                            step: 'lane_click',
+                            lane_key: lane.key,
+                            lane_label: lane.label,
+                          })
+                        }}
+                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
+                      >
                         <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
                         <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
                       </Link>

@@ -27,7 +27,7 @@ function CopyButton({ text }: { text: string }) {
 function CodeBlock({ code }: { code: string }) {
   return (
     <div className="relative mt-3">
-      <pre className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 pr-16 text-xs text-dc1-text-secondary leading-relaxed max-w-full whitespace-pre-wrap break-words">
+      <pre dir="ltr" className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 pr-16 text-left text-xs text-dc1-text-secondary leading-relaxed max-w-full whitespace-pre-wrap break-words">
         {code}
       </pre>
       <CopyButton text={code} />
@@ -112,7 +112,7 @@ const copy = {
       title: 'I am integrating API',
       desc: 'Use auth and endpoint contracts for production-safe integration.',
       cta: 'Open API integration start',
-      href: '/docs/api',
+      href: '/docs/api/openrouter-60s-quickstart',
     },
   ],
   sdkHeading: 'SDK Quickstarts (Node, Python, CLI)',
@@ -237,7 +237,7 @@ const copy = {
       title: 'أنا أدمج API',
       desc: 'ابدأ بالمصادقة وخرائط النقاط النهائية لتكامل إنتاجي آمن.',
       cta: 'افتح بداية تكامل API',
-      href: '/docs/api',
+      href: '/docs/api/openrouter-60s-quickstart',
     },
   ],
     sdkHeading: 'أدلة SDK السريعة (Node وPython وCLI)',
