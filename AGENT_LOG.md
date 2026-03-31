@@ -32443,3 +32443,8 @@ a
 - **Commit**: `pending` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
+
+## [2026-03-31 04:37 UTC] Codex — DCP-198 Admin Renters Hook Dependency Stabilized
+- **Commit**: `pending` - Stabilized renters polling/data-refresh hook dependencies by memoizing `fetchRenters` and wiring explicit effect dependencies for `router`/`token`, preserving existing auth redirect + interval behavior while removing stale-closure risk.
+- **Files**: `app/admin/renters/page.tsx`, `AGENT_LOG.md`
+- **Impact**: File-scoped lint now passes cleanly for the updated admin renters page (`npm run lint -- --file app/admin/renters/page.tsx`), and this branch advances the ongoing React hook lint-debt burn-down without broad behavior changes.
