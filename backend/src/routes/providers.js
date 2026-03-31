@@ -4839,6 +4839,16 @@ router.get('/:id/health', (req, res) => {
 // Minimum hardware requirements for provider activation
 const ACTIVATION_MIN_VRAM_GB = 8;
 const ACTIVATION_MIN_TFLOPS = 10;
+const ACTIVATION_READY_REASON_CODE = 'ACTIVE_READY';
+const ACTIVATION_REASON_CODES = Object.freeze({
+    ACTIVE_READY: ACTIVATION_READY_REASON_CODE,
+    MISSING_TIER_IMAGE: 'MISSING_TIER_IMAGE',
+    STALE_HEARTBEAT: 'STALE_HEARTBEAT',
+    INVALID_GPU_CAPABILITY: 'INVALID_GPU_CAPABILITY',
+    KEY_AUTH_MISMATCH: 'KEY_AUTH_MISMATCH',
+});
+const ACTIVATION_STALE_HEARTBEAT_SECONDS = Number(process.env.DC1_ACTIVATION_STALE_HEARTBEAT_SECONDS || 300);
+const ACTIVATION_MIN_COMPUTE_CAPABILITY = Number(process.env.DC1_ACTIVATION_MIN_COMPUTE_CAPABILITY || 6.0);
 
 // Provider event emitter for downstream consumers (e.g. job dispatcher DCP-738)
 const _providerEventEmitter = new (require('events'))();
@@ -4871,6 +4881,112 @@ function ensureProviderBenchmarksTable() {
             FOREIGN KEY (provider_id) REFERENCES providers(id)
         )
     `).run();
+}
+
+function parseCachedModels(value) {
+    const parsed = safeJsonParse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((entry) => {
+        if (typeof entry === 'string') return entry;
+        if (entry && typeof entry === 'object' && typeof entry.model_id === 'string') return entry.model_id;
+        return null;
+    }).filter(Boolean);
+}
+
+function parseComputeCapability(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getProviderActivationDiagnostics(provider, opts = {}) {
+    const {
+        authKeyProvided = true,
+        keyAuthMismatch = false,
+        nowMs = Date.now(),
+    } = opts;
+
+    if (!provider || keyAuthMismatch || !authKeyProvided) {
+        return {
+            can_activate: false,
+            reason_code: ACTIVATION_REASON_CODES.KEY_AUTH_MISMATCH,
+            reason: !authKeyProvided ? 'Provider API key required' : 'API key does not match the target provider',
+            checks: {
+                key_auth_match: false,
+                tier_image_ready: false,
+                heartbeat_fresh: false,
+                gpu_capability_valid: false,
+            },
+            heartbeat_age_seconds: null,
+        };
+    }
+
+    const checks = {
+        key_auth_match: true,
+        tier_image_ready: true,
+        heartbeat_fresh: true,
+        gpu_capability_valid: true,
+    };
+
+    const cachedModels = parseCachedModels(provider.cached_models);
+    const preloadModel = normalizeString(provider.model_preload_model, { maxLen: 200 });
+    const preloadStatus = (normalizeString(provider.model_preload_status, { maxLen: 50 }) || 'none').toLowerCase();
+    if (preloadModel) {
+        const hasModel = cachedModels.some((model) => String(model).toLowerCase() === preloadModel.toLowerCase());
+        if (!hasModel || preloadStatus === 'downloading' || preloadStatus === 'warming') {
+            checks.tier_image_ready = false;
+        }
+    }
+
+    let heartbeatAgeSeconds = null;
+    if (provider.last_heartbeat) {
+        const heartbeatAt = new Date(provider.last_heartbeat).getTime();
+        if (Number.isFinite(heartbeatAt)) {
+            heartbeatAgeSeconds = Math.max(0, Math.floor((nowMs - heartbeatAt) / 1000));
+        }
+    }
+    if (heartbeatAgeSeconds == null || heartbeatAgeSeconds > ACTIVATION_STALE_HEARTBEAT_SECONDS) {
+        checks.heartbeat_fresh = false;
+    }
+
+    const computeCapabilityRaw = normalizeString(provider.gpu_compute_capability, { maxLen: 32 });
+    if (computeCapabilityRaw) {
+        const parsedCapability = parseComputeCapability(computeCapabilityRaw);
+        if (parsedCapability == null || parsedCapability < ACTIVATION_MIN_COMPUTE_CAPABILITY) {
+            checks.gpu_capability_valid = false;
+        }
+    }
+
+    let reasonCode = ACTIVATION_REASON_CODES.ACTIVE_READY;
+    let reason = 'Provider is ready to activate';
+
+    if (!checks.tier_image_ready) {
+        reasonCode = ACTIVATION_REASON_CODES.MISSING_TIER_IMAGE;
+        reason = preloadModel
+            ? `Required tier image is not ready: ${preloadModel}`
+            : 'Required tier image is not ready';
+    } else if (!checks.heartbeat_fresh) {
+        reasonCode = ACTIVATION_REASON_CODES.STALE_HEARTBEAT;
+        reason = heartbeatAgeSeconds == null
+            ? 'No heartbeat received yet'
+            : `Heartbeat is stale (${heartbeatAgeSeconds}s old)`;
+    } else if (!checks.gpu_capability_valid) {
+        reasonCode = ACTIVATION_REASON_CODES.INVALID_GPU_CAPABILITY;
+        reason = computeCapabilityRaw
+            ? `GPU compute capability ${computeCapabilityRaw} is below required ${ACTIVATION_MIN_COMPUTE_CAPABILITY}`
+            : 'GPU compute capability is invalid';
+    }
+
+    return {
+        can_activate: reasonCode === ACTIVATION_REASON_CODES.ACTIVE_READY,
+        reason_code: reasonCode,
+        reason,
+        checks,
+        heartbeat_age_seconds: heartbeatAgeSeconds,
+    };
 }
 
 function activateProviderById(providerId) {
@@ -5168,6 +5284,75 @@ module.exports.__private = {
 };
 
 // ============================================================================
+// GET /api/providers/activation-diagnostics — Single activation preflight surface
+// ============================================================================
+router.get('/activation-diagnostics', (req, res) => {
+    try {
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req) || req.query.key,
+            { maxLen: 128, trim: false }
+        );
+        const targetProviderId = normalizeString(req.query.provider_id, { maxLen: 128, trim: true });
+        const admin = isAdminRequest(req);
+
+        if (!apiKey && !admin) {
+            const diagnostics = getProviderActivationDiagnostics(null, { authKeyProvided: false });
+            return res.status(401).json({
+                success: false,
+                ...diagnostics,
+            });
+        }
+
+        let providerByKey = null;
+        if (apiKey) {
+            providerByKey = db.get(
+                `SELECT id, status, approval_status, gpu_model, vram_mb, vram_gb, last_heartbeat,
+                        gpu_compute_capability, cached_models, model_preload_status, model_preload_model
+                 FROM providers
+                 WHERE api_key = ? AND deleted_at IS NULL`,
+                apiKey
+            );
+        }
+
+        let provider = providerByKey;
+        let keyAuthMismatch = false;
+
+        if (targetProviderId) {
+            const providerById = db.get(
+                `SELECT id, status, approval_status, gpu_model, vram_mb, vram_gb, last_heartbeat,
+                        gpu_compute_capability, cached_models, model_preload_status, model_preload_model
+                 FROM providers
+                 WHERE id = ? AND deleted_at IS NULL`,
+                targetProviderId
+            );
+            if (!providerById) {
+                return res.status(404).json({ success: false, error: 'Provider not found' });
+            }
+            if (admin) {
+                provider = providerById;
+            } else {
+                keyAuthMismatch = !providerByKey || String(providerByKey.id) !== String(providerById.id);
+                provider = providerById;
+            }
+        }
+
+        const diagnostics = getProviderActivationDiagnostics(provider, {
+            authKeyProvided: Boolean(apiKey) || admin,
+            keyAuthMismatch,
+        });
+        const statusCode = diagnostics.can_activate ? 200 : (diagnostics.reason_code === ACTIVATION_REASON_CODES.KEY_AUTH_MISMATCH ? 401 : 422);
+        return res.status(statusCode).json({
+            success: diagnostics.can_activate,
+            provider_id: provider?.id || null,
+            ...diagnostics,
+        });
+    } catch (error) {
+        console.error('[providers/activation-diagnostics GET]', error);
+        return res.status(500).json({ success: false, error: 'Activation diagnostics failed', details: error.message });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/self-test — Provider readiness validation (DCP-802)
 // ============================================================================
 // Purpose: Provider calls this endpoint to validate they are ready to go live.
@@ -5180,6 +5365,7 @@ router.get('/self-test', (req, res) => {
             { maxLen: 128, trim: false }
         );
         if (!apiKey) {
+            const diagnostics = getProviderActivationDiagnostics(null, { authKeyProvided: false });
             return res.status(401).json({
                 ready: false,
                 checks: {
@@ -5190,15 +5376,21 @@ router.get('/self-test', (req, res) => {
                     vram_available_gb: 0,
                 },
                 next_step: 'missing_key',
+                reason_code: diagnostics.reason_code,
+                reason: diagnostics.reason,
             });
         }
 
         const provider = db.get(
-            'SELECT id, gpu_model, vram_mb, last_heartbeat, status FROM providers WHERE api_key = ? AND deleted_at IS NULL',
+            `SELECT id, gpu_model, vram_mb, vram_gb, last_heartbeat, status, gpu_compute_capability,
+                    cached_models, model_preload_status, model_preload_model
+             FROM providers
+             WHERE api_key = ? AND deleted_at IS NULL`,
             apiKey
         );
 
         if (!provider) {
+            const diagnostics = getProviderActivationDiagnostics(null, { authKeyProvided: true, keyAuthMismatch: true });
             return res.status(401).json({
                 ready: false,
                 checks: {
@@ -5209,8 +5401,12 @@ router.get('/self-test', (req, res) => {
                     vram_available_gb: 0,
                 },
                 next_step: 'invalid_key',
+                reason_code: diagnostics.reason_code,
+                reason: diagnostics.reason,
             });
         }
+
+        const activationDiagnostics = getProviderActivationDiagnostics(provider, { authKeyProvided: true });
 
         // Check if GPU is detected (recorded in provider profile)
         const gpuDetected = !!(provider.gpu_model && provider.vram_mb);
@@ -5234,14 +5430,18 @@ router.get('/self-test', (req, res) => {
         let nextStep = 'activate';
         if (!gpuDetected) {
             nextStep = 'fix_gpu';
+        } else if (activationDiagnostics.reason_code === ACTIVATION_REASON_CODES.MISSING_TIER_IMAGE) {
+            nextStep = 'prepare_tier_image';
         } else if (!dockerAccessible) {
             nextStep = 'fix_docker';
         } else if (!networkReachable) {
             nextStep = 'fix_network';
+        } else if (activationDiagnostics.reason_code === ACTIVATION_REASON_CODES.INVALID_GPU_CAPABILITY) {
+            nextStep = 'upgrade_gpu_capability';
         }
 
         res.json({
-            ready: allReady,
+            ready: allReady && activationDiagnostics.can_activate,
             checks: {
                 key_valid: true,
                 gpu_detected: gpuDetected,
@@ -5253,6 +5453,10 @@ router.get('/self-test', (req, res) => {
             provider_id: provider.id,
             gpu_model: provider.gpu_model || null,
             status: provider.status,
+            reason_code: activationDiagnostics.reason_code,
+            reason: activationDiagnostics.reason,
+            activation_checks: activationDiagnostics.checks,
+            heartbeat_age_seconds: activationDiagnostics.heartbeat_age_seconds,
         });
     } catch (error) {
         console.error('[providers/self-test GET]', error);
@@ -5273,23 +5477,44 @@ router.post('/activate', (req, res) => {
             { maxLen: 128, trim: false }
         );
         if (!apiKey) {
+            const diagnostics = getProviderActivationDiagnostics(null, { authKeyProvided: false });
             return res.status(401).json({
                 success: false,
                 activated: false,
                 reason: 'API key required',
+                reason_code: diagnostics.reason_code,
             });
         }
 
         const provider = db.get(
-            'SELECT id, gpu_model, vram_mb, status FROM providers WHERE api_key = ? AND deleted_at IS NULL',
+            `SELECT id, gpu_model, vram_mb, vram_gb, status, last_heartbeat, gpu_compute_capability,
+                    cached_models, model_preload_status, model_preload_model
+             FROM providers
+             WHERE api_key = ? AND deleted_at IS NULL`,
             apiKey
         );
 
         if (!provider) {
+            const diagnostics = getProviderActivationDiagnostics(null, { authKeyProvided: true, keyAuthMismatch: true });
             return res.status(401).json({
                 success: false,
                 activated: false,
                 reason: 'Invalid API key',
+                reason_code: diagnostics.reason_code,
+            });
+        }
+
+        const activationDiagnostics = getProviderActivationDiagnostics(provider, { authKeyProvided: true });
+        if (!activationDiagnostics.can_activate) {
+            const statusCode = activationDiagnostics.reason_code === ACTIVATION_REASON_CODES.KEY_AUTH_MISMATCH ? 401 : 422;
+            return res.status(statusCode).json({
+                success: false,
+                activated: false,
+                provider_id: provider.id,
+                reason_code: activationDiagnostics.reason_code,
+                reason: activationDiagnostics.reason,
+                activation_checks: activationDiagnostics.checks,
+                heartbeat_age_seconds: activationDiagnostics.heartbeat_age_seconds,
             });
         }
 
@@ -5299,6 +5524,7 @@ router.post('/activate', (req, res) => {
                 success: true,
                 activated: false,
                 reason: 'Provider already online',
+                reason_code: ACTIVATION_REASON_CODES.ACTIVE_READY,
                 provider_id: provider.id,
                 status: 'online',
             });
@@ -5311,6 +5537,7 @@ router.post('/activate', (req, res) => {
                 success: false,
                 activated: false,
                 reason: 'Insufficient hardware: GPU model or VRAM < 4GB',
+                reason_code: 'INSUFFICIENT_HARDWARE',
                 provider_id: provider.id,
             });
         }
@@ -5330,6 +5557,7 @@ router.post('/activate', (req, res) => {
             activated: true,
             provider_id: provider.id,
             status: 'online',
+            reason_code: ACTIVATION_REASON_CODES.ACTIVE_READY,
             gpu_model: provider.gpu_model,
             vram_available_gb: Math.round(vramGb * 10) / 10,
             estimated_monthly_earnings_halala: estimatedMonthlyEarnings,

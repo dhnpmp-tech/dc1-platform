@@ -242,6 +242,30 @@ def http_get(url, timeout=15):
         except urllib.error.HTTPError as e:
             return e.code, _safe_json(e.read())
 
+def run_activation_preflight():
+    """Check backend activation diagnostics once at startup and log reason codes."""
+    try:
+        from urllib.parse import quote
+        key_q = quote(API_KEY or "", safe="")
+        url = f"{API_URL}/api/providers/activation-diagnostics?key={key_q}"
+        status, resp = http_get(url, timeout=10)
+        reason_code = str(resp.get("reason_code") or "UNKNOWN")
+        reason = str(resp.get("reason") or "").strip()
+        if status == 200 and bool(resp.get("can_activate")):
+            log.info(f"Activation preflight: READY ({reason_code})")
+            return True
+        if status in (401, 422):
+            detail = f"{reason_code}"
+            if reason:
+                detail += f" — {reason}"
+            log.warning(f"Activation preflight: BLOCKED ({detail})")
+            return False
+        log.warning(f"Activation preflight unavailable (status={status}): {resp}")
+        return False
+    except Exception as e:
+        log.warning(f"Activation preflight check failed: {e}")
+        return False
+
 def http_patch(url, data, timeout=15):
     """PATCH JSON to URL, returns (status_code, response_dict)."""
     if HAS_REQUESTS:
@@ -2837,6 +2861,10 @@ def main():
         if not checks["cuda"]: missing.append("CUDA")
         if not checks["pytorch"]: missing.append("PyTorch")
         log.warning(f"Readiness: PARTIAL — missing: {', '.join(missing)}")
+
+    # Step 3.5: Fetch backend activation diagnostics reason code
+    log.info("Checking activation diagnostics...")
+    run_activation_preflight()
 
     # Step 4: Pre-cache LLM models (so first inference is fast)
     log.info("Pre-caching LLM models...")
