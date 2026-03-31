@@ -4826,6 +4826,16 @@ router.get('/:id/health', (req, res) => {
 // Minimum hardware requirements for provider activation
 const ACTIVATION_MIN_VRAM_GB = 8;
 const ACTIVATION_MIN_TFLOPS = 10;
+const ACTIVATION_STALE_HEARTBEAT_SECONDS = Number(process.env.DC1_ACTIVATION_STALE_HEARTBEAT_SECONDS || 300);
+const ACTIVATION_MIN_COMPUTE_CAPABILITY = Number(process.env.DC1_ACTIVATION_MIN_COMPUTE_CAPABILITY || 6.0);
+const ACTIVATION_BLOCKER_CODES = Object.freeze({
+    KEY_AUTH_MISMATCH: 'KEY_AUTH_MISMATCH',
+    KEY_AUTH_INTEGRITY: 'KEY_AUTH_INTEGRITY',
+    DAEMON_NOT_SEEN: 'DAEMON_NOT_SEEN',
+    STALE_HEARTBEAT: 'STALE_HEARTBEAT',
+    MISSING_TIER_IMAGE: 'MISSING_TIER_IMAGE',
+    INVALID_GPU_CAPABILITY: 'INVALID_GPU_CAPABILITY',
+});
 
 // Provider event emitter for downstream consumers (e.g. job dispatcher DCP-738)
 const _providerEventEmitter = new (require('events'))();
@@ -4858,6 +4868,88 @@ function ensureProviderBenchmarksTable() {
             FOREIGN KEY (provider_id) REFERENCES providers(id)
         )
     `).run();
+}
+
+function parseActivationCachedModels(raw) {
+    if (!raw) return [];
+    try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map((entry) => {
+            if (typeof entry === 'string') return entry;
+            if (entry && typeof entry === 'object' && typeof entry.model_id === 'string') return entry.model_id;
+            return null;
+        }).filter(Boolean);
+    } catch (_) {
+        return [];
+    }
+}
+
+function parseActivationComputeCapability(raw) {
+    if (raw == null) return null;
+    const parsed = Number.parseFloat(String(raw).trim());
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildProviderActivationScorecard(provider, opts = {}) {
+    const {
+        authKeyProvided = true,
+        authKeyMatched = true,
+        nowMs = Date.now(),
+    } = opts;
+
+    const checks = {
+        key_auth_match: Boolean(authKeyProvided && authKeyMatched),
+        auth_key_integrity: false,
+        daemon_seen: false,
+        heartbeat_fresh: false,
+        tier_image_available: true,
+        gpu_capability_fit: true,
+    };
+
+    if (provider) {
+        checks.auth_key_integrity = Boolean(normalizeString(provider.api_key, { maxLen: 128, trim: false }));
+        checks.daemon_seen = Boolean(
+            normalizeString(provider.daemon_version, { maxLen: 32 }) ||
+            provider.last_heartbeat ||
+            provider.gpu_status
+        );
+
+        const heartbeatAt = provider.last_heartbeat ? new Date(provider.last_heartbeat).getTime() : null;
+        if (Number.isFinite(heartbeatAt)) {
+            const ageSeconds = Math.max(0, Math.floor((nowMs - heartbeatAt) / 1000));
+            checks.heartbeat_fresh = ageSeconds <= ACTIVATION_STALE_HEARTBEAT_SECONDS;
+        }
+
+        const preloadModel = normalizeString(provider.model_preload_model, { maxLen: 200 });
+        const preloadStatus = (normalizeString(provider.model_preload_status, { maxLen: 32 }) || 'none').toLowerCase();
+        const cachedModels = parseActivationCachedModels(provider.cached_models);
+        if (preloadModel) {
+            const hasModel = cachedModels.some((model) => String(model).toLowerCase() === preloadModel.toLowerCase());
+            checks.tier_image_available = hasModel && preloadStatus !== 'downloading' && preloadStatus !== 'warming';
+        }
+
+        const computeCapability = parseActivationComputeCapability(provider.gpu_compute_capability);
+        if (provider.gpu_compute_capability != null && String(provider.gpu_compute_capability).trim() !== '') {
+            checks.gpu_capability_fit = computeCapability != null && computeCapability >= ACTIVATION_MIN_COMPUTE_CAPABILITY;
+        }
+    }
+
+    const blockers = [];
+    if (!checks.key_auth_match) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_MISMATCH, message: 'API key does not match provider' });
+    if (!checks.auth_key_integrity) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_INTEGRITY, message: 'Provider API key integrity check failed' });
+    if (!checks.daemon_seen) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.DAEMON_NOT_SEEN, message: 'No daemon activity detected' });
+    if (!checks.heartbeat_fresh) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.STALE_HEARTBEAT, message: 'Heartbeat is stale or missing' });
+    if (!checks.tier_image_available) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.MISSING_TIER_IMAGE, message: 'Required tier image is not ready' });
+    if (!checks.gpu_capability_fit) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.INVALID_GPU_CAPABILITY, message: 'GPU capability is below serving requirement' });
+
+    return {
+        provider_id: provider?.id || null,
+        ready_to_serve: blockers.length === 0,
+        checks,
+        blockers,
+        generated_at: new Date(nowMs).toISOString(),
+    };
 }
 
 function activateProviderById(providerId) {
@@ -5153,6 +5245,83 @@ module.exports.__private = {
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,
 };
+
+// ============================================================================
+// GET /api/providers/activation-scorecard — provider readiness scorecard
+// ============================================================================
+// Auth:
+//  - Admin: can request one provider (?provider_id=) or fleet view (no provider_id)
+//  - Provider: requires x-provider-key/Bearer and returns own scorecard
+router.get('/activation-scorecard', (req, res) => {
+    try {
+        const providerId = normalizeString(req.query.provider_id, { maxLen: 128, trim: true });
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req) || req.query.key,
+            { maxLen: 128, trim: false }
+        );
+        const admin = isAdminRequest(req);
+
+        if (!admin && !apiKey) {
+            return res.status(401).json({
+                ready_to_serve: false,
+                blockers: [{ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_MISMATCH, message: 'Provider API key required' }],
+            });
+        }
+
+        if (admin && !providerId) {
+            const providers = db.all(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE deleted_at IS NULL
+                 ORDER BY updated_at DESC, id DESC
+                 LIMIT 500`
+            );
+            const scorecards = providers.map((provider) => buildProviderActivationScorecard(provider, { authKeyProvided: true, authKeyMatched: true }));
+            return res.json({
+                count: scorecards.length,
+                ready_count: scorecards.filter((entry) => entry.ready_to_serve).length,
+                blocked_count: scorecards.filter((entry) => !entry.ready_to_serve).length,
+                providers: scorecards,
+                generated_at: new Date().toISOString(),
+            });
+        }
+
+        const targetProvider = providerId
+            ? db.get(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE id = ? AND deleted_at IS NULL`,
+                providerId
+            )
+            : db.get(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE api_key = ? AND deleted_at IS NULL`,
+                apiKey
+            );
+
+        if (!targetProvider) {
+            return res.status(404).json({ error: 'Provider not found' });
+        }
+
+        const authKeyMatched = admin || String(targetProvider.api_key || '') === String(apiKey || '');
+        const scorecard = buildProviderActivationScorecard(targetProvider, {
+            authKeyProvided: Boolean(apiKey) || admin,
+            authKeyMatched,
+        });
+
+        if (!scorecard.checks.key_auth_match) {
+            return res.status(401).json(scorecard);
+        }
+        return res.json(scorecard);
+    } catch (error) {
+        console.error('[providers/activation-scorecard GET]', error);
+        return res.status(500).json({ error: 'Failed to build activation scorecard', details: error.message });
+    }
+});
 
 // ============================================================================
 // GET /api/providers/self-test — Provider readiness validation (DCP-802)
