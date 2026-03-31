@@ -32443,3 +32443,8 @@ a
 - **Commit**: `pending` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
+
+## [2026-03-31 06:43 UTC] Codex — DCP-201 Admin Job Detail Hook Dependency Stabilized
+- **Commit**: `pending` - Stabilized admin job detail data-load dependencies by memoizing `fetchData` and wiring effect deps to `fetchData`/`router`/`token`, preserving login redirect and refresh behavior.
+- **Files**: `app/admin/jobs/[id]/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Advances React hook lint-debt cleanup for admin job detail loading path without changing endpoint contracts or UI behavior.
