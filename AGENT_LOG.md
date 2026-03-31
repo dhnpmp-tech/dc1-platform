@@ -32443,3 +32443,8 @@ a
 - **Commit**: `pending` - Added ranked provider reactivation queue endpoint with deterministic scoring + blocker reason codes + stale-heartbeat/install/readiness diagnostics, plus integration regression tests for ordering, tie-break stability, stale-heartbeat reasoning, and ready_to_serve state transition after prerequisites are met.
 - **Files**: `backend/src/routes/admin.js`, `backend/tests/integration/provider-reactivation-queue.test.js`, `AGENT_LOG.md`
 - **Impact**: Ops now has an execution-ready queue at `GET /api/admin/providers/reactivation-queue` with machine-readable outreach/dashboard fields (`ready_to_serve`, `blocker_reason_codes`, `heartbeat_age_seconds`, `install_status`, `priority_score`, `queue_position`), including `ready_to_serve` filtering for follow-up verification.
+
+## [2026-03-31 08:47 UTC] Codex — DCP-226 Reactivation Queue Hardening (Schema Guard + Status Normalization)
+- **Commit**: `pending` - Hardened provider reactivation queue logic to tolerate schemas missing `deleted_at`, normalized approval/provider status checks to case-insensitive comparisons, and added regression coverage for uppercase status/approval payload variants.
+- **Files**: `backend/src/routes/admin.js`, `backend/tests/integration/provider-reactivation-queue.test.js`, `AGENT_LOG.md`
+- **Impact**: `GET /api/admin/providers/reactivation-queue` no longer assumes modern soft-delete schema columns and now computes `ready_to_serve` consistently even if upstream data stores `approval_status`/`status` in uppercase variants. Regression suite remains green via `cd backend && npm test -- --runInBand tests/integration/provider-reactivation-queue.test.js` (`4/4`).
