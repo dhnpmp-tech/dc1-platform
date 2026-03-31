@@ -12,7 +12,7 @@ It compares code-route declarations with live runtime responses and emits machin
 
 ## Execution
 
-- CI schedule: `.github/workflows/runtime-route-parity-monitor.yml` (every 15 minutes).
+- Scheduler cadence: PM2 app `dcp-runtime-route-parity-cron` in `backend/ecosystem.config.js` (every 15 minutes).
 - Manual run (local):
 
 ```bash

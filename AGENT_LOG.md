@@ -32483,3 +32483,8 @@ a
 - **Commit**: `pending` - Added an automated runtime route parity monitor with code-contract declaration checks + live endpoint probes for `/api/providers/model-catalog`, `/v1/models`, and `/v1/chat/completions`, including JSON artifact output and threshold-based failure policy.
 - **Files**: `backend/src/services/runtimeRouteParityMonitor.js`, `backend/src/scripts/run-runtime-route-parity-monitor.js`, `backend/src/__tests__/runtimeRouteParityMonitor.test.js`, `backend/package.json`, `.github/workflows/runtime-route-parity-monitor.yml`, `docs/ops/runtime-route-parity-runbook.md`, `AGENT_LOG.md`
 - **Impact**: Reliability now has scheduled guardrails every 15 minutes in GitHub Actions with artifact upload and on-call triage guidance, preventing silent production/runtime route drift from shipping unnoticed.
+
+## [2026-03-31 14:24 UTC] Codex — DCP-232 Cadence Routed to PM2 Scheduler
+- **Commit**: `pending` - Routed the runtime route parity monitor cadence through PM2 (`dcp-runtime-route-parity-cron`) every 15 minutes in `backend/ecosystem.config.js` and updated the runbook execution section accordingly.
+- **Files**: `backend/ecosystem.config.js`, `docs/ops/runtime-route-parity-runbook.md`, `AGENT_LOG.md`
+- **Impact**: Route parity enforcement now runs on a production scheduler without relying on GitHub workflow write permissions, preserving continuous parity checks and artifact generation.
