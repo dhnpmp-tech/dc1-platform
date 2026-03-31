@@ -32468,3 +32468,8 @@ a
 - **Commit**: `pending` - Updated backend integration tests to match strict provider registration schema, avoid flaky elapsed-time assumptions in rate-limit assertions, and increase admin integration timeout budget for slow CI/runtime environments.
 - **Files**: `backend/tests/integration/admin-endpoints.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
 - **Impact**: Mainline backend verification is now deterministic for these suites: targeted run `cd backend && npm test -- --runInBand tests/integration/admin-endpoints.test.js tests/integration/rate-limiting.test.js` passes `33/33`, preventing false negatives from schema drift and timing jitter.
+
+## [2026-03-31 12:08 UTC] Codex — Rate-Limiter Test Suite Stability Hardening
+- **Commit**: `pending` - Stabilized backend rate-limiter test suites by increasing integration-appropriate Jest timeouts and mocking noisy warning logs per test to prevent timeout flakiness under slower CI/runtime conditions.
+- **Files**: `backend/src/__tests__/rateLimiter.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Rate-limit verification is now reliable in this environment; targeted command `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/rate-limiting.test.js` passes `23/23` without timeout regressions.

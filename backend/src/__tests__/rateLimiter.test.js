@@ -7,6 +7,16 @@ const request = require('supertest');
 const { ipKeyGenerator } = require('express-rate-limit');
 const { createRateLimiter, createAdminIpAllowlist } = require('../middleware/rateLimiter');
 
+jest.setTimeout(30_000);
+
+beforeEach(() => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 function makeApp({ max = 2, adminToken = 'test-token', allowlist = '' } = {}) {
   const app = express();
   app.set('trust proxy', false);

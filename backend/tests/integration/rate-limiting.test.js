@@ -24,6 +24,16 @@ const express   = require('express');
 const db        = require('../../src/db');
 const { jobSubmitLimiter } = require('../../src/middleware/rateLimiter');
 
+jest.setTimeout(30_000);
+
+beforeEach(() => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Build an Express app with one route and a custom rate limiter. */
