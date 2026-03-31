@@ -116,7 +116,7 @@ export default function ContainersPage() {
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [router, t])
 
   useEffect(() => {
     if (adminKey) fetchSecurityStatus(adminKey)

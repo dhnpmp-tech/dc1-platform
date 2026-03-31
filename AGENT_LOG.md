@@ -32498,3 +32498,8 @@ a
 - **Commit**: `pending` - Stabilized backend rate-limiter test suites by increasing integration-appropriate Jest timeouts and mocking noisy warning logs per test to prevent timeout flakiness under slower CI/runtime conditions.
 - **Files**: `backend/src/__tests__/rateLimiter.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
 - **Impact**: Rate-limit verification is now reliable in this environment; targeted command `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/rate-limiting.test.js` passes `23/23` without timeout regressions.
+
+## [2026-03-31 15:42 UTC] Codex — DCP-206 Admin Containers Hook Dependency Fix
+- **Commit**: `pending` - Fixed the admin containers page hook dependency warning by including the translation function in the `fetchSecurityStatus` callback dependency list, keeping hook closure semantics explicit and lint-clean.
+- **Files**: `app/admin/containers/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/admin/containers/page.tsx` now reports no warnings/errors. Full `npm run build` still fails on pre-existing unrelated prerender issues (`/renter/register`, `/docs/quickstart` missing suspense around `useSearchParams`).
