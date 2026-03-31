@@ -1651,6 +1651,8 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_i
 db.exec(`
   CREATE TABLE IF NOT EXISTS openrouter_usage_ledger (
     id                 TEXT PRIMARY KEY,
+    request_id         TEXT,
+    provider_response_id TEXT,
     renter_id          INTEGER NOT NULL,
     provider_id        INTEGER,
     model              TEXT NOT NULL,
@@ -1666,9 +1668,12 @@ db.exec(`
     created_at         TEXT NOT NULL
   )
 `);
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN request_id TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN provider_response_id TEXT').run(); } catch (_) {}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_pending ON openrouter_usage_ledger(settlement_status, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_settlement ON openrouter_usage_ledger(settlement_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_renter ON openrouter_usage_ledger(renter_id, created_at DESC)`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_or_usage_request_id ON openrouter_usage_ledger(request_id) WHERE request_id IS NOT NULL`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS openrouter_settlements (

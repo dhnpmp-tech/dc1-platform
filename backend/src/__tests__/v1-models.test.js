@@ -6,11 +6,15 @@ const mockDb = {
   get: jest.fn(),
   prepare: jest.fn(() => ({ run: jest.fn() })),
 };
+const mockRecordOpenRouterUsage = jest.fn(() => ({ id: 'oru_test' }));
 
 jest.mock('../db', () => mockDb);
 jest.mock('../middleware/rateLimiter', () => ({
   vllmCompleteLimiter: (req, res, next) => next(),
   vllmStreamLimiter: (req, res, next) => next(),
+}));
+jest.mock('../services/openrouterSettlementService', () => ({
+  recordOpenRouterUsage: (...args) => mockRecordOpenRouterUsage(...args),
 }));
 
 describe('v1 models route', () => {
@@ -20,6 +24,7 @@ describe('v1 models route', () => {
     jest.resetModules();
     mockDb.all.mockReset();
     mockDb.get.mockReset();
+    mockRecordOpenRouterUsage.mockReset();
 
     const router = require('../routes/v1');
     app = express();
@@ -202,6 +207,7 @@ describe('v1 models route', () => {
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('legacy-chat-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('vram_gb AS min_gpu_vram_gb'))).toBe(true);
 
     fetchSpy.mockRestore();
@@ -268,6 +274,7 @@ describe('v1 models route', () => {
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('requested-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('FROM model_registry WHERE model_id = ?'))).toBe(false);
 
     fetchSpy.mockRestore();
