@@ -7,7 +7,7 @@ const {
 } = require('../helpers/openrouterComplianceHarness');
 
 describe('OpenRouter compliance harness', () => {
-  test('produces a structured readiness report and surfaces current blockers', async () => {
+  test('produces a structured readiness report and validates provider-facing tool-definition passthrough', async () => {
     const report = await runOpenRouterComplianceHarness();
     const byId = Object.fromEntries(report.checks.map((check) => [check.id, check]));
     const blockingFailures = report.checks
@@ -19,15 +19,11 @@ describe('OpenRouter compliance harness', () => {
     expect(byId.auth_required?.status).toBe('pass');
     expect(byId.billing_guard?.status).toBe('pass');
     expect(byId.chat_completion_proxy?.status).toBe('pass');
+    expect(byId.stream_stability?.status).toBe('pass');
     expect(byId.tool_result_roundtrip?.status).toBe('pass');
+    expect(byId.tool_definition_passthrough?.status).toBe('pass');
     expect(byId.models_contract).toBeDefined();
-    expect(byId.stream_stability).toBeDefined();
-    expect(byId.tool_definition_passthrough).toBeDefined();
     expect(byId.mid_stream_failure_handling).toBeDefined();
-    expect(blockingFailures).toEqual([
-      'models_contract',
-      'stream_stability',
-      'tool_definition_passthrough',
-    ]);
+    expect(blockingFailures).toEqual([]);
   });
 });
