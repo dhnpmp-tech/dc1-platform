@@ -32522,3 +32522,8 @@ a
 - **Commit**: `pending` - Fixed monitor page hook dependency warning by including `router` in the `checkAll` callback dependency array.
 - **Files**: `app/monitor/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `npm run lint -- --file app/monitor/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` require Suspense boundaries for `useSearchParams`.
+
+## [2026-03-31 20:15 UTC] Codex — DCP-209 Provider Dashboard Hook Dependency Fix
+- **Commit**: `pending` - Fixed provider dashboard effect dependency warning by including translation function `t` in the initialization `useEffect` dependency list.
+- **Files**: `app/provider/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/provider/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers at `/docs/quickstart` and `/renter/register` (`useSearchParams` requires Suspense boundary).
