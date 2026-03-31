@@ -32440,6 +32440,6 @@ a
 - **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
 
 ## [2026-03-31 02:33 UTC] Codex — DCP-211 jobSubmitLimiter Key Isolation Restored For Bearer Renter Keys
-- **Commit**: `pending` - Updated renter limiter key extraction to include `Authorization: Bearer <renter-key>` so job submit throttling remains per-renter (not shared-IP fallback), and added regression coverage proving key A exhaustion does not block key B on the same IP path.
+- **Commit**: `8e64dc6` - Updated renter limiter key extraction to include `Authorization: Bearer <renter-key>` so job submit throttling remains per-renter (not shared-IP fallback), and added regression coverage proving key A exhaustion does not block key B on the same IP path.
 - **Files**: `backend/src/middleware/rateLimiter.js`, `backend/tests/rateLimiter.test.js`, `AGENT_LOG.md`
 - **Impact**: Prevents cross-tenant throttling for bearer-authenticated renter traffic on `/api/jobs/submit`; new test locks the contract by asserting `A21=429` while `B1=200` under shared-IP conditions.
