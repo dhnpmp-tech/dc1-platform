@@ -9,6 +9,7 @@ const { getApiKeyFromReq } = require('../middleware/auth');
 const pricingService = require('../services/pricingService');
 const { GPU_RATE_TABLE } = require('../config/pricing');
 const { stripImageOverride, validateImageOverride } = require('../middleware/imageValidation');
+const { readInstantTierManifest, listInstantTierImageRefs, resolveTemplateImageRef } = require('../lib/instantTierManifest');
 
 // Templates are stored as JSON files in /docker-templates at the repo root
 const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
@@ -81,8 +82,10 @@ router.get('/', publicEndpointLimiter, (req, res) => {
 // GET /api/templates/whitelist -- approved Docker image list for daemon validation
 router.get('/whitelist', publicEndpointLimiter, (req, res) => {
   const templates = loadTemplates();
+  const instantManifest = readInstantTierManifest();
   const fromTemplates = templates.flatMap(t => t.approved_images || []);
   const fromImages = templates.map(t => t.image).filter(i => i && i !== 'custom');
+  const fromManifest = listInstantTierImageRefs(instantManifest);
   let approvedFromDb = [];
   try {
     approvedFromDb = db.all(
@@ -100,7 +103,7 @@ router.get('/whitelist', publicEndpointLimiter, (req, res) => {
     approvedFromDb = [];
   }
 
-  const all = [...new Set([...APPROVED_IMAGES_EXTRA, ...fromImages, ...fromTemplates, ...approvedFromDb])];
+  const all = [...new Set([...APPROVED_IMAGES_EXTRA, ...fromImages, ...fromTemplates, ...fromManifest, ...approvedFromDb])];
   res.json({ approved_images: all });
 });
 
@@ -304,8 +307,11 @@ router.post('/:id/deploy', templateDeployLimiter, (req, res) => {
     // 7. Create job record (deduct balance atomically)
     const now = new Date().toISOString();
     const job_id = 'job-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+    const resolvedTemplateImage = (template.image && template.image !== 'custom')
+      ? resolveTemplateImageRef(template.id, template.image)
+      : undefined;
     const containerSpec = JSON.stringify({
-      image_override: (template.image && template.image !== 'custom') ? template.image : undefined,
+      image_override: resolvedTemplateImage,
       pricing_class,
     });
     const taskSpec = JSON.stringify({
