@@ -32445,6 +32445,6 @@ a
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 00:40 UTC] Codex — DCP-189 Renter Hook Dependency Warnings Reduced
-- **Commit**: `pending` - Stabilized renter dashboard, renter jobs, and renter billing data-loading/auth functions with `useCallback` and aligned effect dependency arrays to remove stale-closure warnings.
+- **Commit**: `2e83abd` - Stabilized renter dashboard, renter jobs, and renter billing data-loading/auth functions with `useCallback` and aligned effect dependency arrays to remove stale-closure warnings.
 - **Files**: `app/renter/page.tsx`, `app/renter/jobs/page.tsx`, `app/renter/billing/page.tsx`, `AGENT_LOG.md`
 - **Impact**: These renter surfaces no longer produce the previous `react-hooks/exhaustive-deps` warnings, while preserving existing polling/login redirect behavior and dashboard/jobs/billing refresh flow.
