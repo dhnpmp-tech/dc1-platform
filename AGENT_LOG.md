@@ -32443,3 +32443,8 @@ a
 - **Commit**: `pending` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
 - **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
+
+## [2026-03-31 05:48 UTC] Codex — DCP-200 Admin Provider Detail Hook Dependency Stabilized
+- **Commit**: `pending` - Stabilized provider detail data-load dependency wiring by memoizing `fetchDetail` and binding effect dependencies to `fetchDetail`/`router`/`token`, keeping existing auth redirect and refresh behavior intact.
+- **Files**: `app/admin/providers/[id]/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Reduces admin hook lint debt for provider detail data loading while preserving existing page behavior and API interactions.
