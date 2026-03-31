@@ -365,7 +365,7 @@ export default function ProviderDashboard() {
     initializeDashboard()
     const interval = setInterval(initializeDashboard, 30000)
     return () => clearInterval(interval)
-  }, [router])
+  }, [router, t])
 
   useEffect(() => {
     if (!providerData || !providerApiKey) return

@@ -15,6 +15,7 @@ import {
 } from '../../lib/provider-install'
 
 const API_BASE = '/api/dc1'
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function normalizeOperatingSystemForApi(value: string): 'windows' | 'linux' | 'mac' | 'darwin' | null {
   const raw = value.trim().toLowerCase()
@@ -189,15 +190,13 @@ function ProviderRegisterPageContent() {
     }
   }, [stopStatusPolling])
 
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
   const validateField = useCallback(
     (field: RegistrationField, value: RegistrationFormData[RegistrationField], snapshot: RegistrationFormData): string => {
       switch (field) {
         case 'fullName':
           return String(value).trim() ? '' : t('register.provider.validation.full_name')
         case 'email':
-          return emailPattern.test(String(value).trim()) ? '' : t('register.provider.validation.email')
+          return EMAIL_PATTERN.test(String(value).trim()) ? '' : t('register.provider.validation.email')
         case 'gpuModel':
           return String(value) ? '' : t('register.provider.validation.gpu')
         case 'vram':
@@ -252,7 +251,7 @@ function ProviderRegisterPageContent() {
         id: 'identity',
         label: t('register.provider.readiness.identity_label'),
         helper: t('register.provider.readiness.identity_helper'),
-        complete: Boolean(formData.fullName.trim()) && emailPattern.test(formData.email.trim()),
+        complete: Boolean(formData.fullName.trim()) && EMAIL_PATTERN.test(formData.email.trim()),
       },
       {
         id: 'hardware',
@@ -267,7 +266,7 @@ function ProviderRegisterPageContent() {
         complete: Boolean(formData.operatingSystem) && Boolean(formData.locationCountry) && formData.pdplConsent,
       },
     ],
-    [customVramReady, formData, emailPattern, t]
+    [customVramReady, formData, t]
   )
 
   const readinessCompleteCount = readinessChecklist.filter((item) => item.complete).length
