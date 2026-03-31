@@ -32445,6 +32445,6 @@ a
 - **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
 
 ## [2026-03-31 03:13 UTC] Codex — DCP-194 Admin Containers Hook Dependency Warning Removed
-- **Commit**: `pending` - Added missing `t` dependency to `fetchSecurityStatus` callback in admin containers so localization references are tracked and warning noise is reduced.
+- **Commit**: `d19562d` - Added missing `t` dependency to `fetchSecurityStatus` callback in admin containers so localization references are tracked and warning noise is reduced.
 - **Files**: `app/admin/containers/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Admin containers no longer emits this `react-hooks/exhaustive-deps` warning; fetch/auth behavior remains unchanged.
