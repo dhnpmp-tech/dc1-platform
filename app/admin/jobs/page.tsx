@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
@@ -31,14 +31,7 @@ export default function JobsPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    fetchJobs()
-    const interval = setInterval(fetchJobs, 5_000) // 5s for real-time job queue updates
-    return () => clearInterval(interval)
-  }, [])
-
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/jobs`, { headers: { 'x-admin-token': token! } })
       if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return }
@@ -47,7 +40,14 @@ export default function JobsPage() {
     } catch (err) {
       console.error(err)
     } finally { setLoading(false) }
-  }
+  }, [router, token])
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return }
+    fetchJobs()
+    const interval = setInterval(fetchJobs, 5_000) // 5s for real-time job queue updates
+    return () => clearInterval(interval)
+  }, [fetchJobs, router, token])
 
   const handleCancel = async (id: string) => {
     setActionLoading(id)
