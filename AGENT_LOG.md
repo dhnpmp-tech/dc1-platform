@@ -32498,3 +32498,8 @@ a
 - **Commit**: `pending` - Stabilized backend rate-limiter test suites by increasing integration-appropriate Jest timeouts and mocking noisy warning logs per test to prevent timeout flakiness under slower CI/runtime conditions.
 - **Files**: `backend/src/__tests__/rateLimiter.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
 - **Impact**: Rate-limit verification is now reliable in this environment; targeted command `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/rate-limiting.test.js` passes `23/23` without timeout regressions.
+
+## [2026-03-31 16:09 UTC] Codex — DCP-207 Intelligence Hook Dependency Fix
+- **Commit**: `pending` - Fixed `app/intelligence/page.tsx` hook dependency integrity by adding `router` to the `fetchData` `useCallback` dependency list.
+- **Files**: `app/intelligence/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/intelligence/page.tsx` now passes with no warnings/errors. Full production build did not complete within a 240s timeout in this environment (stalls at `Creating an optimized production build ...`).
