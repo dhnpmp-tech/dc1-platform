@@ -1,3 +1,8 @@
+## [2026-03-31 18:03 UTC] Codex — Release Heartbeat Landed Intelligence Hook Fix And Skipped Analytics-Only Branch
+- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #146 for `agent/frontend-dev/dcp-207-intelligence-hook-deps`, and landed it onto `main` via the clean release worktree. The branch only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy. Skipped `agent/backend-dev/dcp-276-daily-growth-kpi` because its remaining diff was analytics scripts/artifacts/docs/package metadata rather than backend route code, frontend app code, or tests in the release merge scope.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the intelligence page hook dependency fix. The daily growth KPI branch should be revisited only if it grows into a qualifying code/test change or a release policy update explicitly expands the merge scope.
+
 ## [2026-03-31 15:57 UTC] Codex — Release Heartbeat Landed V1 Rate-Limit Contract And Frontend Follow-Up Fixes
 - **Commit**: `2fda8b7` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for three qualifying branches, and landed `agent/backend-dev/dcp-265-v1-rate-limit-contract`, `agent/frontend-dev/dcp-206-admin-containers-hook-deps-v2`, and `agent/frontend-dev/dcp-269-first-request-ux-gap-fixes` onto `main` via the clean release worktree. The two frontend branches only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy.
 - **Files**: `AGENT_LOG.md`
