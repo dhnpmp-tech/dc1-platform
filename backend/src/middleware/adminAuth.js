@@ -126,6 +126,11 @@ function requireAdminRbac(req, res, next) {
 }
 
 function _auditAndProceed(req, _res, next) {
+  if (req.skipAdminAuditLog === true) {
+    next();
+    return;
+  }
+
   const action = `${req.method} ${req.path}`;
   const adminId = req.adminUser?.id || 'unknown';
 

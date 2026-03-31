@@ -32522,3 +32522,8 @@ a
 - **Commit**: `pending` - Fixed monitor page hook dependency warning by including `router` in the `checkAll` callback dependency array.
 - **Files**: `app/monitor/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `npm run lint -- --file app/monitor/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` require Suspense boundaries for `useSearchParams`.
+
+## [2026-03-31 20:52 UTC] Codex — DCP-280 Payout Admin Audit De-duplication Shipped
+- **Commit**: `pending` - Enforced a single authoritative audit-write path for admin payout mutations by adding middleware opt-out for automatic request audit on payout routes and explicit route-level `logAdminAction` writes for approve/reject/paid transitions; added regression coverage proving one audit row per approve/reject mutation request.
+- **Files**: `backend/src/middleware/adminAuth.js`, `backend/src/routes/payouts.js`, `backend/src/__tests__/payouts-admin-audit-dedupe.test.js`, `backend/src/__tests__/payouts-reject-email.test.js`, `AGENT_LOG.md`
+- **Impact**: Admin payout approve/reject flows now emit exactly one `admin_audit_log` row with action/resource metadata and structured details, eliminating duplicate-event risk while keeping non-payout admin audit coverage intact. Verification: `cd backend && npm test -- --runInBand src/__tests__/payouts-admin-audit-dedupe.test.js src/__tests__/payouts-reject-email.test.js src/__tests__/adminAuth.test.js` passes (`19/19`).
