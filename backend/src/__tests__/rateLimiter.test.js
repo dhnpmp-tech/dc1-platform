@@ -5,7 +5,7 @@
 const express = require('express');
 const request = require('supertest');
 const { ipKeyGenerator } = require('express-rate-limit');
-const { createRateLimiter, createAdminIpAllowlist } = require('../middleware/rateLimiter');
+const { createRateLimiter, createAdminIpAllowlist, jobSubmitLimiter } = require('../middleware/rateLimiter');
 
 function makeApp({ max = 2, adminToken = 'test-token', allowlist = '' } = {}) {
   const app = express();
@@ -150,5 +150,69 @@ describe('Rate limiter config validation', () => {
   test('createAdminIpAllowlist is exported and callable', () => {
     const { createAdminIpAllowlist } = require('../middleware/rateLimiter');
     expect(typeof createAdminIpAllowlist).toBe('function');
+  });
+});
+
+describe('jobSubmitLimiter renter-key isolation', () => {
+  function buildJobSubmitApp() {
+    const app = express();
+    app.set('trust proxy', false);
+    app.use(express.json());
+    app.use('/api/jobs/submit', jobSubmitLimiter);
+    app.post('/api/jobs/submit', (req, res) => res.json({ ok: true }));
+    return app;
+  }
+
+  test('exhausting renter key A does not block renter key B from same IP', async () => {
+    const app = buildJobSubmitApp();
+    const keyA = `renter-key-a-${Date.now()}`;
+    const keyB = `renter-key-b-${Date.now()}`;
+
+    for (let i = 0; i < 20; i++) {
+      const res = await request(app)
+        .post('/api/jobs/submit')
+        .set('x-renter-key', keyA)
+        .send({});
+      expect(res.status).toBe(200);
+    }
+
+    const blockedA = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', keyA)
+      .send({});
+    expect(blockedA.status).toBe(429);
+
+    const allowedB = await request(app)
+      .post('/api/jobs/submit')
+      .set('x-renter-key', keyB)
+      .send({});
+    expect(allowedB.status).toBe(200);
+  });
+
+  test('generic ?key query does not collapse renter-key buckets on submit endpoint', async () => {
+    const app = buildJobSubmitApp();
+    const keyA = `renter-key-a-${Date.now()}`;
+    const keyB = `renter-key-b-${Date.now()}`;
+    const sharedQueryKey = 'shared-proxy-key';
+
+    for (let i = 0; i < 20; i++) {
+      const res = await request(app)
+        .post(`/api/jobs/submit?key=${sharedQueryKey}`)
+        .set('x-renter-key', keyA)
+        .send({});
+      expect(res.status).toBe(200);
+    }
+
+    const blockedA = await request(app)
+      .post(`/api/jobs/submit?key=${sharedQueryKey}`)
+      .set('x-renter-key', keyA)
+      .send({});
+    expect(blockedA.status).toBe(429);
+
+    const allowedB = await request(app)
+      .post(`/api/jobs/submit?key=${sharedQueryKey}`)
+      .set('x-renter-key', keyB)
+      .send({});
+    expect(allowedB.status).toBe(200);
   });
 });
