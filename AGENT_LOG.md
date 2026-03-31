@@ -1,3 +1,8 @@
+## [2026-03-31 07:44 UTC] Codex — DCP-110 Release Branch Revalidation Blocked On Hanging Jest Gate
+- **Commit**: `9939305` - Replayed the remaining DCP-110 release branch commits onto `agent/release-engineer/dcp-110-schema-hardening`, confirmed `origin/main` already contains the runtime route hardening and that this branch now differs only in `backend/src/__tests__/v1-models.test.js`, then re-ran the focused release gates with hard timeouts: `cd backend && timeout 60s npm test -- --runInBand src/__tests__/v1-models.test.js`, `cd backend && timeout 60s npm test -- --runInBand tests/integration/v1-server-wiring.test.js`, and the `npx jest --detectOpenHandles --forceExit` variants; all exited `124` without reporting test results.
+- **Files**: `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: Do not merge or ship this branch as-is. The only remaining delta is companion DCP-110 regression coverage, but the required Jest verification gate still hangs in the clean release worktree, so release status remains blocked until the test runner issue is resolved or an accepted alternate verification path is provided.
+
 ## [2026-03-30 21:08 UTC] Codex — DCP-110 Schema Fallback Release Branch Recut
 - **Commit**: `2e957f3` - Recut the stale DCP-110 follow-up onto current `origin/main`, hardening `/v1` model registry schema introspection so missing-table responses do not poison the cache and model metadata lookups short-circuit cleanly when the schema is unavailable.
 - **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
