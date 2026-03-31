@@ -9,6 +9,7 @@ import StatCard from '../components/ui/StatCard'
 import { useLanguage } from '../lib/i18n'
 import ProviderWizard from './components/ProviderWizard'
 import ProviderActivationCard from './components/ProviderActivationCard'
+import { getProviderActivationNarrative } from '../lib/provider-activation-narrative'
 
 interface ProviderData {
   id: string
@@ -122,7 +123,8 @@ const compareVersions = (v1: string, v2: string): number => {
 
 export default function ProviderDashboard() {
   const router = useRouter()
-  const { t } = useLanguage()
+  const { t, isRTL } = useLanguage()
+  const activationNarrative = getProviderActivationNarrative(isRTL)
   const [providerData, setProviderData] = useState<ProviderData | null>(null)
   const [latestDaemon, setLatestDaemon] = useState<DaemonVersionInfo | null>(null)
   const [providerApiKey, setProviderApiKey] = useState('')
@@ -444,9 +446,9 @@ export default function ProviderDashboard() {
               <div className="text-4xl select-none">⚡</div>
               <div className="flex-1 space-y-4">
                 <div>
-                  <h2 className="text-lg font-bold text-dc1-amber">Activate Your GPU — Start Earning</h2>
+                  <h2 className="text-lg font-bold text-dc1-amber">{activationNarrative.headline}</h2>
                   <p className="text-sm text-dc1-text-secondary mt-1">
-                    Your GPU is registered but not yet online. Complete 3 quick steps to start accepting jobs and earning SAR.
+                    {activationNarrative.subheadline}
                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -482,9 +484,22 @@ export default function ProviderDashboard() {
                   <Link href="/provider/download" className="btn btn-primary btn-sm">
                     Download Daemon →
                   </Link>
+                  {activationNarrative.ctaFlow.map((cta) => (
+                    <Link key={cta.href} href={cta.href} className="text-sm text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80">
+                      {cta.label}
+                    </Link>
+                  ))}
                   <a href="https://docs.dcp.sa/provider/quickstart" target="_blank" rel="noopener noreferrer" className="text-sm text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80">
                     Provider Quickstart Guide
                   </a>
+                </div>
+                <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
+                  <p className="text-xs font-semibold text-dc1-text-primary mb-1">{activationNarrative.assumptionsTitle}</p>
+                  <ul className="space-y-1 text-xs text-dc1-text-muted">
+                    {activationNarrative.assumptions.map((assumption) => (
+                      <li key={assumption}>• {assumption}</li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             </div>
