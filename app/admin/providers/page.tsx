@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
@@ -48,14 +48,7 @@ export default function ProvidersPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    fetchProviders()
-    const interval = setInterval(fetchProviders, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const fetchProviders = async () => {
+  const fetchProviders = useCallback(async () => {
     setFetchError(false)
     try {
       const res = await fetch(`${API_BASE}/admin/providers`, { headers: { 'x-admin-token': token! } })
@@ -66,7 +59,14 @@ export default function ProvidersPage() {
       console.error(err)
       setFetchError(true)
     } finally { setLoading(false) }
-  }
+  }, [router, token])
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return }
+    fetchProviders()
+    const interval = setInterval(fetchProviders, 30000)
+    return () => clearInterval(interval)
+  }, [fetchProviders, router, token])
 
   const handleSuspend = async (id: number, action: 'suspend' | 'unsuspend') => {
     setActionLoading(id)
