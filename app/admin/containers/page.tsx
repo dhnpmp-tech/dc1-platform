@@ -98,7 +98,7 @@ export default function ContainersPage() {
       return
     }
     setAdminKey(key)
-  }, [router])
+  }, [router, t])
 
   const fetchSecurityStatus = useCallback(async (key: string) => {
     try {
