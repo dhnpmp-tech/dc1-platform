@@ -1,3 +1,8 @@
+## [2026-03-31 15:57 UTC] Codex — Release Heartbeat Landed V1 Rate-Limit Contract And Frontend Follow-Up Fixes
+- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for three qualifying branches, and landed `agent/backend-dev/dcp-265-v1-rate-limit-contract`, `agent/frontend-dev/dcp-206-admin-containers-hook-deps-v2`, and `agent/frontend-dev/dcp-269-first-request-ux-gap-fixes` onto `main` via the clean release worktree. The two frontend branches only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the `/v1` USD-string pricing/rate-limit contract hardening, the admin containers hook dependency fix, and the follow-up first-request UX gap closures on the homepage, quickstart, and renter registration surfaces.
+
 ## [2026-03-31 15:27 UTC] Codex — Release Heartbeat Landed Provider Activation, Latency Ordering, Template Catalog, And Manifest Consumption
 - **Commit**: `fc7e202` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for four qualifying branches, and landed `agent/frontend-dev/dcp-245-provider-activation-pack`, `agent/backend-dev/dcp-262-latency-ordering`, `agent/frontend-dev/dcp-198-template-catalog-ui`, and `agent/backend-dev/dcp-260-manifest-consumer` onto `main` via the clean release worktree. `dcp-198` only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy. The older `agent/backend-dev/dcp-226-provider-reactivation-queue` branch was skipped again as stale duplicate work.
 - **Files**: `AGENT_LOG.md`
