@@ -1,0 +1,28 @@
+{
+  "batchId": "payout-2026-03-01-2026-03-31-e3b0c44298fc",
+  "createdAt": "2026-03-31T12:46:39.563Z",
+  "settlementWindow": {
+    "start": "2026-03-01T00:00:00.000Z",
+    "end": "2026-03-31T23:59:59.000Z"
+  },
+  "currency": "SAR",
+  "totals": {
+    "ledger_halala": 0,
+    "covered_halala": 0,
+    "exported_halala": 0,
+    "skipped_halala": 0,
+    "exported_sar": "0.00"
+  },
+  "counts": {
+    "providers_total": 0,
+    "providers_exported": 0,
+    "providers_skipped": 0
+  },
+  "checksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "signature": {
+    "algorithm": "sha256",
+    "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "entries": [],
+  "skipped": []
+}
