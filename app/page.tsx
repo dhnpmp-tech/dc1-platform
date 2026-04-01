@@ -118,6 +118,9 @@ export default function HomePage() {
   const [detailedHealth, setDetailedHealth] = useState<DetailedHealth | null>(null)
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
+  const firstFoldVersion = 'single_intent_lane_v2'
+  const onlineProviders = detailedHealth?.providers?.online ?? null
+  const showZeroSupplyFallback = onlineProviders === 0
 
   const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
@@ -303,61 +306,6 @@ export default function HomePage() {
       description: t('landing.trust_models_desc'),
     },
   ]
-  const segmentProofItems = [
-    t('proof.segment.item_energy'),
-    t('proof.segment.item_models'),
-    t('proof.segment.item_execution'),
-  ]
-  const modeStripItems = [
-    { key: 'marketplace', label: t('mode.label.marketplace'), description: t('mode.desc.marketplace'), href: '/renter/marketplace' },
-    { key: 'playground', label: t('mode.label.playground'), description: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api-reference' },
-    { key: 'enterprise_support', label: t('mode.label.enterprise_support'), description: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=landing-mode-strip' },
-  ]
-  const pathChooserLanes = [
-    {
-      key: 'self_serve_renter',
-      label: t('path_chooser.self_serve.label'),
-      description: t('path_chooser.self_serve.desc'),
-      href: '/renter/register?source=landing_path_chooser&lane=self_serve_renter',
-    },
-    {
-      key: 'provider_onboarding',
-      label: t('path_chooser.provider.label'),
-      description: t('path_chooser.provider.desc'),
-      href: '/provider/register?source=landing_path_chooser&lane=provider_onboarding',
-    },
-    {
-      key: 'enterprise_intake',
-      label: t('path_chooser.enterprise.label'),
-      description: t('path_chooser.enterprise.desc'),
-      href: '/support?category=enterprise&source=landing_path_chooser&lane=enterprise_intake#contact-form',
-    },
-    {
-      key: 'arabic_model_docs',
-      label: t('path_chooser.arabic.label'),
-      description: t('path_chooser.arabic.desc'),
-      href: '/docs?source=landing_path_chooser&lane=arabic_model_docs',
-    },
-  ]
-  const howDcpWorksSteps = [
-    {
-      key: 'choose_model',
-      title: 'Choose Model',
-      description: 'Select from Arabic AI models (ALLaM, JAIS, Falcon) or global models via OpenAI-compatible API.',
-    },
-    {
-      key: 'call_inference_api',
-      title: 'Call Inference API',
-      description: 'Send requests to your model endpoint. Saudi data residency, per-token billing, zero ops.',
-    },
-    {
-      key: 'settle_usage',
-      title: 'Track & Settle',
-      description: 'Monitor usage and costs in real-time. Pay per token with SAR billing.',
-    },
-  ]
-
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -368,20 +316,16 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-gradient-to-b from-dc1-amber/5 via-transparent to-transparent pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 lg:py-36 relative">
           <div className="text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
-              <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY
-            </div>
-            <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
+            <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-10 text-dc1-amber">
               {t('landing.hero_title')}
             </h1>
-            <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
-              {t('landing.hero_desc')}
-            </p>
-            <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
-              OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
+            <div className="w-full rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-3 text-xs text-dc1-text-secondary text-center mb-8">
+              <p>{t('landing.hero_settlement_proof')}</p>
+              {showZeroSupplyFallback && (
+                <p className="mt-2 text-dc1-text-primary font-medium">{t('landing.zero_supply_trust_safe')}</p>
+              )}
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
               <Link
                 href="/renter/register?source=landing_first_fold&intent=renter"
                 onClick={() => {
@@ -391,12 +335,21 @@ export default function HomePage() {
                     surface: 'hero_primary_cta',
                     destination: '/renter/register?source=landing_first_fold&intent=renter',
                     step: 'primary_cta',
+                    first_fold_version: firstFoldVersion,
                   })
                   trackLandingEvent('developer_flow_landing_cta_click', {
                     role_intent: 'renter',
                     surface: 'hero_primary_cta',
                     destination: '/renter/register?source=landing_first_fold&intent=renter',
                     step: 'primary_cta',
+                    first_fold_version: firstFoldVersion,
+                  })
+                  trackLandingEvent('landing_first_fold_cta_clicked', {
+                    role_intent: 'renter',
+                    surface: 'hero_primary_cta',
+                    destination: '/renter/register?source=landing_first_fold&intent=renter',
+                    step: 'primary_cta',
+                    first_fold_version: firstFoldVersion,
                   })
                 }}
                 className="btn btn-primary btn-lg w-full sm:w-auto min-w-[240px]"
@@ -412,12 +365,21 @@ export default function HomePage() {
                     surface: 'hero_primary_cta',
                     destination: '/provider/register?source=landing_first_fold&intent=provider',
                     step: 'primary_cta',
+                    first_fold_version: firstFoldVersion,
                   })
                   trackLandingEvent('developer_flow_landing_cta_click', {
                     role_intent: 'provider',
                     surface: 'hero_primary_cta',
                     destination: '/provider/register?source=landing_first_fold&intent=provider',
                     step: 'primary_cta',
+                    first_fold_version: firstFoldVersion,
+                  })
+                  trackLandingEvent('landing_first_fold_cta_clicked', {
+                    role_intent: 'provider',
+                    surface: 'hero_primary_cta',
+                    destination: '/provider/register?source=landing_first_fold&intent=provider',
+                    step: 'primary_cta',
+                    first_fold_version: firstFoldVersion,
                   })
                 }}
                 className="btn btn-secondary btn-lg w-full sm:w-auto min-w-[240px]"
@@ -431,159 +393,31 @@ export default function HomePage() {
                 {t('landing.cta_enterprise')}
               </Link>
             </p>
-            <div className="mb-8 flex justify-center">
-              <ProviderCountWidget health={detailedHealth} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>
-                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_energy_desc')}</p>
-              </div>
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_models_title')}</p>
-                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_models_desc')}</p>
-              </div>
-              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_container_title')}</p>
-                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
-              </div>
-            </div>
-            <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                How DCP works
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {howDcpWorksSteps.map((item, index) => (
-                  <div key={item.key} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-3">
-                    <p className="text-xs font-semibold text-dc1-amber">{index + 1}. {item.title}</p>
-                    <p className="mt-1 text-xs text-dc1-text-secondary leading-relaxed">{item.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <details className="max-w-4xl mx-auto w-full mb-4 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-left">
-              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                Explore all paths and tools
-              </summary>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                    {t('mode.strip.title')}
-                  </p>
-                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('mode.strip.subtitle')}</p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {modeStripItems.map((item) => (
-                      <Link
-                        key={item.key}
-                        href={item.href}
-                        onClick={() =>
-                          trackLandingEvent('mode_strip_clicked', {
-                            surface: 'mode_strip',
-                            destination: item.href,
-                            step: 'mode_click',
-                            mode_key: item.key,
-                            mode_label: item.label,
-                          })
-                        }
-                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
-                      >
-                        <p className="text-sm font-semibold text-dc1-text-primary">{item.label}</p>
-                        <p className="mt-1 text-xs text-dc1-text-secondary">{item.description}</p>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                    {t('path_chooser.title')}
-                  </p>
-                  <p className="mt-1 text-xs text-dc1-text-secondary">{t('path_chooser.subtitle')}</p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {pathChooserLanes.map((lane) => (
-                      <Link
-                        key={lane.key}
-                        href={lane.href}
-                        onClick={() => {
-                          if (lane.key === 'self_serve_renter') {
-                            updateIntent('renter', 'landing_path_chooser', 'lane_click')
-                          } else if (lane.key === 'provider_onboarding') {
-                            updateIntent('provider', 'landing_path_chooser', 'lane_click')
-                          }
-                          trackLandingEvent('landing_path_lane_clicked', {
-                            surface: 'path_chooser',
-                            destination: lane.href,
-                            step: 'lane_click',
-                            lane_key: lane.key,
-                            lane_label: lane.label,
-                          })
-                        }}
-                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
-                      >
-                        <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
-                        <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </details>
-            <div className="w-full rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-2 text-xs text-dc1-text-secondary text-center">
-              {t('landing.hero_settlement_proof')}
-            </div>
-            <p className="text-xs text-dc1-text-muted mt-4">{t('landing.hero_helper')}</p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
-              <Link
-                href="/marketplace"
-                className="inline-flex items-center gap-2 text-sm font-medium text-dc1-amber hover:text-dc1-amber/80 transition-colors"
-              >
-                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                {t('landing.browse_live')}
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-              <Link
-                href="/earn"
-                className="inline-flex items-center gap-2 text-sm font-medium text-dc1-text-secondary hover:text-dc1-amber transition-colors"
-              >
-                {t('landing.earn_calc')}
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-            </div>
-            <div className="mt-5 mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                {t('landing.reliability_strip_label')}
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{liveGpuCount ?? '—'}</span> {t('landing.reliability_live_providers')}
-                </p>
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{gpuFamilyCoverage ?? '—'}</span> {t('landing.reliability_gpu_families')}
-                </p>
-                <p>
-                  <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable')}</span>
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 mx-auto max-w-3xl rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                {t('proof.segment.title')}
-              </p>
-              <ul className="list-disc ps-5 space-y-1 text-sm text-dc1-text-secondary">
-                {segmentProofItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-            <p className="text-dc1-text-secondary text-sm mt-6">
-              {t('landing.already_account')}{' '}
-              <Link href="/login" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold underline underline-offset-2">
-                {t('landing.sign_in_here')}
-              </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Availability details below fold */}
+      <section className="border-y border-dc1-border bg-dc1-surface-l1/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center mb-6">
+            <ProviderCountWidget health={detailedHealth} />
+          </div>
+          <div className="mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
+              {t('landing.reliability_strip_label')}
             </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
+              <p>
+                <span className="text-dc1-text-primary font-semibold">{liveGpuCount ?? '—'}</span> {t('landing.reliability_live_providers')}
+              </p>
+              <p>
+                <span className="text-dc1-text-primary font-semibold">{gpuFamilyCoverage ?? '—'}</span> {t('landing.reliability_gpu_families')}
+              </p>
+              <p>
+                <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable')}</span>
+              </p>
+            </div>
           </div>
         </div>
       </section>
