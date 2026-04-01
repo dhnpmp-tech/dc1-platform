@@ -41,6 +41,7 @@ const { toCatalogContractCore } = require('../lib/model-catalog-contract');
 const { validateBody } = require('../middleware/validate');
 const { providerRegisterSchema, providerBenchmarkSchema } = require('../schemas/providers.schema');
 const analytics = require('../services/analyticsService');
+const conversionFunnel = require('../services/conversionFunnelService');
 
 function flattenRunParams(params) {
     if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -370,6 +371,18 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             gpu_model: cleanGpuModel,
             os: cleanOs,
         }).catch(() => {});
+        conversionFunnel.trackStage({
+            journey: 'provider',
+            stage: 'register',
+            actorType: 'provider',
+            actorId: result.lastInsertRowid,
+            req,
+            inferViewOnRegister: true,
+            metadata: {
+                gpu_model: cleanGpuModel,
+                os: cleanOs,
+            },
+        });
         
     } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -896,6 +909,18 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
 
         // Tell daemon if update is available (semantic version comparison)
         const needsUpdate = !daemonVersion || compareVersions(daemonVersion, LATEST_DAEMON_VERSION) < 0;
+        conversionFunnel.trackStage({
+            journey: 'provider',
+            stage: 'first_action',
+            actorType: 'provider',
+            actorId: p.id,
+            req,
+            metadata: {
+                action: 'heartbeat_received',
+                approval_status: approvalStatus,
+                daemon_version: daemonVersion || null,
+            },
+        });
         try {
             announceFromProviderHeartbeat(p, {
                 gpu_status: normalizedGpuStatus || {},
@@ -5216,6 +5241,19 @@ router.post('/:id/benchmark-submit', function(req, res) {
         let activation = null;
         if (provider.approval_status === 'approved') {
             activation = activateProviderById(provider.id);
+            if (activation && activation.activated) {
+                conversionFunnel.trackStage({
+                    journey: 'provider',
+                    stage: 'first_success',
+                    actorType: 'provider',
+                    actorId: provider.id,
+                    req,
+                    metadata: {
+                        success_type: 'benchmark_activation',
+                        tier: activation.tier || null,
+                    },
+                });
+            }
         }
 
         const meetsMinimum = vramNum >= ACTIVATION_MIN_VRAM_GB && tflopsNum >= ACTIVATION_MIN_TFLOPS;
@@ -5261,6 +5299,17 @@ router.post('/:id/activate', function(req, res) {
         const result = activateProviderById(providerId);
 
         if (result.activated) {
+            conversionFunnel.trackStage({
+                journey: 'provider',
+                stage: 'first_success',
+                actorType: 'provider',
+                actorId: providerId,
+                req,
+                metadata: {
+                    success_type: 'explicit_activation',
+                    tier: result.tier || null,
+                },
+            });
             return res.json({
                 success: true,
                 provider_id: providerId,
@@ -5613,6 +5662,17 @@ router.post('/activate', (req, res) => {
             'UPDATE providers SET status = ?, updated_at = ? WHERE id = ?',
             'online', now, provider.id
         );
+        conversionFunnel.trackStage({
+            journey: 'provider',
+            stage: 'first_success',
+            actorType: 'provider',
+            actorId: provider.id,
+            req,
+            metadata: {
+                success_type: 'self_activate_online',
+                gpu_model: provider.gpu_model || null,
+            },
+        });
 
         // Estimate monthly earnings based on GPU model and DCP pricing
         const estimatedMonthlyEarnings = calculateEstimatedMonthlyEarnings(provider.gpu_model, 0.7);

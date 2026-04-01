@@ -28,6 +28,7 @@ const {
   calculateControlPlaneSignals,
 } = require('../services/controlPlane');
 const analytics = require('../services/analyticsService');
+const conversionFunnel = require('../services/conversionFunnelService');
 const jobEventEmitter = require('../utils/jobEventEmitter');
 
 function flattenRunParams(params) {
@@ -1742,6 +1743,18 @@ router.post('/submit', requireRenter, validateBody(jobSubmitSchema), (req, res) 
       job_type: job.job_type,
       pricing_class: pricingClass,
     }).catch(() => {});
+    conversionFunnel.trackStage({
+      journey: 'renter',
+      stage: 'first_action',
+      actorType: 'renter',
+      actorId: job.renter_id,
+      req,
+      metadata: {
+        action: 'job_submit',
+        job_id: job.job_id,
+        job_type: job.job_type,
+      },
+    });
   } catch (error) {
     console.error('Job submit error:', error);
     res.status(500).json({ error: 'Job submission failed' });
@@ -2335,6 +2348,18 @@ router.post('/:job_id/result', (req, res) => {
         durationSeconds != null ? durationSeconds * 1000 : null,
         { cost_halala: totalCostHalala }
       ).catch(() => {});
+      conversionFunnel.trackStage({
+        journey: 'renter',
+        stage: 'first_success',
+        actorType: 'renter',
+        actorId: job.renter_id,
+        req,
+        metadata: {
+          success_type: 'job_completed',
+          job_id: job.job_id,
+          cost_halala: totalCostHalala,
+        },
+      });
     } else {
       analytics.renter.deploymentError(
         job.renter_id,

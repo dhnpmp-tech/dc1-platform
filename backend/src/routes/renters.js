@@ -19,6 +19,7 @@ const { validateBody } = require('../middleware/validate');
 const { renterRegisterSchema, renterTopupSchema } = require('../schemas/topup.schema');
 const { getBearerToken } = require('../middleware/auth');
 const analytics = require('../services/analyticsService');
+const conversionFunnel = require('../services/conversionFunnelService');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -399,6 +400,18 @@ router.post('/register', validateBody(renterRegisterSchema), (req, res) => {
       organization: cleanOrg || null,
       use_case: cleanUseCase || null,
     }).catch(() => {});
+    conversionFunnel.trackStage({
+      journey: 'renter',
+      stage: 'register',
+      actorType: 'renter',
+      actorId: renterId,
+      req,
+      inferViewOnRegister: true,
+      metadata: {
+        organization: cleanOrg || null,
+        use_case: cleanUseCase || null,
+      },
+    });
   } catch (error) {
     if (error.message && error.message.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'A renter with this email already exists' });
