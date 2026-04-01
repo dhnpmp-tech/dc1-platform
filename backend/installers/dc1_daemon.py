@@ -150,6 +150,49 @@ _provider_peer_id = None  # Stable peer id for P2P heartbeat announcement
 _job_lock = threading.Lock()  # Protects _current_job_id
 _bw_lock = threading.Lock()   # Protects _bandwidth_stats
 _peer_id_lock = threading.Lock()  # Protects peer id cache
+_last_admission_signature = None  # Dedupe repeated admission rejection logs
+
+def _log_admission_feedback(admission):
+    """Surface backend admission reason codes without flooding logs each poll."""
+    global _last_admission_signature
+    if not isinstance(admission, dict):
+        return
+    if admission.get("accepted") is True:
+        _last_admission_signature = None
+        return
+
+    reason_code = str(admission.get("reason_code") or "UNKNOWN_ADMISSION_REASON").strip()
+    reason = str(admission.get("reason") or "Provider admission rejected").strip()
+    tier_mode = admission.get("tier_mode")
+    model_id = admission.get("model_id")
+    job_id = admission.get("job_id")
+    signature = (reason_code, str(tier_mode or ""), str(model_id or ""))
+    if signature == _last_admission_signature:
+        return
+
+    _last_admission_signature = signature
+    detail = f"reason_code={reason_code}"
+    if tier_mode:
+        detail += f" tier={tier_mode}"
+    if model_id:
+        detail += f" model={model_id}"
+    if job_id:
+        detail += f" job={job_id}"
+
+    log.info(f"No job admitted by backend ({detail}): {reason}")
+    try:
+        payload_details = json.dumps(
+            {"reason_code": reason_code, "reason": reason, "tier_mode": tier_mode, "model_id": model_id, "job_id": job_id},
+            ensure_ascii=True,
+        )
+        report_event(
+            "job_admission_rejected",
+            payload_details,
+            job_id=job_id,
+            severity="info",
+        )
+    except Exception:
+        pass
 
 def _save_update_suppression(until_ts, reason=""):
     """Persist update suppression window so rollback survives process restarts."""
@@ -2466,16 +2509,22 @@ def poll_and_execute():
 
     # Dual endpoint support: try new endpoint first, fall back to legacy
     urls = [
+        f"{API_URL}/api/providers/jobs/next?key={API_KEY}",
         f"{API_URL}/api/providers/{API_KEY}/jobs",
         f"{API_URL}/api/jobs/assigned?key={API_KEY}",
     ]
 
     job = None
+    admission_feedback = None
     for url in urls:
         try:
             code, resp = http_get(url)
             if code == 200:
-                job = resp.get("job")
+                if isinstance(resp, dict):
+                    admission_feedback = resp.get("admission") if isinstance(resp.get("admission"), dict) else admission_feedback
+                    job = resp.get("job")
+                else:
+                    job = None
                 if job:
                     break
         except Exception as e:
@@ -2483,7 +2532,10 @@ def poll_and_execute():
             continue
 
     if not job:
+        _log_admission_feedback(admission_feedback)
         return  # No jobs assigned
+
+    _last_admission_signature = None
 
     job_id = job["job_id"]
     job_type = job.get("job_type", "unknown")
