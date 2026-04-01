@@ -311,7 +311,7 @@ export default function HomePage() {
   const modeStripItems = [
     { key: 'marketplace', label: t('mode.label.marketplace'), description: t('mode.desc.marketplace'), href: '/renter/marketplace' },
     { key: 'playground', label: t('mode.label.playground'), description: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api-reference' },
+    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api/openrouter-60s-quickstart' },
     { key: 'enterprise_support', label: t('mode.label.enterprise_support'), description: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=landing-mode-strip' },
   ]
   const pathChooserLanes = [

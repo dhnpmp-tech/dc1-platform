@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-03-30T21:20:20.669Z",
+  "mode": "forced_failure",
+  "thresholds": {
+    "minProvidersOnline": 1,
+    "maxStreamLatencyMs": 1500,
+    "maxErrorRate": 0
+  },
+  "summary": {
+    "total": 3,
+    "passed": 1,
+    "failed": 2,
+    "status": "fail"
+  },
+  "checks": [
+    {
+      "id": "provider_online_count",
+      "title": "Online provider count meets threshold",
+      "status": "pass",
+      "evidence": {
+        "status": 200,
+        "providersOnline": 1,
+        "minProvidersOnline": 1
+      }
+    },
+    {
+      "id": "v1_stream_done_termination",
+      "title": "V1 streaming returns DONE termination",
+      "status": "fail",
+      "evidence": {
+        "status": 502,
+        "doneSeen": false,
+        "fetchError": null
+      }
+    },
+    {
+      "id": "latency_error_thresholds",
+      "title": "Stream latency and error rate stay within thresholds",
+      "status": "fail",
+      "evidence": {
+        "streamLatencyMs": 30,
+        "maxStreamLatencyMs": 1500,
+        "errorRate": 1,
+        "maxErrorRate": 0
+      }
+    }
+  ]
+}

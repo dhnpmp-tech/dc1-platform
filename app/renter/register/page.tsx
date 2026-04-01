@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -16,9 +15,7 @@ interface RegistrationResult {
 
 export default function RenterRegisterPage() {
   const { t, language } = useLanguage()
-  const searchParams = useSearchParams()
   const isRTL = language === 'ar'
-  const source = searchParams.get('source') || 'direct'
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
   const [formData, setFormData] = useState({
@@ -45,8 +42,6 @@ export default function RenterRegisterPage() {
       surface: 'registration',
       destination: 'none',
       step: 'view',
-      locale: language,
-      source,
       ...payload,
     }
     window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
@@ -60,7 +55,7 @@ export default function RenterRegisterPage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }, [language, source])
+  }, [])
 
   const useCaseOptions = [
     'AI Training',
@@ -94,7 +89,7 @@ export default function RenterRegisterPage() {
     () => [
       { label: t('mode.label.marketplace'), detail: t('mode.desc.marketplace'), href: '/renter/marketplace' },
       { label: t('mode.label.playground'), detail: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api-reference' },
+      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api/openrouter-60s-quickstart' },
       { label: t('mode.label.enterprise_support'), detail: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=renter_register_success#contact-form' },
     ],
     [t]
@@ -176,13 +171,6 @@ export default function RenterRegisterPage() {
         surface: 'registration_form',
         destination: '/api/dc1/renters/register',
         step: 'submit_success',
-      })
-      trackRegisterEvent('quickstart_api_key_created', {
-        surface: 'registration_form',
-        destination: '/api/dc1/renters/register',
-        step: 'api_key_created',
-        renter_id: data.renter_id ?? null,
-        api_key_prefix: typeof data.api_key === 'string' ? data.api_key.slice(0, 11) : null,
       })
     } catch (err) {
       trackRegisterEvent('renter_register_failed', {

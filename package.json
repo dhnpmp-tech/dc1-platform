@@ -7,7 +7,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "report:quickstart-funnel": "node scripts/quickstart-weekly-rollup.mjs",
     "smoke:gpu-job": "node scripts/gpu-job-lifecycle-smoke.mjs",
     "test:e2e": "playwright test",
     "test:e2e:debug": "playwright test --debug",
