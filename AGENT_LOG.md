@@ -1,7 +1,7 @@
-## [2026-04-01 20:39 UTC] Codex — DCP-358 Renter Top-Up Route Fallback + Job Tracking Test Stabilization
-- **Commit**: `pending` - Fixed `POST /api/renters/:id/topup` route precedence so valid admin-token requests no longer get intercepted by renter-RBAC middleware, by deferring admin-authenticated requests from the self-serve top-up route to the dedicated admin top-up handler; stabilized the DCP-841 job-tracking e2e suite by disabling rate limiting within that suite to prevent unrelated provider-register limiter saturation.
-- **Files**: `backend/src/routes/renters.js`, `backend/tests/job-tracking-e2e.test.js`, `AGENT_LOG.md`
-- **Impact**: Admin top-up requests now resolve to the intended admin contract even with the shared path, removing the 401 regression observed in job-tracking flows. Verification: `cd backend && npm test -- --runInBand tests/job-tracking-e2e.test.js` (`28/28` passing).
+## [2026-04-01 20:41 UTC] Codex — DCP-358 Homepage Billing Explainer Hook Dependency Fix
+- **Commit**: `pending` - Stabilized homepage analytics tracking by memoizing `trackLandingEvent` with `useCallback` and adding it to the billing-explainer `useEffect` dependency list to satisfy exhaustive-deps without changing analytics payload contracts.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Landing page billing-explainer tracking now passes hook dependency lint checks and remains tied to current role intent state. Verification: `npm run lint -- --file app/page.tsx` (passes with existing `@next/next/no-img-element` warning only).
 
 ## [2026-04-01 18:45 UTC] Codex — DCP-357 Unified Conversion Funnel Contract + Attribution Report
 - **Commit**: `73d2621` - Added a canonical provider+renter conversion funnel contract (`view -> register -> first_action -> first_success`) with durable event storage, per-actor stage dedupe, EN/AR locale normalization, source-surface/channel attribution capture, and an admin report endpoint for funnel/conversion completeness.

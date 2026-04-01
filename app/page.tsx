@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
@@ -122,7 +122,7 @@ export default function HomePage() {
   const onlineProviders = detailedHealth?.providers?.online ?? null
   const showZeroSupplyFallback = onlineProviders === 0
 
-  const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
+  const trackLandingEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
     const detail = {
       event,
@@ -144,7 +144,7 @@ export default function HomePage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }
+  }, [selectedIntent])
 
   const updateIntent = (intent: RoleIntent, source: string, selectionType: string) => {
     const previousIntent = selectedIntent
@@ -280,7 +280,7 @@ export default function HomePage() {
 
     observer.observe(node)
     return () => observer.disconnect()
-  }, [])
+  }, [trackLandingEvent])
 
   const liveStats = [
     { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
@@ -424,24 +424,7 @@ export default function HomePage() {
 
 
 
-      {/* Live telemetry */}
-      <section className="border-y border-dc1-border bg-dc1-surface-l1/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
-            {liveStats.map((stat) => (
-              <div key={stat.label} className="text-center">
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl sm:text-3xl font-bold text-dc1-amber">{stat.value}</p>
-                  {stat.live && (
-                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" title={t('landing.live_metric_badge')} />
-                  )}
-                </div>
-                <p className="text-sm text-dc1-text-secondary mt-1">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Live telemetry section removed — duplicate of availability details above */}
 
       {/* Trust policy module */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
