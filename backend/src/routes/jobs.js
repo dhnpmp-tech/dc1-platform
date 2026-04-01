@@ -2981,6 +2981,7 @@ router.post('/:job_id/complete', (req, res) => {
     const elapsedSeconds = startedAt
       ? Math.max(1, Math.ceil((new Date(now) - new Date(startedAt)) / 1000))
       : ((job.duration_minutes || 1) * 60);
+    const actualMinutes = Math.ceil(elapsedSeconds / 60);
     const { compute_halala, storage_halala, bandwidth_halala, total_halala } = estimateThreeComponentCost({
       gpuModel: job.gpu_model,
       durationSeconds: elapsedSeconds,
@@ -3008,7 +3009,7 @@ router.post('/:job_id/complete', (req, res) => {
         storage_halala = ?,
         bandwidth_halala = ?
        WHERE id = ?`,
-      now, Math.ceil(elapsedSeconds / 60), totalCostHalala, provider_earned, dc1_fee,
+      now, actualMinutes, totalCostHalala, provider_earned, dc1_fee,
       elapsedSeconds, compute_halala, storage_halala, bandwidth_halala, job.id
     );
     recordLifecycleEvent(job, 'job.completed', {
@@ -3063,7 +3064,7 @@ router.post('/:job_id/complete', (req, res) => {
 
     const updated = db.get('SELECT * FROM jobs WHERE id = ?', job.id);
     fireAndForgetJobEmail('completed', updated, {
-      actual_cost_halala,
+      actual_cost_halala: totalCostHalala,
       refunded_amount_halala: 0,
       retry_attempts: Number(updated?.retry_count || 0),
     });
@@ -3073,7 +3074,7 @@ router.post('/:job_id/complete', (req, res) => {
       job: updated,
       billing: {
         estimated_cost_halala: job.cost_halala,
-        actual_cost_halala,
+        actual_cost_halala: totalCostHalala,
         actual_duration_minutes: actualMinutes,
         provider_earned_halala: provider_earned,
         dc1_fee_halala: dc1_fee

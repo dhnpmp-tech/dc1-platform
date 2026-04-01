@@ -1,3 +1,8 @@
+## [2026-04-01 22:42 UTC] Codex — DCP-359 Marketplace E2E Stability + Manual Complete Route Fix
+- **Commit**: `pending` - Stabilized marketplace e2e coverage by disabling rate-limiter enforcement inside `tests/e2e-marketplace.test.js` (scope-local guard), then fixed a real backend regression in `POST /api/jobs/:job_id/complete` where undefined response/email payload variables (`actual_cost_halala`, `actualMinutes`) caused 500s after successful completion updates.
+- **Files**: `backend/src/routes/jobs.js`, `backend/tests/e2e-marketplace.test.js`, `AGENT_LOG.md`
+- **Impact**: Manual completion now returns deterministic success payloads and completed-job email dispatch metadata without throwing. Verification: `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js` (`25/25` passing).
+
 ## [2026-04-01 21:25 UTC] Codex — Release Heartbeat Landed Three Agent Branches On Main
 - **Commit**: `e3754e7` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), merged `origin/main` into three qualifying agent branches in the clean release worktree, cleared the root `npm run build` gate under the repo-pinned Node `20` runtime, and landed PRs #172 (`agent/frontend-dev/dcp-358-homepage-track-event-hook-deps`), #173 (`agent/backend-dev/dcp-358-backend-check-stabilization`), and #174 (`agent/backend-dev/dcp-232-runtime-parity-monitor`) onto `main`.
 - **Files**: `AGENT_LOG.md`
