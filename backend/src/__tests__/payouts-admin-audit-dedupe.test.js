@@ -80,7 +80,11 @@ describe('admin payout audit dedupe', () => {
   });
 
   afterEach(() => {
-    global.__testDb.close();
+    if (global.__testDb && global.__testDb.open) {
+      global.__testDb.close();
+    }
+    global.__testDb = null;
+    jest.clearAllMocks();
     jest.resetModules();
   });
 
@@ -103,9 +107,13 @@ describe('admin payout audit dedupe', () => {
 
     const rows = global.__testDb.prepare(
       `SELECT * FROM admin_audit_log
-       WHERE target_type = 'payout' AND target_id = ?`
-    ).all('payout-approve-1');
+       WHERE action LIKE 'payout_%'`
+    ).all();
+    const targetRows = rows.filter((row) => row.target_type === 'payout' && row.target_id === 'payout-approve-1');
+
+    // Route guard: exactly one payout mutation audit row must be emitted.
     expect(rows).toHaveLength(1);
+    expect(targetRows).toHaveLength(1);
     expect(rows[0].action).toBe('payout_approved');
     expect(JSON.parse(rows[0].details)).toMatchObject({
       provider_id: 1,
@@ -135,9 +143,13 @@ describe('admin payout audit dedupe', () => {
 
     const rows = global.__testDb.prepare(
       `SELECT * FROM admin_audit_log
-       WHERE target_type = 'payout' AND target_id = ?`
-    ).all('payout-reject-1');
+       WHERE action LIKE 'payout_%'`
+    ).all();
+    const targetRows = rows.filter((row) => row.target_type === 'payout' && row.target_id === 'payout-reject-1');
+
+    // Route guard: exactly one payout mutation audit row must be emitted.
     expect(rows).toHaveLength(1);
+    expect(targetRows).toHaveLength(1);
     expect(rows[0].action).toBe('payout_rejected');
     expect(JSON.parse(rows[0].details)).toMatchObject({
       provider_id: 2,
