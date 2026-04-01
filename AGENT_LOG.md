@@ -3,6 +3,11 @@
 - **Files**: `backend/src/db.js`, `backend/src/routes/renters.js`, `backend/tests/integration/renter-rbac-audit.test.js`, `AGENT_LOG.md`
 - **Impact**: Enterprise trust lane now has concrete org RBAC primitives + deterministic audit trails with integration coverage for allow/deny behavior. Verification: `cd backend && npm test -- --runInBand tests/integration/renter-rbac-audit.test.js` and `cd backend && npm test -- --runInBand tests/integration/api-key-header-parity.test.js` (both passing).
 
+## [2026-04-01 18:20 UTC] Codex — DCP-343 Republished Top-10 Provider Reactivation Export For DCP-340
+- **Commit**: `pending` - Extended reactivation export contact metadata to include `phone`, regenerated the ranked inactive-provider export against `/workspaces/dc1-platform/backend/data/providers.db`, and produced a fresh artifact set with `19` ranked providers and explicit top-10 entries.
+- **Files**: `backend/src/services/providerReactivationQueue.js`, `backend/src/scripts/export-provider-reactivation-queue.js`, `backend/src/__tests__/providerReactivationQueue.test.js`, `backend/artifacts/provider-reactivation/provider-reactivation-queue-20260401.json`, `backend/artifacts/provider-reactivation/provider-reactivation-queue-20260401.csv`, `AGENT_LOG.md`
+- **Impact**: [DCP-340](/DCP/issues/DCP-340) now has a current top-10-ready export artifact with contact metadata (`name`, `email`, `phone`, `organization`, `location`) and `blocker_reason_codes` per target. Verification: `cd backend && npm test -- --runInBand src/__tests__/providerReactivationQueue.test.js` passed (`2/2`), and `DC1_DB_PATH=/workspaces/dc1-platform/backend/data/providers.db npm run providers:export-reactivation -- --limit 500` generated the refreshed artifacts.
+
 ## [2026-04-01 08:57 UTC] Codex — Release Heartbeat Landed V1 Latency Budget Gate
 - **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #157 for `agent/backend-dev/dcp-282-openrouter-tool-sse-parity`, resolved the `AGENT_LOG.md` merge conflict by keeping `main`, and landed the branch onto `main` from the clean release worktree.
 - **Files**: `AGENT_LOG.md`

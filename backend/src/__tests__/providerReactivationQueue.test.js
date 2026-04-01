@@ -13,6 +13,7 @@ function buildDb() {
       id INTEGER PRIMARY KEY,
       name TEXT,
       email TEXT,
+      phone TEXT,
       organization TEXT,
       location TEXT,
       status TEXT,
@@ -32,9 +33,9 @@ function buildDb() {
 function seedProvider(db, row) {
   db.prepare(
     `INSERT INTO providers
-      (id, name, email, organization, location, status, approval_status, is_paused, daemon_version, readiness_status, readiness_details, last_heartbeat, created_at, deleted_at)
+      (id, name, email, phone, organization, location, status, approval_status, is_paused, daemon_version, readiness_status, readiness_details, last_heartbeat, created_at, deleted_at)
      VALUES
-      (@id, @name, @email, @organization, @location, @status, @approval_status, @is_paused, @daemon_version, @readiness_status, @readiness_details, @last_heartbeat, @created_at, NULL)`
+      (@id, @name, @email, @phone, @organization, @location, @status, @approval_status, @is_paused, @daemon_version, @readiness_status, @readiness_details, @last_heartbeat, @created_at, NULL)`
   ).run(row);
 }
 
@@ -47,6 +48,7 @@ describe('providerReactivationQueue', () => {
       id: 1,
       name: 'Ready Node',
       email: 'ready@dcp.sa',
+      phone: '+966500000001',
       organization: 'Org A',
       location: 'Riyadh',
       status: 'online',
@@ -63,6 +65,7 @@ describe('providerReactivationQueue', () => {
       id: 2,
       name: 'Stale Node',
       email: 'stale@dcp.sa',
+      phone: '+966500000002',
       organization: 'Org B',
       location: 'Jeddah',
       status: 'offline',
@@ -79,6 +82,7 @@ describe('providerReactivationQueue', () => {
       id: 3,
       name: 'No Daemon',
       email: 'nodaemon@dcp.sa',
+      phone: '+966500000003',
       organization: 'Org C',
       location: 'Dammam',
       status: 'pending',
@@ -113,6 +117,7 @@ describe('providerReactivationQueue', () => {
           provider_id: 42,
           name: 'Provider 42',
           email: 'p42@dcp.sa',
+          phone: '+966500000042',
           organization: 'Ops',
           location: 'Riyadh',
           status: 'offline',
