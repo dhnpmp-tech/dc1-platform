@@ -68,6 +68,57 @@ describe('openrouterSettlementService', () => {
     expect(summary.top_renters[0].renter_id).toBe(renter.id);
   });
 
+  test('deduplicates usage writes by request_id', () => {
+    const { renter, provider } = seedRenterAndProvider();
+    const first = recordOpenRouterUsage(db._db || db, {
+      requestId: 'req-fixed-123',
+      renterId: renter.id,
+      providerId: provider.id,
+      model: 'openai/gpt-4o-mini',
+      promptTokens: 12,
+      completionTokens: 8,
+      costHalala: 40,
+    });
+    const second = recordOpenRouterUsage(db._db || db, {
+      requestId: 'req-fixed-123',
+      renterId: renter.id,
+      providerId: provider.id,
+      model: 'openai/gpt-4o-mini',
+      promptTokens: 12,
+      completionTokens: 8,
+      costHalala: 40,
+    });
+
+    expect(second.id).toBe(first.id);
+    const count = db.get('SELECT COUNT(*) AS n FROM openrouter_usage_ledger WHERE request_id = ?', 'req-fixed-123');
+    expect(count.n).toBe(1);
+  });
+
+  test('persists request metadata columns for downstream reconciliation reads', () => {
+    const { renter, provider } = seedRenterAndProvider();
+    const usage = recordOpenRouterUsage(db._db || db, {
+      requestId: 'req-metadata-1',
+      providerResponseId: 'chatcmpl-metadata-1',
+      jobId: 'job-metadata-1',
+      requestPath: '/api/vllm/chat/completions',
+      tokenRateHalala: 3,
+      renterId: renter.id,
+      providerId: provider.id,
+      model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+      source: 'api_vllm',
+      promptTokens: 9,
+      completionTokens: 6,
+      costHalala: 45,
+    });
+
+    expect(usage.request_id).toBe('req-metadata-1');
+    expect(usage.provider_response_id).toBe('chatcmpl-metadata-1');
+    expect(usage.job_id).toBe('job-metadata-1');
+    expect(usage.request_path).toBe('/api/vllm/chat/completions');
+    expect(usage.token_rate_halala).toBe(3);
+    expect(usage.source).toBe('api_vllm');
+  });
+
   test('executes invoice-mode settlement and marks usage settled', () => {
     const { renter, provider } = seedRenterAndProvider();
     recordOpenRouterUsage(db._db || db, {
@@ -135,6 +186,13 @@ describe('openrouter-settlement admin routes', () => {
       .send({});
     expect(dryRunRes.status).toBe(200);
     expect(dryRunRes.body.summary.usage_count).toBe(1);
+    expect(dryRunRes.body.summary.pricing).toEqual({
+      currency: 'USD',
+      usd_expected_total: expect.any(String),
+      usd_reconciled_total: expect.any(String),
+      usd_discrepancy_total: expect.any(String),
+    });
+    expect(typeof dryRunRes.body.summary.pricing.usd_reconciled_total).toBe('string');
 
     const runRes = await request(app)
       .post('/api/admin/openrouter/settlements/run')
@@ -142,12 +200,39 @@ describe('openrouter-settlement admin routes', () => {
       .send({ mode: 'invoice' });
     expect(runRes.status).toBe(200);
     expect(runRes.body.settlement.status).toBe('completed');
+    expect(runRes.body.settlement.pricing).toEqual({
+      currency: 'USD',
+      usd_expected_total: expect.any(String),
+      usd_reconciled_total: expect.any(String),
+      usd_discrepancy_total: expect.any(String),
+    });
+    expect(runRes.body.invoice.pricing).toEqual({
+      currency: 'USD',
+      usd: expect.any(String),
+    });
+    expect(typeof runRes.body.invoice.pricing.usd).toBe('string');
 
     const listRes = await request(app)
       .get('/api/admin/openrouter/settlements')
       .set('x-admin-token', token);
     expect(listRes.status).toBe(200);
     expect(listRes.body.count).toBeGreaterThanOrEqual(1);
+    expect(listRes.body.settlements[0].pricing).toEqual({
+      currency: 'USD',
+      usd_expected_total: expect.any(String),
+      usd_reconciled_total: expect.any(String),
+      usd_discrepancy_total: expect.any(String),
+    });
+
+    const detailRes = await request(app)
+      .get(`/api/admin/openrouter/settlements/${runRes.body.settlement.id}`)
+      .set('x-admin-token', token);
+    expect(detailRes.status).toBe(200);
+    expect(detailRes.body.items[0].pricing).toEqual({
+      currency: 'USD',
+      usd: expect.any(String),
+    });
+    expect(typeof detailRes.body.items[0].pricing.usd).toBe('string');
   });
 
   test('rejects access without admin token', async () => {

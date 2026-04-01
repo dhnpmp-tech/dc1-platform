@@ -6,11 +6,15 @@ const mockDb = {
   get: jest.fn(),
   prepare: jest.fn(() => ({ run: jest.fn() })),
 };
+const mockRecordOpenRouterUsage = jest.fn(() => ({ id: 'oru_test' }));
 
 jest.mock('../db', () => mockDb);
 jest.mock('../middleware/rateLimiter', () => ({
   vllmCompleteLimiter: (req, res, next) => next(),
   vllmStreamLimiter: (req, res, next) => next(),
+}));
+jest.mock('../services/openrouterSettlementService', () => ({
+  recordOpenRouterUsage: (...args) => mockRecordOpenRouterUsage(...args),
 }));
 
 describe('v1 models route', () => {
@@ -20,6 +24,7 @@ describe('v1 models route', () => {
     jest.resetModules();
     mockDb.all.mockReset();
     mockDb.get.mockReset();
+    mockRecordOpenRouterUsage.mockReset();
 
     const router = require('../routes/v1');
     app = express();
@@ -32,6 +37,7 @@ describe('v1 models route', () => {
       .mockImplementationOnce(() => ([
         { name: 'model_id' },
         { name: 'display_name' },
+        { name: 'family' },
         { name: 'context_window' },
         { name: 'min_gpu_vram_gb' },
         { name: 'use_cases' },
@@ -41,10 +47,14 @@ describe('v1 models route', () => {
         {
           model_id: 'fallback-model',
           display_name: 'Fallback Model',
+          family: 'mistral',
           context_window: 4096,
           min_gpu_vram_gb: 8,
           use_cases: '[]',
         },
+      ]))
+      .mockImplementationOnce(() => ([
+        { model: '__default__', token_rate_halala: 2 },
       ]));
 
     const res = await request(app).get('/v1/models');
@@ -54,7 +64,30 @@ describe('v1 models route', () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].id).toBe('fallback-model');
     expect(res.body.data[0]).toHaveProperty('parameter_count', null);
-    expect(mockDb.all).toHaveBeenCalledTimes(2);
+    expect(res.body.data[0].pricing).toEqual({
+      prompt_tokens: expect.any(String),
+      completion_tokens: expect.any(String),
+      usd_per_minute: expect.any(String),
+      usd_per_1m_input_tokens: expect.any(String),
+      usd_per_1m_output_tokens: expect.any(String),
+    });
+    expect(res.body.data[0].pricing.prompt_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(res.body.data[0].pricing.completion_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(res.body.data[0].pricing.usd_per_minute).toMatch(/^\d+\.\d{6}$/);
+    expect(res.body.data[0].pricing.usd_per_1m_input_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(res.body.data[0].pricing.usd_per_1m_output_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(res.body.data[0].description).toEqual(expect.any(String));
+    expect(res.body.data[0].architecture).toEqual({
+      tokenizer: 'mistral',
+      instruct_type: 'instruct',
+      modality: 'text',
+    });
+    expect(res.body.data[0].endpoints).toEqual([
+      { url: expect.stringMatching(/\/v1\/chat\/completions$/), type: 'chat' },
+    ]);
+    expect(res.body.data[0].provider_priority).toEqual(['dcp']);
+    expect(typeof res.body.data[0].pricing.usd_per_minute).toBe('string');
+    expect(mockDb.all).toHaveBeenCalledTimes(3);
   });
 
   test('fills safe defaults for legacy model_registry schemas', async () => {
@@ -71,6 +104,9 @@ describe('v1 models route', () => {
           context_window: 4096,
           parameter_count: null,
         },
+      ]))
+      .mockImplementationOnce(() => ([
+        { model: '__default__', token_rate_halala: 1 },
       ]));
 
     const res = await request(app).get('/v1/models');
@@ -81,6 +117,67 @@ describe('v1 models route', () => {
     expect(res.body.data[0].display_name).toBe('legacy-model');
     expect(res.body.data[0].context_window).toBe(4096);
     expect(res.body.data[0].parameter_count).toBeNull();
+    expect(res.body.data[0].pricing).toEqual({
+      prompt_tokens: expect.any(String),
+      completion_tokens: expect.any(String),
+      usd_per_minute: expect.any(String),
+      usd_per_1m_input_tokens: expect.any(String),
+      usd_per_1m_output_tokens: expect.any(String),
+    });
+    expect(res.body.data[0].architecture).toEqual({
+      tokenizer: 'dcp',
+      instruct_type: 'instruct',
+      modality: 'text',
+    });
+  });
+
+  test('returns empty list when model_registry exists without model_id column', async () => {
+    mockDb.all.mockImplementationOnce(() => ([
+      { name: 'display_name' },
+      { name: 'family' },
+      { name: 'is_active' },
+    ]));
+
+    const res = await request(app).get('/v1/models');
+
+    expect(res.status).toBe(200);
+    expect(res.body.object).toBe('list');
+    expect(res.body.data).toEqual([]);
+    expect(mockDb.all.mock.calls.some(([sql]) => String(sql).includes('FROM model_registry'))).toBe(false);
+  });
+
+  test('falls back to deterministic default token pricing when cost_rates schema is unavailable', async () => {
+    mockDb.all
+      .mockImplementationOnce(() => ([
+        { name: 'model_id' },
+        { name: 'display_name' },
+        { name: 'is_active' },
+      ]))
+      .mockImplementationOnce(() => ([
+        {
+          model_id: 'missing-cost-rate-model',
+          display_name: 'Missing Cost Rate Model',
+          context_window: 8192,
+          parameter_count: null,
+        },
+      ]))
+      .mockImplementationOnce(() => {
+        throw new Error('no such table: cost_rates');
+      });
+
+    const res = await request(app).get('/v1/models');
+    const model = res.body.data[0];
+
+    expect(res.status).toBe(200);
+    expect(res.body.object).toBe('list');
+    expect(res.body.data).toHaveLength(1);
+    expect(model.pricing).toMatchObject({
+      prompt_tokens: '0.002667',
+      completion_tokens: '0.002667',
+      usd_per_minute: expect.stringMatching(/^\d+\.\d{6}$/),
+      usd_per_1m_input_tokens: expect.stringMatching(/^\d+\.\d{6}$/),
+      usd_per_1m_output_tokens: expect.stringMatching(/^\d+\.\d{6}$/),
+    });
   });
 
   test('returns empty list when model_registry table is missing', async () => {
@@ -202,7 +299,15 @@ describe('v1 models route', () => {
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('legacy-chat-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('vram_gb AS min_gpu_vram_gb'))).toBe(true);
+    expect(res.body.usage.pricing).toEqual({
+      currency: 'USD',
+      usd_prompt: expect.any(String),
+      usd_completion: expect.any(String),
+      usd_total: expect.any(String),
+    });
+    expect(typeof res.body.usage.pricing.usd_total).toBe('string');
 
     fetchSpy.mockRestore();
   });
@@ -268,7 +373,15 @@ describe('v1 models route', () => {
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('requested-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('FROM model_registry WHERE model_id = ?'))).toBe(false);
+    expect(res.body.usage.pricing).toEqual({
+      currency: 'USD',
+      usd_prompt: expect.any(String),
+      usd_completion: expect.any(String),
+      usd_total: expect.any(String),
+    });
+    expect(typeof res.body.usage.pricing.usd_total).toBe('string');
 
     fetchSpy.mockRestore();
   });

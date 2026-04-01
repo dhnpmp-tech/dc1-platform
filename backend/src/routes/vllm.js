@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 const db = require('../db');
+const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 
 const router = express.Router();
 
@@ -510,6 +511,26 @@ function estimateDurationMinutes(maxTokens) {
   return Math.max(1, Math.ceil(maxTokens / approxTokensPerMinute));
 }
 
+function resolveTokenRateHalala(modelId) {
+  const row = db.get(
+    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+    modelId
+  ) || db.get(
+    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+    '__default__'
+  );
+  return toFiniteInt(row?.token_rate_halala, { min: 0, max: 1_000_000_000 }) || 1;
+}
+
+function extractRequestId(req) {
+  return normalizeString(
+    req.headers['idempotency-key']
+      || req.headers['x-request-id']
+      || req.headers['x-correlation-id'],
+    { maxLen: 200, trim: true }
+  ) || `vllmreq_${crypto.randomUUID()}`;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -715,6 +736,9 @@ async function submitAndAwait(req) {
   const promptTokens = approximateTokenCount(mergedPrompt);
   const durationMinutes = estimateDurationMinutes(maxTokens);
   const estimatedCostHalala = Math.max(1, Math.round(durationMinutes * modelReq.fallback_rate_halala_per_min));
+  const tokenRateHalala = resolveTokenRateHalala(modelReq.model_id);
+  const meteringRequestId = extractRequestId(req);
+  let usagePersisted = false;
 
   if (Number(req.renter.balance_halala || 0) < estimatedCostHalala) {
     return {
@@ -843,6 +867,40 @@ async function submitAndAwait(req) {
     throw error;
   }
 
+  const persistUsageOnce = ({
+    providerForUsage = null,
+    providerResponseId = null,
+    promptTokensValue = 0,
+    completionTokensValue = 0,
+  }) => {
+    if (usagePersisted) return;
+    const cleanPrompt = toFiniteInt(promptTokensValue, { min: 0, max: 1_000_000_000 }) || 0;
+    const cleanCompletion = toFiniteInt(completionTokensValue, { min: 0, max: 1_000_000_000 }) || 0;
+    const cleanTotal = cleanPrompt + cleanCompletion;
+    const cleanCostHalala = Math.max(1, cleanTotal * tokenRateHalala);
+    try {
+      recordOpenRouterUsage(db._db || db, {
+        requestId: meteringRequestId,
+        providerResponseId: normalizeString(providerResponseId, { maxLen: 200 }),
+        jobId,
+        requestPath: normalizeString(req.path || req.originalUrl || '/api/vllm/complete', { maxLen: 160 }),
+        tokenRateHalala,
+        renterId: req.renter.id,
+        providerId: providerForUsage?.id || assignedProvider.id || null,
+        model: modelReq.model_id,
+        source: 'api_vllm',
+        promptTokens: cleanPrompt,
+        completionTokens: cleanCompletion,
+        totalTokens: cleanTotal,
+        costHalala: cleanCostHalala,
+        currency: 'SAR',
+      });
+    } catch (error) {
+      console.error('[vllm] usage ledger persist failed:', error?.message || error);
+    }
+    usagePersisted = true;
+  };
+
 
   // DCP-922: If the selected provider has a registered vLLM endpoint, proxy directly.
   // Try primary provider + up to 2 fallback providers before giving up.
@@ -886,10 +944,6 @@ async function submitAndAwait(req) {
         );
       } catch (_) { /* non-fatal */ }
       try {
-        const rateRecord = db.get(
-          'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
-        ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
-        const tokenRateHalala = toFiniteInt(rateRecord?.token_rate_halala, { min: 1, max: 1000000000 }) || 1;
         persistServeSessionMetering({
           jobId,
           providerId: candidate.id,
@@ -899,6 +953,12 @@ async function submitAndAwait(req) {
           billedHalala: Math.max(1, totalTokens * tokenRateHalala),
         });
       } catch (_) { /* non-fatal */ }
+      persistUsageOnce({
+        providerForUsage: candidate,
+        providerResponseId: `chatcmpl-${jobId}`,
+        promptTokensValue: proxyPromptTokens,
+        completionTokensValue: proxyCompletionTokens,
+      });
 
       return {
         payload: buildOpenAiResponse({
@@ -952,6 +1012,13 @@ async function submitAndAwait(req) {
   } catch (_) {
     // Non-fatal — token write-back failure must not block the inference response
   }
+
+  persistUsageOnce({
+    providerForUsage: assignedProvider,
+    providerResponseId: `chatcmpl-${jobId}`,
+    promptTokensValue: promptTokens,
+    completionTokensValue: actualCompletionTokens,
+  });
 
   // Update serve_sessions metering (Sprint 25 Gap 1 — per-token billing)
   try {

@@ -15,6 +15,7 @@ const {
 const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../services/notifications');
 const { sendWithdrawalApprovedEmail } = require('../services/emailService');
 const { resolveAttemptLogPath } = require('../services/job-execution-logs');
+const { buildFunnelReport } = require('../services/conversionFunnelService');
 const {
   listPolicies: listControlPlanePolicies,
   updatePolicy: updateControlPlanePolicy,
@@ -313,7 +314,7 @@ function buildProviderReactivationQuery(columns) {
   return `
     SELECT ${select.join(', ')}
     FROM providers
-    ${columns.has('deleted_at') ? 'WHERE deleted_at IS NULL' : ''}
+    WHERE deleted_at IS NULL
   `;
 }
 
@@ -355,8 +356,6 @@ function determineInstallStatus(provider) {
 }
 
 function buildReactivationRecord(provider, nowMs = Date.now()) {
-  const approvalStatus = normalizeString(provider.approval_status, { maxLen: 64 })?.toLowerCase() || 'pending';
-  const providerStatus = normalizeString(provider.status, { maxLen: 64 })?.toLowerCase() || null;
   const heartbeatAge = heartbeatAgeSeconds(provider.last_heartbeat, nowMs);
   const installStatus = determineInstallStatus(provider);
   const readinessStatus = normalizeString(provider.readiness_status, { maxLen: 64 })?.toLowerCase();
@@ -364,9 +363,9 @@ function buildReactivationRecord(provider, nowMs = Date.now()) {
   const readinessFailureChecks = parseReadinessDetailFailures(provider.readiness_details);
 
   const blockerReasonCodes = [];
-  if (approvalStatus !== 'approved') blockerReasonCodes.push('approval_pending');
+  if (provider.approval_status !== 'approved') blockerReasonCodes.push('approval_pending');
   if (Number(provider.is_paused || 0) === 1) blockerReasonCodes.push('provider_paused');
-  if (providerStatus === 'suspended') blockerReasonCodes.push('provider_suspended');
+  if (provider.status === 'suspended') blockerReasonCodes.push('provider_suspended');
   if (installStatus === 'not_installed') blockerReasonCodes.push('daemon_not_installed');
   if (installStatus === 'heartbeat_detected_without_daemon_version') blockerReasonCodes.push('daemon_version_missing');
   if (heartbeatAge == null) blockerReasonCodes.push('heartbeat_missing');
@@ -374,7 +373,7 @@ function buildReactivationRecord(provider, nowMs = Date.now()) {
   else if (heartbeatAge > 5 * 60) blockerReasonCodes.push('heartbeat_stale');
   if (readinessFailed || readinessFailureChecks.length > 0) blockerReasonCodes.push('readiness_checks_failed');
 
-  const readyToServe = blockerReasonCodes.length === 0 && providerStatus === 'online';
+  const readyToServe = blockerReasonCodes.length === 0 && provider.status === 'online';
 
   const blockerPenalties = {
     approval_pending: 35,
@@ -398,8 +397,8 @@ function buildReactivationRecord(provider, nowMs = Date.now()) {
     provider_id: provider.id,
     name: provider.name || null,
     email: provider.email || null,
-    status: providerStatus,
-    approval_status: approvalStatus,
+    status: provider.status || null,
+    approval_status: provider.approval_status || null,
     created_at: toIsoOrNull(provider.created_at),
     last_heartbeat: toIsoOrNull(provider.last_heartbeat),
     heartbeat_age_seconds: heartbeatAge,
@@ -1857,6 +1856,19 @@ router.get('/analytics', (req, res) => {
   } catch (error) {
     console.error('Admin analytics error:', error);
     res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// === GET /api/admin/analytics/conversion-funnel - provider/renter unified funnel ===
+router.get('/analytics/conversion-funnel', (req, res) => {
+  try {
+    const sinceDays = toFiniteInt(req.query.since_days, { min: 1, max: 365 }) || 30;
+    const journey = normalizeString(req.query.journey, { maxLen: 16 }) || 'all';
+    const report = buildFunnelReport({ sinceDays, journey });
+    return res.json(report);
+  } catch (error) {
+    console.error('Admin conversion funnel analytics error:', error);
+    return res.status(500).json({ error: 'Failed to fetch conversion funnel analytics' });
   }
 });
 

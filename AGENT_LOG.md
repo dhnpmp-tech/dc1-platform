@@ -1,3 +1,83 @@
+## [2026-04-01 20:41 UTC] Codex — DCP-358 Homepage Billing Explainer Hook Dependency Fix
+- **Commit**: `pending` - Stabilized homepage analytics tracking by memoizing `trackLandingEvent` with `useCallback` and adding it to the billing-explainer `useEffect` dependency list to satisfy exhaustive-deps without changing analytics payload contracts.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Landing page billing-explainer tracking now passes hook dependency lint checks and remains tied to current role intent state. Verification: `npm run lint -- --file app/page.tsx` (passes with existing `@next/next/no-img-element` warning only).
+
+## [2026-04-01 18:45 UTC] Codex — DCP-357 Unified Conversion Funnel Contract + Attribution Report
+- **Commit**: `73d2621` - Added a canonical provider+renter conversion funnel contract (`view -> register -> first_action -> first_success`) with durable event storage, per-actor stage dedupe, EN/AR locale normalization, source-surface/channel attribution capture, and an admin report endpoint for funnel/conversion completeness.
+- **Files**: `backend/src/db.js`, `backend/src/services/conversionFunnelService.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/conversion-funnel-contract.test.js`, `backend/artifacts/conversion-funnel/query-examples.sql`, `docs/api/conversion-funnel-contract.md`, `AGENT_LOG.md`
+- **Impact**: Provider and renter onboarding/activation transitions are now queryable end-to-end from a single contract with attribution segmentation (locale/source/UTM/referrer). Operators can pull baseline conversion and completeness from `GET /api/admin/analytics/conversion-funnel` and SQL examples in `backend/artifacts/conversion-funnel/query-examples.sql`.
+
+## [2026-04-01 16:22 UTC] Codex — DCP-320 Enterprise RBAC + Org-Scoped Audit Baseline Shipped
+- **Commit**: `73d2621` - Completed org-scoped renter RBAC baseline by extending renter API keys with `org_id`/`org_role`, adding immutable `org_audit_log` persistence for allow/deny decisions, enforcing role gates on sensitive renter routes (`/topup`, `/balance`, `/transactions`, webhook mutations, and `/:id/keys` key management), and fixing a role-order bug that previously allowed lower-privilege roles through admin checks.
+- **Files**: `backend/src/db.js`, `backend/src/routes/renters.js`, `backend/tests/integration/renter-rbac-audit.test.js`, `AGENT_LOG.md`
+- **Impact**: Enterprise trust lane now has concrete org RBAC primitives + deterministic audit trails with integration coverage for allow/deny behavior. Verification: `cd backend && npm test -- --runInBand tests/integration/renter-rbac-audit.test.js` and `cd backend && npm test -- --runInBand tests/integration/api-key-header-parity.test.js` (both passing).
+
+## [2026-04-01 08:57 UTC] Codex — Release Heartbeat Landed V1 Latency Budget Gate
+- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #157 for `agent/backend-dev/dcp-282-openrouter-tool-sse-parity`, resolved the `AGENT_LOG.md` merge conflict by keeping `main`, and landed the branch onto `main` from the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the backend `/v1` latency-budget gate path in [`backend/src/routes/v1.js`], the supporting service/script updates, and the expanded integration coverage in [`backend/tests/integration/v1-openrouter-parity.test.js`]. GitHub closed PR #157 as merged at merge commit `d1f4703`.
+
+## [2026-04-01 08:21 UTC] Codex — Release Heartbeat Landed Renter Dashboard Hook Fix
+- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #156 for `agent/frontend-dev/dcp-213-renter-dashboard-hook-deps`, resolved the `app/renter/page.tsx` merge conflict by taking the branch code while keeping `main` for `AGENT_LOG.md`, and landed the branch onto `main` via the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the renter dashboard hook dependency fix in [`app/renter/page.tsx`] so the auth verification effect uses a stable `verifyKey` callback without regressing redirect/refresh behavior. No other qualifying unmerged branches remained in the visible top-20 `agent/` queue after this heartbeat.
+
+## [2026-04-01 04:02 UTC] Codex — DCP-282 OpenRouter Tool Passthrough + Single-[DONE] Stream Termination Parity
+- **Commit**: `pending` - Hardened `/v1/chat/completions` provider proxy passthrough so `tools` and `tool_choice` fields are forwarded exactly when present, and normalized SSE relay termination to always emit exactly one terminal `data: [DONE]` frame on successful streams (including provider fallback/retry paths) while suppressing upstream duplicate DONE frames.
+- **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
+- **Impact**: OpenRouter parity blockers around tool/tool_choice passthrough and stream termination stability are now regression-covered in integration tests for non-stream, stream, fallback, and tool payload cases. Verification: `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js` (`7/7` passing).
+
+## [2026-04-01 04:16 UTC] Codex — Release Heartbeat Landed OpenRouter SSE Parity And Renter Jobs Hook Fix
+- **Commit**: `c17424a` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #154 and #155, and landed `agent/backend-dev/dcp-282-openrouter-tool-sse-parity` plus `agent/frontend-dev/dcp-212-renter-jobs-hook-deps` onto `main` via the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the `/v1` OpenRouter tool/SSE parity fix with updated integration coverage and the renter jobs page hook dependency fix. No other qualifying unmerged branches remained in the visible queue after these merges.
+
+## [2026-04-01 02:13 UTC] Codex — Release Heartbeat Landed Audit Uniqueness Guards And Renter Job Detail Hook Fix
+- **Commit**: `5ac560f` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #152 and #153, and landed `agent/backend-dev/dcp-281-route-audit-uniqueness` plus `agent/frontend-dev/dcp-211-renter-job-detail-hook-deps` onto `main` via the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes stronger backend regression coverage around payout audit uniqueness and the renter job detail page hook dependency fix. No other qualifying unmerged branches remained in the visible queue after these merges.
+
+## [2026-04-01 00:10 UTC] Codex — Release Heartbeat Landed Provider Job Detail Hook Fix
+- **Commit**: `ce291f3` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #151 for `agent/frontend-dev/dcp-210-provider-job-detail-hook-deps`, and landed it onto `main` via the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the provider job detail page hook dependency fix. No other qualifying unmerged branches remained in the visible top-of-feed queue after this merge.
+
+## [2026-03-31 22:08 UTC] Codex — Release Heartbeat Landed Audit Dedupe, Provider Hook Fix, And Growth KPI Export
+- **Commit**: `efcf1a2` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #148, #149, and #150, and landed `agent/backend-dev/dcp-280-security-audit-dedupe`, `agent/frontend-dev/dcp-209-provider-hook-deps`, and `agent/backend-dev/dcp-276-daily-growth-kpi` onto `main` via the clean release worktree. `dcp-209` only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy. The `dcp-276` frontend page changes had already been absorbed by earlier branches; this heartbeat merged the branch’s remaining analytics export tooling.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the admin payout audit de-duplication fix and tests, the provider dashboard hook dependency fix, and the daily growth KPI export/reporting tooling. The release queue is clear for the currently visible top-of-feed branches.
+
+## [2026-03-31 20:05 UTC] Codex — Release Heartbeat Landed Monitor Hook Fix And Left Analytics Branch Parked
+- **Commit**: `1ebfe9a` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #147 for `agent/frontend-dev/dcp-208-monitor-hook-deps`, and landed it onto `main` via the clean release worktree. `agent/backend-dev/dcp-276-daily-growth-kpi` was skipped again because its remaining diff is limited to analytics scripts/artifacts/docs and package metadata rather than backend route code, frontend app code, or tests.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the monitor page hook dependency fix. The daily growth KPI branch remains out of scope for release until it contains qualifying app/backend/test changes or release policy expands to include analytics tooling.
+
+## [2026-03-31 18:03 UTC] Codex — Release Heartbeat Landed Intelligence Hook Fix And Skipped Analytics-Only Branch
+- **Commit**: `ab6db76` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #146 for `agent/frontend-dev/dcp-207-intelligence-hook-deps`, and landed it onto `main` via the clean release worktree. The branch only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy. Skipped `agent/backend-dev/dcp-276-daily-growth-kpi` because its remaining diff was analytics scripts/artifacts/docs/package metadata rather than backend route code, frontend app code, or tests in the release merge scope.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the intelligence page hook dependency fix. The daily growth KPI branch should be revisited only if it grows into a qualifying code/test change or a release policy update explicitly expands the merge scope.
+
+## [2026-03-31 15:57 UTC] Codex — Release Heartbeat Landed V1 Rate-Limit Contract And Frontend Follow-Up Fixes
+- **Commit**: `2fda8b7` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for three qualifying branches, and landed `agent/backend-dev/dcp-265-v1-rate-limit-contract`, `agent/frontend-dev/dcp-206-admin-containers-hook-deps-v2`, and `agent/frontend-dev/dcp-269-first-request-ux-gap-fixes` onto `main` via the clean release worktree. The two frontend branches only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the `/v1` USD-string pricing/rate-limit contract hardening, the admin containers hook dependency fix, and the follow-up first-request UX gap closures on the homepage, quickstart, and renter registration surfaces.
+
+## [2026-03-31 15:27 UTC] Codex — Release Heartbeat Landed Provider Activation, Latency Ordering, Template Catalog, And Manifest Consumption
+- **Commit**: `fc7e202` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for four qualifying branches, and landed `agent/frontend-dev/dcp-245-provider-activation-pack`, `agent/backend-dev/dcp-262-latency-ordering`, `agent/frontend-dev/dcp-198-template-catalog-ui`, and `agent/backend-dev/dcp-260-manifest-consumer` onto `main` via the clean release worktree. `dcp-198` only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy. The older `agent/backend-dev/dcp-226-provider-reactivation-queue` branch was skipped again as stale duplicate work.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the provider activation narrative pack UI, latency-ranked renter provider availability, the renter template catalog UI, and instant-tier manifest consumption in the template deploy path. Release follow-up should continue skipping the stale DCP-226 duplicate unless it is rebased onto the already-landed schema-compatible lineage.
+
+## [2026-03-31 14:59 UTC] Codex — Release Heartbeat Landed Metering, First-Request Flow, And Runtime Parity Monitor
+- **Commit**: `d6a55ed` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for the three qualifying branches without PRs, and landed `agent/backend-dev/dcp-257-metering-ledger`, `agent/frontend-dev/dcp-249-first-request-flow`, and `agent/backend-dev/dcp-232-runtime-parity-monitor` onto `main` via the clean release worktree. `agent/backend-dev/dcp-234-payout-batch-generator` was also processed in this heartbeat and closed as merged because its commit became reachable from `main` through the broader runtime-parity branch. The only conflict encountered was `AGENT_LOG.md` on the runtime-parity merge, resolved by keeping `main` per release policy.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes OpenRouter ledger persistence for v1 metering, the renter 60-second first-request funnel, the runtime route parity monitor scheduler, and the payout batch generator artifacts carried by the runtime-parity merge. The older `agent/backend-dev/dcp-226-provider-reactivation-queue` branch remains stale duplicate work and should stay unmerged unless it is rebased onto the already-landed schema-compat path.
+
+## [2026-03-31 12:42 UTC] Codex — Release Heartbeat Landed Login, Containers, And Backend Test Fixes
+- **Commit**: `37cbea0` - Ran the next release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for the three remaining qualifying branches in the current top-twenty scan, and landed `agent/backend-dev/fix-next-backend-regression`, `agent/frontend-dev/dcp-207-login-hook-deps`, and `agent/frontend-dev/dcp-206-admin-containers-hook-deps-clean` onto `main` via the clean release worktree. The backend test branch merged cleanly; the two frontend merges only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the login hook dependency fix, the admin containers translation-callback dependency fix, and the hardened backend rate-limiter test coverage. The old `agent/backend-dev/dcp-226-provider-reactivation-queue` branch remains stale duplicate work and should stay unmerged unless it is rebased onto the already-landed schema-compat DCP-226 changes.
+
 ## [2026-03-31 12:08 UTC] Codex — Release Heartbeat Landed Activation Scorecard And Four Admin Hook Fixes
 - **Commit**: `b736088` - Ran the next release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for five qualifying branches, and landed `agent/backend-dev/dcp-219-activation-scorecard`, `agent/frontend-dev/dcp-199-admin-renter-detail-hook-deps`, `agent/frontend-dev/dcp-198-admin-renters-hook-deps`, `agent/frontend-dev/dcp-197-admin-providers-hook-deps`, and `agent/frontend-dev/dcp-196-admin-jobs-hook-deps` onto `main` via the clean release worktree. The backend scorecard branch merged cleanly; each frontend merge only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy.
 - **Files**: `AGENT_LOG.md`
@@ -7,6 +87,11 @@
 - **Commit**: `98e1062` - Ran the next release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs for five qualifying branches, and landed `agent/backend-dev/fix-admin-rate-limit-regressions`, `agent/backend-dev/dcp-220-backup-validation-routing`, `agent/frontend-dev/dcp-205-admin-settings-hook-deps`, `agent/frontend-dev/dcp-201-admin-job-detail-hook-deps`, and `agent/frontend-dev/dcp-200-admin-provider-detail-hook-deps` onto `main` via a clean release worktree. Backend merges applied cleanly; frontend merges only conflicted in `AGENT_LOG.md`, which was resolved by keeping `main` per release policy.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: `main` now includes the admin/rate-limit test stabilization, the vLLM backup-validation routing fix, and three additional admin hook dependency fixes. The still-open older branch `agent/backend-dev/dcp-226-provider-reactivation-queue` remains a stale duplicate and should stay unmerged unless rebased to preserve the already-landed schema-compat DCP-226 changes.
+
+## [2026-03-31 15:17 UTC] Codex — DCP-245 Provider Activation Narrative Pack Integrated (AR/EN)
+- **Commit**: `77c878e` - Added the missing source narrative pack doc path (`docs/marketing/provider-activation-saudi-energy-arbitrage-pack.md`) with EN core narrative, AR core narrative, source assumptions, and CTA flow; created a shared frontend narrative module for reuse; injected the narrative/assumptions/CTA blocks into all required provider surfaces (`register`, provider dashboard, activation card, onboarding wizard) with Arabic/English parity and explicit links to `/provider/register` and `/provider-onboarding`.
+- **Files**: `app/lib/provider-activation-narrative.ts`, `app/provider/components/ProviderActivationCard.tsx`, `app/provider/components/ProviderOnboardingWizard.tsx`, `app/provider/page.tsx`, `app/provider/register/page.tsx`, `docs/marketing/provider-activation-saudi-energy-arbitrage-pack.md`, `AGENT_LOG.md`
+- **Impact**: Provider-facing UX now consistently communicates activation ROI, objections handling, transparent assumptions, and a clear CTA flow in both EN/AR across the onboarding-critical screens. This unblocks CMO → frontend handoff scope for activation messaging continuity.
 
 ## [2026-03-31 11:00 UTC] Codex — Release Heartbeat Landed Four Agent Branches On Main
 - **Commit**: `598dfc1` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks) and created PRs for the first five qualifying branches. Landed `agent/frontend-dev/dcp-204-admin-security-hook-deps`, `agent/backend-dev/dcp-226-reactivation-queue-schema-compat`, `agent/frontend-dev/dcp-203-admin-jobs-detail-page-hook-deps`, and `agent/frontend-dev/dcp-202-admin-jobs-list-hook-deps` onto `main` via the release worktree, resolving only `AGENT_LOG.md` conflicts by keeping `main`. Skipped `agent/backend-dev/dcp-226-provider-reactivation-queue` because it was an older duplicate of the newer schema-compat DCP-226 branch and would have replayed stale changes on the same backend files.
@@ -32474,17 +32559,61 @@ a
 - **Files**: `backend/tests/integration/admin-endpoints.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
 - **Impact**: Mainline backend verification is now deterministic for these suites: targeted run `cd backend && npm test -- --runInBand tests/integration/admin-endpoints.test.js tests/integration/rate-limiting.test.js` passes `33/33`, preventing false negatives from schema drift and timing jitter.
 
-## [2026-03-31 12:53 UTC] Codex — DCP-234 Deterministic Provider Payout Batch Generator Shipped
-- **Commit**: `pending` - Added a deterministic payout-batch service + CLI from settlement ledger data with IBAN export, SHA256/HMAC signature support, ledger-total guardrails, edge-case tests (rounding, empty window, duplicate-provider aggregation), and generated reproducible artifacts under `docs/reports/finops/payout-batches/`.
-- **Files**: `backend/src/services/payoutBatchService.js`, `backend/src/scripts/generate-provider-payout-batch.js`, `backend/src/__tests__/payoutBatchService.test.js`, `backend/package.json`, `docs/ops/provider-payout-batch-generator.md`, `docs/reports/finops/payout-batches/payout-2026-03-01-2026-03-31-e3b0c44298fc.json`, `docs/reports/finops/payout-batches/payout-2026-03-01-2026-03-31-e3b0c44298fc.csv`, `AGENT_LOG.md`
-- **Impact**: FinOps now has a reproducible, deterministic payout-export command (`npm run payouts:generate-batch -- --window-start ... --window-end ...`) that emits signed JSON+CSV artifacts and enforces payout-total consistency against covered ledger rows.
+## [2026-03-31 12:08 UTC] Codex — Rate-Limiter Test Suite Stability Hardening
+- **Commit**: `pending` - Stabilized backend rate-limiter test suites by increasing integration-appropriate Jest timeouts and mocking noisy warning logs per test to prevent timeout flakiness under slower CI/runtime conditions.
+- **Files**: `backend/src/__tests__/rateLimiter.test.js`, `backend/tests/integration/rate-limiting.test.js`, `AGENT_LOG.md`
+- **Impact**: Rate-limit verification is now reliable in this environment; targeted command `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/rate-limiting.test.js` passes `23/23` without timeout regressions.
+## [2026-03-31 15:47 UTC] Codex - Enforce OpenRouter USD string pricing contract on v1 + settlement outputs
+- **Commit**: `pending` - Added deterministic USD-string pricing fields to `/v1/models`, `/v1/chat/completions` usage payloads (including SSE final chunks), and OpenRouter settlement admin response surfaces.
+- **Files**: `backend/src/lib/model-catalog-contract.js`, `backend/src/routes/v1.js`, `backend/src/routes/openrouter-settlement.js`, `backend/src/__tests__/v1-models.test.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-settlement.test.js`
+- **Impact**: Provider/OpenRouter integrations now receive explicit USD string pricing fields across model metadata and usage/settlement payloads; regression tests now fail on missing/non-string pricing contract fields.
 
-## [2026-03-31 14:21 UTC] Codex — DCP-232 Runtime Route Parity Monitor Implemented
-- **Commit**: `pending` - Added an automated runtime route parity monitor with code-contract declaration checks + live endpoint probes for `/api/providers/model-catalog`, `/v1/models`, and `/v1/chat/completions`, including JSON artifact output and threshold-based failure policy.
-- **Files**: `backend/src/services/runtimeRouteParityMonitor.js`, `backend/src/scripts/run-runtime-route-parity-monitor.js`, `backend/src/__tests__/runtimeRouteParityMonitor.test.js`, `backend/package.json`, `.github/workflows/runtime-route-parity-monitor.yml`, `docs/ops/runtime-route-parity-runbook.md`, `AGENT_LOG.md`
-- **Impact**: Reliability now has scheduled guardrails every 15 minutes in GitHub Actions with artifact upload and on-call triage guidance, preventing silent production/runtime route drift from shipping unnoticed.
+## [2026-03-31 18:13 UTC] Codex — DCP-208 Monitor Hook Dependency Fix
+- **Commit**: `pending` - Fixed monitor page hook dependency warning by including `router` in the `checkAll` callback dependency array.
+- **Files**: `app/monitor/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/monitor/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` require Suspense boundaries for `useSearchParams`.
 
-## [2026-03-31 14:24 UTC] Codex — DCP-232 Cadence Routed to PM2 Scheduler
-- **Commit**: `pending` - Routed the runtime route parity monitor cadence through PM2 (`dcp-runtime-route-parity-cron`) every 15 minutes in `backend/ecosystem.config.js` and updated the runbook execution section accordingly.
-- **Files**: `backend/ecosystem.config.js`, `docs/ops/runtime-route-parity-runbook.md`, `AGENT_LOG.md`
-- **Impact**: Route parity enforcement now runs on a production scheduler without relying on GitHub workflow write permissions, preserving continuous parity checks and artifact generation.
+## [2026-03-31 20:52 UTC] Codex — DCP-280 Payout Admin Audit De-duplication Shipped
+- **Commit**: `pending` - Enforced a single authoritative audit-write path for admin payout mutations by adding middleware opt-out for automatic request audit on payout routes and explicit route-level `logAdminAction` writes for approve/reject/paid transitions; added regression coverage proving one audit row per approve/reject mutation request.
+- **Files**: `backend/src/middleware/adminAuth.js`, `backend/src/routes/payouts.js`, `backend/src/__tests__/payouts-admin-audit-dedupe.test.js`, `backend/src/__tests__/payouts-reject-email.test.js`, `AGENT_LOG.md`
+- **Impact**: Admin payout approve/reject flows now emit exactly one `admin_audit_log` row with action/resource metadata and structured details, eliminating duplicate-event risk while keeping non-payout admin audit coverage intact. Verification: `cd backend && npm test -- --runInBand src/__tests__/payouts-admin-audit-dedupe.test.js src/__tests__/payouts-reject-email.test.js src/__tests__/adminAuth.test.js` passes (`19/19`).
+
+## [2026-03-31 22:17 UTC] Codex — DCP-210 Provider Job Detail Hook Dependency Fix
+- **Commit**: `pending` - Fixed provider job detail effect dependency warning by including translation function `t` in the data-loading `useEffect` dependency list.
+- **Files**: `app/provider/jobs/[id]/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/provider/jobs/[id]/page.tsx` passes cleanly. Full build still fails on existing unrelated prerender blockers for `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).
+
+## [2026-04-01 00:19 UTC] Codex — DCP-211 Renter Job Detail Hook Dependency Fixes
+- **Commit**: `pending` - Fixed renter job detail hook dependency warnings by adding `apiKey` to the streaming effect deps and adding translation function `t` to the polling effect deps.
+- **Files**: `app/renter/jobs/[id]/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Targeted lint run no longer reports hook-dependency warnings for this file; remaining warning is the existing `@next/next/no-img-element` at line 1221. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).
+
+## [2026-04-01 02:21 UTC] Codex — DCP-212 Renter Jobs Hook Dependency Fix
+- **Commit**: `pending` - Refactored renter jobs fetch routine to a stable `useCallback` and updated the polling `useEffect` dependency list to include `fetchJobs`, resolving exhaustive-deps warnings without changing runtime behavior.
+- **Files**: `app/renter/jobs/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/renter/jobs/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers at `/docs/quickstart` and `/renter/register` due to missing Suspense boundaries for `useSearchParams`.
+
+## [2026-04-01 04:24 UTC] Codex — DCP-213 Renter Dashboard Hook Dependency Fix
+- **Commit**: `pending` - Refactored renter dashboard auth verification flow by wrapping `verifyKey` in `useCallback` and binding the auth polling effect to that stable callback, resolving exhaustive-deps warnings.
+- **Files**: `app/renter/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/renter/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).
+
+## [2026-04-01 11:00 UTC] Codex - DCP-309 Persisted canonical vLLM/v1 usage evidence for billing and settlement
+- **Commit**: `pending` - Added durable request-level usage persistence for `/api/vllm/*` and `/v1/chat/completions` with metadata linkage (request, job, route, token-rate) and failure-safe behavior.
+- **Files**: `backend/src/routes/vllm.js`, `backend/src/routes/v1.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/db.js`, `backend/src/__tests__/vllm-metering-ledger.test.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-settlement.test.js`, `AGENT_LOG.md`
+- **Impact**: Canonical usage rows now persist for both vLLM API and v1 chat completion flows, including provider/renter/model/timestamp plus `job_id`, `request_path`, and `token_rate_halala`; write failures are logged without crashing inference responses; downstream settlement/reconciliation can query usage evidence directly from `openrouter_usage_ledger`.
+
+## [2026-04-01 13:05 UTC] Codex — Release heartbeat landed DCP-304, DCP-301, and DCP-309
+- **Commit**: `dd04499` - Ran the release heartbeat preflight from a clean clone, created PRs #159, #160, and #161 for the qualifying top-of-queue branches, merged `agent/frontend-dev/dcp-304-template-catalog-deploy` (`1a68387`) and `agent/backend-dev/dcp-301-v1-models-openrouter-schema` (`2068602`) directly, then rebased `agent/backend-dev/dcp-309-vllm-usage-persistence` onto the updated `main`, resolved the lone `AGENT_LOG.md` conflict by keeping `main`, force-pushed, and merged it as `dd04499`.
+- **Files**: `AGENT_LOG.md`, `app/renter/marketplace/templates/page.tsx`, `backend/src/routes/v1.js`, `backend/src/routes/vllm.js`, `backend/src/db.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/__tests__/v1-models.test.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `backend/src/__tests__/openrouter-settlement.test.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/vllm-metering-ledger.test.js`
+- **Impact**: `main` now includes the renter template catalog-to-deploy UX, the `/v1/models` OpenRouter schema parity fix, and canonical usage evidence persistence for vLLM/v1 settlement flows. PRs #159, #160, and #161 are already closed as merged; the next release heartbeat should continue from the remaining newer `agent/` branches, with the primary local checkout still avoided until its stale remote-tracking ref ownership issue is cleaned up.
+
+## [2026-04-01 17:13 UTC] Codex — Release heartbeat landed DCP-332, DCP-330, and DCP-320
+- **Commit**: `4efab8b` - Ran the release heartbeat preflight from a clean clone, created PRs #164, #165, and #166 for the qualifying backend branches, merged `agent/backend-dev/dcp-332-v1-reliability-scoreboard` directly as `0b5b1be`, then rebased `agent/backend-dev/dcp-330-provider-reactivation-export` and `agent/backend-dev/dcp-320-enterprise-rbac-audit` onto the updated `main`; `dcp-330` rebased cleanly, while `dcp-320` hit only the expected `AGENT_LOG.md` conflict, which was resolved by keeping `main` before force-pushing and merging the rebased branches as `034effc` and `4efab8b`.
+- **Files**: `AGENT_LOG.md`, `backend/ecosystem.config.js`, `backend/package.json`, `backend/src/scripts/generate-v1-reliability-scoreboard.js`, `backend/src/scripts/export-provider-reactivation-queue.js`, `backend/src/services/providerReactivationQueue.js`, `backend/src/db.js`, `backend/src/routes/renters.js`, `backend/src/__tests__/providerReactivationQueue.test.js`, `backend/tests/integration/renter-rbac-audit.test.js`, `docs/ops/v1-reliability-scoreboard-runbook.md`, `docs/reports/reliability/reliability-scoreboard-2026-04-01.json`, `docs/reports/reliability/reliability-scoreboard-2026-04-01.md`, `docs/reports/reliability/reliability-scoreboard-latest.json`, `docs/reports/reliability/reliability-scoreboard-latest.md`
+- **Impact**: `main` now includes scheduled `/v1` reliability scoreboard generation and artifacts, ranked provider reactivation queue export tooling, and org-scoped renter RBAC with audit coverage. PRs #164, #165, and #166 are already closed as merged; the next release heartbeat should continue from any newer `agent/` branches above the now-cleared queue.
+
+## [2026-04-01 19:16 UTC] Codex — Release heartbeat landed DCP-357, DCP-353, DCP-356, DCP-345, and DCP-335
+- **Commit**: `0f2b378` - Ran the release heartbeat preflight from a clean clone, capped processing to the first five qualifying branches, created PRs #167 through #171, and merged `agent/backend-dev/dcp-357-conversion-funnel-contract` (`642b633`), `agent/frontend-dev/dcp-353-homepage-intent-lane` (`232b13d`), `agent/backend-dev/dcp-356-provider-activation-state-api` (`53eb9a3`), `agent/backend-dev/dcp-345-tier-admission-checks` (`e78976a`), and `agent/frontend-dev/dcp-335-trust-center` (`0f2b378`) into `main`. The only merge conflict in the batch was `AGENT_LOG.md` while landing `dcp-353`; it was resolved by keeping `main` per release policy.
+- **Files**: `AGENT_LOG.md`, `backend/src/db.js`, `backend/src/routes/admin.js`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/services/conversionFunnelService.js`, `backend/tests/integration/conversion-funnel-contract.test.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/provider-activation-state.test.js`, `backend/tests/integration/docker-system.test.js`, `backend/installers/dc1_daemon.py`, `backend/artifacts/conversion-funnel/query-examples.sql`, `app/lib/i18n.tsx`, `app/page.tsx`, `app/trust-center/page.tsx`, `e2e/trust-center.spec.ts`, `docs/api/conversion-funnel-contract.md`, `docs/api/provider-activation-state.md`, `docs/api/README.md`
+- **Impact**: `main` now includes the unified provider+renter conversion funnel contract, the localized homepage intent-lane rewrite, the provider activation-state API, provider tier admission checks, and the EN/AR trust center page with e2e coverage. PRs #167, #168, #169, #170, and #171 are already closed as merged; `agent/backend-dev/dcp-343-reactivation-top10-republish` and `agent/backend-dev/dcp-336-audit-dedupe` remain queued because of the 5-PR heartbeat cap.

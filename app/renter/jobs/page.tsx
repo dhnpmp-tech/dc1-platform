@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
@@ -130,7 +130,7 @@ export default function RenterJobsPage() {
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
 
-  const fetchJobs = async (apiKey: string) => {
+  const fetchJobs = useCallback(async (apiKey: string) => {
     try {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(apiKey)}`)
       if (!res.ok) {
@@ -147,7 +147,7 @@ export default function RenterJobsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [router])
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_renter_key')
@@ -158,7 +158,7 @@ export default function RenterJobsPage() {
     fetchJobs(apiKey)
     const interval = setInterval(() => fetchJobs(apiKey), 30000)
     return () => clearInterval(interval)
-  }, [router])
+  }, [fetchJobs, router])
 
   const openRetryModal = (job: Job) => {
     setRetry({ job, loading: false, error: '', requiredHalala: Number(job.actual_cost_halala || 0) })

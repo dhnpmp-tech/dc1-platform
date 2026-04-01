@@ -14,11 +14,14 @@ function parseUseCases(value) {
 }
 
 function toUsdStringFromHalalaPerMinute(halalaPerMinute) {
-  const halala = Number(halalaPerMinute || 0);
+  return toUsdStringFromHalala(halalaPerMinute);
+}
+
+function toUsdStringFromHalala(halalaValue) {
+  const halala = Number(halalaValue || 0);
   if (!Number.isFinite(halala) || halala <= 0) return '0.000000';
-  const sarPerMinute = halala / 100;
-  const usdPerMinute = sarPerMinute / 3.75;
-  return usdPerMinute.toFixed(6);
+  const usd = halala / 375;
+  return usd.toFixed(6);
 }
 
 function inferModalitiesFromUseCases(useCases) {
@@ -87,6 +90,7 @@ function toCatalogContractCore({ model, providerCount = 0, maxVramGb = 0, create
 
 module.exports = {
   parseUseCases,
+  toUsdStringFromHalala,
   toUsdStringFromHalalaPerMinute,
   inferModalitiesFromUseCases,
   inferSupportedFeaturesFromUseCases,

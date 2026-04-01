@@ -124,6 +124,20 @@ module.exports = {
       }
     },
     {
+      name: 'dcp-v1-reliability-scoreboard-cron',
+      script: '/bin/sh',
+      args: '-lc "cd /root/dc1-platform/backend && node /root/dc1-platform/backend/src/scripts/generate-v1-reliability-scoreboard.js --output-dir docs/reports/reliability >> /root/dc1-platform/backend/logs/v1-reliability-scoreboard.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '15 2 * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production'
+      }
+    },
+    {
       // Provider health monitoring cron — 3-strike deactivation + auto-reactivation.
       name: 'dcp-provider-health-cron',
       script: '/bin/sh',

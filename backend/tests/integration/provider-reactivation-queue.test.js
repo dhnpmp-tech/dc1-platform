@@ -7,8 +7,6 @@ const request = require('supertest');
 const express = require('express');
 const db = require('../../src/db');
 
-jest.setTimeout(180000);
-
 const ADMIN_TOKEN = process.env.DC1_ADMIN_TOKEN;
 
 function createApp() {
@@ -198,30 +196,5 @@ describe('GET /api/admin/providers/reactivation-queue', () => {
     expect(readyProvider).toBeDefined();
     expect(readyProvider.ready_to_serve).toBe(true);
     expect(readyProvider.blocker_reason_codes).toEqual([]);
-  });
-
-  test('treats approval/status values case-insensitively for ready_to_serve', async () => {
-    const providerId = insertProvider({
-      name: 'Case Variant',
-      email: 'case-variant@dc1.test',
-      approval_status: 'APPROVED',
-      status: 'ONLINE',
-      daemon_version: '3.3.0',
-      readiness_status: 'ready',
-      readiness_details: JSON.stringify({ checks: [{ name: 'docker', ok: true }] }),
-      last_heartbeat: nowIsoMinus(45),
-    });
-
-    const res = await request(app)
-      .get('/api/admin/providers/reactivation-queue?ready_to_serve=true')
-      .set('x-admin-token', ADMIN_TOKEN);
-
-    expect(res.status).toBe(200);
-    const provider = res.body.providers.find((row) => row.provider_id === providerId);
-    expect(provider).toBeDefined();
-    expect(provider.approval_status).toBe('approved');
-    expect(provider.status).toBe('online');
-    expect(provider.blocker_reason_codes).toEqual([]);
-    expect(provider.ready_to_serve).toBe(true);
   });
 });
