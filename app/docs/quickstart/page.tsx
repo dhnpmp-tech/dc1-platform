@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -27,7 +28,7 @@ function CopyButton({ text }: { text: string }) {
 function CodeBlock({ code }: { code: string }) {
   return (
     <div className="relative mt-3">
-      <pre className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 pr-16 text-xs text-dc1-text-secondary leading-relaxed max-w-full whitespace-pre-wrap break-words">
+      <pre dir="ltr" className="overflow-x-auto rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3 pr-16 text-left text-xs text-dc1-text-secondary leading-relaxed max-w-full whitespace-pre-wrap break-words">
         {code}
       </pre>
       <CopyButton text={code} />
@@ -112,7 +113,7 @@ const copy = {
       title: 'I am integrating API',
       desc: 'Use auth and endpoint contracts for production-safe integration.',
       cta: 'Open API integration start',
-      href: '/docs/api',
+      href: '/docs/api/openrouter-60s-quickstart',
     },
   ],
   sdkHeading: 'SDK Quickstarts (Node, Python, CLI)',
@@ -237,7 +238,7 @@ const copy = {
       title: 'أنا أدمج API',
       desc: 'ابدأ بالمصادقة وخرائط النقاط النهائية لتكامل إنتاجي آمن.',
       cta: 'افتح بداية تكامل API',
-      href: '/docs/api',
+      href: '/docs/api/openrouter-60s-quickstart',
     },
   ],
     sdkHeading: 'أدلة SDK السريعة (Node وPython وCLI)',
@@ -496,15 +497,18 @@ export API_BASE="https://dcp.sa/api/dc1"`,
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function QuickstartPage() {
   const { language, setLanguage, t: tr } = useLanguage()
+  const searchParams = useSearchParams()
   const isRTL = language === 'ar'
   const t = copy[language]
   const [activeSdk, setActiveSdk] = useState<SdkKey>('node')
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
+  const hasTrackedQuickstartView = useRef(false)
+  const source = searchParams.get('source') || 'direct'
 
   const trackQuickstartEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
-    const detail = { event, source: 'docs_quickstart', ...payload }
+    const detail = { event, surface: 'docs_quickstart', ...payload }
     window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
     const win = window as typeof window & {
       dataLayer?: Array<Record<string, unknown>>
@@ -517,6 +521,16 @@ export default function QuickstartPage() {
       win.gtag('event', event, detail)
     }
   }, [])
+
+  useEffect(() => {
+    if (hasTrackedQuickstartView.current) return
+    hasTrackedQuickstartView.current = true
+    trackQuickstartEvent('quickstart_page_view', {
+      page: 'quickstart',
+      locale: language,
+      source,
+    })
+  }, [language, source, trackQuickstartEvent])
 
   const sdkCards = useMemo<Record<SdkKey, SdkCard>>(() => {
     return {

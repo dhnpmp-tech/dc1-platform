@@ -37,6 +37,7 @@ const {
 } = require('../services/job-execution-logs');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 const { normalizeProviderOs } = require('../lib/provider-os');
+const { toCatalogContractCore } = require('../lib/model-catalog-contract');
 const { validateBody } = require('../middleware/validate');
 const { providerRegisterSchema, providerBenchmarkSchema } = require('../schemas/providers.schema');
 const analytics = require('../services/analyticsService');
@@ -3669,35 +3670,21 @@ function extractOptionalCatalogFields(rawModelMetadata, canonicalModelId) {
 
 function toModelCatalogContractItem({ model, providerCount, maxVramGb, sourceMetadata }) {
     const modelId = String(model.model_id || '').trim();
-    const useCases = parseUseCases(model.use_cases);
-    const modalities = inferModalitiesFromUseCases(useCases);
-    const supportedFeatures = inferSupportedFeaturesFromUseCases(useCases);
-    const contextWindow = Number(model.context_window) > 0 ? Number(model.context_window) : 4096;
-    const maxOutputTokens = Math.max(512, Math.min(16384, Math.floor(contextWindow / 2)));
-    const usdPerMinute = toUsdStringFromHalalaPerMinute(model.default_price_halala_per_min);
+    const contractCore = toCatalogContractCore({
+        model,
+        providerCount,
+        maxVramGb,
+        created: model.created_at ? Math.floor(new Date(model.created_at).getTime() / 1000) : null,
+        nameFallback: toDisplayName(modelId),
+    });
     const optionalFields = extractOptionalCatalogFields(sourceMetadata, modelId);
-
     const payload = {
-        id: modelId,
-        name: model.display_name || toDisplayName(modelId),
-        created: model.created_at || new Date().toISOString(),
-        modalities,
-        context_length: contextWindow,
-        max_output_tokens: maxOutputTokens,
-        quantization: model.quantization || 'unknown',
-        pricing: {
-            usd_per_minute: usdPerMinute,
-            usd_per_1m_input_tokens: usdPerMinute,
-            usd_per_1m_output_tokens: usdPerMinute,
-        },
+        ...contractCore,
         sampling_parameters: {
             temperature: { min: 0, max: 2, default: 0.7 },
             top_p: { min: 0, max: 1, default: 1 },
             top_k: { min: 1, max: 200, default: 50 },
         },
-        supported_features: supportedFeatures,
-        provider_count: providerCount,
-        max_vram_gb: Number((maxVramGb || Number(model.vram_gb) || 0).toFixed(1)),
     };
 
     if (optionalFields.deprecation_date) payload.deprecation_date = optionalFields.deprecation_date;
@@ -3713,7 +3700,7 @@ function toModelCatalogContractItem({ model, providerCount, maxVramGb, sourceMet
 router.get('/model-catalog', (req, res) => {
     try {
         const activeModels = db.all(
-            `SELECT model_id, display_name, quantization, context_window, default_price_halala_per_min, vram_gb, created_at
+            `SELECT model_id, display_name, quantization, context_window, default_price_halala_per_min, vram_gb, created_at, use_cases
              FROM model_registry
              WHERE is_active = 1`
         );
@@ -3897,6 +3884,58 @@ function computeReputationTier({ uptimePct, successRate, totalJobs }) {
     return 'new';
 }
 
+function normalizeLatencyMs(rawValue) {
+    if (rawValue == null || rawValue === '') return null;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) return null;
+    return Math.round(parsed * 10) / 10;
+}
+
+function toLatencyContract(row, heartbeatAgeSeconds = null) {
+    const benchmarkLatencyMs = normalizeLatencyMs(row?.best_latency_ms);
+    if (benchmarkLatencyMs != null) {
+        return {
+            latency_ms: benchmarkLatencyMs,
+            latency_source: 'benchmark',
+            latency_sample_count: Number(row?.latency_sample_count || 0),
+            latency_measured_at: row?.latest_latency_completed_at || null,
+            latency_sort_ms: benchmarkLatencyMs,
+        };
+    }
+
+    if (Number.isFinite(heartbeatAgeSeconds) && heartbeatAgeSeconds >= 0) {
+        const fallbackLatencyMs = normalizeLatencyMs(heartbeatAgeSeconds * 1000);
+        return {
+            latency_ms: fallbackLatencyMs,
+            latency_source: 'heartbeat_age',
+            latency_sample_count: 0,
+            latency_measured_at: null,
+            latency_sort_ms: fallbackLatencyMs,
+        };
+    }
+
+    return {
+        latency_ms: null,
+        latency_source: 'none',
+        latency_sample_count: 0,
+        latency_measured_at: null,
+        latency_sort_ms: Number.POSITIVE_INFINITY,
+    };
+}
+
+function compareByLatencyThenDeterministic(a, b) {
+    const latencyDelta = (a.latency_sort_ms ?? Number.POSITIVE_INFINITY) - (b.latency_sort_ms ?? Number.POSITIVE_INFINITY);
+    if (latencyDelta !== 0) return latencyDelta;
+
+    const reputationDelta = (b.reputation_score ?? 100) - (a.reputation_score ?? 100);
+    if (reputationDelta !== 0) return reputationDelta;
+
+    const uptimeDelta = (b.uptime_pct ?? 0) - (a.uptime_pct ?? 0);
+    if (uptimeDelta !== 0) return uptimeDelta;
+
+    return (a.id ?? 0) - (b.id ?? 0);
+}
+
 // ============================================================================
 // GET /api/providers/active — Authenticated view of online-only providers
 // Requires: Authorization: Bearer <renter_api_key|provider_api_key>
@@ -3940,7 +3979,10 @@ router.get('/active', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3956,6 +3998,15 @@ router.get('/active', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
                    AND COALESCE(p.approval_status, 'pending') = 'approved'
                  ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
@@ -3973,7 +4024,10 @@ router.get('/active', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3989,6 +4043,15 @@ router.get('/active', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
                  ORDER BY p.id DESC`
             );
@@ -3998,6 +4061,7 @@ router.get('/active', (req, res) => {
         const mapped = providers.reduce((acc, p) => {
             const { status: computedStatus, heartbeat_age_seconds } =
                 computeProviderStatus(p.last_heartbeat, now);
+            const latency = toLatencyContract(p, heartbeat_age_seconds);
 
             // /active returns only fully-online providers (not degraded)
             if (computedStatus !== 'online') return acc;
@@ -4066,13 +4130,18 @@ router.get('/active', (req, res) => {
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
                 cached_models: cachedModels,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
                 cost_rates_halala_per_min: COST_RATES,
             });
 
             return acc;
         }, []);
 
-        mapped.sort((a, b) => (b.reputation_score ?? 100) - (a.reputation_score ?? 100));
+        mapped.sort(compareByLatencyThenDeterministic);
 
         res.json({
             providers: mapped,
@@ -4104,7 +4173,10 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -4120,6 +4192,15 @@ router.get('/available', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
                    AND COALESCE(p.approval_status, 'pending') = 'approved'
                  ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
@@ -4138,7 +4219,10 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -4154,6 +4238,15 @@ router.get('/available', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
                  ORDER BY p.id DESC`
             );
@@ -4163,6 +4256,7 @@ router.get('/available', (req, res) => {
         const mapped = providers.reduce((acc, p) => {
             const { status: computedStatus, heartbeat_age_seconds, degraded_since } =
                 computeProviderStatus(p.last_heartbeat, now);
+            const latency = toLatencyContract(p, heartbeat_age_seconds);
 
             // Exclude truly offline providers from the marketplace listing
             if (computedStatus === 'offline') return acc;
@@ -4230,17 +4324,21 @@ router.get('/available', (req, res) => {
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
                 cached_models: cachedModels,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
                 // Pricing (halala per minute by job type)
                 cost_rates_halala_per_min: COST_RATES,
             });
 
             return acc;
         }, []);
-
         // Degrade sort: online providers first, then degraded, both sub-sorted by reputation
         mapped.sort((a, b) => {
             if (a.status !== b.status) return a.status === 'online' ? -1 : 1;
-            return (b.reputation_score ?? 100) - (a.reputation_score ?? 100);
+            return compareByLatencyThenDeterministic(a, b);
         });
 
         res.json({
@@ -4265,11 +4363,15 @@ router.get('/marketplace', (req, res) => {
         const defaultRateHalalaPerHour = 500;
         const providers = db.all(
             `SELECT p.id, p.gpu_model, p.gpu_name_detected, p.gpu_vram_mib, p.vram_gb, p.uptime_percent, p.total_jobs, p.created_at,
+                    p.last_heartbeat, p.reputation_score,
                     gp.rate_halala AS marketplace_rate_halala,
                     COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                     COALESCE(js.completed_jobs, 0) AS completed_jobs,
                     COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                    COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                    COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                    bl.best_latency_ms,
+                    bl.latest_latency_completed_at,
+                    COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
              FROM providers p
              LEFT JOIN gpu_pricing gp
                ON LOWER(TRIM(gp.gpu_model)) = LOWER(TRIM(COALESCE(p.gpu_name_detected, p.gpu_model)))
@@ -4287,6 +4389,15 @@ router.get('/marketplace', (req, res) => {
                 FROM jobs
                 GROUP BY provider_id
              ) js ON js.provider_id = p.id
+             LEFT JOIN (
+                SELECT provider_id,
+                       MIN(latency_ms) AS best_latency_ms,
+                       MAX(completed_at) AS latest_latency_completed_at,
+                       COUNT(*) AS latency_sample_count
+                FROM benchmark_runs
+                WHERE status = 'completed' AND latency_ms IS NOT NULL
+                GROUP BY provider_id
+             ) bl ON bl.provider_id = p.id
              WHERE p.status = 'online' AND COALESCE(p.is_paused, 0) = 0
                AND COALESCE(p.approval_status, 'pending') = 'approved'
              ORDER BY COALESCE(p.reputation_score, 0) DESC, p.id DESC`
@@ -4310,6 +4421,10 @@ router.get('/marketplace', (req, res) => {
                 successRate: jobSuccessRate,
                 totalJobs,
             });
+            const heartbeatAgeSeconds = p.last_heartbeat
+                ? Math.max(0, Math.floor((Date.now() - new Date(p.last_heartbeat).getTime()) / 1000))
+                : null;
+            const latency = toLatencyContract(p, heartbeatAgeSeconds);
 
             const rateHalalaPerHour = Number.isInteger(p.marketplace_rate_halala)
                 ? p.marketplace_rate_halala
@@ -4326,8 +4441,16 @@ router.get('/marketplace', (req, res) => {
                 job_success_rate: jobSuccessRate,
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
+                reputation_score: p.reputation_score ?? 0,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
             };
         });
+
+        payload.sort(compareByLatencyThenDeterministic);
 
         res.json(payload);
     } catch (error) {
@@ -4839,6 +4962,16 @@ router.get('/:id/health', (req, res) => {
 // Minimum hardware requirements for provider activation
 const ACTIVATION_MIN_VRAM_GB = 8;
 const ACTIVATION_MIN_TFLOPS = 10;
+const ACTIVATION_STALE_HEARTBEAT_SECONDS = Number(process.env.DC1_ACTIVATION_STALE_HEARTBEAT_SECONDS || 300);
+const ACTIVATION_MIN_COMPUTE_CAPABILITY = Number(process.env.DC1_ACTIVATION_MIN_COMPUTE_CAPABILITY || 6.0);
+const ACTIVATION_BLOCKER_CODES = Object.freeze({
+    KEY_AUTH_MISMATCH: 'KEY_AUTH_MISMATCH',
+    KEY_AUTH_INTEGRITY: 'KEY_AUTH_INTEGRITY',
+    DAEMON_NOT_SEEN: 'DAEMON_NOT_SEEN',
+    STALE_HEARTBEAT: 'STALE_HEARTBEAT',
+    MISSING_TIER_IMAGE: 'MISSING_TIER_IMAGE',
+    INVALID_GPU_CAPABILITY: 'INVALID_GPU_CAPABILITY',
+});
 
 // Provider event emitter for downstream consumers (e.g. job dispatcher DCP-738)
 const _providerEventEmitter = new (require('events'))();
@@ -4871,6 +5004,88 @@ function ensureProviderBenchmarksTable() {
             FOREIGN KEY (provider_id) REFERENCES providers(id)
         )
     `).run();
+}
+
+function parseActivationCachedModels(raw) {
+    if (!raw) return [];
+    try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map((entry) => {
+            if (typeof entry === 'string') return entry;
+            if (entry && typeof entry === 'object' && typeof entry.model_id === 'string') return entry.model_id;
+            return null;
+        }).filter(Boolean);
+    } catch (_) {
+        return [];
+    }
+}
+
+function parseActivationComputeCapability(raw) {
+    if (raw == null) return null;
+    const parsed = Number.parseFloat(String(raw).trim());
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildProviderActivationScorecard(provider, opts = {}) {
+    const {
+        authKeyProvided = true,
+        authKeyMatched = true,
+        nowMs = Date.now(),
+    } = opts;
+
+    const checks = {
+        key_auth_match: Boolean(authKeyProvided && authKeyMatched),
+        auth_key_integrity: false,
+        daemon_seen: false,
+        heartbeat_fresh: false,
+        tier_image_available: true,
+        gpu_capability_fit: true,
+    };
+
+    if (provider) {
+        checks.auth_key_integrity = Boolean(normalizeString(provider.api_key, { maxLen: 128, trim: false }));
+        checks.daemon_seen = Boolean(
+            normalizeString(provider.daemon_version, { maxLen: 32 }) ||
+            provider.last_heartbeat ||
+            provider.gpu_status
+        );
+
+        const heartbeatAt = provider.last_heartbeat ? new Date(provider.last_heartbeat).getTime() : null;
+        if (Number.isFinite(heartbeatAt)) {
+            const ageSeconds = Math.max(0, Math.floor((nowMs - heartbeatAt) / 1000));
+            checks.heartbeat_fresh = ageSeconds <= ACTIVATION_STALE_HEARTBEAT_SECONDS;
+        }
+
+        const preloadModel = normalizeString(provider.model_preload_model, { maxLen: 200 });
+        const preloadStatus = (normalizeString(provider.model_preload_status, { maxLen: 32 }) || 'none').toLowerCase();
+        const cachedModels = parseActivationCachedModels(provider.cached_models);
+        if (preloadModel) {
+            const hasModel = cachedModels.some((model) => String(model).toLowerCase() === preloadModel.toLowerCase());
+            checks.tier_image_available = hasModel && preloadStatus !== 'downloading' && preloadStatus !== 'warming';
+        }
+
+        const computeCapability = parseActivationComputeCapability(provider.gpu_compute_capability);
+        if (provider.gpu_compute_capability != null && String(provider.gpu_compute_capability).trim() !== '') {
+            checks.gpu_capability_fit = computeCapability != null && computeCapability >= ACTIVATION_MIN_COMPUTE_CAPABILITY;
+        }
+    }
+
+    const blockers = [];
+    if (!checks.key_auth_match) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_MISMATCH, message: 'API key does not match provider' });
+    if (!checks.auth_key_integrity) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_INTEGRITY, message: 'Provider API key integrity check failed' });
+    if (!checks.daemon_seen) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.DAEMON_NOT_SEEN, message: 'No daemon activity detected' });
+    if (!checks.heartbeat_fresh) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.STALE_HEARTBEAT, message: 'Heartbeat is stale or missing' });
+    if (!checks.tier_image_available) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.MISSING_TIER_IMAGE, message: 'Required tier image is not ready' });
+    if (!checks.gpu_capability_fit) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.INVALID_GPU_CAPABILITY, message: 'GPU capability is below serving requirement' });
+
+    return {
+        provider_id: provider?.id || null,
+        ready_to_serve: blockers.length === 0,
+        checks,
+        blockers,
+        generated_at: new Date(nowMs).toISOString(),
+    };
 }
 
 function activateProviderById(providerId) {
@@ -5166,6 +5381,83 @@ module.exports.__private = {
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,
 };
+
+// ============================================================================
+// GET /api/providers/activation-scorecard — provider readiness scorecard
+// ============================================================================
+// Auth:
+//  - Admin: can request one provider (?provider_id=) or fleet view (no provider_id)
+//  - Provider: requires x-provider-key/Bearer and returns own scorecard
+router.get('/activation-scorecard', (req, res) => {
+    try {
+        const providerId = normalizeString(req.query.provider_id, { maxLen: 128, trim: true });
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req) || req.query.key,
+            { maxLen: 128, trim: false }
+        );
+        const admin = isAdminRequest(req);
+
+        if (!admin && !apiKey) {
+            return res.status(401).json({
+                ready_to_serve: false,
+                blockers: [{ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_MISMATCH, message: 'Provider API key required' }],
+            });
+        }
+
+        if (admin && !providerId) {
+            const providers = db.all(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE deleted_at IS NULL
+                 ORDER BY updated_at DESC, id DESC
+                 LIMIT 500`
+            );
+            const scorecards = providers.map((provider) => buildProviderActivationScorecard(provider, { authKeyProvided: true, authKeyMatched: true }));
+            return res.json({
+                count: scorecards.length,
+                ready_count: scorecards.filter((entry) => entry.ready_to_serve).length,
+                blocked_count: scorecards.filter((entry) => !entry.ready_to_serve).length,
+                providers: scorecards,
+                generated_at: new Date().toISOString(),
+            });
+        }
+
+        const targetProvider = providerId
+            ? db.get(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE id = ? AND deleted_at IS NULL`,
+                providerId
+            )
+            : db.get(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE api_key = ? AND deleted_at IS NULL`,
+                apiKey
+            );
+
+        if (!targetProvider) {
+            return res.status(404).json({ error: 'Provider not found' });
+        }
+
+        const authKeyMatched = admin || String(targetProvider.api_key || '') === String(apiKey || '');
+        const scorecard = buildProviderActivationScorecard(targetProvider, {
+            authKeyProvided: Boolean(apiKey) || admin,
+            authKeyMatched,
+        });
+
+        if (!scorecard.checks.key_auth_match) {
+            return res.status(401).json(scorecard);
+        }
+        return res.json(scorecard);
+    } catch (error) {
+        console.error('[providers/activation-scorecard GET]', error);
+        return res.status(500).json({ error: 'Failed to build activation scorecard', details: error.message });
+    }
+});
 
 // ============================================================================
 // GET /api/providers/self-test — Provider readiness validation (DCP-802)

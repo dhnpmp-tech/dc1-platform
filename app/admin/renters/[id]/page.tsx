@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
@@ -55,12 +55,7 @@ export default function RenterDetailPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    fetchData()
-  }, [id])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       const res = await fetch(`${API_BASE}/admin/renters/${id}`, { headers: { 'x-admin-token': token || '' } })
@@ -71,7 +66,12 @@ export default function RenterDetailPage() {
       setStats(data.stats || {})
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
-  }
+  }, [id, router, token])
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return }
+    fetchData()
+  }, [fetchData, router, token])
 
   const handleAction = async (action: 'suspend' | 'unsuspend') => {
     setActionLoading(true)
