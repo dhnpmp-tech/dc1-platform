@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
@@ -122,7 +122,7 @@ export default function HomePage() {
   const onlineProviders = detailedHealth?.providers?.online ?? null
   const showZeroSupplyFallback = onlineProviders === 0
 
-  const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
+  const trackLandingEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
     const detail = {
       event,
@@ -144,7 +144,7 @@ export default function HomePage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }
+  }, [selectedIntent])
 
   const updateIntent = (intent: RoleIntent, source: string, selectionType: string) => {
     const previousIntent = selectedIntent
@@ -280,7 +280,7 @@ export default function HomePage() {
 
     observer.observe(node)
     return () => observer.disconnect()
-  }, [])
+  }, [trackLandingEvent])
 
   const liveStats = [
     { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },

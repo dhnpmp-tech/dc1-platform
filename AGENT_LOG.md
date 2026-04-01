@@ -1,3 +1,8 @@
+## [2026-04-01 20:41 UTC] Codex — DCP-358 Homepage Billing Explainer Hook Dependency Fix
+- **Commit**: `pending` - Stabilized homepage analytics tracking by memoizing `trackLandingEvent` with `useCallback` and adding it to the billing-explainer `useEffect` dependency list to satisfy exhaustive-deps without changing analytics payload contracts.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Landing page billing-explainer tracking now passes hook dependency lint checks and remains tied to current role intent state. Verification: `npm run lint -- --file app/page.tsx` (passes with existing `@next/next/no-img-element` warning only).
+
 ## [2026-04-01 18:45 UTC] Codex — DCP-357 Unified Conversion Funnel Contract + Attribution Report
 - **Commit**: `73d2621` - Added a canonical provider+renter conversion funnel contract (`view -> register -> first_action -> first_success`) with durable event storage, per-actor stage dedupe, EN/AR locale normalization, source-surface/channel attribution capture, and an admin report endpoint for funnel/conversion completeness.
 - **Files**: `backend/src/db.js`, `backend/src/services/conversionFunnelService.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/conversion-funnel-contract.test.js`, `backend/artifacts/conversion-funnel/query-examples.sql`, `docs/api/conversion-funnel-contract.md`, `AGENT_LOG.md`
