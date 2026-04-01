@@ -4,7 +4,7 @@
 - **Impact**: OpenRouter parity blockers around tool/tool_choice passthrough and stream termination stability are now regression-covered in integration tests for non-stream, stream, fallback, and tool payload cases. Verification: `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js` (`7/7` passing).
 
 ## [2026-04-01 04:16 UTC] Codex — Release Heartbeat Landed OpenRouter SSE Parity And Renter Jobs Hook Fix
-- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #154 and #155, and landed `agent/backend-dev/dcp-282-openrouter-tool-sse-parity` plus `agent/frontend-dev/dcp-212-renter-jobs-hook-deps` onto `main` via the clean release worktree.
+- **Commit**: `c17424a` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #154 and #155, and landed `agent/backend-dev/dcp-282-openrouter-tool-sse-parity` plus `agent/frontend-dev/dcp-212-renter-jobs-hook-deps` onto `main` via the clean release worktree.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: `main` now includes the `/v1` OpenRouter tool/SSE parity fix with updated integration coverage and the renter jobs page hook dependency fix. No other qualifying unmerged branches remained in the visible queue after these merges.
 
