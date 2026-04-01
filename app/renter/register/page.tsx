@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
@@ -14,7 +14,7 @@ interface RegistrationResult {
   message: string
 }
 
-export default function RenterRegisterPage() {
+function RenterRegisterPageInner() {
   const { t, language } = useLanguage()
   const searchParams = useSearchParams()
   const isRTL = language === 'ar'
@@ -783,5 +783,13 @@ export default function RenterRegisterPage() {
       </main>
       <Footer />
     </>
+  )
+}
+
+export default function RenterRegisterPage() {
+  return (
+    <Suspense>
+      <RenterRegisterPageInner />
+    </Suspense>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import Header from '../../components/layout/Header'
@@ -495,7 +495,7 @@ export API_BASE="https://dcp.sa/api/dc1"`,
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function QuickstartPage() {
+function QuickstartPageInner() {
   const { language, setLanguage, t: tr } = useLanguage()
   const searchParams = useSearchParams()
   const isRTL = language === 'ar'
@@ -861,5 +861,13 @@ export default function QuickstartPage() {
 
       <Footer />
     </div>
+  )
+}
+
+export default function QuickstartPage() {
+  return (
+    <Suspense>
+      <QuickstartPageInner />
+    </Suspense>
   )
 }
