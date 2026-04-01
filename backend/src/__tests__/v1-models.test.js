@@ -37,6 +37,7 @@ describe('v1 models route', () => {
       .mockImplementationOnce(() => ([
         { name: 'model_id' },
         { name: 'display_name' },
+        { name: 'family' },
         { name: 'context_window' },
         { name: 'min_gpu_vram_gb' },
         { name: 'use_cases' },
@@ -46,10 +47,14 @@ describe('v1 models route', () => {
         {
           model_id: 'fallback-model',
           display_name: 'Fallback Model',
+          family: 'mistral',
           context_window: 4096,
           min_gpu_vram_gb: 8,
           use_cases: '[]',
         },
+      ]))
+      .mockImplementationOnce(() => ([
+        { model: '__default__', token_rate_halala: 2 },
       ]));
 
     const res = await request(app).get('/v1/models');
@@ -60,12 +65,24 @@ describe('v1 models route', () => {
     expect(res.body.data[0].id).toBe('fallback-model');
     expect(res.body.data[0]).toHaveProperty('parameter_count', null);
     expect(res.body.data[0].pricing).toEqual({
+      prompt_tokens: expect.any(String),
+      completion_tokens: expect.any(String),
       usd_per_minute: expect.any(String),
       usd_per_1m_input_tokens: expect.any(String),
       usd_per_1m_output_tokens: expect.any(String),
     });
+    expect(res.body.data[0].description).toEqual(expect.any(String));
+    expect(res.body.data[0].architecture).toEqual({
+      tokenizer: 'mistral',
+      instruct_type: 'instruct',
+      modality: 'text',
+    });
+    expect(res.body.data[0].endpoints).toEqual([
+      { url: expect.stringMatching(/\/v1\/chat\/completions$/), type: 'chat' },
+    ]);
+    expect(res.body.data[0].provider_priority).toEqual(['dcp']);
     expect(typeof res.body.data[0].pricing.usd_per_minute).toBe('string');
-    expect(mockDb.all).toHaveBeenCalledTimes(2);
+    expect(mockDb.all).toHaveBeenCalledTimes(3);
   });
 
   test('fills safe defaults for legacy model_registry schemas', async () => {
@@ -82,6 +99,9 @@ describe('v1 models route', () => {
           context_window: 4096,
           parameter_count: null,
         },
+      ]))
+      .mockImplementationOnce(() => ([
+        { model: '__default__', token_rate_halala: 1 },
       ]));
 
     const res = await request(app).get('/v1/models');
@@ -93,9 +113,16 @@ describe('v1 models route', () => {
     expect(res.body.data[0].context_window).toBe(4096);
     expect(res.body.data[0].parameter_count).toBeNull();
     expect(res.body.data[0].pricing).toEqual({
+      prompt_tokens: expect.any(String),
+      completion_tokens: expect.any(String),
       usd_per_minute: expect.any(String),
       usd_per_1m_input_tokens: expect.any(String),
       usd_per_1m_output_tokens: expect.any(String),
+    });
+    expect(res.body.data[0].architecture).toEqual({
+      tokenizer: 'dcp',
+      instruct_type: 'instruct',
+      modality: 'text',
     });
   });
 

@@ -133,6 +133,7 @@ function buildModelRegistryListQuery(columns) {
   const selectColumns = [
     'model_id',
     columns.has('display_name') ? 'display_name' : 'model_id AS display_name',
+    columns.has('family') ? 'family' : "NULL AS family",
     columns.has('created_at') ? 'created_at' : 'NULL AS created_at',
     columns.has('context_window') ? 'context_window' : '4096 AS context_window',
     columns.has('quantization') ? 'quantization' : "'unknown' AS quantization",
@@ -167,6 +168,28 @@ function buildModelRequirementsQuery(columns) {
   return `SELECT ${selectColumns.join(', ')} FROM model_registry WHERE model_id = ?${whereActive}`;
 }
 
+function buildEndpointUrl(req) {
+  const configured = normalizeString(process.env.OPENROUTER_PROVIDER_ENDPOINT_URL, { maxLen: 400, trim: true });
+  if (configured) return configured;
+  const host = normalizeString(req.get('host'), { maxLen: 200, trim: true }) || 'localhost:8083';
+  const proto = normalizeString(req.get('x-forwarded-proto'), { maxLen: 16, trim: true }) || req.protocol || 'http';
+  return `${proto}://${host}/v1/chat/completions`;
+}
+
+function buildModelDescription(row, contractCore) {
+  const useCases = Array.isArray(contractCore?.supported_features) ? contractCore.supported_features.join(', ') : 'chat.completions';
+  const modelName = normalizeString(row?.display_name, { maxLen: 200 }) || normalizeString(row?.model_id, { maxLen: 200 }) || 'Model';
+  return `${modelName} hosted by DCP for ${useCases}.`;
+}
+
+function resolveTokenizerFamily(row) {
+  const family = normalizeString(row?.family, { maxLen: 80 }) || '';
+  const modelId = normalizeString(row?.model_id, { maxLen: 200 }) || '';
+  if (family) return family.toLowerCase();
+  if (modelId.includes('/')) return modelId.split('/')[0].toLowerCase();
+  return 'dcp';
+}
+
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
 
 router.get('/models', (req, res) => {
@@ -183,7 +206,21 @@ router.get('/models', (req, res) => {
       if (!isMissingModelRegistryError(error)) throw error;
     }
 
+    const tokenRateRows = db.all(
+      `SELECT model, token_rate_halala
+         FROM cost_rates
+        WHERE is_active = 1`
+    );
+    const tokenRateByModel = new Map();
+    for (const row of tokenRateRows || []) {
+      const modelKey = normalizeString(row?.model, { maxLen: 200 });
+      const tokenRate = toFiniteInt(row?.token_rate_halala, { min: 0, max: 100_000_000 });
+      if (!modelKey || tokenRate == null) continue;
+      tokenRateByModel.set(modelKey, tokenRate);
+    }
+
     const nowSecs = Math.floor(Date.now() / 1000);
+    const endpointUrl = buildEndpointUrl(req);
     const data = (rows || []).map((row) => {
       const contractCore = toCatalogContractCore({
         model: row,
@@ -191,7 +228,23 @@ router.get('/models', (req, res) => {
         maxVramGb: Number(row.vram_gb || row.min_gpu_vram_gb || 0),
         created: nowSecs,
       });
+      const tokenRateHalala = tokenRateByModel.get(row.model_id) ?? tokenRateByModel.get('__default__') ?? 1;
+      const usdPerToken = toUsdStringFromHalala(tokenRateHalala);
+      const architecture = {
+        tokenizer: resolveTokenizerFamily(row),
+        instruct_type: 'instruct',
+        modality: 'text',
+      };
 
+      // OpenRouter provider model contract shape:
+      // {
+      //   id, name, description,
+      //   pricing: { prompt_tokens, completion_tokens, ... },
+      //   context_length,
+      //   architecture: { tokenizer, instruct_type|modality },
+      //   endpoints: [{ url, type }],
+      //   provider_priority?: string[]
+      // }
       return {
         ...contractCore,
         object: 'model',
@@ -199,6 +252,17 @@ router.get('/models', (req, res) => {
         permission: [],
         root: row.model_id,
         parent: null,
+        description: buildModelDescription(row, contractCore),
+        pricing: {
+          prompt_tokens: usdPerToken,
+          completion_tokens: usdPerToken,
+          usd_per_minute: contractCore.pricing.usd_per_minute,
+          usd_per_1m_input_tokens: contractCore.pricing.usd_per_1m_input_tokens,
+          usd_per_1m_output_tokens: contractCore.pricing.usd_per_1m_output_tokens,
+        },
+        architecture,
+        endpoints: [{ url: endpointUrl, type: 'chat' }],
+        provider_priority: ['dcp'],
         // Legacy aliases kept for existing clients while catalog parity migrates.
         display_name: contractCore.name,
         context_window: contractCore.context_length,

@@ -32592,3 +32592,8 @@ a
 - **Commit**: `pending` - Ran the required release heartbeat from a clean temporary clone because the primary checkout has a root-owned stale remote-tracking ref for `origin/agent/backend-dev/dcp-282-v1-parameter-passthrough`. Fetched/pruned remotes, scanned the 20 most recent `agent/` branches, and confirmed every branch was already at parity with `main` or had no remaining substantive code delta to merge.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: No PR creation, rebases, or merges were needed this cycle. Future release heartbeats should either clear the stale remote-tracking ref in the primary checkout or continue using a clean clone/worktree for fetch accuracy.
+
+## [2026-04-01 11:04 UTC] Codex - DCP-301 OpenRouter-required /v1/models schema fields shipped
+- **Commit**: `pending` - Updated `/v1/models` to return OpenRouter-required provider fields (`description`, token pricing keys, `architecture`, `endpoints`, `provider_priority`) while preserving existing catalog parity fields.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
+- **Impact**: DCP `/v1/models` payload now includes required crawler-discovery fields expected by OpenRouter provider onboarding and remains backward-compatible with existing internal catalog consumers and parity checks.
