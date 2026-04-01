@@ -6,6 +6,7 @@ Welcome to the DCP (Decentralized Compute Platform) API documentation. This guid
 
 - **[Provider Quickstart](./quickstart-provider.md)** — Register your GPUs and start earning in 5 minutes
 - **[Renter Quickstart](./quickstart-renter.md)** — Submit your first compute job in 5 minutes
+- **[Provider Activation State API](./provider-activation-state.md)** — Canonical onboarding status + blocker codes
 - **[OpenAPI Specification](./openapi.yaml)** — Complete API schema (Swagger/OpenAPI format)
 - **[SDK Examples](./sdk-examples.md)** — Code examples in JavaScript, Python, and cURL
 
