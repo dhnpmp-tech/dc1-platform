@@ -1,0 +1,61 @@
+{
+  "generated_at": "2026-03-31T16:55:37.108Z",
+  "input": "/paperclip/instances/default/workspaces/fe54d572-3cb6-408c-8e95-e3da583c5663/worktree-dcp-265/artifacts/analytics/growth-kpi-events.sample.jsonl",
+  "target_utc_day": "2026-03-30",
+  "totals": {
+    "segment": "total",
+    "templates_cta_impressions": 5,
+    "templates_cta_clicks": 4,
+    "templates_cta_ctr_pct": 80,
+    "renter_register_starts": 4,
+    "quickstart_opens": 5,
+    "first_request_completion_proxy": 2
+  },
+  "locale_source_breakdown": [
+    {
+      "locale": "en",
+      "source": "campaign_week1",
+      "segment": "segment",
+      "templates_cta_impressions": 3,
+      "templates_cta_clicks": 2,
+      "templates_cta_ctr_pct": 66.67,
+      "renter_register_starts": 2,
+      "quickstart_opens": 3,
+      "first_request_completion_proxy": 1
+    },
+    {
+      "locale": "ar",
+      "source": "campaign_week1",
+      "segment": "segment",
+      "templates_cta_impressions": 2,
+      "templates_cta_clicks": 2,
+      "templates_cta_ctr_pct": 100,
+      "renter_register_starts": 2,
+      "quickstart_opens": 2,
+      "first_request_completion_proxy": 1
+    }
+  ],
+  "event_mapping": {
+    "templates_cta_impression_events": [
+      "template_catalog_viewed",
+      "templates_page_view",
+      "landing_page_view"
+    ],
+    "templates_cta_click_events": [
+      "landing_primary_cta_clicked",
+      "developer_flow_landing_cta_click",
+      "role_path_cta_clicked"
+    ],
+    "renter_register_start_events": [
+      "developer_flow_register_submit",
+      "renter_register_submit"
+    ],
+    "quickstart_open_events": [
+      "quickstart_page_view",
+      "renter_register_quickstart_opened"
+    ],
+    "first_request_completion_proxy_events": [
+      "quickstart_first_chat_success"
+    ]
+  }
+}

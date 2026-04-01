@@ -137,6 +137,10 @@ afterEach(() => {
   jest.clearAllMocks();
   delete process.env.DC1_ADMIN_TOKEN;
   process.env.NODE_ENV = 'test';
+  dbProxy._testDb = null;
+  if (testDb && testDb.open) {
+    testDb.close();
+  }
 });
 
 // ── requireAdminRbac tests ────────────────────────────────────────────────────

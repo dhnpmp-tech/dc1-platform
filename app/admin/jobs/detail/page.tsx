@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import StatCard from '../../../components/ui/StatCard'
@@ -101,21 +101,7 @@ export default function AdminJobDetailFallbackPage() {
     setQueryReady(true)
   }, [])
 
-  useEffect(() => {
-    if (!queryReady) return
-    if (!token) {
-      router.push('/login')
-      return
-    }
-    if (!jobId) {
-      setError(t('admin.job_detail_fallback.missing_job_id'))
-      setLoading(false)
-      return
-    }
-    void fetchJobDetail()
-  }, [jobId, queryReady, refreshTick])
-
-  const fetchJobDetail = async () => {
+  const fetchJobDetail = useCallback(async () => {
     try {
       setLoading(true)
       setError('')
@@ -139,7 +125,21 @@ export default function AdminJobDetailFallbackPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [jobId, router, t, token])
+
+  useEffect(() => {
+    if (!queryReady) return
+    if (!token) {
+      router.push('/login')
+      return
+    }
+    if (!jobId) {
+      setError(t('admin.job_detail_fallback.missing_job_id'))
+      setLoading(false)
+      return
+    }
+    void fetchJobDetail()
+  }, [fetchJobDetail, jobId, queryReady, refreshTick, router, t, token])
 
   const handleCancel = async () => {
     if (!job?.id || !confirm(t('admin.job_detail_fallback.confirm_cancel'))) return

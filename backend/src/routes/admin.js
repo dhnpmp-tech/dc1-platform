@@ -292,6 +292,131 @@ function resolveFleetStatus(lastHeartbeat, restartCount = 0, nowMs = Date.now())
   return { status: 'online', ageSeconds };
 }
 
+function getProviderColumnSet() {
+  return new Set((db.all('PRAGMA table_info(providers)') || []).map((row) => String(row?.name || '')));
+}
+
+function buildProviderReactivationQuery(columns) {
+  const select = [
+    'id',
+    'name',
+    'email',
+    'status',
+    "COALESCE(approval_status, 'pending') AS approval_status",
+    'last_heartbeat',
+    "COALESCE(is_paused, 0) AS is_paused",
+    columns.has('daemon_version') ? 'daemon_version' : 'NULL AS daemon_version',
+    columns.has('readiness_status') ? 'readiness_status' : 'NULL AS readiness_status',
+    columns.has('readiness_details') ? 'readiness_details' : 'NULL AS readiness_details',
+    'created_at',
+  ];
+  return `
+    SELECT ${select.join(', ')}
+    FROM providers
+    ${columns.has('deleted_at') ? 'WHERE deleted_at IS NULL' : ''}
+  `;
+}
+
+function parseReadinessDetailFailures(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  let parsed = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+    return [];
+  }
+  if (!parsed || typeof parsed !== 'object') return [];
+
+  const failedChecks = [];
+  const checks = Array.isArray(parsed?.checks) ? parsed.checks : [];
+  for (const check of checks) {
+    const ok = typeof check?.ok === 'boolean' ? check.ok : null;
+    const status = String(check?.status || '').toLowerCase();
+    if (ok === false || status === 'fail' || status === 'failed' || status === 'error') {
+      const code = normalizeString(check?.key || check?.code || check?.name, { maxLen: 64 });
+      if (code) failedChecks.push(code.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+    }
+  }
+
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key === 'checks' || key === 'status') continue;
+    if (typeof value === 'boolean' && value === false) {
+      failedChecks.push(String(key).toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+    }
+  }
+
+  return Array.from(new Set(failedChecks));
+}
+
+function determineInstallStatus(provider) {
+  if (normalizeString(provider?.daemon_version, { maxLen: 100 })) return 'installed';
+  if (provider?.last_heartbeat) return 'heartbeat_detected_without_daemon_version';
+  return 'not_installed';
+}
+
+function buildReactivationRecord(provider, nowMs = Date.now()) {
+  const approvalStatus = normalizeString(provider.approval_status, { maxLen: 64 })?.toLowerCase() || 'pending';
+  const providerStatus = normalizeString(provider.status, { maxLen: 64 })?.toLowerCase() || null;
+  const heartbeatAge = heartbeatAgeSeconds(provider.last_heartbeat, nowMs);
+  const installStatus = determineInstallStatus(provider);
+  const readinessStatus = normalizeString(provider.readiness_status, { maxLen: 64 })?.toLowerCase();
+  const readinessFailed = ['failed', 'error', 'blocked'].includes(String(readinessStatus || ''));
+  const readinessFailureChecks = parseReadinessDetailFailures(provider.readiness_details);
+
+  const blockerReasonCodes = [];
+  if (approvalStatus !== 'approved') blockerReasonCodes.push('approval_pending');
+  if (Number(provider.is_paused || 0) === 1) blockerReasonCodes.push('provider_paused');
+  if (providerStatus === 'suspended') blockerReasonCodes.push('provider_suspended');
+  if (installStatus === 'not_installed') blockerReasonCodes.push('daemon_not_installed');
+  if (installStatus === 'heartbeat_detected_without_daemon_version') blockerReasonCodes.push('daemon_version_missing');
+  if (heartbeatAge == null) blockerReasonCodes.push('heartbeat_missing');
+  else if (heartbeatAge > 15 * 60) blockerReasonCodes.push('heartbeat_stale_critical');
+  else if (heartbeatAge > 5 * 60) blockerReasonCodes.push('heartbeat_stale');
+  if (readinessFailed || readinessFailureChecks.length > 0) blockerReasonCodes.push('readiness_checks_failed');
+
+  const readyToServe = blockerReasonCodes.length === 0 && providerStatus === 'online';
+
+  const blockerPenalties = {
+    approval_pending: 35,
+    provider_paused: 40,
+    provider_suspended: 50,
+    daemon_not_installed: 30,
+    daemon_version_missing: 15,
+    heartbeat_missing: 25,
+    heartbeat_stale_critical: 20,
+    heartbeat_stale: 10,
+    readiness_checks_failed: 20,
+  };
+
+  let score = 100;
+  for (const code of blockerReasonCodes) score -= blockerPenalties[code] || 0;
+  if (heartbeatAge != null && heartbeatAge <= 5 * 60) score += 10;
+  else if (heartbeatAge != null && heartbeatAge <= 60 * 60) score += 5;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  return {
+    provider_id: provider.id,
+    name: provider.name || null,
+    email: provider.email || null,
+    status: providerStatus,
+    approval_status: approvalStatus,
+    created_at: toIsoOrNull(provider.created_at),
+    last_heartbeat: toIsoOrNull(provider.last_heartbeat),
+    heartbeat_age_seconds: heartbeatAge,
+    install_status: installStatus,
+    readiness_status: readinessStatus || null,
+    ready_to_serve: readyToServe,
+    blocker_reason_codes: blockerReasonCodes,
+    failed_readiness_checks: readinessFailureChecks,
+    blocker_count: blockerReasonCodes.length,
+    priority_score: score,
+    priority_band: score >= 70 ? 'high' : (score >= 40 ? 'medium' : 'low'),
+    suggested_action: readyToServe
+      ? 'activate_now'
+      : (blockerReasonCodes[0] || 'needs_manual_review'),
+  };
+}
+
 function percentileFromSorted(values, percentile) {
   if (!Array.isArray(values) || values.length === 0) return null;
   const p = Math.min(Math.max(Number(percentile) || 0, 0), 100);
@@ -947,6 +1072,64 @@ router.get('/providers/status', requireAdminAuth, (req, res) => {
   } catch (error) {
     console.error('Admin providers status error:', error);
     return res.status(500).json({ error: 'Failed to fetch provider status' });
+  }
+});
+
+// === GET /api/admin/providers/reactivation-queue - ranked provider reactivation queue (DCP-226) ===
+router.get('/providers/reactivation-queue', requireAdminAuth, (req, res) => {
+  try {
+    const nowMs = Date.now();
+    const limit = toFiniteInt(req.query.limit, { min: 1, max: 500 }) || 100;
+    const readyFilterRaw = normalizeString(req.query.ready_to_serve, { maxLen: 8 });
+    let readyFilter = null;
+    if (readyFilterRaw != null) {
+      if (['true', '1', 'yes'].includes(readyFilterRaw.toLowerCase())) readyFilter = true;
+      else if (['false', '0', 'no'].includes(readyFilterRaw.toLowerCase())) readyFilter = false;
+      else return res.status(400).json({ error: 'ready_to_serve must be true or false when provided' });
+    }
+
+    const columns = getProviderColumnSet();
+    const providers = db.all(buildProviderReactivationQuery(columns));
+    let queue = providers.map((provider) => buildReactivationRecord(provider, nowMs));
+
+    if (readyFilter != null) {
+      queue = queue.filter((entry) => entry.ready_to_serve === readyFilter);
+    }
+
+    queue.sort((a, b) => {
+      if (b.priority_score !== a.priority_score) return b.priority_score - a.priority_score;
+      if (a.blocker_count !== b.blocker_count) return a.blocker_count - b.blocker_count;
+      const ageA = a.heartbeat_age_seconds == null ? Number.MAX_SAFE_INTEGER : a.heartbeat_age_seconds;
+      const ageB = b.heartbeat_age_seconds == null ? Number.MAX_SAFE_INTEGER : b.heartbeat_age_seconds;
+      if (ageA !== ageB) return ageA - ageB;
+      return Number(a.provider_id || 0) - Number(b.provider_id || 0);
+    });
+
+    const limited = queue.slice(0, limit).map((entry, index) => ({
+      ...entry,
+      queue_position: index + 1,
+    }));
+
+    const readyCount = queue.filter((entry) => entry.ready_to_serve).length;
+    const blockedCount = queue.length - readyCount;
+
+    return res.json({
+      total: queue.length,
+      returned: limited.length,
+      summary: {
+        ready_to_serve: readyCount,
+        blocked: blockedCount,
+      },
+      filters: {
+        ready_to_serve: readyFilter,
+        limit,
+      },
+      generated_at: new Date(nowMs).toISOString(),
+      providers: limited,
+    });
+  } catch (error) {
+    console.error('Admin provider reactivation queue error:', error);
+    return res.status(500).json({ error: 'Failed to fetch provider reactivation queue' });
   }
 });
 

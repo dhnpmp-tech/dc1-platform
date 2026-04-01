@@ -24,7 +24,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { requireAdminAuth, getBearerToken } = require('../middleware/auth');
-const { requireAdminRbac } = require('../middleware/adminAuth');
+const { requireAdminRbac, logAdminAction } = require('../middleware/adminAuth');
 const { verifyProviderKey } = require('../services/apiKeyService');
 const {
   requestPayout,
@@ -35,6 +35,11 @@ const {
 } = require('../services/payoutService');
 const { sendWithdrawalApprovedEmail, sendWithdrawalRejectedEmail } = require('../services/emailService');
 const { sendAlert } = require('../services/notifications');
+
+function skipAutomaticAdminAudit(req, _res, next) {
+  req.skipAdminAuditLog = true;
+  next();
+}
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
@@ -196,7 +201,7 @@ router.get('/admin/payouts/pending', requireAdminRbac, (req, res) => {
 // Body: { payment_ref?: string }
 //
 // DCP-862
-router.post('/admin/payouts/:id/approve', requireAdminRbac, async (req, res) => {
+router.post('/admin/payouts/:id/approve', skipAutomaticAdminAudit, requireAdminRbac, async (req, res) => {
   try {
     const raw_db = db._db || db;
     const { payment_ref } = req.body || {};
@@ -238,6 +243,21 @@ router.post('/admin/payouts/:id/approve', requireAdminRbac, async (req, res) => 
     ].filter(Boolean).join('\n'))
       .catch((e) => console.error('[payouts] approve alert failed:', e.message));
 
+    logAdminAction(
+      raw_db,
+      req.adminUser?.id || 'unknown',
+      'payout_approved',
+      'payout',
+      String(req.params.id),
+      {
+        provider_id: row.provider_id,
+        amount_halala: row.amount_halala,
+        status_from: row.status,
+        status_to: 'processing',
+        payment_ref: payment_ref || null,
+      }
+    );
+
     console.log(`[payout] approved payout_id=${req.params.id} provider_id=${row.provider_id} amount_sar=${amountSar} ref=${payment_ref}`);
     return res.json(updated);
   } catch (err) {
@@ -253,7 +273,7 @@ router.post('/admin/payouts/:id/approve', requireAdminRbac, async (req, res) => 
 // Body: { reason?: string }
 //
 // DCP-862
-router.post('/admin/payouts/:id/reject', requireAdminRbac, async (req, res) => {
+router.post('/admin/payouts/:id/reject', skipAutomaticAdminAudit, requireAdminRbac, async (req, res) => {
   try {
     const raw_db = db._db || db;
     const { reason } = req.body || {};
@@ -284,6 +304,20 @@ router.post('/admin/payouts/:id/reject', requireAdminRbac, async (req, res) => {
         .catch((e) => console.error('[payouts] reject email failed:', e.message));
     }
 
+    logAdminAction(
+      raw_db,
+      req.adminUser?.id || 'unknown',
+      'payout_rejected',
+      'payout',
+      String(req.params.id),
+      {
+        provider_id: result.provider_id,
+        amount_halala: result.amount_halala,
+        status_to: 'rejected',
+        reason: reason || null,
+      }
+    );
+
     return res.json(result);
   } catch (err) {
     console.error('[payouts] POST /admin/payouts/:id/reject error:', err);
@@ -297,24 +331,51 @@ router.post('/admin/payouts/:id/reject', requireAdminRbac, async (req, res) => {
 // Body: { action?: 'paid'|'reject', payment_ref?: string, reason?: string }
 //
 // DCP-768: requireAdminRbac = token auth + RBAC role check + audit log
-router.patch('/admin/payouts/:id', requireAdminRbac, (req, res) => {
+router.patch('/admin/payouts/:id', skipAutomaticAdminAudit, requireAdminRbac, (req, res) => {
   try {
     const { action = 'paid', payment_ref, reason } = req.body;
+    const rawDb = db._db || db;
 
     if (action === 'reject') {
-      const result = rejectPayout(db._db || db, req.params.id, reason || null);
+      const result = rejectPayout(rawDb, req.params.id, reason || null);
       if (result.error) {
         const statusMap = { NOT_FOUND: 404, NOT_REJECTABLE: 409 };
         return res.status(statusMap[result.error] || 400).json(result);
       }
+      logAdminAction(
+        rawDb,
+        req.adminUser?.id || 'unknown',
+        'payout_rejected',
+        'payout',
+        String(req.params.id),
+        {
+          provider_id: result.provider_id,
+          amount_halala: result.amount_halala,
+          status_to: 'rejected',
+          reason: reason || null,
+        }
+      );
       return res.json(result);
     }
 
-    const result = markPayoutPaid(db._db || db, req.params.id, payment_ref || null);
+    const result = markPayoutPaid(rawDb, req.params.id, payment_ref || null);
     if (result.error) {
       const statusMap = { NOT_FOUND: 404, ALREADY_PAID: 409, REJECTED: 409 };
       return res.status(statusMap[result.error] || 400).json(result);
     }
+    logAdminAction(
+      rawDb,
+      req.adminUser?.id || 'unknown',
+      'payout_marked_paid',
+      'payout',
+      String(req.params.id),
+      {
+        provider_id: result.provider_id,
+        amount_halala: result.amount_halala,
+        status_to: 'paid',
+        payment_ref: payment_ref || null,
+      }
+    );
     return res.json(result);
   } catch (err) {
     console.error('[payouts] PATCH /admin/payouts/:id error:', err);

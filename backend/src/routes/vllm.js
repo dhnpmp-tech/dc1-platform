@@ -301,6 +301,20 @@ function getCapableProviderCount(minVramMb) {
   return getCapableProviders(minVramMb).length;
 }
 
+function hasValidProviderEndpoint(provider) {
+  const endpoint = normalizeString(provider?.vllm_endpoint_url, { maxLen: 2000 });
+  return endpoint != null && /^https?:\/\//i.test(endpoint);
+}
+
+function getValidatedBackupProviders({ assignedProviderId, minVramMb, limit = 2 }) {
+  const capable = getCapableProviders(minVramMb)
+    .filter((provider) => provider.id !== assignedProviderId)
+    .filter((provider) => hasValidProviderEndpoint(provider));
+
+  capable.sort((a, b) => (a.gpu_util_pct ?? 0) - (b.gpu_util_pct ?? 0));
+  return capable.slice(0, Math.max(0, Number(limit) || 0));
+}
+
 // Pick best available provider by lowest GPU utilization (DCP-907 job assignment queue)
 function assignProvider(minVramMb) {
   const capable = getCapableProviders(minVramMb);
@@ -832,24 +846,20 @@ async function submitAndAwait(req) {
 
   // DCP-922: If the selected provider has a registered vLLM endpoint, proxy directly.
   // Try primary provider + up to 2 fallback providers before giving up.
-  if (assignedProvider.vllm_endpoint_url) {
+  if (hasValidProviderEndpoint(assignedProvider)) {
     const proxyMessages = preparedMessages.value;
-    const fallbackCandidates = [assignedProvider];
-    try {
-      const extras = db.all(
-        `SELECT id, vllm_endpoint_url FROM providers
-         WHERE status = 'online' AND COALESCE(is_paused, 0) = 0
-           AND deleted_at IS NULL AND vllm_endpoint_url IS NOT NULL
-           AND id != ?
-         ORDER BY uptime_percent DESC LIMIT 2`,
-        assignedProvider.id
-      );
-      fallbackCandidates.push(...extras);
-    } catch (_) { /* non-fatal */ }
+    const fallbackCandidates = [
+      assignedProvider,
+      ...getValidatedBackupProviders({
+        assignedProviderId: assignedProvider.id,
+        minVramMb,
+        limit: 2,
+      }),
+    ];
 
     let lastProxyError = null;
     for (const candidate of fallbackCandidates) {
-      if (!candidate.vllm_endpoint_url) continue;
+      if (!hasValidProviderEndpoint(candidate)) continue;
       const proxyResult = await proxyToProviderEndpoint({
         endpointUrl: candidate.vllm_endpoint_url,
         modelId: modelReq.model_id,

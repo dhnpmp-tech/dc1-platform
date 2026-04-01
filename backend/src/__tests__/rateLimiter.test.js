@@ -7,6 +7,22 @@ const request = require('supertest');
 const { ipKeyGenerator } = require('express-rate-limit');
 const { createRateLimiter, createAdminIpAllowlist, jobSubmitLimiter } = require('../middleware/rateLimiter');
 
+jest.setTimeout(30_000);
+
+let savedDisableRateLimit;
+
+beforeEach(() => {
+  savedDisableRateLimit = process.env.DISABLE_RATE_LIMIT;
+  process.env.DISABLE_RATE_LIMIT = '0';
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  if (savedDisableRateLimit === undefined) delete process.env.DISABLE_RATE_LIMIT;
+  else process.env.DISABLE_RATE_LIMIT = savedDisableRateLimit;
+  jest.restoreAllMocks();
+});
+
 function makeApp({ max = 2, adminToken = 'test-token', allowlist = '' } = {}) {
   const app = express();
   app.set('trust proxy', false);
