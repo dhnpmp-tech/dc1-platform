@@ -17,7 +17,7 @@ const { isPublicWebhookUrl } = require('../lib/webhook-security');
 const { validateWebhookUrl, validateWebhookUrlValue } = require('../middleware/validateWebhookUrl');
 const { validateBody } = require('../middleware/validate');
 const { renterRegisterSchema, renterTopupSchema } = require('../schemas/topup.schema');
-const { getBearerToken } = require('../middleware/auth');
+const { getBearerToken, isAdminRequest } = require('../middleware/auth');
 const analytics = require('../services/analyticsService');
 const conversionFunnel = require('../services/conversionFunnelService');
 
@@ -2046,6 +2046,13 @@ function requireRenterAdmin(req, res, next) {
   return requireRenterRole('admin')(req, res, next);
 }
 
+function requireRenterAdminOrAdminFallback(req, res, next) {
+  // This path is intentionally shared with the admin top-up route below.
+  // If a valid admin token is present, defer to the later admin handler.
+  if (isAdminRequest(req)) return next('route');
+  return requireRenterAdmin(req, res, next);
+}
+
 function requireRenterMember(req, res, next) {
   return requireRenterRole('member')(req, res, next);
 }
@@ -2063,7 +2070,7 @@ function requireRenterReadOnly(req, res, next) {
  * It MUST only be enabled in non-production environments. Gate: ALLOW_SANDBOX_TOPUP=true.
  * In production, renters must top up via the Moyasar payment flow (/api/payments/topup).
  */
-router.post('/:id/topup', requireRenterAdmin, (req, res) => {
+router.post('/:id/topup', requireRenterAdminOrAdminFallback, (req, res) => {
   if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SANDBOX_TOPUP !== 'true') {
     return res.status(403).json({ error: 'Direct top-up disabled in production. Use the payment flow.' });
   }

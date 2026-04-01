@@ -1,3 +1,8 @@
+## [2026-04-01 20:39 UTC] Codex — DCP-358 Renter Top-Up Route Fallback + Job Tracking Test Stabilization
+- **Commit**: `pending` - Fixed `POST /api/renters/:id/topup` route precedence so valid admin-token requests no longer get intercepted by renter-RBAC middleware, by deferring admin-authenticated requests from the self-serve top-up route to the dedicated admin top-up handler; stabilized the DCP-841 job-tracking e2e suite by disabling rate limiting within that suite to prevent unrelated provider-register limiter saturation.
+- **Files**: `backend/src/routes/renters.js`, `backend/tests/job-tracking-e2e.test.js`, `AGENT_LOG.md`
+- **Impact**: Admin top-up requests now resolve to the intended admin contract even with the shared path, removing the 401 regression observed in job-tracking flows. Verification: `cd backend && npm test -- --runInBand tests/job-tracking-e2e.test.js` (`28/28` passing).
+
 ## [2026-04-01 18:45 UTC] Codex — DCP-357 Unified Conversion Funnel Contract + Attribution Report
 - **Commit**: `73d2621` - Added a canonical provider+renter conversion funnel contract (`view -> register -> first_action -> first_success`) with durable event storage, per-actor stage dedupe, EN/AR locale normalization, source-surface/channel attribution capture, and an admin report endpoint for funnel/conversion completeness.
 - **Files**: `backend/src/db.js`, `backend/src/services/conversionFunnelService.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/conversion-funnel-contract.test.js`, `backend/artifacts/conversion-funnel/query-examples.sql`, `docs/api/conversion-funnel-contract.md`, `AGENT_LOG.md`
