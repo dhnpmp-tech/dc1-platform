@@ -82,7 +82,7 @@ function LaunchBanner({ health, t }: { health: DetailedHealth | null; t: (key: s
       <button
         onClick={dismiss}
         className="absolute right-3 top-1/2 -translate-y-1/2 text-dc1-text-muted hover:text-dc1-text-primary"
-        aria-label="Dismiss banner"
+        aria-label={t('landing.launch_banner_dismiss_aria')}
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

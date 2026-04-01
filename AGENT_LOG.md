@@ -1,3 +1,8 @@
+## [2026-04-01 18:39 UTC] Codex — DCP-353 Homepage Launch Banner Accessibility Copy Localized
+- **Commit**: `pending` - Replaced the remaining hardcoded launch-banner dismiss `aria-label` on the homepage with a localized translation key and added EN/AR language entries for the label.
+- **Files**: `app/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Homepage launch-banner controls are now language-consistent for assistive technologies in both English and Arabic. Verification: `npm run lint -- --file app/page.tsx --file app/lib/i18n.tsx` (passes with known existing warnings only).
+
 ## [2026-04-01 18:37 UTC] Codex — DCP-353 Homepage EN/AR Intent-Lane Copy Parity Follow-Up
 - **Commit**: `pending` - Localized remaining hardcoded homepage intent-lane copy by wiring launch-banner, provider-online microcopy, model-marquee label, workflow section, and feature-card OpenAI-compatible API strings to `t(...)` keys; added missing EN/AR translation keys for those surfaces.
 - **Files**: `app/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
