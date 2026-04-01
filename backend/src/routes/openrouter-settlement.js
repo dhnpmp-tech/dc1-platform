@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { isAdminRequest } = require('../middleware/auth');
+const { toUsdStringFromHalala } = require('../lib/model-catalog-contract');
 const {
   computeDryRunSummary,
   executeOpenRouterSettlement,
@@ -18,13 +19,67 @@ function requireAdmin(req, res, next) {
 
 router.use(requireAdmin);
 
+function withUsdPricingFromHalala(value) {
+  return {
+    currency: 'USD',
+    usd: toUsdStringFromHalala(value),
+  };
+}
+
+function enrichDryRunSummary(summary) {
+  if (!summary || typeof summary !== 'object') return summary;
+  return {
+    ...summary,
+    pricing: {
+      currency: 'USD',
+      usd_expected_total: toUsdStringFromHalala(summary.expected_total_halala),
+      usd_reconciled_total: toUsdStringFromHalala(summary.reconciled_halala),
+      usd_discrepancy_total: toUsdStringFromHalala(Math.abs(Number(summary.discrepancy_halala || 0))),
+    },
+    top_renters: Array.isArray(summary.top_renters)
+      ? summary.top_renters.map((row) => ({
+        ...row,
+        pricing: withUsdPricingFromHalala(row.total_halala),
+      }))
+      : [],
+  };
+}
+
+function enrichSettlement(settlement) {
+  if (!settlement || typeof settlement !== 'object') return settlement;
+  return {
+    ...settlement,
+    pricing: {
+      currency: 'USD',
+      usd_expected_total: toUsdStringFromHalala(settlement.expected_total_halala),
+      usd_reconciled_total: toUsdStringFromHalala(settlement.reconciled_halala),
+      usd_discrepancy_total: toUsdStringFromHalala(Math.abs(Number(settlement.discrepancy_halala || 0))),
+    },
+  };
+}
+
+function enrichInvoice(invoice) {
+  if (!invoice || typeof invoice !== 'object') return invoice;
+  return { ...invoice, pricing: withUsdPricingFromHalala(invoice.amount_halala) };
+}
+
+function enrichTopup(topup) {
+  if (!topup || typeof topup !== 'object') return topup;
+  return { ...topup, pricing: withUsdPricingFromHalala(topup.amount_halala) };
+}
+
+function enrichSettlementItem(item) {
+  if (!item || typeof item !== 'object') return item;
+  return { ...item, pricing: withUsdPricingFromHalala(item.cost_halala) };
+}
+
 router.post('/settlements/dry-run', (req, res) => {
   try {
-    const summary = computeDryRunSummary(db._db || db, {
+    const summary = enrichDryRunSummary(computeDryRunSummary(db._db || db, {
       periodStart: req.body?.period_start,
       periodEnd: req.body?.period_end,
       expectedTotalHalala: req.body?.expected_total_halala,
-    });
+    }));
     return res.json({ dry_run: true, summary });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Failed to compute OpenRouter dry run' });
@@ -51,10 +106,10 @@ router.post('/settlements/run', (req, res) => {
     }
 
     return res.json({
-      settlement: result.settlement,
-      summary: result.summary,
-      invoice: result.invoice,
-      topup: result.topup,
+      settlement: enrichSettlement(result.settlement),
+      summary: enrichDryRunSummary(result.summary),
+      invoice: enrichInvoice(result.invoice),
+      topup: enrichTopup(result.topup),
       alerts: result.alerts || [],
     });
   } catch (error) {
@@ -73,7 +128,7 @@ router.get('/settlements', (req, res) => {
         LIMIT ?`,
       limit
     );
-    return res.json({ settlements: rows, count: rows.length });
+    return res.json({ settlements: rows.map((row) => enrichSettlement(row)), count: rows.length });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Failed to list OpenRouter settlements' });
   }
@@ -107,7 +162,13 @@ router.get('/settlements/:id', (req, res) => {
       settlement.id
     ) || null;
 
-    return res.json({ settlement, items, alerts, invoice, topup });
+    return res.json({
+      settlement: enrichSettlement(settlement),
+      items: items.map((item) => enrichSettlementItem(item)),
+      alerts,
+      invoice: enrichInvoice(invoice),
+      topup: enrichTopup(topup),
+    });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Failed to fetch OpenRouter settlement details' });
   }

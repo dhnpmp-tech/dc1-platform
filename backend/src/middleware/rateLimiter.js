@@ -1,8 +1,16 @@
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
-const { getAdminTokenFromReq } = require('./auth');
+const { getAdminTokenFromReq, getBearerToken } = require('./auth');
 
 function ipFallbackKey(req) {
   return `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`;
+}
+
+function normalizeLimiterCredential(rawValue, prefix) {
+  if (Array.isArray(rawValue)) return null;
+  if (typeof rawValue !== 'string') return null;
+  const trimmed = rawValue.trim();
+  if (!trimmed) return null;
+  return `${prefix}:${trimmed}`;
 }
 
 function retryAfterSeconds(req, windowMs) {
@@ -14,7 +22,28 @@ function retryAfterSeconds(req, windowMs) {
   return Math.max(1, Math.ceil(windowMs / 1000));
 }
 
-function createRateLimiter({ windowMs, max, keyGenerator }) {
+function defaultRateLimitBody({ retryAfter }) {
+  return {
+    error: 'Rate limit exceeded',
+    retryAfterSeconds: retryAfter,
+    retryAfterMs: retryAfter * 1000,
+  };
+}
+
+function openAiRateLimitBody({ retryAfter }) {
+  return {
+    error: {
+      message: `Rate limit exceeded. Retry after ${retryAfter} second${retryAfter === 1 ? '' : 's'}.`,
+      type: 'rate_limit_error',
+      param: null,
+      code: 'rate_limit_exceeded',
+    },
+    retry_after_seconds: retryAfter,
+    retry_after_ms: retryAfter * 1000,
+  };
+}
+
+function createRateLimiter({ windowMs, max, keyGenerator, buildBody = defaultRateLimitBody }) {
   const isRateLimitDisabled = process.env.DISABLE_RATE_LIMIT === '1';
   return rateLimit({
     windowMs,
@@ -26,14 +55,23 @@ function createRateLimiter({ windowMs, max, keyGenerator }) {
       const retryAfter = retryAfterSeconds(req, windowMs);
       console.warn(`[rate-limit] 429: ${req.method} ${req.path}`);
       res.setHeader('Retry-After', String(retryAfter));
-      res.status(429).json({ error: 'Rate limit exceeded', retryAfterSeconds: retryAfter, retryAfterMs: retryAfter * 1000 });
+      res.status(429).json(buildBody({ req, retryAfter, windowMs }));
     },
   });
 }
 
-function getRenterKey(req) {
-  const renterKey = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
-  if (renterKey) return `renter:${String(renterKey)}`;
+function getRenterKey(req, { includeGenericQueryKey = true } = {}) {
+  const candidates = [
+    req.headers['x-renter-key'],
+    req.query.renter_key,
+  ];
+  if (includeGenericQueryKey) candidates.push(req.query.key);
+  candidates.push(getBearerToken(req));
+
+  for (const candidate of candidates) {
+    const normalized = normalizeLimiterCredential(candidate, 'renter');
+    if (normalized) return normalized;
+  }
   return null;
 }
 
@@ -61,7 +99,11 @@ function createAdminIpAllowlist() {
 const registerLimiter = createRateLimiter({ windowMs: 60*60*1000, max: 5, keyGenerator: (req) => ipFallbackKey(req) });
 
 // Job submission: 20 per renter key per minute (DCP-855)
-const jobSubmitLimiter = createRateLimiter({ windowMs: 60*1000, max: 20, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
+const jobSubmitLimiter = createRateLimiter({
+  windowMs: 60*1000,
+  max: 20,
+  keyGenerator: (req) => getRenterKey(req, { includeGenericQueryKey: false }) || ipFallbackKey(req),
+});
 
 // Job creation: 10 per renter key per minute (DCP-855)
 const jobCreateLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
@@ -69,8 +111,18 @@ const jobCreateLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGene
 const marketplaceLimiter = createRateLimiter({ windowMs: 60*1000, max: 60, keyGenerator: (req) => getApiKey(req) || ipFallbackKey(req) });
 const publicProvidersLimiter = createRateLimiter({ windowMs: 60*1000, max: 60, keyGenerator: (req) => ipFallbackKey(req) });
 const containerRegistryLimiter = createRateLimiter({ windowMs: 60*1000, max: 30, keyGenerator: (req) => ipFallbackKey(req) });
-const vllmCompleteLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
-const vllmStreamLimiter = createRateLimiter({ windowMs: 60*1000, max: 5, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
+const vllmCompleteLimiter = createRateLimiter({
+  windowMs: 60*1000,
+  max: 10,
+  keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req),
+  buildBody: openAiRateLimitBody,
+});
+const vllmStreamLimiter = createRateLimiter({
+  windowMs: 60*1000,
+  max: 5,
+  keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req),
+  buildBody: openAiRateLimitBody,
+});
 
 const retryJobLimiter = createRateLimiter({
   windowMs: 60*1000, max: 3,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
@@ -42,12 +42,7 @@ export default function ProviderDetailPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    fetchDetail()
-  }, [id])
-
-  const fetchDetail = async () => {
+  const fetchDetail = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/providers/${id}`, { headers: { 'x-admin-token': token! } })
       if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return }
@@ -55,7 +50,12 @@ export default function ProviderDetailPage() {
       setData(await res.json())
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
-  }
+  }, [id, router, token])
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return }
+    fetchDetail()
+  }, [fetchDetail, router, token])
 
   const handleAction = async (action: 'suspend' | 'unsuspend') => {
     setActionLoading(true)

@@ -21,6 +21,7 @@ jest.mock('../middleware/auth', () => ({
 
 jest.mock('../middleware/adminAuth', () => ({
   requireAdminRbac: (req, res, next) => next(),
+  logAdminAction: jest.fn(),
 }));
 
 jest.mock('../services/apiKeyService', () => ({

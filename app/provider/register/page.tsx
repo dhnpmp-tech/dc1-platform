@@ -13,6 +13,7 @@ import {
   getProviderInstallApiBase,
   ProviderNextActionState,
 } from '../../lib/provider-install'
+import { getProviderActivationNarrative } from '../../lib/provider-activation-narrative'
 
 const API_BASE = '/api/dc1'
 
@@ -79,6 +80,7 @@ type SupportCategory = 'provider' | 'bug'
 
 function ProviderRegisterPageContent() {
   const { t, isRTL } = useLanguage()
+  const activationNarrative = getProviderActivationNarrative(isRTL)
   const searchParams = useSearchParams()
 
   // ── Referral code state ──────────────────────────────────────────────────
@@ -1218,6 +1220,44 @@ function ProviderRegisterPageContent() {
                 <a key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 hover:border-dc1-amber transition-colors">
                   <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
                   <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-4">
+          <div className={`rounded-xl border border-dc1-amber/25 bg-dc1-amber/5 p-5 ${isRTL ? 'text-right' : 'text-left'}`}>
+            <h2 className="text-lg font-bold text-dc1-text-primary">{activationNarrative.headline}</h2>
+            <p className="mt-1 text-sm text-dc1-text-secondary">{activationNarrative.subheadline}</p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l1 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-text-muted mb-2">
+                  {isRTL ? 'القيمة الأساسية' : 'Core value'}
+                </p>
+                <ul className="space-y-1 text-sm text-dc1-text-secondary">
+                  {activationNarrative.valuePoints.map((point) => (
+                    <li key={point}>• {point}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l1 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-text-muted mb-2">
+                  {activationNarrative.assumptionsTitle}
+                </p>
+                <ul className="space-y-1 text-sm text-dc1-text-secondary">
+                  {activationNarrative.assumptions.map((assumption) => (
+                    <li key={assumption}>• {assumption}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {activationNarrative.ctaFlow.map((cta) => (
+                <a key={cta.href} href={cta.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-xs font-semibold text-dc1-text-primary hover:border-dc1-amber/40 transition-colors">
+                  {cta.label}
                 </a>
               ))}
             </div>

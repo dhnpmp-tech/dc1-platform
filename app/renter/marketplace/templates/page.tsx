@@ -49,17 +49,14 @@ const ChartIcon = () => (
   </svg>
 )
 
-// ── Template data (static — loaded from docker-templates/*.json at build/runtime) ──
-// These match the files in docker-templates/ exactly.
-// Hyperscaler reference prices (SAR/hr) for savings calculation:
-// AWS p3.2xlarge (~V100 16GB): ~73 SAR/hr; A10G: ~28 SAR/hr; RunPod RTX 4090: ~14 SAR/hr
-const HYPERSCALER_SAR_PER_HR_FALLBACK = 14.0  // RunPod RTX 4090 baseline
+// Hyperscaler reference baseline (SAR/hr) used when template-specific benchmark data is not available.
+const HYPERSCALER_SAR_PER_HR_FALLBACK = 14.0
 
 interface Template {
   id: string
   name: string
   description: string
-  icon: string
+  icon?: string
   category: TemplateCategory
   min_vram_gb: number
   estimated_price_sar_per_hour: number
@@ -71,294 +68,6 @@ interface Template {
 }
 
 type TemplateCategory = 'Arabic AI' | 'LLM' | 'Training' | 'Dev Tools' | 'Image'
-
-const TEMPLATES: Template[] = [
-  // ── Arabic AI ──────────────────────────────────────────────────────────────
-  {
-    id: 'arabic-rag-complete',
-    name: 'Arabic RAG Pipeline',
-    description: 'Full-stack Arabic RAG: BGE-M3 embeddings + BGE reranker + ALLaM/JAIS. PDPL-compliant, in-kingdom. Enterprise document retrieval.',
-    icon: '🔍',
-    category: 'Arabic AI',
-    min_vram_gb: 40,
-    estimated_price_sar_per_hour: 45,
-    hyperscaler_price_sar_per_hour: 110,
-    tags: ['rag', 'arabic', 'nlp', 'embedding', 'reranking', 'llm', 'pdpl-compliant', 'enterprise'],
-    difficulty: 'easy',
-    is_arabic: true,
-    sort_order: 1,
-  },
-  {
-    id: 'arabic-embeddings',
-    name: 'Arabic Embeddings API',
-    description: 'High-throughput embedding service for Arabic and bilingual retrieval pipelines using BAAI/bge-m3.',
-    icon: '🌙',
-    category: 'Arabic AI',
-    min_vram_gb: 8,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 25,
-    tags: ['llm', 'embedding', 'rag', 'arabic'],
-    difficulty: 'easy',
-    is_arabic: true,
-    sort_order: 2,
-  },
-  {
-    id: 'arabic-reranker',
-    name: 'Arabic Reranker API',
-    description: 'Semantic reranking for Arabic search and RAG quality uplift. Improves retrieval precision by 30–40%.',
-    icon: '🌙',
-    category: 'Arabic AI',
-    min_vram_gb: 8,
-    estimated_price_sar_per_hour: 11,
-    hyperscaler_price_sar_per_hour: 25,
-    tags: ['llm', 'reranker', 'rag', 'arabic'],
-    difficulty: 'easy',
-    is_arabic: true,
-    sort_order: 3,
-  },
-  {
-    id: 'qwen25-7b',
-    name: 'Qwen 2.5 7B',
-    description: 'Alibaba Qwen 2.5 7B Instruct — strong multilingual model with Arabic support. OpenAI-compatible.',
-    icon: '🌐',
-    category: 'Arabic AI',
-    min_vram_gb: 16,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['llm', 'inference', 'qwen', 'arabic', 'multilingual', 'openai-compatible'],
-    difficulty: 'easy',
-    is_arabic: true,
-    sort_order: 4,
-  },
-  {
-    id: 'llama3-8b',
-    name: 'Llama 3 8B Instruct',
-    description: 'Meta Llama 3 8B Instruct — fast, capable LLM for chat, summarization, and reasoning. OpenAI-compatible.',
-    icon: '🦙',
-    category: 'Arabic AI',
-    min_vram_gb: 16,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['llm', 'inference', 'llama', 'meta', 'openai-compatible', 'arabic'],
-    difficulty: 'easy',
-    is_arabic: true,
-    sort_order: 5,
-  },
-  {
-    id: 'mistral-7b',
-    name: 'Mistral 7B Instruct',
-    description: 'Mistral AI 7B Instruct — strong reasoning and coding. Low latency, low cost. OpenAI-compatible.',
-    icon: '🌊',
-    category: 'Arabic AI',
-    min_vram_gb: 16,
-    estimated_price_sar_per_hour: 8,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['llm', 'inference', 'mistral', 'openai-compatible', 'coding', 'reasoning', 'arabic'],
-    difficulty: 'easy',
-    is_arabic: true,
-    sort_order: 6,
-  },
-  // ── LLM ───────────────────────────────────────────────────────────────────
-  {
-    id: 'nemotron-nano',
-    name: 'Nemotron Nano 4B',
-    description: 'NVIDIA Nemotron-Mini 4B Instruct — compact, efficient LLM optimized for instruction following. Fits in 8 GB.',
-    icon: '⚡',
-    category: 'LLM',
-    min_vram_gb: 8,
-    estimated_price_sar_per_hour: 5,
-    hyperscaler_price_sar_per_hour: 14,
-    tags: ['llm', 'inference', 'nvidia', 'nemotron', 'efficient', 'openai-compatible'],
-    difficulty: 'easy',
-    is_arabic: false,
-    sort_order: 7,
-  },
-  {
-    id: 'nemotron-super',
-    name: 'Nemotron Super 70B',
-    description: 'NVIDIA Llama-3.1-Nemotron-70B — high-capability enterprise LLM. Multi-GPU, OpenAI-compatible.',
-    icon: '🏆',
-    category: 'LLM',
-    min_vram_gb: 80,
-    estimated_price_sar_per_hour: 45,
-    hyperscaler_price_sar_per_hour: 150,
-    tags: ['llm', 'inference', 'nvidia', 'nemotron', '70b', 'enterprise', 'multi-gpu', 'openai-compatible'],
-    difficulty: 'medium',
-    is_arabic: false,
-    sort_order: 8,
-  },
-  {
-    id: 'vllm-serve',
-    name: 'vLLM Serve',
-    description: 'OpenAI-compatible LLM serving API. Deploy Mistral, Llama, Qwen and other models via vLLM.',
-    icon: '🤖',
-    category: 'LLM',
-    min_vram_gb: 16,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['llm', 'inference', 'api', 'openai-compatible'],
-    difficulty: 'medium',
-    is_arabic: false,
-    sort_order: 9,
-  },
-  {
-    id: 'ollama',
-    name: 'Ollama LLM',
-    description: 'Run local LLMs via Ollama. Supports llama3, mistral, gemma and 50+ quantized models. Easy UI.',
-    icon: '🦙',
-    category: 'LLM',
-    min_vram_gb: 4,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 14,
-    tags: ['llm', 'ollama', 'small-models', 'inference', 'quantized'],
-    difficulty: 'easy',
-    is_arabic: false,
-    sort_order: 10,
-  },
-  // ── Training ──────────────────────────────────────────────────────────────
-  {
-    id: 'lora-finetune',
-    name: 'LoRA Fine-Tuning',
-    description: 'Parameter-efficient LoRA fine-tuning workflow for adapter training with low VRAM overhead.',
-    icon: '🧩',
-    category: 'Training',
-    min_vram_gb: 16,
-    estimated_price_sar_per_hour: 14,
-    hyperscaler_price_sar_per_hour: 40,
-    tags: ['lora', 'fine-tuning', 'llm', 'peft'],
-    difficulty: 'medium',
-    is_arabic: false,
-    sort_order: 11,
-  },
-  {
-    id: 'qlora-finetune',
-    name: 'QLoRA Fine-Tuning',
-    description: '4-bit QLoRA fine-tuning optimized for memory-constrained GPUs. Train 7B models on 12 GB VRAM.',
-    icon: '🧠',
-    category: 'Training',
-    min_vram_gb: 12,
-    estimated_price_sar_per_hour: 13,
-    hyperscaler_price_sar_per_hour: 35,
-    tags: ['qlora', 'fine-tuning', 'quantization', 'llm'],
-    difficulty: 'medium',
-    is_arabic: false,
-    sort_order: 12,
-  },
-  {
-    id: 'pytorch-training',
-    name: 'PyTorch Training',
-    description: 'Run PyTorch training jobs on GPU. Supports custom scripts with dataset mounting and checkpoint saving.',
-    icon: '🔥',
-    category: 'Training',
-    min_vram_gb: 8,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['training', 'pytorch', 'ml', 'deep-learning'],
-    difficulty: 'medium',
-    is_arabic: false,
-    sort_order: 13,
-  },
-  {
-    id: 'pytorch-single-gpu',
-    name: 'PyTorch Single GPU',
-    description: 'One-command PyTorch training/inference on a single GPU with deterministic CUDA seeds.',
-    icon: '🔥',
-    category: 'Training',
-    min_vram_gb: 12,
-    estimated_price_sar_per_hour: 11,
-    hyperscaler_price_sar_per_hour: 28,
-    tags: ['pytorch', 'single-gpu', 'training', 'inference'],
-    difficulty: 'easy',
-    is_arabic: false,
-    sort_order: 14,
-  },
-  {
-    id: 'pytorch-multi-gpu',
-    name: 'PyTorch Multi GPU',
-    description: 'Multi-GPU PyTorch template for distributed workloads with NCCL-friendly defaults.',
-    icon: '⚡',
-    category: 'Training',
-    min_vram_gb: 24,
-    estimated_price_sar_per_hour: 18,
-    hyperscaler_price_sar_per_hour: 60,
-    tags: ['pytorch', 'multi-gpu', 'distributed', 'training'],
-    difficulty: 'advanced',
-    is_arabic: false,
-    sort_order: 15,
-  },
-  {
-    id: 'jupyter-gpu',
-    name: 'Jupyter GPU Notebook',
-    description: 'GPU-accelerated Jupyter notebook with PyTorch, CUDA, and popular ML libraries pre-installed.',
-    icon: '📓',
-    category: 'Dev Tools',
-    min_vram_gb: 4,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['jupyter', 'notebook', 'interactive', 'development', 'training'],
-    difficulty: 'easy',
-    is_arabic: false,
-    sort_order: 16,
-  },
-  // ── Dev Tools ─────────────────────────────────────────────────────────────
-  {
-    id: 'python-scientific-compute',
-    name: 'Python Scientific Compute',
-    description: 'CUDA-ready scientific Python template for linear algebra, simulation, and data processing.',
-    icon: '🔬',
-    category: 'Dev Tools',
-    min_vram_gb: 8,
-    estimated_price_sar_per_hour: 10,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['scientific', 'python', 'cuda', 'simulation'],
-    difficulty: 'easy',
-    is_arabic: false,
-    sort_order: 17,
-  },
-  {
-    id: 'custom-container',
-    name: 'Custom Container',
-    description: 'Bring your own Docker image. Run any GPU workload using an approved base image. Full flexibility.',
-    icon: '📦',
-    category: 'Dev Tools',
-    min_vram_gb: 4,
-    estimated_price_sar_per_hour: 9,
-    hyperscaler_price_sar_per_hour: 14,
-    tags: ['custom', 'advanced', 'bring-your-own', 'flexible'],
-    difficulty: 'advanced',
-    is_arabic: false,
-    sort_order: 18,
-  },
-  // ── Image ─────────────────────────────────────────────────────────────────
-  {
-    id: 'sdxl',
-    name: 'Stable Diffusion XL',
-    description: 'Stability AI SDXL — high-resolution 1024×1024 image generation. Significantly better than SD 1.5.',
-    icon: '🎨',
-    category: 'Image',
-    min_vram_gb: 8,
-    estimated_price_sar_per_hour: 12,
-    hyperscaler_price_sar_per_hour: 28,
-    tags: ['image-gen', 'diffusion', 'sdxl', 'creative', 'art', '1024px'],
-    difficulty: 'easy',
-    is_arabic: false,
-    sort_order: 19,
-  },
-  {
-    id: 'stable-diffusion',
-    name: 'Stable Diffusion',
-    description: 'Image generation with Stable Diffusion. Generate high-quality images from text prompts.',
-    icon: '🎨',
-    category: 'Image',
-    min_vram_gb: 4,
-    estimated_price_sar_per_hour: 12,
-    hyperscaler_price_sar_per_hour: 22,
-    tags: ['image-gen', 'diffusion', 'creative', 'art'],
-    difficulty: 'easy',
-    is_arabic: false,
-    sort_order: 20,
-  },
-]
 
 const CATEGORIES: { id: TemplateCategory | 'all'; label: string; emoji: string }[] = [
   { id: 'all',       label: 'All Templates', emoji: '🗂️' },
@@ -393,6 +102,16 @@ function deriveCategory(id: string, tags: string[]): TemplateCategory {
   if (lower.includes('jupyter') || lower.includes('python-scientific') ||
       tagSet.includes('notebook')) return 'Dev Tools'
   return 'LLM'
+}
+
+function estimateHyperscalerPriceSarHr(template: Pick<Template, 'min_vram_gb' | 'category' | 'is_arabic'>): number {
+  if (template.is_arabic) return 25
+  if (template.category === 'Training') return template.min_vram_gb >= 24 ? 60 : 35
+  if (template.category === 'Image') return 28
+  if (template.min_vram_gb >= 80) return 150
+  if (template.min_vram_gb >= 40) return 110
+  if (template.min_vram_gb >= 24) return 40
+  return HYPERSCALER_SAR_PER_HR_FALLBACK
 }
 
 function getSavingsPct(t: Template): number | null {
@@ -637,8 +356,9 @@ export default function TemplateCatalogPage() {
   const [maxPrice, setMaxPrice] = useState('')
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | 'easy' | 'medium' | 'advanced'>('all')
   const [deploy, setDeploy] = useState<DeployModalState>({ template: null, loading: false, error: '', jobId: null })
-  const [apiTemplates, setApiTemplates] = useState<Template[] | null>(null)
+  const [apiTemplates, setApiTemplates] = useState<Template[]>([])
   const [loadingTemplates, setLoadingTemplates] = useState(true)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/dc1/templates')
@@ -648,17 +368,25 @@ export default function TemplateCatalogPage() {
         const mapped: Template[] = list.map(raw => {
           const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
           const rawId = String(raw.id ?? '')
+          const lowerId = rawId.toLowerCase()
           const isArabic = tags.some(tag => tag.toLowerCase().includes('arabic')) ||
-            rawId.includes('arabic') || rawId.includes('allam') || rawId.includes('jais')
+            lowerId.includes('arabic') || lowerId.includes('allam') || lowerId.includes('jais')
+          const category = deriveCategory(rawId, tags)
+          const minVram = Number(raw.min_vram_gb ?? 8)
+          const estimatedPrice = Number(raw.estimated_price_sar_per_hour ?? 0)
           return {
             id: rawId,
             name: String(raw.name ?? ''),
             description: String(raw.description ?? ''),
-            icon: String(raw.icon ?? '📦'),
-            category: deriveCategory(rawId, tags),
-            min_vram_gb: Number(raw.min_vram_gb ?? 8),
-            estimated_price_sar_per_hour: Number(raw.estimated_price_sar_per_hour ?? 0),
-            hyperscaler_price_sar_per_hour: undefined,
+            icon: String(raw.icon ?? ''),
+            category,
+            min_vram_gb: minVram,
+            estimated_price_sar_per_hour: estimatedPrice,
+            hyperscaler_price_sar_per_hour: estimateHyperscalerPriceSarHr({
+              min_vram_gb: minVram,
+              category,
+              is_arabic: isArabic,
+            }),
             tags,
             difficulty: (['easy', 'medium', 'advanced'].includes(String(raw.difficulty ?? ''))
               ? String(raw.difficulty) : 'easy') as Template['difficulty'],
@@ -666,13 +394,16 @@ export default function TemplateCatalogPage() {
             sort_order: Number(raw.sort_order ?? 99),
           }
         })
-        if (mapped.length > 0) setApiTemplates(mapped)
+        setApiTemplates(mapped)
+        setTemplatesError(mapped.length > 0 ? null : 'Template catalog is currently empty.')
       })
-      .catch(() => { /* fallback to static TEMPLATES */ })
+      .catch(() => {
+        setTemplatesError('Failed to load template catalog from API.')
+      })
       .finally(() => setLoadingTemplates(false))
   }, [])
 
-  const activeTemplates = apiTemplates ?? TEMPLATES
+  const activeTemplates = apiTemplates
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -896,6 +627,12 @@ export default function TemplateCatalogPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
           </div>
+        ) : activeTemplates.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-2xl mb-3">⚠️</p>
+            <p className="text-dc1-text-secondary mb-1">{templatesError ?? 'Template catalog unavailable.'}</p>
+            <button onClick={() => window.location.reload()} className="btn btn-outline btn-sm mt-3">Retry</button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-2xl mb-3">🔍</p>
@@ -917,7 +654,16 @@ export default function TemplateCatalogPage() {
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <Link href="/renter/marketplace" className="btn btn-secondary btn-sm">Browse Providers</Link>
-            <button onClick={() => openDeploy(activeTemplates.find(t => t.id === 'custom-container') ?? activeTemplates[0])} className="btn btn-outline btn-sm">
+            <button
+              onClick={() => {
+                const customContainer = activeTemplates.find(t => t.id === 'custom-container')
+                const fallback = activeTemplates[0]
+                if (customContainer) openDeploy(customContainer)
+                else if (fallback) openDeploy(fallback)
+              }}
+              disabled={activeTemplates.length === 0}
+              className="btn btn-outline btn-sm"
+            >
               📦 Custom Container
             </button>
           </div>

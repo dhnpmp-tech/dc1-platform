@@ -17,6 +17,8 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
+const { toCatalogContractCore, toUsdStringFromHalala } = require('../lib/model-catalog-contract');
+const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 
 const router = express.Router();
 
@@ -126,7 +128,11 @@ function buildModelRegistryListQuery(columns) {
   const selectColumns = [
     'model_id',
     columns.has('display_name') ? 'display_name' : 'model_id AS display_name',
+    columns.has('created_at') ? 'created_at' : 'NULL AS created_at',
     columns.has('context_window') ? 'context_window' : '4096 AS context_window',
+    columns.has('quantization') ? 'quantization' : "'unknown' AS quantization",
+    columns.has('vram_gb') ? 'vram_gb' : '0 AS vram_gb',
+    columns.has('default_price_halala_per_min') ? 'default_price_halala_per_min' : '0 AS default_price_halala_per_min',
     columns.has('parameter_count') ? 'parameter_count' : 'NULL AS parameter_count',
     columns.has('min_gpu_vram_gb')
       ? 'min_gpu_vram_gb'
@@ -173,20 +179,27 @@ router.get('/models', (req, res) => {
     }
 
     const nowSecs = Math.floor(Date.now() / 1000);
+    const data = (rows || []).map((row) => {
+      const contractCore = toCatalogContractCore({
+        model: row,
+        providerCount: 0,
+        maxVramGb: Number(row.vram_gb || row.min_gpu_vram_gb || 0),
+        created: nowSecs,
+      });
 
-    const data = (rows || []).map(row => ({
-      id: row.model_id,
-      object: 'model',
-      created: nowSecs,
-      owned_by: 'dc1-platform',
-      permission: [],
-      root: row.model_id,
-      parent: null,
-      // Extra DC1 fields (safe to include — OpenRouter ignores unknown keys)
-      display_name: row.display_name || row.model_id,
-      context_window: Number(row.context_window || 0),
-      parameter_count: row.parameter_count ?? null,
-    }));
+      return {
+        ...contractCore,
+        object: 'model',
+        owned_by: 'dc1-platform',
+        permission: [],
+        root: row.model_id,
+        parent: null,
+        // Legacy aliases kept for existing clients while catalog parity migrates.
+        display_name: contractCore.name,
+        context_window: contractCore.context_length,
+        parameter_count: row.parameter_count ?? null,
+      };
+    });
 
     return res.json({ object: 'list', data });
   } catch (error) {
@@ -262,6 +275,26 @@ function resolveModelRequirements(model) {
   };
 }
 
+function resolveTokenRateHalala(modelId) {
+  const row = db.get(
+    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+    modelId
+  ) || db.get(
+    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+    '__default__'
+  );
+  return toFiniteInt(row?.token_rate_halala, { min: 0, max: 100_000_000 }) ?? 1;
+}
+
+function extractRequestId(req) {
+  return normalizeString(
+    req.headers['idempotency-key']
+      || req.headers['x-request-id']
+      || req.headers['x-correlation-id'],
+    { maxLen: 200, trim: true }
+  ) || `orreq_${crypto.randomUUID()}`;
+}
+
 function approximateTokenCount(text) {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
@@ -269,6 +302,30 @@ function approximateTokenCount(text) {
 
 function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
+}
+
+function withUsdUsagePricing(rawUsage = {}, tokenRateHalala = 1) {
+  const promptTokens = toFiniteInt(rawUsage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+  const completionTokens = toFiniteInt(rawUsage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+  const totalTokens = toFiniteInt(rawUsage.total_tokens, { min: 0, max: 1_000_000_000 })
+    ?? (promptTokens + completionTokens);
+  const safeTokenRate = toFiniteInt(tokenRateHalala, { min: 0, max: 100_000_000 }) ?? 0;
+  const promptCostHalala = promptTokens * safeTokenRate;
+  const completionCostHalala = completionTokens * safeTokenRate;
+  const totalCostHalala = totalTokens * safeTokenRate;
+
+  return {
+    ...rawUsage,
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: totalTokens,
+    pricing: {
+      currency: 'USD',
+      usd_prompt: toUsdStringFromHalala(promptCostHalala),
+      usd_completion: toUsdStringFromHalala(completionCostHalala),
+      usd_total: toUsdStringFromHalala(totalCostHalala),
+    },
+  };
 }
 
 function v1ChatRateLimiter(req, res, next) {
@@ -281,8 +338,8 @@ function v1ChatRateLimiter(req, res, next) {
 async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
-  if (Array.isArray(tools)) body.tools = tools;
-  if (toolChoice != null) body.tool_choice = toolChoice;
+  if (tools !== undefined) body.tools = tools;
+  if (toolChoice !== undefined) body.tool_choice = toolChoice;
   let response;
   try {
     response = await fetch(url, {
@@ -364,8 +421,10 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const wantsStream = !!req.body?.stream;
 
     // Extract function calling params (Gap 4)
-    const tools = Array.isArray(req.body?.tools) ? req.body.tools : null;
-    const toolChoice = req.body?.tool_choice || null;
+    const hasTools = Object.prototype.hasOwnProperty.call(req.body || {}, 'tools');
+    const hasToolChoice = Object.prototype.hasOwnProperty.call(req.body || {}, 'tool_choice');
+    const tools = hasTools ? req.body.tools : undefined;
+    const toolChoice = hasToolChoice ? req.body.tool_choice : undefined;
 
     const modelReq = resolveModelRequirements(model);
     const minVramMb = modelReq.min_vram_gb * 1024;
@@ -382,6 +441,59 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const promptTokens = approximateTokenCount(mergedPrompt);
     const durationMinutes = Math.max(1, Math.ceil(maxTokens / 350));
     const estimatedCostHalala = Math.max(1, Math.round(durationMinutes * modelReq.fallback_rate_halala_per_min));
+    const tokenRateHalala = resolveTokenRateHalala(modelReq.model_id);
+    const meteringRequestId = extractRequestId(req);
+    let usagePersisted = false;
+
+    const toUsageSnapshot = (rawUsage = {}, completionText = '') => {
+      const billedPromptTokens = toFiniteInt(rawUsage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? promptTokens;
+      const defaultCompletionTokens = completionText ? approximateTokenCount(completionText) : 0;
+      const billedCompletionTokens = toFiniteInt(rawUsage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? defaultCompletionTokens;
+      const billedTotalTokens = toFiniteInt(rawUsage.total_tokens, { min: 0, max: 1_000_000_000 })
+        ?? (billedPromptTokens + billedCompletionTokens);
+      return {
+        promptTokens: billedPromptTokens,
+        completionTokens: billedCompletionTokens,
+        totalTokens: billedTotalTokens,
+        costHalala: Math.max(1, billedTotalTokens * tokenRateHalala),
+      };
+    };
+
+    const persistUsageOnce = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
+      if (usagePersisted) return;
+      const snapshot = toUsageSnapshot(usage, completionText);
+      try {
+        recordOpenRouterUsage(db._db || db, {
+          requestId: meteringRequestId,
+          providerResponseId,
+          renterId: req.renter.id,
+          providerId: providerForUsage?.id || null,
+          model: modelReq.model_id,
+          source: 'v1',
+          promptTokens: snapshot.promptTokens,
+          completionTokens: snapshot.completionTokens,
+          totalTokens: snapshot.totalTokens,
+          costHalala: snapshot.costHalala,
+          currency: 'SAR',
+        });
+      } catch (error) {
+        console.error('[v1/chat/completions] usage ledger persist failed:', error?.message || error);
+      }
+      usagePersisted = true;
+    };
+
+    const debitRenterSafe = (costHalala) => {
+      try {
+        db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
+          .run(costHalala, new Date().toISOString(), req.renter.id, costHalala);
+      } catch (_) { /* best-effort */ }
+    };
+
+    const debitAndPersistUsage = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
+      const snapshot = toUsageSnapshot(usage, completionText);
+      debitRenterSafe(snapshot.costHalala);
+      persistUsageOnce({ providerForUsage, providerResponseId, usage, completionText });
+    };
     if (Number(req.renter.balance_halala || 0) < estimatedCostHalala) {
       return res.status(402).json({
         error: { message: 'Insufficient balance', type: 'billing_error', code: 402 }
@@ -401,37 +513,130 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         toolChoice,
       });
 
-      const debitAndReturnProxyResult = (resultBody) => {
-        const usage = resultBody?.usage || {};
-        const actualTokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
-        const rateRecord = db.get(
-          'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', modelReq.model_id
-        ) || db.get('SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1', '__default__');
-        const tokenRate = rateRecord?.token_rate_halala || 1;
-        const actualCost = Math.max(1, actualTokens * tokenRate);
-        try {
-          db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
-            .run(actualCost, new Date().toISOString(), req.renter.id, actualCost);
-        } catch (_) { /* best-effort */ }
-
-        return res.json(resultBody);
+      const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
+        const usageForResponse = withUsdUsagePricing(resultBody?.usage || {}, tokenRateHalala);
+        debitAndPersistUsage({
+          providerForUsage,
+          providerResponseId: normalizeString(resultBody?.id, { maxLen: 200 }),
+          usage: usageForResponse,
+        });
+        return res.json({
+          ...resultBody,
+          usage: usageForResponse,
+        });
       };
 
-      const writeStreamingResponse = (streamResponse) => {
+      const writeStreamingResponse = async (streamResponse, providerForUsage) => {
+        if (!streamResponse?.body) {
+          throw new Error('Provider streaming response missing body');
+        }
+
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
-        streamResponse.body.pipe(res);
+        if (res.flushHeaders) res.flushHeaders();
+
+        let providerResponseId = null;
+        let finalUsage = null;
+        let completionText = '';
+        let sseBuffer = '';
+        let doneWritten = false;
+
+        const writeDoneOnce = () => {
+          if (doneWritten) return;
+          doneWritten = true;
+          res.write('data: [DONE]\n\n');
+        };
+
+        const processSseBuffer = (flushPartial = false) => {
+          const lines = sseBuffer.split('\n');
+          sseBuffer = flushPartial ? '' : (lines.pop() || '');
+          if (lines.length === 0) return '';
+
+          const transformedLines = [];
+          for (const rawLine of lines) {
+            const line = rawLine.trimEnd();
+            if (!line.startsWith('data:')) {
+              transformedLines.push(rawLine);
+              continue;
+            }
+            const payload = line.slice(5).trim();
+            if (!payload) {
+              transformedLines.push(rawLine);
+              continue;
+            }
+            if (payload === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(payload);
+              if (parsed && typeof parsed.id === 'string' && parsed.id.trim()) {
+                providerResponseId = parsed.id.trim().slice(0, 200);
+              }
+              const delta = parsed?.choices?.[0]?.delta?.content;
+              if (typeof delta === 'string' && delta) {
+                completionText += delta;
+              }
+              if (parsed && parsed.usage && typeof parsed.usage === 'object') {
+                const usageWithPricing = withUsdUsagePricing(parsed.usage, tokenRateHalala);
+                parsed.usage = usageWithPricing;
+                finalUsage = usageWithPricing;
+              }
+              transformedLines.push(`data: ${JSON.stringify(parsed)}`);
+            } catch (_) {
+              transformedLines.push(rawLine);
+            }
+          }
+
+          return transformedLines.length > 0 ? `${transformedLines.join('\n')}\n` : '';
+        };
+
+        const transformSseText = (chunkText) => {
+          sseBuffer += chunkText;
+          return processSseBuffer(false);
+        };
+
+        const body = streamResponse.body;
+        if (typeof body[Symbol.asyncIterator] === 'function') {
+          for await (const chunk of body) {
+            const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            const transformed = transformSseText(bufferChunk.toString('utf8'));
+            if (transformed) res.write(transformed);
+          }
+        } else if (typeof body.getReader === 'function') {
+          const reader = body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (!value) continue;
+            const bufferChunk = Buffer.from(value);
+            const transformed = transformSseText(bufferChunk.toString('utf8'));
+            if (transformed) res.write(transformed);
+          }
+        } else {
+          throw new Error('Unsupported provider stream body');
+        }
+
+        const trailing = processSseBuffer(true);
+        if (trailing) res.write(trailing);
+
+        debitAndPersistUsage({
+          providerForUsage,
+          providerResponseId,
+          usage: finalUsage || {},
+          completionText,
+        });
+        writeDoneOnce();
+        res.end();
       };
 
       if (wantsStream && proxyResult.streamResponse) {
-        writeStreamingResponse(proxyResult.streamResponse);
+        await writeStreamingResponse(proxyResult.streamResponse, assignedProvider);
         return;
       }
 
       if (proxyResult.body) {
-        return debitAndReturnProxyResult(proxyResult.body);
+        return debitAndReturnProxyResult(proxyResult.body, assignedProvider);
       }
 
       // If selected provider endpoint exists but failed to produce a valid payload,
@@ -456,12 +661,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         if (fallbackResult.proxyError) continue;
 
         if (wantsStream && fallbackResult.streamResponse) {
-          writeStreamingResponse(fallbackResult.streamResponse);
+          await writeStreamingResponse(fallbackResult.streamResponse, fallbackProvider);
           return;
         }
 
         if (fallbackResult.body) {
-          return debitAndReturnProxyResult(fallbackResult.body);
+          return debitAndReturnProxyResult(fallbackResult.body, fallbackProvider);
         }
       }
 
@@ -522,6 +727,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       if (job.status === 'completed') {
         const text = job.result_text || '';
         const cTokens = job.completion_tokens || approximateTokenCount(text);
+        const usage = withUsdUsagePricing(
+          { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens: promptTokens + cTokens },
+          tokenRateHalala
+        );
+        const completionId = `chatcmpl-${jobId}`;
 
         // If streaming was requested, simulate SSE from completed text
         if (wantsStream) {
@@ -531,7 +741,6 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           res.setHeader('X-Accel-Buffering', 'no');
           if (res.flushHeaders) res.flushHeaders();
 
-          const completionId = `chatcmpl-${jobId}`;
           // Send content in small chunks
           const chunkSize = 20;
           for (let i = 0; i < text.length; i += chunkSize) {
@@ -547,14 +756,16 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             id: completionId, object: 'chat.completion.chunk',
             created: Math.floor(Date.now() / 1000), model: modelReq.model_id,
             choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-            usage: { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens: promptTokens + cTokens },
+            usage,
           })}\n\n`);
           res.write('data: [DONE]\n\n');
+          debitAndPersistUsage({ providerForUsage: assignedProvider, providerResponseId: completionId, usage });
           return res.end();
         }
 
+        debitAndPersistUsage({ providerForUsage: assignedProvider, providerResponseId: completionId, usage });
         return res.json({
-          id: `chatcmpl-${jobId}`,
+          id: completionId,
           object: 'chat.completion',
           created: Math.floor(Date.now() / 1000),
           model: modelReq.model_id,
@@ -563,7 +774,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             message: { role: 'assistant', content: text },
             finish_reason: 'stop',
           }],
-          usage: { prompt_tokens: promptTokens, completion_tokens: cTokens, total_tokens: promptTokens + cTokens },
+          usage,
         });
       }
 
