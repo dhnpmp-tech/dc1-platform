@@ -32582,3 +32582,8 @@ a
 - **Commit**: `pending` - Refactored renter dashboard auth verification flow by wrapping `verifyKey` in `useCallback` and binding the auth polling effect to that stable callback, resolving exhaustive-deps warnings.
 - **Files**: `app/renter/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `npm run lint -- --file app/renter/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).
+
+## [2026-04-01 10:59 UTC] Codex — Release heartbeat merged DCP-282 passthrough branch
+- **Commit**: `2e154a7` - Created PR #158 for `agent/backend-dev/dcp-282-v1-parameter-passthrough`, rebased it onto `main` with `AGENT_LOG.md` resolved from `main`, and merged it into `main`.
+- **Files**: `AGENT_LOG.md`, `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`
+- **Impact**: `main` now includes the optional v1 chat-completions parameter passthrough and its parity coverage. Other release heartbeats can skip this branch/PR because the code is already landed on `main`.
