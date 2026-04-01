@@ -32542,3 +32542,8 @@ a
 - **Commit**: `pending` - Fixed provider job detail effect dependency warning by including translation function `t` in the data-loading `useEffect` dependency list.
 - **Files**: `app/provider/jobs/[id]/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `npm run lint -- --file app/provider/jobs/[id]/page.tsx` passes cleanly. Full build still fails on existing unrelated prerender blockers for `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).
+
+## [2026-04-01 00:19 UTC] Codex — DCP-211 Renter Job Detail Hook Dependency Fixes
+- **Commit**: `pending` - Fixed renter job detail hook dependency warnings by adding `apiKey` to the streaming effect deps and adding translation function `t` to the polling effect deps.
+- **Files**: `app/renter/jobs/[id]/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Targeted lint run no longer reports hook-dependency warnings for this file; remaining warning is the existing `@next/next/no-img-element` at line 1221. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).

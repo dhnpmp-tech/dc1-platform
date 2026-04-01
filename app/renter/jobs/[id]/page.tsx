@@ -282,7 +282,7 @@ function LogStream({
       disconnect()
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [connect, disconnect])
+  }, [apiKey, connect, disconnect])
 
   useEffect(() => {
     if (autoScroll && bottomRef.current) {
@@ -769,7 +769,7 @@ export default function RenterJobDetailPage() {
     fetchData()
     const interval = setInterval(fetchData, 3000)
     return () => clearInterval(interval)
-  }, [jobId, router])
+  }, [jobId, router, t])
 
   useEffect(() => {
     if (!job?.provider_id) {
