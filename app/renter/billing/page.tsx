@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import { useLanguage } from '../../lib/i18n'
@@ -115,16 +115,7 @@ export default function BillingPage() {
   const [renterName, setRenterName] = useState('')
   const API_BASE = getApiBase()
 
-  useEffect(() => {
-    const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
-    if (key) {
-      fetchRenterData(key)
-    } else {
-      setLoading(false)
-    }
-  }, [])
-
-  const fetchRenterData = async (key: string) => {
+  const fetchRenterData = useCallback(async (key: string) => {
     try {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
       if (res.ok) {
@@ -139,7 +130,16 @@ export default function BillingPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [API_BASE])
+
+  useEffect(() => {
+    const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
+    if (key) {
+      fetchRenterData(key)
+    } else {
+      setLoading(false)
+    }
+  }, [fetchRenterData])
 
   const balance = renter ? (renter.balance_halala / 100).toFixed(2) : '0.00'
   const totalSpent = renter ? ((renter.total_spent_halala || 0) / 100).toFixed(2) : '0.00'
