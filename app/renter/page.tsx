@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../components/layout/DashboardLayout'
@@ -126,32 +126,7 @@ export default function RenterDashboard() {
   ]
 
   // ── Auth + Auto-refresh ──────────────────────────────────────────
-  useEffect(() => {
-    const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
-    if (key) {
-      setAuthReason(null)
-      verifyKey(key)
-      const interval = setInterval(() => {
-        verifyKey(key)
-      }, 30000)
-      return () => clearInterval(interval)
-    } else {
-      setAuthReason('missing_credentials')
-      setAuthChecking(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (authChecking || renter) return
-    const params = new URLSearchParams({
-      role: 'renter',
-      redirect: '/renter',
-    })
-    if (authReason) params.set('reason', authReason)
-    router.replace(`/login?${params.toString()}`)
-  }, [authChecking, renter, authReason, router])
-
-  const verifyKey = async (key: string) => {
+  const verifyKey = useCallback(async (key: string) => {
     setAuthChecking(true)
     setAuthReason(null)
     try {
@@ -191,7 +166,32 @@ export default function RenterDashboard() {
     } finally {
       setAuthChecking(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
+    if (key) {
+      setAuthReason(null)
+      verifyKey(key)
+      const interval = setInterval(() => {
+        verifyKey(key)
+      }, 30000)
+      return () => clearInterval(interval)
+    } else {
+      setAuthReason('missing_credentials')
+      setAuthChecking(false)
+    }
+  }, [verifyKey])
+
+  useEffect(() => {
+    if (authChecking || renter) return
+    const params = new URLSearchParams({
+      role: 'renter',
+      redirect: '/renter',
+    })
+    if (authReason) params.set('reason', authReason)
+    router.replace(`/login?${params.toString()}`)
+  }, [authChecking, renter, authReason, router])
 
   const fetchGPUs = async () => {
     try {
