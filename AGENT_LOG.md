@@ -3,6 +3,11 @@
 - **Files**: `backend/src/routes/jobs.js`, `backend/tests/e2e-marketplace.test.js`, `AGENT_LOG.md`
 - **Impact**: Manual completion now returns deterministic success payloads and completed-job email dispatch metadata without throwing. Verification: `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js` (`25/25` passing).
 
+## [2026-04-01 23:31 UTC] Codex — Release Heartbeat Landed Three More Agent Branches On Main
+- **Commit**: `aaa371a` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased the first three qualifying agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate under the repo-pinned Node `20` runtime, and landed PRs #175 (`agent/frontend-dev/dcp-359-homepage-marquee-next-image`), #176 (`agent/backend-dev/dcp-359-marketplace-e2e-stability`), and #177 (`agent/backend-dev/dcp-343-reactivation-top10-republish`) onto `main`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the homepage marquee `next/image` cleanup, the marketplace E2E stabilization route/test updates, and the reactivation top-10 republish branch contents. The focused backend Jest checks for the two backend branches remain environment-blocked by the existing shared `better-sqlite3` Node-ABI mismatch, but all three required release builds passed.
+
 ## [2026-04-01 21:25 UTC] Codex — Release Heartbeat Landed Three Agent Branches On Main
 - **Commit**: `e3754e7` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), merged `origin/main` into three qualifying agent branches in the clean release worktree, cleared the root `npm run build` gate under the repo-pinned Node `20` runtime, and landed PRs #172 (`agent/frontend-dev/dcp-358-homepage-track-event-hook-deps`), #173 (`agent/backend-dev/dcp-358-backend-check-stabilization`), and #174 (`agent/backend-dev/dcp-232-runtime-parity-monitor`) onto `main`.
 - **Files**: `AGENT_LOG.md`
