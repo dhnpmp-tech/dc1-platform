@@ -48,7 +48,13 @@ async function startMockProvider(mode, capture = []) {
         capture.push(null);
       }
 
-      if (mode === 'stream') {
+      if (mode === 'error') {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'upstream failure' }));
+        return;
+      }
+
+      if (mode === 'stream' || mode === 'stream_no_done' || mode === 'stream_double_done') {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
@@ -68,7 +74,12 @@ async function startMockProvider(mode, capture = []) {
           created: Math.floor(Date.now() / 1000),
           choices: [{ index: 0, delta: { content: 'haba' }, finish_reason: 'stop' }],
         })}\n\n`);
-        res.write('data: [DONE]\n\n');
+        if (mode !== 'stream_no_done') {
+          res.write('data: [DONE]\n\n');
+        }
+        if (mode === 'stream_double_done') {
+          res.write('data: [DONE]\n\n');
+        }
         res.end();
         return;
       }
@@ -100,7 +111,8 @@ function seedRenter(apiKey) {
   ).run('Parity Renter', `${apiKey}@dc1.test`, apiKey, 100000, nowIso());
 }
 
-function seedProvider(endpointUrl) {
+function seedProvider(endpointUrl, { gpuUtilPct = null } = {}) {
+  const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const result = db.prepare(
     `INSERT INTO providers
       (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib, approval_status, status,
@@ -108,7 +120,7 @@ function seedProvider(endpointUrl) {
      VALUES (?, ?, ?, ?, ?, ?, 'approved', 'online', '["inference"]', ?, ?, ?, ?)`
   ).run(
     'Parity Provider',
-    `provider-${Date.now()}@dc1.test`,
+    `provider-${uniqueSuffix}@dc1.test`,
     `provider-${crypto.randomBytes(6).toString('hex')}`,
     'RTX 4090',
     24,
@@ -118,6 +130,13 @@ function seedProvider(endpointUrl) {
     nowIso(),
     nowIso()
   );
+  if (gpuUtilPct != null) {
+    try {
+      db.prepare('UPDATE providers SET gpu_util_pct = ? WHERE id = ?').run(gpuUtilPct, result.lastInsertRowid);
+    } catch (_) {
+      // Older schema snapshots used by tests may not include gpu_util_pct.
+    }
+  }
   return result.lastInsertRowid;
 }
 
@@ -188,10 +207,64 @@ describe('/v1 OpenRouter parity', () => {
 
       expect(res.status).toBe(200);
       expect(String(res.headers['content-type'] || '')).toContain('text/event-stream');
-      expect(res.text).toContain('data: [DONE]');
+      expect((res.text.match(/data:\s*\[DONE\]/g) || [])).toHaveLength(1);
       expect(res.text).toContain('Mar');
     } finally {
       await provider.close();
+    }
+  });
+
+  test('POST /v1/chat/completions stream emits exactly one DONE even when provider emits duplicates', async () => {
+    const provider = await startMockProvider('stream_double_done');
+    const renterKey = 'parity-renter-stream-double-done';
+    try {
+      seedModel();
+      seedRenter(renterKey);
+      seedProvider(provider.endpointUrl);
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          stream: true,
+        });
+
+      expect(res.status).toBe(200);
+      expect(String(res.headers['content-type'] || '')).toContain('text/event-stream');
+      expect((res.text.match(/data:\s*\[DONE\]/g) || [])).toHaveLength(1);
+    } finally {
+      await provider.close();
+    }
+  });
+
+  test('POST /v1/chat/completions stream fallback path terminates with one DONE when fallback provider omits DONE', async () => {
+    const primary = await startMockProvider('error');
+    const fallback = await startMockProvider('stream_no_done');
+    const renterKey = 'parity-renter-stream-fallback';
+    try {
+      seedModel();
+      seedRenter(renterKey);
+      seedProvider(primary.endpointUrl, { gpuUtilPct: 1 });
+      seedProvider(fallback.endpointUrl, { gpuUtilPct: 90 });
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'hello fallback' }],
+          stream: true,
+        });
+
+      expect(res.status).toBe(200);
+      expect(String(res.headers['content-type'] || '')).toContain('text/event-stream');
+      expect(res.text).toContain('Mar');
+      expect((res.text.match(/data:\s*\[DONE\]/g) || [])).toHaveLength(1);
+    } finally {
+      await primary.close();
+      await fallback.close();
     }
   });
 
@@ -229,6 +302,35 @@ describe('/v1 OpenRouter parity', () => {
       expect(res.status).toBe(200);
       expect(providerCapture[0]?.tools?.length).toBe(1);
       expect(providerCapture[0]?.tool_choice).toEqual({ type: 'function', function: { name: 'get_weather' } });
+    } finally {
+      await provider.close();
+    }
+  });
+
+  test('POST /v1/chat/completions preserves explicit tools/tool_choice payload values without normalization', async () => {
+    const providerCapture = [];
+    const provider = await startMockProvider('json', providerCapture);
+    const renterKey = 'parity-renter-raw-tool-fields';
+    const toolsPayload = { raw: true, schema_version: 2, nested: { depth: ['x', 'y'] } };
+
+    try {
+      seedModel();
+      seedRenter(renterKey);
+      seedProvider(provider.endpointUrl);
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'passthrough payloads' }],
+          tools: toolsPayload,
+          tool_choice: false,
+        });
+
+      expect(res.status).toBe(200);
+      expect(providerCapture[0]?.tools).toEqual(toolsPayload);
+      expect(providerCapture[0]?.tool_choice).toBe(false);
     } finally {
       await provider.close();
     }

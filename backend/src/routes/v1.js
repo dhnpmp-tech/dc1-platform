@@ -338,8 +338,8 @@ function v1ChatRateLimiter(req, res, next) {
 async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
-  if (Array.isArray(tools)) body.tools = tools;
-  if (toolChoice != null) body.tool_choice = toolChoice;
+  if (tools !== undefined) body.tools = tools;
+  if (toolChoice !== undefined) body.tool_choice = toolChoice;
   let response;
   try {
     response = await fetch(url, {
@@ -421,8 +421,10 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const wantsStream = !!req.body?.stream;
 
     // Extract function calling params (Gap 4)
-    const tools = Array.isArray(req.body?.tools) ? req.body.tools : null;
-    const toolChoice = req.body?.tool_choice || null;
+    const hasTools = Object.prototype.hasOwnProperty.call(req.body || {}, 'tools');
+    const hasToolChoice = Object.prototype.hasOwnProperty.call(req.body || {}, 'tool_choice');
+    const tools = hasTools ? req.body.tools : undefined;
+    const toolChoice = hasToolChoice ? req.body.tool_choice : undefined;
 
     const modelReq = resolveModelRequirements(model);
     const minVramMb = modelReq.min_vram_gb * 1024;
@@ -539,18 +541,32 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         let finalUsage = null;
         let completionText = '';
         let sseBuffer = '';
+        let doneWritten = false;
 
-        const transformSseText = (chunkText) => {
-          sseBuffer += chunkText;
+        const writeDoneOnce = () => {
+          if (doneWritten) return;
+          doneWritten = true;
+          res.write('data: [DONE]\n\n');
+        };
+
+        const processSseBuffer = (flushPartial = false) => {
           const lines = sseBuffer.split('\n');
-          sseBuffer = lines.pop() || '';
+          sseBuffer = flushPartial ? '' : (lines.pop() || '');
           if (lines.length === 0) return '';
 
-          const transformedLines = lines.map((rawLine) => {
+          const transformedLines = [];
+          for (const rawLine of lines) {
             const line = rawLine.trimEnd();
-            if (!line.startsWith('data:')) return rawLine;
+            if (!line.startsWith('data:')) {
+              transformedLines.push(rawLine);
+              continue;
+            }
             const payload = line.slice(5).trim();
-            if (!payload || payload === '[DONE]') return rawLine;
+            if (!payload) {
+              transformedLines.push(rawLine);
+              continue;
+            }
+            if (payload === '[DONE]') continue;
 
             try {
               const parsed = JSON.parse(payload);
@@ -566,13 +582,18 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
                 parsed.usage = usageWithPricing;
                 finalUsage = usageWithPricing;
               }
-              return `data: ${JSON.stringify(parsed)}`;
+              transformedLines.push(`data: ${JSON.stringify(parsed)}`);
             } catch (_) {
-              return rawLine;
+              transformedLines.push(rawLine);
             }
-          });
+          }
 
-          return `${transformedLines.join('\n')}\n`;
+          return transformedLines.length > 0 ? `${transformedLines.join('\n')}\n` : '';
+        };
+
+        const transformSseText = (chunkText) => {
+          sseBuffer += chunkText;
+          return processSseBuffer(false);
         };
 
         const body = streamResponse.body;
@@ -596,9 +617,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           throw new Error('Unsupported provider stream body');
         }
 
-        if (sseBuffer) {
-          res.write(sseBuffer);
-        }
+        const trailing = processSseBuffer(true);
+        if (trailing) res.write(trailing);
 
         debitAndPersistUsage({
           providerForUsage,
@@ -606,6 +626,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           usage: finalUsage || {},
           completionText,
         });
+        writeDoneOnce();
         res.end();
       };
 
