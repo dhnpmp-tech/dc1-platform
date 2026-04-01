@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
@@ -119,7 +120,7 @@ export default function HomePage() {
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
 
-  const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
+  const trackLandingEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
     const detail = {
       event,
@@ -141,7 +142,7 @@ export default function HomePage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }
+  }, [selectedIntent])
 
   const updateIntent = (intent: RoleIntent, source: string, selectionType: string) => {
     const previousIntent = selectedIntent
@@ -277,7 +278,7 @@ export default function HomePage() {
 
     observer.observe(node)
     return () => observer.disconnect()
-  }, [])
+  }, [trackLandingEvent])
 
   const liveStats = [
     { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
@@ -634,10 +635,12 @@ export default function HomePage() {
                   { src: '/logos/huggingface-text.png', alt: 'Hugging Face' },
                   { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM' },
                 ].map((logo, i) => (
-                  <img
+                  <Image
                     key={`${copy}-${i}`}
                     src={logo.src}
                     alt={logo.alt}
+                    width={160}
+                    height={36}
                     className="h-7 sm:h-9 w-auto object-contain brightness-0 invert opacity-50 hover:opacity-90 transition-opacity duration-300 shrink-0"
                   />
                 ))}
