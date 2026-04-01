@@ -1,3 +1,8 @@
+## [2026-04-01 08:57 UTC] Codex — Release Heartbeat Landed V1 Latency Budget Gate
+- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #157 for `agent/backend-dev/dcp-282-openrouter-tool-sse-parity`, resolved the `AGENT_LOG.md` merge conflict by keeping `main`, and landed the branch onto `main` from the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the backend `/v1` latency-budget gate path in [`backend/src/routes/v1.js`], the supporting service/script updates, and the expanded integration coverage in [`backend/tests/integration/v1-openrouter-parity.test.js`]. GitHub closed PR #157 as merged at merge commit `d1f4703`.
+
 ## [2026-04-01 08:21 UTC] Codex — Release Heartbeat Landed Renter Dashboard Hook Fix
 - **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #156 for `agent/frontend-dev/dcp-213-renter-dashboard-hook-deps`, resolved the `app/renter/page.tsx` merge conflict by taking the branch code while keeping `main` for `AGENT_LOG.md`, and landed the branch onto `main` via the clean release worktree.
 - **Files**: `AGENT_LOG.md`
