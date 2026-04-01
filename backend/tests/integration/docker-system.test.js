@@ -332,6 +332,10 @@ describe('DCP-324 Docker wave integration suite', () => {
       const nextJobRes = await request(app).get(`/api/providers/jobs/next?key=${providerKey}`);
       expect(nextJobRes.status).toBe(200);
       expect(nextJobRes.body.job).toBeNull();
+      expect(nextJobRes.body.admission).toEqual(expect.objectContaining({
+        accepted: false,
+        reason_code: 'INSUFFICIENT_VRAM',
+      }));
 
       const stored = db.prepare('SELECT status FROM jobs WHERE job_id = ?').get(submitRes.body.job.job_id);
       expect(stored.status).toBe('queued');
@@ -366,6 +370,105 @@ describe('DCP-324 Docker wave integration suite', () => {
       const stored = db.prepare('SELECT status, provider_id FROM jobs WHERE job_id = ?').get(submitRes.body.job.job_id);
       expect(stored.status).toBe('running');
       expect(stored.provider_id).toBe(highProviderId);
+    });
+
+    it('returns deterministic reason code when instant-tier model is not cached on provider', async () => {
+      const modelId = 'dcp-tests/instant-tier-hot-model';
+      db.prepare(
+        `INSERT OR REPLACE INTO model_registry
+         (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+      ).run(
+        modelId,
+        'Instant Tier Test Model',
+        'dcp-tests',
+        8,
+        'fp16',
+        4096,
+        JSON.stringify(['test']),
+        8,
+        10,
+        new Date().toISOString(),
+        new Date().toISOString()
+      );
+      db.prepare('UPDATE model_registry SET prewarm_class = ? WHERE model_id = ?').run('hot', modelId);
+
+      const { providerKey, providerId } = await registerProvider();
+      setProviderCapabilities(providerId, { vramMb: 24576, gpuCount: 1 });
+      db.prepare('UPDATE providers SET cached_models = ? WHERE id = ?').run(JSON.stringify([]), providerId);
+
+      const { renterKey } = await registerRenter({ balance_halala: 20_000 });
+      const submitRes = await submitContainerJob(renterKey, {
+        container_spec: {
+          image_type: 'llm',
+          image: 'dcp/vllm-serve:latest',
+          vram_required_mb: 4096,
+          gpu_count: 1,
+          compute_type: 'inference',
+          model_id: modelId,
+        },
+      });
+      expect(submitRes.status).toBe(201);
+
+      const nextJobRes = await request(app).get(`/api/providers/jobs/next?key=${providerKey}`);
+      expect(nextJobRes.status).toBe(200);
+      expect(nextJobRes.body.job).toBeNull();
+      expect(nextJobRes.body.admission).toEqual(expect.objectContaining({
+        accepted: false,
+        reason_code: 'INSTANT_MODEL_NOT_CACHED',
+        tier_mode: 'instant',
+        model_id: modelId,
+      }));
+    });
+
+    it('assigns instant-tier job after provider reports model cached', async () => {
+      const modelId = 'dcp-tests/instant-tier-hot-model-2';
+      db.prepare(
+        `INSERT OR REPLACE INTO model_registry
+         (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+      ).run(
+        modelId,
+        'Instant Tier Test Model 2',
+        'dcp-tests',
+        8,
+        'fp16',
+        4096,
+        JSON.stringify(['test']),
+        8,
+        10,
+        new Date().toISOString(),
+        new Date().toISOString()
+      );
+      db.prepare('UPDATE model_registry SET prewarm_class = ? WHERE model_id = ?').run('hot', modelId);
+
+      const { providerKey, providerId } = await registerProvider();
+      setProviderCapabilities(providerId, { vramMb: 24576, gpuCount: 1 });
+      db.prepare('UPDATE providers SET cached_models = ? WHERE id = ?').run(JSON.stringify([modelId]), providerId);
+
+      const { renterKey } = await registerRenter({ balance_halala: 20_000 });
+      const submitRes = await submitContainerJob(renterKey, {
+        container_spec: {
+          image_type: 'llm',
+          image: 'dcp/vllm-serve:latest',
+          vram_required_mb: 4096,
+          gpu_count: 1,
+          compute_type: 'inference',
+          model_id: modelId,
+        },
+      });
+      expect(submitRes.status).toBe(201);
+
+      const nextJobRes = await request(app).get(`/api/providers/jobs/next?key=${providerKey}`);
+      expect(nextJobRes.status).toBe(200);
+      expect(nextJobRes.body.job).toBeTruthy();
+      expect(nextJobRes.body.job.job_id).toBe(submitRes.body.job.job_id);
+      expect(nextJobRes.body.admission).toEqual(expect.objectContaining({
+        accepted: true,
+        reason_code: 'ADMISSION_OK',
+        tier_mode: 'instant',
+        model_id: modelId,
+      }));
     });
 
     it('returns queue depth grouped by compute_type', async () => {

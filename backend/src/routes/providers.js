@@ -2079,6 +2079,33 @@ function discoverComputeTypesFromResourceSpec(resourceSpec) {
     return discovered;
 }
 
+const PROVIDER_ADMISSION_REASON_CODES = Object.freeze({
+    OK: 'ADMISSION_OK',
+    NO_PENDING_JOBS: 'NO_PENDING_JOBS',
+    PROVIDER_PAUSED: 'PROVIDER_PAUSED',
+    PROVIDER_OFFLINE: 'PROVIDER_OFFLINE',
+    JOB_TIER_UNSUPPORTED: 'JOB_TIER_UNSUPPORTED',
+    COMPUTE_TYPE_UNSUPPORTED: 'COMPUTE_TYPE_UNSUPPORTED',
+    INSUFFICIENT_VRAM: 'INSUFFICIENT_VRAM',
+    INSUFFICIENT_GPU_COUNT: 'INSUFFICIENT_GPU_COUNT',
+    INSTANT_MODEL_NOT_CACHED: 'INSTANT_MODEL_NOT_CACHED',
+    NO_ELIGIBLE_JOB_FOR_PROVIDER: 'NO_ELIGIBLE_JOB_FOR_PROVIDER',
+});
+
+const TIER_MODE_BY_PREWARM_CLASS = Object.freeze({
+    hot: 'instant',
+    warm: 'cached',
+    cold: 'on-demand',
+});
+
+function resolveTierMode(prewarmClass) {
+    const normalized = normalizeString(prewarmClass, { maxLen: 32 })?.toLowerCase() || 'warm';
+    return {
+        prewarm_class: normalized,
+        tier_mode: TIER_MODE_BY_PREWARM_CLASS[normalized] || null,
+    };
+}
+
 function getProviderRoutingProfile(provider) {
     const vramMb =
         toFiniteInt(provider.vram_mb, { min: 0, max: 1024 * 1024 }) ||
@@ -2110,7 +2137,13 @@ function getProviderRoutingProfile(provider) {
     }
 
     const cachedModelsRaw = safeJsonParse(provider.cached_models);
-    const cachedModels = new Set(Array.isArray(cachedModelsRaw) ? cachedModelsRaw : []);
+    const cachedModels = new Set();
+    if (Array.isArray(cachedModelsRaw)) {
+        for (const modelId of cachedModelsRaw) {
+            const normalizedModel = normalizeString(modelId, { maxLen: 500 })?.toLowerCase();
+            if (normalizedModel) cachedModels.add(normalizedModel);
+        }
+    }
 
     return {
         vram_mb: Number(vramMb || 0),
@@ -2138,10 +2171,12 @@ function parseJobContainerRequirements(containerSpecRaw, prewarmCache = null) {
                 'SELECT prewarm_class FROM model_registry WHERE model_id = ? AND is_active = 1',
                 modelId
             );
-            prewarmClass = normalizeString(modelRecord?.prewarm_class) || 'warm';
+            prewarmClass = normalizeString(modelRecord?.prewarm_class)?.toLowerCase() || 'warm';
             if (prewarmCache) prewarmCache.set(modelId, prewarmClass);
         }
     }
+
+    const tier = resolveTierMode(prewarmClass);
 
     return {
         vram_required_mb: vramRequiredMb,
@@ -2149,29 +2184,67 @@ function parseJobContainerRequirements(containerSpecRaw, prewarmCache = null) {
         compute_type: computeType,
         container_spec: containerSpec,
         model_id: modelId,
-        prewarm_class: prewarmClass,
+        prewarm_class: tier.prewarm_class,
+        tier_mode: tier.tier_mode,
     };
 }
 
-function providerMatchesJob(providerProfile, jobRequirements) {
+function evaluateProviderAdmission(providerProfile, jobRequirements) {
+    if (!jobRequirements.tier_mode) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.JOB_TIER_UNSUPPORTED,
+            reason: `Unsupported prewarm class '${jobRequirements.prewarm_class || 'unknown'}'`,
+            tier_mode: null,
+            prewarm_class: jobRequirements.prewarm_class || null,
+        };
+    }
     if (!providerProfile.supported_compute_types.has(jobRequirements.compute_type)) {
-        return false;
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.COMPUTE_TYPE_UNSUPPORTED,
+            reason: `Provider does not support compute type '${jobRequirements.compute_type}'`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
     }
     if (providerProfile.vram_mb < jobRequirements.vram_required_mb) {
-        return false;
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_VRAM,
+            reason: `Provider VRAM ${providerProfile.vram_mb} MiB is below required ${jobRequirements.vram_required_mb} MiB`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
     }
     if (providerProfile.gpu_count < jobRequirements.gpu_count) {
-        return false;
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_GPU_COUNT,
+            reason: `Provider GPU count ${providerProfile.gpu_count} is below required ${jobRequirements.gpu_count}`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
     }
-    // Sprint 25 Gap 5: hot-tier models must already be cached on the provider.
-    // 'hot' = instant-tier (baked into image or pre-downloaded); skip providers that lack it.
-    // 'warm'/'cold' = download at runtime; any provider with sufficient VRAM is acceptable.
-    if (jobRequirements.prewarm_class === 'hot' && jobRequirements.model_id) {
-        if (!providerProfile.cached_models?.has(jobRequirements.model_id)) {
-            return false;
+    if (jobRequirements.tier_mode === 'instant' && jobRequirements.model_id) {
+        const normalizedModelId = normalizeString(jobRequirements.model_id, { maxLen: 500 })?.toLowerCase();
+        if (!normalizedModelId || !providerProfile.cached_models?.has(normalizedModelId)) {
+            return {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.INSTANT_MODEL_NOT_CACHED,
+                reason: `Instant tier requires cached model '${jobRequirements.model_id}'`,
+                tier_mode: jobRequirements.tier_mode,
+                prewarm_class: jobRequirements.prewarm_class,
+            };
         }
     }
-    return true;
+    return {
+        accepted: true,
+        reason_code: PROVIDER_ADMISSION_REASON_CODES.OK,
+        reason: 'Provider satisfies admission checks',
+        tier_mode: jobRequirements.tier_mode,
+        prewarm_class: jobRequirements.prewarm_class,
+    };
 }
 
 function buildNextPendingJob(providerId) {
@@ -2182,9 +2255,37 @@ function buildNextPendingJob(providerId) {
          WHERE id = ?`,
         providerId
     );
-    if (!provider || Number(provider.is_paused || 0) === 1) return null;
+    if (!provider) {
+        return {
+            job: null,
+            admission: {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.PROVIDER_OFFLINE,
+                reason: 'Provider not found',
+            },
+        };
+    }
+    if (Number(provider.is_paused || 0) === 1) {
+        return {
+            job: null,
+            admission: {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.PROVIDER_PAUSED,
+                reason: 'Provider is paused',
+            },
+        };
+    }
     const providerStatus = computeProviderStatus(provider.last_heartbeat, Date.now());
-    if (providerStatus.status === 'offline') return null;
+    if (providerStatus.status === 'offline') {
+        return {
+            job: null,
+            admission: {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.PROVIDER_OFFLINE,
+                reason: 'Provider heartbeat is stale/offline',
+            },
+        };
+    }
 
     const providerProfile = getProviderRoutingProfile(provider);
     const candidates = db.all(
@@ -2206,11 +2307,21 @@ function buildNextPendingJob(providerId) {
 
     let job = null;
     let parsedContainerSpec = null;
+    let selectedAdmission = null;
     const now = new Date().toISOString();
     const prewarmCache = new Map(); // memoize model_registry lookups within this poll
     for (const candidate of candidates) {
         const requirements = parseJobContainerRequirements(candidate.container_spec, prewarmCache);
-        if (!providerMatchesJob(providerProfile, requirements)) {
+        const admission = evaluateProviderAdmission(providerProfile, requirements);
+        if (!admission.accepted) {
+            if (!selectedAdmission) {
+                selectedAdmission = {
+                    ...admission,
+                    job_id: candidate.job_id,
+                    compute_type: requirements.compute_type,
+                    model_id: requirements.model_id,
+                };
+            }
             continue;
         }
 
@@ -2234,10 +2345,29 @@ function buildNextPendingJob(providerId) {
 
         job = candidate;
         parsedContainerSpec = requirements.container_spec;
+        selectedAdmission = {
+            ...admission,
+            job_id: candidate.job_id,
+            compute_type: requirements.compute_type,
+            model_id: requirements.model_id,
+        };
         break;
     }
 
-    if (!job) return null;
+    if (!job) {
+        return {
+            job: null,
+            admission: selectedAdmission || {
+                accepted: false,
+                reason_code: candidates.length > 0
+                    ? PROVIDER_ADMISSION_REASON_CODES.NO_ELIGIBLE_JOB_FOR_PROVIDER
+                    : PROVIDER_ADMISSION_REASON_CODES.NO_PENDING_JOBS,
+                reason: candidates.length > 0
+                    ? 'Pending jobs exist but none pass provider admission checks'
+                    : 'No pending jobs available',
+            },
+        };
+    }
 
     const nextAttemptRow = db.get(
         'SELECT COALESCE(MAX(attempt_number), 0) + 1 AS attempt_number FROM job_executions WHERE job_id = ?',
@@ -2302,6 +2432,7 @@ function buildNextPendingJob(providerId) {
     });
 
     return {
+        job: {
         id: job.id,
         job_id: job.job_id,
         job_type: job.job_type,
@@ -2314,6 +2445,12 @@ function buildNextPendingJob(providerId) {
         gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
         duration_minutes: job.duration_minutes,
         max_duration_seconds: job.max_duration_seconds || 600
+        },
+        admission: selectedAdmission || {
+            accepted: true,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.OK,
+            reason: 'Provider satisfies admission checks',
+        },
     };
 }
 
@@ -2322,8 +2459,8 @@ router.get('/:api_key/jobs', (req, res) => {
         const { api_key } = req.params;
         const provider = db.get('SELECT id, readiness_status FROM providers WHERE api_key = ?', api_key);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
-        const job = buildNextPendingJob(provider.id);
-        return res.json({ job: job || null });
+        const decision = buildNextPendingJob(provider.id);
+        return res.json({ job: decision.job || null, admission: decision.admission || null });
     } catch (error) {
         console.error('Job poll error:', error);
         res.status(500).json({ error: 'Job poll failed' });
@@ -2343,8 +2480,8 @@ router.get('/jobs/next', (req, res) => {
         if (!cleanApiKey) return res.status(400).json({ error: 'Provider API key required' });
         const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
-        const job = buildNextPendingJob(provider.id);
-        return res.json({ job: job || null });
+        const decision = buildNextPendingJob(provider.id);
+        return res.json({ job: decision.job || null, admission: decision.admission || null });
     } catch (error) {
         console.error('Job next poll error:', error);
         res.status(500).json({ error: 'Job poll failed' });
