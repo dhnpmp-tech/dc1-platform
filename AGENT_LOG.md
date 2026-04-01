@@ -1,3 +1,8 @@
+## [2026-04-01 08:21 UTC] Codex — Release Heartbeat Landed Renter Dashboard Hook Fix
+- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #156 for `agent/frontend-dev/dcp-213-renter-dashboard-hook-deps`, resolved the `app/renter/page.tsx` merge conflict by taking the branch code while keeping `main` for `AGENT_LOG.md`, and landed the branch onto `main` via the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the renter dashboard hook dependency fix in [`app/renter/page.tsx`] so the auth verification effect uses a stable `verifyKey` callback without regressing redirect/refresh behavior. No other qualifying unmerged branches remained in the visible top-20 `agent/` queue after this heartbeat.
+
 ## [2026-04-01 04:02 UTC] Codex — DCP-282 OpenRouter Tool Passthrough + Single-[DONE] Stream Termination Parity
 - **Commit**: `pending` - Hardened `/v1/chat/completions` provider proxy passthrough so `tools` and `tool_choice` fields are forwarded exactly when present, and normalized SSE relay termination to always emit exactly one terminal `data: [DONE]` frame on successful streams (including provider fallback/retry paths) while suppressing upstream duplicate DONE frames.
 - **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
