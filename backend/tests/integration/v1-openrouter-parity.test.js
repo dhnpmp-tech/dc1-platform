@@ -21,6 +21,8 @@ function resetDb() {
   [
     'renter_api_keys',
     'jobs',
+    'inference_stream_events',
+    'benchmark_runs',
     'model_registry',
     'providers',
     'renters',
@@ -140,6 +142,14 @@ function seedProvider(endpointUrl, { gpuUtilPct = null } = {}) {
   return result.lastInsertRowid;
 }
 
+function seedBenchmarkRun(providerId, latencyMs, benchmarkType = 'standard') {
+  db.prepare(
+    `INSERT INTO benchmark_runs
+      (provider_id, benchmark_type, status, started_at, completed_at, latency_ms, notes)
+     VALUES (?, ?, 'completed', ?, ?, ?, ?)`
+  ).run(providerId, benchmarkType, nowIso(), nowIso(), latencyMs, 'v1 latency gate test');
+}
+
 function seedModel(modelId = 'parity-model') {
   db.prepare(
     `INSERT OR REPLACE INTO model_registry
@@ -162,13 +172,26 @@ function seedModel(modelId = 'parity-model') {
 
 describe('/v1 OpenRouter parity', () => {
   let app;
+  let envSnapshot;
 
   beforeEach(() => {
     resetDb();
+    envSnapshot = { ...process.env };
     app = express();
     app.use(express.json());
     app.use('/v1', v1Router);
     app.use('/api/providers', providersRouter);
+  });
+
+  afterEach(() => {
+    Object.keys(process.env).forEach((key) => {
+      if (!(key in envSnapshot)) {
+        delete process.env[key];
+      }
+    });
+    Object.keys(envSnapshot).forEach((key) => {
+      process.env[key] = envSnapshot[key];
+    });
   });
 
   test('GET /v1/models returns OpenAI list payload even when model_registry has no parameter_count column', async () => {
@@ -394,5 +417,66 @@ describe('/v1 OpenRouter parity', () => {
 
     assertKeyOrder(v1Model);
     assertKeyOrder(providerModel);
+  });
+
+  test('POST /v1/chat/completions allows sparse-provider fallback mode when telemetry is below sample floor', async () => {
+    const provider = await startMockProvider('json');
+    const renterKey = 'parity-renter-sparse-fallback';
+    try {
+      process.env.V1_LATENCY_GATE_MIN_SAMPLES = '4';
+      process.env.V1_LATENCY_GATE_MIN_STREAM_SAMPLES = '2';
+      process.env.V1_LATENCY_GATE_MAX_P50_MS = '300';
+      process.env.V1_LATENCY_GATE_BASELINE_P95_MS = '900';
+      process.env.V1_LATENCY_GATE_MAX_P95_REGRESSION_PCT = '0.2';
+
+      seedModel();
+      seedRenter(renterKey);
+      const providerId = seedProvider(provider.endpointUrl, { gpuUtilPct: 12 });
+      seedBenchmarkRun(providerId, 180);
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'sparse fallback probe' }],
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['x-dcp-latency-gate-mode']).toBe('sparse_provider_fallback');
+    } finally {
+      await provider.close();
+    }
+  });
+
+  test('POST /v1/chat/completions rejects provider routing when latency budget is breached', async () => {
+    const provider = await startMockProvider('json');
+    const renterKey = 'parity-renter-gate-breach';
+    try {
+      process.env.V1_LATENCY_GATE_MIN_SAMPLES = '3';
+      process.env.V1_LATENCY_GATE_MIN_STREAM_SAMPLES = '0';
+      process.env.V1_LATENCY_GATE_MAX_P50_MS = '300';
+      process.env.V1_LATENCY_GATE_BASELINE_P95_MS = '900';
+      process.env.V1_LATENCY_GATE_MAX_P95_REGRESSION_PCT = '0.1';
+
+      seedModel();
+      seedRenter(renterKey);
+      const providerId = seedProvider(provider.endpointUrl, { gpuUtilPct: 3 });
+      [450, 520, 610, 640].forEach((latency) => seedBenchmarkRun(providerId, latency));
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'budget breach probe' }],
+        });
+
+      expect(res.status).toBe(503);
+      expect(res.body?.error?.type).toBe('latency_budget_gate_error');
+      expect(JSON.stringify(res.body?.error?.details?.reasons || [])).toMatch(/p50|p95|latency/i);
+    } finally {
+      await provider.close();
+    }
   });
 });

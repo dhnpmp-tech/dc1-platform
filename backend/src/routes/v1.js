@@ -19,6 +19,11 @@ const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 const { toCatalogContractCore, toUsdStringFromHalala } = require('../lib/model-catalog-contract');
 const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
+const {
+  selectProvidersWithLatencyGate,
+  recordStreamOutcome,
+  resolveProviderTier,
+} = require('../services/inferenceLatencyBudgetGate');
 
 const router = express.Router();
 
@@ -243,13 +248,6 @@ function getCapableProviders(minVramMb) {
   return capable;
 }
 
-function assignProvider(minVramMb) {
-  const capable = getCapableProviders(minVramMb);
-  if (capable.length === 0) return null;
-  capable.sort((a, b) => (a.gpu_util_pct ?? 0) - (b.gpu_util_pct ?? 0));
-  return capable[0];
-}
-
 function resolveModelRequirements(model) {
   const columns = getModelRegistryColumns();
   if (columns.size === 0) {
@@ -428,13 +426,54 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     const modelReq = resolveModelRequirements(model);
     const minVramMb = modelReq.min_vram_gb * 1024;
+    const capableProviders = getCapableProviders(minVramMb);
+    if (capableProviders.length === 0) {
+      return res.status(503).json({
+        error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
+      });
+    }
 
-    const assignedProvider = assignProvider(minVramMb);
+    const gateSelection = selectProvidersWithLatencyGate({
+      db,
+      providers: capableProviders,
+    });
+    if (!gateSelection.pass || !gateSelection.selectedProviderId) {
+      return res.status(503).json({
+        error: {
+          message: 'Latency budget gate failed before provider submission',
+          type: 'latency_budget_gate_error',
+          code: 503,
+          details: {
+            mode: gateSelection.mode,
+            reasons: gateSelection.reasons,
+            tiers: gateSelection.tiers,
+            thresholds: {
+              max_p50_ms: gateSelection.thresholds.maxP50Ms,
+              baseline_p95_ms: gateSelection.thresholds.baselineP95Ms,
+              max_p95_regression_pct: gateSelection.thresholds.maxP95RegressionPct,
+              baseline_stream_failure_rate: gateSelection.thresholds.baselineStreamFailureRate,
+              max_stream_failure_regression_pct: gateSelection.thresholds.maxStreamFailureRegressionPct,
+              min_latency_samples: gateSelection.thresholds.minLatencySamples,
+              min_stream_samples: gateSelection.thresholds.minStreamSamples,
+            },
+          },
+        }
+      });
+    }
+
+    const providerById = new Map(capableProviders.map((provider) => [Number(provider.id), provider]));
+    const assignedProvider = providerById.get(Number(gateSelection.selectedProviderId)) || null;
+    const fallbackProviders = gateSelection.fallbackProviderIds
+      .map((providerId) => providerById.get(Number(providerId)))
+      .filter(Boolean);
+
     if (!assignedProvider) {
       return res.status(503).json({
         error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
       });
     }
+
+    res.setHeader('x-dcp-latency-gate-mode', gateSelection.mode);
 
     // Check balance
     const mergedPrompt = estimatePromptFromMessages(messages);
@@ -531,6 +570,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           throw new Error('Provider streaming response missing body');
         }
 
+        const startedAt = Date.now();
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
@@ -596,38 +636,57 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           return processSseBuffer(false);
         };
 
-        const body = streamResponse.body;
-        if (typeof body[Symbol.asyncIterator] === 'function') {
-          for await (const chunk of body) {
-            const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-            const transformed = transformSseText(bufferChunk.toString('utf8'));
-            if (transformed) res.write(transformed);
+        try {
+          const body = streamResponse.body;
+          if (typeof body[Symbol.asyncIterator] === 'function') {
+            for await (const chunk of body) {
+              const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              const transformed = transformSseText(bufferChunk.toString('utf8'));
+              if (transformed) res.write(transformed);
+            }
+          } else if (typeof body.getReader === 'function') {
+            const reader = body.getReader();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (!value) continue;
+              const bufferChunk = Buffer.from(value);
+              const transformed = transformSseText(bufferChunk.toString('utf8'));
+              if (transformed) res.write(transformed);
+            }
+          } else {
+            throw new Error('Unsupported provider stream body');
           }
-        } else if (typeof body.getReader === 'function') {
-          const reader = body.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (!value) continue;
-            const bufferChunk = Buffer.from(value);
-            const transformed = transformSseText(bufferChunk.toString('utf8'));
-            if (transformed) res.write(transformed);
-          }
-        } else {
-          throw new Error('Unsupported provider stream body');
+
+          const trailing = processSseBuffer(true);
+          if (trailing) res.write(trailing);
+
+          debitAndPersistUsage({
+            providerForUsage,
+            providerResponseId,
+            usage: finalUsage || {},
+            completionText,
+          });
+          writeDoneOnce();
+          res.end();
+          recordStreamOutcome(db, {
+            providerId: providerForUsage?.id || null,
+            providerTier: resolveProviderTier(providerForUsage),
+            modelId: modelReq.model_id,
+            success: true,
+            durationMs: Date.now() - startedAt,
+          });
+        } catch (error) {
+          recordStreamOutcome(db, {
+            providerId: providerForUsage?.id || null,
+            providerTier: resolveProviderTier(providerForUsage),
+            modelId: modelReq.model_id,
+            success: false,
+            errorCode: normalizeString(error?.message || 'stream_error', { maxLen: 120 }),
+            durationMs: Date.now() - startedAt,
+          });
+          throw error;
         }
-
-        const trailing = processSseBuffer(true);
-        if (trailing) res.write(trailing);
-
-        debitAndPersistUsage({
-          providerForUsage,
-          providerResponseId,
-          usage: finalUsage || {},
-          completionText,
-        });
-        writeDoneOnce();
-        res.end();
       };
 
       if (wantsStream && proxyResult.streamResponse) {
@@ -641,9 +700,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
       // If selected provider endpoint exists but failed to produce a valid payload,
       // retry once through other capable providers before returning upstream failure.
-      const fallbackCapable = getCapableProviders(minVramMb)
+      const fallbackCapable = fallbackProviders
         .filter((provider) => provider.id !== assignedProvider.id && provider.vllm_endpoint_url)
-        .sort((a, b) => (a.gpu_util_pct ?? 0) - (b.gpu_util_pct ?? 0))
         .slice(0, 2);
 
       for (const fallbackProvider of fallbackCapable) {
