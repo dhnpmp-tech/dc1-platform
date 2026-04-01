@@ -1,5 +1,5 @@
 ## [2026-04-01 08:58 UTC] Codex — DCP-282 Optional /v1 Parameter Passthrough Parity Hardening
-- **Commit**: `pending` - Added an allowlisted passthrough layer in `/v1/chat/completions` so OpenAI-compatible optional request fields (sampling, stream options, response format, logit/logprob controls, metadata, and user attribution) are forwarded unchanged to provider endpoints on both primary and fallback proxy attempts.
+- **Commit**: `fce2462` - Added an allowlisted passthrough layer in `/v1/chat/completions` so OpenAI-compatible optional request fields (sampling, stream options, response format, logit/logprob controls, metadata, and user attribution) are forwarded unchanged to provider endpoints on both primary and fallback proxy attempts.
 - **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
 - **Impact**: Provider proxy behavior now preserves additional OpenRouter/OpenAI request contracts beyond `tools`/`tool_choice`, reducing integration drift risk for advanced client payloads. Verification: `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js` (`8/8` passing).
 
