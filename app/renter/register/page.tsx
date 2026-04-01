@@ -1,7 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -14,18 +13,16 @@ interface RegistrationResult {
   message: string
 }
 
-function RenterRegisterPageInner() {
+export default function RenterRegisterPage() {
   const { t, language } = useLanguage()
-  const searchParams = useSearchParams()
   const isRTL = language === 'ar'
-  const source = searchParams.get('source') || 'direct'
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     organization: '',
-    useCase: '',
+    useCase: 'AI Training',
     phone: '',
     pdplConsent: false,
   })
@@ -45,8 +42,6 @@ function RenterRegisterPageInner() {
       surface: 'registration',
       destination: 'none',
       step: 'view',
-      locale: language,
-      source,
       ...payload,
     }
     window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
@@ -60,16 +55,15 @@ function RenterRegisterPageInner() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }, [language, source])
+  }, [])
 
   const useCaseOptions = [
-    { value: 'AI Training', label: t('register.renter.use_case_option.ai_training') },
-    { value: 'Inference', label: t('register.renter.use_case_option.inference') },
-    { value: 'Image Generation', label: t('register.renter.use_case_option.image_generation') },
-    { value: 'Scientific Computing', label: t('register.renter.use_case_option.scientific_computing') },
-    { value: 'Other', label: t('register.renter.use_case_option.other') },
+    'AI Training',
+    'Inference',
+    'Image Generation',
+    'Scientific Computing',
+    'Other',
   ]
-  const quickstartHref = '/docs/api/openrouter-60s-quickstart?source=renter_register_success'
   const modelDocsHref = language === 'ar' ? '/docs/ar/models' : '/docs/models'
   const firstWorkloadActions = useMemo(
     () => [
@@ -86,7 +80,7 @@ function RenterRegisterPageInner() {
       {
         title: t('conversion.first_workload.step3_title'),
         description: t('conversion.first_workload.step3_desc'),
-        href: '/docs/api/openrouter-60s-quickstart?source=renter_register_first_workload&step=quickstart_docs',
+        href: '/docs/quickstart?source=renter_register_first_workload&step=quickstart_docs',
       },
     ],
     [t]
@@ -95,7 +89,7 @@ function RenterRegisterPageInner() {
     () => [
       { label: t('mode.label.marketplace'), detail: t('mode.desc.marketplace'), href: '/renter/marketplace' },
       { label: t('mode.label.playground'), detail: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api-reference' },
+      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api/openrouter-60s-quickstart' },
       { label: t('mode.label.enterprise_support'), detail: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=renter_register_success#contact-form' },
     ],
     [t]
@@ -142,11 +136,6 @@ function RenterRegisterPageInner() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    trackRegisterEvent('developer_flow_register_submit', {
-      surface: 'registration_form',
-      destination: '/api/dc1/renters/register',
-      step: 'submit_start',
-    })
 
     if (!formData.pdplConsent) {
       setError(t('register.renter.pdpl_error'))
@@ -182,18 +171,6 @@ function RenterRegisterPageInner() {
         surface: 'registration_form',
         destination: '/api/dc1/renters/register',
         step: 'submit_success',
-      })
-      trackRegisterEvent('developer_flow_register_success', {
-        surface: 'registration_form',
-        destination: '/api/dc1/renters/register',
-        step: 'submit_success',
-      })
-      trackRegisterEvent('quickstart_api_key_created', {
-        surface: 'registration_form',
-        destination: '/api/dc1/renters/register',
-        step: 'api_key_created',
-        renter_id: data.renter_id ?? null,
-        api_key_prefix: typeof data.api_key === 'string' ? data.api_key.slice(0, 11) : null,
       })
     } catch (err) {
       trackRegisterEvent('renter_register_failed', {
@@ -296,37 +273,6 @@ function RenterRegisterPageInner() {
               <p className="text-sm text-status-warning bg-status-warning/5 border border-status-warning/20 rounded-lg p-4 mb-6">
                 {t('register.renter.key_security')}
               </p>
-
-              <div className={`rounded-lg border border-dc1-amber/30 bg-dc1-amber/5 p-4 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
-                <h3 className="text-sm font-semibold text-dc1-text-primary mb-2">
-                  {t('register.renter.success_quickstart_title')}
-                </h3>
-                <p className="text-xs text-dc1-text-secondary mb-3">
-                  {t('register.renter.success_quickstart_subtitle')}
-                </p>
-                <a
-                  href={quickstartHref}
-                  onClick={() =>
-                    {
-                      trackRegisterEvent('renter_register_quickstart_opened', {
-                        source_page: 'renter_register_success',
-                        surface: 'success_quickstart',
-                        destination: quickstartHref,
-                        step: 'open_quickstart',
-                      })
-                      trackRegisterEvent('developer_flow_quickstart_open', {
-                        source_page: 'renter_register_success',
-                        surface: 'success_quickstart',
-                        destination: quickstartHref,
-                        step: 'open_quickstart',
-                      })
-                    }
-                  }
-                  className="btn btn-primary btn-sm w-full sm:w-auto"
-                >
-                  {t('register.renter.success_quickstart_cta')}
-                </a>
-              </div>
 
               <div className={`bg-dc1-surface-l2 border border-dc1-border rounded-lg p-5 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
                 <h3 className="text-base font-semibold text-dc1-text-primary mb-3">
@@ -535,20 +481,7 @@ function RenterRegisterPageInner() {
             <p className="text-xs text-dc1-text-secondary mb-3">{t('path_chooser.subtitle')}</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {pathChooserLanes.map((lane) => (
-                <a
-                  key={lane.key}
-                  href={lane.href}
-                  onClick={() =>
-                    trackRegisterEvent('renter_register_path_lane_clicked', {
-                      source_page: 'renter_register',
-                      surface: 'path_chooser',
-                      destination: lane.href,
-                      step: 'lane_click',
-                      lane_key: lane.key,
-                    })
-                  }
-                  className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 hover:border-dc1-amber transition-colors"
-                >
+                <a key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 hover:border-dc1-amber transition-colors">
                   <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
                   <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
                 </a>
@@ -581,16 +514,6 @@ function RenterRegisterPageInner() {
         <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
           <div className="card bg-dc1-surface-l1 border border-dc1-border rounded-lg p-8">
             <h2 className="text-2xl font-bold text-dc1-text-primary mb-6">{t('register.renter.form_title')}</h2>
-            <div className={`mb-6 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4 text-xs ${isRTL ? 'text-right' : 'text-left'}`}>
-              <p className="text-dc1-text-secondary">
-                <span className="font-semibold text-dc1-text-primary">{t('register.renter.contract_required_label')}:</span>{' '}
-                {t('register.renter.contract_required_fields')}
-              </p>
-              <p className="mt-1 text-dc1-text-secondary">
-                <span className="font-semibold text-dc1-text-primary">{t('register.renter.contract_optional_label')}:</span>{' '}
-                {t('register.renter.contract_optional_fields')}
-              </p>
-            </div>
 
             {error && (
               <div className="alert-error mb-6">
@@ -655,19 +578,19 @@ function RenterRegisterPageInner() {
               {/* Use Case */}
               <div>
                 <label htmlFor="useCase" className="label">
-                  {t('register.renter.use_case')} <span className="text-dc1-text-muted">{t('register.renter.optional')}</span>
+                  {t('register.renter.use_case')} <span className="text-status-error">*</span>
                 </label>
                 <select
                   id="useCase"
                   name="useCase"
                   value={formData.useCase}
                   onChange={handleChange}
+                  required
                   className="input"
                 >
-                  <option value="">{t('register.renter.use_case_placeholder')}</option>
-                  {useCaseOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  {useCaseOptions.map(option => (
+                    <option key={option} value={option}>
+                      {option}
                     </option>
                   ))}
                 </select>
@@ -783,13 +706,5 @@ function RenterRegisterPageInner() {
       </main>
       <Footer />
     </>
-  )
-}
-
-export default function RenterRegisterPage() {
-  return (
-    <Suspense>
-      <RenterRegisterPageInner />
-    </Suspense>
   )
 }

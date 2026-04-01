@@ -1,0 +1,104 @@
+# مسار أول طلب خلال 60 ثانية (AR)
+
+هذا الدليل يوصلك من التسجيل إلى أول طلب `POST /v1/chat/completions` خلال حوالي 60 ثانية.
+
+## 1) إنشاء مفتاح مستأجر (التسجيل)
+
+```bash
+curl -sS -X POST https://dcp.sa/api/dc1/renters/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "DX Quickstart",
+    "email": "dx-quickstart@example.com"
+  }'
+```
+
+احفظ قيمة `api_key` من الاستجابة.
+
+## 2) ضبط عنوان API والمفتاح
+
+```bash
+export DCP_API_V1="https://api.dcp.sa/v1"
+export DCP_RENTER_KEY="dc1-renter-your-key"
+```
+
+## 3) التحقق من قائمة النماذج
+
+```bash
+curl -sS "$DCP_API_V1/models"
+```
+
+## 4) إرسال أول طلب محادثة (cURL)
+
+```bash
+curl -sS "$DCP_API_V1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "x-renter-key: $DCP_RENTER_KEY" \
+  -d '{
+    "model": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+    "messages": [
+      { "role": "user", "content": "Reply with exactly: quickstart-ok" }
+    ],
+    "max_tokens": 12
+  }'
+```
+
+## 5) مسار Node.js (نسخ ولصق)
+
+```js
+import https from "https";
+
+const payload = JSON.stringify({
+  model: "ALLaM-AI/ALLaM-7B-Instruct-preview",
+  messages: [{ role: "user", content: "Reply with exactly: quickstart-ok" }],
+  max_tokens: 12,
+});
+
+const req = https.request("https://api.dcp.sa/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(payload),
+    "x-renter-key": process.env.DCP_RENTER_KEY,
+  },
+}, (res) => {
+  let body = "";
+  res.on("data", (chunk) => (body += chunk));
+  res.on("end", () => console.log(body));
+});
+
+req.write(payload);
+req.end();
+```
+
+## 6) مسار Python (نسخ ولصق)
+
+```python
+import json
+import os
+import urllib.request
+
+payload = {
+    "model": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+    "messages": [{"role": "user", "content": "Reply with exactly: quickstart-ok"}],
+    "max_tokens": 12,
+}
+
+req = urllib.request.Request(
+    "https://api.dcp.sa/v1/chat/completions",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={
+        "Content-Type": "application/json",
+        "x-renter-key": os.environ["DCP_RENTER_KEY"],
+    },
+    method="POST",
+)
+
+with urllib.request.urlopen(req, timeout=40) as resp:
+    print(resp.read().decode("utf-8"))
+```
+
+## ملاحظات
+
+- المصادقة في هذا المسار تكون عبر مفتاح المستأجر (`x-renter-key`).
+- إذا ظهرت رسالة `{"error":"no_capacity"}` فهذا يعني أن المسار صحيح والمصادقة سليمة، لكن السعة غير متاحة الآن.

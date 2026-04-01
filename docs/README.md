@@ -8,6 +8,8 @@ DCP is a Saudi-hosted GPU compute marketplace for AI workloads. This directory c
 |----------|----------|-------------|
 | [Quickstart](./quickstart.md) | English | Submit a GPU workload |
 | [دليل البدء السريع](./quickstart-ar.md) | العربية | دليل البدء السريع للحملات عبر curl |
+| [OpenRouter 60-Second First Request](./api/openrouter-60s-quickstart.md) | English | Signup to first `/v1/chat/completions` call in ~60 seconds |
+| [مسار أول طلب خلال 60 ثانية](./ar/openrouter-60s-quickstart.mdx) | العربية | من التسجيل إلى أول طلب `/v1/chat/completions` خلال 60 ثانية |
 | [API Reference](./api-reference.md) | English | All endpoints with request/response schemas |
 | [مرجع API](./api-reference-ar.md) | العربية | جميع نقاط النهاية بالعربية |
 | [Provider Guide](./provider-guide.md) | English | Earn SAR by connecting your NVIDIA GPU |
