@@ -1,3 +1,8 @@
+## [2026-04-01 16:31 UTC] Codex — DCP-332 /v1 Reliability Scoreboard + Threshold Alerting Landed
+- **Commit**: `pending` - Added a scheduled `/v1` reliability scoreboard pipeline that computes p50/p95 latency, stream error-rate, and SSE `[DONE]` compliance against explicit thresholds, then emits machine-readable + markdown artifacts under `docs/reports/reliability/`; scheduling is wired as a daily PM2 cron app in `backend/ecosystem.config.js`, with a QA/Release consumption runbook.
+- **Files**: `backend/src/scripts/generate-v1-reliability-scoreboard.js`, `backend/package.json`, `backend/ecosystem.config.js`, `docs/ops/v1-reliability-scoreboard-runbook.md`, `docs/reports/reliability/reliability-scoreboard-2026-04-01.json`, `docs/reports/reliability/reliability-scoreboard-2026-04-01.md`, `docs/reports/reliability/reliability-scoreboard-latest.json`, `docs/reports/reliability/reliability-scoreboard-latest.md`, `AGENT_LOG.md`
+- **Impact**: QA/Release now have a deterministic PASS/FAIL reliability gate artifact with explicit breach reasons before go/no-go. Verification: `cd backend && npm run monitor:v1:reliability-scoreboard -- --seed-synthetic --output-dir docs/reports/reliability` (PASS, artifacts generated).
+
 ## [2026-04-01 08:57 UTC] Codex — Release Heartbeat Landed V1 Latency Budget Gate
 - **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #157 for `agent/backend-dev/dcp-282-openrouter-tool-sse-parity`, resolved the `AGENT_LOG.md` merge conflict by keeping `main`, and landed the branch onto `main` from the clean release worktree.
 - **Files**: `AGENT_LOG.md`
