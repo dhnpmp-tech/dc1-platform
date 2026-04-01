@@ -764,6 +764,22 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS inference_stream_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    model_id TEXT,
+    provider_tier TEXT,
+    stream_success INTEGER NOT NULL CHECK(stream_success IN (0, 1)),
+    stream_error_code TEXT,
+    duration_ms REAL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_events_provider_created ON inference_stream_events(provider_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_events_tier_created ON inference_stream_events(provider_tier, created_at DESC)`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS bottleneck_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider_id INTEGER NOT NULL,
