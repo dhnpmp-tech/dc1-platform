@@ -32567,3 +32567,8 @@ a
 - **Commit**: `pending` - Refactored renter jobs fetch routine to a stable `useCallback` and updated the polling `useEffect` dependency list to include `fetchJobs`, resolving exhaustive-deps warnings without changing runtime behavior.
 - **Files**: `app/renter/jobs/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `npm run lint -- --file app/renter/jobs/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers at `/docs/quickstart` and `/renter/register` due to missing Suspense boundaries for `useSearchParams`.
+
+## [2026-04-01 04:24 UTC] Codex — DCP-213 Renter Dashboard Hook Dependency Fix
+- **Commit**: `pending` - Refactored renter dashboard auth verification flow by wrapping `verifyKey` in `useCallback` and binding the auth polling effect to that stable callback, resolving exhaustive-deps warnings.
+- **Files**: `app/renter/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/renter/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).

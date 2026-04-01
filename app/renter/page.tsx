@@ -125,56 +125,7 @@ export default function RenterDashboard() {
     { label: t('nav.settings'), href: '/renter/settings', icon: <GearIcon /> },
   ]
 
-  const fetchGPUs = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/renters/available-providers`)
-      if (res.ok) {
-        const data = await res.json()
-        const gpusData = data.providers?.map((p: any) => ({
-          id: p.id,
-          provider_id: p.id,
-          provider_name: p.name,
-          gpu_model: p.gpu_model,
-          vram_gb: p.vram_gb,
-          status: 'online' as const,
-        })) || []
-        setGpus(gpusData)
-      }
-    } catch (err) {
-      console.error('Failed to fetch GPUs:', err)
-    }
-  }, [])
-
-  const fetchJobs = useCallback(async (key: string) => {
-    setJobsLoading(true)
-    try {
-      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
-      if (res.ok) {
-        const data = await res.json()
-        const jobsData: JobCardJob[] = (data.recent_jobs || []).map((j: any) => ({
-          id: j.id,
-          job_id: j.job_id || String(j.id),
-          job_type: j.job_type || 'gpu_job',
-          status: j.status,
-          submitted_at: j.submitted_at,
-          started_at: j.started_at,
-          completed_at: j.completed_at,
-          actual_cost_halala: j.actual_cost_halala || 0,
-          actual_duration_minutes: j.actual_duration_minutes,
-          price_per_hour_halala: j.price_per_hour_halala,
-          params: j.params ?? null,
-          container_spec: j.container_spec ?? null,
-          gpu_type: j.gpu_model ?? null,
-        }))
-        setJobs(jobsData)
-      }
-    } catch (err) {
-      console.error('Failed to fetch jobs:', err)
-    } finally {
-      setJobsLoading(false)
-    }
-  }, [])
-
+  // ── Auth + Auto-refresh ──────────────────────────────────────────
   const verifyKey = useCallback(async (key: string) => {
     setAuthChecking(true)
     setAuthReason(null)
@@ -215,9 +166,8 @@ export default function RenterDashboard() {
     } finally {
       setAuthChecking(false)
     }
-  }, [fetchGPUs, fetchJobs])
+  }, [])
 
-  // ── Auth + Auto-refresh ──────────────────────────────────────────
   useEffect(() => {
     const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
     if (key) {
@@ -242,6 +192,56 @@ export default function RenterDashboard() {
     if (authReason) params.set('reason', authReason)
     router.replace(`/login?${params.toString()}`)
   }, [authChecking, renter, authReason, router])
+
+  const fetchGPUs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/renters/available-providers`)
+      if (res.ok) {
+        const data = await res.json()
+        const gpusData = data.providers?.map((p: any) => ({
+          id: p.id,
+          provider_id: p.id,
+          provider_name: p.name,
+          gpu_model: p.gpu_model,
+          vram_gb: p.vram_gb,
+          status: 'online' as const,
+        })) || []
+        setGpus(gpusData)
+      }
+    } catch (err) {
+      console.error('Failed to fetch GPUs:', err)
+    }
+  }
+
+  const fetchJobs = async (key: string) => {
+    setJobsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`)
+      if (res.ok) {
+        const data = await res.json()
+        const jobsData: JobCardJob[] = (data.recent_jobs || []).map((j: any) => ({
+          id: j.id,
+          job_id: j.job_id || String(j.id),
+          job_type: j.job_type || 'gpu_job',
+          status: j.status,
+          submitted_at: j.submitted_at,
+          started_at: j.started_at,
+          completed_at: j.completed_at,
+          actual_cost_halala: j.actual_cost_halala || 0,
+          actual_duration_minutes: j.actual_duration_minutes,
+          price_per_hour_halala: j.price_per_hour_halala,
+          params: j.params ?? null,
+          container_spec: j.container_spec ?? null,
+          gpu_type: j.gpu_model ?? null,
+        }))
+        setJobs(jobsData)
+      }
+    } catch (err) {
+      console.error('Failed to fetch jobs:', err)
+    } finally {
+      setJobsLoading(false)
+    }
+  }
 
   const handleLogout = async () => {
     await clearSession()
