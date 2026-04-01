@@ -1392,6 +1392,49 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider_time ON provider_metrics(provider_id, recorded_at)`);
 
+// ─── CONVERSION FUNNEL EVENTS TABLE — DCP-357 ───
+// Canonical provider + renter activation funnel contract:
+// view -> register -> first_action -> first_success
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversion_funnel_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,
+    occurred_at TEXT NOT NULL,
+    journey TEXT NOT NULL CHECK(journey IN ('provider','renter')),
+    stage TEXT NOT NULL CHECK(stage IN ('view','register','first_action','first_success')),
+    actor_type TEXT NOT NULL DEFAULT 'anonymous' CHECK(actor_type IN ('provider','renter','anonymous','admin','system')),
+    actor_id INTEGER,
+    actor_key TEXT,
+    anonymous_id TEXT,
+    session_id TEXT,
+    correlation_id TEXT,
+    locale TEXT,
+    locale_raw TEXT,
+    language TEXT,
+    country_code TEXT,
+    source_surface TEXT,
+    source_channel TEXT,
+    utm_source TEXT,
+    utm_medium TEXT,
+    utm_campaign TEXT,
+    utm_content TEXT,
+    utm_term TEXT,
+    referrer TEXT,
+    referrer_host TEXT,
+    referrer_path TEXT,
+    request_path TEXT,
+    request_method TEXT,
+    success INTEGER NOT NULL DEFAULT 1,
+    metadata_json TEXT,
+    dedupe_key TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_time ON conversion_funnel_events(occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_journey_stage ON conversion_funnel_events(journey, stage, occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_actor ON conversion_funnel_events(actor_key, occurred_at DESC)`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_conversion_funnel_dedupe_key ON conversion_funnel_events(dedupe_key) WHERE dedupe_key IS NOT NULL`);
+
 // ─── CONTROL PLANE POLICY TABLE ───
 // Queue/SLO policy inputs used by autoscale and pre-warm recommendations.
 db.exec(`
