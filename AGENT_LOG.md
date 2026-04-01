@@ -32532,3 +32532,8 @@ a
 - **Commit**: `pending` - Enforced a single authoritative audit-write path for admin payout mutations by adding middleware opt-out for automatic request audit on payout routes and explicit route-level `logAdminAction` writes for approve/reject/paid transitions; added regression coverage proving one audit row per approve/reject mutation request.
 - **Files**: `backend/src/middleware/adminAuth.js`, `backend/src/routes/payouts.js`, `backend/src/__tests__/payouts-admin-audit-dedupe.test.js`, `backend/src/__tests__/payouts-reject-email.test.js`, `AGENT_LOG.md`
 - **Impact**: Admin payout approve/reject flows now emit exactly one `admin_audit_log` row with action/resource metadata and structured details, eliminating duplicate-event risk while keeping non-payout admin audit coverage intact. Verification: `cd backend && npm test -- --runInBand src/__tests__/payouts-admin-audit-dedupe.test.js src/__tests__/payouts-reject-email.test.js src/__tests__/adminAuth.test.js` passes (`19/19`).
+
+## [2026-03-31 22:17 UTC] Codex — DCP-210 Provider Job Detail Hook Dependency Fix
+- **Commit**: `pending` - Fixed provider job detail effect dependency warning by including translation function `t` in the data-loading `useEffect` dependency list.
+- **Files**: `app/provider/jobs/[id]/page.tsx`, `AGENT_LOG.md`
+- **Impact**: `npm run lint -- --file app/provider/jobs/[id]/page.tsx` passes cleanly. Full build still fails on existing unrelated prerender blockers for `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).
