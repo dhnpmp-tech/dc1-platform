@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
@@ -52,20 +52,7 @@ export default function RentersPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    fetchRenters()
-    const interval = setInterval(fetchRenters, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (!creditToast) return
-    const timer = setTimeout(() => setCreditToast(null), 5000)
-    return () => clearTimeout(timer)
-  }, [creditToast])
-
-  const fetchRenters = async () => {
+  const fetchRenters = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/renters`, { headers: { 'x-admin-token': token! } })
       if (res.status === 401) { localStorage.removeItem('dc1_admin_token'); router.push('/login'); return }
@@ -74,7 +61,20 @@ export default function RentersPage() {
     } catch (err) {
       console.error(err)
     } finally { setLoading(false) }
-  }
+  }, [router, token])
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return }
+    fetchRenters()
+    const interval = setInterval(fetchRenters, 30000)
+    return () => clearInterval(interval)
+  }, [fetchRenters, router, token])
+
+  useEffect(() => {
+    if (!creditToast) return
+    const timer = setTimeout(() => setCreditToast(null), 5000)
+    return () => clearTimeout(timer)
+  }, [creditToast])
 
   const handleSuspend = async (id: number, action: 'suspend' | 'unsuspend') => {
     setActionLoading(id)

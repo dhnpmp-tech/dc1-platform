@@ -148,7 +148,7 @@ export default function MonitorPage() {
       })
     );
     setLoading(false);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     checkAll();

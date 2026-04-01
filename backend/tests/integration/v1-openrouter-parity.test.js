@@ -9,6 +9,7 @@ process.env.DC1_DB_PATH = process.env.DC1_DB_PATH || ':memory:';
 
 const db = require('../../src/db');
 const v1Router = require('../../src/routes/v1');
+const providersRouter = require('../../src/routes/providers');
 
 function safeDelete(table) {
   try {
@@ -47,7 +48,13 @@ async function startMockProvider(mode, capture = []) {
         capture.push(null);
       }
 
-      if (mode === 'stream') {
+      if (mode === 'error') {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'upstream failure' }));
+        return;
+      }
+
+      if (mode === 'stream' || mode === 'stream_no_done' || mode === 'stream_double_done') {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
@@ -67,7 +74,12 @@ async function startMockProvider(mode, capture = []) {
           created: Math.floor(Date.now() / 1000),
           choices: [{ index: 0, delta: { content: 'haba' }, finish_reason: 'stop' }],
         })}\n\n`);
-        res.write('data: [DONE]\n\n');
+        if (mode !== 'stream_no_done') {
+          res.write('data: [DONE]\n\n');
+        }
+        if (mode === 'stream_double_done') {
+          res.write('data: [DONE]\n\n');
+        }
         res.end();
         return;
       }
@@ -99,15 +111,16 @@ function seedRenter(apiKey) {
   ).run('Parity Renter', `${apiKey}@dc1.test`, apiKey, 100000, nowIso());
 }
 
-function seedProvider(endpointUrl) {
-  db.prepare(
+function seedProvider(endpointUrl, { gpuUtilPct = null } = {}) {
+  const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  const result = db.prepare(
     `INSERT INTO providers
       (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib, approval_status, status,
        supported_compute_types, vllm_endpoint_url, last_heartbeat, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'approved', 'online', '["inference"]', ?, ?, ?, ?)`
   ).run(
     'Parity Provider',
-    `provider-${Date.now()}@dc1.test`,
+    `provider-${uniqueSuffix}@dc1.test`,
     `provider-${crypto.randomBytes(6).toString('hex')}`,
     'RTX 4090',
     24,
@@ -117,6 +130,14 @@ function seedProvider(endpointUrl) {
     nowIso(),
     nowIso()
   );
+  if (gpuUtilPct != null) {
+    try {
+      db.prepare('UPDATE providers SET gpu_util_pct = ? WHERE id = ?').run(gpuUtilPct, result.lastInsertRowid);
+    } catch (_) {
+      // Older schema snapshots used by tests may not include gpu_util_pct.
+    }
+  }
+  return result.lastInsertRowid;
 }
 
 function seedModel(modelId = 'parity-model') {
@@ -147,6 +168,7 @@ describe('/v1 OpenRouter parity', () => {
     app = express();
     app.use(express.json());
     app.use('/v1', v1Router);
+    app.use('/api/providers', providersRouter);
   });
 
   test('GET /v1/models returns OpenAI list payload even when model_registry has no parameter_count column', async () => {
@@ -185,10 +207,64 @@ describe('/v1 OpenRouter parity', () => {
 
       expect(res.status).toBe(200);
       expect(String(res.headers['content-type'] || '')).toContain('text/event-stream');
-      expect(res.text).toContain('data: [DONE]');
+      expect((res.text.match(/data:\s*\[DONE\]/g) || [])).toHaveLength(1);
       expect(res.text).toContain('Mar');
     } finally {
       await provider.close();
+    }
+  });
+
+  test('POST /v1/chat/completions stream emits exactly one DONE even when provider emits duplicates', async () => {
+    const provider = await startMockProvider('stream_double_done');
+    const renterKey = 'parity-renter-stream-double-done';
+    try {
+      seedModel();
+      seedRenter(renterKey);
+      seedProvider(provider.endpointUrl);
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          stream: true,
+        });
+
+      expect(res.status).toBe(200);
+      expect(String(res.headers['content-type'] || '')).toContain('text/event-stream');
+      expect((res.text.match(/data:\s*\[DONE\]/g) || [])).toHaveLength(1);
+    } finally {
+      await provider.close();
+    }
+  });
+
+  test('POST /v1/chat/completions stream fallback path terminates with one DONE when fallback provider omits DONE', async () => {
+    const primary = await startMockProvider('error');
+    const fallback = await startMockProvider('stream_no_done');
+    const renterKey = 'parity-renter-stream-fallback';
+    try {
+      seedModel();
+      seedRenter(renterKey);
+      seedProvider(primary.endpointUrl, { gpuUtilPct: 1 });
+      seedProvider(fallback.endpointUrl, { gpuUtilPct: 90 });
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'hello fallback' }],
+          stream: true,
+        });
+
+      expect(res.status).toBe(200);
+      expect(String(res.headers['content-type'] || '')).toContain('text/event-stream');
+      expect(res.text).toContain('Mar');
+      expect((res.text.match(/data:\s*\[DONE\]/g) || [])).toHaveLength(1);
+    } finally {
+      await primary.close();
+      await fallback.close();
     }
   });
 
@@ -229,5 +305,94 @@ describe('/v1 OpenRouter parity', () => {
     } finally {
       await provider.close();
     }
+  });
+
+  test('POST /v1/chat/completions preserves explicit tools/tool_choice payload values without normalization', async () => {
+    const providerCapture = [];
+    const provider = await startMockProvider('json', providerCapture);
+    const renterKey = 'parity-renter-raw-tool-fields';
+    const toolsPayload = { raw: true, schema_version: 2, nested: { depth: ['x', 'y'] } };
+
+    try {
+      seedModel();
+      seedRenter(renterKey);
+      seedProvider(provider.endpointUrl);
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send({
+          model: 'parity-model',
+          messages: [{ role: 'user', content: 'passthrough payloads' }],
+          tools: toolsPayload,
+          tool_choice: false,
+        });
+
+      expect(res.status).toBe(200);
+      expect(providerCapture[0]?.tools).toEqual(toolsPayload);
+      expect(providerCapture[0]?.tool_choice).toBe(false);
+    } finally {
+      await provider.close();
+    }
+  });
+
+  test('model catalog required fields stay parity-aligned between /v1/models and /api/providers/model-catalog', async () => {
+    seedModel('parity-catalog-model');
+    const providerId = seedProvider('http://127.0.0.1:9');
+    db.prepare('UPDATE providers SET cached_models = ? WHERE id = ?').run(
+      JSON.stringify([{ model_id: 'parity-catalog-model', display_name: 'Parity Model' }]),
+      providerId
+    );
+
+    const [v1Res, providerRes] = await Promise.all([
+      request(app).get('/v1/models'),
+      request(app).get('/api/providers/model-catalog'),
+    ]);
+
+    expect(v1Res.status).toBe(200);
+    expect(providerRes.status).toBe(200);
+
+    const v1Model = (v1Res.body.data || []).find((entry) => entry.id === 'parity-catalog-model');
+    const providerModel = (providerRes.body.data || []).find((entry) => entry.id === 'parity-catalog-model');
+
+    expect(v1Model).toBeDefined();
+    expect(providerModel).toBeDefined();
+
+    const requiredParityKeys = [
+      'id',
+      'name',
+      'created',
+      'modalities',
+      'context_length',
+      'max_output_tokens',
+      'quantization',
+      'pricing',
+      'capability_flags',
+      'supported_features',
+    ];
+
+    requiredParityKeys.forEach((key) => {
+      expect(v1Model).toHaveProperty(key);
+      expect(providerModel).toHaveProperty(key);
+    });
+
+    expect(typeof v1Model.created).toBe('number');
+    expect(typeof providerModel.created).toBe('number');
+    expect(v1Model.pricing).toEqual(providerModel.pricing);
+    expect(v1Model.capability_flags).toEqual(providerModel.capability_flags);
+    expect(v1Model.supported_features).toEqual(providerModel.supported_features);
+    expect(v1Model.pricing.usd_per_minute).toMatch(/^\d+\.\d{6}$/);
+
+    const assertKeyOrder = (entry) => {
+      const keys = Object.keys(entry);
+      const indexes = requiredParityKeys.map((key) => keys.indexOf(key));
+      expect(indexes.every((idx) => idx >= 0)).toBe(true);
+      for (let i = 1; i < indexes.length; i += 1) {
+        expect(indexes[i]).toBeGreaterThan(indexes[i - 1]);
+      }
+    };
+
+    assertKeyOrder(v1Model);
+    assertKeyOrder(providerModel);
   });
 });

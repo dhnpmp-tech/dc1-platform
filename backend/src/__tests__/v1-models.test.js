@@ -6,11 +6,15 @@ const mockDb = {
   get: jest.fn(),
   prepare: jest.fn(() => ({ run: jest.fn() })),
 };
+const mockRecordOpenRouterUsage = jest.fn(() => ({ id: 'oru_test' }));
 
 jest.mock('../db', () => mockDb);
 jest.mock('../middleware/rateLimiter', () => ({
   vllmCompleteLimiter: (req, res, next) => next(),
   vllmStreamLimiter: (req, res, next) => next(),
+}));
+jest.mock('../services/openrouterSettlementService', () => ({
+  recordOpenRouterUsage: (...args) => mockRecordOpenRouterUsage(...args),
 }));
 
 describe('v1 models route', () => {
@@ -20,6 +24,7 @@ describe('v1 models route', () => {
     jest.resetModules();
     mockDb.all.mockReset();
     mockDb.get.mockReset();
+    mockRecordOpenRouterUsage.mockReset();
 
     const router = require('../routes/v1');
     app = express();
@@ -54,6 +59,12 @@ describe('v1 models route', () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].id).toBe('fallback-model');
     expect(res.body.data[0]).toHaveProperty('parameter_count', null);
+    expect(res.body.data[0].pricing).toEqual({
+      usd_per_minute: expect.any(String),
+      usd_per_1m_input_tokens: expect.any(String),
+      usd_per_1m_output_tokens: expect.any(String),
+    });
+    expect(typeof res.body.data[0].pricing.usd_per_minute).toBe('string');
     expect(mockDb.all).toHaveBeenCalledTimes(2);
   });
 
@@ -81,15 +92,16 @@ describe('v1 models route', () => {
     expect(res.body.data[0].display_name).toBe('legacy-model');
     expect(res.body.data[0].context_window).toBe(4096);
     expect(res.body.data[0].parameter_count).toBeNull();
+    expect(res.body.data[0].pricing).toEqual({
+      usd_per_minute: expect.any(String),
+      usd_per_1m_input_tokens: expect.any(String),
+      usd_per_1m_output_tokens: expect.any(String),
+    });
   });
 
   test('returns empty list when model_registry table is missing', async () => {
     mockDb.all.mockImplementation((sql) => {
       if (String(sql).includes('PRAGMA table_info(model_registry)')) {
-        const err = new Error('no such table: model_registry');
-        throw err;
-      }
-      if (String(sql).includes('FROM model_registry')) {
         const err = new Error('no such table: model_registry');
         throw err;
       }
@@ -206,7 +218,15 @@ describe('v1 models route', () => {
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('legacy-chat-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('vram_gb AS min_gpu_vram_gb'))).toBe(true);
+    expect(res.body.usage.pricing).toEqual({
+      currency: 'USD',
+      usd_prompt: expect.any(String),
+      usd_completion: expect.any(String),
+      usd_total: expect.any(String),
+    });
+    expect(typeof res.body.usage.pricing.usd_total).toBe('string');
 
     fetchSpy.mockRestore();
   });
@@ -272,7 +292,15 @@ describe('v1 models route', () => {
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('requested-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('FROM model_registry WHERE model_id = ?'))).toBe(false);
+    expect(res.body.usage.pricing).toEqual({
+      currency: 'USD',
+      usd_prompt: expect.any(String),
+      usd_completion: expect.any(String),
+      usd_total: expect.any(String),
+    });
+    expect(typeof res.body.usage.pricing.usd_total).toBe('string');
 
     fetchSpy.mockRestore();
   });

@@ -170,6 +170,29 @@ describe('jobSubmitLimiter — 20/min per renter key', () => {
     const r = await request(app).post('/test').set('x-renter-key', keyB);
     expect(r.status).toBe(200);
   });
+
+  test('Authorization bearer renter keys are isolated per key on shared IP', async () => {
+    const keyA = uniqueKey('job-bearer-a');
+    const keyB = uniqueKey('job-bearer-b');
+    const app = buildApp(jobSubmitLimiter);
+
+    for (let i = 0; i < 20; i++) {
+      const res = await request(app)
+        .post('/test')
+        .set('Authorization', `Bearer ${keyA}`);
+      expect(res.status).toBe(200);
+    }
+
+    const blockedA = await request(app)
+      .post('/test')
+      .set('Authorization', `Bearer ${keyA}`);
+    expect(blockedA.status).toBe(429);
+
+    const allowedB = await request(app)
+      .post('/test')
+      .set('Authorization', `Bearer ${keyB}`);
+    expect(allowedB.status).toBe(200);
+  });
 });
 
 describe('registerLimiter — 5 per IP per 10min', () => {

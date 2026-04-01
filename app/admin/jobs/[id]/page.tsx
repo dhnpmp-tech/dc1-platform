@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
@@ -57,12 +57,7 @@ export default function JobDetailPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') : null
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    void fetchData()
-  }, [id])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       const res = await fetch(`${API_BASE}/admin/jobs/${id}`, { headers: { 'x-admin-token': token || '' } })
@@ -74,7 +69,12 @@ export default function JobDetailPage() {
       setRecoveryEvents(data.recovery_events || [])
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
-  }
+  }, [id, router, token])
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return }
+    void fetchData()
+  }, [fetchData, router, token])
 
   const handleCancel = async () => {
     if (!confirm(t('admin.job_detail.confirm_cancel_refund'))) return
