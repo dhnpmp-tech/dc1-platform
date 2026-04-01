@@ -1,3 +1,8 @@
+## [2026-04-01 04:02 UTC] Codex — DCP-282 OpenRouter Tool Passthrough + Single-[DONE] Stream Termination Parity
+- **Commit**: `pending` - Hardened `/v1/chat/completions` provider proxy passthrough so `tools` and `tool_choice` fields are forwarded exactly when present, and normalized SSE relay termination to always emit exactly one terminal `data: [DONE]` frame on successful streams (including provider fallback/retry paths) while suppressing upstream duplicate DONE frames.
+- **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
+- **Impact**: OpenRouter parity blockers around tool/tool_choice passthrough and stream termination stability are now regression-covered in integration tests for non-stream, stream, fallback, and tool payload cases. Verification: `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js` (`7/7` passing).
+
 ## [2026-04-01 02:13 UTC] Codex — Release Heartbeat Landed Audit Uniqueness Guards And Renter Job Detail Hook Fix
 - **Commit**: `5ac560f` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #152 and #153, and landed `agent/backend-dev/dcp-281-route-audit-uniqueness` plus `agent/frontend-dev/dcp-211-renter-job-detail-hook-deps` onto `main` via the clean release worktree.
 - **Files**: `AGENT_LOG.md`
