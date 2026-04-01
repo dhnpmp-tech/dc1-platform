@@ -111,8 +111,24 @@ function requireAuth(req, res, next) {
 
 let modelRegistryColumnsCache = null;
 
+function isSqliteMissingSchemaError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('no such table:') || message.includes('no such column:');
+}
+
 function isMissingModelRegistryError(error) {
-  return String(error?.message || '').includes('no such table: model_registry');
+  const message = String(error?.message || '').toLowerCase();
+  return isSqliteMissingSchemaError(error) && message.includes('model_registry');
+}
+
+function isMissingCostRatesSchemaError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  if (!isSqliteMissingSchemaError(error)) return false;
+  return (
+    message.includes('cost_rates')
+    || message.includes('token_rate_halala')
+    || message.includes('is_active')
+  );
 }
 
 function getModelRegistryColumns() {
@@ -168,6 +184,19 @@ function buildModelRequirementsQuery(columns) {
   return `SELECT ${selectColumns.join(', ')} FROM model_registry WHERE model_id = ?${whereActive}`;
 }
 
+function loadActiveTokenRateRows() {
+  try {
+    return db.all(
+      `SELECT model, token_rate_halala
+         FROM cost_rates
+        WHERE is_active = 1`
+    );
+  } catch (error) {
+    if (!isMissingCostRatesSchemaError(error)) throw error;
+    return [];
+  }
+}
+
 function buildEndpointUrl(req) {
   const configured = normalizeString(process.env.OPENROUTER_PROVIDER_ENDPOINT_URL, { maxLen: 400, trim: true });
   if (configured) return configured;
@@ -195,7 +224,7 @@ function resolveTokenizerFamily(row) {
 router.get('/models', (req, res) => {
   try {
     const columns = getModelRegistryColumns();
-    if (columns.size === 0) {
+    if (columns.size === 0 || !columns.has('model_id')) {
       return res.json({ object: 'list', data: [] });
     }
 
@@ -206,11 +235,7 @@ router.get('/models', (req, res) => {
       if (!isMissingModelRegistryError(error)) throw error;
     }
 
-    const tokenRateRows = db.all(
-      `SELECT model, token_rate_halala
-         FROM cost_rates
-        WHERE is_active = 1`
-    );
+    const tokenRateRows = loadActiveTokenRateRows();
     const tokenRateByModel = new Map();
     for (const row of tokenRateRows || []) {
       const modelKey = normalizeString(row?.model, { maxLen: 200 });
@@ -314,7 +339,7 @@ function getCapableProviders(minVramMb) {
 
 function resolveModelRequirements(model) {
   const columns = getModelRegistryColumns();
-  if (columns.size === 0) {
+  if (columns.size === 0 || !columns.has('model_id')) {
     return {
       model_id: model,
       min_vram_gb: 0,
@@ -338,14 +363,19 @@ function resolveModelRequirements(model) {
 }
 
 function resolveTokenRateHalala(modelId) {
-  const row = db.get(
-    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
-    modelId
-  ) || db.get(
-    'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
-    '__default__'
-  );
-  return toFiniteInt(row?.token_rate_halala, { min: 0, max: 100_000_000 }) ?? 1;
+  try {
+    const row = db.get(
+      'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+      modelId
+    ) || db.get(
+      'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
+      '__default__'
+    );
+    return toFiniteInt(row?.token_rate_halala, { min: 0, max: 100_000_000 }) ?? 1;
+  } catch (error) {
+    if (!isMissingCostRatesSchemaError(error)) throw error;
+    return 1;
+  }
 }
 
 function extractRequestId(req) {

@@ -223,6 +223,11 @@ describe('/v1 OpenRouter parity', () => {
       completion_tokens: expect.any(String),
     });
     expect(typeof parityModel.pricing.prompt_tokens).toBe('string');
+    expect(parityModel.pricing.prompt_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(parityModel.pricing.completion_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(parityModel.pricing.usd_per_minute).toMatch(/^\d+\.\d{6}$/);
+    expect(parityModel.pricing.usd_per_1m_input_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(parityModel.pricing.usd_per_1m_output_tokens).toMatch(/^\d+\.\d{6}$/);
     expect(parityModel).toHaveProperty('parameter_count');
   });
 
@@ -471,7 +476,11 @@ describe('/v1 OpenRouter parity', () => {
     });
     expect(v1Model.capability_flags).toEqual(providerModel.capability_flags);
     expect(v1Model.supported_features).toEqual(providerModel.supported_features);
+    expect(v1Model.pricing.prompt_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(v1Model.pricing.completion_tokens).toMatch(/^\d+\.\d{6}$/);
     expect(v1Model.pricing.usd_per_minute).toMatch(/^\d+\.\d{6}$/);
+    expect(v1Model.pricing.usd_per_1m_input_tokens).toMatch(/^\d+\.\d{6}$/);
+    expect(v1Model.pricing.usd_per_1m_output_tokens).toMatch(/^\d+\.\d{6}$/);
 
     const assertKeyOrder = (entry) => {
       const keys = Object.keys(entry);
