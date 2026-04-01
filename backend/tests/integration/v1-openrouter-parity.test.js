@@ -194,7 +194,7 @@ describe('/v1 OpenRouter parity', () => {
     });
   });
 
-  test('GET /v1/models returns OpenAI list payload even when model_registry has no parameter_count column', async () => {
+  test('GET /v1/models returns OpenRouter-required model fields', async () => {
     seedModel();
 
     const res = await request(app).get('/v1/models');
@@ -206,8 +206,23 @@ describe('/v1 OpenRouter parity', () => {
     expect(parityModel).toMatchObject({
       id: 'parity-model',
       object: 'model',
+      name: 'Parity Model',
       display_name: 'Parity Model',
+      description: expect.any(String),
+      context_length: expect.any(Number),
+      architecture: {
+        tokenizer: 'test',
+        instruct_type: 'instruct',
+        modality: 'text',
+      },
+      endpoints: [{ url: expect.stringMatching(/\/v1\/chat\/completions$/), type: 'chat' }],
+      provider_priority: ['dcp'],
     });
+    expect(parityModel.pricing).toMatchObject({
+      prompt_tokens: expect.any(String),
+      completion_tokens: expect.any(String),
+    });
+    expect(typeof parityModel.pricing.prompt_tokens).toBe('string');
     expect(parityModel).toHaveProperty('parameter_count');
   });
 
@@ -449,7 +464,11 @@ describe('/v1 OpenRouter parity', () => {
 
     expect(typeof v1Model.created).toBe('number');
     expect(typeof providerModel.created).toBe('number');
-    expect(v1Model.pricing).toEqual(providerModel.pricing);
+    expect(v1Model.pricing).toMatchObject(providerModel.pricing);
+    expect(v1Model.pricing).toMatchObject({
+      prompt_tokens: expect.any(String),
+      completion_tokens: expect.any(String),
+    });
     expect(v1Model.capability_flags).toEqual(providerModel.capability_flags);
     expect(v1Model.supported_features).toEqual(providerModel.supported_features);
     expect(v1Model.pricing.usd_per_minute).toMatch(/^\d+\.\d{6}$/);
