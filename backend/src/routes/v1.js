@@ -333,9 +333,47 @@ function v1ChatRateLimiter(req, res, next) {
   return vllmCompleteLimiter(req, res, next);
 }
 
-async function proxyToProvider({ endpointUrl, modelId, messages, maxTokens, temperature, stream, tools, toolChoice }) {
+const PROVIDER_OPTIONAL_PASSTHROUGH_FIELDS = [
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'repetition_penalty',
+  'stop',
+  'n',
+  'seed',
+  'response_format',
+  'stream_options',
+  'parallel_tool_calls',
+  'logit_bias',
+  'logprobs',
+  'top_logprobs',
+  'user',
+  'metadata',
+];
+
+function collectProviderOptionalPassthroughFields(requestBody = {}) {
+  const passthrough = {};
+  for (const field of PROVIDER_OPTIONAL_PASSTHROUGH_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(requestBody, field)) {
+      passthrough[field] = requestBody[field];
+    }
+  }
+  return passthrough;
+}
+
+async function proxyToProvider({
+  endpointUrl,
+  modelId,
+  messages,
+  maxTokens,
+  temperature,
+  stream,
+  tools,
+  toolChoice,
+  passthroughBody = {},
+}) {
   const url = `${endpointUrl}/v1/chat/completions`;
-  const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream };
+  const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream, ...passthroughBody };
   if (tools !== undefined) body.tools = tools;
   if (toolChoice !== undefined) body.tool_choice = toolChoice;
   let response;
@@ -423,6 +461,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const hasToolChoice = Object.prototype.hasOwnProperty.call(req.body || {}, 'tool_choice');
     const tools = hasTools ? req.body.tools : undefined;
     const toolChoice = hasToolChoice ? req.body.tool_choice : undefined;
+    const passthroughBody = collectProviderOptionalPassthroughFields(req.body || {});
 
     const modelReq = resolveModelRequirements(model);
     const minVramMb = modelReq.min_vram_gb * 1024;
@@ -550,6 +589,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         stream: wantsStream,
         tools,
         toolChoice,
+        passthroughBody,
       });
 
       const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
@@ -714,6 +754,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           stream: wantsStream,
           tools,
           toolChoice,
+          passthroughBody,
         });
 
         if (fallbackResult.proxyError) continue;

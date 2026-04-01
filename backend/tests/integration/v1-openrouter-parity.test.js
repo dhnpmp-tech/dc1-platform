@@ -359,6 +359,54 @@ describe('/v1 OpenRouter parity', () => {
     }
   });
 
+  test('POST /v1/chat/completions forwards optional OpenAI-compatible request fields unchanged', async () => {
+    const providerCapture = [];
+    const provider = await startMockProvider('json', providerCapture);
+    const renterKey = 'parity-renter-optional-field-passthrough';
+
+    try {
+      seedModel();
+      seedRenter(renterKey);
+      seedProvider(provider.endpointUrl);
+
+      const payload = {
+        model: 'parity-model',
+        messages: [{ role: 'user', content: 'optional fields passthrough' }],
+        top_p: 0.55,
+        frequency_penalty: 0.25,
+        presence_penalty: -0.5,
+        stop: ['</tool>', 'END'],
+        n: 2,
+        seed: 42,
+        stream_options: { include_usage: true },
+        response_format: { type: 'json_object' },
+        parallel_tool_calls: false,
+        user: 'renter_qa',
+        metadata: { source: 'integration-test', tier: 'qa' },
+      };
+
+      const res = await request(app)
+        .post('/v1/chat/completions')
+        .set('Authorization', `Bearer ${renterKey}`)
+        .send(payload);
+
+      expect(res.status).toBe(200);
+      expect(providerCapture[0]?.top_p).toBe(payload.top_p);
+      expect(providerCapture[0]?.frequency_penalty).toBe(payload.frequency_penalty);
+      expect(providerCapture[0]?.presence_penalty).toBe(payload.presence_penalty);
+      expect(providerCapture[0]?.stop).toEqual(payload.stop);
+      expect(providerCapture[0]?.n).toBe(payload.n);
+      expect(providerCapture[0]?.seed).toBe(payload.seed);
+      expect(providerCapture[0]?.stream_options).toEqual(payload.stream_options);
+      expect(providerCapture[0]?.response_format).toEqual(payload.response_format);
+      expect(providerCapture[0]?.parallel_tool_calls).toBe(payload.parallel_tool_calls);
+      expect(providerCapture[0]?.user).toBe(payload.user);
+      expect(providerCapture[0]?.metadata).toEqual(payload.metadata);
+    } finally {
+      await provider.close();
+    }
+  });
+
   test('model catalog required fields stay parity-aligned between /v1/models and /api/providers/model-catalog', async () => {
     seedModel('parity-catalog-model');
     const providerId = seedProvider('http://127.0.0.1:9');
