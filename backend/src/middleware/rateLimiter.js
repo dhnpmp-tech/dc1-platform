@@ -1,8 +1,16 @@
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
-const { getAdminTokenFromReq } = require('./auth');
+const { getAdminTokenFromReq, getBearerToken } = require('./auth');
 
 function ipFallbackKey(req) {
   return `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`;
+}
+
+function normalizeLimiterCredential(rawValue, prefix) {
+  if (Array.isArray(rawValue)) return null;
+  if (typeof rawValue !== 'string') return null;
+  const trimmed = rawValue.trim();
+  if (!trimmed) return null;
+  return `${prefix}:${trimmed}`;
 }
 
 function retryAfterSeconds(req, windowMs) {
@@ -52,9 +60,18 @@ function createRateLimiter({ windowMs, max, keyGenerator, buildBody = defaultRat
   });
 }
 
-function getRenterKey(req) {
-  const renterKey = req.headers['x-renter-key'] || req.query.renter_key || req.query.key;
-  if (renterKey) return `renter:${String(renterKey)}`;
+function getRenterKey(req, { includeGenericQueryKey = true } = {}) {
+  const candidates = [
+    req.headers['x-renter-key'],
+    req.query.renter_key,
+  ];
+  if (includeGenericQueryKey) candidates.push(req.query.key);
+  candidates.push(getBearerToken(req));
+
+  for (const candidate of candidates) {
+    const normalized = normalizeLimiterCredential(candidate, 'renter');
+    if (normalized) return normalized;
+  }
   return null;
 }
 
@@ -82,7 +99,11 @@ function createAdminIpAllowlist() {
 const registerLimiter = createRateLimiter({ windowMs: 60*60*1000, max: 5, keyGenerator: (req) => ipFallbackKey(req) });
 
 // Job submission: 20 per renter key per minute (DCP-855)
-const jobSubmitLimiter = createRateLimiter({ windowMs: 60*1000, max: 20, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
+const jobSubmitLimiter = createRateLimiter({
+  windowMs: 60*1000,
+  max: 20,
+  keyGenerator: (req) => getRenterKey(req, { includeGenericQueryKey: false }) || ipFallbackKey(req),
+});
 
 // Job creation: 10 per renter key per minute (DCP-855)
 const jobCreateLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req) });
