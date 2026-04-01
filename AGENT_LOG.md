@@ -8,6 +8,11 @@
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Landing page billing-explainer tracking now passes hook dependency lint checks and remains tied to current role intent state. Verification: `npm run lint -- --file app/page.tsx` (passes with existing `@next/next/no-img-element` warning only).
 
+## [2026-04-01 22:44 UTC] Codex — DCP-359 Homepage Marquee Image Optimization + Hook-Dep Cleanup
+- **Commit**: `pending` - Replaced supported-model marquee `<img>` tags with `next/image` for framework-native image handling and resolved homepage `trackLandingEvent` exhaustive-deps lint warning by memoizing the tracker callback and binding the billing-explainer observer effect to it.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Landing page marquee now uses Next.js image primitives and homepage lint checks are clean for this file. Verification: `npm run lint -- --file app/page.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-01 18:45 UTC] Codex — DCP-357 Unified Conversion Funnel Contract + Attribution Report
 - **Commit**: `73d2621` - Added a canonical provider+renter conversion funnel contract (`view -> register -> first_action -> first_success`) with durable event storage, per-actor stage dedupe, EN/AR locale normalization, source-surface/channel attribution capture, and an admin report endpoint for funnel/conversion completeness.
 - **Files**: `backend/src/db.js`, `backend/src/services/conversionFunnelService.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/conversion-funnel-contract.test.js`, `backend/artifacts/conversion-funnel/query-examples.sql`, `docs/api/conversion-funnel-contract.md`, `AGENT_LOG.md`
