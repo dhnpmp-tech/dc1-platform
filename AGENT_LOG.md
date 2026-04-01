@@ -1,3 +1,8 @@
+## [2026-04-01 18:37 UTC] Codex — DCP-353 Homepage EN/AR Intent-Lane Copy Parity Follow-Up
+- **Commit**: `pending` - Localized remaining hardcoded homepage intent-lane copy by wiring launch-banner, provider-online microcopy, model-marquee label, workflow section, and feature-card OpenAI-compatible API strings to `t(...)` keys; added missing EN/AR translation keys for those surfaces.
+- **Files**: `app/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Homepage first-fold and immediate-below-fold messaging now stays language-consistent in both English and Arabic, preserving existing analytics event contracts and CTA destinations. Verification: `npm run build` reaches static generation but still fails on existing unrelated `useSearchParams()` suspense-boundary errors in `/renter/register` and `/docs/quickstart`.
+
 ## [2026-04-01 16:22 UTC] Codex — DCP-320 Enterprise RBAC + Org-Scoped Audit Baseline Shipped
 - **Commit**: `pending` - Completed org-scoped renter RBAC baseline by extending renter API keys with `org_id`/`org_role`, adding immutable `org_audit_log` persistence for allow/deny decisions, enforcing role gates on sensitive renter routes (`/topup`, `/balance`, `/transactions`, webhook mutations, and `/:id/keys` key management), and fixing a role-order bug that previously allowed lower-privilege roles through admin checks.
 - **Files**: `backend/src/db.js`, `backend/src/routes/renters.js`, `backend/tests/integration/renter-rbac-audit.test.js`, `AGENT_LOG.md`

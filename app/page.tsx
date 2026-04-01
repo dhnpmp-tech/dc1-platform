@@ -47,7 +47,7 @@ interface DetailedHealth {
   providers: { registered: number; online: number }
 }
 
-function LaunchBanner({ health }: { health: DetailedHealth | null }) {
+function LaunchBanner({ health, t }: { health: DetailedHealth | null; t: (key: string) => string }) {
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
@@ -72,11 +72,11 @@ function LaunchBanner({ health }: { health: DetailedHealth | null }) {
   return (
     <div className="relative bg-dc1-amber/10 border-b border-dc1-amber/30 px-4 py-3 text-center">
       <p className="text-sm text-dc1-text-primary">
-        <span className="font-semibold text-dc1-amber">DCP Phase 1 is live</span>
+        <span className="font-semibold text-dc1-amber">{t('landing.launch_banner_badge')}</span>
         {' — '}
-        {registered} providers joining. Be first to deploy Arabic AI in-Kingdom.{' '}
+        {registered} {t('landing.launch_banner_joining_copy')}{' '}
         <Link href="/models" className="font-semibold text-dc1-amber underline hover:text-dc1-amber/80">
-          Start Building →
+          {t('landing.launch_banner_cta')}
         </Link>
       </p>
       <button
@@ -92,7 +92,7 @@ function LaunchBanner({ health }: { health: DetailedHealth | null }) {
   )
 }
 
-function ProviderCountWidget({ health }: { health: DetailedHealth | null }) {
+function ProviderCountWidget({ health, t }: { health: DetailedHealth | null; t: (key: string) => string }) {
   const online = health?.providers?.online ?? null
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
@@ -104,7 +104,7 @@ function ProviderCountWidget({ health }: { health: DetailedHealth | null }) {
       <span className={`font-bold tabular-nums transition-all ${online !== null && online > 0 ? 'text-emerald-400' : 'text-dc1-text-muted'}`}>
         {online ?? '—'}
       </span>
-      <span className="text-dc1-text-secondary">providers online</span>
+      <span className="text-dc1-text-secondary">{t('landing.providers_online')}</span>
     </span>
   )
 }
@@ -186,8 +186,8 @@ export default function HomePage() {
       ),
     },
     {
-      title: 'OpenAI-Compatible API',
-      description: 'Drop-in replacement for OpenAI API. Use your existing code with Arabic AI models hosted in Saudi Arabia.',
+      title: t('landing.feat_vllm_title'),
+      description: t('landing.feat_vllm_desc'),
       cta: t('landing.feat_vllm_cta'),
       href: '/docs',
       icon: (
@@ -309,7 +309,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <LaunchBanner health={detailedHealth} />
+      <LaunchBanner health={detailedHealth} t={t} />
 
       {/* Hero */}
       <section className="relative overflow-hidden">
@@ -401,7 +401,7 @@ export default function HomePage() {
       <section className="border-y border-dc1-border bg-dc1-surface-l1/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center mb-6">
-            <ProviderCountWidget health={detailedHealth} />
+            <ProviderCountWidget health={detailedHealth} t={t} />
           </div>
           <div className="mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
             <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
@@ -477,7 +477,7 @@ export default function HomePage() {
       <section className="py-16 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber text-center">
-            Saudi-ready AI workloads with Arabic model support
+            {t('landing.model_marquee_title')}
           </p>
         </div>
         <div className="relative w-full">
@@ -534,10 +534,10 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            Choose your workflow
+            {t('landing.workflow_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            Validate quickly in-browser, then move to API-driven container jobs for repeatable integration.
+            {t('landing.workflow_desc')}
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -549,15 +549,15 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Browser Playground</h3>
+            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">{t('landing.workflow_playground_title')}</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Verify a first workload from your browser with minimal setup. Pick a model, review output quality, and decide when it is production-ready.
+              {t('landing.workflow_playground_desc')}
             </p>
             <ul className="space-y-2 mb-8">
               {[
-                'No local install required',
-                'Routing checks policy and compatibility before assignment',
-                'Pre-run estimate is shown before execution',
+                t('landing.workflow_playground_bullet1'),
+                t('landing.workflow_playground_bullet2'),
+                t('landing.workflow_playground_bullet3'),
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -566,7 +566,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/renter/register" className="btn btn-primary btn-sm">
-              Try the playground
+              {t('landing.workflow_playground_cta')}
             </Link>
           </div>
 
@@ -577,15 +577,15 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Container Jobs</h3>
+            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">{t('landing.workflow_container_title')}</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Run repeatable, policy-aligned container jobs for training, fine-tuning, or batch workloads using an API-first flow.
+              {t('landing.workflow_container_desc')}
             </p>
             <ul className="space-y-2 mb-8">
               {[
-                'Approved container runtimes from the DCP catalog',
-                'GPU-scoped execution within isolated workspaces',
-                'Submit and track jobs via REST API',
+                t('landing.workflow_container_bullet1'),
+                t('landing.workflow_container_bullet2'),
+                t('landing.workflow_container_bullet3'),
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -594,7 +594,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/docs" className="btn btn-secondary btn-sm">
-              View API docs
+              {t('landing.workflow_container_cta')}
             </Link>
           </div>
         </div>
