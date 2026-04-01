@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
@@ -119,7 +120,7 @@ export default function HomePage() {
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
 
-  const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
+  const trackLandingEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
     const detail = {
       event,
@@ -141,7 +142,7 @@ export default function HomePage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }
+  }, [selectedIntent])
 
   const updateIntent = (intent: RoleIntent, source: string, selectionType: string) => {
     const previousIntent = selectedIntent
@@ -277,7 +278,7 @@ export default function HomePage() {
 
     observer.observe(node)
     return () => observer.disconnect()
-  }, [])
+  }, [trackLandingEvent])
 
   const liveStats = [
     { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
@@ -311,7 +312,7 @@ export default function HomePage() {
   const modeStripItems = [
     { key: 'marketplace', label: t('mode.label.marketplace'), description: t('mode.desc.marketplace'), href: '/renter/marketplace' },
     { key: 'playground', label: t('mode.label.playground'), description: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api-reference' },
+    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api/openrouter-60s-quickstart' },
     { key: 'enterprise_support', label: t('mode.label.enterprise_support'), description: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=landing-mode-strip' },
   ]
   const pathChooserLanes = [
@@ -392,12 +393,6 @@ export default function HomePage() {
                     destination: '/renter/register?source=landing_first_fold&intent=renter',
                     step: 'primary_cta',
                   })
-                  trackLandingEvent('developer_flow_landing_cta_click', {
-                    role_intent: 'renter',
-                    surface: 'hero_primary_cta',
-                    destination: '/renter/register?source=landing_first_fold&intent=renter',
-                    step: 'primary_cta',
-                  })
                 }}
                 className="btn btn-primary btn-lg w-full sm:w-auto min-w-[240px]"
               >
@@ -408,12 +403,6 @@ export default function HomePage() {
                 onClick={() => {
                   updateIntent('provider', 'landing_first_fold', 'primary_cta')
                   trackLandingEvent('landing_primary_cta_clicked', {
-                    role_intent: 'provider',
-                    surface: 'hero_primary_cta',
-                    destination: '/provider/register?source=landing_first_fold&intent=provider',
-                    step: 'primary_cta',
-                  })
-                  trackLandingEvent('developer_flow_landing_cta_click', {
                     role_intent: 'provider',
                     surface: 'hero_primary_cta',
                     destination: '/provider/register?source=landing_first_fold&intent=provider',
@@ -500,25 +489,7 @@ export default function HomePage() {
                   <p className="mt-1 text-xs text-dc1-text-secondary">{t('path_chooser.subtitle')}</p>
                   <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {pathChooserLanes.map((lane) => (
-                      <Link
-                        key={lane.key}
-                        href={lane.href}
-                        onClick={() => {
-                          if (lane.key === 'self_serve_renter') {
-                            updateIntent('renter', 'landing_path_chooser', 'lane_click')
-                          } else if (lane.key === 'provider_onboarding') {
-                            updateIntent('provider', 'landing_path_chooser', 'lane_click')
-                          }
-                          trackLandingEvent('landing_path_lane_clicked', {
-                            surface: 'path_chooser',
-                            destination: lane.href,
-                            step: 'lane_click',
-                            lane_key: lane.key,
-                            lane_label: lane.label,
-                          })
-                        }}
-                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
-                      >
+                      <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber">
                         <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
                         <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
                       </Link>
@@ -664,10 +635,12 @@ export default function HomePage() {
                   { src: '/logos/huggingface-text.png', alt: 'Hugging Face' },
                   { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM' },
                 ].map((logo, i) => (
-                  <img
+                  <Image
                     key={`${copy}-${i}`}
                     src={logo.src}
                     alt={logo.alt}
+                    width={160}
+                    height={36}
                     className="h-7 sm:h-9 w-auto object-contain brightness-0 invert opacity-50 hover:opacity-90 transition-opacity duration-300 shrink-0"
                   />
                 ))}

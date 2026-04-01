@@ -15,6 +15,7 @@ const {
 const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../services/notifications');
 const { sendWithdrawalApprovedEmail } = require('../services/emailService');
 const { resolveAttemptLogPath } = require('../services/job-execution-logs');
+const { buildFunnelReport } = require('../services/conversionFunnelService');
 const {
   listPolicies: listControlPlanePolicies,
   updatePolicy: updateControlPlanePolicy,
@@ -1855,6 +1856,19 @@ router.get('/analytics', (req, res) => {
   } catch (error) {
     console.error('Admin analytics error:', error);
     res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// === GET /api/admin/analytics/conversion-funnel - provider/renter unified funnel ===
+router.get('/analytics/conversion-funnel', (req, res) => {
+  try {
+    const sinceDays = toFiniteInt(req.query.since_days, { min: 1, max: 365 }) || 30;
+    const journey = normalizeString(req.query.journey, { maxLen: 16 }) || 'all';
+    const report = buildFunnelReport({ sinceDays, journey });
+    return res.json(report);
+  } catch (error) {
+    console.error('Admin conversion funnel analytics error:', error);
+    return res.status(500).json({ error: 'Failed to fetch conversion funnel analytics' });
   }
 });
 
