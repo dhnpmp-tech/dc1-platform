@@ -92,6 +92,8 @@ describe('v1 chat metering ledger persistence', () => {
     expect(payload.requestId).toBe('req-stream-123');
     expect(payload.providerId).toBe(55);
     expect(payload.providerResponseId).toBe('chatcmpl-stream-1');
+    expect(payload.requestPath).toBe('/chat/completions');
+    expect(payload.tokenRateHalala).toBe(2);
     expect(payload.promptTokens).toBe(11);
     expect(payload.completionTokens).toBe(7);
     expect(payload.totalTokens).toBe(18);

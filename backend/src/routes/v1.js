@@ -608,6 +608,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         recordOpenRouterUsage(db._db || db, {
           requestId: meteringRequestId,
           providerResponseId,
+          requestPath: normalizeString(req.path || req.originalUrl || '/v1/chat/completions', { maxLen: 160 }),
+          tokenRateHalala,
           renterId: req.renter.id,
           providerId: providerForUsage?.id || null,
           model: modelReq.model_id,

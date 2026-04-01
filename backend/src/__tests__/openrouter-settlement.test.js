@@ -94,6 +94,31 @@ describe('openrouterSettlementService', () => {
     expect(count.n).toBe(1);
   });
 
+  test('persists request metadata columns for downstream reconciliation reads', () => {
+    const { renter, provider } = seedRenterAndProvider();
+    const usage = recordOpenRouterUsage(db._db || db, {
+      requestId: 'req-metadata-1',
+      providerResponseId: 'chatcmpl-metadata-1',
+      jobId: 'job-metadata-1',
+      requestPath: '/api/vllm/chat/completions',
+      tokenRateHalala: 3,
+      renterId: renter.id,
+      providerId: provider.id,
+      model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+      source: 'api_vllm',
+      promptTokens: 9,
+      completionTokens: 6,
+      costHalala: 45,
+    });
+
+    expect(usage.request_id).toBe('req-metadata-1');
+    expect(usage.provider_response_id).toBe('chatcmpl-metadata-1');
+    expect(usage.job_id).toBe('job-metadata-1');
+    expect(usage.request_path).toBe('/api/vllm/chat/completions');
+    expect(usage.token_rate_halala).toBe(3);
+    expect(usage.source).toBe('api_vllm');
+  });
+
   test('executes invoice-mode settlement and marks usage settled', () => {
     const { renter, provider } = seedRenterAndProvider();
     recordOpenRouterUsage(db._db || db, {

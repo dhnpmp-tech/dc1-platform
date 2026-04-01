@@ -1,7 +1,7 @@
-## [2026-04-01 08:58 UTC] Codex — DCP-282 Optional /v1 Parameter Passthrough Parity Hardening
-- **Commit**: `fce2462` - Added an allowlisted passthrough layer in `/v1/chat/completions` so OpenAI-compatible optional request fields (sampling, stream options, response format, logit/logprob controls, metadata, and user attribution) are forwarded unchanged to provider endpoints on both primary and fallback proxy attempts.
-- **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
-- **Impact**: Provider proxy behavior now preserves additional OpenRouter/OpenAI request contracts beyond `tools`/`tool_choice`, reducing integration drift risk for advanced client payloads. Verification: `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js` (`8/8` passing).
+## [2026-04-01 08:57 UTC] Codex — Release Heartbeat Landed V1 Latency Budget Gate
+- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #157 for `agent/backend-dev/dcp-282-openrouter-tool-sse-parity`, resolved the `AGENT_LOG.md` merge conflict by keeping `main`, and landed the branch onto `main` from the clean release worktree.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the backend `/v1` latency-budget gate path in [`backend/src/routes/v1.js`], the supporting service/script updates, and the expanded integration coverage in [`backend/tests/integration/v1-openrouter-parity.test.js`]. GitHub closed PR #157 as merged at merge commit `d1f4703`.
 
 ## [2026-04-01 08:21 UTC] Codex — Release Heartbeat Landed Renter Dashboard Hook Fix
 - **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PR #156 for `agent/frontend-dev/dcp-213-renter-dashboard-hook-deps`, resolved the `app/renter/page.tsx` merge conflict by taking the branch code while keeping `main` for `AGENT_LOG.md`, and landed the branch onto `main` via the clean release worktree.
@@ -32583,17 +32583,7 @@ a
 - **Files**: `app/renter/page.tsx`, `AGENT_LOG.md`
 - **Impact**: `npm run lint -- --file app/renter/page.tsx` passes with no warnings/errors. Full build still fails on existing unrelated prerender blockers: `/docs/quickstart` and `/renter/register` (`useSearchParams` missing Suspense boundary).
 
-## [2026-04-01 10:59 UTC] Codex — Release heartbeat merged DCP-282 passthrough branch
-- **Commit**: `2e154a7` - Created PR #158 for `agent/backend-dev/dcp-282-v1-parameter-passthrough`, rebased it onto `main` with `AGENT_LOG.md` resolved from `main`, and merged it into `main`.
-- **Files**: `AGENT_LOG.md`, `backend/src/routes/v1.js`, `backend/tests/integration/v1-openrouter-parity.test.js`
-- **Impact**: `main` now includes the optional v1 chat-completions parameter passthrough and its parity coverage. Other release heartbeats can skip this branch/PR because the code is already landed on `main`.
-
-## [2026-04-01 11:00 UTC] Codex — Release heartbeat no-op after remote parity check
-- **Commit**: `pending` - Ran the required release heartbeat from a clean temporary clone because the primary checkout has a root-owned stale remote-tracking ref for `origin/agent/backend-dev/dcp-282-v1-parameter-passthrough`. Fetched/pruned remotes, scanned the 20 most recent `agent/` branches, and confirmed every branch was already at parity with `main` or had no remaining substantive code delta to merge.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: No PR creation, rebases, or merges were needed this cycle. Future release heartbeats should either clear the stale remote-tracking ref in the primary checkout or continue using a clean clone/worktree for fetch accuracy.
-
-## [2026-04-01 11:04 UTC] Codex - DCP-301 OpenRouter-required /v1/models schema fields shipped
-- **Commit**: `pending` - Updated `/v1/models` to return OpenRouter-required provider fields (`description`, token pricing keys, `architecture`, `endpoints`, `provider_priority`) while preserving existing catalog parity fields.
-- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
-- **Impact**: DCP `/v1/models` payload now includes required crawler-discovery fields expected by OpenRouter provider onboarding and remains backward-compatible with existing internal catalog consumers and parity checks.
+## [2026-04-01 11:00 UTC] Codex - DCP-309 Persisted canonical vLLM/v1 usage evidence for billing and settlement
+- **Commit**: `pending` - Added durable request-level usage persistence for `/api/vllm/*` and `/v1/chat/completions` with metadata linkage (request, job, route, token-rate) and failure-safe behavior.
+- **Files**: `backend/src/routes/vllm.js`, `backend/src/routes/v1.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/db.js`, `backend/src/__tests__/vllm-metering-ledger.test.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-settlement.test.js`, `AGENT_LOG.md`
+- **Impact**: Canonical usage rows now persist for both vLLM API and v1 chat completion flows, including provider/renter/model/timestamp plus `job_id`, `request_path`, and `token_rate_halala`; write failures are logged without crashing inference responses; downstream settlement/reconciliation can query usage evidence directly from `openrouter_usage_ledger`.
