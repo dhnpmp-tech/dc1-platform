@@ -1,5 +1,5 @@
 ## [2026-04-01 02:13 UTC] Codex — Release Heartbeat Landed Audit Uniqueness Guards And Renter Job Detail Hook Fix
-- **Commit**: `pending` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #152 and #153, and landed `agent/backend-dev/dcp-281-route-audit-uniqueness` plus `agent/frontend-dev/dcp-211-renter-job-detail-hook-deps` onto `main` via the clean release worktree.
+- **Commit**: `5ac560f` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), created PRs #152 and #153, and landed `agent/backend-dev/dcp-281-route-audit-uniqueness` plus `agent/frontend-dev/dcp-211-renter-job-detail-hook-deps` onto `main` via the clean release worktree.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: `main` now includes stronger backend regression coverage around payout audit uniqueness and the renter job detail page hook dependency fix. No other qualifying unmerged branches remained in the visible queue after these merges.
 
