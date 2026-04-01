@@ -1,7 +1,7 @@
 # DCP API Rate Limits Reference
 
 **Maintained by:** Security Engineer
-**Last updated:** 2026-03-24 (DCP-906)
+**Last updated:** 2026-03-31 (DCP-265)
 **Source files:** `backend/src/middleware/rateLimiter.js`, `backend/src/server.js`
 
 This is the authoritative reference for all API rate limits. All limiters use `express-rate-limit` with `standardHeaders: true` (RateLimit-* headers) and return HTTP 429 with body:
@@ -9,7 +9,21 @@ This is the authoritative reference for all API rate limits. All limiters use `e
 { "error": "Rate limit exceeded", "retryAfterSeconds": N, "retryAfterMs": N }
 ```
 
-Rate limiting is **disabled** in test environments (`DISABLE_RATE_LIMIT=1` or `NODE_ENV=test`).
+OpenAI-compatible `/v1/chat/completions` throttles return an OpenAI-style error envelope with stable retry metadata:
+```json
+{
+  "error": {
+    "message": "Rate limit exceeded. Retry after N seconds.",
+    "type": "rate_limit_error",
+    "param": null,
+    "code": "rate_limit_exceeded"
+  },
+  "retry_after_seconds": N,
+  "retry_after_ms": N000
+}
+```
+
+Rate limiting is disabled only when `DISABLE_RATE_LIMIT=1`.
 
 ---
 
@@ -43,6 +57,8 @@ Rate limiting is **disabled** in test environments (`DISABLE_RATE_LIMIT=1` or `N
 |---|---|---|---|---|
 | `POST /api/vllm/complete` | `vllmCompleteLimiter` | 1 min | 10 | Renter key or IP |
 | `POST /api/vllm/complete/stream` | `vllmStreamLimiter` | 1 min | 5 | Renter key or IP |
+| `POST /v1/chat/completions` (non-stream) | `vllmCompleteLimiter` | 1 min | 10 | Renter key or IP |
+| `POST /v1/chat/completions` (stream=true) | `vllmStreamLimiter` | 1 min | 5 | Renter key or IP |
 
 ---
 

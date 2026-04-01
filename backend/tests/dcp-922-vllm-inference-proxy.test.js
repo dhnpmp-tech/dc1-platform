@@ -7,9 +7,10 @@
  *   3. POST /api/vllm/complete proxies to provider vLLM endpoint when registered
  *   4. Token counts extracted from provider vLLM response (not approximated)
  *   5. Fallback to next provider when primary fails (connection refused)
- *   6. Returns 503 when all providers fail
- *   7. Phase 1 graceful degradation: no endpoint_url → job polling path (no_capacity fallback)
- *   8. Metering persists even when provider usage payload is malformed
+ *   6. Backup fallback candidates are validated for VRAM capability
+ *   7. Returns 503 when all providers fail
+ *   8. Phase 1 graceful degradation: no endpoint_url → job polling path (no_capacity fallback)
+ *   9. Metering persists even when provider usage payload is malformed
  */
 
 'use strict';
@@ -317,7 +318,91 @@ async function run() {
     db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
   });
 
-  // ── Test 6: 503 when all providers fail ───────────────────────────────────
+  // ── Test 6: backup candidates must satisfy routing capability checks ──────
+  await test('Backup candidate validation excludes under-capacity provider from capable pool', async () => {
+    const MODEL_HIGH_VRAM = 'test-model-dcp922-high-vram';
+    const nowIso = new Date().toISOString();
+    db.run(
+      `INSERT OR REPLACE INTO model_registry
+       (model_id, display_name, family, vram_gb, quantization, context_window, use_cases,
+        min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
+      MODEL_HIGH_VRAM, 'DCP922 High VRAM Model', 'test', 20, 'fp16', 4096, '[]', 20, 20
+    );
+
+    // Primary provider: capable but endpoint fails.
+    db.run('UPDATE providers SET vllm_endpoint_url = ?, gpu_vram_mib = ?, vram_gb = ?, last_heartbeat = ? WHERE id = ?',
+      'http://127.0.0.1:19998', 24576, 24, nowIso, providerId);
+
+    // Backup A: endpoint works but does NOT satisfy model VRAM requirement.
+    const lowVramKey = 'dcp-provider-low-vram-' + crypto.randomBytes(8).toString('hex');
+    const lowVramResult = db.run(
+      `INSERT INTO providers (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib,
+         approval_status, status, supported_compute_types, last_heartbeat,
+         vllm_endpoint_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'approved', 'online', '["inference"]',
+         ?, ?, ?, ?)`,
+      'DCP922 Low VRAM Backup', 'provider-low-vram@test.com', lowVramKey,
+      'RTX 4070', 8, 8192, nowIso, `http://127.0.0.1:${VLLM_PORT2}`, nowIso, nowIso
+    );
+    const lowVramProviderId = lowVramResult.lastInsertRowid;
+    const lowVramServer = await createMockVllmServer({
+      port: VLLM_PORT2,
+      modelId: MODEL_HIGH_VRAM,
+      responseText: 'LOW_VRAM_BACKUP_SHOULD_NOT_BE_USED',
+      usage: { prompt_tokens: 4, completion_tokens: 4, total_tokens: 8 },
+    });
+
+    // Backup B: capable and should be selected.
+    const capableBackupPort = 19925;
+    const capableKey = 'dcp-provider-capable-backup-' + crypto.randomBytes(8).toString('hex');
+    const capableResult = db.run(
+      `INSERT INTO providers (name, email, api_key, gpu_model, vram_gb, gpu_vram_mib,
+         approval_status, status, supported_compute_types, last_heartbeat,
+         vllm_endpoint_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'approved', 'online', '["inference"]',
+         ?, ?, ?, ?)`,
+      'DCP922 Capable Backup', 'provider-capable-backup@test.com', capableKey,
+      'RTX 4090', 24, 24576, nowIso, `http://127.0.0.1:${capableBackupPort}`, nowIso, nowIso
+    );
+    const capableProviderId = capableResult.lastInsertRowid;
+    const capableServer = await createMockVllmServer({
+      port: capableBackupPort,
+      modelId: MODEL_HIGH_VRAM,
+      responseText: 'Response from capable validated backup',
+      usage: { prompt_tokens: 6, completion_tokens: 6, total_tokens: 12 },
+    });
+
+    try {
+      const res = await request(mainServer, 'POST', '/api/vllm/complete', {
+        model: MODEL_HIGH_VRAM,
+        messages: [{ role: 'user', content: 'Use a validated backup candidate' }],
+      }, { 'x-renter-key': renterKey });
+
+      if (res.status === 200) {
+        assertEqual(
+          res.body?.choices?.[0]?.message?.content,
+          'Response from capable validated backup',
+          `Expected capable backup response, got: ${res.body?.choices?.[0]?.message?.content}`
+        );
+      } else {
+        assertEqual(res.status, 503, `Expected 200 or 503, got ${res.status}: ${res.text}`);
+        assertEqual(
+          res.body?.diagnostics?.capable_providers,
+          2,
+          `Expected exactly 2 capable providers (primary + high-VRAM backup), got ${res.body?.diagnostics?.capable_providers}`
+        );
+      }
+    } finally {
+      lowVramServer.close();
+      capableServer.close();
+      db.run('DELETE FROM providers WHERE id IN (?, ?)', lowVramProviderId, capableProviderId);
+      db.run('DELETE FROM model_registry WHERE model_id = ?', MODEL_HIGH_VRAM);
+      db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
+    }
+  });
+
+  // ── Test 7: 503 when all providers fail ───────────────────────────────────
   await test('Returns 503 when all providers return errors', async () => {
     // Mock that returns 500
     const mockVllm = await createMockVllmServer({
@@ -344,7 +429,7 @@ async function run() {
     db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
   });
 
-  // ── Test 7: Phase 1 graceful degradation (no endpoint → no_capacity path) ─
+  // ── Test 8: Phase 1 graceful degradation (no endpoint → no_capacity path) ─
   await test('Phase 1: no vllm_endpoint_url returns 503 no_capacity (legacy path, no live providers)', async () => {
     // Ensure no endpoint registered on provider
     db.run('UPDATE providers SET vllm_endpoint_url = NULL WHERE id = ?', providerId);
@@ -364,7 +449,7 @@ async function run() {
     db.run("UPDATE providers SET status = 'online' WHERE id = ?", providerId);
   });
 
-  // ── Test 8: malformed provider usage still persists metering ──────────────
+  // ── Test 9: malformed provider usage still persists metering ──────────────
   await test('Malformed provider usage still persists serve_sessions metering', async () => {
     const mockVllm = await createMockVllmServer({
       port: VLLM_PORT,

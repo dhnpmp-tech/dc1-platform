@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-03-31T12:00:00.000Z",
+  "window_start": "2026-03-24T12:00:00.000Z",
+  "window_end": "2026-03-31T12:00:00.000Z",
+  "window_days": 7,
+  "totals": {
+    "quickstart_page_view": 10,
+    "quickstart_api_key_created": 6,
+    "quickstart_first_chat_success": 4,
+    "page_to_api_key_rate_pct": 60,
+    "page_to_first_chat_rate_pct": 40,
+    "api_key_to_first_chat_rate_pct": 66.67
+  },
+  "locale_source_breakdown": [
+    {
+      "locale": "en",
+      "source": "renter_register_first_workload",
+      "quickstart_page_view": 3,
+      "quickstart_api_key_created": 2,
+      "quickstart_first_chat_success": 1,
+      "page_to_api_key_rate_pct": 66.67,
+      "page_to_first_chat_rate_pct": 33.33,
+      "api_key_to_first_chat_rate_pct": 50
+    },
+    {
+      "locale": "ar",
+      "source": "renter_register_first_workload",
+      "quickstart_page_view": 3,
+      "quickstart_api_key_created": 2,
+      "quickstart_first_chat_success": 1,
+      "page_to_api_key_rate_pct": 66.67,
+      "page_to_first_chat_rate_pct": 33.33,
+      "api_key_to_first_chat_rate_pct": 50
+    },
+    {
+      "locale": "en",
+      "source": "docs_start_quickstart",
+      "quickstart_page_view": 2,
+      "quickstart_api_key_created": 1,
+      "quickstart_first_chat_success": 1,
+      "page_to_api_key_rate_pct": 50,
+      "page_to_first_chat_rate_pct": 50,
+      "api_key_to_first_chat_rate_pct": 100
+    },
+    {
+      "locale": "ar",
+      "source": "landing_primary_cta",
+      "quickstart_page_view": 1,
+      "quickstart_api_key_created": 1,
+      "quickstart_first_chat_success": 1,
+      "page_to_api_key_rate_pct": 100,
+      "page_to_first_chat_rate_pct": 100,
+      "api_key_to_first_chat_rate_pct": 100
+    },
+    {
+      "locale": "en",
+      "source": "landing_primary_cta",
+      "quickstart_page_view": 1,
+      "quickstart_api_key_created": 0,
+      "quickstart_first_chat_success": 0,
+      "page_to_api_key_rate_pct": 0,
+      "page_to_first_chat_rate_pct": 0,
+      "api_key_to_first_chat_rate_pct": 0
+    }
+  ]
+}

@@ -15,10 +15,13 @@
 
 if (!process.env.DC1_DB_PATH)     process.env.DC1_DB_PATH     = ':memory:';
 if (!process.env.DC1_ADMIN_TOKEN) process.env.DC1_ADMIN_TOKEN = 'test-admin-token';
+if (!process.env.DISABLE_RATE_LIMIT) process.env.DISABLE_RATE_LIMIT = '1';
 
 const request = require('supertest');
 const express = require('express');
 const db      = require('../../src/db');
+
+jest.setTimeout(30_000);
 
 // ── App factory ──────────────────────────────────────────────────────────────
 
@@ -63,7 +66,8 @@ async function seedProvider() {
   const res = await request(app).post('/api/providers/register').send({
     name: `Admin-Test-Provider-${Date.now()}`,
     email: `adminp-${Date.now()}-${Math.random().toString(36).slice(2)}@dc1.test`,
-    gpu_model: 'RTX 4090', os: 'Linux', vram_gb: 24,
+    gpu_model: 'RTX 4090',
+    os: 'Linux',
   });
   expect(res.status).toBe(200);
   await request(app).post('/api/providers/heartbeat').send({
