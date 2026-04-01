@@ -169,8 +169,10 @@ export default function AdminDashboard() {
     return () => clearInterval(interval)
   }, [router])
 
-  const getToken = () =>
-    typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') || '' : ''
+  const getToken = useCallback(
+    () => (typeof window !== 'undefined' ? localStorage.getItem('dc1_admin_token') || '' : ''),
+    [],
+  )
 
   const fetchPricing = useCallback(async () => {
     setPricingLoading(true)
@@ -187,7 +189,7 @@ export default function AdminDashboard() {
     } finally {
       setPricingLoading(false)
     }
-  }, [])
+  }, [getToken])
 
   const fetchMetrics = useCallback(async () => {
     setMetricsLoading(true)
@@ -204,7 +206,7 @@ export default function AdminDashboard() {
     } finally {
       setMetricsLoading(false)
     }
-  }, [])
+  }, [getToken])
 
   useEffect(() => {
     if (activeTab === 'pricing' && isAuthed) fetchPricing()
@@ -244,7 +246,7 @@ export default function AdminDashboard() {
     } catch { /* non-fatal */ } finally {
       setProvidersLoading(false)
     }
-  }, [])
+  }, [getToken])
 
   const fetchJobs = useCallback(async () => {
     setJobsLoading(true)
@@ -263,7 +265,7 @@ export default function AdminDashboard() {
     } catch { /* non-fatal */ } finally {
       setJobsLoading(false)
     }
-  }, [])
+  }, [getToken])
 
   const fetchRevenue7d = useCallback(async () => {
     setRevenueLoading(true)
@@ -278,7 +280,7 @@ export default function AdminDashboard() {
     } catch { /* non-fatal */ } finally {
       setRevenueLoading(false)
     }
-  }, [])
+  }, [getToken])
 
   const pingApiHealth = useCallback(async () => {
     setApiHealthLoading(true)
@@ -305,7 +307,7 @@ export default function AdminDashboard() {
     } catch { /* non-fatal */ } finally {
       setErrorsLoading(false)
     }
-  }, [])
+  }, [getToken])
 
   // Ops tab: initial data fetch + 30s job refresh
   useEffect(() => {
