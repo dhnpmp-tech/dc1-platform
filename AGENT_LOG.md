@@ -32412,3 +32412,8 @@ a
 - **Commit**: `pending` - Added provider activation download-event persistence, implemented `/api/admin/providers/activation-conversion` with 24h/7d stage counts + conversion rates + machine-readable blocker taxonomy, and replaced the conversion test shim with real integration coverage.
 - **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/provider-activation-conversion.test.js`, `AGENT_LOG.md`
 - **Impact**: Backend now exposes deterministic activation conversion telemetry (`registered -> installer_downloaded -> first_heartbeat -> online_within_24h`) with non-synthetic empty-window behavior and blocker taxonomy derived from lifecycle + daemon error logs; regression coverage is in place for the new admin contract.
+
+## [2026-04-02 20:29 UTC] Codex — Stabilized Provider Core Integration Suite Against Register Limiter Leakage
+- **Commit**: `pending` - Scoped `api-core` integration suite to disable rate limiting so provider/renter/admin contract tests no longer fail nondeterministically after the register limiter budget is consumed across cases.
+- **Files**: `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: Restores deterministic backend contract coverage on `POST /api/providers/register` and dependent flows (`/me`, heartbeat, admin stats) while keeping dedicated rate-limit suites as the source of truth for 429 behavior.
