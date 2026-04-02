@@ -1743,6 +1743,21 @@ const translations: Record<Language, Record<string, string>> = {
     'landing.cta_register_provider': 'Connect Your GPU',
     'landing.cta_register_renter': 'Start Renting',
     'landing.cta_browse': 'Browse the live marketplace',
+    // Usage Paths / Workflow section
+    'landing.workflow_title': 'Two ways to use DCP',
+    'landing.workflow_desc': 'Start with the playground for instant inference, or bring your own container for full control.',
+    'landing.workflow_playground_title': 'Inference Playground',
+    'landing.workflow_playground_desc': 'Run a starter workload in the browser, then graduate to the full API for repeatable production use.',
+    'landing.workflow_playground_bullet1': 'OpenAI-compatible API — drop-in replacement',
+    'landing.workflow_playground_bullet2': 'Arabic models: ALLaM, JAIS, Falcon',
+    'landing.workflow_playground_bullet3': 'Pay per token, billed in SAR',
+    'landing.workflow_playground_cta': 'Start free',
+    'landing.workflow_container_title': 'Custom Workloads',
+    'landing.workflow_container_desc': 'Bring any Docker image and run it on Saudi GPU hardware with full root access.',
+    'landing.workflow_container_bullet1': 'Any framework: PyTorch, JAX, custom CUDA',
+    'landing.workflow_container_bullet2': 'Dedicated GPU allocation, not shared',
+    'landing.workflow_container_bullet3': 'Saudi data residency — PDPL compliant',
+    'landing.workflow_container_cta': 'Read the docs',
 
     // Provider Guide
     'pg.title': 'Join DCP as a GPU Provider',

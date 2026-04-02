@@ -623,16 +623,16 @@
             <p>Join the DC1 decentralized compute network. Connect your GPU in 5 minutes — no coding required.</p>
             <div class="stats">
                 <div class="stat">
-                    <div class="stat-value">14</div>
-                    <div class="stat-label">GPU Models</div>
+                    <div class="stat-value" id="hero-providers-online">—</div>
+                    <div class="stat-label">Providers online</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-value">5 min</div>
-                    <div class="stat-label">Setup time</div>
+                    <div class="stat-value" id="hero-gpus-online">—</div>
+                    <div class="stat-label">GPUs online</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-value">24/7</div>
-                    <div class="stat-label">Auto earnings</div>
+                    <div class="stat-value" id="hero-stats-updated">—</div>
+                    <div class="stat-label">Last updated</div>
                 </div>
             </div>
         </div>
@@ -841,8 +841,62 @@
             else if (ua.includes('linux') || ua.includes('ubuntu')) sel.value = 'Linux';
         }
 
+        function normalizeProviderList(payload) {
+            if (Array.isArray(payload)) return payload;
+            if (payload && typeof payload === 'object') {
+                if (Array.isArray(payload.providers)) return payload.providers;
+                if (Array.isArray(payload.data)) return payload.data;
+            }
+            return [];
+        }
+
+        function deriveLiveStats(providers) {
+            const hasLiveFlag = providers.some((p) => typeof p?.is_live === 'boolean');
+            const liveProviders = hasLiveFlag ? providers.filter((p) => p && p.is_live) : providers;
+            const providersOnline = liveProviders.length;
+            const gpusOnline = liveProviders.reduce((sum, provider) => {
+                const parsed = Number(provider?.gpu_count);
+                if (Number.isFinite(parsed) && parsed > 0) return sum + parsed;
+                return sum + 1;
+            }, 0);
+            return { providersOnline, gpusOnline };
+        }
+
+        function updateHeroStats(providersOnline, gpusOnline) {
+            const providersNode = document.getElementById('hero-providers-online');
+            const gpusNode = document.getElementById('hero-gpus-online');
+            const updatedNode = document.getElementById('hero-stats-updated');
+            if (providersNode) providersNode.textContent = String(providersOnline);
+            if (gpusNode) gpusNode.textContent = String(gpusOnline);
+            if (updatedNode) {
+                updatedNode.textContent = new Date().toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                });
+            }
+        }
+
+        async function loadHeroStats() {
+            const endpoints = ['/api/providers/available', '/api/providers/online'];
+            for (const endpoint of endpoints) {
+                try {
+                    const res = await fetch(endpoint, { cache: 'no-store' });
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    const providers = normalizeProviderList(data);
+                    const { providersOnline, gpusOnline } = deriveLiveStats(providers);
+                    updateHeroStats(providersOnline, gpusOnline);
+                    return;
+                } catch (error) {
+                    // Try the next endpoint.
+                }
+            }
+        }
+
         detectGPU();
         detectOS();
+        loadHeroStats();
+        setInterval(loadHeroStats, 60000);
 
         // ===================================================================
         // GPU Selection
