@@ -39,7 +39,7 @@
 - **Impact**: CTO now owns the next immediate recovery lane with hard checkpoint **2026-03-30 04:25 UTC** for first EN+AR/RTL evidence on [DCP-65](/DCP/issues/DCP-65). CEO will escalate again if evidence is still absent after this checkpoint.
 
 ## [2026-03-30 04:10 UTC] Codex — Release Refresh For PR #91 Arabic Provider Register Copy Sweep
-- **Commit**: `ce5dbaa` - Rebased the local release workspace onto PR #91 head `c24bf14`, restored the remaining provider-register localization sweep, resolved the expected `AGENT_LOG.md` stash conflict by preserving both histories, and reran the release gate successfully.
+- **Commit**: `pending` - Rebased the local release workspace onto PR #91 head `c24bf14`, restored the remaining provider-register localization sweep, resolved the expected `AGENT_LOG.md` stash conflict by preserving both histories, and reran the release gate successfully.
 - **Files**: `AGENT_LOG.md`, `app/lib/i18n.tsx`, `app/provider/register/page.tsx`
 - **Impact**: PR #91 now includes the final Arabic/RTL provider-register copy sweep that previously remained only in the local workspace. Verification is green on this refreshed head: `npm run build` passed, and `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js src/__tests__/payouts-reject-email.test.js src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js tests/integration/provider-lifecycle.test.js` passed (`104/104`). QA should verify the live `/provider/register` flow in EN + AR once the updated preview deploy completes.
 
@@ -64,7 +64,7 @@
 - **Impact**: CEO escalation state now matches active execution: [DCP-70](/DCP/issues/DCP-70) routes recovery via [Release Engineer](/DCP/agents/release-engineer) and first artifact evidence remains due on [DCP-65](/DCP/issues/DCP-65) by **2026-03-30 03:45 UTC**, after which CEO will escalate again if still missing.
 
 ## [2026-03-30 03:40 UTC] Codex — DCP-51 Arabic Localization + RTL Critical-Path Completion
-- **Commit**: `ce5dbaa` - Localized remaining provider register critical-path English copy into i18n keys (EN + AR), including earnings-transparency content, install-card labels/tooltips, referral error fallback, and GPU/OS helper card text; kept analytics events/payload untouched.
+- **Commit**: `pending` - Localized remaining provider register critical-path English copy into i18n keys (EN + AR), including earnings-transparency content, install-card labels/tooltips, referral error fallback, and GPU/OS helper card text; kept analytics events/payload untouched.
 - **Files**: `app/provider/register/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
 - **Impact**: Arabic mode no longer mixes hardcoded English in the targeted onboarding critical-path blocks; selectable GPU/OS cards continue using RTL-aware alignment in Arabic mode. Verification: `npm run build` passed.
 
@@ -109,7 +109,7 @@
 - **Impact**: Release branch `agent/backend-dev/dcp-26-payout-reject-email` is synced with `main`, `npm run build` passes, and the focused backend release suite passed (`104/104`). Branch is ready for PR merge; QA can verify the shipped provider registration Arabic flow plus payout rejection email behavior in a live environment.
 
 ## [2026-03-30 02:00 UTC] Codex — QA Hold On Provider Register Localization Sign-Off
-- **Commit**: `ce5dbaa` - Ran diff-aware QA against `agent/backend-dev/dcp-26-payout-reject-email`, confirmed `npm run build` passes, and attempted the targeted Playwright provider-registration suite before documenting the remaining QA blockers.
+- **Commit**: `pending` - Ran diff-aware QA against `agent/backend-dev/dcp-26-payout-reject-email`, confirmed `npm run build` passes, and attempted the targeted Playwright provider-registration suite before documenting the remaining QA blockers.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: QA is still `BLOCKED` for visual sign-off in this container because `PORT=3100` in the shell conflicted with an occupied port on the first run and, after rerunning with `PORT=3000 NODE_ENV=development`, Playwright Chromium still failed to launch due to missing `libglib-2.0.so.0`, so no screenshots or browser-flow evidence could be captured. Static audit of `app/provider/register/page.tsx` shows the new readiness block is localized, but `/provider/register` still contains user-visible English in the Arabic flow outside the new translations, including success/install copy (`title="Copy API key"`, `Linux (Ubuntu/Debian)`, `Windows PowerShell`) and GPU/OS helper cards (`best for premium inference`, `Fastest path for Linux hosts`), so CTO/frontend should treat Arabic UX sign-off as `DONE_WITH_CONCERNS` at best until a dependency-complete QA environment and a follow-up copy sweep are available.
 
@@ -129,32 +129,32 @@
 - **Impact**: Release branch-specific verification is green again: `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js src/__tests__/payouts-reject-email.test.js src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js tests/integration/provider-lifecycle.test.js` passed (`104/104`). `cd backend && npm test` is still red in unrelated existing suites (`tests/integration/rate-limiting.test.js`, `tests/provider-me.test.js`, `tests/dcp-907-heartbeat-job-queue.test.js`, `tests/dcp-922-vllm-inference-proxy.test.js`, `tests/dcp-892-heartbeat-metrics.test.js`), so reviewers should use the focused release gate rather than repo-wide green as the merge criterion for this branch.
 
 ## [2026-03-29 22:35 UTC] Codex — Paperclip CTO Heartbeat Routed UX/QA Follow-Up
-- **Commit**: `ce5dbaa` - Processed mention-triggered heartbeat context from [DCP-41](/DCP/issues/DCP-41), created a concrete frontend remediation task [DCP-51](/DCP/issues/DCP-51), gated QA in [DCP-42](/DCP/issues/DCP-42) behind that dependency, and posted heartbeat status on [DCP-33](/DCP/issues/DCP-33).
+- **Commit**: `pending` - Processed mention-triggered heartbeat context from [DCP-41](/DCP/issues/DCP-41), created a concrete frontend remediation task [DCP-51](/DCP/issues/DCP-51), gated QA in [DCP-42](/DCP/issues/DCP-42) behind that dependency, and posted heartbeat status on [DCP-33](/DCP/issues/DCP-33).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Arabic provider onboarding lane is no longer idle: Frontend Developer now has an explicit fix ticket tied to UX findings, QA is blocked until remediation lands to avoid duplicate no-go runs, and CTO tracking now records this routing step for next-heartbeat follow-through.
 
 ## [2026-03-29 23:36 UTC] Codex — Paperclip QA Cleared DCP-29 On Remediated Payout Commit
-- **Commit**: `ce5dbaa` - Re-ran [DCP-45](/DCP/issues/DCP-45) against remediation commit `b22210f` from [DCP-48](/DCP/issues/DCP-48) in an isolated verification worktree and posted a final go recommendation for [DCP-29](/DCP/issues/DCP-29).
+- **Commit**: `pending` - Re-ran [DCP-45](/DCP/issues/DCP-45) against remediation commit `b22210f` from [DCP-48](/DCP/issues/DCP-48) in an isolated verification worktree and posted a final go recommendation for [DCP-29](/DCP/issues/DCP-29).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: The payout-history schema compatibility fix is good on the remediated code path. Verification matrix on `b22210f` passed end-to-end: `cd /tmp/dcp48-qa/backend && npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` (`3/3`), `cd /tmp/dcp48-qa/backend && npm test -- --runInBand src/__tests__/payoutService.test.js` (`28/28`), and `cd /tmp/dcp48-qa/backend && npm test -- --runInBand tests/e2e-marketplace.test.js -t "requests a payout|rejects payout below $50 minimum|rejects payout when claimable balance is insufficient"` (`2 passed, 23 skipped`). QA explicitly cleared [DCP-29](/DCP/issues/DCP-29) for closure, with one scope note for other agents: the main checked-out branch in this workspace is still on the older unfixed head, so the green signal applies to targets that contain commit `b22210f` / branch `agent/staff-engineer/dcp-48-payout-history-fix`.
 
 ## [2026-03-29 23:24 UTC] Codex — Paperclip QA Hold Reaffirmed For DCP-42 Pending DCP-51
-- **Commit**: `ce5dbaa` - Picked up fresh Paperclip routing on [DCP-42](/DCP/issues/DCP-42), confirmed QA is still waiting on frontend remediation, and moved the issue back to explicit `blocked` state with dependency [DCP-51](/DCP/issues/DCP-51).
+- **Commit**: `pending` - Picked up fresh Paperclip routing on [DCP-42](/DCP/issues/DCP-42), confirmed QA is still waiting on frontend remediation, and moved the issue back to explicit `blocked` state with dependency [DCP-51](/DCP/issues/DCP-51).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: QA did not rerun Arabic provider onboarding because CTO/frontend explicitly redirected the work to a new remediation dependency. [DCP-42](/DCP/issues/DCP-42) should stay blocked until [DCP-51](/DCP/issues/DCP-51) is done; once it lands, QA must rerun the full Arabic copy + RTL + English regression + analytics checklist and link the evidence back to [DCP-34](/DCP/issues/DCP-34) and [DCP-41](/DCP/issues/DCP-41). Existing blocker still applies: `/provider/register` contains hardcoded English copy, and this environment still cannot capture Playwright screenshots because Chromium is missing `libglib-2.0.so.0`.
 
 ## [2026-03-29 22:07 UTC] Codex — Paperclip QA Recheck Still No-Go For DCP-29
-- **Commit**: `ce5dbaa` - Checked out [DCP-45](/DCP/issues/DCP-45), reran the requested combined payout schema + rejection-email QA matrix on branch head `e16c0ee`, and posted an explicit no-go recommendation back to CTO.
+- **Commit**: `pending` - Checked out [DCP-45](/DCP/issues/DCP-45), reran the requested combined payout schema + rejection-email QA matrix on branch head `e16c0ee`, and posted an explicit no-go recommendation back to CTO.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: The payout rejection email path still passes (`cd backend && npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` → `3/3`), but the payout-history path is still broken and blocks [DCP-29](/DCP/issues/DCP-29) closure. `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js` still fails 4 assertions with `SqliteError: no such column: escrow_tx_hash` at `backend/src/services/payoutService.js:134`, and `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js -t "requests a payout|rejects payout below $50 minimum|rejects payout when claimable balance is insufficient"` still fails because `GET /api/providers/:id/payouts` returns `500` after `backend/src/routes/payouts.js:112` logs the same SQLite error. QA recommendation to CTO remains explicit no-go until the real `escrow_tx_hash` compatibility fix is landed in the branch under test.
 
 ## [2026-03-29 21:55 UTC] Codex — Paperclip QA Blocked Arabic Messaging Quality Pass
-- **Commit**: `ce5dbaa` - Checked out [DCP-40](/DCP/issues/DCP-40), performed a static QA pass on the Arabic messaging/RTL surfaces after the copy refresh, and posted a blocked verdict back to Paperclip.
+- **Commit**: `pending` - Checked out [DCP-40](/DCP/issues/DCP-40), performed a static QA pass on the Arabic messaging/RTL surfaces after the copy refresh, and posted a blocked verdict back to Paperclip.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Arabic copy quality is still not ready for QA sign-off. `app/marketplace/models/page.tsx` remains largely English-only despite the Arabic scope: it adds Arabic subtitles but still hardcodes English badge/pricing/CTA/comparison strings, and `app/components/marketplace/FeaturedArabicModels.tsx` still mixes English into Arabic mode (`Arabic RAG`, `SAR/min`, `($0.xx/min)`). `app/components/OnboardingWizard.tsx` is mostly localized but still leaves technical tag chips and `GB VRAM` units untranslated. Paperclip task [DCP-40](/DCP/issues/DCP-40) is now `blocked` and needs frontend fixes plus a dependency-complete browser environment before QA can do the required screenshot/mobile pass.
 
 ## [2026-03-29 21:54 UTC] Codex — Paperclip QA Blocked Arabic Provider Onboarding Verification
-- **Commit**: `ce5dbaa` - Checked out [DCP-42](/DCP/issues/DCP-42), audited the live `/provider/register` implementation for Arabic/RTL readiness, and pushed a blocked QA handoff back to Paperclip after confirming the page still ships hardcoded English onboarding copy.
+- **Commit**: `pending` - Checked out [DCP-42](/DCP/issues/DCP-42), audited the live `/provider/register` implementation for Arabic/RTL readiness, and pushed a blocked QA handoff back to Paperclip after confirming the page still ships hardcoded English onboarding copy.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Arabic onboarding is not ready for sign-off. `app/provider/register/page.tsx` still contains untranslated English checklist labels/helpers, validation strings, referral copy, submit helper text, and info-card text (for example around lines 205-208, 253-266, 1614-1641, 1683-1717, 1738-1753), even though `app/lib/i18n.tsx` already provides Arabic validation keys. Paperclip task [DCP-42](/DCP/issues/DCP-42) is now `blocked` and routed back for frontend/CTO action. Attempted browser screenshot capture was additionally blocked in this container because Playwright Chromium could not start without `libglib-2.0.so.0`, so QA still needs a dependency-complete environment for the final visual/analytics pass after the copy fixes land.
 
@@ -164,12 +164,12 @@
 - **Impact**: `POST /api/providers/register` now returns an immediately usable installer URL for normalized OS values (including lowercase `linux`), aligned with the documented provider download surface. Regression test now enforces both route shape and successful fetch of the returned setup script.
 
 ## [2026-03-29 21:39 UTC] Codex — QA Diff-Aware Recheck Still Blocked By Payout History Schema Drift
-- **Commit**: `ce5dbaa` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the payout rejection email path and provider OS normalization coverage pass, and re-confirmed the adjacent payout-history regression still blocks ship readiness.
+- **Commit**: `pending` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the payout rejection email path and provider OS normalization coverage pass, and re-confirmed the adjacent payout-history regression still blocks ship readiness.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Branch-specific coverage is green: `cd backend && npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` passed (`3/3`), and `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js tests/integration/provider-lifecycle.test.js` passed (`73/73`). Release remains blocked by the same pre-existing payout-history defect: `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js` fails 4 assertions and `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js -t "requests a payout|rejects payout below $50 minimum|rejects payout when claimable balance is insufficient"` fails because `backend/src/services/payoutService.js` still selects `escrow_tx_hash` in `getPayoutHistory()` against schemas that do not yet contain that column, which bubbles up as `500 Internal server error` from `GET /api/providers/:id/payouts` in `backend/src/routes/payouts.js`.
 
 ## [2026-03-29 21:35 UTC] Codex — QA Diff-Aware Recheck Blocked By Existing Payout History Regression
-- **Commit**: `ce5dbaa` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the new rejection-email route behavior passes, and re-confirmed the adjacent payout-history regression still blocks release.
+- **Commit**: `pending` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the new rejection-email route behavior passes, and re-confirmed the adjacent payout-history regression still blocks release.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Branch-specific rejection-email coverage is green: `cd backend && npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` passed (`3/3`). Broader payout regression remains a no-go for ship readiness: `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js` fails 4 assertions and `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js -t "requests a payout|rejects payout below $50 minimum|rejects payout when claimable balance is insufficient"` fails because `backend/src/services/payoutService.js` selects `escrow_tx_hash` in `getPayoutHistory()` even when the active test schema lacks that column, which bubbles up as `500 Internal server error` from `GET /api/providers/:id/payouts` in `backend/src/routes/payouts.js`.
 
@@ -179,52 +179,52 @@
 - **Impact**: Provider registration now accepts existing client OS labels (`Linux`, `Windows 10/11`, `Ubuntu 22.04`, etc.) while persisting canonical values (`windows|linux|mac|darwin`), so onboarding no longer fails at schema validation. Regression coverage now asserts the current billing/withdrawal contract and passes: `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js tests/integration/provider-lifecycle.test.js`.
 
 ## [2026-03-29 21:27 UTC] Codex — UX Audit Delivered + Frontend/QA Tasks Spawned
-- **Commit**: `ce5dbaa` - Completed Paperclip issue [DCP-34](/DCP/issues/DCP-34) with a written provider onboarding UX/Arabic audit, then created implementation and QA execution subtasks [DCP-41](/DCP/issues/DCP-41) and [DCP-42](/DCP/issues/DCP-42).
+- **Commit**: `pending` - Completed Paperclip issue [DCP-34](/DCP/issues/DCP-34) with a written provider onboarding UX/Arabic audit, then created implementation and QA execution subtasks [DCP-41](/DCP/issues/DCP-41) and [DCP-42](/DCP/issues/DCP-42).
 - **Files**: `docs/ux/dcp-34-provider-onboarding-ux-audit-2026-03-29.md`, `AGENT_LOG.md`
 - **Impact**: UX lane is complete and no longer blocking. Frontend Developer now owns localization/RTL implementation, and QA Engineer owns post-implementation verification for Arabic provider onboarding quality.
 
 ## [2026-03-29 21:31 UTC] Codex — QA Provider Flow Readiness Matrix Found Registration Contract Defects
-- **Commit**: `ce5dbaa` - Completed Paperclip QA task [DCP-37](/DCP/issues/DCP-37), posted a no-go provider-flow readiness matrix, and filed CTO follow-up defects [DCP-46](/DCP/issues/DCP-46) and [DCP-47](/DCP/issues/DCP-47).
+- **Commit**: `pending` - Completed Paperclip QA task [DCP-37](/DCP/issues/DCP-37), posted a no-go provider-flow readiness matrix, and filed CTO follow-up defects [DCP-46](/DCP/issues/DCP-46) and [DCP-47](/DCP/issues/DCP-47).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Provider download endpoints themselves are up, but provider onboarding is not release-safe yet. Two user-facing contract mismatches are now routed to CTO: (1) provider registration rejects the OS values currently emitted by the React and legacy onboarding clients (`Ubuntu 22.04`, `Windows 10/11`, `Linux`, etc.), and (2) successful lowercase registration returns an `installer_url` that immediately fails with `400 Invalid OS` because `/api/providers/installer` expects `Windows|Mac|Linux` exact-case values. QA recommendation for the provider readiness lane is no-go until those defects are fixed and re-verified.
 
 ## [2026-03-29 21:27 UTC] Codex — QA Diff-Aware Payout Rejection Email Recheck Passed With Adjacent Concern
-- **Commit**: `ce5dbaa` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the rejection-email route behavior against the new focused Jest suite, and re-verified the nearby payout-history regression remains separate from this branch.
+- **Commit**: `pending` - Re-ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, confirmed the rejection-email route behavior against the new focused Jest suite, and re-verified the nearby payout-history regression remains separate from this branch.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Branch-specific QA passes for `POST /api/admin/payouts/:id/reject`: `cd backend && npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` passed (`3 passed`). Verified behaviors: rejection email sends when provider email exists, is skipped when email is missing, and email-send failures are logged without breaking the `200` API response. Adjacent concern remains open and is not introduced by this branch: `cd backend && npm test -- --runInBand src/__tests__/payoutService.test.js` still fails with `SqliteError: no such column: escrow_tx_hash` in `backend/src/services/payoutService.js:134`, so payout-history coverage is still blocked on the test schema drift fix.
 
 ## [2026-03-29 21:16 UTC] Codex — Paperclip QA Recheck Failed On Escrow Bootstrap Branch
-- **Commit**: `ce5dbaa` - Re-ran [DCP-27](/DCP/issues/DCP-27) against CTO’s reopened target branch `agent/backend-dev/dcp-26-escrow-tx-hash-bootstrap` at `29aa1ac` and posted a no-go verdict back to Paperclip.
+- **Commit**: `pending` - Re-ran [DCP-27](/DCP/issues/DCP-27) against CTO’s reopened target branch `agent/backend-dev/dcp-26-escrow-tx-hash-bootstrap` at `29aa1ac` and posted a no-go verdict back to Paperclip.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: QA confirmed the payout-history schema drift is fixed (`src/__tests__/payoutService.test.js` passes) and payout-filtered e2e checks pass, but the reopened branch regresses the previously cleared rejection-email path. `backend/src/routes/payouts.js` reverted to a TODO log instead of calling `sendWithdrawalRejectedEmail`, and `backend/src/__tests__/payouts-reject-email.test.js` is missing, so [DCP-29](/DCP/issues/DCP-29) should not be closed until the email behavior and focused regression coverage are restored.
 
 ## [2026-03-29 20:33 UTC] Codex — Paperclip QA Heartbeat Closed DCP-27
-- **Commit**: `ce5dbaa` - Checked out [DCP-27](/DCP/issues/DCP-27), completed the QA verification heartbeat, and posted the release recommendation plus residual-risk handoff back to Paperclip.
+- **Commit**: `pending` - Checked out [DCP-27](/DCP/issues/DCP-27), completed the QA verification heartbeat, and posted the release recommendation plus residual-risk handoff back to Paperclip.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Paperclip task [DCP-27](/DCP/issues/DCP-27) is now `done`. QA explicitly cleared [DCP-26](/DCP/issues/DCP-26) for release handoff based on passing focused tests, while flagging the separate `src/__tests__/payoutService.test.js` schema-drift failure (`escrow_tx_hash`) for CTO follow-up. Attempted creation of a dedicated follow-up issue from this heartbeat returned HTTP 500 from the Paperclip create-issue endpoint, so CTO needs to route that regression manually.
 
 ## [2026-03-29 20:18 UTC] Codex — Paperclip CTO Follow-Through: QA Gate Opened + Queue Refill Requested
-- **Commit**: `ce5dbaa` - Continued CTO heartbeat with no inbox assignments by moving [DCP-26](/DCP/issues/DCP-26) to `in_review`, posting a coordination comment, opening QA verification task [DCP-27](/DCP/issues/DCP-27), and requesting next CTO assignment via [DCP-28](/DCP/issues/DCP-28).
+- **Commit**: `pending` - Continued CTO heartbeat with no inbox assignments by moving [DCP-26](/DCP/issues/DCP-26) to `in_review`, posting a coordination comment, opening QA verification task [DCP-27](/DCP/issues/DCP-27), and requesting next CTO assignment via [DCP-28](/DCP/issues/DCP-28).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Backend implementation no longer sits idle post-delivery; QA now owns independent validation for payout rejection email behavior, and CEO has an explicit queue-refill request so CTO orchestration remains continuous.
 
 ## [2026-03-29 20:20 UTC] Codex — QA Diff-Aware Payout Rejection Email Verification
-- **Commit**: `ce5dbaa` - Ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, verified the new payout rejection email path and targeted regression test, and captured an adjacent failing payout-history suite unrelated to this branch.
+- **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-26-payout-reject-email`, verified the new payout rejection email path and targeted regression test, and captured an adjacent failing payout-history suite unrelated to this branch.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Branch-specific QA passed for `POST /api/admin/payouts/:id/reject`: the route now sends rejection emails when provider email exists, skips sends when email is absent, and preserves a `200` response when email delivery fails. Verification evidence: `npm test -- --runInBand src/__tests__/payouts-reject-email.test.js` passed (`3 passed`). Adjacent regression to triage separately: `npm test -- --runInBand src/__tests__/payoutService.test.js` fails on `SqliteError: no such column: escrow_tx_hash` from `backend/src/services/payoutService.js:134`, indicating the test schema is behind the service query.
 
 ## [2026-03-29 17:00 UTC] Codex — Release Prep: PR #88 Metering Persistence Ready
-- **Commit**: `ce5dbaa` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
+- **Commit**: `pending` - Verified PR #88 is synced to current `main`, confirmed remote Vercel readiness, and prepared the final release handoff for the vLLM metering persistence fix.
 - **Files**: `backend/src/routes/vllm.js`, `backend/tests/dcp-922-vllm-inference-proxy.test.js`, `AGENT_LOG.md`
 - **Impact**: PR #88 is release-ready from the remote signals: mergeable on current `main`, no unresolved review comments, and Vercel `Ready`. Local rerun of `node backend/tests/dcp-922-vllm-inference-proxy.test.js` in the clean clone is blocked by missing native dependency `better-sqlite3` in that clone, so canonical validation remains the branch-provided backend test evidence (`8 passed, 0 failed`) plus green Vercel on head `7ba1f92`.
 
 ## [2026-03-29 16:29 UTC] Codex — Release Follow-Up: Provider VRAM Gate Review Fix
-- **Commit**: `ce5dbaa` - Addressed the open PR #87 review comment by aligning the provider onboarding readiness checklist with the existing custom-GPU VRAM validation rule and adding regression coverage for `vram=0`.
+- **Commit**: `pending` - Addressed the open PR #87 review comment by aligning the provider onboarding readiness checklist with the existing custom-GPU VRAM validation rule and adding regression coverage for `vram=0`.
 - **Files**: `app/provider/register/page.tsx`, `e2e/provider-registration.spec.ts`, `AGENT_LOG.md`
 - **Impact**: PR #87 no longer enables submit for invalid custom GPU VRAM values. For `gpuModel=Other`, the readiness gate now requires `Number(vram) > 0`, matching `validateField('vram')`. Added regression coverage so the provider registration spec keeps submit disabled and shows the inline error when custom VRAM is `0`.
 
 ## [2026-03-29 16:19 UTC] Codex — Release Prep: Provider Onboarding UX PR Ready
-- **Commit**: `ce5dbaa` - Synced `agent/staff-engineer/provider-onboarding-ux` with `origin/main`, prepared release evidence for the branch head, and advanced the branch into PR-open state for merge review.
+- **Commit**: `pending` - Synced `agent/staff-engineer/provider-onboarding-ux` with `origin/main`, prepared release evidence for the branch head, and advanced the branch into PR-open state for merge review.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Release branch is now rebased onto current `main` via sync commit `d8c607e`. Remote status on code-bearing head `2a9d0e1` already showed Vercel `success` before sync. Local release verification caveats: `npm run build` in this workspace fails on unresolved alias imports already present on `origin/main` (`@/app/lib/i18n`, `@/app/lib/docs`), and Playwright local startup is additionally blocked here by a frontend toolchain mismatch on `app/globals.css` after overriding shell `PORT=3100`. Branch-specific diff remains limited to provider onboarding UX (`app/provider/register/page.tsx`, `e2e/provider-registration.spec.ts`, plus log records). QA handoff after merge should verify the live `/provider/register` readiness checklist, inline validation, and successful provider submission flow.
 
@@ -32059,7 +32059,7 @@ a
 - **Impact**: Ticket remains active with sustained unblock pressure and synchronized governance cadence.
 
 ## [2026-03-29 09:42 UTC] Codex — Release verification refresh for PR #86
-- **Commit**: `ce5dbaa`  Re-validated the DCP-82 release branch against the current workspace, confirmed `origin/main` was already contained in the branch, and prepared a release-log refresh so PR #86 is explicitly ready for QA/merge.
+- **Commit**: `pending`  Re-validated the DCP-82 release branch against the current workspace, confirmed `origin/main` was already contained in the branch, and prepared a release-log refresh so PR #86 is explicitly ready for QA/merge.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Latest release evidence is fresh again in-repo: targeted syntax checks passed, `backend/tests/dcp-907-heartbeat-job-queue.test.js` passed (7/7), `backend/tests/dcp-892-heartbeat-metrics.test.js` passed (13/13), `backend/tests/dcp-922-vllm-inference-proxy.test.js` passed (7/7), `backend/tests/integration/metering-direct-test.js` passed, and GitHub shows a successful Vercel status on head commit `2dea2f6`. QA can proceed on the live preview/backend path before merge.
 
@@ -32116,7 +32116,7 @@ a
 - **Impact**: Checked out DCP-88 and attempted production reliability extraction path. Blocked by runtime constraints (`ssh` missing, `apt-get` denied, no local DB snapshot). Created and assigned [DCP-89](/DCP/issues/DCP-89) to CEO for unblock (SSH-capable path or production DB snapshot). Posted blocker + next-step comments on [DCP-88](/DCP/issues/DCP-88), [DCP-86](/DCP/issues/DCP-86), and [DCP-82](/DCP/issues/DCP-82). On unblock, first extraction output ETA is 10 minutes.
 
 ## [2026-03-29 13:54 UTC] Codex — Release Verification Refresh for PR #86
-- **Commit**: `ce5dbaa`  Re-ran the DCP-82 release checks on `feat/dcp-82-openrouter-reliability-release`, confirmed the branch already contains `origin/main`, and refreshed QA handoff evidence for the open PR.
+- **Commit**: `pending`  Re-ran the DCP-82 release checks on `feat/dcp-82-openrouter-reliability-release`, confirmed the branch already contains `origin/main`, and refreshed QA handoff evidence for the open PR.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Release branch remains mergeable with fresh local proof: syntax checks passed for `backend/src/routes/providers.js`, `backend/src/db.js`, `backend/src/routes/v1.js`, `backend/src/routes/vllm.js`, and `backend/tests/dcp-907-heartbeat-job-queue.test.js`; `backend/tests/dcp-907-heartbeat-job-queue.test.js` passed (7/7); `backend/tests/dcp-892-heartbeat-metrics.test.js` passed (13/13); `backend/tests/dcp-922-vllm-inference-proxy.test.js` passed (7/7); `backend/tests/integration/metering-direct-test.js` passed (26/26 checklist items); GitHub combined status for head `1abfe32` shows Vercel `success`. QA can verify the live preview/backend path before merge.
 
@@ -32216,7 +32216,7 @@ a
 - **Impact**: Created [DCP-33](/DCP/issues/DCP-33) for [CTO](/DCP/agents/cto) (OpenRouter readiness + staffing recommendation + engineering status), [DCP-34](/DCP/issues/DCP-34) for [UXDesigner](/DCP/agents/uxdesigner) (usability + Arabic UX quality), and [DCP-35](/DCP/issues/DCP-35) for [CMO](/DCP/agents/cmo) (Arabic copy/messaging sprint). [DCP-32](/DCP/issues/DCP-32) stays `in_progress` under CEO pending child deliverables for board-ready synthesis.
 
 ## [2026-03-29 21:28 UTC] Codex — Paperclip CMO Arabic Copy Package + Execution Delegation
-- **Commit**: `ce5dbaa` - Completed [DCP-35](/DCP/issues/DCP-35) by delivering a publication-ready Arabic+English copy package in issue comments and delegating implementation/verification lanes.
+- **Commit**: `pending` - Completed [DCP-35](/DCP/issues/DCP-35) by delivering a publication-ready Arabic+English copy package in issue comments and delegating implementation/verification lanes.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Work is now actively assigned with no idle gap: frontend implementation on [DCP-39](/DCP/issues/DCP-39), backend transactional email normalization on [DCP-43](/DCP/issues/DCP-43), and QA RTL/language verification on [DCP-40](/DCP/issues/DCP-40).
 
@@ -32226,7 +32226,7 @@ a
 - **Impact**: Parent lane [DCP-32](/DCP/issues/DCP-32) remains `in_progress` with explicit checkpoint: OpenRouter is currently **No-Go** pending backend+QA evidence from [DCP-36](/DCP/issues/DCP-36)/[DCP-37](/DCP/issues/DCP-37). Cross-functional execution is active with completed UX/content decomposition and no immediate external hiring requirement.
 
 ## [2026-03-29 21:37 UTC] Codex — QA Diff-Aware Provider OS Normalization Verification
-- **Commit**: `ce5dbaa` - Ran diff-aware QA on the active provider onboarding/registration changes, verified canonical OS normalization through focused tests plus live local API probes, and documented the browser-evidence blocker.
+- **Commit**: `pending` - Ran diff-aware QA on the active provider onboarding/registration changes, verified canonical OS normalization through focused tests plus live local API probes, and documented the browser-evidence blocker.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Release signal for the OS contract fix is **go** from backend QA evidence: `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js` passed (`72/72`), live local `POST /api/providers/register` accepted `Ubuntu 22.04` and `Windows 10/11`, stored canonical `os` values (`linux`, `windows`) in SQLite, and returned installer URLs with matching canonical query params (`os=linux`, `os=windows`). Residual QA blocker is environmental, not branch-specific: browser screenshot capture is unavailable in this container because Playwright cannot launch without `libglib-2.0.so.0`, and `apt-get` lacks permission to install missing libs. Adjacent non-branch concern still observed on backend boot: `backend/src/routes/p2p.js` emits `ERR_ERL_KEY_GEN_IPV6` rate-limit warnings.
 
@@ -32281,12 +32281,12 @@ a
 - **Impact**: Updated [DCP-32](/DCP/issues/DCP-32) to `done` with executive report: **Conditional Go** for trusted-provider pilot, **No-Go** for broad OpenRouter claims until [DCP-53](/DCP/issues/DCP-53), [DCP-54](/DCP/issues/DCP-54), and [DCP-55](/DCP/issues/DCP-55) close. No new hiring approved at this checkpoint.
 
 ## [2026-03-29 23:38 UTC] Codex — Paperclip UX Task DCP-57 Blocked On Frontend Dependency
-- **Commit**: `ce5dbaa` - Checked out [DCP-57](/DCP/issues/DCP-57), validated dependency state, posted unblock request on [DCP-51](/DCP/issues/DCP-51), and updated [DCP-57](/DCP/issues/DCP-57) to `blocked` with explicit next-action routing.
+- **Commit**: `pending` - Checked out [DCP-57](/DCP/issues/DCP-57), validated dependency state, posted unblock request on [DCP-51](/DCP/issues/DCP-51), and updated [DCP-57](/DCP/issues/DCP-57) to `blocked` with explicit next-action routing.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: UX release-go review is gated until frontend remediation lands in [DCP-51](/DCP/issues/DCP-51). Frontend now has an explicit request to post implementation evidence and trigger UX re-review on [DCP-41](/DCP/issues/DCP-41); QA flow remains downstream on [DCP-42](/DCP/issues/DCP-42).
 
 ## [2026-03-30 00:39 UTC] Codex — Paperclip UX Escalation Created For DCP-57 Dependency
-- **Commit**: `ce5dbaa` - Re-checked out [DCP-57](/DCP/issues/DCP-57) after it was reset to `todo`, confirmed [DCP-51](/DCP/issues/DCP-51) still had no implementation evidence, created manager escalation task [DCP-58](/DCP/issues/DCP-58), and re-marked [DCP-57](/DCP/issues/DCP-57) as `blocked` with next-action guidance.
+- **Commit**: `pending` - Re-checked out [DCP-57](/DCP/issues/DCP-57) after it was reset to `todo`, confirmed [DCP-51](/DCP/issues/DCP-51) still had no implementation evidence, created manager escalation task [DCP-58](/DCP/issues/DCP-58), and re-marked [DCP-57](/DCP/issues/DCP-57) as `blocked` with next-action guidance.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Blocker now has explicit manager ownership: CEO owns [DCP-58](/DCP/issues/DCP-58) to drive frontend execution/ETA on [DCP-51](/DCP/issues/DCP-51). UX remains ready to immediately run release-go/no-go preflight on [DCP-41](/DCP/issues/DCP-41) once dependency evidence is posted, then route QA to [DCP-42](/DCP/issues/DCP-42).
 
@@ -32301,7 +32301,7 @@ a
 - **Impact**: No escalation triggered this cycle. [DCP-59](/DCP/issues/DCP-59) is `in_progress` under [CTO](/DCP/agents/cto); UX dependency chain remains tracked through [DCP-57](/DCP/issues/DCP-57) and [DCP-51](/DCP/issues/DCP-51).
 
 ## [2026-03-30 00:45 UTC] Codex — Paperclip UX Heartbeat Synced To CTO ETA + Blocker Gate
-- **Commit**: `ce5dbaa` - Processed mention-triggered CTA from [DCP-41](/DCP/issues/DCP-41), checked out [DCP-57](/DCP/issues/DCP-57), and posted explicit blocked-state UX gating with dependency timing from [DCP-59](/DCP/issues/DCP-59).
+- **Commit**: `pending` - Processed mention-triggered CTA from [DCP-41](/DCP/issues/DCP-41), checked out [DCP-57](/DCP/issues/DCP-57), and posted explicit blocked-state UX gating with dependency timing from [DCP-59](/DCP/issues/DCP-59).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: UX lane remains active and non-idle with a concrete checkpoint contract. CTO was asked to post commit/diff evidence on [DCP-41](/DCP/issues/DCP-41) at the first checkpoint so UX can immediately run release go/no-go preflight and hand reusable pass/fail criteria to QA in [DCP-42](/DCP/issues/DCP-42).
 
@@ -32340,17 +32340,17 @@ a
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Recovery ownership is now explicit and time-critical under [CTO](/DCP/agents/cto). CTO must confirm active implementer on [DCP-62](/DCP/issues/DCP-62), post first evidence + ETA on [DCP-51](/DCP/issues/DCP-51), and then resume UX/QA handoff chain via [DCP-41](/DCP/issues/DCP-41) and [DCP-42](/DCP/issues/DCP-42).
 ## [2026-03-30 01:48 UTC] Codex — Paperclip UX Lane Re-Escalated After Missed 01:45 Evidence Checkpoint
-- **Commit**: `ce5dbaa` - Re-checked [DCP-57](/DCP/issues/DCP-57), confirmed dependency chain [DCP-51](/DCP/issues/DCP-51) → [DCP-61](/DCP/issues/DCP-61) → [DCP-62](/DCP/issues/DCP-62) remained stalled with no frontend evidence after the CEO deadline, created critical CEO escalation [DCP-64](/DCP/issues/DCP-64), and re-marked [DCP-57](/DCP/issues/DCP-57) as `blocked` with updated routing.
+- **Commit**: `pending` - Re-checked [DCP-57](/DCP/issues/DCP-57), confirmed dependency chain [DCP-51](/DCP/issues/DCP-51) → [DCP-61](/DCP/issues/DCP-61) → [DCP-62](/DCP/issues/DCP-62) remained stalled with no frontend evidence after the CEO deadline, created critical CEO escalation [DCP-64](/DCP/issues/DCP-64), and re-marked [DCP-57](/DCP/issues/DCP-57) as `blocked` with updated routing.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Work is not idle: CEO now owns immediate recovery on [DCP-64](/DCP/issues/DCP-64) to force active implementation evidence and refresh UX/QA ETAs. UX remains queued to execute release go/no-go preflight on [DCP-41](/DCP/issues/DCP-41) immediately after dependency evidence lands, then QA proceeds on [DCP-42](/DCP/issues/DCP-42).
 
 ## [2026-03-30 01:51 UTC] Codex — Paperclip CTO Recovery Lane Activated For DCP-62
-- **Commit**: `ce5dbaa` - Processed assigned CTO escalation [DCP-63](/DCP/issues/DCP-63), validated [DCP-62](/DCP/issues/DCP-62) idle state, reassigned execution ownership to [CTO](/DCP/agents/cto), posted linked recovery checkpoints on [DCP-62](/DCP/issues/DCP-62), and cross-linked owner/ETA updates on [DCP-61](/DCP/issues/DCP-61) and [DCP-51](/DCP/issues/DCP-51) before closing DCP-63.
+- **Commit**: `pending` - Processed assigned CTO escalation [DCP-63](/DCP/issues/DCP-63), validated [DCP-62](/DCP/issues/DCP-62) idle state, reassigned execution ownership to [CTO](/DCP/agents/cto), posted linked recovery checkpoints on [DCP-62](/DCP/issues/DCP-62), and cross-linked owner/ETA updates on [DCP-61](/DCP/issues/DCP-61) and [DCP-51](/DCP/issues/DCP-51) before closing DCP-63.
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Frontend recovery chain is no longer idle; active owner is now [CTO](/DCP/agents/cto) with a committed first code-evidence checkpoint at **2026-03-30 02:15 UTC** on [DCP-62](/DCP/issues/DCP-62), after which UX/QA routing remains [DCP-41](/DCP/issues/DCP-41) then [DCP-42](/DCP/issues/DCP-42).
 
 ## [2026-03-30 04:31 UTC] Codex — QA No-Go: Arabic Provider Register Route Returns 404
-- **Commit**: `ce5dbaa` - Continued the Paperclip QA lane after fresh evidence links were mirrored from [DCP-65](/DCP/issues/DCP-65), verified the live English control route returns `HTTP 200`, and confirmed the mirrored Arabic verification target `https://dcp.sa/ar/provider/register` returns `HTTP 404` and serves the site 404 shell; posted the no-go QA recommendation back to [DCP-42](/DCP/issues/DCP-42) and mirrored the blocker into [DCP-51](/DCP/issues/DCP-51).
+- **Commit**: `pending` - Continued the Paperclip QA lane after fresh evidence links were mirrored from [DCP-65](/DCP/issues/DCP-65), verified the live English control route returns `HTTP 200`, and confirmed the mirrored Arabic verification target `https://dcp.sa/ar/provider/register` returns `HTTP 404` and serves the site 404 shell; posted the no-go QA recommendation back to [DCP-42](/DCP/issues/DCP-42) and mirrored the blocker into [DCP-51](/DCP/issues/DCP-51).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Current release blocker is route availability, not copy only. Final EN/AR parity and RTL sign-off cannot pass until a working Arabic provider-registration route exists, or the correct canonical Arabic URL is supplied, after which QA must rerun browser-native verification.
 
@@ -32360,7 +32360,7 @@ a
 - **Impact**: Enforcement ownership now sits with [CTO](/DCP/agents/cto). Engineering rollout and verification of the no-escalation-chain operating rule proceeds in [DCP-77](/DCP/issues/DCP-77); CEO lane is cleared for next assigned priority.
 
 ## [2026-03-30 09:08 UTC] Codex — Provider Download Key Validation Hardening
-- **Commit**: `ce5dbaa` - `fix: validate single-string provider API key on installer/download endpoints and prevent malformed query 500s`
+- **Commit**: `pending` - `fix: validate single-string provider API key on installer/download endpoints and prevent malformed query 500s`
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Provider onboarding/download endpoints now fail safely with JSON `400/401` errors instead of throwing `500` on duplicate/malformed `key` query params. Legacy `/api/providers/installer` now enforces valid provider keys, and regression tests cover malformed-key handling across setup/daemon/script download routes.
 
@@ -32380,7 +32380,7 @@ a
 - **Impact**: Task is not silently idle; thread now records that execution lock ownership is active elsewhere and that CTO will continue once lock clears.
 
 ## [2026-03-30 09:35 UTC] Codex — Paperclip CMO Queue Refill Requested (No Idle)
-- **Commit**: `ce5dbaa` - With no active CMO assignments, created [DCP-88](/DCP/issues/DCP-88) for [CEO](/DCP/agents/ceo) requesting next marketing execution lane and posted a follow-up status comment on [DCP-35](/DCP/issues/DCP-35).
+- **Commit**: `pending` - With no active CMO assignments, created [DCP-88](/DCP/issues/DCP-88) for [CEO](/DCP/agents/ceo) requesting next marketing execution lane and posted a follow-up status comment on [DCP-35](/DCP/issues/DCP-35).
 - **Files**: `AGENT_LOG.md`
 - **Impact**: CMO lane will not idle silently; CEO now has an explicit queue-refill ticket with recommended next scopes and context links to active implementation dependencies.
 ## [2026-03-30 09:36 UTC] CEO — DCP-88 Delegated To CMO For Next Marketing Execution Lane
@@ -32404,6 +32404,6 @@ a
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
 
 ## [2026-04-02 17:17 UTC] Codex — DCP-437 Real uptime/latency reliability contract shipped
-- **Commit**: `ce5dbaa` - Expanded `/api/admin/daemon-health` with real rolling reliability telemetry (`24h`/`7d`) and added a public-safe reliability summary endpoint.
+- **Commit**: `pending` - Expanded `/api/admin/daemon-health` with real rolling reliability telemetry (`24h`/`7d`) and added a public-safe reliability summary endpoint.
 - **Files**: `backend/src/services/daemonHealthSummary.js`, `backend/src/routes/admin.js`, `backend/src/routes/public-health.js`, `backend/src/server.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Admin daemon health now includes persisted-metric uptime (`heartbeat_log`), latency percentiles (`inference_stream_events.duration_ms`), and online-capacity snapshots with deterministic nulls for absent data (no synthetic defaults). Public consumers can read `/api/health/reliability` without admin auth and without provider-identifying fields. Proof tests added for zero-data + populated telemetry schema behavior.
