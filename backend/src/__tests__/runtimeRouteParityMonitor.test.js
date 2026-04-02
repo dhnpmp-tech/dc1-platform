@@ -34,7 +34,7 @@ describe('runtimeRouteParityMonitor', () => {
         data: [],
       }))
       .mockResolvedValueOnce(makeResponse(401, {
-        error: { message: 'API key required', code: 401 },
+        error: { message: 'API key required', code: 'authentication_required' },
       }));
 
     const result = await runRuntimeRouteParityMonitor({
@@ -91,7 +91,7 @@ describe('runtimeRouteParityMonitor', () => {
           validateBody: (json) => {
             const mismatches = [];
             if (typeof json.error?.message !== 'string') mismatches.push('message mismatch');
-            if (typeof json.error?.code !== 'number') mismatches.push('code mismatch');
+            if (typeof json.error?.code !== 'string') mismatches.push('code mismatch');
             return mismatches;
           },
         },
