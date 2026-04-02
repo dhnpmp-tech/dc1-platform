@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useLanguage } from '../../lib/i18n'
 
 export default function Footer() {
@@ -13,9 +14,11 @@ export default function Footer() {
           {/* Brand */}
           <div className="md:col-span-1">
             <div className="flex items-center mb-4">
-              <img
+              <Image
                 src="/logo.svg"
                 alt="DCP"
+                width={120}
+                height={40}
                 className="h-10 w-auto"
               />
             </div>
