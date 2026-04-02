@@ -1,6 +1,6 @@
 # vLLM Model Serving Configurations
 
-Production-ready vLLM startup scripts for Tier A Arabic models on RTX 4090 GPUs.
+Production-ready vLLM startup scripts for Tier A Arabic models on RTX 4090 GPUs, plus AWQ-first bootstrap scripts for 8GB/12GB providers.
 
 ## Overview
 
@@ -10,6 +10,12 @@ This directory contains optimized vLLM configurations for serving the DCP platfo
 - **Cold-start:** 5-15 seconds depending on model
 - **VRAM efficiency:** 75-88% utilization
 - **Fault tolerance:** Swap space configured for OOM protection
+
+Low-VRAM providers use dedicated AWQ bootstraps and matrix-based admission:
+
+- `awq-8gb-bootstrap.sh` for <=8GB cards
+- `awq-12gb-bootstrap.sh` for <=12GB cards
+- `compatibility-matrix.json` for model compatibility and fallback handling
 
 ## Models
 
@@ -31,7 +37,24 @@ bash infra/vllm-configs/allam-7b.sh
 
 # Start Qwen on custom port
 VLLM_PORT=8001 bash infra/vllm-configs/qwen25-7b.sh
+
+# Start 8GB AWQ bootstrap
+bash infra/vllm-configs/awq-8gb-bootstrap.sh
+
+# Start 12GB AWQ bootstrap
+bash infra/vllm-configs/awq-12gb-bootstrap.sh
 ```
+
+### Low-VRAM Defaults (8GB/12GB AWQ)
+
+Both low-VRAM scripts default to:
+
+- `--quantization awq`
+- `--dtype float16`
+- `--gpu-memory-utilization 0.90`
+- `--max-model-len 2048`
+
+ALLaM-7B AWQ is explicitly tracked as unavailable in `compatibility-matrix.json` and falls back to fp16 requirements when possible.
 
 ### Environment Variables
 
