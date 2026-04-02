@@ -1,3 +1,8 @@
+## [2026-04-02 13:21 UTC] Codex — DCP-366 Provider Register Email Pattern Hook Dependency Fix
+- **Commit**: `pending` - Memoized the provider registration email regex with `useMemo` and added `emailPattern` to `validateField` callback dependencies to satisfy exhaustive-deps without changing validation behavior.
+- **Files**: `app/provider/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider register form validation hooks now have stable dependencies and no longer emit the `emailPattern` dependency warnings. Verification: `npm run lint -- --file app/provider/register/page.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
 ## [2026-04-02 12:12 UTC] Codex — Release Heartbeat Merged DCP-178 + DCP-365 + DCP-394
 - **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed the first three visible code-bearing branches in isolated evaluation clones with shared project dependencies, merged PR #192 (`agent/backend-dev/dcp-178-openrouter-compliance-gate`), PR #193 (`agent/frontend-dev/dcp-365-legalpage-logo-next-image`), and PR #194 (`agent/backend-dev/dcp-394-sensitive-audit-runtime-wiring`) only after `npm run build` passed; `dcp-394` required merge-conflict resolution with `AGENT_LOG.md` from `main` and code from the branch.
 - **Files**: `AGENT_LOG.md`
