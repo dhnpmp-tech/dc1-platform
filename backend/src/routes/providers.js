@@ -55,6 +55,26 @@ function runStatement(sql, ...params) {
     return db.prepare(sql).run(...flattenRunParams(params));
 }
 
+function recordActivationEvent(providerId, eventCode, metadata = null) {
+    try {
+        runStatement(
+            `INSERT INTO provider_activation_events (provider_id, event_code, occurred_at, metadata_json, created_at)
+             VALUES (?, ?, ?, ?, ?)`,
+            providerId,
+            eventCode,
+            new Date().toISOString(),
+            metadata ? JSON.stringify(metadata) : null,
+            new Date().toISOString()
+        );
+    } catch (error) {
+        console.warn('[provider-activation-event] failed to persist event', {
+            providerId,
+            eventCode,
+            message: error?.message || String(error),
+        });
+    }
+}
+
 // ── Heartbeat HMAC validation ────────────────────────────────────────────────
 // Daemons sign the raw request body with HMAC-SHA256 using DC1_HMAC_SECRET.
 // Header format: X-DC1-Signature: sha256=<hex>
@@ -3171,6 +3191,7 @@ router.get('/download/daemon', (req, res) => {
 
         // check_only mode: return version info without downloading the file
         if (check_only === 'true') {
+            recordActivationEvent(provider.id, 'daemon_download_check', { route: 'download/daemon' });
             return res.json({
                 version: currentVersion,
                 min_version: MIN_DAEMON_VERSION,
@@ -3190,6 +3211,11 @@ router.get('/download/daemon', (req, res) => {
             .replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 
         const downloadName = path.basename(daemonPath);
+        recordActivationEvent(provider.id, 'daemon_downloaded', {
+            route: 'download/daemon',
+            filename: downloadName,
+            daemon_version: currentVersion,
+        });
         res.setHeader('Content-Type', 'text/x-python');
         res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
         res.send(injected);
@@ -3311,6 +3337,12 @@ router.get('/download/setup', (req, res) => {
 
         const contentType = isWindows ? 'text/plain' : 'text/x-shellscript';
         const filename = isWindows ? 'dc1-setup.ps1' : 'dc1-setup.sh';
+
+        recordActivationEvent(provider.id, 'setup_script_downloaded', {
+            route: 'download/setup',
+            os: isWindows ? 'windows' : 'unix',
+            filename,
+        });
 
         res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
