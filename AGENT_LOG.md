@@ -32702,3 +32702,8 @@ a
 - **Commit**: `8882dfd` - Added a new "Native Status App" dashboard card with Windows/Linux/macOS download buttons, client OS detection from `navigator.platform`, and highlighted recommended download based on detected platform; added backend alias route for macOS tray download.
 - **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
 - **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
+
+## [2026-04-02 11:52 UTC] Codex — DCP-401/DCP-402 Provider Setup Docs Refresh
+- **Commit**: `pending` - Updated provider onboarding docs with current quick-install commands, WireGuard home-provider routing instructions, tray app download endpoints, and daemon v3.4.0 model whitelist grouped by capability with VRAM guidance.
+- **Files**: `docs/provider-setup.md`, `docs/guides/provider-setup-guide.md`, `AGENT_LOG.md`
+- **Impact**: Provider onboarding documentation now matches the current install and routing flow needed for OpenRouter Gate 0 submission prep, reducing setup drift for home providers and support handoffs.
