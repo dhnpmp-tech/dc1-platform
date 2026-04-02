@@ -1137,28 +1137,8 @@
          ============================================================ -->
     <header>
         <div class="header-logo">
-            <!-- SVG-rendered DCP ∞ logo -->
-            <svg width="64" height="40" viewBox="0 0 64 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="DCP Infinity Symbol">
-                <defs>
-                    <linearGradient id="infGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stop-color="#00E5C8"/>
-                        <stop offset="100%" stop-color="#FF6B00"/>
-                    </linearGradient>
-                    <filter id="glow">
-                        <feGaussianBlur stdDeviation="2" result="blur"/>
-                        <feMerge>
-                            <feMergeNode in="blur"/>
-                            <feMergeNode in="SourceGraphic"/>
-                        </feMerge>
-                    </filter>
-                </defs>
-                <path d="M20 20C20 20 16 8 8 8C2 8 2 20 8 20C14 20 20 12 26 12C32 12 32 20 26 20C20 20 14 28 8 28C2 28 2 20 8 20C14 20 20 32 26 32C32 32 38 20 44 20C50 20 56 20 56 20"
-                      stroke="none" fill="none"/>
-                <path d="M8 20C8 20 8 10 16 10C22 10 28 20 32 20C36 20 42 10 48 10C56 10 56 20 48 20C42 20 36 30 32 30C28 30 22 20 16 20C10 20 8 20 8 20"
-                      stroke="url(#infGrad)" stroke-width="5" stroke-linecap="round" fill="none" filter="url(#glow)"/>
-            </svg>
-            <div class="logo-divider"></div>
-            <div class="logo-wordmark">DCP</div>
+            <!-- Actual DCP logo — served from dcp.sa/public/ -->
+            <img src="/dcp-logo-primary.svg" alt="DCP — Decentralised Compute Platform" height="56" style="display:block;" onerror="this.onerror=null;this.src='/dcp-logo-512.png';this.style.height='56px';">
         </div>
 
         <div class="header-badge">v3.0 — Production Ready</div>
@@ -1228,7 +1208,7 @@
                 </tr>
                 <tr>
                     <td><strong>Tagline</strong></td>
-                    <td>"Infinite Compute. Real Power."</td>
+                    <td>"Infinite Compute" <span class="badge badge-updated">TBD</span></td>
                 </tr>
                 <tr>
                     <td><strong>Logo Status</strong></td>
