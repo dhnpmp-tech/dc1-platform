@@ -17,6 +17,8 @@
     "test": "NODE_ENV=test jest --runInBand",
     "test:integration": "NODE_ENV=test jest tests/integration/ --runInBand",
     "test:openrouter:compliance": "NODE_ENV=test node tests/openrouter-compliance-harness.js",
+    "test:reliability:ensure-smoke-principal": "node tests/ensure-inference-smoke-principal.js",
+    "test:reliability:first-live-proof": "node tests/first-live-inference-proof-package.js",
     "test:smoke": "NODE_ENV=test jest tests/integration/sprint19-20-smoke.test.js",
     "test:s21": "NODE_ENV=test jest tests/integration/sprint21-smoke.test.js",
     "test:e2e": "NODE_ENV=test jest tests/integration/ --forceExit --testTimeout=30000",
