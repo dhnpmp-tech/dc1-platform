@@ -15,7 +15,7 @@ export default function Footer() {
           <div className="md:col-span-1">
             <div className="flex items-center mb-4">
               <Image
-                src="/logo.svg"
+                src="/dcp-logo-primary.png"
                 alt="DCP"
                 width={120}
                 height={40}
