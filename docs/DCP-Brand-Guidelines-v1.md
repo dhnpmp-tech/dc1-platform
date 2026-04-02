@@ -22,7 +22,7 @@ The ∞ infinity symbol is not decoration — it's the business model. DCP conne
 - **P** = Power — Saudi energy advantage, real throughput
 
 ### Mission
-Make GPU compute accessible, affordable, and sovereign for builders everywhere — starting with the Arabic-speaking world.
+Make GPU compute accessible and affordable for builders everywhere — powered by Saudi energy economics.
 
 ### Vision
 The default compute layer for AI in the Arab world and beyond.
@@ -31,7 +31,7 @@ The default compute layer for AI in the Arab world and beyond.
 1. **Open** — OpenAI-compatible API, no walled garden
 2. **Sovereign** — Your data stays in your region (PDPL compliant)
 3. **Real** — No vaporware. Working inference or nothing.
-4. **Inclusive** — Arabic-first, but not Arabic-only
+4. **Global** — Built for developers everywhere. Arabic models are a feature, not the ceiling.
 
 ---
 

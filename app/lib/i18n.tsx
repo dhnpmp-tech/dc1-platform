@@ -294,7 +294,7 @@ const translations: Record<Language, Record<string, string>> = {
     'jobs_submit_redirect.message': 'This compatibility route now forwards to the canonical submit experience.',
 
     // Footer
-    'footer.brand_description': 'Built for Saudi AI growth: structurally lower energy-cost compute, Arabic-model readiness (ALLaM 7B, Falcon H1, JAIS 13B, BGE-M3), and secure GPU-accelerated container execution.',
+    'footer.brand_description': 'Infinite Compute. Real Power. — Saudi energy economics powering GPU inference for builders worldwide. Arabic models included.',
     'footer.platform': 'Platform',
     'footer.rent_gpus': 'Start Renting',
     'footer.earn_with_gpus': 'Start Earning',
@@ -1499,7 +1499,7 @@ const translations: Record<Language, Record<string, string>> = {
     'landing.hero_badge': 'INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY',
     'landing.hero_title_1': 'Borderless',
     'landing.hero_title_2': 'GPU Compute.',
-    'landing.hero_title': 'Saudi-based GPU compute for Arabic-first AI teams.',
+    'landing.hero_title': 'Infinite Compute. Real Power. — GPU inference for builders everywhere, powered by Saudi energy.',
     'landing.hero_desc': 'OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.',
     'landing.hero_helper': 'Billing uses estimate hold in halala, runtime settlement, and automatic unused-hold return after completion.',
     'mode.strip.title': 'Choose your mode',
@@ -1594,7 +1594,7 @@ const translations: Record<Language, Record<string, string>> = {
     'landing.trust_models_desc': 'Arabic-ready model support includes ALLaM 7B, Falcon H1, JAIS 13B, and BGE-M3.',
     'landing.live_metric_badge': 'Live telemetry',
     'landing.features_title': 'Built for What Comes Next',
-    'landing.features_desc': 'Built for Saudi teams that need transparent matching, predictable job states, and completion-driven settlement.',
+    'landing.features_desc': 'Built for developers worldwide — transparent matching, predictable job states, and completion-driven settlement.',
     'landing.feat_payg_title': 'Pay-as-you-go',
     'landing.feat_payg_desc': 'Wallet-based pay-for-use billing: estimate before execution, then final settlement after completion.',
     'landing.feat_payg_cta': 'Start Renting',
