@@ -8,6 +8,11 @@
 - **Files**: `app/components/layout/LegalPage.tsx`, `AGENT_LOG.md`
 - **Impact**: Legal page header now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this layout component. Verification: `npm run lint -- --file app/components/layout/LegalPage.tsx` (`✔ No ESLint warnings or errors`).
 
+## [2026-04-02 13:19 UTC] Codex — DCP-361 FeedbackWidget Reset Helper Order + Hook Dependency Fix
+- **Commit**: `pending` - Moved `resetForm` above the feedback trigger `useEffect` and added it to the dependency list so the widget no longer references a block-scoped callback before declaration and satisfies exhaustive-deps in the same patch.
+- **Files**: `app/components/ui/FeedbackWidget.tsx`, `AGENT_LOG.md`
+- **Impact**: Feedback widget trigger handling now has stable hook dependencies and deterministic callback ordering, removing the DCP-361 build/lint blocker path. Verification: `npm run lint -- --file app/components/ui/FeedbackWidget.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
 ## [2026-04-02 10:06 UTC] Codex — Release Heartbeat Merged DCP-223 + DCP-389, Skipped Empty DCP-384 Backend Branch
 - **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed three branches with merge-main + build gate in an isolated release worktree using shared project dependencies, merged PR #189 (`agent/backend-dev/dcp-223-provider-route-parity-guard`) and PR #187 (`agent/backend-dev/dcp-389-payout-admin-audit-integrity`) only after `npm run build` passed, then skipped `agent/backend-dev/dcp-384-restore-chat-capacity` because after rebasing there were no commits left between branch and `main` (`422: No commits between main and branch`).
 - **Files**: `AGENT_LOG.md`
