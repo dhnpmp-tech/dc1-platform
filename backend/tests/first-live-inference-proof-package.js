@@ -162,7 +162,7 @@ async function run() {
   addLog(`smoke principal ready renter_id=${principal.renterId} key_hint=${redactSecret(principal.inferenceKey)}`);
 
   const authHeaders = {
-    'x-renter-key': principal.inferenceKey,
+    Authorization: `Bearer ${principal.inferenceKey}`,
     'content-type': 'application/json',
   };
 
@@ -173,7 +173,7 @@ async function run() {
   addLog('probe /v1/models');
   const models = await requestJson(baseUrl, '/v1/models', {
     method: 'GET',
-    headers: { 'x-renter-key': principal.inferenceKey },
+    headers: { Authorization: `Bearer ${principal.inferenceKey}` },
   });
 
   const completionPayload = {
@@ -184,14 +184,14 @@ async function run() {
   };
 
   addLog('probe /v1/chat/completions (json)');
-  const completionJson = await requestJson(baseUrl, `/v1/chat/completions?key=${encodeURIComponent(principal.inferenceKey)}`, {
+  const completionJson = await requestJson(baseUrl, '/v1/chat/completions', {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify(completionPayload),
   });
 
   addLog('probe /v1/chat/completions (stream)');
-  const streamRes = await requestJson(baseUrl, `/v1/chat/completions?key=${encodeURIComponent(principal.inferenceKey)}`, {
+  const streamRes = await requestJson(baseUrl, '/v1/chat/completions', {
     method: 'POST',
     headers: authHeaders,
     body: JSON.stringify({ ...completionPayload, stream: true }),

@@ -30,6 +30,9 @@ Recovery steps:
 
 - Single-command readiness report:
   `cd backend && npm run test:openrouter:compliance`
+- Canonical `/v1` renter auth contract for proof tooling:
+  `Authorization: Bearer <renter_api_key>` (primary) or `x-renter-key: <renter_api_key>` (parity path).
+  Do not send `/v1` auth via query params.
 - Machine-readable artifacts are written to:
   `backend/artifacts/openrouter-compliance/latest.json` and `backend/artifacts/openrouter-compliance/latest.md`
 - The harness exercises the real `/v1` router against mock providers and reports:

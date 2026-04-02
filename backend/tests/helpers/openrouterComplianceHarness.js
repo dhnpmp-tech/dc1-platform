@@ -295,7 +295,11 @@ async function runOpenRouterComplianceHarness() {
 
       {
         const check = createCheck('models_contract', 'GET /v1/models returns an OpenAI-compatible list payload', 'blocking');
-        const { response, json } = await fetchJson(`${baseUrl}/v1/models`);
+        const { response, json } = await fetchJson(`${baseUrl}/v1/models`, {
+          headers: {
+            Authorization: `Bearer ${fundedRenter.apiKey}`,
+          },
+        });
         const model = json?.data?.find((entry) => entry.id === DEFAULT_MODEL_ID);
         checks.push(finalizeCheck(
           check,
@@ -304,6 +308,43 @@ async function runOpenRouterComplianceHarness() {
             ? 'Model catalog contract matches the OpenAI list shape expected by OpenRouter.'
             : 'Model catalog contract is not returning the expected OpenAI list shape.',
           [`status=${response.status}`, `model_present=${Boolean(model)}`]
+        ));
+      }
+
+      {
+        const check = createCheck('auth_header_parity', 'GET /v1/models and POST /v1/chat/completions both accept x-renter-key auth', 'blocking');
+        const modelsViaHeader = await fetchJson(`${baseUrl}/v1/models`, {
+          headers: {
+            'x-renter-key': fundedRenter.apiKey,
+          },
+        });
+        const chatViaHeader = await fetchJson(`${baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-renter-key': fundedRenter.apiKey,
+          },
+          body: JSON.stringify({
+            model: DEFAULT_MODEL_ID,
+            messages: [{ role: 'user', content: 'header parity check' }],
+            max_tokens: 24,
+          }),
+        });
+        checks.push(finalizeCheck(
+          check,
+          modelsViaHeader.response.status === 200
+            && chatViaHeader.response.status !== 401
+            && chatViaHeader.json?.error?.type !== 'authentication_error',
+          (modelsViaHeader.response.status === 200
+            && chatViaHeader.response.status !== 401
+            && chatViaHeader.json?.error?.type !== 'authentication_error')
+            ? 'Both /v1 endpoints accept x-renter-key renter auth consistently before downstream routing checks.'
+            : 'At least one /v1 endpoint rejected x-renter-key auth.',
+          [
+            `models_status=${modelsViaHeader.response.status}`,
+            `chat_status=${chatViaHeader.response.status}`,
+            `chat_error_type=${chatViaHeader.json?.error?.type || 'none'}`,
+          ]
         ));
       }
 

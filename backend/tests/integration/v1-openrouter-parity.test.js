@@ -195,9 +195,13 @@ describe('/v1 OpenRouter parity', () => {
   });
 
   test('GET /v1/models returns OpenRouter-required model fields', async () => {
+    const renterKey = 'parity-renter-models-bearer';
     seedModel();
+    seedRenter(renterKey);
 
-    const res = await request(app).get('/v1/models');
+    const res = await request(app)
+      .get('/v1/models')
+      .set('Authorization', `Bearer ${renterKey}`);
     const parityModel = (res.body.data || []).find((model) => model.id === 'parity-model');
 
     expect(res.status).toBe(200);
@@ -231,6 +235,34 @@ describe('/v1 OpenRouter parity', () => {
     expect(parityModel).toHaveProperty('parameter_count');
   });
 
+  test('GET /v1/models accepts x-renter-key auth and rejects missing auth with deterministic error contract', async () => {
+    const renterKey = 'parity-renter-models-header';
+    const invalidKey = 'parity-renter-models-invalid';
+    seedModel();
+    seedRenter(renterKey);
+
+    const okRes = await request(app)
+      .get('/v1/models')
+      .set('x-renter-key', renterKey);
+    expect(okRes.status).toBe(200);
+
+    const missingAuthRes = await request(app).get('/v1/models');
+    expect(missingAuthRes.status).toBe(401);
+    expect(missingAuthRes.body?.error).toMatchObject({
+      type: 'authentication_error',
+      code: 'auth_missing',
+    });
+
+    const invalidAuthRes = await request(app)
+      .get('/v1/models')
+      .set('Authorization', `Bearer ${invalidKey}`);
+    expect(invalidAuthRes.status).toBe(401);
+    expect(invalidAuthRes.body?.error).toMatchObject({
+      type: 'authentication_error',
+      code: 'auth_invalid',
+    });
+  });
+
   test('POST /v1/chat/completions with stream=true preserves SSE output and DONE terminator', async () => {
     const provider = await startMockProvider('stream');
     const renterKey = 'parity-renter-stream';
@@ -255,6 +287,26 @@ describe('/v1 OpenRouter parity', () => {
     } finally {
       await provider.close();
     }
+  });
+
+  test('POST /v1/chat/completions accepts x-renter-key auth before downstream routing checks', async () => {
+    const renterKey = 'parity-renter-header-auth';
+    seedRenter(renterKey);
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('x-renter-key', renterKey)
+      .send({
+        model: 'parity-model',
+        messages: [{ role: 'user', content: 'hello with header key' }],
+        max_tokens: 24,
+      });
+
+    // This request intentionally does not seed providers/models, so downstream
+    // validation/routing may fail with 400/503. The auth contract assertion is:
+    // x-renter-key should not be rejected as missing/invalid auth.
+    expect([400, 503]).toContain(res.status);
+    expect(res.body?.error?.type).not.toBe('authentication_error');
   });
 
   test('POST /v1/chat/completions stream emits exactly one DONE even when provider emits duplicates', async () => {

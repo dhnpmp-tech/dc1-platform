@@ -32402,3 +32402,8 @@ a
 - **Commit**: `0cf8bfa` - Hardened provider installer/download endpoints to require a single normalized API key query param and reject malformed duplicate key input safely.
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
+
+## [2026-04-02 16:31 UTC] Codex — DCP-429 Canonical /v1 Renter Auth Contract + Proof Tooling Alignment
+- **Commit**: `pending` - Implemented a shared `/v1` renter auth parser with deterministic auth error codes for missing/invalid/conflicting credentials, enforced parity auth handling on both `/v1/models` and `/v1/chat/completions`, and aligned proof tooling to canonical bearer auth usage.
+- **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-auth-contract.test.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `backend/tests/helpers/openrouterComplianceHarness.js`, `backend/tests/first-live-inference-proof-package.js`, `backend/tests/README.md`, `AGENT_LOG.md`
+- **Impact**: `/v1` auth behavior is now deterministic (`auth_missing`, `auth_invalid`, `auth_conflict`) across model-list and completion endpoints, both `Authorization: Bearer` and `x-renter-key` are accepted consistently, and first-live proof artifacts no longer mix query-param auth with header auth on `/v1`.

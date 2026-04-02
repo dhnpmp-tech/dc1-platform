@@ -57,23 +57,52 @@ function normalizeModelToken(value) {
   return normalizeString(value, { maxLen: 300 })?.toLowerCase() || null;
 }
 
-function getRenterKey(req) {
-  // Accept: Authorization: Bearer <key>, x-renter-key header, or ?key= query param
+function parseRenterAuth(req) {
   const authHeader = req.headers['authorization'];
+  let bearerKey = null;
   if (typeof authHeader === 'string') {
     const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (match) return match[1].trim();
+    if (match) bearerKey = normalizeString(match[1], { maxLen: 128, trim: false });
   }
-  const header = normalizeString(req.headers['x-renter-key'], { maxLen: 128, trim: false });
-  const query = normalizeString(req.query.key, { maxLen: 128, trim: false });
-  return header || query || null;
+
+  const renterHeaderKey = normalizeString(req.headers['x-renter-key'], { maxLen: 128, trim: false });
+  if (bearerKey && renterHeaderKey && bearerKey !== renterHeaderKey) {
+    return {
+      ok: false,
+      status: 401,
+      error: {
+        message: 'Conflicting API key credentials. Send only one of Authorization: Bearer <key> or x-renter-key.',
+        type: 'authentication_error',
+        code: 'auth_conflict',
+      },
+    };
+  }
+
+  const key = bearerKey || renterHeaderKey || null;
+  if (!key) {
+    return {
+      ok: false,
+      status: 401,
+      error: {
+        message: 'Renter API key required. Pass Authorization: Bearer <key> or x-renter-key.',
+        type: 'authentication_error',
+        code: 'auth_missing',
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    key,
+    source: bearerKey ? 'authorization' : 'x-renter-key',
+  };
 }
 
 function requireAuth(req, res, next) {
-  const key = getRenterKey(req);
-  if (!key) return res.status(401).json({
-    error: { message: 'API key required. Pass via Authorization: Bearer <key>', type: 'authentication_error', code: 401 }
-  });
+  const parsedAuth = parseRenterAuth(req);
+  if (!parsedAuth.ok) return res.status(parsedAuth.status).json({ error: parsedAuth.error });
+
+  const key = parsedAuth.key;
 
   const now = new Date().toISOString();
 
@@ -108,7 +137,7 @@ function requireAuth(req, res, next) {
     key, 'active'
   );
   if (!renter) return res.status(401).json({
-    error: { message: 'Invalid or inactive API key', type: 'authentication_error', code: 401 }
+    error: { message: 'Invalid or inactive API key', type: 'authentication_error', code: 'auth_invalid' }
   });
 
   req.renter = renter;
@@ -357,7 +386,7 @@ function resolveEffectiveMinVramMb(requestedModelId, registryMinVramMb) {
 
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
 
-router.get('/models', (req, res) => {
+router.get('/models', requireAuth, (req, res) => {
   try {
     const columns = getModelRegistryColumns();
     if (columns.size === 0 || !columns.has('model_id')) {
