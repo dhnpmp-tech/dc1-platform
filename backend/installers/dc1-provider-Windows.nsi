@@ -41,8 +41,8 @@ VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey "LegalCopyright" "© 2026 DCP. All rights reserved."
 
 ; --------------- Brand ---------------
-!define MUI_ICON "dc1-icon.ico"
-!define MUI_UNICON "dc1-icon.ico"
+!define MUI_ICON "dcp-icon.ico"
+!define MUI_UNICON "dcp-icon.ico"
 !define MUI_ABORTWARNING
 
 ; --------------- Variables ---------------
