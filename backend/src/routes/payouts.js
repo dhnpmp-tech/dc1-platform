@@ -37,6 +37,9 @@ const { sendWithdrawalApprovedEmail, sendWithdrawalRejectedEmail } = require('..
 const { sendAlert } = require('../services/notifications');
 
 function skipAutomaticAdminAudit(req, _res, next) {
+  // Approve/reject/patch payout routes emit one explicit payout_* audit row via
+  // logAdminAction after mutation result is known. Skip middleware audit so one
+  // request cannot write duplicate admin security-audit rows.
   req.skipAdminAuditLog = true;
   next();
 }

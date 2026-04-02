@@ -158,4 +158,56 @@ describe('admin payout audit dedupe', () => {
       reason: 'iban_mismatch',
     });
   });
+
+  test('approve failure does not emit payout mutation audit rows', async () => {
+    global.__testDb.prepare(
+      'INSERT INTO providers (id, name, email, claimable_earnings_halala) VALUES (?,?,?,?)'
+    ).run(3, 'Provider Three', 'provider3@example.com', 200000);
+    global.__testDb.prepare(
+      `INSERT INTO payout_requests
+         (id, provider_id, amount_halala, amount_sar, amount_usd, status, requested_at)
+       VALUES (?,?,?,?,?,?,?)`
+    ).run('payout-approve-locked', 3, 10000, 100.0, 26.67, 'processing', new Date().toISOString());
+
+    const res = await request(app)
+      .post('/api/admin/payouts/payout-approve-locked/approve')
+      .set('x-admin-token', ADMIN_TOKEN)
+      .send({ payment_ref: 'BANK-ALREADY' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: 'NOT_APPROVABLE' });
+
+    const rows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log
+       WHERE action LIKE 'payout_%'`
+    ).all();
+
+    expect(rows).toHaveLength(0);
+  });
+
+  test('reject failure does not emit payout mutation audit rows', async () => {
+    global.__testDb.prepare(
+      'INSERT INTO providers (id, name, email, claimable_earnings_halala) VALUES (?,?,?,?)'
+    ).run(4, 'Provider Four', 'provider4@example.com', 100000);
+    global.__testDb.prepare(
+      `INSERT INTO payout_requests
+         (id, provider_id, amount_halala, amount_sar, amount_usd, status, requested_at, processed_at)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).run('payout-reject-locked', 4, 5200, 52.0, 13.87, 'paid', new Date().toISOString(), new Date().toISOString());
+
+    const res = await request(app)
+      .post('/api/admin/payouts/payout-reject-locked/reject')
+      .set('x-admin-token', ADMIN_TOKEN)
+      .send({ reason: 'late_reversal' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: 'NOT_REJECTABLE' });
+
+    const rows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log
+       WHERE action LIKE 'payout_%'`
+    ).all();
+
+    expect(rows).toHaveLength(0);
+  });
 });
