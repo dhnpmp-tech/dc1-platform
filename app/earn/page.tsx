@@ -280,6 +280,43 @@ export default function EarnPage() {
         </div>
       </section>
 
+      {/* Quick Install */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+        <div className="rounded-2xl border border-dc1-amber/30 bg-dc1-surface-l1 p-8">
+          <h2 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-2">
+            Get started in one command
+          </h2>
+          <p className="text-dc1-text-secondary text-sm mb-6">
+            Linux / macOS — requires NVIDIA GPU with 8GB+ VRAM
+          </p>
+          <div className="bg-dc1-void rounded-xl border border-dc1-border p-4 font-mono text-sm overflow-x-auto">
+            <span className="text-dc1-text-muted select-none">$ </span>
+            <span className="text-dc1-amber">curl</span>
+            <span className="text-dc1-text-primary"> -fsSL https://api.dcp.sa/install | bash</span>
+          </div>
+          <p className="text-xs text-dc1-text-muted mt-3">
+            Detects your GPU, generates a WireGuard keypair, and walks you through the rest.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <a
+              href="https://api.dcp.sa/install"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-dc1-amber hover:underline"
+            >
+              View script source →
+            </a>
+            <span className="text-dc1-text-muted text-sm">|</span>
+            <a
+              href="/docs"
+              className="text-sm text-dc1-amber hover:underline"
+            >
+              Manual setup guide →
+            </a>
+          </div>
+        </div>
+      </section>
+
       {/* How it works */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
