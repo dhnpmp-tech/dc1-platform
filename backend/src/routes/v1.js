@@ -15,6 +15,8 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 const { toCatalogContractCore, toUsdStringFromHalala } = require('../lib/model-catalog-contract');
@@ -24,12 +26,9 @@ const {
   recordStreamOutcome,
   resolveProviderTier,
 } = require('../services/inferenceLatencyBudgetGate');
-const {
-  evaluateProviderModelCompatibility,
-  findModelEntry,
-} = require('../services/vllmCompatibilityMatrix');
 
 const router = express.Router();
+const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm-configs/compatibility-matrix.json');
 
 // ── Helpers (shared with vllm.js — keep lightweight to avoid circular deps) ──
 
@@ -52,6 +51,10 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
   const num = toFiniteNumber(value, { min, max });
   if (num == null || !Number.isInteger(num)) return null;
   return num;
+}
+
+function normalizeModelToken(value) {
+  return normalizeString(value, { maxLen: 300 })?.toLowerCase() || null;
 }
 
 function getRenterKey(req) {
@@ -223,19 +226,133 @@ function resolveTokenizerFamily(row) {
   return 'dcp';
 }
 
-function resolveEffectiveMinVramMb(modelId, registryMinVramMb) {
-  const entry = findModelEntry(modelId);
-  const variants = entry?.variants && typeof entry.variants === 'object'
-    ? Object.values(entry.variants)
-    : [];
-  const matrixMinimum = variants
-    .map((variant) => (variant?.available === false ? null : toFiniteInt(variant?.min_vram_mb, { min: 1 })))
-    .filter((value) => value != null)
-    .reduce((min, value) => (min == null ? value : Math.min(min, value)), null);
+let cachedVllmCompatibilityIndex = null;
 
-  if (matrixMinimum == null) return registryMinVramMb;
-  if (!Number.isFinite(registryMinVramMb) || registryMinVramMb <= 0) return matrixMinimum;
-  return Math.min(registryMinVramMb, matrixMinimum);
+function toVariantRecord(rawVariant) {
+  if (!rawVariant || typeof rawVariant !== 'object') return null;
+  const minVramMb = toFiniteInt(rawVariant.min_vram_mb, { min: 0, max: 1024 * 1024 });
+  const modelId = normalizeString(rawVariant.model_id, { maxLen: 300 });
+  if (minVramMb == null || !modelId) return null;
+
+  const aliases = new Set();
+  const addAlias = (raw) => {
+    const normalized = normalizeModelToken(raw);
+    if (normalized) aliases.add(normalized);
+  };
+  addAlias(rawVariant.model_id);
+  if (Array.isArray(rawVariant.aliases)) rawVariant.aliases.forEach(addAlias);
+
+  return {
+    modelId,
+    minVramMb,
+    available: rawVariant.available !== false,
+    aliases,
+  };
+}
+
+function loadVllmCompatibilityIndex() {
+  if (cachedVllmCompatibilityIndex) return cachedVllmCompatibilityIndex;
+  try {
+    const raw = JSON.parse(fs.readFileSync(VLLM_COMPATIBILITY_MATRIX_PATH, 'utf8'));
+    const models = Array.isArray(raw?.models) ? raw.models : [];
+    const byAlias = new Map();
+
+    for (const model of models) {
+      if (!model || typeof model !== 'object') continue;
+      const canonicalId = normalizeModelToken(model.id);
+      if (!canonicalId) continue;
+
+      const variants = {};
+      const variantAliases = new Map();
+      const rawVariants = model.variants && typeof model.variants === 'object' ? model.variants : {};
+      for (const [variantKeyRaw, variantRaw] of Object.entries(rawVariants)) {
+        const variantKey = normalizeString(variantKeyRaw, { maxLen: 64 })?.toLowerCase();
+        if (!variantKey) continue;
+        const variant = toVariantRecord(variantRaw);
+        if (!variant) continue;
+        variants[variantKey] = variant;
+        for (const alias of variant.aliases) {
+          if (!variantAliases.has(alias)) variantAliases.set(alias, variantKey);
+        }
+      }
+      if (Object.keys(variants).length === 0) continue;
+
+      const defaultVariantRaw = normalizeString(model.default_variant, { maxLen: 64 })?.toLowerCase() || 'awq';
+      const fallbackVariantRaw = normalizeString(model.fallback_variant, { maxLen: 64 })?.toLowerCase() || null;
+      const entry = {
+        id: canonicalId,
+        variants,
+        defaultVariant: variants[defaultVariantRaw] ? defaultVariantRaw : Object.keys(variants)[0],
+        fallbackVariant: fallbackVariantRaw && variants[fallbackVariantRaw] ? fallbackVariantRaw : null,
+        variantAliases,
+      };
+
+      const bindAlias = (aliasRaw) => {
+        const alias = normalizeModelToken(aliasRaw);
+        if (!alias || byAlias.has(alias)) return;
+        byAlias.set(alias, entry);
+      };
+
+      bindAlias(canonicalId);
+      if (Array.isArray(model.aliases)) model.aliases.forEach(bindAlias);
+      for (const alias of variantAliases.keys()) bindAlias(alias);
+    }
+
+    cachedVllmCompatibilityIndex = { available: true, byAlias };
+    return cachedVllmCompatibilityIndex;
+  } catch (_) {
+    cachedVllmCompatibilityIndex = { available: false, byAlias: new Map() };
+    return cachedVllmCompatibilityIndex;
+  }
+}
+
+function resolveProviderRoutingModel({ requestedModelId, providerVramMb }) {
+  const normalizedModelId = normalizeModelToken(requestedModelId);
+  const compatibility = loadVllmCompatibilityIndex();
+  if (!compatibility.available || !normalizedModelId) {
+    return { proxyModelId: requestedModelId, eligible: true };
+  }
+
+  const entry = compatibility.byAlias.get(normalizedModelId);
+  if (!entry) {
+    return { proxyModelId: requestedModelId, eligible: true };
+  }
+
+  const requestedVariant = entry.variantAliases.get(normalizedModelId) || null;
+  const variantOrder = [];
+  if (requestedVariant) variantOrder.push(requestedVariant);
+  if (entry.defaultVariant) variantOrder.push(entry.defaultVariant);
+  if (entry.fallbackVariant) variantOrder.push(entry.fallbackVariant);
+  for (const variantKey of Object.keys(entry.variants)) {
+    if (!variantOrder.includes(variantKey)) variantOrder.push(variantKey);
+  }
+
+  for (const variantKey of variantOrder) {
+    const variant = entry.variants[variantKey];
+    if (!variant || !variant.available) continue;
+    if (providerVramMb >= variant.minVramMb) {
+      return { proxyModelId: variant.modelId, eligible: true };
+    }
+  }
+
+  return { proxyModelId: requestedModelId, eligible: false };
+}
+
+function resolveEffectiveMinVramMb(requestedModelId, registryMinVramMb) {
+  const normalizedModelId = normalizeModelToken(requestedModelId);
+  const compatibility = loadVllmCompatibilityIndex();
+  if (!compatibility.available || !normalizedModelId) return registryMinVramMb;
+
+  const entry = compatibility.byAlias.get(normalizedModelId);
+  if (!entry) return registryMinVramMb;
+
+  const mins = Object.values(entry.variants)
+    .filter((variant) => variant && variant.available)
+    .map((variant) => variant.minVramMb)
+    .filter((value) => Number.isFinite(value));
+
+  if (mins.length === 0) return registryMinVramMb;
+  return Math.min(registryMinVramMb, Math.min(...mins));
 }
 
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
@@ -578,15 +695,13 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     const modelReq = resolveModelRequirements(model);
     const registryMinVramMb = modelReq.min_vram_gb * 1024;
-    const minVramMb = resolveEffectiveMinVramMb(modelReq.model_id, registryMinVramMb);
-    const capableProviders = getCapableProviders(minVramMb).filter((provider) => {
-      const compatibility = evaluateProviderModelCompatibility({
-        modelId: modelReq.model_id,
-        providerVramMb: resolveProviderVramMb(provider),
-      });
-      if (!compatibility.supported) return false;
-      provider._modelCompatibility = compatibility;
-      return true;
+    const effectiveMinVramMb = resolveEffectiveMinVramMb(modelReq.model_id, registryMinVramMb);
+    const capableProviders = getCapableProviders(effectiveMinVramMb).filter((provider) => {
+      const providerVramMb = resolveProviderVramMb(provider);
+      return resolveProviderRoutingModel({
+        requestedModelId: modelReq.model_id,
+        providerVramMb,
+      }).eligible;
     });
     if (capableProviders.length === 0) {
       return res.status(503).json({
@@ -704,9 +819,14 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     // If provider has a vLLM endpoint, proxy directly
     if (assignedProvider.vllm_endpoint_url) {
+      const assignedProviderProxyModel = resolveProviderRoutingModel({
+        requestedModelId: modelReq.model_id,
+        providerVramMb: resolveProviderVramMb(assignedProvider),
+      });
+
       const proxyResult = await proxyToProvider({
         endpointUrl: assignedProvider.vllm_endpoint_url,
-        modelId: assignedProvider._modelCompatibility?.resolved_model_id || modelReq.model_id,
+        modelId: assignedProviderProxyModel.proxyModelId,
         messages,
         maxTokens,
         temperature,
@@ -869,16 +989,15 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         .slice(0, 2);
 
       for (const fallbackProvider of fallbackCapable) {
-        const fallbackCompatibility = fallbackProvider._modelCompatibility
-          || evaluateProviderModelCompatibility({
-            modelId: modelReq.model_id,
-            providerVramMb: resolveProviderVramMb(fallbackProvider),
-          });
-        if (!fallbackCompatibility.supported) continue;
+        const fallbackProxyModel = resolveProviderRoutingModel({
+          requestedModelId: modelReq.model_id,
+          providerVramMb: resolveProviderVramMb(fallbackProvider),
+        });
+        if (!fallbackProxyModel.eligible) continue;
 
         const fallbackResult = await proxyToProvider({
           endpointUrl: fallbackProvider.vllm_endpoint_url,
-          modelId: fallbackCompatibility.resolved_model_id || modelReq.model_id,
+          modelId: fallbackProxyModel.proxyModelId,
           messages,
           maxTokens,
           temperature,
@@ -918,8 +1037,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const containerSpec = {
       image_type: 'vllm-serve',
       image: 'dcp/vllm-serve:latest',
-      model_id: assignedProvider._modelCompatibility?.resolved_model_id || modelReq.model_id,
-      vram_required_mb: assignedProvider._modelCompatibility?.min_required_vram_mb || minVramMb,
+      model_id: modelReq.model_id,
+      vram_required_mb: effectiveMinVramMb,
       gpu_count: 1,
       compute_type: 'inference',
     };
