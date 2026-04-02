@@ -5,6 +5,15 @@ Source issue: [DCP-75](/DCP/issues/DCP-75)
 Parent: [DCP-82](/DCP/issues/DCP-82)
 Updated: 2026-03-29 00:24 UTC
 
+## Canonical Gate Command
+
+```bash
+cd backend
+npm run gate:openrouter-reliability
+```
+
+Reference this single command in QA closeout threads (especially [DCP-227](/DCP/issues/DCP-227)) to avoid command-pack ambiguity.
+
 ## Input Artifacts
 
 - Telemetry implementation: `backend/src/routes/providers.js` (from DCP-72)
