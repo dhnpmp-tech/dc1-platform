@@ -56,6 +56,8 @@ interface DaemonVersionInfo {
   changelog?: string
 }
 
+type NativeAppOs = 'windows' | 'linux' | 'macos' | 'unknown'
+
 const GPU_MODEL_PRESETS = ['RTX 3060 Ti', 'RTX 3080', 'RTX 4090', 'A100', 'H100']
 const COMPUTE_TYPES: Array<'inference' | 'training' | 'rendering'> = ['inference', 'training', 'rendering']
 const isComputeType = (value: string): value is 'inference' | 'training' | 'rendering' =>
@@ -134,6 +136,7 @@ export default function ProviderDashboard() {
   const [profileError, setProfileError] = useState('')
   const [profileSaved, setProfileSaved] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [detectedNativeAppOs, setDetectedNativeAppOs] = useState<NativeAppOs>('unknown')
   const [gpuProfileDraft, setGpuProfileDraft] = useState({
     gpuModel: '',
     vramMb: 4096,
@@ -240,6 +243,23 @@ export default function ProviderDashboard() {
       setProfileSaving(false)
     }
   }
+
+  useEffect(() => {
+    const platform = window.navigator.platform.toLowerCase()
+    if (platform.includes('win')) {
+      setDetectedNativeAppOs('windows')
+      return
+    }
+    if (platform.includes('mac')) {
+      setDetectedNativeAppOs('macos')
+      return
+    }
+    if (platform.includes('linux')) {
+      setDetectedNativeAppOs('linux')
+      return
+    }
+    setDetectedNativeAppOs('unknown')
+  }, [])
 
   useEffect(() => {
     const fetchLatestDaemonVersion = async () => {
@@ -396,6 +416,38 @@ export default function ProviderDashboard() {
   })()
   const selectedVramGb = Math.max(4, Math.min(80, Math.round((gpuProfileDraft.vramMb || 4096) / 1024)))
   const computeTypeLabel = (value: 'inference' | 'training' | 'rendering') => t(`provider.compute_${value}`)
+  const nativeStatusAppDownloads: Array<{
+    id: Exclude<NativeAppOs, 'unknown'>
+    label: string
+    details: string
+    href: string
+  }> = [
+    {
+      id: 'windows',
+      label: 'Windows Tray App',
+      details: 'Best for Windows 10/11 hosts. Launches as a tray process.',
+      href: '/api/dc1/providers/download/tray-windows',
+    },
+    {
+      id: 'linux',
+      label: 'Linux Tray App',
+      details: 'Desktop tray helper for Ubuntu and other Linux distributions.',
+      href: '/api/dc1/providers/download/tray-linux',
+    },
+    {
+      id: 'macos',
+      label: 'macOS Menubar App',
+      details: 'Native status indicator for macOS menu bar.',
+      href: '/api/dc1/providers/download/tray-mac',
+    },
+  ]
+  const detectedNativeAppLabel = detectedNativeAppOs === 'windows'
+    ? 'Windows'
+    : detectedNativeAppOs === 'linux'
+      ? 'Linux'
+      : detectedNativeAppOs === 'macos'
+        ? 'macOS'
+        : 'Unknown'
 
   if (loading) {
     return (
@@ -541,6 +593,48 @@ export default function ProviderDashboard() {
             <Link href="/provider/earnings" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
               4. {t('nav.earnings')}
             </Link>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold text-dc1-text-primary">Native Status App</h2>
+              <p className="text-sm text-dc1-text-secondary mt-1">
+                Download the tray/menubar helper to monitor node status and earnings in real time.
+              </p>
+            </div>
+            <span className="text-xs font-semibold rounded-full border border-dc1-amber/40 bg-dc1-amber/10 px-3 py-1 text-dc1-amber">
+              Detected OS: {detectedNativeAppLabel}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {nativeStatusAppDownloads.map((download) => {
+              const isRecommended = detectedNativeAppOs === download.id
+              return (
+                <a
+                  key={download.id}
+                  href={download.href}
+                  className={`rounded-xl border p-4 transition-colors ${
+                    isRecommended
+                      ? 'border-dc1-amber bg-dc1-amber/10'
+                      : 'border-dc1-border bg-dc1-surface-l2 hover:border-dc1-amber/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-dc1-text-primary">{download.label}</p>
+                    {isRecommended && (
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-dc1-amber">
+                        Recommended
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-dc1-text-muted">{download.details}</p>
+                  <p className="mt-3 text-xs font-semibold text-dc1-amber">Download</p>
+                </a>
+              )
+            })}
           </div>
         </div>
 

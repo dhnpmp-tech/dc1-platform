@@ -1,7 +1,32 @@
-## [2026-04-02 08:52 UTC] Codex — DCP-364 Dashboard Sidebar Logos Migrated To Next Image
-- **Commit**: `pending` - Replaced both dashboard sidebar logo `<img>` tags (desktop sidebar header and mobile topbar) with `next/image` and explicit dimensions while preserving existing classes/visual sizing.
-- **Files**: `app/components/layout/DashboardSidebar.tsx`, `AGENT_LOG.md`
-- **Impact**: Dashboard sidebar branding now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` in this layout component. Verification: `npm run lint -- --file app/components/layout/DashboardSidebar.tsx` (`✔ No ESLint warnings or errors`).
+## [2026-04-02 13:21 UTC] Codex — DCP-366 Provider Register Email Pattern Hook Dependency Fix
+- **Commit**: `pending` - Memoized the provider registration email regex with `useMemo` and added `emailPattern` to `validateField` callback dependencies to satisfy exhaustive-deps without changing validation behavior.
+- **Files**: `app/provider/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider register form validation hooks now have stable dependencies and no longer emit the `emailPattern` dependency warnings. Verification: `npm run lint -- --file app/provider/register/page.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
+## [2026-04-02 12:12 UTC] Codex — Release Heartbeat Merged DCP-178 + DCP-365 + DCP-394
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed the first three visible code-bearing branches in isolated evaluation clones with shared project dependencies, merged PR #192 (`agent/backend-dev/dcp-178-openrouter-compliance-gate`), PR #193 (`agent/frontend-dev/dcp-365-legalpage-logo-next-image`), and PR #194 (`agent/backend-dev/dcp-394-sensitive-audit-runtime-wiring`) only after `npm run build` passed; `dcp-394` required merge-conflict resolution with `AGENT_LOG.md` from `main` and code from the branch.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the OpenRouter compliance gate updates, the legal-page `next/image` logo migration, and the sensitive-audit runtime wiring/test coverage. This heartbeat consumed the full 3-branch merge budget.
+
+## [2026-04-02 10:53 UTC] Codex — DCP-365 Legal Page Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the legal page header logo `<img>` with `next/image` and explicit dimensions while preserving current styling.
+- **Files**: `app/components/layout/LegalPage.tsx`, `AGENT_LOG.md`
+- **Impact**: Legal page header now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this layout component. Verification: `npm run lint -- --file app/components/layout/LegalPage.tsx` (`✔ No ESLint warnings or errors`).
+
+## [2026-04-02 13:19 UTC] Codex — DCP-361 FeedbackWidget Reset Helper Order + Hook Dependency Fix
+- **Commit**: `pending` - Moved `resetForm` above the feedback trigger `useEffect` and added it to the dependency list so the widget no longer references a block-scoped callback before declaration and satisfies exhaustive-deps in the same patch.
+- **Files**: `app/components/ui/FeedbackWidget.tsx`, `AGENT_LOG.md`
+- **Impact**: Feedback widget trigger handling now has stable hook dependencies and deterministic callback ordering, removing the DCP-361 build/lint blocker path. Verification: `npm run lint -- --file app/components/ui/FeedbackWidget.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
+## [2026-04-02 10:06 UTC] Codex — Release Heartbeat Merged DCP-223 + DCP-389, Skipped Empty DCP-384 Backend Branch
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed three branches with merge-main + build gate in an isolated release worktree using shared project dependencies, merged PR #189 (`agent/backend-dev/dcp-223-provider-route-parity-guard`) and PR #187 (`agent/backend-dev/dcp-389-payout-admin-audit-integrity`) only after `npm run build` passed, then skipped `agent/backend-dev/dcp-384-restore-chat-capacity` because after rebasing there were no commits left between branch and `main` (`422: No commits between main and branch`).
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes provider route parity guardrails plus payout admin audit-integrity changes from the two passing branches. No additional branch was merged beyond the max-3 heartbeat window.
+
+## [2026-04-02 09:43 UTC] Codex — DCP-384 Restore AWQ Chat Capacity Routing
+- **Commit**: `0c677c5` - Patched `/v1/chat/completions` to use the vLLM compatibility matrix during provider admission and proxy model selection so low-VRAM providers can serve compatible AWQ variants for quickstart models such as `mistralai/Mistral-7B-Instruct-v0.2`.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: Staff-engineer branch `agent/staff-engineer/dcp-384-restore-chat-capacity` now restores 12 GB-class eligibility for the Mistral quickstart path; QA should re-run the authenticated non-stream and stream smoke on deployed infra before shipping.
 
 ## [2026-04-02 06:50 UTC] Codex — DCP-363 Header Logo Migrated To Next Image
 - **Commit**: `pending` - Replaced the header brand logo `<img>` with `next/image` and explicit dimensions, preserving existing sizing/styling classes.
@@ -32687,3 +32712,23 @@ a
 - **Commit**: `pending` - Added strict renter-facing template catalog contract endpoint from `docker-templates/` with deterministic ordering, explicit validation failures for malformed files, and integration tests for success + malformed paths.
 - **Files**: `backend/src/routes/templates.js`, `backend/tests/integration/template-catalog-contract.test.js`, `docs/api/template-catalog-contract.md`, `docs/api/README.md`, `AGENT_LOG.md`
 - **Impact**: Frontend lane [DCP-355](/DCP/issues/DCP-355) now has a stable backend contract at `GET /api/templates/catalog` (`dcp.template_catalog.v1`) exposing `id`, `model_name`, `min_vram_gb`, `tier_hint`, and `deploy_defaults`; malformed template JSON/schema now fails closed with explicit per-file errors instead of silent omission.
+
+## [2026-04-02 09:05 UTC] Codex — DCP-223 Provider Route Parity Guard + Release Preflight Wiring
+- **Commit**: `f06282e` - Added a dedicated release guard command that verifies code/runtime parity for `GET /api/providers/model-catalog` and `GET /api/providers/models`, writes JSON/Markdown evidence artifacts, and exits non-zero on route or contract drift; wired the command into release runbooks/checklists and captured a live evidence run against `https://api.dcp.sa`.
+- **Files**: `backend/src/scripts/run-provider-route-parity-guard.js`, `backend/package.json`, `docs/ops/provider-route-parity-guard-runbook.md`, `docs/ops/runtime-route-parity-runbook.md`, `docs/ops/openrouter-reliability-gate-command-pack.md`, `docs/ops/openrouter-qa-gate-checklist.md`, `docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.json`, `docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.md`, `docs/reports/reliability/provider-route-parity-guard-latest.json`, `docs/reports/reliability/provider-route-parity-guard-latest.md`, `AGENT_LOG.md`
+- **Impact**: Release preflight now fails closed when deployed provider catalog routes drift from backend code. Evidence run reproduced current production mismatch (`/api/providers/model-catalog` returned `404` with HTML), giving an explicit blocker artifact for merge/deploy approval threads.
+
+## [2026-04-02 11:16 UTC] Codex — DCP-400 Native Status App Downloads Added To Provider Dashboard
+- **Commit**: `8882dfd` - Added a new "Native Status App" dashboard card with Windows/Linux/macOS download buttons, client OS detection from `navigator.platform`, and highlighted recommended download based on detected platform; added backend alias route for macOS tray download.
+- **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
+- **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
+
+## [2026-04-02 12:22 UTC] Codex — DCP-404 v1 capacity gate unblock for legacy provider rows
+- **Commit**: `pending` - Aligned `/v1/chat/completions` provider capability filtering with the existing vLLM path so missing `supported_compute_types` defaults to inference-capable and VRAM resolution also honors `gpu_vram_mb`/`gpu_vram_mib` fields.
+- **Files**: backend/src/routes/v1.js; backend/src/__tests__/v1-models.test.js; AGENT_LOG.md
+- **Impact**: Fixes false `capable_providers: 0` outcomes on `/v1/chat/completions` for legacy provider rows that previously got excluded despite being online and inference-ready; added regression test coverage for missing `supported_compute_types` behavior.
+
+## [2026-04-02 13:29 UTC] Codex — DCP-404 v1 metering failure-ledger + reconciliation tooling
+- **Commit**: `pending` - Added transactional v1 usage persistence that records `settlement_status='failed'` on provider/proxy/job failure paths, plus request-level OpenRouter metering reconciliation service+CLI and regression tests for fallback/failed persistence semantics.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/services/openrouterMeteringReconciliation.js`, `backend/src/scripts/reconcile-openrouter-metering.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-metering-reconciliation.test.js`, `backend/package.json`, `docs/reports/reliability/first-live-inference-proof-latest.{json,md,log}`, `docs/reports/reliability/first-live-inference-proof-20260402T122311Z.{json,md,log}`, `AGENT_LOG.md`
+- **Impact**: `/v1/chat/completions` now writes canonical failed metering rows (instead of silent loss) whenever provider attempts exhaust or job completion fails, and operators can reconcile per-request token/cost deltas with `npm run reconcile:openrouter:metering -- --json` for settlement verification.

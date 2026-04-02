@@ -23,6 +23,7 @@ const {
   createAdminIpAllowlist,
 } = require('./middleware/rateLimiter');
 const { getBearerToken } = require('./middleware/auth');
+const { sensitiveAuditLogger } = require('./middleware/sensitiveAuditLogger');
 
 // ── Startup secrets guard ──────────────────────────────────────────────────
 // Fail fast if required secrets are missing or still set to placeholder values.
@@ -138,6 +139,7 @@ app.use('/api/webhooks', express.raw({ type: 'application/json' }), (req, _res, 
 });
 app.use(express.json({ limit: '50mb' }));  // Large limit for base64 image results (512x512 PNG ~ 500KB base64)
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(sensitiveAuditLogger);
 
 // ── Security Headers (DCP-879) ───────────────────────────────────────────
 // Headless REST API — no HTML served from this origin, so strict policies apply.

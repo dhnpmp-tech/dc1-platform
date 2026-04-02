@@ -30,5 +30,7 @@ Recovery steps:
 
 - Single-command readiness report:
   `cd backend && npm run test:openrouter:compliance`
+- Machine-readable artifacts are written to:
+  `backend/artifacts/openrouter-compliance/latest.json` and `backend/artifacts/openrouter-compliance/latest.md`
 - The harness exercises the real `/v1` router against mock providers and reports:
   model-list contract, auth/billing failures, streaming stability, tool-call roundtrip behavior, tool-definition passthrough, and mid-stream failure handling.
