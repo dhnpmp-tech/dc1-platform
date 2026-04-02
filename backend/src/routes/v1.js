@@ -24,6 +24,10 @@ const {
   recordStreamOutcome,
   resolveProviderTier,
 } = require('../services/inferenceLatencyBudgetGate');
+const {
+  evaluateProviderModelCompatibility,
+  findModelEntry,
+} = require('../services/vllmCompatibilityMatrix');
 
 const router = express.Router();
 
@@ -217,6 +221,21 @@ function resolveTokenizerFamily(row) {
   if (family) return family.toLowerCase();
   if (modelId.includes('/')) return modelId.split('/')[0].toLowerCase();
   return 'dcp';
+}
+
+function resolveEffectiveMinVramMb(modelId, registryMinVramMb) {
+  const entry = findModelEntry(modelId);
+  const variants = entry?.variants && typeof entry.variants === 'object'
+    ? Object.values(entry.variants)
+    : [];
+  const matrixMinimum = variants
+    .map((variant) => (variant?.available === false ? null : toFiniteInt(variant?.min_vram_mb, { min: 1 })))
+    .filter((value) => value != null)
+    .reduce((min, value) => (min == null ? value : Math.min(min, value)), null);
+
+  if (matrixMinimum == null) return registryMinVramMb;
+  if (!Number.isFinite(registryMinVramMb) || registryMinVramMb <= 0) return matrixMinimum;
+  return Math.min(registryMinVramMb, matrixMinimum);
 }
 
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
@@ -558,8 +577,17 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const passthroughBody = collectProviderOptionalPassthroughFields(req.body || {});
 
     const modelReq = resolveModelRequirements(model);
-    const minVramMb = modelReq.min_vram_gb * 1024;
-    const capableProviders = getCapableProviders(minVramMb);
+    const registryMinVramMb = modelReq.min_vram_gb * 1024;
+    const minVramMb = resolveEffectiveMinVramMb(modelReq.model_id, registryMinVramMb);
+    const capableProviders = getCapableProviders(minVramMb).filter((provider) => {
+      const compatibility = evaluateProviderModelCompatibility({
+        modelId: modelReq.model_id,
+        providerVramMb: resolveProviderVramMb(provider),
+      });
+      if (!compatibility.supported) return false;
+      provider._modelCompatibility = compatibility;
+      return true;
+    });
     if (capableProviders.length === 0) {
       return res.status(503).json({
         error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
@@ -678,7 +706,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     if (assignedProvider.vllm_endpoint_url) {
       const proxyResult = await proxyToProvider({
         endpointUrl: assignedProvider.vllm_endpoint_url,
-        modelId: modelReq.model_id,
+        modelId: assignedProvider._modelCompatibility?.resolved_model_id || modelReq.model_id,
         messages,
         maxTokens,
         temperature,
@@ -841,9 +869,16 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         .slice(0, 2);
 
       for (const fallbackProvider of fallbackCapable) {
+        const fallbackCompatibility = fallbackProvider._modelCompatibility
+          || evaluateProviderModelCompatibility({
+            modelId: modelReq.model_id,
+            providerVramMb: resolveProviderVramMb(fallbackProvider),
+          });
+        if (!fallbackCompatibility.supported) continue;
+
         const fallbackResult = await proxyToProvider({
           endpointUrl: fallbackProvider.vllm_endpoint_url,
-          modelId: modelReq.model_id,
+          modelId: fallbackCompatibility.resolved_model_id || modelReq.model_id,
           messages,
           maxTokens,
           temperature,
@@ -883,8 +918,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const containerSpec = {
       image_type: 'vllm-serve',
       image: 'dcp/vllm-serve:latest',
-      model_id: modelReq.model_id,
-      vram_required_mb: minVramMb,
+      model_id: assignedProvider._modelCompatibility?.resolved_model_id || modelReq.model_id,
+      vram_required_mb: assignedProvider._modelCompatibility?.min_required_vram_mb || minVramMb,
       gpu_count: 1,
       compute_type: 'inference',
     };
