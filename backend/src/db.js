@@ -1093,6 +1093,8 @@ db.exec(`
     key TEXT NOT NULL UNIQUE,
     label TEXT,
     scopes TEXT NOT NULL DEFAULT '["inference"]',
+    org_id TEXT,
+    org_role TEXT NOT NULL DEFAULT 'member' CHECK(org_role IN ('owner', 'admin', 'member', 'read-only')),
     expires_at TEXT,
     revoked_at TEXT,
     last_used_at TEXT,
@@ -1100,8 +1102,33 @@ db.exec(`
     FOREIGN KEY (renter_id) REFERENCES renters(id)
   )
 `);
+try { db.prepare(`ALTER TABLE renter_api_keys ADD COLUMN org_id TEXT`).run(); } catch (_) {}
+try { db.prepare(`ALTER TABLE renter_api_keys ADD COLUMN org_role TEXT NOT NULL DEFAULT 'member' CHECK(org_role IN ('owner', 'admin', 'member', 'read-only'))`).run(); } catch (_) {}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_key ON renter_api_keys(key)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_renter ON renter_api_keys(renter_id, revoked_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_org ON renter_api_keys(org_id, org_role, revoked_at)`);
+
+// ─── ORG RBAC AUDIT LOG TABLE ─── (DCP-320)
+// Immutable per-organization trail for RBAC access decisions and privileged mutations.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS org_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id TEXT NOT NULL,
+    actor_type TEXT NOT NULL CHECK(actor_type IN ('master_key', 'scoped_key', 'unknown')),
+    actor_id TEXT,
+    actor_role TEXT NOT NULL CHECK(actor_role IN ('owner', 'admin', 'member', 'read-only', 'unknown')),
+    renter_id INTEGER,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT,
+    outcome TEXT NOT NULL CHECK(outcome IN ('allow', 'deny')),
+    reason TEXT,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_org_audit_org_time ON org_audit_log(org_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_org_audit_action_time ON org_audit_log(action, created_at DESC)`);
 
 // ─── IMAGE SECURITY TABLES ───
 // Trivy scan evidence + approved image digest pinning for container execution policy.
@@ -1364,6 +1391,49 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider_time ON provider_metrics(provider_id, recorded_at)`);
+
+// ─── CONVERSION FUNNEL EVENTS TABLE — DCP-357 ───
+// Canonical provider + renter activation funnel contract:
+// view -> register -> first_action -> first_success
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversion_funnel_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,
+    occurred_at TEXT NOT NULL,
+    journey TEXT NOT NULL CHECK(journey IN ('provider','renter')),
+    stage TEXT NOT NULL CHECK(stage IN ('view','register','first_action','first_success')),
+    actor_type TEXT NOT NULL DEFAULT 'anonymous' CHECK(actor_type IN ('provider','renter','anonymous','admin','system')),
+    actor_id INTEGER,
+    actor_key TEXT,
+    anonymous_id TEXT,
+    session_id TEXT,
+    correlation_id TEXT,
+    locale TEXT,
+    locale_raw TEXT,
+    language TEXT,
+    country_code TEXT,
+    source_surface TEXT,
+    source_channel TEXT,
+    utm_source TEXT,
+    utm_medium TEXT,
+    utm_campaign TEXT,
+    utm_content TEXT,
+    utm_term TEXT,
+    referrer TEXT,
+    referrer_host TEXT,
+    referrer_path TEXT,
+    request_path TEXT,
+    request_method TEXT,
+    success INTEGER NOT NULL DEFAULT 1,
+    metadata_json TEXT,
+    dedupe_key TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_time ON conversion_funnel_events(occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_journey_stage ON conversion_funnel_events(journey, stage, occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_actor ON conversion_funnel_events(actor_key, occurred_at DESC)`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_conversion_funnel_dedupe_key ON conversion_funnel_events(dedupe_key) WHERE dedupe_key IS NOT NULL`);
 
 // ─── CONTROL PLANE POLICY TABLE ───
 // Queue/SLO policy inputs used by autoscale and pre-warm recommendations.

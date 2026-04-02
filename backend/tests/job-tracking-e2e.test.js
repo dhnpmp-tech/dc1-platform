@@ -17,6 +17,7 @@
 process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'test-service-key-stub';
 process.env.DC1_ADMIN_TOKEN = process.env.DC1_ADMIN_TOKEN || 'test-admin-token-jest';
+process.env.DISABLE_RATE_LIMIT = process.env.DISABLE_RATE_LIMIT || '1';
 
 const request = require('supertest');
 const express = require('express');

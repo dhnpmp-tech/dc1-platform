@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
@@ -119,7 +120,7 @@ export default function HomePage() {
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
 
-  const trackLandingEvent = (event: string, payload: Record<string, unknown> = {}) => {
+  const trackLandingEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
     const detail = {
       event,
@@ -141,7 +142,7 @@ export default function HomePage() {
     if (typeof win.gtag === 'function') {
       win.gtag('event', event, detail)
     }
-  }
+  }, [selectedIntent])
 
   const updateIntent = (intent: RoleIntent, source: string, selectionType: string) => {
     const previousIntent = selectedIntent
@@ -277,7 +278,7 @@ export default function HomePage() {
 
     observer.observe(node)
     return () => observer.disconnect()
-  }, [])
+  }, [trackLandingEvent])
 
   const liveStats = [
     { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
@@ -311,7 +312,7 @@ export default function HomePage() {
   const modeStripItems = [
     { key: 'marketplace', label: t('mode.label.marketplace'), description: t('mode.desc.marketplace'), href: '/renter/marketplace' },
     { key: 'playground', label: t('mode.label.playground'), description: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api-reference' },
+    { key: 'docs_api', label: t('mode.label.docs_api'), description: t('mode.desc.docs_api'), href: '/docs/api/openrouter-60s-quickstart' },
     { key: 'enterprise_support', label: t('mode.label.enterprise_support'), description: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=landing-mode-strip' },
   ]
   const pathChooserLanes = [
@@ -392,12 +393,6 @@ export default function HomePage() {
                     destination: '/renter/register?source=landing_first_fold&intent=renter',
                     step: 'primary_cta',
                   })
-                  trackLandingEvent('developer_flow_landing_cta_click', {
-                    role_intent: 'renter',
-                    surface: 'hero_primary_cta',
-                    destination: '/renter/register?source=landing_first_fold&intent=renter',
-                    step: 'primary_cta',
-                  })
                 }}
                 className="btn btn-primary btn-lg w-full sm:w-auto min-w-[240px]"
               >
@@ -408,12 +403,6 @@ export default function HomePage() {
                 onClick={() => {
                   updateIntent('provider', 'landing_first_fold', 'primary_cta')
                   trackLandingEvent('landing_primary_cta_clicked', {
-                    role_intent: 'provider',
-                    surface: 'hero_primary_cta',
-                    destination: '/provider/register?source=landing_first_fold&intent=provider',
-                    step: 'primary_cta',
-                  })
-                  trackLandingEvent('developer_flow_landing_cta_click', {
                     role_intent: 'provider',
                     surface: 'hero_primary_cta',
                     destination: '/provider/register?source=landing_first_fold&intent=provider',
@@ -500,25 +489,7 @@ export default function HomePage() {
                   <p className="mt-1 text-xs text-dc1-text-secondary">{t('path_chooser.subtitle')}</p>
                   <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {pathChooserLanes.map((lane) => (
-                      <Link
-                        key={lane.key}
-                        href={lane.href}
-                        onClick={() => {
-                          if (lane.key === 'self_serve_renter') {
-                            updateIntent('renter', 'landing_path_chooser', 'lane_click')
-                          } else if (lane.key === 'provider_onboarding') {
-                            updateIntent('provider', 'landing_path_chooser', 'lane_click')
-                          }
-                          trackLandingEvent('landing_path_lane_clicked', {
-                            surface: 'path_chooser',
-                            destination: lane.href,
-                            step: 'lane_click',
-                            lane_key: lane.key,
-                            lane_label: lane.label,
-                          })
-                        }}
-                        className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber"
-                      >
+                      <Link key={lane.key} href={lane.href} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2 transition-colors hover:border-dc1-amber">
                         <p className="text-sm font-semibold text-dc1-text-primary">{lane.label}</p>
                         <p className="mt-1 text-xs text-dc1-text-secondary">{lane.description}</p>
                       </Link>
@@ -643,7 +614,7 @@ export default function HomePage() {
       <section className="py-16 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-dc1-amber text-center">
-            Saudi-ready AI workloads with Arabic model support
+            {t('landing.model_marquee_title')}
           </p>
         </div>
         <div className="relative w-full">
@@ -664,10 +635,12 @@ export default function HomePage() {
                   { src: '/logos/huggingface-text.png', alt: 'Hugging Face' },
                   { src: '/arabic-ai-logos/allam-humain.png', alt: 'ALLaM' },
                 ].map((logo, i) => (
-                  <img
+                  <Image
                     key={`${copy}-${i}`}
                     src={logo.src}
                     alt={logo.alt}
+                    width={160}
+                    height={36}
                     className="h-7 sm:h-9 w-auto object-contain brightness-0 invert opacity-50 hover:opacity-90 transition-opacity duration-300 shrink-0"
                   />
                 ))}
@@ -700,10 +673,10 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            Choose your workflow
+            {t('landing.workflow_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            Validate quickly in-browser, then move to API-driven container jobs for repeatable integration.
+            {t('landing.workflow_desc')}
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -715,15 +688,15 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Browser Playground</h3>
+            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">{t('landing.workflow_playground_title')}</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Verify a first workload from your browser with minimal setup. Pick a model, review output quality, and decide when it is production-ready.
+              {t('landing.workflow_playground_desc')}
             </p>
             <ul className="space-y-2 mb-8">
               {[
-                'No local install required',
-                'Routing checks policy and compatibility before assignment',
-                'Pre-run estimate is shown before execution',
+                t('landing.workflow_playground_bullet1'),
+                t('landing.workflow_playground_bullet2'),
+                t('landing.workflow_playground_bullet3'),
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -732,7 +705,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/renter/register" className="btn btn-primary btn-sm">
-              Try the playground
+              {t('landing.workflow_playground_cta')}
             </Link>
           </div>
 
@@ -743,15 +716,15 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">Container Jobs</h3>
+            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">{t('landing.workflow_container_title')}</h3>
             <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              Run repeatable, policy-aligned container jobs for training, fine-tuning, or batch workloads using an API-first flow.
+              {t('landing.workflow_container_desc')}
             </p>
             <ul className="space-y-2 mb-8">
               {[
-                'Approved container runtimes from the DCP catalog',
-                'GPU-scoped execution within isolated workspaces',
-                'Submit and track jobs via REST API',
+                t('landing.workflow_container_bullet1'),
+                t('landing.workflow_container_bullet2'),
+                t('landing.workflow_container_bullet3'),
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
                   <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
@@ -760,7 +733,7 @@ export default function HomePage() {
               ))}
             </ul>
             <Link href="/docs" className="btn btn-secondary btn-sm">
-              View API docs
+              {t('landing.workflow_container_cta')}
             </Link>
           </div>
         </div>
