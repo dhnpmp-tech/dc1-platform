@@ -111,7 +111,7 @@ function ProviderCountWidget({ health }: { health: DetailedHealth | null }) {
 }
 
 export default function HomePage() {
-  const { t } = useLanguage()
+  const { t, isRTL } = useLanguage()
   const [liveGpuCount, setLiveGpuCount] = useState<number | null>(null)
   const [gpuFamilyCoverage, setGpuFamilyCoverage] = useState<number | null>(null)
   const [reliabilityUpdatedAt, setReliabilityUpdatedAt] = useState<Date | null>(null)
@@ -344,18 +344,52 @@ export default function HomePage() {
   const howDcpWorksSteps = [
     {
       key: 'choose_model',
-      title: 'Choose Model',
-      description: 'Select from Arabic AI models (ALLaM, JAIS, Falcon) or global models via OpenAI-compatible API.',
+      title: t('landing.how_compact_step1_title'),
+      description: t('landing.how_compact_step1_desc'),
     },
     {
       key: 'call_inference_api',
-      title: 'Call Inference API',
-      description: 'Send requests to your model endpoint. Saudi data residency, per-token billing, zero ops.',
+      title: t('landing.how_compact_step2_title'),
+      description: t('landing.how_compact_step2_desc'),
     },
     {
       key: 'settle_usage',
-      title: 'Track & Settle',
-      description: 'Monitor usage and costs in real-time. Pay per token with SAR billing.',
+      title: t('landing.how_compact_step3_title'),
+      description: t('landing.how_compact_step3_desc'),
+    },
+  ]
+  const trustProofPoints = [
+    {
+      key: 'energy',
+      title: t('landing.saudi_trust_energy_title'),
+      description: t('landing.saudi_trust_energy_desc'),
+    },
+    {
+      key: 'pdpl',
+      title: t('landing.saudi_trust_pdpl_title'),
+      description: t('landing.saudi_trust_pdpl_desc'),
+    },
+    {
+      key: 'residency',
+      title: t('landing.saudi_trust_residency_title'),
+      description: t('landing.saudi_trust_residency_desc'),
+    },
+  ]
+  const firstFoldFaqItems = [
+    {
+      key: 'data',
+      question: t('landing.first_fold_faq_q1'),
+      answer: t('landing.first_fold_faq_a1'),
+    },
+    {
+      key: 'provider',
+      question: t('landing.first_fold_faq_q2'),
+      answer: t('landing.first_fold_faq_a2'),
+    },
+    {
+      key: 'billing',
+      question: t('landing.first_fold_faq_q3'),
+      answer: t('landing.first_fold_faq_a3'),
     },
   ]
 
@@ -371,7 +405,7 @@ export default function HomePage() {
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
               <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY
+              {t('landing.hero_badge')}
             </div>
             <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
               {t('landing.hero_title')}
@@ -380,13 +414,19 @@ export default function HomePage() {
               {t('landing.hero_desc')}
             </p>
             <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
-              OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.
+              {t('landing.hero_supporting')}
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <Link
                 href="/renter/register?source=landing_first_fold&intent=renter"
                 onClick={() => {
                   updateIntent('renter', 'landing_first_fold', 'primary_cta')
+                  trackLandingEvent('signup_click', {
+                    role_intent: 'renter',
+                    surface: 'hero_primary_cta',
+                    destination: '/renter/register?source=landing_first_fold&intent=renter',
+                    step: 'signup',
+                  })
                   trackLandingEvent('landing_primary_cta_clicked', {
                     role_intent: 'renter',
                     surface: 'hero_primary_cta',
@@ -402,6 +442,12 @@ export default function HomePage() {
                 href="/provider/register?source=landing_first_fold&intent=provider"
                 onClick={() => {
                   updateIntent('provider', 'landing_first_fold', 'primary_cta')
+                  trackLandingEvent('provider_install_click', {
+                    role_intent: 'provider',
+                    surface: 'hero_primary_cta',
+                    destination: '/provider/register?source=landing_first_fold&intent=provider',
+                    step: 'provider_install',
+                  })
                   trackLandingEvent('landing_primary_cta_clicked', {
                     role_intent: 'provider',
                     surface: 'hero_primary_cta',
@@ -423,7 +469,7 @@ export default function HomePage() {
             <div className="mb-8 flex justify-center">
               <ProviderCountWidget health={detailedHealth} />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-start">
               <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
                 <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>
                 <p className="text-xs text-dc1-text-secondary">{t('landing.diff_energy_desc')}</p>
@@ -437,9 +483,9 @@ export default function HomePage() {
                 <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
               </div>
             </div>
-            <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">
+            <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-start">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                How DCP works
+                {t('landing.how_compact_title')}
               </p>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {howDcpWorksSteps.map((item, index) => (
@@ -450,9 +496,36 @@ export default function HomePage() {
                 ))}
               </div>
             </div>
-            <details className="max-w-4xl mx-auto w-full mb-4 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-left">
+            <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-amber/10 p-4 text-start">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+                {t('landing.saudi_trust_title')}
+              </p>
+              <p className="mt-2 text-xs text-dc1-text-secondary">{t('landing.saudi_trust_intro')}</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {trustProofPoints.map((item) => (
+                  <div key={item.key} className="rounded-lg border border-dc1-amber/30 bg-dc1-surface-l1 px-3 py-3">
+                    <p className="text-xs font-semibold text-dc1-amber">{item.title}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-dc1-text-secondary">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mb-8 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-start">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
+                {t('landing.first_fold_faq_title')}
+              </p>
+              <div className="mt-3 space-y-2">
+                {firstFoldFaqItems.map((item) => (
+                  <details key={item.key} className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3" dir={isRTL ? 'rtl' : 'ltr'}>
+                    <summary className="cursor-pointer text-xs font-semibold text-dc1-text-primary">{item.question}</summary>
+                    <p className="mt-2 text-xs leading-relaxed text-dc1-text-secondary">{item.answer}</p>
+                  </details>
+                ))}
+              </div>
+            </div>
+            <details className="max-w-4xl mx-auto w-full mb-4 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-start">
               <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                Explore all paths and tools
+                {t('landing.paths_tools_summary')}
               </summary>
               <div className="mt-4 space-y-4">
                 <div>
