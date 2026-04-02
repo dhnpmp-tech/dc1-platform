@@ -1,3 +1,8 @@
+## [2026-04-02 10:06 UTC] Codex — Release Heartbeat Merged DCP-223 + DCP-389, Skipped Empty DCP-384 Backend Branch
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed three branches with merge-main + build gate in an isolated release worktree using shared project dependencies, merged PR #189 (`agent/backend-dev/dcp-223-provider-route-parity-guard`) and PR #187 (`agent/backend-dev/dcp-389-payout-admin-audit-integrity`) only after `npm run build` passed, then skipped `agent/backend-dev/dcp-384-restore-chat-capacity` because after rebasing there were no commits left between branch and `main` (`422: No commits between main and branch`).
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes provider route parity guardrails plus payout admin audit-integrity changes from the two passing branches. No additional branch was merged beyond the max-3 heartbeat window.
+
 ## [2026-04-02 09:43 UTC] Codex — DCP-384 Restore AWQ Chat Capacity Routing
 - **Commit**: `0c677c5` - Patched `/v1/chat/completions` to use the vLLM compatibility matrix during provider admission and proxy model selection so low-VRAM providers can serve compatible AWQ variants for quickstart models such as `mistralai/Mistral-7B-Instruct-v0.2`.
 - **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
