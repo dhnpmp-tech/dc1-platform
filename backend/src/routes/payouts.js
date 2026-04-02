@@ -44,6 +44,21 @@ function skipAutomaticAdminAudit(req, _res, next) {
   next();
 }
 
+function logPayoutMutationAuditOnce(req, rawDb, action, payoutId, details) {
+  // Hard guard for one-request/one-audit semantics on payout admin mutations.
+  // If a handler path is refactored and calls this twice, only the first insert is kept.
+  if (req._payoutMutationAuditLogged === true) return;
+  req._payoutMutationAuditLogged = true;
+  logAdminAction(
+    rawDb,
+    req.adminUser?.id || 'unknown',
+    action,
+    'payout',
+    String(payoutId),
+    details
+  );
+}
+
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
 /**
@@ -246,12 +261,11 @@ router.post('/admin/payouts/:id/approve', skipAutomaticAdminAudit, requireAdminR
     ].filter(Boolean).join('\n'))
       .catch((e) => console.error('[payouts] approve alert failed:', e.message));
 
-    logAdminAction(
+    logPayoutMutationAuditOnce(
+      req,
       raw_db,
-      req.adminUser?.id || 'unknown',
       'payout_approved',
-      'payout',
-      String(req.params.id),
+      req.params.id,
       {
         provider_id: row.provider_id,
         amount_halala: row.amount_halala,
@@ -307,12 +321,11 @@ router.post('/admin/payouts/:id/reject', skipAutomaticAdminAudit, requireAdminRb
         .catch((e) => console.error('[payouts] reject email failed:', e.message));
     }
 
-    logAdminAction(
+    logPayoutMutationAuditOnce(
+      req,
       raw_db,
-      req.adminUser?.id || 'unknown',
       'payout_rejected',
-      'payout',
-      String(req.params.id),
+      req.params.id,
       {
         provider_id: result.provider_id,
         amount_halala: result.amount_halala,
@@ -345,12 +358,11 @@ router.patch('/admin/payouts/:id', skipAutomaticAdminAudit, requireAdminRbac, (r
         const statusMap = { NOT_FOUND: 404, NOT_REJECTABLE: 409 };
         return res.status(statusMap[result.error] || 400).json(result);
       }
-      logAdminAction(
+      logPayoutMutationAuditOnce(
+        req,
         rawDb,
-        req.adminUser?.id || 'unknown',
         'payout_rejected',
-        'payout',
-        String(req.params.id),
+        req.params.id,
         {
           provider_id: result.provider_id,
           amount_halala: result.amount_halala,
@@ -366,12 +378,11 @@ router.patch('/admin/payouts/:id', skipAutomaticAdminAudit, requireAdminRbac, (r
       const statusMap = { NOT_FOUND: 404, ALREADY_PAID: 409, REJECTED: 409 };
       return res.status(statusMap[result.error] || 400).json(result);
     }
-    logAdminAction(
+    logPayoutMutationAuditOnce(
+      req,
       rawDb,
-      req.adminUser?.id || 'unknown',
       'payout_marked_paid',
-      'payout',
-      String(req.params.id),
+      req.params.id,
       {
         provider_id: result.provider_id,
         amount_halala: result.amount_halala,
