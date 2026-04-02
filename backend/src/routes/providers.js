@@ -98,6 +98,7 @@ const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '3.3.0').trim();
 const MIN_DAEMON_VERSION = (process.env.MIN_DAEMON_VERSION || LATEST_DAEMON_VERSION).trim();
 const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
 const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');
+const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm-configs/compatibility-matrix.json');
 // Auth rate limiting: use the centralized authLimiter (5/IP/15min — brute force protection, DCP-855).
 const loginEmailLimiter = authLimiter;
 
@@ -2093,6 +2094,7 @@ const PROVIDER_ADMISSION_REASON_CODES = Object.freeze({
     INSUFFICIENT_GPU_COUNT: 'INSUFFICIENT_GPU_COUNT',
     MODEL_COMPATIBILITY_UNSUPPORTED: 'MODEL_COMPATIBILITY_UNSUPPORTED',
     INSTANT_MODEL_NOT_CACHED: 'INSTANT_MODEL_NOT_CACHED',
+    MODEL_UNSUPPORTED_ON_PROVIDER: 'MODEL_UNSUPPORTED_ON_PROVIDER',
     NO_ELIGIBLE_JOB_FOR_PROVIDER: 'NO_ELIGIBLE_JOB_FOR_PROVIDER',
 });
 
@@ -2101,6 +2103,186 @@ const TIER_MODE_BY_PREWARM_CLASS = Object.freeze({
     warm: 'cached',
     cold: 'on-demand',
 });
+
+const LOW_VRAM_AWQ_ENFORCEMENT_MAX_MB = 12288;
+let cachedVllmCompatibilityIndex = null;
+
+function normalizeModelToken(value) {
+    return normalizeString(value, { maxLen: 500 })?.toLowerCase() || null;
+}
+
+function toVariantRecord(rawVariant) {
+    if (!isPlainObject(rawVariant)) return null;
+    const minVramMb =
+        toFiniteInt(rawVariant.min_vram_mb, { min: 1, max: 1024 * 1024 }) ||
+        toFiniteInt(rawVariant.vram_required_mb, { min: 1, max: 1024 * 1024 }) ||
+        null;
+    if (!minVramMb) return null;
+
+    const aliases = new Set();
+    const addAlias = (raw) => {
+        const normalized = normalizeModelToken(raw);
+        if (normalized) aliases.add(normalized);
+    };
+    addAlias(rawVariant.model_id);
+    if (Array.isArray(rawVariant.aliases)) rawVariant.aliases.forEach(addAlias);
+
+    return {
+        min_vram_mb: minVramMb,
+        available: rawVariant.available !== false,
+        availability_note: normalizeString(rawVariant.availability_note, { maxLen: 500 }),
+        recommended_script: normalizeString(rawVariant.recommended_script, { maxLen: 500 }),
+        aliases,
+    };
+}
+
+function loadVllmCompatibilityIndex() {
+    if (cachedVllmCompatibilityIndex) return cachedVllmCompatibilityIndex;
+
+    try {
+        const raw = JSON.parse(fs.readFileSync(VLLM_COMPATIBILITY_MATRIX_PATH, 'utf8'));
+        const models = Array.isArray(raw?.models) ? raw.models : [];
+        const byAlias = new Map();
+
+        for (const model of models) {
+            if (!isPlainObject(model)) continue;
+            const canonicalId = normalizeModelToken(model.id);
+            if (!canonicalId) continue;
+
+            const variants = {};
+            const variantAliases = new Map();
+            const rawVariants = isPlainObject(model.variants) ? model.variants : {};
+            for (const [variantKeyRaw, variantRaw] of Object.entries(rawVariants)) {
+                const variantKey = normalizeString(variantKeyRaw, { maxLen: 64 })?.toLowerCase();
+                if (!variantKey) continue;
+                const variant = toVariantRecord(variantRaw);
+                if (!variant) continue;
+                variants[variantKey] = variant;
+                for (const alias of variant.aliases) {
+                    if (!variantAliases.has(alias)) variantAliases.set(alias, variantKey);
+                }
+            }
+            if (Object.keys(variants).length === 0) continue;
+
+            const defaultVariantRaw = normalizeString(model.default_variant, { maxLen: 64 })?.toLowerCase() || 'awq';
+            const fallbackVariantRaw = normalizeString(model.fallback_variant, { maxLen: 64 })?.toLowerCase() || null;
+            const entry = {
+                id: canonicalId,
+                variants,
+                defaultVariant: variants[defaultVariantRaw] ? defaultVariantRaw : Object.keys(variants)[0],
+                fallbackVariant: fallbackVariantRaw && variants[fallbackVariantRaw] ? fallbackVariantRaw : null,
+                variantAliases,
+            };
+
+            const bindAlias = (aliasRaw) => {
+                const alias = normalizeModelToken(aliasRaw);
+                if (!alias || byAlias.has(alias)) return;
+                byAlias.set(alias, entry);
+            };
+
+            bindAlias(canonicalId);
+            if (Array.isArray(model.aliases)) model.aliases.forEach(bindAlias);
+            for (const alias of variantAliases.keys()) bindAlias(alias);
+        }
+
+        cachedVllmCompatibilityIndex = {
+            available: true,
+            byAlias,
+        };
+        return cachedVllmCompatibilityIndex;
+    } catch (error) {
+        console.error('[providers] Failed to load vLLM compatibility matrix:', error.message);
+        cachedVllmCompatibilityIndex = {
+            available: false,
+            byAlias: new Map(),
+        };
+        return cachedVllmCompatibilityIndex;
+    }
+}
+
+function evaluateLowVramInferenceCompatibility(providerProfile, jobRequirements) {
+    if (jobRequirements.compute_type !== 'inference' || !jobRequirements.model_id) {
+        return { accepted: true };
+    }
+    if (providerProfile.vram_mb > LOW_VRAM_AWQ_ENFORCEMENT_MAX_MB) {
+        return { accepted: true };
+    }
+
+    const compatibilityIndex = loadVllmCompatibilityIndex();
+    if (!compatibilityIndex.available) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: 'Low-VRAM inference admission requires vLLM compatibility matrix, but it is unavailable',
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    const normalizedModelId = normalizeModelToken(jobRequirements.model_id);
+    const modelEntry = normalizedModelId ? compatibilityIndex.byAlias.get(normalizedModelId) : null;
+    if (!modelEntry) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `Model '${jobRequirements.model_id}' is not supported for <=12GB AWQ provider routing`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    const requestedVariant = normalizedModelId && modelEntry.variantAliases.has(normalizedModelId)
+        ? modelEntry.variantAliases.get(normalizedModelId)
+        : null;
+    const selectedVariant = requestedVariant || modelEntry.defaultVariant;
+    const variantConfig = modelEntry.variants[selectedVariant];
+    if (!variantConfig) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `Compatibility matrix is missing variant '${selectedVariant}' for model '${jobRequirements.model_id}'`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    if (!variantConfig.available) {
+        if (modelEntry.fallbackVariant) {
+            const fallbackConfig = modelEntry.variants[modelEntry.fallbackVariant];
+            if (fallbackConfig && providerProfile.vram_mb >= fallbackConfig.min_vram_mb) {
+                return { accepted: true };
+            }
+            if (fallbackConfig) {
+                return {
+                    accepted: false,
+                    reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+                    reason: `${jobRequirements.model_id}: AWQ weights unavailable (${variantConfig.availability_note || 'upstream missing'}); fallback '${modelEntry.fallbackVariant}' needs at least ${fallbackConfig.min_vram_mb} MiB VRAM`,
+                    tier_mode: jobRequirements.tier_mode,
+                    prewarm_class: jobRequirements.prewarm_class,
+                };
+            }
+        }
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `${jobRequirements.model_id}: AWQ weights unavailable (${variantConfig.availability_note || 'upstream missing'})`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    if (providerProfile.vram_mb < variantConfig.min_vram_mb) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `Model '${jobRequirements.model_id}' requires ${variantConfig.min_vram_mb} MiB VRAM for ${selectedVariant}, provider has ${providerProfile.vram_mb} MiB`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    return { accepted: true };
+}
 
 function resolveTierMode(prewarmClass) {
     const normalized = normalizeString(prewarmClass, { maxLen: 32 })?.toLowerCase() || 'warm';
@@ -2154,6 +2336,9 @@ function getProviderRoutingProfile(provider) {
         gpu_count: Number(gpuCount || 1),
         supported_compute_types: supported,
         cached_models: cachedModels,
+        gpu_label: normalizeString(provider.gpu_name_detected, { maxLen: 120 })
+            || normalizeString(provider.gpu_model, { maxLen: 120 })
+            || null,
     };
 }
 
@@ -2211,6 +2396,10 @@ function evaluateProviderAdmission(providerProfile, jobRequirements) {
             tier_mode: jobRequirements.tier_mode,
             prewarm_class: jobRequirements.prewarm_class,
         };
+    }
+    const modelCompatibility = evaluateLowVramInferenceCompatibility(providerProfile, jobRequirements);
+    if (!modelCompatibility.accepted) {
+        return modelCompatibility;
     }
     if (providerProfile.vram_mb < jobRequirements.vram_required_mb) {
         return {
@@ -2282,6 +2471,7 @@ function evaluateProviderAdmission(providerProfile, jobRequirements) {
 function buildNextPendingJob(providerId) {
     const provider = db.get(
         `SELECT id, wallet_address, is_paused, last_heartbeat, resource_spec, supported_compute_types, gpu_count, gpu_count_reported,
+                gpu_model, gpu_name_detected,
                 vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb, cached_models
          FROM providers
          WHERE id = ?`,
@@ -6804,6 +6994,10 @@ module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
     inferVramGb,
+    loadVllmCompatibilityIndex,
+    evaluateLowVramInferenceCompatibility,
+    evaluateProviderAdmission,
+    PROVIDER_ADMISSION_REASON_CODES,
     activateProviderById,
     getProviderRoutingProfile,
     parseJobContainerRequirements,
