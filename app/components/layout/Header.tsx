@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LanguageToggle, useLanguage } from '../../lib/i18n'
@@ -82,9 +83,11 @@ export default function Header() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center shrink-0">
-            <img
+            <Image
               src="/logo.svg"
               alt="DCP"
+              width={108}
+              height={36}
               className="h-9 w-auto"
             />
           </Link>

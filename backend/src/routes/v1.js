@@ -15,6 +15,8 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
 const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
 const { toCatalogContractCore, toUsdStringFromHalala } = require('../lib/model-catalog-contract');
@@ -26,6 +28,7 @@ const {
 } = require('../services/inferenceLatencyBudgetGate');
 
 const router = express.Router();
+const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm-configs/compatibility-matrix.json');
 
 // ── Helpers (shared with vllm.js — keep lightweight to avoid circular deps) ──
 
@@ -48,6 +51,10 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
   const num = toFiniteNumber(value, { min, max });
   if (num == null || !Number.isInteger(num)) return null;
   return num;
+}
+
+function normalizeModelToken(value) {
+  return normalizeString(value, { maxLen: 300 })?.toLowerCase() || null;
 }
 
 function getRenterKey(req) {
@@ -219,6 +226,135 @@ function resolveTokenizerFamily(row) {
   return 'dcp';
 }
 
+let cachedVllmCompatibilityIndex = null;
+
+function toVariantRecord(rawVariant) {
+  if (!rawVariant || typeof rawVariant !== 'object') return null;
+  const minVramMb = toFiniteInt(rawVariant.min_vram_mb, { min: 0, max: 1024 * 1024 });
+  const modelId = normalizeString(rawVariant.model_id, { maxLen: 300 });
+  if (minVramMb == null || !modelId) return null;
+
+  const aliases = new Set();
+  const addAlias = (raw) => {
+    const normalized = normalizeModelToken(raw);
+    if (normalized) aliases.add(normalized);
+  };
+  addAlias(rawVariant.model_id);
+  if (Array.isArray(rawVariant.aliases)) rawVariant.aliases.forEach(addAlias);
+
+  return {
+    modelId,
+    minVramMb,
+    available: rawVariant.available !== false,
+    aliases,
+  };
+}
+
+function loadVllmCompatibilityIndex() {
+  if (cachedVllmCompatibilityIndex) return cachedVllmCompatibilityIndex;
+  try {
+    const raw = JSON.parse(fs.readFileSync(VLLM_COMPATIBILITY_MATRIX_PATH, 'utf8'));
+    const models = Array.isArray(raw?.models) ? raw.models : [];
+    const byAlias = new Map();
+
+    for (const model of models) {
+      if (!model || typeof model !== 'object') continue;
+      const canonicalId = normalizeModelToken(model.id);
+      if (!canonicalId) continue;
+
+      const variants = {};
+      const variantAliases = new Map();
+      const rawVariants = model.variants && typeof model.variants === 'object' ? model.variants : {};
+      for (const [variantKeyRaw, variantRaw] of Object.entries(rawVariants)) {
+        const variantKey = normalizeString(variantKeyRaw, { maxLen: 64 })?.toLowerCase();
+        if (!variantKey) continue;
+        const variant = toVariantRecord(variantRaw);
+        if (!variant) continue;
+        variants[variantKey] = variant;
+        for (const alias of variant.aliases) {
+          if (!variantAliases.has(alias)) variantAliases.set(alias, variantKey);
+        }
+      }
+      if (Object.keys(variants).length === 0) continue;
+
+      const defaultVariantRaw = normalizeString(model.default_variant, { maxLen: 64 })?.toLowerCase() || 'awq';
+      const fallbackVariantRaw = normalizeString(model.fallback_variant, { maxLen: 64 })?.toLowerCase() || null;
+      const entry = {
+        id: canonicalId,
+        variants,
+        defaultVariant: variants[defaultVariantRaw] ? defaultVariantRaw : Object.keys(variants)[0],
+        fallbackVariant: fallbackVariantRaw && variants[fallbackVariantRaw] ? fallbackVariantRaw : null,
+        variantAliases,
+      };
+
+      const bindAlias = (aliasRaw) => {
+        const alias = normalizeModelToken(aliasRaw);
+        if (!alias || byAlias.has(alias)) return;
+        byAlias.set(alias, entry);
+      };
+
+      bindAlias(canonicalId);
+      if (Array.isArray(model.aliases)) model.aliases.forEach(bindAlias);
+      for (const alias of variantAliases.keys()) bindAlias(alias);
+    }
+
+    cachedVllmCompatibilityIndex = { available: true, byAlias };
+    return cachedVllmCompatibilityIndex;
+  } catch (_) {
+    cachedVllmCompatibilityIndex = { available: false, byAlias: new Map() };
+    return cachedVllmCompatibilityIndex;
+  }
+}
+
+function resolveProviderRoutingModel({ requestedModelId, providerVramMb }) {
+  const normalizedModelId = normalizeModelToken(requestedModelId);
+  const compatibility = loadVllmCompatibilityIndex();
+  if (!compatibility.available || !normalizedModelId) {
+    return { proxyModelId: requestedModelId, eligible: true };
+  }
+
+  const entry = compatibility.byAlias.get(normalizedModelId);
+  if (!entry) {
+    return { proxyModelId: requestedModelId, eligible: true };
+  }
+
+  const requestedVariant = entry.variantAliases.get(normalizedModelId) || null;
+  const variantOrder = [];
+  if (requestedVariant) variantOrder.push(requestedVariant);
+  if (entry.defaultVariant) variantOrder.push(entry.defaultVariant);
+  if (entry.fallbackVariant) variantOrder.push(entry.fallbackVariant);
+  for (const variantKey of Object.keys(entry.variants)) {
+    if (!variantOrder.includes(variantKey)) variantOrder.push(variantKey);
+  }
+
+  for (const variantKey of variantOrder) {
+    const variant = entry.variants[variantKey];
+    if (!variant || !variant.available) continue;
+    if (providerVramMb >= variant.minVramMb) {
+      return { proxyModelId: variant.modelId, eligible: true };
+    }
+  }
+
+  return { proxyModelId: requestedModelId, eligible: false };
+}
+
+function resolveEffectiveMinVramMb(requestedModelId, registryMinVramMb) {
+  const normalizedModelId = normalizeModelToken(requestedModelId);
+  const compatibility = loadVllmCompatibilityIndex();
+  if (!compatibility.available || !normalizedModelId) return registryMinVramMb;
+
+  const entry = compatibility.byAlias.get(normalizedModelId);
+  if (!entry) return registryMinVramMb;
+
+  const mins = Object.values(entry.variants)
+    .filter((variant) => variant && variant.available)
+    .map((variant) => variant.minVramMb)
+    .filter((value) => Number.isFinite(value));
+
+  if (mins.length === 0) return registryMinVramMb;
+  return Math.min(registryMinVramMb, Math.min(...mins));
+}
+
 // ── GET /v1/models — OpenAI-compatible model list ──────────────────────────
 
 router.get('/models', (req, res) => {
@@ -310,12 +446,32 @@ const PROVIDER_HEARTBEAT_STALE_MS = 10 * 60 * 1000;
 const PROXY_TIMEOUT_MS = 30000;
 
 function parseComputeTypes(raw) {
-  try { return new Set(JSON.parse(raw || '[]')); } catch (_) { return new Set(); }
+  if (!raw) return new Set(['inference', 'training', 'rendering']);
+  if (Array.isArray(raw)) {
+    return new Set(raw.map((value) => String(value).toLowerCase()));
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.map((value) => String(value).toLowerCase()));
+    }
+  } catch (_) {
+    // ignore malformed JSON; fall back to CSV parsing
+  }
+  return new Set(String(raw).split(',').map((value) => value.trim().toLowerCase()).filter(Boolean));
 }
 
 function resolveProviderVramMb(provider) {
-  if (provider.vram_mb) return Number(provider.vram_mb);
-  if (provider.vram_gb) return Number(provider.vram_gb) * 1024;
+  const candidates = [
+    provider.vram_mb,
+    provider.gpu_vram_mb,
+    provider.gpu_vram_mib,
+    provider.vram_gb != null ? Number(provider.vram_gb) * 1024 : null,
+  ];
+  for (const candidate of candidates) {
+    const value = toFiniteInt(candidate, { min: 0, max: 1024 * 1024 });
+    if (value != null) return value;
+  }
   return 0;
 }
 
@@ -494,6 +650,7 @@ async function proxyToProvider({
 }
 
 router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res) => {
+  let persistFailureUsageBestEffort = null;
   try {
     const model = normalizeString(req.body?.model, { maxLen: 200 });
     if (!model) return res.status(400).json({
@@ -558,8 +715,15 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const passthroughBody = collectProviderOptionalPassthroughFields(req.body || {});
 
     const modelReq = resolveModelRequirements(model);
-    const minVramMb = modelReq.min_vram_gb * 1024;
-    const capableProviders = getCapableProviders(minVramMb);
+    const registryMinVramMb = modelReq.min_vram_gb * 1024;
+    const effectiveMinVramMb = resolveEffectiveMinVramMb(modelReq.model_id, registryMinVramMb);
+    const capableProviders = getCapableProviders(effectiveMinVramMb).filter((provider) => {
+      const providerVramMb = resolveProviderVramMb(provider);
+      return resolveProviderRoutingModel({
+        requestedModelId: modelReq.model_id,
+        providerVramMb,
+      }).eligible;
+    });
     if (capableProviders.length === 0) {
       return res.status(503).json({
         error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
@@ -616,6 +780,20 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const tokenRateHalala = resolveTokenRateHalala(modelReq.model_id);
     const meteringRequestId = extractRequestId(req);
     let usagePersisted = false;
+    const dbHandle = db._db || db;
+    const transactionFactory = typeof dbHandle?.transaction === 'function'
+      ? dbHandle.transaction.bind(dbHandle)
+      : null;
+
+    const runUsageTransaction = (work) => {
+      if (!transactionFactory) {
+        work();
+        return;
+      }
+      transactionFactory(() => {
+        work();
+      })();
+    };
 
     const toUsageSnapshot = (rawUsage = {}, completionText = '') => {
       const billedPromptTokens = toFiniteInt(rawUsage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? promptTokens;
@@ -631,11 +809,17 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       };
     };
 
-    const persistUsageOnce = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
+    const persistUsageOnce = ({
+      providerForUsage,
+      providerResponseId = null,
+      usage,
+      completionText = '',
+      settlementStatus = 'pending',
+    }) => {
       if (usagePersisted) return;
       const snapshot = toUsageSnapshot(usage, completionText);
       try {
-        recordOpenRouterUsage(db._db || db, {
+        recordOpenRouterUsage(dbHandle, {
           requestId: meteringRequestId,
           providerResponseId,
           requestPath: normalizeString(req.path || req.originalUrl || '/v1/chat/completions', { maxLen: 160 }),
@@ -649,6 +833,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           totalTokens: snapshot.totalTokens,
           costHalala: snapshot.costHalala,
           currency: 'SAR',
+          settlementStatus,
         });
       } catch (error) {
         console.error('[v1/chat/completions] usage ledger persist failed:', error?.message || error);
@@ -665,8 +850,27 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     const debitAndPersistUsage = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
       const snapshot = toUsageSnapshot(usage, completionText);
-      debitRenterSafe(snapshot.costHalala);
-      persistUsageOnce({ providerForUsage, providerResponseId, usage, completionText });
+      runUsageTransaction(() => {
+        debitRenterSafe(snapshot.costHalala);
+        persistUsageOnce({ providerForUsage, providerResponseId, usage, completionText, settlementStatus: 'pending' });
+      });
+    };
+
+    persistFailureUsageBestEffort = ({
+      providerForUsage = null,
+      providerResponseId = null,
+      usage = null,
+      completionText = '',
+    } = {}) => {
+      runUsageTransaction(() => {
+        persistUsageOnce({
+          providerForUsage,
+          providerResponseId,
+          usage: usage || { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+          completionText,
+          settlementStatus: 'failed',
+        });
+      });
     };
     if (Number(req.renter.balance_halala || 0) < estimatedCostHalala) {
       return res.status(402).json({
@@ -676,9 +880,14 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     // If provider has a vLLM endpoint, proxy directly
     if (assignedProvider.vllm_endpoint_url) {
+      const assignedProviderProxyModel = resolveProviderRoutingModel({
+        requestedModelId: modelReq.model_id,
+        providerVramMb: resolveProviderVramMb(assignedProvider),
+      });
+
       const proxyResult = await proxyToProvider({
         endpointUrl: assignedProvider.vllm_endpoint_url,
-        modelId: modelReq.model_id,
+        modelId: assignedProviderProxyModel.proxyModelId,
         messages,
         maxTokens,
         temperature,
@@ -813,6 +1022,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             durationMs: Date.now() - startedAt,
           });
         } catch (error) {
+          persistFailureUsageBestEffort({
+            providerForUsage,
+            providerResponseId,
+            usage: finalUsage || { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+            completionText,
+          });
           recordStreamOutcome(db, {
             providerId: providerForUsage?.id || null,
             providerTier: resolveProviderTier(providerForUsage),
@@ -841,9 +1056,15 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         .slice(0, 2);
 
       for (const fallbackProvider of fallbackCapable) {
+        const fallbackProxyModel = resolveProviderRoutingModel({
+          requestedModelId: modelReq.model_id,
+          providerVramMb: resolveProviderVramMb(fallbackProvider),
+        });
+        if (!fallbackProxyModel.eligible) continue;
+
         const fallbackResult = await proxyToProvider({
           endpointUrl: fallbackProvider.vllm_endpoint_url,
-          modelId: modelReq.model_id,
+          modelId: fallbackProxyModel.proxyModelId,
           messages,
           maxTokens,
           temperature,
@@ -865,6 +1086,10 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         }
       }
 
+      persistFailureUsageBestEffort({
+        providerForUsage: assignedProvider,
+        usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+      });
       return res.status(502).json({
         error: {
           message: proxyResult.proxyError
@@ -884,7 +1109,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       image_type: 'vllm-serve',
       image: 'dcp/vllm-serve:latest',
       model_id: modelReq.model_id,
-      vram_required_mb: minVramMb,
+      vram_required_mb: effectiveMinVramMb,
       gpu_count: 1,
       compute_type: 'inference',
     };
@@ -905,6 +1130,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         JSON.stringify(containerSpec), now, now
       );
     } catch (error) {
+      persistFailureUsageBestEffort({
+        providerForUsage: assignedProvider,
+        providerResponseId: `chatcmpl-${jobId}`,
+        usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+      });
       return res.status(500).json({
         error: { message: 'Failed to submit inference job', type: 'server_error', code: 500 }
       });
@@ -974,6 +1204,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       }
 
       if (['failed', 'cancelled', 'permanently_failed', 'timed_out'].includes(job.status)) {
+        persistFailureUsageBestEffort({
+          providerForUsage: assignedProvider,
+          providerResponseId: `chatcmpl-${jobId}`,
+          usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+        });
         return res.status(502).json({
           error: { message: `Inference ${job.status}: ${job.error || 'unknown'}`, type: 'upstream_error', code: 502 }
         });
@@ -982,11 +1217,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       await new Promise(r => setTimeout(r, POLL_MS));
     }
 
+    persistFailureUsageBestEffort({
+      providerForUsage: assignedProvider,
+      providerResponseId: `chatcmpl-${jobId}`,
+      usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+    });
     return res.status(504).json({
       error: { message: 'Inference did not complete within timeout', type: 'timeout_error', code: 504 }
     });
 
   } catch (error) {
+    if (typeof persistFailureUsageBestEffort === 'function') {
+      persistFailureUsageBestEffort();
+    }
     console.error('[v1/chat/completions] Error:', error);
     return res.status(500).json({
       error: { message: 'Internal server error', type: 'server_error', code: 500 }

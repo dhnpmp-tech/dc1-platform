@@ -35,6 +35,9 @@ const {
     appendAttemptRawText,
     getAttemptLogPath,
 } = require('../services/job-execution-logs');
+const {
+    evaluateProviderModelCompatibility,
+} = require('../services/vllmCompatibilityMatrix');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 const { normalizeProviderOs } = require('../lib/provider-os');
 const { toCatalogContractCore } = require('../lib/model-catalog-contract');
@@ -2089,6 +2092,7 @@ const PROVIDER_ADMISSION_REASON_CODES = Object.freeze({
     COMPUTE_TYPE_UNSUPPORTED: 'COMPUTE_TYPE_UNSUPPORTED',
     INSUFFICIENT_VRAM: 'INSUFFICIENT_VRAM',
     INSUFFICIENT_GPU_COUNT: 'INSUFFICIENT_GPU_COUNT',
+    MODEL_COMPATIBILITY_UNSUPPORTED: 'MODEL_COMPATIBILITY_UNSUPPORTED',
     INSTANT_MODEL_NOT_CACHED: 'INSTANT_MODEL_NOT_CACHED',
     MODEL_UNSUPPORTED_ON_PROVIDER: 'MODEL_UNSUPPORTED_ON_PROVIDER',
     NO_ELIGIBLE_JOB_FOR_PROVIDER: 'NO_ELIGIBLE_JOB_FOR_PROVIDER',
@@ -2415,6 +2419,29 @@ function evaluateProviderAdmission(providerProfile, jobRequirements) {
             prewarm_class: jobRequirements.prewarm_class,
         };
     }
+    if (jobRequirements.model_id) {
+        const compatibility = evaluateProviderModelCompatibility({
+            modelId: jobRequirements.model_id,
+            providerVramMb: providerProfile.vram_mb,
+        });
+        if (!compatibility.supported) {
+            return {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_COMPATIBILITY_UNSUPPORTED,
+                reason: compatibility.reason,
+                tier_mode: jobRequirements.tier_mode,
+                prewarm_class: jobRequirements.prewarm_class,
+                model_id: jobRequirements.model_id,
+                matrix_version: compatibility.matrix_version || null,
+                min_required_vram_mb: compatibility.min_required_vram_mb || null,
+                recommended_script: compatibility.recommended_script || null,
+            };
+        }
+        // Include compatibility data on accepted admissions for deterministic operator hints.
+        if (compatibility.known) {
+            jobRequirements._compatibility = compatibility;
+        }
+    }
     if (jobRequirements.tier_mode === 'instant' && jobRequirements.model_id) {
         const normalizedModelId = normalizeString(jobRequirements.model_id, { maxLen: 500 })?.toLowerCase();
         if (!normalizedModelId || !providerProfile.cached_models?.has(normalizedModelId)) {
@@ -2433,6 +2460,11 @@ function evaluateProviderAdmission(providerProfile, jobRequirements) {
         reason: 'Provider satisfies admission checks',
         tier_mode: jobRequirements.tier_mode,
         prewarm_class: jobRequirements.prewarm_class,
+        resolved_model_id: jobRequirements?._compatibility?.resolved_model_id || null,
+        resolved_variant: jobRequirements?._compatibility?.resolved_variant || null,
+        recommended_script: jobRequirements?._compatibility?.recommended_script || null,
+        fallback_used: Boolean(jobRequirements?._compatibility?.fallback_used),
+        matrix_version: jobRequirements?._compatibility?.matrix_version || null,
     };
 }
 
@@ -3212,6 +3244,27 @@ router.get('/download/tray-linux', (req, res) => {
         res.sendFile(trayPath);
     } catch (error) {
         console.error('Linux tray download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/download/tray-mac - Serve macOS menu bar app
+// ============================================================================
+router.get('/download/tray-mac', (req, res) => {
+    try {
+        if (req.query.check_only === 'true') {
+            return res.json({ version: '2.0.0', platform: 'macos' });
+        }
+        const menubarPath = path.join(__dirname, '../../installers/dcp_menubar.py');
+        if (!fs.existsSync(menubarPath)) {
+            return res.status(404).json({ error: 'Menu bar app not found' });
+        }
+        res.setHeader('Content-Type', 'text/x-python');
+        res.setHeader('Content-Disposition', 'attachment; filename="dcp_menubar.py"');
+        res.sendFile(menubarPath);
+    } catch (error) {
+        console.error('Mac tray download error:', error);
         res.status(500).json({ error: 'Download failed' });
     }
 });
@@ -6946,6 +6999,10 @@ module.exports.__private = {
     evaluateProviderAdmission,
     PROVIDER_ADMISSION_REASON_CODES,
     activateProviderById,
+    getProviderRoutingProfile,
+    parseJobContainerRequirements,
+    evaluateProviderAdmission,
+    PROVIDER_ADMISSION_REASON_CODES,
     _providerEventEmitter,
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,

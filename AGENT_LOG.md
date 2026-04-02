@@ -1,7 +1,67 @@
+## [2026-04-02 13:21 UTC] Codex — DCP-366 Provider Register Email Pattern Hook Dependency Fix
+- **Commit**: `pending` - Memoized the provider registration email regex with `useMemo` and added `emailPattern` to `validateField` callback dependencies to satisfy exhaustive-deps without changing validation behavior.
+- **Files**: `app/provider/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider register form validation hooks now have stable dependencies and no longer emit the `emailPattern` dependency warnings. Verification: `npm run lint -- --file app/provider/register/page.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
+## [2026-04-02 12:12 UTC] Codex — Release Heartbeat Merged DCP-178 + DCP-365 + DCP-394
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed the first three visible code-bearing branches in isolated evaluation clones with shared project dependencies, merged PR #192 (`agent/backend-dev/dcp-178-openrouter-compliance-gate`), PR #193 (`agent/frontend-dev/dcp-365-legalpage-logo-next-image`), and PR #194 (`agent/backend-dev/dcp-394-sensitive-audit-runtime-wiring`) only after `npm run build` passed; `dcp-394` required merge-conflict resolution with `AGENT_LOG.md` from `main` and code from the branch.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the OpenRouter compliance gate updates, the legal-page `next/image` logo migration, and the sensitive-audit runtime wiring/test coverage. This heartbeat consumed the full 3-branch merge budget.
+
+## [2026-04-02 10:53 UTC] Codex — DCP-365 Legal Page Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the legal page header logo `<img>` with `next/image` and explicit dimensions while preserving current styling.
+- **Files**: `app/components/layout/LegalPage.tsx`, `AGENT_LOG.md`
+- **Impact**: Legal page header now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this layout component. Verification: `npm run lint -- --file app/components/layout/LegalPage.tsx` (`✔ No ESLint warnings or errors`).
+
+## [2026-04-02 13:19 UTC] Codex — DCP-361 FeedbackWidget Reset Helper Order + Hook Dependency Fix
+- **Commit**: `pending` - Moved `resetForm` above the feedback trigger `useEffect` and added it to the dependency list so the widget no longer references a block-scoped callback before declaration and satisfies exhaustive-deps in the same patch.
+- **Files**: `app/components/ui/FeedbackWidget.tsx`, `AGENT_LOG.md`
+- **Impact**: Feedback widget trigger handling now has stable hook dependencies and deterministic callback ordering, removing the DCP-361 build/lint blocker path. Verification: `npm run lint -- --file app/components/ui/FeedbackWidget.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
+## [2026-04-02 10:06 UTC] Codex — Release Heartbeat Merged DCP-223 + DCP-389, Skipped Empty DCP-384 Backend Branch
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed three branches with merge-main + build gate in an isolated release worktree using shared project dependencies, merged PR #189 (`agent/backend-dev/dcp-223-provider-route-parity-guard`) and PR #187 (`agent/backend-dev/dcp-389-payout-admin-audit-integrity`) only after `npm run build` passed, then skipped `agent/backend-dev/dcp-384-restore-chat-capacity` because after rebasing there were no commits left between branch and `main` (`422: No commits between main and branch`).
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes provider route parity guardrails plus payout admin audit-integrity changes from the two passing branches. No additional branch was merged beyond the max-3 heartbeat window.
+
+## [2026-04-02 09:43 UTC] Codex — DCP-384 Restore AWQ Chat Capacity Routing
+- **Commit**: `0c677c5` - Patched `/v1/chat/completions` to use the vLLM compatibility matrix during provider admission and proxy model selection so low-VRAM providers can serve compatible AWQ variants for quickstart models such as `mistralai/Mistral-7B-Instruct-v0.2`.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: Staff-engineer branch `agent/staff-engineer/dcp-384-restore-chat-capacity` now restores 12 GB-class eligibility for the Mistral quickstart path; QA should re-run the authenticated non-stream and stream smoke on deployed infra before shipping.
+
+## [2026-04-02 06:50 UTC] Codex — DCP-363 Header Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the header brand logo `<img>` with `next/image` and explicit dimensions, preserving existing sizing/styling classes.
+- **Files**: `app/components/layout/Header.tsx`, `AGENT_LOG.md`
+- **Impact**: Header branding now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this component. Verification: `npm run lint -- --file app/components/layout/Header.tsx` (`✔ No ESLint warnings or errors`).
+
+## [2026-04-02 04:49 UTC] Codex — DCP-362 Footer Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the footer brand logo `<img>` with `next/image` and explicit dimensions to satisfy Next.js image lint policy while keeping existing layout sizing classes.
+- **Files**: `app/components/layout/Footer.tsx`, `AGENT_LOG.md`
+- **Impact**: Footer branding now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this component. Verification: `npm run lint -- --file app/components/layout/Footer.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-01 22:42 UTC] Codex — DCP-359 Marketplace E2E Stability + Manual Complete Route Fix
 - **Commit**: `pending` - Stabilized marketplace e2e coverage by disabling rate-limiter enforcement inside `tests/e2e-marketplace.test.js` (scope-local guard), then fixed a real backend regression in `POST /api/jobs/:job_id/complete` where undefined response/email payload variables (`actual_cost_halala`, `actualMinutes`) caused 500s after successful completion updates.
 - **Files**: `backend/src/routes/jobs.js`, `backend/tests/e2e-marketplace.test.js`, `AGENT_LOG.md`
 - **Impact**: Manual completion now returns deterministic success payloads and completed-job email dispatch metadata without throwing. Verification: `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js` (`25/25` passing).
+
+## [2026-04-02 07:56 UTC] Codex — Release Heartbeat Landed Header Logo Fix, FeedbackWidget Branch Still Fails Build
+- **Commit**: `5afe66c` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased the two qualifying visible frontend branches onto current `main` in the clean release worktree, landed PR #185 (`agent/frontend-dev/dcp-363-header-logo-next-image`) after `npm run build` passed, and re-checked `agent/frontend-dev/dcp-361-next-frontend-lint-fix`, which still failed the production build with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the header logo `next/image` fix. The remaining visible code branch is still blocked on the same `FeedbackWidget` declaration-order bug and must not be merged until that build failure is removed.
+
+## [2026-04-02 05:50 UTC] Codex — Release Heartbeat Landed Two Branches, Frontend Lint Fix Still Blocked
+- **Commit**: `921c0b2` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate for PRs #183 (`agent/frontend-dev/dcp-362-footer-logo-next-image`) and #184 (`agent/backend-dev/dcp-376-template-catalog-contract`), and re-blocked `agent/frontend-dev/dcp-361-next-frontend-lint-fix` after `npm run build` failed again with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200` even after rebasing onto the latest `main`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the footer logo `next/image` fix and the renter template-catalog contract endpoint/test branch contents. The remaining visible frontend lint-fix branch is still not releasable because it breaks the Next.js production build.
+
+## [2026-04-02 03:44 UTC] Codex — Release Heartbeat Landed Two Branches, Blocked One On Build Gate
+- **Commit**: `6b1f81b` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate for PRs #181 (`agent/backend-dev/dcp-358-openrouter-gate`) and #182 (`agent/backend-dev/dcp-369-vllm-bootstrap`), and blocked `agent/frontend-dev/dcp-361-next-frontend-lint-fix` after `npm run build` failed with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the canonical OpenRouter reliability gate command pack and the low-VRAM VLLM bootstrap compatibility/admission wiring. The remaining visible frontend lint-fix branch must be corrected before it can land because it breaks the Next.js production build.
+
+## [2026-04-02 01:37 UTC] Codex — Release Heartbeat Landed Three Final Visible Agent Branches On Main
+- **Commit**: `c52a75b` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased the three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate under the repo-pinned Node `20` runtime, and landed PRs #178 (`agent/backend-dev/dcp-373-self-serve-smoke-principal-clean`), #179 (`agent/frontend-dev/dcp-360-homepage-i18n-hardcoded-copy`), and #180 (`agent/backend-dev/dcp-336-audit-dedupe`) onto `main`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the self-serve smoke-principal proof harness, the homepage i18n copy cleanup, and the payout audit-dedupe branch contents. Backend verification beyond the release build remains environment-limited: the smoke-principal script hit a live API rate limit and the focused payout dedupe Jest suite is still blocked by the existing shared `better-sqlite3` Node-ABI mismatch.
 
 ## [2026-04-01 23:31 UTC] Codex — Release Heartbeat Landed Three More Agent Branches On Main
 - **Commit**: `08c5d18` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased the first three qualifying agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate under the repo-pinned Node `20` runtime, and landed PRs #175 (`agent/frontend-dev/dcp-359-homepage-marquee-next-image`), #176 (`agent/backend-dev/dcp-359-marketplace-e2e-stability`), and #177 (`agent/backend-dev/dcp-343-reactivation-top10-republish`) onto `main`.
@@ -22,6 +82,11 @@
 - **Commit**: `pending` - Replaced supported-model marquee `<img>` tags with `next/image` for framework-native image handling and resolved homepage `trackLandingEvent` exhaustive-deps lint warning by memoizing the tracker callback and binding the billing-explainer observer effect to it.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Landing page marquee now uses Next.js image primitives and homepage lint checks are clean for this file. Verification: `npm run lint -- --file app/page.tsx` (`✔ No ESLint warnings or errors`).
+
+## [2026-04-02 00:46 UTC] Codex — DCP-360 Homepage Workflow + Marquee Copy Bound To i18n Keys
+- **Commit**: `pending` - Replaced remaining hardcoded homepage English copy in the marquee label and workflow cards (titles, descriptions, bullets, CTAs) with existing `landing.*` translation keys.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Homepage language switching now stays consistent across the workflow and marquee sections for EN/AR without adding new translation payload. Verification: `npm run lint -- --file app/page.tsx` (`✔ No ESLint warnings or errors`).
 
 ## [2026-04-01 18:45 UTC] Codex — DCP-357 Unified Conversion Funnel Contract + Attribution Report
 - **Commit**: `73d2621` - Added a canonical provider+renter conversion funnel contract (`view -> register -> first_action -> first_success`) with durable event storage, per-actor stage dedupe, EN/AR locale normalization, source-surface/channel attribution capture, and an admin report endpoint for funnel/conversion completeness.
@@ -32643,7 +32708,27 @@ a
 - **Files**: `AGENT_LOG.md`, `backend/src/db.js`, `backend/src/routes/admin.js`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/services/conversionFunnelService.js`, `backend/tests/integration/conversion-funnel-contract.test.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/provider-activation-state.test.js`, `backend/tests/integration/docker-system.test.js`, `backend/installers/dc1_daemon.py`, `backend/artifacts/conversion-funnel/query-examples.sql`, `app/lib/i18n.tsx`, `app/page.tsx`, `app/trust-center/page.tsx`, `e2e/trust-center.spec.ts`, `docs/api/conversion-funnel-contract.md`, `docs/api/provider-activation-state.md`, `docs/api/README.md`
 - **Impact**: `main` now includes the unified provider+renter conversion funnel contract, the localized homepage intent-lane rewrite, the provider activation-state API, provider tier admission checks, and the EN/AR trust center page with e2e coverage. PRs #167, #168, #169, #170, and #171 are already closed as merged; `agent/backend-dev/dcp-343-reactivation-top10-republish` and `agent/backend-dev/dcp-336-audit-dedupe` remain queued because of the 5-PR heartbeat cap.
 
-## [2026-04-02 08:46 UTC] Codex — DCP-373 Low-VRAM AWQ Admission Matrix + Bootstrap Artifacts
-- **Commit**: `pending` - Added matrix-driven low-VRAM (<=12GB) inference admission enforcement for provider routing, introduced explicit unsupported-model rejection codepath, and shipped AWQ bootstrap/matrix artifacts with regression coverage.
-- **Files**: `backend/src/routes/providers.js`, `backend/src/__tests__/providers-low-vram-admission.test.js`, `infra/vllm-configs/README.md`, `infra/vllm-configs/awq-8gb-bootstrap.sh`, `infra/vllm-configs/awq-12gb-bootstrap.sh`, `infra/vllm-configs/compatibility-matrix.json`, `AGENT_LOG.md`
-- **Impact**: Low-VRAM providers now route inference work only for matrix-supported AWQ-compatible models, with deterministic rejection for unsupported or unavailable AWQ variants (including ALLaM fallback guardrails). Verification: `cd backend && npm test -- --runInBand src/__tests__/providers-resource-spec.test.js src/__tests__/providers-low-vram-admission.test.js tests/integration/providers-available-vllm.test.js` passes (`12/12`).
+## [2026-04-02 04:07 UTC] Codex — DCP-376 Template Catalog Contract Shipped
+- **Commit**: `pending` - Added strict renter-facing template catalog contract endpoint from `docker-templates/` with deterministic ordering, explicit validation failures for malformed files, and integration tests for success + malformed paths.
+- **Files**: `backend/src/routes/templates.js`, `backend/tests/integration/template-catalog-contract.test.js`, `docs/api/template-catalog-contract.md`, `docs/api/README.md`, `AGENT_LOG.md`
+- **Impact**: Frontend lane [DCP-355](/DCP/issues/DCP-355) now has a stable backend contract at `GET /api/templates/catalog` (`dcp.template_catalog.v1`) exposing `id`, `model_name`, `min_vram_gb`, `tier_hint`, and `deploy_defaults`; malformed template JSON/schema now fails closed with explicit per-file errors instead of silent omission.
+
+## [2026-04-02 09:05 UTC] Codex — DCP-223 Provider Route Parity Guard + Release Preflight Wiring
+- **Commit**: `f06282e` - Added a dedicated release guard command that verifies code/runtime parity for `GET /api/providers/model-catalog` and `GET /api/providers/models`, writes JSON/Markdown evidence artifacts, and exits non-zero on route or contract drift; wired the command into release runbooks/checklists and captured a live evidence run against `https://api.dcp.sa`.
+- **Files**: `backend/src/scripts/run-provider-route-parity-guard.js`, `backend/package.json`, `docs/ops/provider-route-parity-guard-runbook.md`, `docs/ops/runtime-route-parity-runbook.md`, `docs/ops/openrouter-reliability-gate-command-pack.md`, `docs/ops/openrouter-qa-gate-checklist.md`, `docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.json`, `docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.md`, `docs/reports/reliability/provider-route-parity-guard-latest.json`, `docs/reports/reliability/provider-route-parity-guard-latest.md`, `AGENT_LOG.md`
+- **Impact**: Release preflight now fails closed when deployed provider catalog routes drift from backend code. Evidence run reproduced current production mismatch (`/api/providers/model-catalog` returned `404` with HTML), giving an explicit blocker artifact for merge/deploy approval threads.
+
+## [2026-04-02 11:16 UTC] Codex — DCP-400 Native Status App Downloads Added To Provider Dashboard
+- **Commit**: `8882dfd` - Added a new "Native Status App" dashboard card with Windows/Linux/macOS download buttons, client OS detection from `navigator.platform`, and highlighted recommended download based on detected platform; added backend alias route for macOS tray download.
+- **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
+- **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
+
+## [2026-04-02 12:22 UTC] Codex — DCP-404 v1 capacity gate unblock for legacy provider rows
+- **Commit**: `pending` - Aligned `/v1/chat/completions` provider capability filtering with the existing vLLM path so missing `supported_compute_types` defaults to inference-capable and VRAM resolution also honors `gpu_vram_mb`/`gpu_vram_mib` fields.
+- **Files**: backend/src/routes/v1.js; backend/src/__tests__/v1-models.test.js; AGENT_LOG.md
+- **Impact**: Fixes false `capable_providers: 0` outcomes on `/v1/chat/completions` for legacy provider rows that previously got excluded despite being online and inference-ready; added regression test coverage for missing `supported_compute_types` behavior.
+
+## [2026-04-02 13:29 UTC] Codex — DCP-404 v1 metering failure-ledger + reconciliation tooling
+- **Commit**: `pending` - Added transactional v1 usage persistence that records `settlement_status='failed'` on provider/proxy/job failure paths, plus request-level OpenRouter metering reconciliation service+CLI and regression tests for fallback/failed persistence semantics.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/services/openrouterMeteringReconciliation.js`, `backend/src/scripts/reconcile-openrouter-metering.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-metering-reconciliation.test.js`, `backend/package.json`, `docs/reports/reliability/first-live-inference-proof-latest.{json,md,log}`, `docs/reports/reliability/first-live-inference-proof-20260402T122311Z.{json,md,log}`, `AGENT_LOG.md`
+- **Impact**: `/v1/chat/completions` now writes canonical failed metering rows (instead of silent loss) whenever provider attempts exhaust or job completion fails, and operators can reconcile per-request token/cost deltas with `npm run reconcile:openrouter:metering -- --json` for settlement verification.

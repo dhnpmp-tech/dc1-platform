@@ -191,7 +191,7 @@ function ProviderRegisterPageContent() {
     }
   }, [stopStatusPolling])
 
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const emailPattern = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/, [])
 
   const validateField = useCallback(
     (field: RegistrationField, value: RegistrationFormData[RegistrationField], snapshot: RegistrationFormData): string => {
@@ -216,7 +216,7 @@ function ProviderRegisterPageContent() {
           return ''
       }
     },
-    [t]
+    [emailPattern, t]
   )
 
   const validateForm = useCallback(() => {

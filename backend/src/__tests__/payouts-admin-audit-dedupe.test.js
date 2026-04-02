@@ -158,4 +158,155 @@ describe('admin payout audit dedupe', () => {
       reason: 'iban_mismatch',
     });
   });
+
+  test('approve failure does not emit payout mutation audit rows', async () => {
+    global.__testDb.prepare(
+      'INSERT INTO providers (id, name, email, claimable_earnings_halala) VALUES (?,?,?,?)'
+    ).run(3, 'Provider Three', 'provider3@example.com', 200000);
+    global.__testDb.prepare(
+      `INSERT INTO payout_requests
+         (id, provider_id, amount_halala, amount_sar, amount_usd, status, requested_at)
+       VALUES (?,?,?,?,?,?,?)`
+    ).run('payout-approve-locked', 3, 10000, 100.0, 26.67, 'processing', new Date().toISOString());
+
+    const res = await request(app)
+      .post('/api/admin/payouts/payout-approve-locked/approve')
+      .set('x-admin-token', ADMIN_TOKEN)
+      .send({ payment_ref: 'BANK-ALREADY' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: 'NOT_APPROVABLE' });
+
+    const rows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log
+       WHERE action LIKE 'payout_%'`
+    ).all();
+
+    expect(rows).toHaveLength(0);
+  });
+
+  test('reject failure does not emit payout mutation audit rows', async () => {
+    global.__testDb.prepare(
+      'INSERT INTO providers (id, name, email, claimable_earnings_halala) VALUES (?,?,?,?)'
+    ).run(4, 'Provider Four', 'provider4@example.com', 100000);
+    global.__testDb.prepare(
+      `INSERT INTO payout_requests
+         (id, provider_id, amount_halala, amount_sar, amount_usd, status, requested_at, processed_at)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).run('payout-reject-locked', 4, 5200, 52.0, 13.87, 'paid', new Date().toISOString(), new Date().toISOString());
+
+    const res = await request(app)
+      .post('/api/admin/payouts/payout-reject-locked/reject')
+      .set('x-admin-token', ADMIN_TOKEN)
+      .send({ reason: 'late_reversal' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: 'NOT_REJECTABLE' });
+
+    const rows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log
+       WHERE action LIKE 'payout_%'`
+    ).all();
+
+    expect(rows).toHaveLength(0);
+  });
+
+  test('legacy PATCH paid writes exactly one payout mutation audit row', async () => {
+    global.__testDb.prepare(
+      'INSERT INTO providers (id, name, email, claimable_earnings_halala) VALUES (?,?,?,?)'
+    ).run(5, 'Provider Five', 'provider5@example.com', 100000);
+    global.__testDb.prepare(
+      `INSERT INTO payout_requests
+         (id, provider_id, amount_halala, amount_sar, amount_usd, status, requested_at)
+       VALUES (?,?,?,?,?,?,?)`
+    ).run('payout-patch-paid-1', 5, 8400, 84.0, 22.4, 'processing', new Date().toISOString());
+
+    const res = await request(app)
+      .patch('/api/admin/payouts/payout-patch-paid-1')
+      .set('x-admin-token', ADMIN_TOKEN)
+      .send({ action: 'paid', payment_ref: 'WIRE-555' });
+
+    expect(res.status).toBe(200);
+
+    const payoutRows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log WHERE action LIKE 'payout_%'`
+    ).all();
+    const genericRows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log WHERE action = 'PATCH /admin/payouts/payout-patch-paid-1'`
+    ).all();
+
+    expect(payoutRows).toHaveLength(1);
+    expect(genericRows).toHaveLength(0);
+    expect(payoutRows[0].action).toBe('payout_marked_paid');
+    expect(JSON.parse(payoutRows[0].details)).toMatchObject({
+      provider_id: 5,
+      amount_halala: 8400,
+      status_to: 'paid',
+      payment_ref: 'WIRE-555',
+    });
+  });
+
+  test('legacy PATCH reject writes exactly one payout mutation audit row', async () => {
+    global.__testDb.prepare(
+      'INSERT INTO providers (id, name, email, claimable_earnings_halala) VALUES (?,?,?,?)'
+    ).run(6, 'Provider Six', 'provider6@example.com', 100000);
+    global.__testDb.prepare(
+      `INSERT INTO payout_requests
+         (id, provider_id, amount_halala, amount_sar, amount_usd, status, requested_at)
+       VALUES (?,?,?,?,?,?,?)`
+    ).run('payout-patch-reject-1', 6, 4300, 43.0, 11.47, 'processing', new Date().toISOString());
+
+    const res = await request(app)
+      .patch('/api/admin/payouts/payout-patch-reject-1')
+      .set('x-admin-token', ADMIN_TOKEN)
+      .send({ action: 'reject', reason: 'policy_hold' });
+
+    expect(res.status).toBe(200);
+
+    const payoutRows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log WHERE action LIKE 'payout_%'`
+    ).all();
+    const genericRows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log WHERE action = 'PATCH /admin/payouts/payout-patch-reject-1'`
+    ).all();
+
+    expect(payoutRows).toHaveLength(1);
+    expect(genericRows).toHaveLength(0);
+    expect(payoutRows[0].action).toBe('payout_rejected');
+    expect(JSON.parse(payoutRows[0].details)).toMatchObject({
+      provider_id: 6,
+      amount_halala: 4300,
+      status_to: 'rejected',
+      reason: 'policy_hold',
+    });
+  });
+
+  test('legacy PATCH failure does not emit payout mutation audit rows', async () => {
+    global.__testDb.prepare(
+      'INSERT INTO providers (id, name, email, claimable_earnings_halala) VALUES (?,?,?,?)'
+    ).run(7, 'Provider Seven', 'provider7@example.com', 100000);
+    global.__testDb.prepare(
+      `INSERT INTO payout_requests
+         (id, provider_id, amount_halala, amount_sar, amount_usd, status, requested_at)
+       VALUES (?,?,?,?,?,?,?)`
+    ).run('payout-patch-fail-1', 7, 5100, 51.0, 13.6, 'paid', new Date().toISOString());
+
+    const res = await request(app)
+      .patch('/api/admin/payouts/payout-patch-fail-1')
+      .set('x-admin-token', ADMIN_TOKEN)
+      .send({ action: 'paid', payment_ref: 'WIRE-FAIL' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: 'ALREADY_PAID' });
+
+    const payoutRows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log WHERE action LIKE 'payout_%'`
+    ).all();
+    const genericRows = global.__testDb.prepare(
+      `SELECT * FROM admin_audit_log WHERE action = 'PATCH /admin/payouts/payout-patch-fail-1'`
+    ).all();
+
+    expect(payoutRows).toHaveLength(0);
+    expect(genericRows).toHaveLength(0);
+  });
 });
