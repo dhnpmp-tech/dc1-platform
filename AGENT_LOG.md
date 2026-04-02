@@ -1,3 +1,8 @@
+## [2026-04-02 02:47 UTC] Codex — DCP-361 Feedback Widget Hook Dependency Fix
+- **Commit**: `pending` - Updated the feedback widget event-listener effect dependency list to include `resetForm`, matching actual callback usage and resolving the React exhaustive-deps lint warning.
+- **Files**: `app/components/ui/FeedbackWidget.tsx`, `AGENT_LOG.md`
+- **Impact**: Feedback widget listeners now satisfy hook dependency requirements without behavior change for API-call prompt or custom survey trigger flows. Verification: `npm run lint -- --file app/components/ui/FeedbackWidget.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-01 22:42 UTC] Codex — DCP-359 Marketplace E2E Stability + Manual Complete Route Fix
 - **Commit**: `pending` - Stabilized marketplace e2e coverage by disabling rate-limiter enforcement inside `tests/e2e-marketplace.test.js` (scope-local guard), then fixed a real backend regression in `POST /api/jobs/:job_id/complete` where undefined response/email payload variables (`actual_cost_halala`, `actualMinutes`) caused 500s after successful completion updates.
 - **Files**: `backend/src/routes/jobs.js`, `backend/tests/e2e-marketplace.test.js`, `AGENT_LOG.md`

@@ -197,7 +197,7 @@ export default function FeedbackWidget() {
       window.removeEventListener('dc1_api_call', handleApiCall)
       window.removeEventListener('dc1_feedback_trigger', handleTrigger)
     }
-  }, [view])
+  }, [view, resetForm])
 
   // ── Reset helpers ─────────────────────────────────────────────────────────
 
