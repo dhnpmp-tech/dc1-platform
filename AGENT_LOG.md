@@ -32404,6 +32404,6 @@ a
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
 
 ## [2026-04-02 16:37 UTC] Codex — DCP-432 Homepage Conversion + Saudi Trust Proof (EN/AR)
-- **Commit**: `pending` - Implemented first-fold homepage conversion updates for Saudi trust proof, added EN/AR trust + objection-handling FAQ copy, and wired required CTA analytics events (`signup_click`, `provider_install_click`) from hero actions.
+- **Commit**: `8d005d6` - Implemented first-fold homepage conversion updates for Saudi trust proof, added EN/AR trust + objection-handling FAQ copy, and wired required CTA analytics events (`signup_click`, `provider_install_click`) from hero actions.
 - **Files**: `app/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
 - **Impact**: Homepage now has explicit Saudi energy + PDPL + in-Kingdom trust cues in first fold with localized copy and RTL-safe FAQ rendering. Required conversion events are emitted from renter signup and provider install CTAs for measurement tracking.
