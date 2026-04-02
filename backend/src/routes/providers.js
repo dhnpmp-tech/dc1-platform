@@ -3059,6 +3059,27 @@ router.get('/download/tray-linux', (req, res) => {
 });
 
 // ============================================================================
+// GET /api/providers/download/tray-mac - Serve macOS menu bar app
+// ============================================================================
+router.get('/download/tray-mac', (req, res) => {
+    try {
+        if (req.query.check_only === 'true') {
+            return res.json({ version: '2.0.0', platform: 'macos' });
+        }
+        const menubarPath = path.join(__dirname, '../../installers/dcp_menubar.py');
+        if (!fs.existsSync(menubarPath)) {
+            return res.status(404).json({ error: 'Menu bar app not found' });
+        }
+        res.setHeader('Content-Type', 'text/x-python');
+        res.setHeader('Content-Disposition', 'attachment; filename="dcp_menubar.py"');
+        res.sendFile(menubarPath);
+    } catch (error) {
+        console.error('Mac tray download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/download/setup - OS-specific setup script with injected key
 // ============================================================================
 router.get('/download/setup', (req, res) => {
