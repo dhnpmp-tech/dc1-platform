@@ -32402,3 +32402,8 @@ a
 - **Commit**: `0cf8bfa` - Hardened provider installer/download endpoints to require a single normalized API key query param and reject malformed duplicate key input safely.
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
+
+## [2026-04-02 17:27 UTC] Codex — DCP-449 better-sqlite3 ABI 137 workspace test gate unblocked
+- **Commit**: `pending` - Added a backend native-module ABI guard script that auto-detects `better-sqlite3` Node module version mismatch and runs `npm rebuild better-sqlite3` before tests; restored historical gate filename compatibility for provider activation conversion tests.
+- **Files**: `backend/scripts/ensure-better-sqlite3-abi.js`, `backend/package.json`, `backend/tests/integration/provider-activation-conversion.test.js`, `AGENT_LOG.md`
+- **Impact**: Backend test runs now proactively self-heal when a workspace ships with stale native binaries (e.g., ABI 127 on Node ABI 137), and the SRE gate command path continues to run without manual filename translation.
