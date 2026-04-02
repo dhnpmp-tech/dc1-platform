@@ -1177,6 +1177,29 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_rate_limit_log_action_actor_time ON admin_rate_limit_log(action_key, actor_fingerprint, created_at DESC)`);
 
+// ─── SENSITIVE SECURITY AUDIT EVENTS TABLE ─── (DCP-394)
+// Captures high-sensitivity runtime route access/mutations with deterministic action labels.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS security_audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT,
+    method TEXT NOT NULL,
+    route_path TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('success', 'error')),
+    actor_type TEXT NOT NULL CHECK(actor_type IN ('admin', 'provider', 'renter', 'unknown')),
+    actor_id TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_events_action_time ON security_audit_events(action, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_events_resource_time ON security_audit_events(resource_type, resource_id, created_at DESC)`);
+
 // ─── PDPL REQUEST AUDIT TABLE ───
 // Records immutable export/deletion requests for compliance evidence.
 db.exec(`
