@@ -4,9 +4,19 @@ import { useRouter } from 'next/navigation'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import ProviderRegistrationWizard from '../components/ProviderRegistrationWizard'
+import { usePublicMetricsContract } from '../../lib/usePublicMetricsContract'
 
 export default function ProviderOnboardPage() {
   const router = useRouter()
+  const { snapshot } = usePublicMetricsContract()
+
+  const registeredProviders = snapshot?.providersRegistered ?? null
+  const snapshotAt = snapshot?.snapshotAt
+    ? new Date(snapshot.snapshotAt).toLocaleString()
+    : null
+  const networkSnapshotCopy = registeredProviders !== null
+    ? `Network snapshot: ${registeredProviders.toLocaleString()} providers registered${snapshotAt ? ` (updated ${snapshotAt})` : ''}.`
+    : 'Network snapshot is temporarily unavailable. Setup still takes under 5 minutes.'
 
   return (
     <>
@@ -19,7 +29,7 @@ export default function ProviderOnboardPage() {
               Start earning with your GPU
             </h1>
             <p className="mt-2 text-dc1-text-secondary">
-              Join 43+ providers already on the DCP network. Setup takes under 5 minutes.
+              {networkSnapshotCopy}
             </p>
           </div>
 
