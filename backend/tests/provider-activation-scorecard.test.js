@@ -65,6 +65,8 @@ describe('Provider Activation Scorecard API (DCP-219)', () => {
     expect(res.body.provider_id).toBe(provider.id);
     expect(res.body.ready_to_serve).toBe(true);
     expect(res.body.blockers).toEqual([]);
+    expect(res.body.admission?.latest_rejection_code).toBe(null);
+    expect(Array.isArray(res.body.admission?.code_enum)).toBe(true);
   });
 
   test('returns blocked scorecard for stale heartbeat', async () => {
@@ -143,5 +145,25 @@ describe('Provider Activation Scorecard API (DCP-219)', () => {
 
     expect(after.body.ready_to_serve).toBe(true);
     expect(after.body.blockers).toEqual([]);
+  });
+
+  test('includes latest tier-admission rejection code for provider-facing scorecard', async () => {
+    const provider = insertProvider();
+    db.run(
+      `INSERT INTO provider_activation_events (provider_id, event_code, occurred_at, metadata_json, created_at)
+       VALUES (?, 'tier_admission_rejected', ?, ?, ?)`,
+      provider.id,
+      new Date(Date.now() - 30 * 1000).toISOString(),
+      JSON.stringify({ rejection_code: 'INSUFFICIENT_GPU_COUNT' }),
+      new Date(Date.now() - 30 * 1000).toISOString()
+    );
+
+    const res = await request(app)
+      .get('/api/providers/activation-scorecard')
+      .set('x-provider-key', provider.apiKey)
+      .expect(200);
+
+    expect(res.body.admission?.latest_rejection_code).toBe('INSUFFICIENT_GPU_COUNT');
+    expect(res.body.admission?.code_enum).toContain('INSUFFICIENT_GPU_COUNT');
   });
 });

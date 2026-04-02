@@ -2132,6 +2132,20 @@ const PROVIDER_ADMISSION_REASON_CODES = Object.freeze({
     NO_ELIGIBLE_JOB_FOR_PROVIDER: 'NO_ELIGIBLE_JOB_FOR_PROVIDER',
 });
 
+const TIER_ADMISSION_REJECTION_CODES = Object.freeze([
+    PROVIDER_ADMISSION_REASON_CODES.PROVIDER_PAUSED,
+    PROVIDER_ADMISSION_REASON_CODES.PROVIDER_OFFLINE,
+    PROVIDER_ADMISSION_REASON_CODES.JOB_TIER_UNSUPPORTED,
+    PROVIDER_ADMISSION_REASON_CODES.COMPUTE_TYPE_UNSUPPORTED,
+    PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_VRAM,
+    PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_GPU_COUNT,
+    PROVIDER_ADMISSION_REASON_CODES.MODEL_COMPATIBILITY_UNSUPPORTED,
+    PROVIDER_ADMISSION_REASON_CODES.INSTANT_MODEL_NOT_CACHED,
+    PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+    PROVIDER_ADMISSION_REASON_CODES.NO_ELIGIBLE_JOB_FOR_PROVIDER,
+]);
+const TIER_ADMISSION_REJECTION_CODE_SET = new Set(TIER_ADMISSION_REJECTION_CODES);
+
 const TIER_MODE_BY_PREWARM_CLASS = Object.freeze({
     hot: 'instant',
     warm: 'cached',
@@ -2376,6 +2390,45 @@ function getProviderRoutingProfile(provider) {
     };
 }
 
+function normalizeAdmissionRejectionCode(value) {
+    const code = normalizeString(value, { maxLen: 128, trim: true });
+    return code && TIER_ADMISSION_REJECTION_CODE_SET.has(code) ? code : null;
+}
+
+function fetchLatestTierAdmissionRejection(providerId) {
+    const row = db.get(
+        `SELECT occurred_at, metadata_json
+           FROM provider_activation_events
+          WHERE provider_id = ?
+            AND event_code = 'tier_admission_rejected'
+          ORDER BY occurred_at DESC, id DESC
+          LIMIT 1`,
+        providerId
+    );
+    if (!row) {
+        return {
+            latest_rejection_code: null,
+            latest_rejection_at: null,
+            code_enum: TIER_ADMISSION_REJECTION_CODES,
+        };
+    }
+
+    let metadata = null;
+    if (row.metadata_json) {
+        try {
+            metadata = JSON.parse(row.metadata_json);
+        } catch (_) {
+            metadata = null;
+        }
+    }
+    const rejectionCode = normalizeAdmissionRejectionCode(metadata?.rejection_code);
+    return {
+        latest_rejection_code: rejectionCode,
+        latest_rejection_at: row.occurred_at || null,
+        code_enum: TIER_ADMISSION_REJECTION_CODES,
+    };
+}
+
 function parseJobContainerRequirements(containerSpecRaw, prewarmCache = null) {
     let containerSpec = null;
     try { containerSpec = containerSpecRaw ? JSON.parse(containerSpecRaw) : null; } catch (_) {}
@@ -2570,6 +2623,19 @@ function buildNextPendingJob(providerId) {
         const requirements = parseJobContainerRequirements(candidate.container_spec, prewarmCache);
         const admission = evaluateProviderAdmission(providerProfile, requirements);
         if (!admission.accepted) {
+            const rejectionCode = normalizeAdmissionRejectionCode(admission.reason_code);
+            if (rejectionCode) {
+                recordActivationEvent(providerId, 'tier_admission_rejected', {
+                    rejection_code: rejectionCode,
+                    reason_code: rejectionCode,
+                    reason: admission.reason || null,
+                    tier_mode: admission.tier_mode || requirements.tier_mode || null,
+                    prewarm_class: admission.prewarm_class || requirements.prewarm_class || null,
+                    job_id: candidate.job_id || null,
+                    model_id: requirements.model_id || null,
+                    compute_type: requirements.compute_type || null,
+                });
+            }
             if (!selectedAdmission) {
                 selectedAdmission = {
                     ...admission,
@@ -5537,6 +5603,11 @@ function buildProviderActivationScorecard(provider, opts = {}) {
         ready_to_serve: blockers.length === 0,
         checks,
         blockers,
+        admission: provider?.id ? fetchLatestTierAdmissionRejection(provider.id) : {
+            latest_rejection_code: null,
+            latest_rejection_at: null,
+            code_enum: TIER_ADMISSION_REJECTION_CODES,
+        },
         generated_at: new Date(nowMs).toISOString(),
     };
 }
@@ -6135,6 +6206,7 @@ function buildActivationStatePayload(provider, nowMs = Date.now()) {
         activation_state: activationState,
         blocker_codes: blockers.map((item) => item.code),
         blockers,
+        admission: fetchLatestTierAdmissionRejection(provider.id),
         next_action: nextAction,
         signals: {
             approval_status: evalResult.approvalStatus,
@@ -7051,6 +7123,8 @@ module.exports.__private = {
     parseJobContainerRequirements,
     evaluateProviderAdmission,
     PROVIDER_ADMISSION_REASON_CODES,
+    TIER_ADMISSION_REJECTION_CODES,
+    fetchLatestTierAdmissionRejection,
     _providerEventEmitter,
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,
