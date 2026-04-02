@@ -32412,3 +32412,8 @@ a
 - **Commit**: `pending` - Added provider activation download-event persistence, implemented `/api/admin/providers/activation-conversion` with 24h/7d stage counts + conversion rates + machine-readable blocker taxonomy, and replaced the conversion test shim with real integration coverage.
 - **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/provider-activation-conversion.test.js`, `AGENT_LOG.md`
 - **Impact**: Backend now exposes deterministic activation conversion telemetry (`registered -> installer_downloaded -> first_heartbeat -> online_within_24h`) with non-synthetic empty-window behavior and blocker taxonomy derived from lifecycle + daemon error logs; regression coverage is in place for the new admin contract.
+
+## [2026-04-02 21:37 UTC] Codex — Frontend: Suspense CSR boundary hardening for docs quickstart + renter register
+- **Commit**: `pending` - Added explicit Suspense fallback boundaries on `/docs/quickstart` and `/renter/register` client pages to keep Next.js `useSearchParams` CSR boundary requirements resilient during production builds.
+- **Files**: `app/docs/quickstart/page.tsx`, `app/renter/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Production build with typecheck and static generation succeeds (`npm run build -- --no-lint`), including prerender output for both target routes. Existing EN/AR UX flows remain unchanged.
