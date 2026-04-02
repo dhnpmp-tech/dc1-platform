@@ -1415,6 +1415,22 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider_time ON provider_metrics(provider_id, recorded_at)`);
 
+// ─── PROVIDER ACTIVATION EVENTS TABLE — DCP-443 ───
+// Tracks installer/daemon download milestones to quantify provider activation conversion.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_activation_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    event_code TEXT NOT NULL,
+    occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
+    metadata_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_activation_events_provider_time ON provider_activation_events(provider_id, occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_activation_events_code_time ON provider_activation_events(event_code, occurred_at DESC)`);
+
 // ─── CONVERSION FUNNEL EVENTS TABLE — DCP-357 ───
 // Canonical provider + renter activation funnel contract:
 // view -> register -> first_action -> first_success

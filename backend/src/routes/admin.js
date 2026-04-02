@@ -416,6 +416,199 @@ function buildReactivationRecord(provider, nowMs = Date.now()) {
   };
 }
 
+const ACTIVATION_DOWNLOAD_EVENT_CODES = ['setup_script_downloaded', 'daemon_downloaded'];
+
+function sanitizeReasonCode(value, fallback = 'unknown') {
+  const normalized = normalizeString(String(value || ''), { maxLen: 64, lowercase: true });
+  if (!normalized) return fallback;
+  const safe = normalized.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return safe || fallback;
+}
+
+function addTaxonomyReason(taxonomyMap, code, providerId, increment = 1, source = 'lifecycle') {
+  const safeCode = sanitizeReasonCode(code);
+  if (!taxonomyMap.has(safeCode)) {
+    taxonomyMap.set(safeCode, {
+      code: safeCode,
+      count: 0,
+      source,
+      sample_provider_ids: [],
+    });
+  }
+  const entry = taxonomyMap.get(safeCode);
+  entry.count += Number(increment) || 0;
+  if (providerId != null && Number.isFinite(Number(providerId))) {
+    const asNumber = Number(providerId);
+    if (!entry.sample_provider_ids.includes(asNumber) && entry.sample_provider_ids.length < 5) {
+      entry.sample_provider_ids.push(asNumber);
+    }
+  }
+}
+
+function toInClause(ids) {
+  const clean = Array.from(new Set((ids || []).map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0)));
+  if (clean.length === 0) return { clause: '(NULL)', params: [] };
+  return { clause: `(${clean.map(() => '?').join(',')})`, params: clean };
+}
+
+function parseIsoTimestamp(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function asPercent(numerator, denominator) {
+  if (!(denominator > 0)) return null;
+  return Number(((numerator / denominator) * 100).toFixed(2));
+}
+
+function buildActivationConversionWindowReport(windowHours, nowIso = new Date().toISOString()) {
+  const now = new Date(nowIso);
+  const sinceIso = new Date(now.getTime() - (windowHours * 3600 * 1000)).toISOString();
+
+  const providers = db.all(
+    `SELECT id, created_at, status, approval_status, is_paused, daemon_version, last_heartbeat
+     FROM providers
+     WHERE deleted_at IS NULL
+       AND created_at >= ?`,
+    sinceIso
+  );
+  const providerIds = providers.map((provider) => Number(provider.id)).filter((id) => Number.isInteger(id) && id > 0);
+  const providerIdSet = new Set(providerIds);
+  const taxonomy = new Map();
+
+  if (providerIds.length === 0) {
+    return {
+      window_hours: windowHours,
+      since: sinceIso,
+      until: nowIso,
+      stage_counts: {
+        registered: 0,
+        installer_downloaded: 0,
+        first_heartbeat: 0,
+        online_within_24h: 0,
+      },
+      conversion_rates: {
+        installer_download_rate: null,
+        first_heartbeat_rate: null,
+        online_within_24h_rate: null,
+      },
+      blocker_taxonomy: [],
+      sample_size: 0,
+    };
+  }
+
+  const providerInClause = toInClause(providerIds);
+
+  const downloadRows = db.all(
+    `SELECT provider_id
+       FROM provider_activation_events
+      WHERE provider_id IN ${providerInClause.clause}
+        AND event_code IN (${ACTIVATION_DOWNLOAD_EVENT_CODES.map(() => '?').join(',')})
+        AND occurred_at >= ?
+      GROUP BY provider_id`,
+    ...providerInClause.params,
+    ...ACTIVATION_DOWNLOAD_EVENT_CODES,
+    sinceIso
+  );
+  const installerDownloadedSet = new Set(
+    downloadRows
+      .map((row) => Number(row.provider_id))
+      .filter((providerId) => providerIdSet.has(providerId))
+  );
+
+  const heartbeatRows = db.all(
+    `SELECT provider_id, MIN(received_at) AS first_heartbeat_at
+       FROM heartbeat_log
+      WHERE provider_id IN ${providerInClause.clause}
+      GROUP BY provider_id`,
+    ...providerInClause.params
+  );
+  const firstHeartbeatByProvider = new Map();
+  for (const row of heartbeatRows) {
+    const providerId = Number(row.provider_id);
+    if (!providerIdSet.has(providerId)) continue;
+    const firstHeartbeat = parseIsoTimestamp(row.first_heartbeat_at);
+    if (!firstHeartbeat) continue;
+    firstHeartbeatByProvider.set(providerId, firstHeartbeat);
+  }
+
+  const daemonRows = db.all(
+    `SELECT provider_id, event_type, severity, COUNT(*) AS count
+       FROM daemon_events
+      WHERE provider_id IN ${providerInClause.clause}
+        AND received_at >= ?
+        AND severity IN ('error', 'critical')
+      GROUP BY provider_id, event_type, severity`,
+    ...providerInClause.params,
+    sinceIso
+  );
+  for (const row of daemonRows) {
+    const providerId = Number(row.provider_id);
+    if (!providerIdSet.has(providerId)) continue;
+    const reasonCode = `daemon_event_${sanitizeReasonCode(row.event_type, 'unknown')}`;
+    addTaxonomyReason(taxonomy, reasonCode, providerId, Number(row.count) || 0, 'daemon_events');
+  }
+
+  let firstHeartbeatCount = 0;
+  let onlineWithin24hCount = 0;
+
+  for (const provider of providers) {
+    const providerId = Number(provider.id);
+    const createdAt = parseIsoTimestamp(provider.created_at);
+    const firstHeartbeatAt = firstHeartbeatByProvider.get(providerId) || null;
+    const hadHeartbeat = !!firstHeartbeatAt;
+    if (hadHeartbeat && firstHeartbeatAt >= new Date(sinceIso)) {
+      firstHeartbeatCount += 1;
+    }
+
+    const heartbeatWithin24h =
+      hadHeartbeat &&
+      createdAt &&
+      firstHeartbeatAt.getTime() >= createdAt.getTime() &&
+      firstHeartbeatAt.getTime() <= (createdAt.getTime() + (24 * 3600 * 1000));
+    const onlineWithin24h = heartbeatWithin24h && provider.status === 'online';
+    if (onlineWithin24h) {
+      onlineWithin24hCount += 1;
+      continue;
+    }
+
+    if (!installerDownloadedSet.has(providerId)) addTaxonomyReason(taxonomy, 'installer_not_downloaded', providerId, 1, 'lifecycle');
+    if (!provider.daemon_version) addTaxonomyReason(taxonomy, 'daemon_not_detected', providerId, 1, 'lifecycle');
+    if (!hadHeartbeat) addTaxonomyReason(taxonomy, 'heartbeat_missing', providerId, 1, 'lifecycle');
+    if (hadHeartbeat && !heartbeatWithin24h) addTaxonomyReason(taxonomy, 'heartbeat_after_24h', providerId, 1, 'lifecycle');
+    if (provider.status !== 'online') addTaxonomyReason(taxonomy, 'provider_not_online', providerId, 1, 'lifecycle');
+    if (provider.approval_status !== 'approved') addTaxonomyReason(taxonomy, 'approval_pending', providerId, 1, 'lifecycle');
+    if (Number(provider.is_paused || 0) === 1) addTaxonomyReason(taxonomy, 'provider_paused', providerId, 1, 'lifecycle');
+  }
+
+  const registeredCount = providers.length;
+  const installerCount = installerDownloadedSet.size;
+  const blockerTaxonomy = Array.from(taxonomy.values())
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+
+  return {
+    window_hours: windowHours,
+    since: sinceIso,
+    until: nowIso,
+    stage_counts: {
+      registered: registeredCount,
+      installer_downloaded: installerCount,
+      first_heartbeat: firstHeartbeatCount,
+      online_within_24h: onlineWithin24hCount,
+    },
+    conversion_rates: {
+      installer_download_rate: asPercent(installerCount, registeredCount),
+      first_heartbeat_rate: asPercent(firstHeartbeatCount, registeredCount),
+      online_within_24h_rate: asPercent(onlineWithin24hCount, registeredCount),
+    },
+    blocker_taxonomy: blockerTaxonomy,
+    sample_size: registeredCount,
+  };
+}
+
 function percentileFromSorted(values, percentile) {
   if (!Array.isArray(values) || values.length === 0) return null;
   const p = Math.min(Math.max(Number(percentile) || 0, 0), 100);
@@ -1869,6 +2062,28 @@ router.get('/analytics/conversion-funnel', (req, res) => {
   } catch (error) {
     console.error('Admin conversion funnel analytics error:', error);
     return res.status(500).json({ error: 'Failed to fetch conversion funnel analytics' });
+  }
+});
+
+// ============================================================================
+// GET /api/admin/providers/activation-conversion - provider activation funnel report
+// ============================================================================
+router.get('/providers/activation-conversion', (req, res) => {
+  try {
+    const nowIso = new Date().toISOString();
+    const report24h = buildActivationConversionWindowReport(24, nowIso);
+    const report7d = buildActivationConversionWindowReport(24 * 7, nowIso);
+
+    return res.json({
+      generated_at: nowIso,
+      windows: {
+        last_24h: report24h,
+        last_7d: report7d,
+      },
+    });
+  } catch (error) {
+    console.error('Provider activation conversion report error:', error);
+    return res.status(500).json({ error: 'Failed to build provider activation conversion report' });
   }
 });
 
