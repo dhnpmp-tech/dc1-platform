@@ -269,14 +269,14 @@ export default function ProviderEarningsDashboard() {
 
   return (
     <DashboardLayout navItems={navItems} role="provider" userName={provider.name}>
-      <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
+      <div className="space-y-6 overflow-x-hidden" dir={isRTL ? 'rtl' : 'ltr'}>
 
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h1 className="text-2xl sm:text-3xl font-bold font-poppins text-dc1-text-primary">Earnings Dashboard</h1>
           <Link href="/provider/earnings" className="text-sm text-dc1-amber hover:underline">Full earnings report →</Link>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Total Jobs Served" value={metrics?.jobsCompleted ?? 0} />
           <StatCard label="Avg Job Duration" value={metrics ? `${metrics.avgJobDurationMinutes.toFixed(1)} min` : '—'} />
           <StatCard label="Uptime (7 days)" value={`${uptimePct}%`} accent={uptimePct >= 70 ? 'success' : uptimePct >= 40 ? 'amber' : 'default'} />
@@ -387,16 +387,42 @@ export default function ProviderEarningsDashboard() {
               </div>
               <div className="divide-y divide-dc1-border/40">
                 {pagedJobs.map(job => (
-                  <div key={job.jobId} className="grid grid-cols-2 sm:grid-cols-5 gap-3 px-3 py-3 text-sm hover:bg-dc1-surface-l2 transition-colors rounded">
-                    <span className="text-dc1-text-secondary font-mono text-xs truncate col-span-2 sm:col-span-1">
-                      {job.jobId.length > 14 ? `${job.jobId.slice(0, 12)}…` : job.jobId}
-                    </span>
-                    <span className="text-dc1-text-secondary capitalize">{job.jobType}</span>
-                    <span className="text-dc1-text-secondary">{job.durationMinutes.toFixed(1)} min</span>
-                    <span className="text-dc1-amber font-medium text-right">{(job.earningsHalala / 100).toFixed(4)} SAR</span>
-                    <span className={`text-right text-xs font-medium ${job.status === 'completed' ? 'text-status-success' : 'text-status-error'}`}>
-                      {job.status}
-                    </span>
+                  <div key={job.jobId}>
+                    <div className="sm:hidden px-3 py-3 hover:bg-dc1-surface-l2 transition-colors rounded">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-dc1-text-secondary font-mono text-xs truncate">
+                          {job.jobId.length > 14 ? `${job.jobId.slice(0, 12)}…` : job.jobId}
+                        </span>
+                        <span className={`text-xs font-medium capitalize ${job.status === 'completed' ? 'text-status-success' : 'text-status-error'}`}>
+                          {job.status}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-md bg-dc1-surface-l2 px-2 py-1.5">
+                          <p className="text-dc1-text-muted">Type</p>
+                          <p className="text-dc1-text-secondary capitalize">{job.jobType}</p>
+                        </div>
+                        <div className="rounded-md bg-dc1-surface-l2 px-2 py-1.5">
+                          <p className="text-dc1-text-muted">Duration</p>
+                          <p className="text-dc1-text-secondary">{job.durationMinutes.toFixed(1)} min</p>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-dc1-amber">
+                        {(job.earningsHalala / 100).toFixed(4)} SAR
+                      </p>
+                    </div>
+
+                    <div className="hidden sm:grid grid-cols-5 gap-3 px-3 py-3 text-sm hover:bg-dc1-surface-l2 transition-colors rounded">
+                      <span className="text-dc1-text-secondary font-mono text-xs truncate">
+                        {job.jobId.length > 14 ? `${job.jobId.slice(0, 12)}…` : job.jobId}
+                      </span>
+                      <span className="text-dc1-text-secondary capitalize">{job.jobType}</span>
+                      <span className="text-dc1-text-secondary">{job.durationMinutes.toFixed(1)} min</span>
+                      <span className="text-dc1-amber font-medium text-right">{(job.earningsHalala / 100).toFixed(4)} SAR</span>
+                      <span className={`text-right text-xs font-medium ${job.status === 'completed' ? 'text-status-success' : 'text-status-error'}`}>
+                        {job.status}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
