@@ -23,6 +23,11 @@
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Landing page marquee now uses Next.js image primitives and homepage lint checks are clean for this file. Verification: `npm run lint -- --file app/page.tsx` (`✔ No ESLint warnings or errors`).
 
+## [2026-04-02 00:46 UTC] Codex — DCP-360 Homepage Workflow + Marquee Copy Bound To i18n Keys
+- **Commit**: `pending` - Replaced remaining hardcoded homepage English copy in the marquee label and workflow cards (titles, descriptions, bullets, CTAs) with existing `landing.*` translation keys.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Homepage language switching now stays consistent across the workflow and marquee sections for EN/AR without adding new translation payload. Verification: `npm run lint -- --file app/page.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-01 18:45 UTC] Codex — DCP-357 Unified Conversion Funnel Contract + Attribution Report
 - **Commit**: `73d2621` - Added a canonical provider+renter conversion funnel contract (`view -> register -> first_action -> first_success`) with durable event storage, per-actor stage dedupe, EN/AR locale normalization, source-surface/channel attribution capture, and an admin report endpoint for funnel/conversion completeness.
 - **Files**: `backend/src/db.js`, `backend/src/services/conversionFunnelService.js`, `backend/src/routes/providers.js`, `backend/src/routes/renters.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/conversion-funnel-contract.test.js`, `backend/artifacts/conversion-funnel/query-examples.sql`, `docs/api/conversion-funnel-contract.md`, `AGENT_LOG.md`
