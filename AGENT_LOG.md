@@ -32702,3 +32702,8 @@ a
 - **Commit**: `8882dfd` - Added a new "Native Status App" dashboard card with Windows/Linux/macOS download buttons, client OS detection from `navigator.platform`, and highlighted recommended download based on detected platform; added backend alias route for macOS tray download.
 - **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
 - **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
+
+## [2026-04-02 12:09 UTC] Codex — DCP-296 Top-3 Prefetch SLA Command + Runbook Delivered
+- **Commit**: `pending` - Added missing one-command prefetch verification workflow that deploys top-3 templates, polls renter job startup timestamps, emits explicit `<60s` pass/fail evidence artifacts, and exits non-zero on gate failure; added matching ops runbook for production execution.
+- **Files**: `infra/scripts/publish-prefetch-top3.sh`, `docs/ops/publish-prefetch-top3-runbook.md`, `AGENT_LOG.md`
+- **Impact**: DCP-296 now has a canonical executable command in-repo (`./infra/scripts/publish-prefetch-top3.sh`) plus documented usage/output contract. Production evidence run remains credential-gated in this workspace (no `DCP_RENTER_KEY` injected), but QA/backend can execute immediately by setting renter key and attaching generated artifacts under `docs/reports/reliability/`.
