@@ -21,6 +21,18 @@ npm run gate:openrouter-reliability:raw
 
 Use the raw command only for local debugging; QA closeout should reference the canonical gate command above.
 
+## Mandatory Release Preflight Pair
+
+For merge/deploy requests touching OpenRouter/provider catalog surfaces, include both commands:
+
+```bash
+cd backend
+npm run gate:openrouter-reliability
+npm run gate:provider-route-parity
+```
+
+`gate:provider-route-parity` enforces deployed parity for `GET /api/providers/model-catalog` and `GET /api/providers/models`. See `docs/ops/provider-route-parity-guard-runbook.md`.
+
 ## Artifact Contract
 
 Each canonical run writes:

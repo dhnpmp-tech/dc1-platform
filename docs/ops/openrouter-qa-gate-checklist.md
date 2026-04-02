@@ -14,6 +14,17 @@ npm run gate:openrouter-reliability
 
 Reference this single command in QA closeout threads (especially [DCP-227](/DCP/issues/DCP-227)) to avoid command-pack ambiguity.
 
+## Mandatory Release Parity Evidence
+
+Run and attach provider route parity evidence before merge/deploy requests:
+
+```bash
+cd backend
+npm run gate:provider-route-parity
+```
+
+Required evidence artifact: `docs/reports/reliability/provider-route-parity-guard-latest.json` (plus matching `.md` summary).
+
 ## Input Artifacts
 
 - Telemetry implementation: `backend/src/routes/providers.js` (from DCP-72)
