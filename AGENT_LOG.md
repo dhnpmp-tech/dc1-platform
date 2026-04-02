@@ -3,6 +3,11 @@
 - **Files**: `backend/src/routes/jobs.js`, `backend/tests/e2e-marketplace.test.js`, `AGENT_LOG.md`
 - **Impact**: Manual completion now returns deterministic success payloads and completed-job email dispatch metadata without throwing. Verification: `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js` (`25/25` passing).
 
+## [2026-04-02 03:44 UTC] Codex — Release Heartbeat Landed Two Branches, Blocked One On Build Gate
+- **Commit**: `9f52b79` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate for PRs #181 (`agent/backend-dev/dcp-358-openrouter-gate`) and #182 (`agent/backend-dev/dcp-369-vllm-bootstrap`), and blocked `agent/frontend-dev/dcp-361-next-frontend-lint-fix` after `npm run build` failed with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the canonical OpenRouter reliability gate command pack and the low-VRAM VLLM bootstrap compatibility/admission wiring. The remaining visible frontend lint-fix branch must be corrected before it can land because it breaks the Next.js production build.
+
 ## [2026-04-02 01:37 UTC] Codex — Release Heartbeat Landed Three Final Visible Agent Branches On Main
 - **Commit**: `c52a75b` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased the three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate under the repo-pinned Node `20` runtime, and landed PRs #178 (`agent/backend-dev/dcp-373-self-serve-smoke-principal-clean`), #179 (`agent/frontend-dev/dcp-360-homepage-i18n-hardcoded-copy`), and #180 (`agent/backend-dev/dcp-336-audit-dedupe`) onto `main`.
 - **Files**: `AGENT_LOG.md`
