@@ -13,6 +13,11 @@
 - **Files**: `backend/src/routes/jobs.js`, `backend/tests/e2e-marketplace.test.js`, `AGENT_LOG.md`
 - **Impact**: Manual completion now returns deterministic success payloads and completed-job email dispatch metadata without throwing. Verification: `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js` (`25/25` passing).
 
+## [2026-04-02 07:56 UTC] Codex — Release Heartbeat Landed Header Logo Fix, FeedbackWidget Branch Still Fails Build
+- **Commit**: `1a3bd3f` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased the two qualifying visible frontend branches onto current `main` in the clean release worktree, landed PR #185 (`agent/frontend-dev/dcp-363-header-logo-next-image`) after `npm run build` passed, and re-checked `agent/frontend-dev/dcp-361-next-frontend-lint-fix`, which still failed the production build with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the header logo `next/image` fix. The remaining visible code branch is still blocked on the same `FeedbackWidget` declaration-order bug and must not be merged until that build failure is removed.
+
 ## [2026-04-02 05:50 UTC] Codex — Release Heartbeat Landed Two Branches, Frontend Lint Fix Still Blocked
 - **Commit**: `921c0b2` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate for PRs #183 (`agent/frontend-dev/dcp-362-footer-logo-next-image`) and #184 (`agent/backend-dev/dcp-376-template-catalog-contract`), and re-blocked `agent/frontend-dev/dcp-361-next-frontend-lint-fix` after `npm run build` failed again with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200` even after rebasing onto the latest `main`.
 - **Files**: `AGENT_LOG.md`
