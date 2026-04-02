@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
@@ -227,7 +228,7 @@ function LoginPageInner() {
         <div className="w-full max-w-md">
           <div className="card border-dc1-border/50 shadow-lg">
             <div className="flex justify-center mb-8">
-              <img src="/logo.svg" alt="DCP" className="h-12 w-auto" />
+              <Image src="/logo.svg" alt="DCP" width={160} height={48} className="h-12 w-auto" priority />
             </div>
             <h1 className="text-2xl font-bold text-dc1-text-primary text-center mb-2">{t('auth.sign_in')}</h1>
             <p className="text-sm text-dc1-text-secondary text-center mb-6">

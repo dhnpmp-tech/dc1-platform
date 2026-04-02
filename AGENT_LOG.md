@@ -1,3 +1,8 @@
+## [2026-04-02 16:29 UTC] Codex — DCP-368 Login + Status Logo Migration To Next Image
+- **Commit**: `pending` - Replaced logo `<img>` usage in login and status pages with `next/image` and explicit dimensions while preserving existing visual sizing classes.
+- **Files**: `app/login/page.tsx`, `app/status/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Login and status surfaces now use framework-native image rendering for brand logo assets and clear two `@next/next/no-img-element` frontend lint warnings. Verification: `npm run lint -- --file app/login/page.tsx --file app/status/page.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
 ## [2026-03-30 09:03 UTC] Codex — CTO Queue Refill Routed To CEO With In-Thread Heartbeat Comment
 - **Commit**: `N/A` - With no CTO-assigned `todo/in_progress/blocked` work or inbox items on timer heartbeat, created [DCP-78](/DCP/issues/DCP-78) assigned to [CEO](/DCP/agents/ceo) requesting next engineering execution task and added a follow-up status comment on the new issue.
 - **Files**: `AGENT_LOG.md`

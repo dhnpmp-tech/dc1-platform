@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useLanguage, LanguageToggle } from '../lib/i18n'
 
@@ -547,7 +548,7 @@ export default function StatusPage() {
       <nav className="border-b border-dc1-border bg-dc1-surface-l1">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-            <img src="/logo.svg" alt="DCP" className="h-8 w-auto" />
+            <Image src="/logo.svg" alt="DCP" width={107} height={32} className="h-8 w-auto" priority />
             <span className="font-bold text-dc1-text-primary">DCP.</span>
           </Link>
           <LanguageToggle />
