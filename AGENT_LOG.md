@@ -1,3 +1,8 @@
+## [2026-04-02 06:50 UTC] Codex — DCP-363 Header Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the header brand logo `<img>` with `next/image` and explicit dimensions, preserving existing sizing/styling classes.
+- **Files**: `app/components/layout/Header.tsx`, `AGENT_LOG.md`
+- **Impact**: Header branding now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this component. Verification: `npm run lint -- --file app/components/layout/Header.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-02 04:49 UTC] Codex — DCP-362 Footer Logo Migrated To Next Image
 - **Commit**: `pending` - Replaced the footer brand logo `<img>` with `next/image` and explicit dimensions to satisfy Next.js image lint policy while keeping existing layout sizing classes.
 - **Files**: `app/components/layout/Footer.tsx`, `AGENT_LOG.md`
