@@ -37,6 +37,7 @@ function recordOpenRouterUsage(db, {
   totalTokens = null,
   costHalala,
   currency = 'SAR',
+  settlementStatus = 'pending',
 }) {
   const cleanRequestId = typeof requestId === 'string' ? requestId.trim().slice(0, 200) : '';
   const cleanProviderResponseId = typeof providerResponseId === 'string' ? providerResponseId.trim().slice(0, 200) : '';
@@ -51,6 +52,9 @@ function recordOpenRouterUsage(db, {
   const cleanCompletion = toInt(completionTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanTotal = toInt(totalTokens, { min: 0, max: 1_000_000_000 }) ?? (cleanPrompt + cleanCompletion);
   const cleanCost = toInt(costHalala, { min: 0, max: 100_000_000_000 });
+  const cleanSettlementStatus = settlementStatus === 'failed'
+    ? 'failed'
+    : (settlementStatus === 'settled' ? 'settled' : 'pending');
 
   if (!cleanRenterId) throw new Error('renterId must be a positive integer');
   if (!cleanModel) throw new Error('model is required');
@@ -85,7 +89,7 @@ function recordOpenRouterUsage(db, {
     cleanTotal,
     cleanCost,
     currency || 'SAR',
-    'pending',
+    cleanSettlementStatus,
     nowIso(),
   ];
   if (hasRequestId) {

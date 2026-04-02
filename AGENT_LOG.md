@@ -32713,7 +32713,12 @@ a
 - **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
 - **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
 
-## [2026-04-02 11:52 UTC] Codex — DCP-401/DCP-402 Provider Setup Docs Refresh
-- **Commit**: `pending` - Updated provider onboarding docs with current quick-install commands, WireGuard home-provider routing instructions, tray app download endpoints, and daemon v3.4.0 model whitelist grouped by capability with VRAM guidance.
-- **Files**: `docs/provider-setup.md`, `docs/guides/provider-setup-guide.md`, `AGENT_LOG.md`
-- **Impact**: Provider onboarding documentation now matches the current install and routing flow needed for OpenRouter Gate 0 submission prep, reducing setup drift for home providers and support handoffs.
+## [2026-04-02 12:22 UTC] Codex — DCP-404 v1 capacity gate unblock for legacy provider rows
+- **Commit**: `pending` - Aligned `/v1/chat/completions` provider capability filtering with the existing vLLM path so missing `supported_compute_types` defaults to inference-capable and VRAM resolution also honors `gpu_vram_mb`/`gpu_vram_mib` fields.
+- **Files**: backend/src/routes/v1.js; backend/src/__tests__/v1-models.test.js; AGENT_LOG.md
+- **Impact**: Fixes false `capable_providers: 0` outcomes on `/v1/chat/completions` for legacy provider rows that previously got excluded despite being online and inference-ready; added regression test coverage for missing `supported_compute_types` behavior.
+
+## [2026-04-02 13:29 UTC] Codex — DCP-404 v1 metering failure-ledger + reconciliation tooling
+- **Commit**: `pending` - Added transactional v1 usage persistence that records `settlement_status='failed'` on provider/proxy/job failure paths, plus request-level OpenRouter metering reconciliation service+CLI and regression tests for fallback/failed persistence semantics.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/services/openrouterMeteringReconciliation.js`, `backend/src/scripts/reconcile-openrouter-metering.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-metering-reconciliation.test.js`, `backend/package.json`, `docs/reports/reliability/first-live-inference-proof-latest.{json,md,log}`, `docs/reports/reliability/first-live-inference-proof-20260402T122311Z.{json,md,log}`, `AGENT_LOG.md`
+- **Impact**: `/v1/chat/completions` now writes canonical failed metering rows (instead of silent loss) whenever provider attempts exhaust or job completion fails, and operators can reconcile per-request token/cost deltas with `npm run reconcile:openrouter:metering -- --json` for settlement verification.
