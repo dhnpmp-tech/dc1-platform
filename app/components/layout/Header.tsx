@@ -84,9 +84,9 @@ export default function Header() {
           {/* Logo */}
           <Link href="/" className="flex items-center shrink-0">
             <Image
-              src="/dcp-logo-primary.png"
+              src="/dcp-logo-transparent.svg"
               alt="DCP"
-              width={108}
+              width={36}
               height={36}
               className="h-12 w-auto"
             />
