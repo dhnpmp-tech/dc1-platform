@@ -1,3 +1,8 @@
+## [2026-04-02 10:53 UTC] Codex — DCP-365 Legal Page Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the legal page header logo `<img>` with `next/image` and explicit dimensions while preserving current styling.
+- **Files**: `app/components/layout/LegalPage.tsx`, `AGENT_LOG.md`
+- **Impact**: Legal page header now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this layout component. Verification: `npm run lint -- --file app/components/layout/LegalPage.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-02 10:06 UTC] Codex — Release Heartbeat Merged DCP-223 + DCP-389, Skipped Empty DCP-384 Backend Branch
 - **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed three branches with merge-main + build gate in an isolated release worktree using shared project dependencies, merged PR #189 (`agent/backend-dev/dcp-223-provider-route-parity-guard`) and PR #187 (`agent/backend-dev/dcp-389-payout-admin-audit-integrity`) only after `npm run build` passed, then skipped `agent/backend-dev/dcp-384-restore-chat-capacity` because after rebasing there were no commits left between branch and `main` (`422: No commits between main and branch`).
 - **Files**: `AGENT_LOG.md`
@@ -32698,7 +32703,7 @@ a
 - **Files**: `backend/src/scripts/run-provider-route-parity-guard.js`, `backend/package.json`, `docs/ops/provider-route-parity-guard-runbook.md`, `docs/ops/runtime-route-parity-runbook.md`, `docs/ops/openrouter-reliability-gate-command-pack.md`, `docs/ops/openrouter-qa-gate-checklist.md`, `docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.json`, `docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.md`, `docs/reports/reliability/provider-route-parity-guard-latest.json`, `docs/reports/reliability/provider-route-parity-guard-latest.md`, `AGENT_LOG.md`
 - **Impact**: Release preflight now fails closed when deployed provider catalog routes drift from backend code. Evidence run reproduced current production mismatch (`/api/providers/model-catalog` returned `404` with HTML), giving an explicit blocker artifact for merge/deploy approval threads.
 
-## [2026-04-02 10:11 UTC] Codex — DCP-394 Sensitive Audit Runtime Wiring + No-Dupe Contract Coverage
-- **Commit**: `pending` - Added runtime `sensitiveAuditLogger` coverage for admin payout mutations and job-result read/submit surfaces, created `security_audit_events` schema with indexes, and added integration coverage proving one classified security-audit row per sensitive request.
-- **Files**: `backend/src/middleware/sensitiveAuditLogger.js`, `backend/src/server.js`, `backend/src/db.js`, `backend/tests/integration/sensitive-audit-runtime-wiring.test.js`, `AGENT_LOG.md`
-- **Impact**: Security/compliance-sensitive routes now emit deterministic action-classified audit records at runtime (`admin.payout.*`, `job.result.*`) without duplicate writes per request, with reproducible evidence via `cd backend && npm test -- --runInBand tests/integration/sensitive-audit-runtime-wiring.test.js src/__tests__/payouts-admin-audit-dedupe.test.js` (`10/10` passing).
+## [2026-04-02 11:16 UTC] Codex — DCP-400 Native Status App Downloads Added To Provider Dashboard
+- **Commit**: `8882dfd` - Added a new "Native Status App" dashboard card with Windows/Linux/macOS download buttons, client OS detection from `navigator.platform`, and highlighted recommended download based on detected platform; added backend alias route for macOS tray download.
+- **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
+- **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
