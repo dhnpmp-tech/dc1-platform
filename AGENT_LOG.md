@@ -32712,3 +32712,8 @@ a
 - **Commit**: `8882dfd` - Added a new "Native Status App" dashboard card with Windows/Linux/macOS download buttons, client OS detection from `navigator.platform`, and highlighted recommended download based on detected platform; added backend alias route for macOS tray download.
 - **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
 - **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
+
+## [2026-04-02 12:22 UTC] Codex — DCP-404 v1 capacity gate unblock for legacy provider rows
+- **Commit**: `pending` - Aligned `/v1/chat/completions` provider capability filtering with the existing vLLM path so missing `supported_compute_types` defaults to inference-capable and VRAM resolution also honors `gpu_vram_mb`/`gpu_vram_mib` fields.
+- **Files**: backend/src/routes/v1.js; backend/src/__tests__/v1-models.test.js; AGENT_LOG.md
+- **Impact**: Fixes false `capable_providers: 0` outcomes on `/v1/chat/completions` for legacy provider rows that previously got excluded despite being online and inference-ready; added regression test coverage for missing `supported_compute_types` behavior.

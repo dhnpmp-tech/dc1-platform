@@ -446,12 +446,32 @@ const PROVIDER_HEARTBEAT_STALE_MS = 10 * 60 * 1000;
 const PROXY_TIMEOUT_MS = 30000;
 
 function parseComputeTypes(raw) {
-  try { return new Set(JSON.parse(raw || '[]')); } catch (_) { return new Set(); }
+  if (!raw) return new Set(['inference', 'training', 'rendering']);
+  if (Array.isArray(raw)) {
+    return new Set(raw.map((value) => String(value).toLowerCase()));
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.map((value) => String(value).toLowerCase()));
+    }
+  } catch (_) {
+    // ignore malformed JSON; fall back to CSV parsing
+  }
+  return new Set(String(raw).split(',').map((value) => value.trim().toLowerCase()).filter(Boolean));
 }
 
 function resolveProviderVramMb(provider) {
-  if (provider.vram_mb) return Number(provider.vram_mb);
-  if (provider.vram_gb) return Number(provider.vram_gb) * 1024;
+  const candidates = [
+    provider.vram_mb,
+    provider.gpu_vram_mb,
+    provider.gpu_vram_mib,
+    provider.vram_gb != null ? Number(provider.vram_gb) * 1024 : null,
+  ];
+  for (const candidate of candidates) {
+    const value = toFiniteInt(candidate, { min: 0, max: 1024 * 1024 });
+    if (value != null) return value;
+  }
   return 0;
 }
 
