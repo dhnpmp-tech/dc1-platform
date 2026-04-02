@@ -1,3 +1,8 @@
+## [2026-04-02 14:26 UTC] Codex — Release Heartbeat Merged DCP-387 Dependency Security Gate
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), found one visible code-bearing branch in the current top-20 set, merged current `main` into `agent/backend-dev/dcp-387-ci-dependency-security-gate` in an isolated release worktree, forced a full dev dependency install in that throwaway worktree so the root `npm run build` gate could run, and advanced `main` only after the production build passed.
+- **Files**: `.github/workflows/payout-dependency-security-gate.yml`, `backend/package-lock.json`, `AGENT_LOG.md`
+- **Impact**: `main` now includes the payout-path dependency security gate workflow and the `path-to-regexp` lockfile remediation from DCP-387. No other visible top-20 agent branch had a remaining code diff against `main`, so this heartbeat used 1 of the 3 allowed merge slots.
+
 ## [2026-04-02 13:21 UTC] Codex — DCP-366 Provider Register Email Pattern Hook Dependency Fix
 - **Commit**: `pending` - Memoized the provider registration email regex with `useMemo` and added `emailPattern` to `validateField` callback dependencies to satisfy exhaustive-deps without changing validation behavior.
 - **Files**: `app/provider/register/page.tsx`, `AGENT_LOG.md`
