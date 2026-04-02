@@ -130,6 +130,7 @@ export default function ProviderDashboard() {
   const [providerApiKey, setProviderApiKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [showWizard, setShowWizard] = useState(false)
+  const [copiedInstallCommand, setCopiedInstallCommand] = useState<'linux' | 'windows' | null>(null)
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileSaved, setProfileSaved] = useState(false)
@@ -238,6 +239,16 @@ export default function ProviderDashboard() {
       setProfileError(error instanceof Error ? error.message : t('common.error'))
     } finally {
       setProfileSaving(false)
+    }
+  }
+
+  const handleCopyInstallCommand = async (command: string, target: 'linux' | 'windows') => {
+    try {
+      await navigator.clipboard.writeText(command)
+      setCopiedInstallCommand(target)
+      setTimeout(() => setCopiedInstallCommand(null), 1800)
+    } catch (error) {
+      console.error('Failed to copy install command:', error)
     }
   }
 
@@ -396,6 +407,10 @@ export default function ProviderDashboard() {
   })()
   const selectedVramGb = Math.max(4, Math.min(80, Math.round((gpuProfileDraft.vramMb || 4096) / 1024)))
   const computeTypeLabel = (value: 'inference' | 'training' | 'rendering') => t(`provider.compute_${value}`)
+  const quickInstallCommands = {
+    linux: 'curl -fsSL https://api.dcp.sa/install | bash',
+    windows: `irm https://api.dcp.sa/api/providers/download/setup?key=${encodeURIComponent(providerApiKey || 'YOUR_KEY')} | iex`,
+  }
 
   if (loading) {
     return (
@@ -541,6 +556,50 @@ export default function ProviderDashboard() {
             <Link href="/provider/earnings" className="rounded-lg border border-dc1-border bg-dc1-surface-l1 px-3 py-2 text-dc1-text-secondary hover:text-dc1-amber transition-colors">
               4. {t('nav.earnings')}
             </Link>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold text-dc1-text-primary">Quick Install</h2>
+              <p className="text-sm text-dc1-text-secondary mt-1">
+                Run one command to install and start your provider daemon.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+              <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                <p className="text-sm font-semibold text-dc1-text-primary">Linux/macOS</p>
+                <button
+                  type="button"
+                  onClick={() => handleCopyInstallCommand(quickInstallCommands.linux, 'linux')}
+                  className="btn btn-secondary btn-sm"
+                >
+                  {copiedInstallCommand === 'linux' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className="rounded-md bg-dc1-bg px-3 py-2 text-xs text-dc1-text-secondary overflow-x-auto">
+                <code>{quickInstallCommands.linux}</code>
+              </pre>
+            </div>
+
+            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+              <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                <p className="text-sm font-semibold text-dc1-text-primary">Windows (PowerShell)</p>
+                <button
+                  type="button"
+                  onClick={() => handleCopyInstallCommand(quickInstallCommands.windows, 'windows')}
+                  className="btn btn-secondary btn-sm"
+                >
+                  {copiedInstallCommand === 'windows' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className="rounded-md bg-dc1-bg px-3 py-2 text-xs text-dc1-text-secondary overflow-x-auto">
+                <code>{quickInstallCommands.windows}</code>
+              </pre>
+            </div>
           </div>
         </div>
 
