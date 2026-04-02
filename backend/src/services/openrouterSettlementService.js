@@ -23,6 +23,11 @@ function toInt(value, { min = null, max = null } = {}) {
 }
 
 function recordOpenRouterUsage(db, {
+  requestId = null,
+  providerResponseId = null,
+  jobId = null,
+  requestPath = null,
+  tokenRateHalala = null,
   renterId,
   providerId = null,
   model,
@@ -32,7 +37,13 @@ function recordOpenRouterUsage(db, {
   totalTokens = null,
   costHalala,
   currency = 'SAR',
+  settlementStatus = 'pending',
 }) {
+  const cleanRequestId = typeof requestId === 'string' ? requestId.trim().slice(0, 200) : '';
+  const cleanProviderResponseId = typeof providerResponseId === 'string' ? providerResponseId.trim().slice(0, 200) : '';
+  const cleanJobId = typeof jobId === 'string' ? jobId.trim().slice(0, 120) : '';
+  const cleanRequestPath = typeof requestPath === 'string' ? requestPath.trim().slice(0, 160) : '';
+  const cleanTokenRateHalala = toInt(tokenRateHalala, { min: 0, max: 100_000_000_000 });
   const cleanRenterId = toInt(renterId, { min: 1 });
   const cleanProviderId = providerId == null ? null : toInt(providerId, { min: 1 });
   const cleanModel = typeof model === 'string' ? model.trim().slice(0, 200) : '';
@@ -41,17 +52,33 @@ function recordOpenRouterUsage(db, {
   const cleanCompletion = toInt(completionTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanTotal = toInt(totalTokens, { min: 0, max: 1_000_000_000 }) ?? (cleanPrompt + cleanCompletion);
   const cleanCost = toInt(costHalala, { min: 0, max: 100_000_000_000 });
+  const cleanSettlementStatus = settlementStatus === 'failed'
+    ? 'failed'
+    : (settlementStatus === 'settled' ? 'settled' : 'pending');
 
   if (!cleanRenterId) throw new Error('renterId must be a positive integer');
   if (!cleanModel) throw new Error('model is required');
   if (cleanCost == null) throw new Error('costHalala must be an integer >= 0');
 
+  const ledgerColumns = db.prepare(`PRAGMA table_info(openrouter_usage_ledger)`).all();
+  const hasRequestId = ledgerColumns.some((col) => col?.name === 'request_id');
+  const hasProviderResponseId = ledgerColumns.some((col) => col?.name === 'provider_response_id');
+  const hasJobId = ledgerColumns.some((col) => col?.name === 'job_id');
+  const hasRequestPath = ledgerColumns.some((col) => col?.name === 'request_path');
+  const hasTokenRateHalala = ledgerColumns.some((col) => col?.name === 'token_rate_halala');
+
+  if (cleanRequestId && hasRequestId) {
+    const existing = db.prepare('SELECT * FROM openrouter_usage_ledger WHERE request_id = ? LIMIT 1').get(cleanRequestId);
+    if (existing) return existing;
+  }
+
   const id = `oru_${crypto.randomUUID()}`;
-  db.prepare(
-    `INSERT INTO openrouter_usage_ledger
-      (id, renter_id, provider_id, model, source, prompt_tokens, completion_tokens, total_tokens, cost_halala, currency, settlement_status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
-  ).run(
+  const insertColumns = [
+    'id', 'renter_id', 'provider_id', 'model', 'source',
+    'prompt_tokens', 'completion_tokens', 'total_tokens',
+    'cost_halala', 'currency', 'settlement_status', 'created_at',
+  ];
+  const insertValues = [
     id,
     cleanRenterId,
     cleanProviderId,
@@ -62,8 +89,47 @@ function recordOpenRouterUsage(db, {
     cleanTotal,
     cleanCost,
     currency || 'SAR',
-    nowIso()
-  );
+    cleanSettlementStatus,
+    nowIso(),
+  ];
+  if (hasRequestId) {
+    insertColumns.push('request_id');
+    insertValues.push(cleanRequestId || null);
+  }
+  if (hasProviderResponseId) {
+    insertColumns.push('provider_response_id');
+    insertValues.push(cleanProviderResponseId || null);
+  }
+  if (hasJobId) {
+    insertColumns.push('job_id');
+    insertValues.push(cleanJobId || null);
+  }
+  if (hasRequestPath) {
+    insertColumns.push('request_path');
+    insertValues.push(cleanRequestPath || null);
+  }
+  if (hasTokenRateHalala) {
+    insertColumns.push('token_rate_halala');
+    insertValues.push(cleanTokenRateHalala);
+  }
+  const placeholders = insertColumns.map(() => '?').join(', ');
+
+  try {
+    db.prepare(
+      `INSERT INTO openrouter_usage_ledger (${insertColumns.join(', ')})
+       VALUES (${placeholders})`
+    ).run(...insertValues);
+  } catch (error) {
+    if (
+      cleanRequestId &&
+      hasRequestId &&
+      String(error?.message || '').includes('UNIQUE constraint failed: openrouter_usage_ledger.request_id')
+    ) {
+      const existing = db.prepare('SELECT * FROM openrouter_usage_ledger WHERE request_id = ? LIMIT 1').get(cleanRequestId);
+      if (existing) return existing;
+    }
+    throw error;
+  }
 
   return db.prepare('SELECT * FROM openrouter_usage_ledger WHERE id = ?').get(id);
 }

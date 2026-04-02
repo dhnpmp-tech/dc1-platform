@@ -217,6 +217,32 @@ describe('Provider API — POST /api/providers/heartbeat', () => {
   });
 });
 
+describe('Provider API — installer/download key validation', () => {
+  it('returns 400 on malformed duplicate key query for setup download', async () => {
+    const res = await request(app).get('/api/providers/download/setup?key=one&key=two&os=linux');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'API key required' });
+  });
+
+  it('returns 400 on malformed duplicate key query for daemon download', async () => {
+    const res = await request(app).get('/api/providers/download/daemon?key=one&key=two&check_only=true');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'API key required' });
+  });
+
+  it('returns 400 on malformed duplicate key query for script download', async () => {
+    const res = await request(app).get('/api/providers/download?key=one&key=two&platform=linux');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'API key required' });
+  });
+
+  it('returns 401 for installer request with unknown API key', async () => {
+    const res = await request(app).get('/api/providers/installer?key=dc1-provider-invalid&os=Linux');
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: 'Invalid API key' });
+  });
+});
+
 describe('Provider API — GET /api/providers/:api_key/jobs', () => {
   it('returns null job when no pending jobs assigned', async () => {
     const reg = await registerProvider();

@@ -161,7 +161,7 @@ export default function ProviderJobDetailPage() {
     // Auto-refresh for running jobs
     const interval = setInterval(fetchData, 10000)
     return () => clearInterval(interval)
-  }, [jobId, router])
+  }, [jobId, router, t])
 
   if (loading) {
     return (

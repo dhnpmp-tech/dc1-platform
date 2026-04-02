@@ -89,7 +89,7 @@ export default function RenterRegisterPage() {
     () => [
       { label: t('mode.label.marketplace'), detail: t('mode.desc.marketplace'), href: '/renter/marketplace' },
       { label: t('mode.label.playground'), detail: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api-reference' },
+      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api/openrouter-60s-quickstart' },
       { label: t('mode.label.enterprise_support'), detail: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=renter_register_success#contact-form' },
     ],
     [t]

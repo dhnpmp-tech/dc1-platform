@@ -1,0 +1,61 @@
+{
+  "generated_at": "2026-04-02T09:05:44.977Z",
+  "base_url": "https://api.dcp.sa",
+  "timeout_ms": 12000,
+  "command": "cd backend && npm run gate:provider-route-parity",
+  "summary": {
+    "total_routes": 2,
+    "pass": 1,
+    "failed": 1,
+    "status": "fail"
+  },
+  "routes": [
+    {
+      "id": "providers_model_catalog",
+      "method": "GET",
+      "path": "/api/providers/model-catalog",
+      "declared_in_code": true,
+      "runtime": {
+        "endpoint": "https://api.dcp.sa/api/providers/model-catalog",
+        "ok": true,
+        "status": 404,
+        "contentType": "text/html; charset=utf-8",
+        "bodyText": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/providers/model-catalog</pre>\n</body>\n</html>\n",
+        "bodyJson": null,
+        "durationMs": 82
+      },
+      "mismatches": [
+        "status mismatch: expected 200, got 404",
+        "content-type mismatch: expected to include \"application/json\", got \"text/html; charset=utf-8\"",
+        "response body is not a JSON object"
+      ],
+      "status": "fail"
+    },
+    {
+      "id": "providers_models_aggregate",
+      "method": "GET",
+      "path": "/api/providers/models",
+      "declared_in_code": true,
+      "runtime": {
+        "endpoint": "https://api.dcp.sa/api/providers/models",
+        "ok": true,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "bodyText": "{\"models\":[],\"total\":0}",
+        "bodyJson": {
+          "models": [],
+          "total": 0
+        },
+        "durationMs": 6
+      },
+      "mismatches": [],
+      "status": "pass"
+    }
+  ],
+  "artifacts": {
+    "json": "docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.json",
+    "markdown": "docs/reports/reliability/provider-route-parity-guard-20260402T090544Z.md",
+    "latest_json": "docs/reports/reliability/provider-route-parity-guard-latest.json",
+    "latest_markdown": "docs/reports/reliability/provider-route-parity-guard-latest.md"
+  }
+}

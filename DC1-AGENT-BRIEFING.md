@@ -3,7 +3,7 @@
 
 ## What Is DC1
 
-DC1 is a GPU compute marketplace for Saudi Arabia. Providers register their NVIDIA GPUs, install a Python daemon, and earn SAR. Renters submit compute jobs (LLM inference, training, rendering) that run on provider hardware. DC1 takes a 25% fee; providers earn 75%.
+DC1 is a GPU compute marketplace — powered by Saudi energy, built for developers everywhere. Providers register their NVIDIA GPUs, install a Python daemon, and earn SAR. Renters submit compute jobs (LLM inference, training, rendering) that run on provider hardware. DC1 takes a 25% fee; providers earn 75%.
 
 Currency: SAR (Saudi Riyal). Internal billing in **halala** (1 SAR = 100 halala).
 

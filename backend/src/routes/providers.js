@@ -35,11 +35,16 @@ const {
     appendAttemptRawText,
     getAttemptLogPath,
 } = require('../services/job-execution-logs');
+const {
+    evaluateProviderModelCompatibility,
+} = require('../services/vllmCompatibilityMatrix');
 const { isPublicWebhookUrl, isResolvablePublicWebhookUrl } = require('../lib/webhook-security');
 const { normalizeProviderOs } = require('../lib/provider-os');
+const { toCatalogContractCore } = require('../lib/model-catalog-contract');
 const { validateBody } = require('../middleware/validate');
 const { providerRegisterSchema, providerBenchmarkSchema } = require('../schemas/providers.schema');
 const analytics = require('../services/analyticsService');
+const conversionFunnel = require('../services/conversionFunnelService');
 
 function flattenRunParams(params) {
     if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -93,6 +98,7 @@ const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '3.3.0').trim();
 const MIN_DAEMON_VERSION = (process.env.MIN_DAEMON_VERSION || LATEST_DAEMON_VERSION).trim();
 const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
 const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');
+const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm-configs/compatibility-matrix.json');
 // Auth rate limiting: use the centralized authLimiter (5/IP/15min — brute force protection, DCP-855).
 const loginEmailLimiter = authLimiter;
 
@@ -111,6 +117,11 @@ function normalizeEmail(value) {
     const normalized = normalizeString(value, { maxLen: 254 })?.toLowerCase() || null;
     if (!normalized || !EMAIL_REGEX.test(normalized)) return null;
     return normalized;
+}
+
+function normalizeSingleQueryParam(value, { maxLen = 128 } = {}) {
+    if (typeof value !== 'string') return null;
+    return normalizeString(value, { maxLen, trim: false });
 }
 
 function toFiniteNumber(value, { min = null, max = null } = {}) {
@@ -369,6 +380,18 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             gpu_model: cleanGpuModel,
             os: cleanOs,
         }).catch(() => {});
+        conversionFunnel.trackStage({
+            journey: 'provider',
+            stage: 'register',
+            actorType: 'provider',
+            actorId: result.lastInsertRowid,
+            req,
+            inferViewOnRegister: true,
+            metadata: {
+                gpu_model: cleanGpuModel,
+                os: cleanOs,
+            },
+        });
         
     } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -458,9 +481,17 @@ router.post('/login-email', loginEmailLimiter, (req, res) => {
 router.get('/installer', (req, res) => {
     try {
         const { key, os } = req.query;
-        
-        if (!key || !os) {
+
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        const cleanOs = normalizeSingleQueryParam(os, { maxLen: 24 });
+
+        if (!cleanKey || !cleanOs) {
             return res.status(400).json({ error: 'Missing API key or OS' });
+        }
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanKey);
+        if (!provider) {
+            return res.status(401).json({ error: 'Invalid API key' });
         }
         
         // Determine installer path
@@ -470,7 +501,7 @@ router.get('/installer', (req, res) => {
             'Linux': 'dc1-provider-setup-Linux.deb'
         };
         
-        const installerFile = installerMap[os];
+        const installerFile = installerMap[cleanOs];
         if (!installerFile) {
             return res.status(400).json({ error: 'Invalid OS' });
         }
@@ -895,6 +926,18 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
 
         // Tell daemon if update is available (semantic version comparison)
         const needsUpdate = !daemonVersion || compareVersions(daemonVersion, LATEST_DAEMON_VERSION) < 0;
+        conversionFunnel.trackStage({
+            journey: 'provider',
+            stage: 'first_action',
+            actorType: 'provider',
+            actorId: p.id,
+            req,
+            metadata: {
+                action: 'heartbeat_received',
+                approval_status: approvalStatus,
+                daemon_version: daemonVersion || null,
+            },
+        });
         try {
             announceFromProviderHeartbeat(p, {
                 gpu_status: normalizedGpuStatus || {},
@@ -1863,9 +1906,10 @@ router.post('/preferences', async (req, res) => {
 router.get('/download', async (req, res) => {
     try {
         const { key, platform } = req.query;
-        if (!key) return res.status(400).json({ error: 'API key required' });
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [cleanKey]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         const isUnix = platform === 'linux' || platform === 'mac' || platform === 'darwin';
@@ -1878,7 +1922,7 @@ router.get('/download', async (req, res) => {
         }
 
         let script = fs.readFileSync(templatePath, 'utf-8');
-        script = script.replace(/\{\{API_KEY\}\}/g, key);
+        script = script.replace(/\{\{API_KEY\}\}/g, cleanKey);
         script = script.replace(/\{\{RUN_MODE\}\}/g, provider.run_mode || 'always-on');
         script = script.replace(/\{\{SCHEDULED_START\}\}/g, provider.scheduled_start || '23:00');
         script = script.replace(/\{\{SCHEDULED_END\}\}/g, provider.scheduled_end || '07:00');
@@ -2053,6 +2097,215 @@ function discoverComputeTypesFromResourceSpec(resourceSpec) {
     return discovered;
 }
 
+const PROVIDER_ADMISSION_REASON_CODES = Object.freeze({
+    OK: 'ADMISSION_OK',
+    NO_PENDING_JOBS: 'NO_PENDING_JOBS',
+    PROVIDER_PAUSED: 'PROVIDER_PAUSED',
+    PROVIDER_OFFLINE: 'PROVIDER_OFFLINE',
+    JOB_TIER_UNSUPPORTED: 'JOB_TIER_UNSUPPORTED',
+    COMPUTE_TYPE_UNSUPPORTED: 'COMPUTE_TYPE_UNSUPPORTED',
+    INSUFFICIENT_VRAM: 'INSUFFICIENT_VRAM',
+    INSUFFICIENT_GPU_COUNT: 'INSUFFICIENT_GPU_COUNT',
+    MODEL_COMPATIBILITY_UNSUPPORTED: 'MODEL_COMPATIBILITY_UNSUPPORTED',
+    INSTANT_MODEL_NOT_CACHED: 'INSTANT_MODEL_NOT_CACHED',
+    MODEL_UNSUPPORTED_ON_PROVIDER: 'MODEL_UNSUPPORTED_ON_PROVIDER',
+    NO_ELIGIBLE_JOB_FOR_PROVIDER: 'NO_ELIGIBLE_JOB_FOR_PROVIDER',
+});
+
+const TIER_MODE_BY_PREWARM_CLASS = Object.freeze({
+    hot: 'instant',
+    warm: 'cached',
+    cold: 'on-demand',
+});
+
+const LOW_VRAM_AWQ_ENFORCEMENT_MAX_MB = 12288;
+let cachedVllmCompatibilityIndex = null;
+
+function normalizeModelToken(value) {
+    return normalizeString(value, { maxLen: 500 })?.toLowerCase() || null;
+}
+
+function toVariantRecord(rawVariant) {
+    if (!isPlainObject(rawVariant)) return null;
+    const minVramMb =
+        toFiniteInt(rawVariant.min_vram_mb, { min: 1, max: 1024 * 1024 }) ||
+        toFiniteInt(rawVariant.vram_required_mb, { min: 1, max: 1024 * 1024 }) ||
+        null;
+    if (!minVramMb) return null;
+
+    const aliases = new Set();
+    const addAlias = (raw) => {
+        const normalized = normalizeModelToken(raw);
+        if (normalized) aliases.add(normalized);
+    };
+    addAlias(rawVariant.model_id);
+    if (Array.isArray(rawVariant.aliases)) rawVariant.aliases.forEach(addAlias);
+
+    return {
+        min_vram_mb: minVramMb,
+        available: rawVariant.available !== false,
+        availability_note: normalizeString(rawVariant.availability_note, { maxLen: 500 }),
+        recommended_script: normalizeString(rawVariant.recommended_script, { maxLen: 500 }),
+        aliases,
+    };
+}
+
+function loadVllmCompatibilityIndex() {
+    if (cachedVllmCompatibilityIndex) return cachedVllmCompatibilityIndex;
+
+    try {
+        const raw = JSON.parse(fs.readFileSync(VLLM_COMPATIBILITY_MATRIX_PATH, 'utf8'));
+        const models = Array.isArray(raw?.models) ? raw.models : [];
+        const byAlias = new Map();
+
+        for (const model of models) {
+            if (!isPlainObject(model)) continue;
+            const canonicalId = normalizeModelToken(model.id);
+            if (!canonicalId) continue;
+
+            const variants = {};
+            const variantAliases = new Map();
+            const rawVariants = isPlainObject(model.variants) ? model.variants : {};
+            for (const [variantKeyRaw, variantRaw] of Object.entries(rawVariants)) {
+                const variantKey = normalizeString(variantKeyRaw, { maxLen: 64 })?.toLowerCase();
+                if (!variantKey) continue;
+                const variant = toVariantRecord(variantRaw);
+                if (!variant) continue;
+                variants[variantKey] = variant;
+                for (const alias of variant.aliases) {
+                    if (!variantAliases.has(alias)) variantAliases.set(alias, variantKey);
+                }
+            }
+            if (Object.keys(variants).length === 0) continue;
+
+            const defaultVariantRaw = normalizeString(model.default_variant, { maxLen: 64 })?.toLowerCase() || 'awq';
+            const fallbackVariantRaw = normalizeString(model.fallback_variant, { maxLen: 64 })?.toLowerCase() || null;
+            const entry = {
+                id: canonicalId,
+                variants,
+                defaultVariant: variants[defaultVariantRaw] ? defaultVariantRaw : Object.keys(variants)[0],
+                fallbackVariant: fallbackVariantRaw && variants[fallbackVariantRaw] ? fallbackVariantRaw : null,
+                variantAliases,
+            };
+
+            const bindAlias = (aliasRaw) => {
+                const alias = normalizeModelToken(aliasRaw);
+                if (!alias || byAlias.has(alias)) return;
+                byAlias.set(alias, entry);
+            };
+
+            bindAlias(canonicalId);
+            if (Array.isArray(model.aliases)) model.aliases.forEach(bindAlias);
+            for (const alias of variantAliases.keys()) bindAlias(alias);
+        }
+
+        cachedVllmCompatibilityIndex = {
+            available: true,
+            byAlias,
+        };
+        return cachedVllmCompatibilityIndex;
+    } catch (error) {
+        console.error('[providers] Failed to load vLLM compatibility matrix:', error.message);
+        cachedVllmCompatibilityIndex = {
+            available: false,
+            byAlias: new Map(),
+        };
+        return cachedVllmCompatibilityIndex;
+    }
+}
+
+function evaluateLowVramInferenceCompatibility(providerProfile, jobRequirements) {
+    if (jobRequirements.compute_type !== 'inference' || !jobRequirements.model_id) {
+        return { accepted: true };
+    }
+    if (providerProfile.vram_mb > LOW_VRAM_AWQ_ENFORCEMENT_MAX_MB) {
+        return { accepted: true };
+    }
+
+    const compatibilityIndex = loadVllmCompatibilityIndex();
+    if (!compatibilityIndex.available) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: 'Low-VRAM inference admission requires vLLM compatibility matrix, but it is unavailable',
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    const normalizedModelId = normalizeModelToken(jobRequirements.model_id);
+    const modelEntry = normalizedModelId ? compatibilityIndex.byAlias.get(normalizedModelId) : null;
+    if (!modelEntry) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `Model '${jobRequirements.model_id}' is not supported for <=12GB AWQ provider routing`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    const requestedVariant = normalizedModelId && modelEntry.variantAliases.has(normalizedModelId)
+        ? modelEntry.variantAliases.get(normalizedModelId)
+        : null;
+    const selectedVariant = requestedVariant || modelEntry.defaultVariant;
+    const variantConfig = modelEntry.variants[selectedVariant];
+    if (!variantConfig) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `Compatibility matrix is missing variant '${selectedVariant}' for model '${jobRequirements.model_id}'`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    if (!variantConfig.available) {
+        if (modelEntry.fallbackVariant) {
+            const fallbackConfig = modelEntry.variants[modelEntry.fallbackVariant];
+            if (fallbackConfig && providerProfile.vram_mb >= fallbackConfig.min_vram_mb) {
+                return { accepted: true };
+            }
+            if (fallbackConfig) {
+                return {
+                    accepted: false,
+                    reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+                    reason: `${jobRequirements.model_id}: AWQ weights unavailable (${variantConfig.availability_note || 'upstream missing'}); fallback '${modelEntry.fallbackVariant}' needs at least ${fallbackConfig.min_vram_mb} MiB VRAM`,
+                    tier_mode: jobRequirements.tier_mode,
+                    prewarm_class: jobRequirements.prewarm_class,
+                };
+            }
+        }
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `${jobRequirements.model_id}: AWQ weights unavailable (${variantConfig.availability_note || 'upstream missing'})`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    if (providerProfile.vram_mb < variantConfig.min_vram_mb) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+            reason: `Model '${jobRequirements.model_id}' requires ${variantConfig.min_vram_mb} MiB VRAM for ${selectedVariant}, provider has ${providerProfile.vram_mb} MiB`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+
+    return { accepted: true };
+}
+
+function resolveTierMode(prewarmClass) {
+    const normalized = normalizeString(prewarmClass, { maxLen: 32 })?.toLowerCase() || 'warm';
+    return {
+        prewarm_class: normalized,
+        tier_mode: TIER_MODE_BY_PREWARM_CLASS[normalized] || null,
+    };
+}
+
 function getProviderRoutingProfile(provider) {
     const vramMb =
         toFiniteInt(provider.vram_mb, { min: 0, max: 1024 * 1024 }) ||
@@ -2084,13 +2337,22 @@ function getProviderRoutingProfile(provider) {
     }
 
     const cachedModelsRaw = safeJsonParse(provider.cached_models);
-    const cachedModels = new Set(Array.isArray(cachedModelsRaw) ? cachedModelsRaw : []);
+    const cachedModels = new Set();
+    if (Array.isArray(cachedModelsRaw)) {
+        for (const modelId of cachedModelsRaw) {
+            const normalizedModel = normalizeString(modelId, { maxLen: 500 })?.toLowerCase();
+            if (normalizedModel) cachedModels.add(normalizedModel);
+        }
+    }
 
     return {
         vram_mb: Number(vramMb || 0),
         gpu_count: Number(gpuCount || 1),
         supported_compute_types: supported,
         cached_models: cachedModels,
+        gpu_label: normalizeString(provider.gpu_name_detected, { maxLen: 120 })
+            || normalizeString(provider.gpu_model, { maxLen: 120 })
+            || null,
     };
 }
 
@@ -2112,10 +2374,12 @@ function parseJobContainerRequirements(containerSpecRaw, prewarmCache = null) {
                 'SELECT prewarm_class FROM model_registry WHERE model_id = ? AND is_active = 1',
                 modelId
             );
-            prewarmClass = normalizeString(modelRecord?.prewarm_class) || 'warm';
+            prewarmClass = normalizeString(modelRecord?.prewarm_class)?.toLowerCase() || 'warm';
             if (prewarmCache) prewarmCache.set(modelId, prewarmClass);
         }
     }
+
+    const tier = resolveTierMode(prewarmClass);
 
     return {
         vram_required_mb: vramRequiredMb,
@@ -2123,42 +2387,141 @@ function parseJobContainerRequirements(containerSpecRaw, prewarmCache = null) {
         compute_type: computeType,
         container_spec: containerSpec,
         model_id: modelId,
-        prewarm_class: prewarmClass,
+        prewarm_class: tier.prewarm_class,
+        tier_mode: tier.tier_mode,
     };
 }
 
-function providerMatchesJob(providerProfile, jobRequirements) {
+function evaluateProviderAdmission(providerProfile, jobRequirements) {
+    if (!jobRequirements.tier_mode) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.JOB_TIER_UNSUPPORTED,
+            reason: `Unsupported prewarm class '${jobRequirements.prewarm_class || 'unknown'}'`,
+            tier_mode: null,
+            prewarm_class: jobRequirements.prewarm_class || null,
+        };
+    }
     if (!providerProfile.supported_compute_types.has(jobRequirements.compute_type)) {
-        return false;
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.COMPUTE_TYPE_UNSUPPORTED,
+            reason: `Provider does not support compute type '${jobRequirements.compute_type}'`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+    const modelCompatibility = evaluateLowVramInferenceCompatibility(providerProfile, jobRequirements);
+    if (!modelCompatibility.accepted) {
+        return modelCompatibility;
     }
     if (providerProfile.vram_mb < jobRequirements.vram_required_mb) {
-        return false;
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_VRAM,
+            reason: `Provider VRAM ${providerProfile.vram_mb} MiB is below required ${jobRequirements.vram_required_mb} MiB`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
     }
     if (providerProfile.gpu_count < jobRequirements.gpu_count) {
-        return false;
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_GPU_COUNT,
+            reason: `Provider GPU count ${providerProfile.gpu_count} is below required ${jobRequirements.gpu_count}`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+        };
     }
-    // Sprint 25 Gap 5: hot-tier models must already be cached on the provider.
-    // 'hot' = instant-tier (baked into image or pre-downloaded); skip providers that lack it.
-    // 'warm'/'cold' = download at runtime; any provider with sufficient VRAM is acceptable.
-    if (jobRequirements.prewarm_class === 'hot' && jobRequirements.model_id) {
-        if (!providerProfile.cached_models?.has(jobRequirements.model_id)) {
-            return false;
+    if (jobRequirements.model_id) {
+        const compatibility = evaluateProviderModelCompatibility({
+            modelId: jobRequirements.model_id,
+            providerVramMb: providerProfile.vram_mb,
+        });
+        if (!compatibility.supported) {
+            return {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.MODEL_COMPATIBILITY_UNSUPPORTED,
+                reason: compatibility.reason,
+                tier_mode: jobRequirements.tier_mode,
+                prewarm_class: jobRequirements.prewarm_class,
+                model_id: jobRequirements.model_id,
+                matrix_version: compatibility.matrix_version || null,
+                min_required_vram_mb: compatibility.min_required_vram_mb || null,
+                recommended_script: compatibility.recommended_script || null,
+            };
+        }
+        // Include compatibility data on accepted admissions for deterministic operator hints.
+        if (compatibility.known) {
+            jobRequirements._compatibility = compatibility;
         }
     }
-    return true;
+    if (jobRequirements.tier_mode === 'instant' && jobRequirements.model_id) {
+        const normalizedModelId = normalizeString(jobRequirements.model_id, { maxLen: 500 })?.toLowerCase();
+        if (!normalizedModelId || !providerProfile.cached_models?.has(normalizedModelId)) {
+            return {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.INSTANT_MODEL_NOT_CACHED,
+                reason: `Instant tier requires cached model '${jobRequirements.model_id}'`,
+                tier_mode: jobRequirements.tier_mode,
+                prewarm_class: jobRequirements.prewarm_class,
+            };
+        }
+    }
+    return {
+        accepted: true,
+        reason_code: PROVIDER_ADMISSION_REASON_CODES.OK,
+        reason: 'Provider satisfies admission checks',
+        tier_mode: jobRequirements.tier_mode,
+        prewarm_class: jobRequirements.prewarm_class,
+        resolved_model_id: jobRequirements?._compatibility?.resolved_model_id || null,
+        resolved_variant: jobRequirements?._compatibility?.resolved_variant || null,
+        recommended_script: jobRequirements?._compatibility?.recommended_script || null,
+        fallback_used: Boolean(jobRequirements?._compatibility?.fallback_used),
+        matrix_version: jobRequirements?._compatibility?.matrix_version || null,
+    };
 }
 
 function buildNextPendingJob(providerId) {
     const provider = db.get(
         `SELECT id, wallet_address, is_paused, last_heartbeat, resource_spec, supported_compute_types, gpu_count, gpu_count_reported,
+                gpu_model, gpu_name_detected,
                 vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb, cached_models
          FROM providers
          WHERE id = ?`,
         providerId
     );
-    if (!provider || Number(provider.is_paused || 0) === 1) return null;
+    if (!provider) {
+        return {
+            job: null,
+            admission: {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.PROVIDER_OFFLINE,
+                reason: 'Provider not found',
+            },
+        };
+    }
+    if (Number(provider.is_paused || 0) === 1) {
+        return {
+            job: null,
+            admission: {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.PROVIDER_PAUSED,
+                reason: 'Provider is paused',
+            },
+        };
+    }
     const providerStatus = computeProviderStatus(provider.last_heartbeat, Date.now());
-    if (providerStatus.status === 'offline') return null;
+    if (providerStatus.status === 'offline') {
+        return {
+            job: null,
+            admission: {
+                accepted: false,
+                reason_code: PROVIDER_ADMISSION_REASON_CODES.PROVIDER_OFFLINE,
+                reason: 'Provider heartbeat is stale/offline',
+            },
+        };
+    }
 
     const providerProfile = getProviderRoutingProfile(provider);
     const candidates = db.all(
@@ -2180,11 +2543,21 @@ function buildNextPendingJob(providerId) {
 
     let job = null;
     let parsedContainerSpec = null;
+    let selectedAdmission = null;
     const now = new Date().toISOString();
     const prewarmCache = new Map(); // memoize model_registry lookups within this poll
     for (const candidate of candidates) {
         const requirements = parseJobContainerRequirements(candidate.container_spec, prewarmCache);
-        if (!providerMatchesJob(providerProfile, requirements)) {
+        const admission = evaluateProviderAdmission(providerProfile, requirements);
+        if (!admission.accepted) {
+            if (!selectedAdmission) {
+                selectedAdmission = {
+                    ...admission,
+                    job_id: candidate.job_id,
+                    compute_type: requirements.compute_type,
+                    model_id: requirements.model_id,
+                };
+            }
             continue;
         }
 
@@ -2208,10 +2581,29 @@ function buildNextPendingJob(providerId) {
 
         job = candidate;
         parsedContainerSpec = requirements.container_spec;
+        selectedAdmission = {
+            ...admission,
+            job_id: candidate.job_id,
+            compute_type: requirements.compute_type,
+            model_id: requirements.model_id,
+        };
         break;
     }
 
-    if (!job) return null;
+    if (!job) {
+        return {
+            job: null,
+            admission: selectedAdmission || {
+                accepted: false,
+                reason_code: candidates.length > 0
+                    ? PROVIDER_ADMISSION_REASON_CODES.NO_ELIGIBLE_JOB_FOR_PROVIDER
+                    : PROVIDER_ADMISSION_REASON_CODES.NO_PENDING_JOBS,
+                reason: candidates.length > 0
+                    ? 'Pending jobs exist but none pass provider admission checks'
+                    : 'No pending jobs available',
+            },
+        };
+    }
 
     const nextAttemptRow = db.get(
         'SELECT COALESCE(MAX(attempt_number), 0) + 1 AS attempt_number FROM job_executions WHERE job_id = ?',
@@ -2276,6 +2668,7 @@ function buildNextPendingJob(providerId) {
     });
 
     return {
+        job: {
         id: job.id,
         job_id: job.job_id,
         job_type: job.job_type,
@@ -2288,6 +2681,12 @@ function buildNextPendingJob(providerId) {
         gpu_requirements: job.gpu_requirements ? JSON.parse(job.gpu_requirements) : null,
         duration_minutes: job.duration_minutes,
         max_duration_seconds: job.max_duration_seconds || 600
+        },
+        admission: selectedAdmission || {
+            accepted: true,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.OK,
+            reason: 'Provider satisfies admission checks',
+        },
     };
 }
 
@@ -2296,8 +2695,8 @@ router.get('/:api_key/jobs', (req, res) => {
         const { api_key } = req.params;
         const provider = db.get('SELECT id, readiness_status FROM providers WHERE api_key = ?', api_key);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
-        const job = buildNextPendingJob(provider.id);
-        return res.json({ job: job || null });
+        const decision = buildNextPendingJob(provider.id);
+        return res.json({ job: decision.job || null, admission: decision.admission || null });
     } catch (error) {
         console.error('Job poll error:', error);
         res.status(500).json({ error: 'Job poll failed' });
@@ -2317,8 +2716,8 @@ router.get('/jobs/next', (req, res) => {
         if (!cleanApiKey) return res.status(400).json({ error: 'Provider API key required' });
         const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanApiKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
-        const job = buildNextPendingJob(provider.id);
-        return res.json({ job: job || null });
+        const decision = buildNextPendingJob(provider.id);
+        return res.json({ job: decision.job || null, admission: decision.admission || null });
     } catch (error) {
         console.error('Job next poll error:', error);
         res.status(500).json({ error: 'Job poll failed' });
@@ -2750,9 +3149,10 @@ router.post('/:id/jobs/:jobId/complete', async (req, res) => {
 router.get('/download/daemon', (req, res) => {
     try {
         const { key, check_only } = req.query;
-        if (!key) return res.status(400).json({ error: 'API key required' });
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         const daemonCandidates = [
@@ -2774,7 +3174,7 @@ router.get('/download/daemon', (req, res) => {
             return res.json({
                 version: currentVersion,
                 min_version: MIN_DAEMON_VERSION,
-                download_url: `/api/providers/download/daemon?key=${key}`,
+                download_url: `/api/providers/download/daemon?key=${cleanKey}`,
             });
         }
 
@@ -2783,10 +3183,10 @@ router.get('/download/daemon', (req, res) => {
         const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa';
         const hmacSecret = process.env.DC1_HMAC_SECRET || '';
         let injected = script
-            .replace('API_KEY = "{{API_KEY}}"', `API_KEY = "${key}"`)
+            .replace('API_KEY = "{{API_KEY}}"', `API_KEY = "${cleanKey}"`)
             .replace('API_URL = "{{API_URL}}"', `API_URL = "${apiUrl}"`)
             .replace('HMAC_SECRET = "{{HMAC_SECRET}}"', `HMAC_SECRET = "${hmacSecret}"`)
-            .replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`)
+            .replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${cleanKey}"`)
             .replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 
         const downloadName = path.basename(daemonPath);
@@ -2864,14 +3264,36 @@ router.get('/download/tray-linux', (req, res) => {
 });
 
 // ============================================================================
+// GET /api/providers/download/tray-mac - Serve macOS menu bar app
+// ============================================================================
+router.get('/download/tray-mac', (req, res) => {
+    try {
+        if (req.query.check_only === 'true') {
+            return res.json({ version: '2.0.0', platform: 'macos' });
+        }
+        const menubarPath = path.join(__dirname, '../../installers/dcp_menubar.py');
+        if (!fs.existsSync(menubarPath)) {
+            return res.status(404).json({ error: 'Menu bar app not found' });
+        }
+        res.setHeader('Content-Type', 'text/x-python');
+        res.setHeader('Content-Disposition', 'attachment; filename="dcp_menubar.py"');
+        res.sendFile(menubarPath);
+    } catch (error) {
+        console.error('Mac tray download error:', error);
+        res.status(500).json({ error: 'Download failed' });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/download/setup - OS-specific setup script with injected key
 // ============================================================================
 router.get('/download/setup', (req, res) => {
     try {
         const { key, os: osType } = req.query;
-        if (!key) return res.status(400).json({ error: 'API key required' });
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         const isWindows = (osType || '').toLowerCase() === 'windows';
@@ -2884,7 +3306,7 @@ router.get('/download/setup', (req, res) => {
 
         const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa';
         let script = fs.readFileSync(templatePath, 'utf-8');
-        script = script.replace(/INJECT_KEY_HERE/g, key);
+        script = script.replace(/INJECT_KEY_HERE/g, cleanKey);
         script = script.replace(/INJECT_URL_HERE/g, apiUrl);
 
         const contentType = isWindows ? 'text/plain' : 'text/x-shellscript';
@@ -3669,35 +4091,21 @@ function extractOptionalCatalogFields(rawModelMetadata, canonicalModelId) {
 
 function toModelCatalogContractItem({ model, providerCount, maxVramGb, sourceMetadata }) {
     const modelId = String(model.model_id || '').trim();
-    const useCases = parseUseCases(model.use_cases);
-    const modalities = inferModalitiesFromUseCases(useCases);
-    const supportedFeatures = inferSupportedFeaturesFromUseCases(useCases);
-    const contextWindow = Number(model.context_window) > 0 ? Number(model.context_window) : 4096;
-    const maxOutputTokens = Math.max(512, Math.min(16384, Math.floor(contextWindow / 2)));
-    const usdPerMinute = toUsdStringFromHalalaPerMinute(model.default_price_halala_per_min);
+    const contractCore = toCatalogContractCore({
+        model,
+        providerCount,
+        maxVramGb,
+        created: model.created_at ? Math.floor(new Date(model.created_at).getTime() / 1000) : null,
+        nameFallback: toDisplayName(modelId),
+    });
     const optionalFields = extractOptionalCatalogFields(sourceMetadata, modelId);
-
     const payload = {
-        id: modelId,
-        name: model.display_name || toDisplayName(modelId),
-        created: model.created_at || new Date().toISOString(),
-        modalities,
-        context_length: contextWindow,
-        max_output_tokens: maxOutputTokens,
-        quantization: model.quantization || 'unknown',
-        pricing: {
-            usd_per_minute: usdPerMinute,
-            usd_per_1m_input_tokens: usdPerMinute,
-            usd_per_1m_output_tokens: usdPerMinute,
-        },
+        ...contractCore,
         sampling_parameters: {
             temperature: { min: 0, max: 2, default: 0.7 },
             top_p: { min: 0, max: 1, default: 1 },
             top_k: { min: 1, max: 200, default: 50 },
         },
-        supported_features: supportedFeatures,
-        provider_count: providerCount,
-        max_vram_gb: Number((maxVramGb || Number(model.vram_gb) || 0).toFixed(1)),
     };
 
     if (optionalFields.deprecation_date) payload.deprecation_date = optionalFields.deprecation_date;
@@ -3713,7 +4121,7 @@ function toModelCatalogContractItem({ model, providerCount, maxVramGb, sourceMet
 router.get('/model-catalog', (req, res) => {
     try {
         const activeModels = db.all(
-            `SELECT model_id, display_name, quantization, context_window, default_price_halala_per_min, vram_gb, created_at
+            `SELECT model_id, display_name, quantization, context_window, default_price_halala_per_min, vram_gb, created_at, use_cases
              FROM model_registry
              WHERE is_active = 1`
         );
@@ -3897,6 +4305,58 @@ function computeReputationTier({ uptimePct, successRate, totalJobs }) {
     return 'new';
 }
 
+function normalizeLatencyMs(rawValue) {
+    if (rawValue == null || rawValue === '') return null;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) return null;
+    return Math.round(parsed * 10) / 10;
+}
+
+function toLatencyContract(row, heartbeatAgeSeconds = null) {
+    const benchmarkLatencyMs = normalizeLatencyMs(row?.best_latency_ms);
+    if (benchmarkLatencyMs != null) {
+        return {
+            latency_ms: benchmarkLatencyMs,
+            latency_source: 'benchmark',
+            latency_sample_count: Number(row?.latency_sample_count || 0),
+            latency_measured_at: row?.latest_latency_completed_at || null,
+            latency_sort_ms: benchmarkLatencyMs,
+        };
+    }
+
+    if (Number.isFinite(heartbeatAgeSeconds) && heartbeatAgeSeconds >= 0) {
+        const fallbackLatencyMs = normalizeLatencyMs(heartbeatAgeSeconds * 1000);
+        return {
+            latency_ms: fallbackLatencyMs,
+            latency_source: 'heartbeat_age',
+            latency_sample_count: 0,
+            latency_measured_at: null,
+            latency_sort_ms: fallbackLatencyMs,
+        };
+    }
+
+    return {
+        latency_ms: null,
+        latency_source: 'none',
+        latency_sample_count: 0,
+        latency_measured_at: null,
+        latency_sort_ms: Number.POSITIVE_INFINITY,
+    };
+}
+
+function compareByLatencyThenDeterministic(a, b) {
+    const latencyDelta = (a.latency_sort_ms ?? Number.POSITIVE_INFINITY) - (b.latency_sort_ms ?? Number.POSITIVE_INFINITY);
+    if (latencyDelta !== 0) return latencyDelta;
+
+    const reputationDelta = (b.reputation_score ?? 100) - (a.reputation_score ?? 100);
+    if (reputationDelta !== 0) return reputationDelta;
+
+    const uptimeDelta = (b.uptime_pct ?? 0) - (a.uptime_pct ?? 0);
+    if (uptimeDelta !== 0) return uptimeDelta;
+
+    return (a.id ?? 0) - (b.id ?? 0);
+}
+
 // ============================================================================
 // GET /api/providers/active — Authenticated view of online-only providers
 // Requires: Authorization: Bearer <renter_api_key|provider_api_key>
@@ -3940,7 +4400,10 @@ router.get('/active', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3956,6 +4419,15 @@ router.get('/active', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
                    AND COALESCE(p.approval_status, 'pending') = 'approved'
                  ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
@@ -3973,7 +4445,10 @@ router.get('/active', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -3989,6 +4464,15 @@ router.get('/active', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
                  ORDER BY p.id DESC`
             );
@@ -3998,6 +4482,7 @@ router.get('/active', (req, res) => {
         const mapped = providers.reduce((acc, p) => {
             const { status: computedStatus, heartbeat_age_seconds } =
                 computeProviderStatus(p.last_heartbeat, now);
+            const latency = toLatencyContract(p, heartbeat_age_seconds);
 
             // /active returns only fully-online providers (not degraded)
             if (computedStatus !== 'online') return acc;
@@ -4066,13 +4551,18 @@ router.get('/active', (req, res) => {
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
                 cached_models: cachedModels,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
                 cost_rates_halala_per_min: COST_RATES,
             });
 
             return acc;
         }, []);
 
-        mapped.sort((a, b) => (b.reputation_score ?? 100) - (a.reputation_score ?? 100));
+        mapped.sort(compareByLatencyThenDeterministic);
 
         res.json({
             providers: mapped,
@@ -4104,7 +4594,10 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -4120,6 +4613,15 @@ router.get('/available', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE p.is_paused = 0 AND p.last_heartbeat IS NOT NULL
                    AND COALESCE(p.approval_status, 'pending') = 'approved'
                  ORDER BY (p.reputation_score IS NULL) ASC, p.reputation_score DESC,
@@ -4138,7 +4640,10 @@ router.get('/available', (req, res) => {
                         COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                         COALESCE(js.completed_jobs, 0) AS completed_jobs,
                         COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                        COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                        bl.best_latency_ms,
+                        bl.latest_latency_completed_at,
+                        COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
                  FROM providers p
                  LEFT JOIN (
                     SELECT provider_id, COUNT(*) AS heartbeats_7d
@@ -4154,6 +4659,15 @@ router.get('/available', (req, res) => {
                     FROM jobs
                     GROUP BY provider_id
                  ) js ON js.provider_id = p.id
+                 LEFT JOIN (
+                    SELECT provider_id,
+                           MIN(latency_ms) AS best_latency_ms,
+                           MAX(completed_at) AS latest_latency_completed_at,
+                           COUNT(*) AS latency_sample_count
+                    FROM benchmark_runs
+                    WHERE status = 'completed' AND latency_ms IS NOT NULL
+                    GROUP BY provider_id
+                 ) bl ON bl.provider_id = p.id
                  WHERE COALESCE(p.is_paused, 0) = 0 AND p.last_heartbeat IS NOT NULL
                  ORDER BY p.id DESC`
             );
@@ -4163,6 +4677,7 @@ router.get('/available', (req, res) => {
         const mapped = providers.reduce((acc, p) => {
             const { status: computedStatus, heartbeat_age_seconds, degraded_since } =
                 computeProviderStatus(p.last_heartbeat, now);
+            const latency = toLatencyContract(p, heartbeat_age_seconds);
 
             // Exclude truly offline providers from the marketplace listing
             if (computedStatus === 'offline') return acc;
@@ -4230,17 +4745,21 @@ router.get('/available', (req, res) => {
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
                 cached_models: cachedModels,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
                 // Pricing (halala per minute by job type)
                 cost_rates_halala_per_min: COST_RATES,
             });
 
             return acc;
         }, []);
-
         // Degrade sort: online providers first, then degraded, both sub-sorted by reputation
         mapped.sort((a, b) => {
             if (a.status !== b.status) return a.status === 'online' ? -1 : 1;
-            return (b.reputation_score ?? 100) - (a.reputation_score ?? 100);
+            return compareByLatencyThenDeterministic(a, b);
         });
 
         res.json({
@@ -4265,11 +4784,15 @@ router.get('/marketplace', (req, res) => {
         const defaultRateHalalaPerHour = 500;
         const providers = db.all(
             `SELECT p.id, p.gpu_model, p.gpu_name_detected, p.gpu_vram_mib, p.vram_gb, p.uptime_percent, p.total_jobs, p.created_at,
+                    p.last_heartbeat, p.reputation_score,
                     gp.rate_halala AS marketplace_rate_halala,
                     COALESCE(hb.heartbeats_7d, 0) AS heartbeats_7d,
                     COALESCE(js.completed_jobs, 0) AS completed_jobs,
                     COALESCE(js.terminal_jobs, 0) AS terminal_jobs,
-                    COALESCE(js.total_jobs_computed, 0) AS total_jobs_all
+                    COALESCE(js.total_jobs_computed, 0) AS total_jobs_all,
+                    bl.best_latency_ms,
+                    bl.latest_latency_completed_at,
+                    COALESCE(bl.latency_sample_count, 0) AS latency_sample_count
              FROM providers p
              LEFT JOIN gpu_pricing gp
                ON LOWER(TRIM(gp.gpu_model)) = LOWER(TRIM(COALESCE(p.gpu_name_detected, p.gpu_model)))
@@ -4287,6 +4810,15 @@ router.get('/marketplace', (req, res) => {
                 FROM jobs
                 GROUP BY provider_id
              ) js ON js.provider_id = p.id
+             LEFT JOIN (
+                SELECT provider_id,
+                       MIN(latency_ms) AS best_latency_ms,
+                       MAX(completed_at) AS latest_latency_completed_at,
+                       COUNT(*) AS latency_sample_count
+                FROM benchmark_runs
+                WHERE status = 'completed' AND latency_ms IS NOT NULL
+                GROUP BY provider_id
+             ) bl ON bl.provider_id = p.id
              WHERE p.status = 'online' AND COALESCE(p.is_paused, 0) = 0
                AND COALESCE(p.approval_status, 'pending') = 'approved'
              ORDER BY COALESCE(p.reputation_score, 0) DESC, p.id DESC`
@@ -4310,6 +4842,10 @@ router.get('/marketplace', (req, res) => {
                 successRate: jobSuccessRate,
                 totalJobs,
             });
+            const heartbeatAgeSeconds = p.last_heartbeat
+                ? Math.max(0, Math.floor((Date.now() - new Date(p.last_heartbeat).getTime()) / 1000))
+                : null;
+            const latency = toLatencyContract(p, heartbeatAgeSeconds);
 
             const rateHalalaPerHour = Number.isInteger(p.marketplace_rate_halala)
                 ? p.marketplace_rate_halala
@@ -4326,8 +4862,16 @@ router.get('/marketplace', (req, res) => {
                 job_success_rate: jobSuccessRate,
                 total_jobs_completed: completedJobs,
                 reputation_tier: reputationTier,
+                reputation_score: p.reputation_score ?? 0,
+                latency_ms: latency.latency_ms,
+                latency_source: latency.latency_source,
+                latency_sample_count: latency.latency_sample_count,
+                latency_measured_at: latency.latency_measured_at,
+                latency_sort_ms: latency.latency_sort_ms,
             };
         });
+
+        payload.sort(compareByLatencyThenDeterministic);
 
         res.json(payload);
     } catch (error) {
@@ -4839,6 +5383,16 @@ router.get('/:id/health', (req, res) => {
 // Minimum hardware requirements for provider activation
 const ACTIVATION_MIN_VRAM_GB = 8;
 const ACTIVATION_MIN_TFLOPS = 10;
+const ACTIVATION_STALE_HEARTBEAT_SECONDS = Number(process.env.DC1_ACTIVATION_STALE_HEARTBEAT_SECONDS || 300);
+const ACTIVATION_MIN_COMPUTE_CAPABILITY = Number(process.env.DC1_ACTIVATION_MIN_COMPUTE_CAPABILITY || 6.0);
+const ACTIVATION_BLOCKER_CODES = Object.freeze({
+    KEY_AUTH_MISMATCH: 'KEY_AUTH_MISMATCH',
+    KEY_AUTH_INTEGRITY: 'KEY_AUTH_INTEGRITY',
+    DAEMON_NOT_SEEN: 'DAEMON_NOT_SEEN',
+    STALE_HEARTBEAT: 'STALE_HEARTBEAT',
+    MISSING_TIER_IMAGE: 'MISSING_TIER_IMAGE',
+    INVALID_GPU_CAPABILITY: 'INVALID_GPU_CAPABILITY',
+});
 
 // Provider event emitter for downstream consumers (e.g. job dispatcher DCP-738)
 const _providerEventEmitter = new (require('events'))();
@@ -4871,6 +5425,88 @@ function ensureProviderBenchmarksTable() {
             FOREIGN KEY (provider_id) REFERENCES providers(id)
         )
     `).run();
+}
+
+function parseActivationCachedModels(raw) {
+    if (!raw) return [];
+    try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map((entry) => {
+            if (typeof entry === 'string') return entry;
+            if (entry && typeof entry === 'object' && typeof entry.model_id === 'string') return entry.model_id;
+            return null;
+        }).filter(Boolean);
+    } catch (_) {
+        return [];
+    }
+}
+
+function parseActivationComputeCapability(raw) {
+    if (raw == null) return null;
+    const parsed = Number.parseFloat(String(raw).trim());
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildProviderActivationScorecard(provider, opts = {}) {
+    const {
+        authKeyProvided = true,
+        authKeyMatched = true,
+        nowMs = Date.now(),
+    } = opts;
+
+    const checks = {
+        key_auth_match: Boolean(authKeyProvided && authKeyMatched),
+        auth_key_integrity: false,
+        daemon_seen: false,
+        heartbeat_fresh: false,
+        tier_image_available: true,
+        gpu_capability_fit: true,
+    };
+
+    if (provider) {
+        checks.auth_key_integrity = Boolean(normalizeString(provider.api_key, { maxLen: 128, trim: false }));
+        checks.daemon_seen = Boolean(
+            normalizeString(provider.daemon_version, { maxLen: 32 }) ||
+            provider.last_heartbeat ||
+            provider.gpu_status
+        );
+
+        const heartbeatAt = provider.last_heartbeat ? new Date(provider.last_heartbeat).getTime() : null;
+        if (Number.isFinite(heartbeatAt)) {
+            const ageSeconds = Math.max(0, Math.floor((nowMs - heartbeatAt) / 1000));
+            checks.heartbeat_fresh = ageSeconds <= ACTIVATION_STALE_HEARTBEAT_SECONDS;
+        }
+
+        const preloadModel = normalizeString(provider.model_preload_model, { maxLen: 200 });
+        const preloadStatus = (normalizeString(provider.model_preload_status, { maxLen: 32 }) || 'none').toLowerCase();
+        const cachedModels = parseActivationCachedModels(provider.cached_models);
+        if (preloadModel) {
+            const hasModel = cachedModels.some((model) => String(model).toLowerCase() === preloadModel.toLowerCase());
+            checks.tier_image_available = hasModel && preloadStatus !== 'downloading' && preloadStatus !== 'warming';
+        }
+
+        const computeCapability = parseActivationComputeCapability(provider.gpu_compute_capability);
+        if (provider.gpu_compute_capability != null && String(provider.gpu_compute_capability).trim() !== '') {
+            checks.gpu_capability_fit = computeCapability != null && computeCapability >= ACTIVATION_MIN_COMPUTE_CAPABILITY;
+        }
+    }
+
+    const blockers = [];
+    if (!checks.key_auth_match) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_MISMATCH, message: 'API key does not match provider' });
+    if (!checks.auth_key_integrity) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_INTEGRITY, message: 'Provider API key integrity check failed' });
+    if (!checks.daemon_seen) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.DAEMON_NOT_SEEN, message: 'No daemon activity detected' });
+    if (!checks.heartbeat_fresh) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.STALE_HEARTBEAT, message: 'Heartbeat is stale or missing' });
+    if (!checks.tier_image_available) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.MISSING_TIER_IMAGE, message: 'Required tier image is not ready' });
+    if (!checks.gpu_capability_fit) blockers.push({ reason_code: ACTIVATION_BLOCKER_CODES.INVALID_GPU_CAPABILITY, message: 'GPU capability is below serving requirement' });
+
+    return {
+        provider_id: provider?.id || null,
+        ready_to_serve: blockers.length === 0,
+        checks,
+        blockers,
+        generated_at: new Date(nowMs).toISOString(),
+    };
 }
 
 function activateProviderById(providerId) {
@@ -5001,6 +5637,19 @@ router.post('/:id/benchmark-submit', function(req, res) {
         let activation = null;
         if (provider.approval_status === 'approved') {
             activation = activateProviderById(provider.id);
+            if (activation && activation.activated) {
+                conversionFunnel.trackStage({
+                    journey: 'provider',
+                    stage: 'first_success',
+                    actorType: 'provider',
+                    actorId: provider.id,
+                    req,
+                    metadata: {
+                        success_type: 'benchmark_activation',
+                        tier: activation.tier || null,
+                    },
+                });
+            }
         }
 
         const meetsMinimum = vramNum >= ACTIVATION_MIN_VRAM_GB && tflopsNum >= ACTIVATION_MIN_TFLOPS;
@@ -5046,6 +5695,17 @@ router.post('/:id/activate', function(req, res) {
         const result = activateProviderById(providerId);
 
         if (result.activated) {
+            conversionFunnel.trackStage({
+                journey: 'provider',
+                stage: 'first_success',
+                actorType: 'provider',
+                actorId: providerId,
+                req,
+                metadata: {
+                    success_type: 'explicit_activation',
+                    tier: result.tier || null,
+                },
+            });
             return res.json({
                 success: true,
                 provider_id: providerId,
@@ -5157,15 +5817,400 @@ router.delete('/:id/keys/:kid', (req, res) => {
     }
 });
 
-module.exports = router;
-module.exports.__private = {
-    discoverComputeTypesFromResourceSpec,
-    inferVramGb,
-    activateProviderById,
-    _providerEventEmitter,
-    ACTIVATION_MIN_VRAM_GB,
-    ACTIVATION_MIN_TFLOPS,
-};
+// ============================================================================
+// GET /api/providers/activation-scorecard — provider readiness scorecard
+// ============================================================================
+// Auth:
+//  - Admin: can request one provider (?provider_id=) or fleet view (no provider_id)
+//  - Provider: requires x-provider-key/Bearer and returns own scorecard
+router.get('/activation-scorecard', (req, res) => {
+    try {
+        const providerId = normalizeString(req.query.provider_id, { maxLen: 128, trim: true });
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req) || req.query.key,
+            { maxLen: 128, trim: false }
+        );
+        const admin = isAdminRequest(req);
+
+        if (!admin && !apiKey) {
+            return res.status(401).json({
+                ready_to_serve: false,
+                blockers: [{ reason_code: ACTIVATION_BLOCKER_CODES.KEY_AUTH_MISMATCH, message: 'Provider API key required' }],
+            });
+        }
+
+        if (admin && !providerId) {
+            const providers = db.all(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE deleted_at IS NULL
+                 ORDER BY updated_at DESC, id DESC
+                 LIMIT 500`
+            );
+            const scorecards = providers.map((provider) => buildProviderActivationScorecard(provider, { authKeyProvided: true, authKeyMatched: true }));
+            return res.json({
+                count: scorecards.length,
+                ready_count: scorecards.filter((entry) => entry.ready_to_serve).length,
+                blocked_count: scorecards.filter((entry) => !entry.ready_to_serve).length,
+                providers: scorecards,
+                generated_at: new Date().toISOString(),
+            });
+        }
+
+        const targetProvider = providerId
+            ? db.get(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE id = ? AND deleted_at IS NULL`,
+                providerId
+            )
+            : db.get(
+                `SELECT id, status, api_key, daemon_version, last_heartbeat, gpu_status,
+                        cached_models, model_preload_status, model_preload_model, gpu_compute_capability
+                 FROM providers
+                 WHERE api_key = ? AND deleted_at IS NULL`,
+                apiKey
+            );
+
+        if (!targetProvider) {
+            return res.status(404).json({ error: 'Provider not found' });
+        }
+
+        const authKeyMatched = admin || String(targetProvider.api_key || '') === String(apiKey || '');
+        const scorecard = buildProviderActivationScorecard(targetProvider, {
+            authKeyProvided: Boolean(apiKey) || admin,
+            authKeyMatched,
+        });
+
+        if (!scorecard.checks.key_auth_match) {
+            return res.status(401).json(scorecard);
+        }
+        return res.json(scorecard);
+    } catch (error) {
+        console.error('[providers/activation-scorecard GET]', error);
+        return res.status(500).json({ error: 'Failed to build activation scorecard', details: error.message });
+    }
+});
+
+const ACTIVATION_STATE = Object.freeze({
+    NOT_STARTED: 'not_started',
+    INSTALL_STARTED: 'install_started',
+    HEARTBEAT_RECEIVED: 'heartbeat_received',
+    READY_FOR_JOBS: 'ready_for_jobs',
+    BLOCKED: 'blocked',
+});
+
+const ACTIVATION_STATE_BLOCKER = Object.freeze({
+    DAEMON_NOT_DETECTED: 'daemon_not_detected',
+    HEARTBEAT_MISSING: 'heartbeat_missing',
+    HEARTBEAT_STALE: 'heartbeat_stale',
+    APPROVAL_PENDING: 'approval_pending',
+    APPROVAL_REJECTED: 'approval_rejected',
+    PROVIDER_PAUSED: 'provider_paused',
+    PROVIDER_SUSPENDED: 'provider_suspended',
+    READINESS_PENDING: 'readiness_pending',
+    READINESS_FAILED: 'readiness_failed',
+    GPU_PROFILE_INCOMPLETE: 'gpu_profile_incomplete',
+    PROVIDER_NOT_ONLINE: 'provider_not_online',
+});
+
+const ACTIVATION_HINTS = Object.freeze({
+    install_daemon: {
+        hint_key: 'install_daemon',
+        hint_en: 'Install and start the provider daemon, then send the first heartbeat.',
+        hint_ar: 'قم بتثبيت وتشغيل دايمون المزود ثم أرسل أول نبضة.',
+    },
+    send_heartbeat: {
+        hint_key: 'send_heartbeat',
+        hint_en: 'Start the daemon and send a heartbeat to continue onboarding.',
+        hint_ar: 'شغّل الدايمون وأرسل نبضة متابعة لإكمال التهيئة.',
+    },
+    refresh_heartbeat: {
+        hint_key: 'refresh_heartbeat',
+        hint_en: 'Daemon heartbeat is stale. Restart daemon/network and send a fresh heartbeat.',
+        hint_ar: 'نبضة الدايمون قديمة. أعد تشغيل الدايمون أو الشبكة وأرسل نبضة جديدة.',
+    },
+    wait_approval: {
+        hint_key: 'wait_approval',
+        hint_en: 'Provider registration is pending admin approval.',
+        hint_ar: 'تسجيل المزود بانتظار موافقة الإدارة.',
+    },
+    fix_rejection: {
+        hint_key: 'fix_rejection',
+        hint_en: 'Provider was rejected. Review rejection reason and resubmit after fixes.',
+        hint_ar: 'تم رفض المزود. راجع سبب الرفض وأعد التقديم بعد المعالجة.',
+    },
+    resume_provider: {
+        hint_key: 'resume_provider',
+        hint_en: 'Provider is paused. Resume provider to continue accepting jobs.',
+        hint_ar: 'المزود في وضع الإيقاف. قم بالاستئناف لمتابعة استقبال الوظائف.',
+    },
+    contact_support: {
+        hint_key: 'contact_support',
+        hint_en: 'Provider is suspended. Contact support/admin to resolve account status.',
+        hint_ar: 'المزود موقوف. تواصل مع الدعم أو الإدارة لمعالجة حالة الحساب.',
+    },
+    run_readiness_checks: {
+        hint_key: 'run_readiness_checks',
+        hint_en: 'Readiness checks are still running. Keep daemon online until checks pass.',
+        hint_ar: 'فحوصات الجاهزية ما زالت قيد التنفيذ. أبقِ الدايمون متصلاً حتى تنجح الفحوصات.',
+    },
+    fix_readiness: {
+        hint_key: 'fix_readiness',
+        hint_en: 'Readiness checks failed. Fix failed checks and re-run readiness.',
+        hint_ar: 'فشلت فحوصات الجاهزية. أصلح العناصر الفاشلة ثم أعد تشغيل فحص الجاهزية.',
+    },
+    complete_gpu_profile: {
+        hint_key: 'complete_gpu_profile',
+        hint_en: 'GPU profile is incomplete. Update GPU model/VRAM and resend heartbeat.',
+        hint_ar: 'ملف تعريف GPU غير مكتمل. حدّث طراز البطاقة/الذاكرة ثم أعد إرسال النبضة.',
+    },
+    mark_online: {
+        hint_key: 'mark_online',
+        hint_en: 'Provider has heartbeat but is not online yet. Complete activation to go live.',
+        hint_ar: 'تم استلام النبضة لكن المزود ليس متصلاً بعد. أكمل التفعيل للبدء.',
+    },
+    ready_for_jobs: {
+        hint_key: 'ready_for_jobs',
+        hint_en: 'Provider is fully activated and ready to accept jobs.',
+        hint_ar: 'المزود مفعّل بالكامل وجاهز لاستقبال الوظائف.',
+    },
+});
+
+const ACTIVATION_BLOCKER_HINT_KEY = Object.freeze({
+    [ACTIVATION_STATE_BLOCKER.DAEMON_NOT_DETECTED]: 'install_daemon',
+    [ACTIVATION_STATE_BLOCKER.HEARTBEAT_MISSING]: 'send_heartbeat',
+    [ACTIVATION_STATE_BLOCKER.HEARTBEAT_STALE]: 'refresh_heartbeat',
+    [ACTIVATION_STATE_BLOCKER.APPROVAL_PENDING]: 'wait_approval',
+    [ACTIVATION_STATE_BLOCKER.APPROVAL_REJECTED]: 'fix_rejection',
+    [ACTIVATION_STATE_BLOCKER.PROVIDER_PAUSED]: 'resume_provider',
+    [ACTIVATION_STATE_BLOCKER.PROVIDER_SUSPENDED]: 'contact_support',
+    [ACTIVATION_STATE_BLOCKER.READINESS_PENDING]: 'run_readiness_checks',
+    [ACTIVATION_STATE_BLOCKER.READINESS_FAILED]: 'fix_readiness',
+    [ACTIVATION_STATE_BLOCKER.GPU_PROFILE_INCOMPLETE]: 'complete_gpu_profile',
+    [ACTIVATION_STATE_BLOCKER.PROVIDER_NOT_ONLINE]: 'mark_online',
+});
+
+const ACTIVATION_BLOCKER_SEVERITY = Object.freeze({
+    [ACTIVATION_STATE_BLOCKER.DAEMON_NOT_DETECTED]: 'soft',
+    [ACTIVATION_STATE_BLOCKER.HEARTBEAT_MISSING]: 'soft',
+    [ACTIVATION_STATE_BLOCKER.HEARTBEAT_STALE]: 'hard',
+    [ACTIVATION_STATE_BLOCKER.APPROVAL_PENDING]: 'soft',
+    [ACTIVATION_STATE_BLOCKER.APPROVAL_REJECTED]: 'hard',
+    [ACTIVATION_STATE_BLOCKER.PROVIDER_PAUSED]: 'hard',
+    [ACTIVATION_STATE_BLOCKER.PROVIDER_SUSPENDED]: 'hard',
+    [ACTIVATION_STATE_BLOCKER.READINESS_PENDING]: 'soft',
+    [ACTIVATION_STATE_BLOCKER.READINESS_FAILED]: 'hard',
+    [ACTIVATION_STATE_BLOCKER.GPU_PROFILE_INCOMPLETE]: 'soft',
+    [ACTIVATION_STATE_BLOCKER.PROVIDER_NOT_ONLINE]: 'soft',
+});
+
+function activationApiError(res, statusCode, code, error, details = {}) {
+    return res.status(statusCode).json({
+        error,
+        code,
+        statusCode,
+        details,
+    });
+}
+
+function resolveActivationHint(hintKey) {
+    return ACTIVATION_HINTS[hintKey] || ACTIVATION_HINTS.install_daemon;
+}
+
+function collectActivationStateBlockers(provider, nowMs = Date.now()) {
+    const blockers = [];
+    const daemonSeen = Boolean(
+        normalizeString(provider.daemon_version, { maxLen: 64 }) ||
+        provider.gpu_status
+    );
+    const approvalStatus = normalizeString(provider.approval_status, { maxLen: 32 })?.toLowerCase() || 'pending';
+    const providerStatus = normalizeString(provider.status, { maxLen: 32 })?.toLowerCase() || 'pending';
+    const readinessStatus = normalizeString(provider.readiness_status, { maxLen: 32 })?.toLowerCase() || 'pending';
+    const isPaused = Number(provider.is_paused || 0) === 1;
+
+    const heartbeatAt = provider.last_heartbeat ? new Date(provider.last_heartbeat).getTime() : null;
+    const hasHeartbeat = Number.isFinite(heartbeatAt);
+    const heartbeatAgeSeconds = hasHeartbeat ? Math.max(0, Math.floor((nowMs - heartbeatAt) / 1000)) : null;
+    const heartbeatFresh = heartbeatAgeSeconds != null && heartbeatAgeSeconds <= ACTIVATION_STALE_HEARTBEAT_SECONDS;
+
+    const vramMb = toFiniteInt(provider.vram_mb, { min: 0, max: 1024 * 1024 })
+        || toFiniteInt(provider.gpu_vram_mib, { min: 0, max: 1024 * 1024 })
+        || toFiniteInt(provider.gpu_vram_mb, { min: 0, max: 1024 * 1024 })
+        || 0;
+    const gpuProfileComplete = Boolean(normalizeString(provider.gpu_model, { maxLen: 255 })) && vramMb > 0;
+
+    if (!daemonSeen) blockers.push(ACTIVATION_STATE_BLOCKER.DAEMON_NOT_DETECTED);
+    if (!hasHeartbeat) blockers.push(ACTIVATION_STATE_BLOCKER.HEARTBEAT_MISSING);
+    if (hasHeartbeat && !heartbeatFresh) blockers.push(ACTIVATION_STATE_BLOCKER.HEARTBEAT_STALE);
+
+    if (approvalStatus === 'pending') blockers.push(ACTIVATION_STATE_BLOCKER.APPROVAL_PENDING);
+    if (approvalStatus === 'rejected') blockers.push(ACTIVATION_STATE_BLOCKER.APPROVAL_REJECTED);
+    if (isPaused) blockers.push(ACTIVATION_STATE_BLOCKER.PROVIDER_PAUSED);
+    if (providerStatus === 'suspended') blockers.push(ACTIVATION_STATE_BLOCKER.PROVIDER_SUSPENDED);
+
+    if (readinessStatus === 'pending') blockers.push(ACTIVATION_STATE_BLOCKER.READINESS_PENDING);
+    if (['failed', 'error', 'blocked'].includes(readinessStatus)) blockers.push(ACTIVATION_STATE_BLOCKER.READINESS_FAILED);
+    if (!gpuProfileComplete) blockers.push(ACTIVATION_STATE_BLOCKER.GPU_PROFILE_INCOMPLETE);
+    if (providerStatus !== 'online') blockers.push(ACTIVATION_STATE_BLOCKER.PROVIDER_NOT_ONLINE);
+
+    return {
+        blockers,
+        daemonSeen,
+        hasHeartbeat,
+        heartbeatFresh,
+        heartbeatAgeSeconds,
+        gpuProfileComplete,
+        approvalStatus,
+        providerStatus,
+        readinessStatus,
+        isPaused,
+    };
+}
+
+function resolveActivationState(evalResult) {
+    const hardBlockers = evalResult.blockers.filter((code) => ACTIVATION_BLOCKER_SEVERITY[code] === 'hard');
+    if (!evalResult.daemonSeen && !evalResult.hasHeartbeat) return ACTIVATION_STATE.NOT_STARTED;
+    if (evalResult.daemonSeen && !evalResult.hasHeartbeat) return ACTIVATION_STATE.INSTALL_STARTED;
+    if (evalResult.hasHeartbeat && !evalResult.heartbeatFresh) return ACTIVATION_STATE.BLOCKED;
+    if (hardBlockers.length > 0) return ACTIVATION_STATE.BLOCKED;
+    if (evalResult.blockers.length === 0) return ACTIVATION_STATE.READY_FOR_JOBS;
+    return ACTIVATION_STATE.HEARTBEAT_RECEIVED;
+}
+
+function buildActivationStatePayload(provider, nowMs = Date.now()) {
+    const evalResult = collectActivationStateBlockers(provider, nowMs);
+    const activationState = resolveActivationState(evalResult);
+
+    const blockers = evalResult.blockers.map((code) => {
+        const hintKey = ACTIVATION_BLOCKER_HINT_KEY[code] || 'install_daemon';
+        const hint = resolveActivationHint(hintKey);
+        return {
+            code,
+            severity: ACTIVATION_BLOCKER_SEVERITY[code] || 'soft',
+            ...hint,
+        };
+    });
+
+    const nextAction = activationState === ACTIVATION_STATE.READY_FOR_JOBS
+        ? resolveActivationHint('ready_for_jobs')
+        : (blockers[0] || resolveActivationHint('install_daemon'));
+
+    return {
+        provider_id: provider.id,
+        activation_state: activationState,
+        blocker_codes: blockers.map((item) => item.code),
+        blockers,
+        next_action: nextAction,
+        signals: {
+            approval_status: evalResult.approvalStatus,
+            provider_status: evalResult.providerStatus,
+            readiness_status: evalResult.readinessStatus,
+            is_paused: evalResult.isPaused,
+            daemon_seen: evalResult.daemonSeen,
+            heartbeat_received: evalResult.hasHeartbeat,
+            heartbeat_fresh: evalResult.heartbeatFresh,
+            heartbeat_age_seconds: evalResult.heartbeatAgeSeconds,
+            last_heartbeat: provider.last_heartbeat || null,
+            gpu_profile_complete: evalResult.gpuProfileComplete,
+        },
+        generated_at: new Date(nowMs).toISOString(),
+    };
+}
+
+// ============================================================================
+// GET /api/providers/activation-state — canonical provider activation state
+// ============================================================================
+// Auth:
+//   - Provider: x-provider-key / Bearer token (returns own activation state)
+//   - Admin: x-admin-token + provider_id query (returns requested provider state)
+router.get('/activation-state', (req, res) => {
+    try {
+        const providerId = normalizeString(req.query.provider_id, { maxLen: 64, trim: true });
+        const apiKey = normalizeString(
+            req.headers['x-provider-key'] || getBearerToken(req) || req.query.key,
+            { maxLen: 128, trim: false }
+        );
+        const admin = isAdminRequest(req);
+
+        if (!admin && !apiKey) {
+            return activationApiError(
+                res,
+                401,
+                'PROVIDER_AUTH_REQUIRED',
+                'Provider API key required',
+                {
+                    remediation_hint: resolveActivationHint('install_daemon'),
+                }
+            );
+        }
+
+        if (admin && !providerId) {
+            return activationApiError(
+                res,
+                400,
+                'PROVIDER_ID_REQUIRED',
+                'provider_id is required for admin activation-state lookup',
+                {
+                    field: 'provider_id',
+                }
+            );
+        }
+
+        const targetProvider = providerId
+            ? db.get(
+                `SELECT id, api_key, status, approval_status, is_paused, daemon_version, last_heartbeat,
+                        gpu_status, readiness_status, gpu_model, vram_mb, gpu_vram_mib, gpu_vram_mb
+                 FROM providers
+                 WHERE id = ? AND deleted_at IS NULL`,
+                providerId
+            )
+            : db.get(
+                `SELECT id, api_key, status, approval_status, is_paused, daemon_version, last_heartbeat,
+                        gpu_status, readiness_status, gpu_model, vram_mb, gpu_vram_mib, gpu_vram_mb
+                 FROM providers
+                 WHERE api_key = ? AND deleted_at IS NULL`,
+                apiKey
+            );
+
+        if (!targetProvider) {
+            return activationApiError(
+                res,
+                404,
+                'PROVIDER_NOT_FOUND',
+                'Provider not found',
+                {
+                    provider_id: providerId || null,
+                }
+            );
+        }
+
+        if (!admin && String(targetProvider.api_key || '') !== String(apiKey || '')) {
+            return activationApiError(
+                res,
+                403,
+                'PROVIDER_AUTH_FORBIDDEN',
+                'Provider API key does not match the requested provider',
+                {
+                    remediation_hint: resolveActivationHint('install_daemon'),
+                }
+            );
+        }
+
+        return res.json(buildActivationStatePayload(targetProvider));
+    } catch (error) {
+        console.error('[providers/activation-state GET]', error);
+        return activationApiError(
+            res,
+            500,
+            'ACTIVATION_STATE_FETCH_FAILED',
+            'Failed to fetch provider activation state',
+            { reason: error.message }
+        );
+    }
+});
 
 // ============================================================================
 // GET /api/providers/self-test — Provider readiness validation (DCP-802)
@@ -5321,6 +6366,17 @@ router.post('/activate', (req, res) => {
             'UPDATE providers SET status = ?, updated_at = ? WHERE id = ?',
             'online', now, provider.id
         );
+        conversionFunnel.trackStage({
+            journey: 'provider',
+            stage: 'first_success',
+            actorType: 'provider',
+            actorId: provider.id,
+            req,
+            metadata: {
+                success_type: 'self_activate_online',
+                gpu_model: provider.gpu_model || null,
+            },
+        });
 
         // Estimate monthly earnings based on GPU model and DCP pricing
         const estimatedMonthlyEarnings = calculateEstimatedMonthlyEarnings(provider.gpu_model, 0.7);
@@ -5954,7 +7010,15 @@ module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
     inferVramGb,
+    loadVllmCompatibilityIndex,
+    evaluateLowVramInferenceCompatibility,
+    evaluateProviderAdmission,
+    PROVIDER_ADMISSION_REASON_CODES,
     activateProviderById,
+    getProviderRoutingProfile,
+    parseJobContainerRequirements,
+    evaluateProviderAdmission,
+    PROVIDER_ADMISSION_REASON_CODES,
     _providerEventEmitter,
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,

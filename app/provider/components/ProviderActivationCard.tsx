@@ -1,6 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { useLanguage } from '../../lib/i18n'
+import { getProviderActivationNarrative } from '../../lib/provider-activation-narrative'
 
 const API_BASE = '/api/dc1'
 
@@ -41,7 +44,17 @@ const ACTIVATION_CARD_DISMISSED_KEY = 'provider_activation_dismissed'
 const ACTIVATION_COMPLETE_KEY = 'provider_activation_complete'
 
 // ── Screen 1: CTA card ────────────────────────────────────────────────────────
-function ActivationCTACard({ onStart, onDismiss }: { onStart: () => void; onDismiss: () => void }) {
+function ActivationCTACard({
+  onStart,
+  onDismiss,
+  isRTL,
+}: {
+  onStart: () => void
+  onDismiss: () => void
+  isRTL: boolean
+}) {
+  const narrative = getProviderActivationNarrative(isRTL)
+
   return (
     <div className="rounded-xl border border-dc1-amber/30 bg-gradient-to-br from-dc1-amber/5 to-transparent p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
@@ -53,24 +66,37 @@ function ActivationCTACard({ onStart, onDismiss }: { onStart: () => void; onDism
 
         <div className="flex-1">
           <h3 className="text-lg font-bold text-dc1-text-primary mb-1">
-            Activate your GPU — start earning now
+            {narrative.headline}
           </h3>
           <p className="text-sm text-dc1-text-secondary mb-4">
-            Install the DCP daemon and connect your GPU to the marketplace. Setup takes under 5 minutes.
-            Saudi providers earn SAR 4,500–15,750/month at 70% utilisation.
+            {narrative.subheadline}
           </p>
+          <ul className="mb-4 space-y-1 text-xs text-dc1-text-secondary">
+            {narrative.valuePoints.map((point) => (
+              <li key={point} className="flex items-start gap-2">
+                <span className="mt-0.5 text-dc1-amber">•</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
           <div className="flex flex-wrap gap-3">
             <button
               onClick={onStart}
               className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-dc1-void hover:brightness-110 transition-all min-h-[44px]"
             >
-              Activate now →
+              {isRTL ? 'ابدأ التفعيل الآن →' : 'Activate now →'}
             </button>
+            <Link
+              href="/provider-onboarding"
+              className="rounded-lg border border-dc1-amber/40 bg-dc1-amber/10 px-5 py-2.5 text-sm font-semibold text-dc1-amber hover:bg-dc1-amber/20 transition-colors min-h-[44px] inline-flex items-center"
+            >
+              {isRTL ? 'فتح الإعداد الإرشادي' : 'Open guided onboarding'}
+            </Link>
             <button
               onClick={onDismiss}
               className="rounded-lg border border-dc1-border px-5 py-2.5 text-sm font-semibold text-dc1-text-secondary hover:text-dc1-text-primary hover:border-dc1-amber/40 transition-colors min-h-[44px]"
             >
-              Remind me later
+              {isRTL ? 'ذكرني لاحقًا' : 'Remind me later'}
             </button>
           </div>
         </div>
@@ -85,6 +111,15 @@ function ActivationCTACard({ onStart, onDismiss }: { onStart: () => void; onDism
             <p className="text-[10px] text-dc1-text-muted mt-0.5">est. / month · 70% utilisation</p>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+        <p className="text-xs font-semibold text-dc1-text-primary mb-2">{narrative.assumptionsTitle}</p>
+        <ul className="space-y-1 text-xs text-dc1-text-muted">
+          {narrative.assumptions.map((assumption) => (
+            <li key={assumption}>• {assumption}</li>
+          ))}
+        </ul>
       </div>
     </div>
   )
@@ -346,6 +381,7 @@ function ActivationWizard({
 
 // ── Main export: orchestrates the 3-screen flow ───────────────────────────────
 export default function ProviderActivationCard({ providerId, apiKey, onComplete }: ProviderActivationCardProps) {
+  const { isRTL } = useLanguage()
   const [screen, setScreen] = useState<'cta' | 'wizard' | 'hidden'>(() => {
     if (typeof window === 'undefined') return 'cta'
     if (localStorage.getItem(ACTIVATION_COMPLETE_KEY) === 'true') return 'hidden'
@@ -372,6 +408,7 @@ export default function ProviderActivationCard({ providerId, apiKey, onComplete 
         <ActivationCTACard
           onStart={() => setScreen('wizard')}
           onDismiss={handleDismiss}
+          isRTL={isRTL}
         />
       )}
       {screen === 'wizard' && (

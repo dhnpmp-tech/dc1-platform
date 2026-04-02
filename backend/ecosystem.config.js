@@ -110,6 +110,34 @@ module.exports = {
       }
     },
     {
+      name: 'dcp-runtime-route-parity-cron',
+      script: '/bin/sh',
+      args: '-lc "ROUTE_PARITY_BASE_URL=${ROUTE_PARITY_BASE_URL:-https://api.dcp.sa} ROUTE_PARITY_ARTIFACT_DIR=/root/dc1-platform/docs/reports/runtime-parity ROUTE_PARITY_TIMEOUT_MS=12000 ROUTE_PARITY_MAX_FAILURES=0 ROUTE_PARITY_LATENCY_THRESHOLD_MS=4000 ROUTE_PARITY_MAX_LATENCY_BREACHES=0 node /root/dc1-platform/backend/src/scripts/run-runtime-route-parity-monitor.js >> /root/dc1-platform/backend/logs/runtime-route-parity.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '*/15 * * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production'
+      }
+    },
+    {
+      name: 'dcp-v1-reliability-scoreboard-cron',
+      script: '/bin/sh',
+      args: '-lc "cd /root/dc1-platform/backend && node /root/dc1-platform/backend/src/scripts/generate-v1-reliability-scoreboard.js --output-dir docs/reports/reliability >> /root/dc1-platform/backend/logs/v1-reliability-scoreboard.log 2>&1"',
+      cwd: '/root/dc1-platform/backend',
+      instances: 1,
+      autorestart: false,
+      cron_restart: '15 2 * * *',
+      watch: false,
+      max_memory_restart: '100M',
+      env: {
+        NODE_ENV: 'production'
+      }
+    },
+    {
       // Provider health monitoring cron — 3-strike deactivation + auto-reactivation.
       name: 'dcp-provider-health-cron',
       script: '/bin/sh',

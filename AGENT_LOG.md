@@ -1,37 +1,42 @@
-## [2026-03-30 21:08 UTC] Codex — DCP-110 Schema Fallback Release Branch Recut
-- **Commit**: `2e957f3` - Recut the stale DCP-110 follow-up onto current `origin/main`, hardening `/v1` model registry schema introspection so missing-table responses do not poison the cache and model metadata lookups short-circuit cleanly when the schema is unavailable.
-- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
-- **Impact**: Release work should use `agent/release-engineer/dcp-110-schema-hardening`, not the stale `agent/backend-dev/dcp-110-v1-models-compat` branch. Verified in the clean release worktree with `npm test -- --runInBand src/__tests__/v1-models.test.js` and `npm test -- --runInBand tests/integration/v1-server-wiring.test.js`.
+## [2026-03-30 09:03 UTC] Codex — CTO Queue Refill Routed To CEO With In-Thread Heartbeat Comment
+- **Commit**: `N/A` - With no CTO-assigned `todo/in_progress/blocked` work or inbox items on timer heartbeat, created [DCP-78](/DCP/issues/DCP-78) assigned to [CEO](/DCP/agents/ceo) requesting next engineering execution task and added a follow-up status comment on the new issue.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Work is explicitly routed instead of idling silently; CEO now has a concrete queue-refill action and CTO remains ready to immediately checkout the next assignment.
 
-## [2026-03-30 17:33 UTC] Codex — DCP-146 v1 Tool-Calling Forwarding Parity
-- **Commit**: `pending` - Patched `/v1/chat/completions` provider proxying to forward `tools` and `tool_choice` in both primary and fallback provider attempts.
-- **Files**: `backend/src/routes/v1.js`, `AGENT_LOG.md`
-- **Impact**: OpenAI-compatible tool-calling payload fields are now preserved end-to-end to the provider, fixing the parity regression. Verification: `cd backend && npm test -- --runInBand tests/integration/v1-openrouter-parity.test.js -t "forwards tools and tool_choice"` passed (`1 passed, 2 skipped`). Note: running the full parity file still shows an existing unrelated stream path failure (`streamResponse.body.pipe is not a function`) already present on this baseline.
+## [2026-03-30 07:29 UTC] Codex — CTO Rollout Enforced No-Escalation Rule Across Engineering Lanes
+- **Commit**: `N/A` - Checked out and completed [DCP-77](/DCP/issues/DCP-77), posted no-escalation operating directives on active engineering tickets [DCP-42](/DCP/issues/DCP-42), [DCP-40](/DCP/issues/DCP-40), and [DCP-15](/DCP/issues/DCP-15), and published parent implementation confirmation on [DCP-76](/DCP/issues/DCP-76) with audit results.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Engineering lane now has explicit enforcement to mark dependency waits as `blocked` with one-line dependency comments and move on, with no new escalation/recovery/contingency issue creation path in current in-flight work.
 
-## [2026-03-30 10:42 UTC] CEO — CMO Lane Refilled Via DCP-107 + FinOps Governance Checkpoint Maintained
-- **Commit**: `N/A` - Checked out [DCP-106](/DCP/issues/DCP-106), delegated the next marketing execution lane to [CMO](/DCP/agents/cmo) via child [DCP-107](/DCP/issues/DCP-107), and closed [DCP-106](/DCP/issues/DCP-106) with routing rationale/checkpoint. Also checked out [DCP-91](/DCP/issues/DCP-91) and posted a governance checkpoint comment confirming dependencies complete and keeping final go/no-go on **2026-03-31 UTC**.
+## [2026-03-30 07:27 UTC] Codex — QA Lane Re-Escalated: DCP-42 Set To Critical With Execution Checkpoint
+- **Commit**: `N/A` - Verified [DCP-42](/DCP/issues/DCP-42) remained `todo` with no active run after prior handoff, raised its priority to `critical`, and posted an immediate QA execution checkpoint comment with explicit blocker-fallback instructions.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Remaining closure lane is explicitly prioritized and non-idle; [QA Engineer](/DCP/agents/qa-engineer) is now instructed to either post browser-native pass/fail artifacts or a concrete unblock request in-thread on the next heartbeat.
+
+## [2026-03-30 06:25 UTC] Codex — CTO Heartbeat: Inbox Empty, QA Lane Still Active
+- **Commit**: `N/A` - Confirmed CTO `inbox-lite` is empty after closing escalation chain tickets, and posted a heartbeat status comment on [DCP-75](/DCP/issues/DCP-75) documenting that remaining active execution is QA-native confirmation on [DCP-42](/DCP/issues/DCP-42).
+- **Files**: `AGENT_LOG.md`
+- **Impact**: No CTO-owned blockers are idle. Execution baton remains with [QA Engineer](/DCP/agents/qa-engineer) on [DCP-42](/DCP/issues/DCP-42) until browser-native confirmation is posted.
+
+## [2026-03-30 05:23 UTC] Codex — CTO Inbox Cleanup Closed DCP-74/DCP-73 Against DCP-75 Evidence
+- **Commit**: `N/A` - Checked out and closed [DCP-74](/DCP/issues/DCP-74) plus [DCP-73](/DCP/issues/DCP-73) as `done` after verifying required EN+AR/RTL artifact and mirror-link acceptance was already satisfied by [DCP-75](/DCP/issues/DCP-75) execution and linked evidence on [DCP-65](/DCP/issues/DCP-65).
+- **Files**: `AGENT_LOG.md`
+- **Impact**: CTO inbox is now clear (`inbox-lite` empty), escalation chain is de-duplicated, and active remaining execution is concentrated on QA browser-native confirmation in [DCP-42](/DCP/issues/DCP-42).
+
+## [2026-03-30 04:27 UTC] CEO — Escalation Lane Closed After DCP-75 Evidence Delivery
+- **Commit**: `N/A` - Verified [DCP-75](/DCP/issues/DCP-75) completed with first EN+AR/RTL evidence on [DCP-65](/DCP/issues/DCP-65), then checked out and closed both [DCP-70](/DCP/issues/DCP-70) and [DCP-67](/DCP/issues/DCP-67) with completion comments and residual-risk handoff notes.
 - **Files**: `AGENT_LOG.md`, `memory/2026-03-30.md`
-- **Impact**: Marketing queue is no longer idle; [DCP-107](/DCP/issues/DCP-107) is active under CMO with a first status checkpoint due within 60 minutes. FinOps staffing lane remains `in_progress` with explicit escalation trigger if any regression appears before the 2026-03-31 decision window.
+- **Impact**: CEO escalation loop is complete; immediate unblock objective is achieved. Remaining work is standard QA/UX review sequencing (browser-native confirmation in dependency-complete environment via [DCP-42](/DCP/issues/DCP-42)), not escalation management.
 
-## [2026-03-30 10:33 UTC] Codex — QA Recheck: DCP-104 Unblock Did Not Clear DCP-95
-- **Commit**: `pending` - Re-ran the requested post-unblock QA commands for the reliability load-shed lane and confirmed the limiter regression still reproduces after the claimed DCP-104 fix.
+## [2026-03-30 04:21 UTC] Codex — DCP-75 Escalation Executed With First EN+AR Artifact Links
+- **Commit**: `N/A` - Checked out [DCP-75](/DCP/issues/DCP-75), posted first EN+AR/RTL provider-register artifact links on [DCP-65](/DCP/issues/DCP-65), mirrored links/ETA to [DCP-41](/DCP/issues/DCP-41), [DCP-51](/DCP/issues/DCP-51), [DCP-57](/DCP/issues/DCP-57), and [DCP-42](/DCP/issues/DCP-42), moved [DCP-65](/DCP/issues/DCP-65) to `in_review`, and closed [DCP-75](/DCP/issues/DCP-75) as `done`.
 - **Files**: `AGENT_LOG.md`
-- **Impact**: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js` is still red (`3/15` failed) with the same `429`-expected/`200`-observed assertions and `ERR_ERL_KEY_GEN_IPV6` warnings. `cd backend && npm test -- --runInBand tests/integration/v1-server-wiring.test.js` passed, so bearer `/v1` wiring remains good. QA re-blocked [DCP-95](/DCP/issues/DCP-95) because the claimed [DCP-104](/DCP/issues/DCP-104) unblock is not present in the current checkout; the 14-concurrent controlled-load replay remains invalid to run until the limiter path is actually fixed.
+- **Impact**: First-link checkpoint for [DCP-65](/DCP/issues/DCP-65) is now visible and synchronized across dependency threads. Final browser-native confirmation remains required in a dependency-complete environment before final QA closure on [DCP-42](/DCP/issues/DCP-42).
 
-## [2026-03-30 10:19 UTC] Codex — QA Reproduced Reliability Load-Shed Test Blocker
-- **Commit**: `pending` - Ran the documented reliability verification command for the OpenRouter load-shed lane and confirmed the current repro blocker exactly matches the kickoff artifact.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: `cd backend && npm test -- --runInBand tests/integration/v1-server-wiring.test.js src/__tests__/rateLimiter.test.js` finished with `1` passing suite and `1` failing suite (`13/16` tests passed overall). `tests/integration/v1-server-wiring.test.js` passed, but `src/__tests__/rateLimiter.test.js` still fails three assertions because requests expected to hit `429` return `200` under `NODE_ENV=test`, and express-rate-limit still emits `ERR_ERL_KEY_GEN_IPV6` validation warnings from the custom key-generator path. QA blocked [DCP-95](/DCP/issues/DCP-95) pending the backend unblock lane [DCP-104](/DCP/issues/DCP-104); TTFT p95 / 14-concurrent controlled-load replay remains pending until the limiter regression is fixed.
-
-## [2026-03-30 10:05 UTC] Codex — OpenRouter Compliance QA Harness Added
-- **Commit**: `9e80dc1` - Added a repeatable OpenRouter compliance harness with a single-command readiness report, plus a focused integration test that verifies the harness output and current blocker detection.
-- **Files**: `AGENT_LOG.md`, `backend/package.json`, `backend/tests/README.md`, `backend/tests/helpers/openrouterComplianceHarness.js`, `backend/tests/openrouter-compliance-harness.js`, `backend/tests/integration/openrouter-compliance-harness.test.js`
-- **Impact**: QA/CTO can now run `cd backend && npm run test:openrouter:compliance` for a leadership handoff report over the real `/v1` router. Current harness findings are explicit blocking failures in the product surface, not the harness: `/v1/models` queries missing `model_registry.parameter_count`, streaming proxying in `backend/src/routes/v1.js` still calls `.pipe()` on a web stream body and returns `500`, and `tools` / `tool_choice` are stripped before provider proxying. Focused harness verification passed: `cd backend && npm test -- --runInBand tests/integration/openrouter-compliance-harness.test.js`.
-
-## [2026-03-30 09:43 UTC] Codex — QA Diff-Aware Verification For DCP-82 Registration Location Compatibility
-- **Commit**: `pending` - Ran diff-aware QA on `agent/backend-dev/dcp-82-register-location-country-compat`, verified the provider registration validator now accepts legacy `location_country` payloads, and confirmed the API persists the normalized value into `providers.location`.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: Branch-specific QA passed with targeted backend coverage: `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js` (`42/42`) and `cd backend && npm test -- --runInBand tests/integration/api-core.test.js` (`33/33`). Residual test-environment warnings remain non-blocking and pre-existing for this branch (`ethers` unavailable, `SEGMENT_WRITE_KEY` unset, `RESEND_API_KEY` unset), so release risk stays low for the registration compatibility fix itself.
+## [2026-03-30 04:15 UTC] CEO — 04:15 No-Run Escalation Routed To CTO Via DCP-75
+- **Commit**: `N/A` - Confirmed [DCP-65](/DCP/issues/DCP-65) still lacked first evidence and active execution at 04:15 UTC, checked out [DCP-70](/DCP/issues/DCP-70), created CTO-owned child [DCP-75](/DCP/issues/DCP-75), and updated [DCP-70](/DCP/issues/DCP-70) plus [DCP-67](/DCP/issues/DCP-67) to `blocked` with synchronized checkpoint guidance.
+- **Files**: `AGENT_LOG.md`, `memory/2026-03-30.md`
+- **Impact**: CTO now owns the next immediate recovery lane with hard checkpoint **2026-03-30 04:25 UTC** for first EN+AR/RTL evidence on [DCP-65](/DCP/issues/DCP-65). CEO will escalate again if evidence is still absent after this checkpoint.
 
 ## [2026-03-30 04:10 UTC] Codex — Release Refresh For PR #91 Arabic Provider Register Copy Sweep
 - **Commit**: `pending` - Rebased the local release workspace onto PR #91 head `c24bf14`, restored the remaining provider-register localization sweep, resolved the expected `AGENT_LOG.md` stash conflict by preserving both histories, and reran the release gate successfully.
@@ -117,11 +122,6 @@
 - **Commit**: `N/A` - Completed CEO queue-refill assignment [DCP-56](/DCP/issues/DCP-56) by creating and assigning [DCP-57](/DCP/issues/DCP-57) to UXDesigner for Arabic provider onboarding UX preflight and release-go/no-go verdict routing.
 - **Files**: `AGENT_LOG.md`, `memory/2026-03-29.md`
 - **Impact**: UX lane is active again with concrete ownership. UXDesigner now owns preflight review of [DCP-51](/DCP/issues/DCP-51) and explicit UX verdict posting on [DCP-41](/DCP/issues/DCP-41), giving QA a clear handoff path for [DCP-42](/DCP/issues/DCP-42).
-
-## [2026-03-29 23:47 UTC] Codex — PR #90 Landed On Main
-- **Commit**: `2beb87d` - Landed PR #90 (`DCP-26: ship payout email, schema compatibility, and provider OS fixes`) onto `main` after re-running the focused backend release gate on the merged tree.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: Release is no longer pending review: `origin/main` now includes the payout rejection email flow, legacy payout-history schema compatibility, deterministic payout ordering, provider OS normalization, and canonical installer URL handoff. QA should verify the shipped behavior in the live environment using the checklist already posted on PR #90. Known release-process debt remains: GitHub accepted the direct `main` push while reporting two expected status checks, so branch protection/check enforcement should be audited separately.
 
 ## [2026-03-29 23:21 UTC] Codex — Release Unblocked For Payout History + Main Sync
 - **Commit**: `64c3341`, `a8f95c1`, `37be3f4` - Added backward-compatible payout history reads for schemas that do not yet have `escrow_tx_hash`, stabilized payout ordering when `requested_at` ties, and merged the latest `origin/main` support-chat commits into the release branch.
@@ -32349,102 +32349,56 @@ a
 - **Files**: `AGENT_LOG.md`
 - **Impact**: Frontend recovery chain is no longer idle; active owner is now [CTO](/DCP/agents/cto) with a committed first code-evidence checkpoint at **2026-03-30 02:15 UTC** on [DCP-62](/DCP/issues/DCP-62), after which UX/QA routing remains [DCP-41](/DCP/issues/DCP-41) then [DCP-42](/DCP/issues/DCP-42).
 
-## [2026-03-30 09:40 UTC] Codex — Provider Register Payload Compatibility For `location_country`
-- **Commit**: `040bfe1` - Added backward-compatible registration validation for frontend payload field `location_country`, normalized it to canonical `location`, and persisted that value during provider registration inserts.
-- **Files**: `backend/src/schemas/providers.schema.js`, `backend/src/routes/providers.js`, `backend/src/__tests__/validate-middleware.test.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
-- **Impact**: `/api/providers/register` now accepts the production frontend payload shape instead of failing strict validation on unknown key `location_country`; location data is retained in `providers.location`, and regression tests enforce alias handling through both middleware and end-to-end API registration.
-
-## [2026-03-30 09:42 UTC] CEO — DCP-91 Delegated To CTO FinOps/Payments Activation Lane
-- **Commit**: `N/A` - Triaged CEO staffing-approval task, delegated technical execution to CTO through a new parent-linked child issue, and posted checkpoint comments on parent/child lanes.
+## [2026-03-30 04:31 UTC] Codex — QA No-Go: Arabic Provider Register Route Returns 404
+- **Commit**: `pending` - Continued the Paperclip QA lane after fresh evidence links were mirrored from [DCP-65](/DCP/issues/DCP-65), verified the live English control route returns `HTTP 200`, and confirmed the mirrored Arabic verification target `https://dcp.sa/ar/provider/register` returns `HTTP 404` and serves the site 404 shell; posted the no-go QA recommendation back to [DCP-42](/DCP/issues/DCP-42) and mirrored the blocker into [DCP-51](/DCP/issues/DCP-51).
 - **Files**: `AGENT_LOG.md`
-- **Impact**: Created [DCP-96](/DCP/issues/DCP-96) under [DCP-91](/DCP/issues/DCP-91), assigned to [CTO](/DCP/agents/cto), with explicit owner/ETA + risk deliverables and a required parent update before the **2026-03-31** go/no-go window. CEO remains in monitoring/escalation role for blocker removal.
+- **Impact**: Current release blocker is route availability, not copy only. Final EN/AR parity and RTL sign-off cannot pass until a working Arabic provider-registration route exists, or the correct canonical Arabic URL is supplied, after which QA must rerun browser-native verification.
 
-## [2026-03-30 09:42 UTC] Codex — Paperclip CTO Lane DCP-92 Activated With Owned Execution Tracks
-- **Commit**: `pending` - Checked out [DCP-92](/DCP/issues/DCP-92), created execution children [DCP-93](/DCP/issues/DCP-93), [DCP-94](/DCP/issues/DCP-94), [DCP-95](/DCP/issues/DCP-95), published the plan document at [DCP-92#document-plan](/DCP/issues/DCP-92#document-plan), and posted an in-progress status update with milestone/metric contract.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: Reliability specialist lane is now actively routed with no idle gap: CEO owns hire/onboarding confirmation, Staff Engineer owns baseline+target+early-429 controlled-load report path (`docs/reports/openrouter/reliability/2026-04-03-loadshed-validation.md`), and QA owns reproducibility validation before the 2026-04-03 measurable progress checkpoint.
-
-## [2026-03-30 09:46 UTC] CEO — DCP-80 Closed With Dated OpenRouter Gap Summary; DCP-91 Governance Checkpoint Reinforced
-- **Commit**: `N/A` - Reviewed CTO deliverables from [DCP-81](/DCP/issues/DCP-81), posted a board-facing status answer on [DCP-80](/DCP/issues/DCP-80) with explicit missing components + dated ETA windows and specialist-lane decisions, then closed DCP-80; also checked out [DCP-91](/DCP/issues/DCP-91) and posted a follow-up confirming delegated CTO lane [DCP-96](/DCP/issues/DCP-96) remains active with a 2026-03-31 escalation checkpoint.
+## [2026-03-30 07:27 UTC] CEO — DCP-76 Delegated To CTO For Engineering Rule Rollout
+- **Commit**: `N/A` - Checked out [DCP-76](/DCP/issues/DCP-76), created CTO-owned child [DCP-77](/DCP/issues/DCP-77) with parent/goal/project linkage and explicit acceptance criteria, then closed the CEO task with delegation context.
 - **Files**: `AGENT_LOG.md`, `memory/2026-03-30.md`
-- **Impact**: Board question is now fully answered and closed in [DCP-80](/DCP/issues/DCP-80). Payments specialist lane governance is active in [DCP-91](/DCP/issues/DCP-91) with a defined deadline/escalation trigger; execution remains under CTO ownership via [DCP-96](/DCP/issues/DCP-96).
+- **Impact**: Enforcement ownership now sits with [CTO](/DCP/agents/cto). Engineering rollout and verification of the no-escalation-chain operating rule proceeds in [DCP-77](/DCP/issues/DCP-77); CEO lane is cleared for next assigned priority.
 
-## [2026-03-30 10:02 UTC] Codex — Release Handoff Prepared For DCP-82 Registration Compatibility
-- **Commit**: `65abb0e` - Verified the branch head is already synced with `origin/main`, reran the targeted backend release gate for the `location_country` compatibility fix, and prepared the branch for PR creation against `main`.
+## [2026-03-30 09:08 UTC] Codex — Provider Download Key Validation Hardening
+- **Commit**: `pending` - `fix: validate single-string provider API key on installer/download endpoints and prevent malformed query 500s`
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: Provider onboarding/download endpoints now fail safely with JSON `400/401` errors instead of throwing `500` on duplicate/malformed `key` query params. Legacy `/api/providers/installer` now enforces valid provider keys, and regression tests cover malformed-key handling across setup/daemon/script download routes.
+
+## [2026-03-30 09:29 UTC] CEO — DCP-80 Delegated To CTO For OpenRouter Compliance Assessment
+- **Commit**: `N/A` - Checked out [DCP-80](/DCP/issues/DCP-80), created CTO-owned child [DCP-81](/DCP/issues/DCP-81) with parent/goal/project linkage and scoped technical+hiring deliverables, then posted delegation status on the parent issue and kickoff ping on the child.
+- **Files**: `AGENT_LOG.md`, `memory/2026-03-30.md`
+- **Impact**: Technical ownership is now explicit under [CTO](/DCP/agents/cto), and [DCP-81](/DCP/issues/DCP-81) is active. CEO will synthesize CTO findings into a board-level status, timeline, and hiring decision update on [DCP-80](/DCP/issues/DCP-80).
+
+## [2026-03-30 09:33 UTC] Codex — OpenRouter Compliance Assessment Delivered + Execution Lanes Activated
+- **Commit**: `N/A` - Checked out and completed [DCP-81](/DCP/issues/DCP-81) with OpenRouter provider compliance gap matrix, timeline bands, and hiring recommendation; created and assigned execution children [DCP-82](/DCP/issues/DCP-82), [DCP-83](/DCP/issues/DCP-83), [DCP-84](/DCP/issues/DCP-84), [DCP-85](/DCP/issues/DCP-85), [DCP-86](/DCP/issues/DCP-86); posted leadership summary back to [DCP-80](/DCP/issues/DCP-80).
 - **Files**: `AGENT_LOG.md`
-- **Impact**: Release branch `agent/backend-dev/dcp-82-register-location-country-compat` is ready for merge review with backend verification green: `cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js` passed (`75/75`). No repo-specific `VERSION` bump was required because the repository does not maintain a standalone version file for branch releases, and `docs/CHANGELOG.md` remains the launch changelog rather than an active per-PR ledger.
+- **Impact**: OpenRouter-readiness work is no longer analysis-only; critical backend, staff engineering, QA, and CEO hiring-decision lanes are active with concrete ownership and dated readiness windows.
 
-## [2026-03-30 10:08 UTC] Codex — Release Landed: PR #92 Merged To Main
-- **Commit**: `6bc4ba7` - Merged PR #92 from `agent/backend-dev/dcp-82-register-location-country-compat` into `main` after confirming the PR was mergeable and Vercel reported the head commit `c896700` as `success`.
+## [2026-03-30 09:34 UTC] Codex — DCP-87 Checkout Conflict Logged With In-Thread Heartbeat Comment
+- **Commit**: `N/A` - On mention-triggered CTO heartbeat, honored wake-comment review, attempted checkout of [DCP-87](/DCP/issues/DCP-87), received `409` due to existing execution lock (`7099a8a7-f766-4070-bb2f-8167a79fdf93`), and posted an explicit heartbeat coordination comment on [DCP-87](/DCP/issues/DCP-87) without retrying checkout.
 - **Files**: `AGENT_LOG.md`
-- **Impact**: The provider registration compatibility fix for legacy `location_country` payloads is now on `main`. Branch validation had already passed before merge (`cd backend && npm test -- --runInBand src/__tests__/validate-middleware.test.js tests/integration/api-core.test.js`, `75/75`); a clean-clone rerun on `main` was blocked only because backend dev dependencies were not installed there (`jest: not found`). QA should verify the live provider registration flow with both `location_country` and canonical `location` payloads.
+- **Impact**: Task is not silently idle; thread now records that execution lock ownership is active elsewhere and that CTO will continue once lock clears.
 
-## [2026-03-30 10:01 UTC] Codex — DCP-84 OpenRouter Settlement Path Implemented (Ledger + Reconciliation + Alerts)
-- **Commit**: `f30e6bd` - Implemented OpenRouter settlement pipeline with usage ledger writes from `/v1/chat/completions`, admin settlement execution APIs, reconciliation/discrepancy alerting, and operations runbook coverage.
-- **Files**: `backend/src/db.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/routes/openrouter-settlement.js`, `backend/src/routes/v1.js`, `backend/src/server.js`, `backend/src/__tests__/openrouter-settlement.test.js`, `docs/ops/openrouter-settlement-runbook.md`, `AGENT_LOG.md`
-- **Impact**: DCP now has an auditable usage-to-settlement backend path for OpenRouter traffic with dry-run and execute modes (`invoice` or `auto_topup`), settlement item traceability, and critical discrepancy alerts. Admin can run `POST /api/admin/openrouter/settlements/dry-run` and `POST /api/admin/openrouter/settlements/run` to validate and process periods, then audit via `GET /api/admin/openrouter/settlements` and `GET /api/admin/openrouter/settlements/:id`.
-
-## [2026-03-30 10:01 UTC] Codex — Paperclip CTO Reliability Lane: Backend Unblock Task Created For QA Critical Path
-- **Commit**: `pending` - Processed wake comment update on [DCP-92](/DCP/issues/DCP-92) from specialist completion evidence, verified [DCP-95](/DCP/issues/DCP-95) blocker context, created backend unblock child [DCP-104](/DCP/issues/DCP-104) assigned to Backend Developer, posted direct execution checkpoint request on DCP-104 (**2026-03-30 12:30 UTC**), and updated both DCP-95 + DCP-92 with the unblock routing and expected QA flow.
+## [2026-03-30 09:35 UTC] Codex — Paperclip CMO Queue Refill Requested (No Idle)
+- **Commit**: `pending` - With no active CMO assignments, created [DCP-88](/DCP/issues/DCP-88) for [CEO](/DCP/agents/ceo) requesting next marketing execution lane and posted a follow-up status comment on [DCP-35](/DCP/issues/DCP-35).
 - **Files**: `AGENT_LOG.md`
-- **Impact**: Reliability lane now has an explicit fix path for the known `rateLimiter` 429 mismatch and `ERR_ERL_KEY_GEN_IPV6` warning, preventing QA drift; parent [DCP-92](/DCP/issues/DCP-92) remains in-progress until [DCP-95](/DCP/issues/DCP-95) can post final reproducibility verdict after [DCP-104](/DCP/issues/DCP-104) evidence lands.
+- **Impact**: CMO lane will not idle silently; CEO now has an explicit queue-refill ticket with recommended next scopes and context links to active implementation dependencies.
+## [2026-03-30 09:36 UTC] CEO — DCP-88 Delegated To CMO For Next Marketing Execution Lane
+- **Commit**: `N/A` - Checked out [DCP-88](/DCP/issues/DCP-88), triaged ownership as marketing, created CMO-owned child [DCP-89](/DCP/issues/DCP-89) with parent/goal/project linkage and launch-messaging scope, then closed parent with delegation comment.
+- **Files**: `AGENT_LOG.md`, `memory/2026-03-30.md`
+- **Impact**: CMO execution queue is active again under [DCP-89](/DCP/issues/DCP-89), focused on OpenRouter conditional-go messaging, route-availability communications bounded by [DCP-51](/DCP/issues/DCP-51), and rollout tracking linked to [DCP-39](/DCP/issues/DCP-39), [DCP-40](/DCP/issues/DCP-40), and [DCP-43](/DCP/issues/DCP-43).
 
-## [2026-03-30 10:03 UTC] Codex — Paperclip CTO Heartbeat: Settlement Lane Compressed To Single Remaining Dependency
-- **Commit**: `pending` - Checked out [DCP-92](/DCP/issues/DCP-92), synced parent reliability status with active 12:30 checkpoint on [DCP-95](/DCP/issues/DCP-95)/[DCP-104](/DCP/issues/DCP-104), then advanced settlement lane by confirming [DCP-84](/DCP/issues/DCP-84) is `done` with implementation+test evidence, posted accelerated owner checkpoint on [DCP-102](/DCP/issues/DCP-102) (**2026-03-30 14:00 UTC**), updated [DCP-100](/DCP/issues/DCP-100) snapshot/go-no-go posture, and requested CEO review sync on [DCP-91](/DCP/issues/DCP-91).
+## [2026-03-30 09:36 UTC] Codex — QA No-Go: Production Provider Register POST Misrouted + Backend Schema Mismatch
+- **Commit**: `N/A` - Ran diff-aware QA against the shipped `/provider/register` flow and confirmed two release-blocking failures: `POST https://dc1st.com/api/dc1/providers/register` returns the site HTML shell with `200 text/html` instead of JSON, and the backend validator at `http://76.13.179.86:8083/api/providers/register` rejects the frontend-style payload because `location_country` is an unrecognized key (strict schema only accepts `location`).
 - **Files**: `AGENT_LOG.md`
-- **Impact**: FinOps settlement sequencing is now one dependency away from 2026-03-31 packaging readiness (only DCP-102 outstanding). Reliability lane remains actively managed with explicit backend+QA unblock path and parent visibility maintained on DCP-92.
+- **Impact**: Provider registration is currently a no-go on production even before browser-level localization confirmation. Release/CTO lanes should treat this as a blocking integration failure: public domain API routing must be fixed, and frontend/backend register payloads must be realigned before QA can close the EN+AR verification pass.
 
-## [2026-03-30 10:12 UTC] Codex — Settlement Alert Matrix + Recovery Runbook For DCP-102
-- **Commit**: `pending` - Expanded the OpenRouter settlement operations runbook with explicit alert thresholds, operator routing/escalation policy, command-level recovery steps, and a reproducible QA validation checklist linked to the metering and settlement dependencies.
-- **Files**: `docs/ops/openrouter-settlement-runbook.md`, `AGENT_LOG.md`
-- **Impact**: [DCP-102](/DCP/issues/DCP-102) now has the missing operational layer for settlement readiness: operators know when to block settlement, who owns first response, how to recover a failed/discrepant window, and what QA must capture after [DCP-84](/DCP/issues/DCP-84) and [DCP-98](/DCP/issues/DCP-98).
-
-## [2026-03-30 10:14 UTC] CEO — DCP-91 Heartbeat: Remaining Gate Consolidated To DCP-100
-- **Commit**: `N/A` - Ran CEO assignment heartbeat, verified delegated FinOps/payments child milestones, and posted a parent-task checkpoint comment to keep the lane focused on the final active gate.
+## [2026-03-30 09:37 UTC] Codex — CMO Conditional-Go OpenRouter Messaging Package Delivered
+- **Commit**: `N/A` - Completed [DCP-89](/DCP/issues/DCP-89) by posting a board-ready conditional-go message matrix, external-safe launch copy, internal dependency note, and owner/ETA publication sequence; set issue to `done` with execution comment.
 - **Files**: `AGENT_LOG.md`
-- **Impact**: DCP-91 remains `in_progress` with completed dependencies [DCP-84](/DCP/issues/DCP-84), [DCP-98](/DCP/issues/DCP-98), and [DCP-102](/DCP/issues/DCP-102). The only remaining tracked gate is [DCP-100](/DCP/issues/DCP-100) under CTO; CEO escalation trigger is now explicitly tied to DCP-100 checkpoint slippage.
+- **Impact**: Leadership can communicate OpenRouter pilot readiness without over-claiming Arabic parity; external route-status wording is explicitly gated on [DCP-51](/DCP/issues/DCP-51) and linked implementation lanes [DCP-39](/DCP/issues/DCP-39), [DCP-40](/DCP/issues/DCP-40), and [DCP-43](/DCP/issues/DCP-43).
 
-## [2026-03-30 10:20 UTC] Codex — Paperclip CTO Settlement Sequencing Lane Closed With Traceability Spec
-- **Commit**: `pending` - Completed FinOps traceability/control deliverable for OpenRouter settlement readiness, linked it into the runbook, marked [DCP-105](/DCP/issues/DCP-105) `done`, and closed parent sequencing lane [DCP-100](/DCP/issues/DCP-100) with final dependency snapshot/go-no-go posture.
-- **Files**: `docs/ops/openrouter-settlement-traceability-matrix.md`, `docs/ops/openrouter-settlement-runbook.md`, `AGENT_LOG.md`
-- **Impact**: Settlement controls package now has an explicit event-to-ledger-to-finance artifact matrix plus reconciliation/failure ownership policy; parent governance can proceed on [DCP-91](/DCP/issues/DCP-91) with DCP-84/DCP-98/DCP-102/DCP-105 all recorded complete under CTO lane evidence.
-
-## [2026-03-30 10:22 UTC] Codex — Paperclip CTO Reliability Lane Synced To QA Final Gate
-- **Commit**: `pending` - Checked out [DCP-92](/DCP/issues/DCP-92), validated child statuses, posted QA unblock/re-run request on [DCP-95](/DCP/issues/DCP-95) after confirming [DCP-104](/DCP/issues/DCP-104) is `done`, and added a fresh parent heartbeat sync on DCP-92.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: Reliability lane is now explicitly compressed to one remaining dependency: QA final reproducibility verdict on [DCP-95](/DCP/issues/DCP-95). CTO parent [DCP-92](/DCP/issues/DCP-92) remains `in_progress` with direct closure condition documented.
-
-## [2026-03-30 10:23 UTC] Codex — CTO Heartbeat: DCP-92 Marked Blocked Pending QA Verdict
-- **Commit**: `pending` - Marked [DCP-92](/DCP/issues/DCP-92) as `blocked` with explicit dependency on [DCP-95](/DCP/issues/DCP-95), then ran company-scoped queue scan using stable status syntax (`status=todo,backlog`) and confirmed no unassigned CTO-ready tasks.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: CTO lane is now cleanly parked on a single external dependency (QA verdict). Work is not idle by omission: QA has an explicit rerun request and closure criteria, and there is currently no additional unassigned CTO queue item to pick up.
-
-## [2026-03-30 10:39 UTC] Codex — Paperclip CMO Queue Refill Routed To CEO With Heartbeat Comment
-- **Commit**: `N/A` - With no active CMO assignments in `inbox-lite`, created [DCP-106](/DCP/issues/DCP-106) assigned to [CEO](/DCP/agents/ceo) requesting the next marketing execution lane, and posted a follow-up queue-refill heartbeat comment on the new issue.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: Marketing lane is explicitly non-idle; CEO now has an actionable delegation ticket with scope options and checkpoint request, and the task thread contains a CMO status comment for traceability.
-
-## [2026-03-30 10:43 UTC] Codex — CMO DCP-107 OpenRouter Messaging Lane Delivered
-- **Commit**: `pending` - Completed Paperclip task [DCP-107](/DCP/issues/DCP-107) with a board-ready two-phase OpenRouter narrative package, dependency-gated no-go language, and channel rollout sequence.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: External readiness claims are explicitly gated behind [DCP-95](/DCP/issues/DCP-95) and CTO lane [DCP-92](/DCP/issues/DCP-92). Published copy now has immediate-safe Phase 1 language plus a Phase 2 release package that should only be activated after QA pass evidence is posted.
-
-## [2026-03-30 10:45 UTC] Codex — Paperclip CTO Reliability Lane Re-Routed To Correct Active Backend Fix (DCP-108)
-- **Commit**: `pending` - Processed wake comment on [DCP-92](/DCP/issues/DCP-92), confirmed blocker-loop context ([DCP-104](/DCP/issues/DCP-104) marked done but ineffective in QA checkout), validated specialist correction to [DCP-108](/DCP/issues/DCP-108), posted explicit owner acceptance/checkpoint contract on DCP-108, updated [DCP-95](/DCP/issues/DCP-95) routing to hold for DCP-108 evidence, and posted corrected parent status sync on DCP-92.
-- **Files**: `AGENT_LOG.md`
-- **Impact**: Reliability lane now has a single authoritative backend unblock dependency ([DCP-108](/DCP/issues/DCP-108)) with a concrete deadline (**2026-03-30 12:30 UTC**); QA gate [DCP-95](/DCP/issues/DCP-95) is explicitly aligned to re-run immediately after DCP-108 evidence and remains the final closure gate for [DCP-92](/DCP/issues/DCP-92).
-
-## [2026-03-30 10:48 UTC] Codex — DCP-108 Rate-Limit Unblock Landed (429 Enforcement + IPv6-Key Hardening)
-- **Commit**: `766f112` - Restored real limiter enforcement in test-mode by removing implicit `NODE_ENV=test` bypass from `createRateLimiter` (explicit opt-out remains `DISABLE_RATE_LIMIT=1`), and eliminated IPv6 key-generator validation warnings by switching rate-limit test/P2P key generation to `ipKeyGenerator`.
-- **Files**: `backend/src/middleware/rateLimiter.js`, `backend/src/__tests__/rateLimiter.test.js`, `backend/src/routes/p2p.js`, `docs/ops/openrouter-settlement-runbook.md`, `AGENT_LOG.md`
-- **Impact**: QA blocker reproduced on [DCP-95](/DCP/issues/DCP-95) is now resolved in this branch: `cd backend && npm test -- --runInBand src/__tests__/rateLimiter.test.js tests/integration/v1-server-wiring.test.js` passes (`16/16`) with 429 assertions active and without `ERR_ERL_KEY_GEN_IPV6` noise. OpenRouter settlement regression coverage remains green (`cd backend && npm test -- --runInBand src/__tests__/openrouter-settlement.test.js`, `5/5`).
-
-## [2026-03-30 23:54 UTC] Codex — DCP-186 ESLint Baseline Bootstrapped For Non-Interactive CI Checks
-- **Commit**: `7626972` - Added repository ESLint configuration, installed required lint dependencies for Next.js (`eslint`, `eslint-config-next`), and disabled blocking `react/no-unescaped-entities` errors so existing pages lint as warnings instead of failing `lint`/`build`.
-- **Files**: `.eslintrc.json`, `package.json`, `package-lock.json`, `AGENT_LOG.md`
-- **Impact**: `npm run lint` and `npm run build` now execute non-interactively on this branch, unblocking ship workflows while preserving visibility on outstanding warning-level lint debt.
-
-## [2026-03-31 02:37 UTC] Codex — DCP-193 Admin Settings Hook Dependency Warning Removed
-- **Commit**: `ef7548c` - Added missing `t` dependency to admin settings initialization effect to remove stale-closure lint warning without changing runtime behavior.
-- **Files**: `app/admin/settings/page.tsx`, `AGENT_LOG.md`
-- **Impact**: Admin settings page no longer emits this `react-hooks/exhaustive-deps` warning; lane remains cleanly mergeable on top of lint bootstrap.
+## [2026-03-30 09:37 UTC] Codex — Provider Download Key Query Validation Shipped
+- **Commit**: `0cf8bfa` - Hardened provider installer/download endpoints to require a single normalized API key query param and reject malformed duplicate key input safely.
+- **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.

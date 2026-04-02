@@ -4,8 +4,11 @@ Welcome to the DCP (Decentralized Compute Platform) API documentation. This guid
 
 ## Quick Links
 
+- **[OpenRouter 60-Second First Request](./openrouter-60s-quickstart.md)** — Signup to first `/v1/chat/completions` call with cURL, Node, and Python
 - **[Provider Quickstart](./quickstart-provider.md)** — Register your GPUs and start earning in 5 minutes
 - **[Renter Quickstart](./quickstart-renter.md)** — Submit your first compute job in 5 minutes
+- **[Provider Activation State API](./provider-activation-state.md)** — Canonical onboarding status + blocker codes
+- **[Template Catalog Contract API](./template-catalog-contract.md)** — Canonical renter template metadata contract from `docker-templates/`
 - **[OpenAPI Specification](./openapi.yaml)** — Complete API schema (Swagger/OpenAPI format)
 - **[SDK Examples](./sdk-examples.md)** — Code examples in JavaScript, Python, and cURL
 
@@ -117,6 +120,7 @@ All errors follow this format:
 ## Next Steps
 
 1. **New to DCP?**
+   - Run [OpenRouter 60-Second First Request](./openrouter-60s-quickstart.md) for `/v1` onboarding
    - Read [Provider Quickstart](./quickstart-provider.md) to set up your GPU
    - Or read [Renter Quickstart](./quickstart-renter.md) to submit a job
 
@@ -130,6 +134,6 @@ All errors follow this format:
 
 ---
 
-**Last Updated:** March 23, 2026
+**Last Updated:** April 2, 2026
 **API Version:** 1.0
 **Status:** Production

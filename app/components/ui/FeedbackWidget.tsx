@@ -172,6 +172,14 @@ export default function FeedbackWidget() {
     return () => clearTimeout(t)
   }, [])
 
+  // ── Reset helpers ─────────────────────────────────────────────────────────
+
+  const resetForm = useCallback(() => {
+    setRating(null)
+    setYesNo(null)
+    setText('')
+  }, [])
+
   // ── Event listeners ───────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -197,15 +205,7 @@ export default function FeedbackWidget() {
       window.removeEventListener('dc1_api_call', handleApiCall)
       window.removeEventListener('dc1_feedback_trigger', handleTrigger)
     }
-  }, [view])
-
-  // ── Reset helpers ─────────────────────────────────────────────────────────
-
-  const resetForm = useCallback(() => {
-    setRating(null)
-    setYesNo(null)
-    setText('')
-  }, [])
+  }, [view, resetForm])
 
   const dismiss = useCallback(() => {
     try {

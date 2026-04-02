@@ -201,7 +201,7 @@ export default function IntelligencePage() {
     } finally {
       setLoading(false);
     }
-  }, [fleet]);
+  }, [fleet, router]);
 
   useEffect(() => {
     fetchData();

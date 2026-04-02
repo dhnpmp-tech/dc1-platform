@@ -1,0 +1,20 @@
+queue_position,provider_id,name,email,phone,organization,location,status,approval_status,priority_score,priority_band,suggested_action,ready_to_serve,blocker_count,blocker_reason_codes,failed_readiness_checks,last_heartbeat,heartbeat_age_seconds,install_status,readiness_status,created_at
+1,5,Peter,setup@oida.ae,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+2,6,Peter,dhnpmp@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+3,7,Peter,peter@dc1st.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+4,8,Tareq Alkhulaiwi,tak@alchemist.com.sa,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+5,9,Tareg Al-Othman,tareg@dc1st.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+6,10,Tariq Almazyad,tariq.almazyad@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+7,11,Yazan Almazyad,Yazan.almazyad@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+8,12,Rakan Almazyad,rakan.m.almazyad@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+9,13,BADER OMAR BASAQR,hanzox647@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+10,14,Faisal,faisalalfayyadh11@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+11,15,Faisal Al-assaf,ife9lx@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+12,16,Loay Almutlaq,lmutlaq2007@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+13,17,mishal alqahtani,mishalq611@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+14,18,Nawaf Alsudairy,nawaf.a.sudairy@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+15,19,MUNTHIR ALMAZYAD,montheral77@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+16,20,zainab,zoro.za55555@gmail.com,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+17,21,Mining Farm Riyadh,mining-farm-01@dc1.local,,,,offline,approved,45,medium,daemon_not_installed,false,2,daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-31T11:42:18.664Z
+18,3,QA Ubuntu,qa-ubuntu-1774820252@example.test,,,,offline,pending,10,low,approval_pending,false,3,approval_pending;daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-29T21:37:32.855Z
+19,4,QA Windows,qa-windows-1774820252@example.test,,,,offline,pending,10,low,approval_pending,false,3,approval_pending;daemon_not_installed;heartbeat_missing,,,,not_installed,pending,2026-03-29T21:37:32.859Z

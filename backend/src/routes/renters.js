@@ -17,8 +17,9 @@ const { isPublicWebhookUrl } = require('../lib/webhook-security');
 const { validateWebhookUrl, validateWebhookUrlValue } = require('../middleware/validateWebhookUrl');
 const { validateBody } = require('../middleware/validate');
 const { renterRegisterSchema, renterTopupSchema } = require('../schemas/topup.schema');
-const { getBearerToken } = require('../middleware/auth');
+const { getBearerToken, isAdminRequest } = require('../middleware/auth');
 const analytics = require('../services/analyticsService');
+const conversionFunnel = require('../services/conversionFunnelService');
 
 function flattenRunParams(params) {
   if (params.length === 1 && Array.isArray(params[0])) return params[0];
@@ -109,6 +110,119 @@ function parseCachedModels(rawCachedModels) {
   } catch {
     return [];
   }
+}
+
+const ORG_ROLES = ['owner', 'admin', 'member', 'read-only'];
+const ORG_ROLE_RANK = new Map(ORG_ROLES.map((role, idx) => [role, idx]));
+
+function deriveOrgId(renter) {
+  const orgName = normalizeString(renter?.organization, { maxLen: 160 })?.toLowerCase();
+  if (orgName) {
+    const slug = orgName
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80);
+    if (slug) return `org:${slug}`;
+  }
+  return `renter:${renter?.id || 'unknown'}`;
+}
+
+function parseScopes(rawScopes) {
+  if (Array.isArray(rawScopes)) return rawScopes.filter(Boolean);
+  if (typeof rawScopes !== 'string') return [];
+  try {
+    const parsed = JSON.parse(rawScopes);
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeOrgRole(rawRole) {
+  const role = normalizeString(rawRole, { maxLen: 16 })?.toLowerCase() || null;
+  return role && ORG_ROLE_RANK.has(role) ? role : null;
+}
+
+function inferRoleFromScopes(scopes) {
+  const scoped = Array.isArray(scopes) ? scopes : [];
+  if (scoped.includes('admin')) return 'admin';
+  const readOnlyScopes = new Set(['billing', 'balance.read', 'jobs.read']);
+  if (scoped.length > 0 && scoped.every((scope) => readOnlyScopes.has(scope))) return 'read-only';
+  return 'member';
+}
+
+function recordOrgAudit(entry) {
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO org_audit_log
+       (org_id, actor_type, actor_id, actor_role, renter_id, action, resource_type, resource_id, outcome, reason, metadata_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      entry.org_id || 'org:unknown',
+      entry.actor_type || 'unknown',
+      entry.actor_id || null,
+      entry.actor_role || 'unknown',
+      entry.renter_id || null,
+      entry.action,
+      entry.resource_type || 'renter',
+      entry.resource_id || null,
+      entry.outcome,
+      entry.reason || null,
+      entry.metadata_json || null,
+      now
+    );
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.error('[org-audit] Failed to write audit record:', err?.message || err);
+    }
+  }
+}
+
+function getRenterAuthContext(rawKey) {
+  if (!rawKey) return null;
+
+  const master = db.get(
+    `SELECT id, organization
+     FROM renters
+     WHERE api_key = ? AND status = 'active'`,
+    rawKey
+  );
+  if (master) {
+    return {
+      renter: master,
+      actorType: 'master_key',
+      actorId: `renter:${master.id}`,
+      keyId: null,
+      role: 'owner',
+      orgId: deriveOrgId(master),
+      scopes: ['admin'],
+    };
+  }
+
+  const scoped = db.get(
+    `SELECT k.id, k.scopes, k.org_id, k.org_role, r.id AS renter_id, r.organization
+     FROM renter_api_keys k
+     JOIN renters r ON r.id = k.renter_id
+     WHERE k.key = ?
+       AND k.revoked_at IS NULL
+       AND (k.expires_at IS NULL OR k.expires_at > ?)
+       AND r.status = 'active'`,
+    rawKey,
+    new Date().toISOString()
+  );
+  if (!scoped) return null;
+
+  const scopes = parseScopes(scoped.scopes);
+  return {
+    renter: { id: scoped.renter_id, organization: scoped.organization },
+    actorType: 'scoped_key',
+    actorId: scoped.id,
+    keyId: scoped.id,
+    role: normalizeOrgRole(scoped.org_role) || inferRoleFromScopes(scopes),
+    orgId: scoped.org_id || deriveOrgId({ id: scoped.renter_id, organization: scoped.organization }),
+    scopes,
+  };
 }
 
 function buildProviderShapeFromSQLiteRow(row, now) {
@@ -286,6 +400,18 @@ router.post('/register', validateBody(renterRegisterSchema), (req, res) => {
       organization: cleanOrg || null,
       use_case: cleanUseCase || null,
     }).catch(() => {});
+    conversionFunnel.trackStage({
+      journey: 'renter',
+      stage: 'register',
+      actorType: 'renter',
+      actorId: renterId,
+      req,
+      inferViewOnRegister: true,
+      metadata: {
+        organization: cleanOrg || null,
+        use_case: cleanUseCase || null,
+      },
+    });
   } catch (error) {
     if (error.message && error.message.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'A renter with this email already exists' });
@@ -1014,7 +1140,7 @@ router.post('/me/keys', (req, res) => {
   try {
     const masterKey = req.headers['x-renter-key'] || req.query.key;
     if (!masterKey) return res.status(401).json({ error: 'Master API key required' });
-    const renter = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', masterKey, 'active');
+    const renter = db.get('SELECT id, organization FROM renters WHERE api_key = ? AND status = ?', masterKey, 'active');
     if (!renter) return res.status(403).json({ error: 'Invalid or inactive master API key' });
 
     const rawScopes = req.body?.scopes;
@@ -1026,6 +1152,8 @@ router.post('/me/keys', (req, res) => {
     const label = typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 80) : null;
     const rawExpiry = req.body?.expires_at;
     const expiresAt = rawExpiry && !isNaN(Date.parse(rawExpiry)) ? new Date(rawExpiry).toISOString() : null;
+    const orgId = deriveOrgId(renter);
+    const orgRole = normalizeOrgRole(req.body?.org_role) || inferRoleFromScopes(scopes);
 
     const activeCount = db.get(
       'SELECT COUNT(*) AS c FROM renter_api_keys WHERE renter_id = ? AND revoked_at IS NULL',
@@ -1039,11 +1167,13 @@ router.post('/me/keys', (req, res) => {
     const key = `dc1-sk-${crypto.randomBytes(20).toString('hex')}`;
     const now = new Date().toISOString();
     runStatement(
-      'INSERT INTO renter_api_keys (id, renter_id, key, label, scopes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      id, renter.id, key, label, JSON.stringify(scopes), expiresAt, now
+      `INSERT INTO renter_api_keys
+       (id, renter_id, key, label, scopes, org_id, org_role, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, renter.id, key, label, JSON.stringify(scopes), orgId, orgRole, expiresAt, now
     );
 
-    return res.status(201).json({ id, key, label, scopes, expires_at: expiresAt, created_at: now });
+    return res.status(201).json({ id, key, label, scopes, org_id: orgId, org_role: orgRole, expires_at: expiresAt, created_at: now });
   } catch (error) {
     console.error('Scoped key create error:', error);
     return res.status(500).json({ error: 'Failed to create API key' });
@@ -1059,7 +1189,7 @@ router.get('/me/keys', (req, res) => {
     if (!renter) return res.status(403).json({ error: 'Invalid or inactive master API key' });
 
     const keys = db.all(
-      `SELECT id, label, scopes, expires_at, last_used_at, created_at,
+      `SELECT id, label, scopes, org_id, org_role, expires_at, last_used_at, created_at,
               CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END AS revoked
        FROM renter_api_keys
        WHERE renter_id = ?
@@ -1070,6 +1200,8 @@ router.get('/me/keys', (req, res) => {
       id: k.id,
       label: k.label,
       scopes: (() => { try { return JSON.parse(k.scopes); } catch (_) { return []; } })(),
+      org_id: k.org_id,
+      org_role: k.org_role || 'member',
       expires_at: k.expires_at,
       last_used_at: k.last_used_at,
       created_at: k.created_at,
@@ -1119,7 +1251,7 @@ const RENTER_KEY_PERMISSIONS = new Set(['inference', 'jobs.read', 'balance.read'
 const MAX_DCP_KEYS_PER_RENTER = 20;
 
 // POST /api/renters/:id/keys — create a dcp_ API key
-router.post('/:id/keys', requireRenterOwner, (req, res) => {
+router.post('/:id/keys', requireRenterAdmin, (req, res) => {
   try {
     const renter = req.renter;
 
@@ -1134,6 +1266,8 @@ router.post('/:id/keys', requireRenterOwner, (req, res) => {
     }
 
     const label = typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 80) : null;
+    const orgRole = normalizeOrgRole(req.body?.org_role) || inferRoleFromScopes(permissions);
+    const orgId = req.rbac.orgId || deriveOrgId(renter);
 
     const activeCount = db.get(
       `SELECT COUNT(*) AS c FROM renter_api_keys WHERE renter_id = ? AND revoked_at IS NULL AND key LIKE 'dcp_%'`,
@@ -1148,11 +1282,13 @@ router.post('/:id/keys', requireRenterOwner, (req, res) => {
     const now = new Date().toISOString();
 
     runStatement(
-      'INSERT INTO renter_api_keys (id, renter_id, key, label, scopes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      keyId, renter.id, key, label, JSON.stringify(permissions), null, now
+      `INSERT INTO renter_api_keys
+       (id, renter_id, key, label, scopes, org_id, org_role, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      keyId, renter.id, key, label, JSON.stringify(permissions), orgId, orgRole, null, now
     );
 
-    return res.status(201).json({ keyId, key, label, permissions, created_at: now });
+    return res.status(201).json({ keyId, key, label, permissions, org_id: orgId, org_role: orgRole, created_at: now });
   } catch (error) {
     console.error('DCP key create error:', error);
     return res.status(500).json({ error: 'Failed to create API key' });
@@ -1160,12 +1296,12 @@ router.post('/:id/keys', requireRenterOwner, (req, res) => {
 });
 
 // GET /api/renters/:id/keys — list dcp_ API keys (secret never returned; shows last 4 chars)
-router.get('/:id/keys', requireRenterOwner, (req, res) => {
+router.get('/:id/keys', requireRenterReadOnly, (req, res) => {
   try {
     const renter = req.renter;
 
     const keys = db.all(
-      `SELECT id, label, scopes, key, expires_at, last_used_at, created_at,
+      `SELECT id, label, scopes, key, org_id, org_role, expires_at, last_used_at, created_at,
               CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END AS revoked
        FROM renter_api_keys
        WHERE renter_id = ? AND key LIKE 'dcp_%'
@@ -1176,6 +1312,8 @@ router.get('/:id/keys', requireRenterOwner, (req, res) => {
       keyId: k.id,
       label: k.label,
       permissions: (() => { try { return JSON.parse(k.scopes); } catch (_) { return []; } })(),
+      org_id: k.org_id,
+      org_role: k.org_role || 'member',
       key_hint: `dcp_...${k.key.slice(-4)}`,
       expires_at: k.expires_at,
       last_used_at: k.last_used_at,
@@ -1191,7 +1329,7 @@ router.get('/:id/keys', requireRenterOwner, (req, res) => {
 });
 
 // DELETE /api/renters/:id/keys/:keyId — revoke a dcp_ API key
-router.delete('/:id/keys/:keyId', requireRenterOwner, (req, res) => {
+router.delete('/:id/keys/:keyId', requireRenterAdmin, (req, res) => {
   try {
     const renter = req.renter;
     const keyId = req.params.keyId;
@@ -1800,18 +1938,127 @@ router.get('/me/analytics', (req, res) => {
 const { VALID_EVENTS: WEBHOOK_VALID_EVENTS } = require('../services/renterWebhookService');
 
 /**
- * Middleware: authenticate renter by x-renter-key AND verify :id matches.
- * Adds req.renter to the request.
+ * Middleware factory: authenticate renter key, enforce org-scoped RBAC role,
+ * and emit immutable org audit entries for each access decision.
  */
-function requireRenterOwner(req, res, next) {
-  const key = req.headers['x-renter-key'] || req.query.key;
-  if (!key) return res.status(401).json({ error: 'x-renter-key header required' });
-  const renter = db.get('SELECT * FROM renters WHERE api_key = ? AND status = ?', key, 'active');
-  if (!renter) return res.status(401).json({ error: 'Invalid API key' });
-  const paramId = parseInt(req.params.id, 10);
-  if (renter.id !== paramId) return res.status(403).json({ error: 'Forbidden: key does not match renter id' });
-  req.renter = renter;
-  return next();
+function requireRenterRole(minRole) {
+  return function renterRoleGuard(req, res, next) {
+    const rawHeaderKey = req.headers['x-renter-key'];
+    const key = rawHeaderKey || req.query.key || getBearerToken(req);
+    const action = `${req.method.toUpperCase()} ${req.baseUrl}${req.path}`;
+
+    if (!key) {
+      recordOrgAudit({
+        org_id: 'org:unknown',
+        actor_type: 'unknown',
+        actor_role: 'unknown',
+        action,
+        resource_type: 'renter',
+        resource_id: req.params?.id || null,
+        outcome: 'deny',
+        reason: 'missing_key',
+      });
+      return res.status(401).json({ error: 'x-renter-key header required' });
+    }
+
+    const auth = getRenterAuthContext(key);
+    if (!auth) {
+      recordOrgAudit({
+        org_id: 'org:unknown',
+        actor_type: 'unknown',
+        actor_role: 'unknown',
+        action,
+        resource_type: 'renter',
+        resource_id: req.params?.id || null,
+        outcome: 'deny',
+        reason: 'invalid_or_revoked_key',
+      });
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    const paramId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(paramId) || auth.renter.id !== paramId) {
+      recordOrgAudit({
+        org_id: auth.orgId,
+        actor_type: auth.actorType,
+        actor_id: auth.actorId,
+        actor_role: auth.role,
+        renter_id: auth.renter.id,
+        action,
+        resource_type: 'renter',
+        resource_id: String(req.params?.id || ''),
+        outcome: 'deny',
+        reason: 'renter_mismatch',
+      });
+      return res.status(403).json({ error: 'Forbidden: key does not match renter id' });
+    }
+
+    const actorRank = ORG_ROLE_RANK.get(auth.role) ?? Number.MAX_SAFE_INTEGER;
+    const requiredRank = ORG_ROLE_RANK.get(minRole) ?? -1;
+    if (actorRank > requiredRank) {
+      recordOrgAudit({
+        org_id: auth.orgId,
+        actor_type: auth.actorType,
+        actor_id: auth.actorId,
+        actor_role: auth.role,
+        renter_id: auth.renter.id,
+        action,
+        resource_type: 'renter',
+        resource_id: String(paramId),
+        outcome: 'deny',
+        reason: `requires_${minRole}`,
+        metadata_json: JSON.stringify({ key_id: auth.keyId, required_role: minRole }),
+      });
+      return res.status(403).json({ error: `Forbidden: ${minRole} role required` });
+    }
+
+    req.renter = db.get('SELECT * FROM renters WHERE id = ? AND status = ?', auth.renter.id, 'active');
+    if (!req.renter) {
+      return res.status(404).json({ error: 'Renter not found' });
+    }
+    req.rbac = {
+      orgId: auth.orgId,
+      role: auth.role,
+      actorType: auth.actorType,
+      actorId: auth.actorId,
+      keyId: auth.keyId,
+    };
+
+    recordOrgAudit({
+      org_id: auth.orgId,
+      actor_type: auth.actorType,
+      actor_id: auth.actorId,
+      actor_role: auth.role,
+      renter_id: auth.renter.id,
+      action,
+      resource_type: 'renter',
+      resource_id: String(paramId),
+      outcome: 'allow',
+      reason: `min_role_${minRole}`,
+      metadata_json: JSON.stringify({ key_id: auth.keyId, required_role: minRole }),
+    });
+
+    return next();
+  };
+}
+
+function requireRenterAdmin(req, res, next) {
+  return requireRenterRole('admin')(req, res, next);
+}
+
+function requireRenterAdminOrAdminFallback(req, res, next) {
+  // This path is intentionally shared with the admin top-up route below.
+  // If a valid admin token is present, defer to the later admin handler.
+  if (isAdminRequest(req)) return next('route');
+  return requireRenterAdmin(req, res, next);
+}
+
+function requireRenterMember(req, res, next) {
+  return requireRenterRole('member')(req, res, next);
+}
+
+function requireRenterReadOnly(req, res, next) {
+  return requireRenterRole('read-only')(req, res, next);
 }
 
 /**
@@ -1823,7 +2070,7 @@ function requireRenterOwner(req, res, next) {
  * It MUST only be enabled in non-production environments. Gate: ALLOW_SANDBOX_TOPUP=true.
  * In production, renters must top up via the Moyasar payment flow (/api/payments/topup).
  */
-router.post('/:id/topup', requireRenterOwner, (req, res) => {
+router.post('/:id/topup', requireRenterAdminOrAdminFallback, (req, res) => {
   if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SANDBOX_TOPUP !== 'true') {
     return res.status(403).json({ error: 'Direct top-up disabled in production. Use the payment flow.' });
   }
@@ -1867,7 +2114,7 @@ router.post('/:id/topup', requireRenterOwner, (req, res) => {
  * GET /api/renters/:id/balance
  * Renter-facing balance check — returns balance_sar + last 5 transactions.
  */
-router.get('/:id/balance', requireRenterOwner, (req, res) => {
+router.get('/:id/balance', requireRenterReadOnly, (req, res) => {
   try {
     const { getRenterBalance: _getRenterBalance, getLedger: _getLedger } = require('../services/creditService');
     const balance = _getRenterBalance(db, req.renter.id);
@@ -1894,7 +2141,7 @@ router.get('/:id/balance', requireRenterOwner, (req, res) => {
  * Paginated credit/debit transaction history for the renter.
  * Query: limit (max 50, default 20), offset (default 0), direction (credit|debit)
  */
-router.get('/:id/transactions', requireRenterOwner, (req, res) => {
+router.get('/:id/transactions', requireRenterReadOnly, (req, res) => {
   const rawLimit = parseInt(req.query.limit, 10);
   const rawOffset = parseInt(req.query.offset, 10);
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 20;
@@ -1919,7 +2166,7 @@ router.get('/:id/transactions', requireRenterOwner, (req, res) => {
  * SSRF prevention: validateWebhookUrl middleware enforces HTTPS-only, port 443,
  * blocks RFC-1918/loopback/link-local addresses, and performs a live DNS resolution check.
  */
-router.post('/:id/webhooks', requireRenterOwner, validateWebhookUrl('url'), (req, res) => {
+router.post('/:id/webhooks', requireRenterAdmin, validateWebhookUrl('url'), (req, res) => {
   const { url, secret, events } = req.body || {};
   const renter = req.renter;
 
@@ -1987,7 +2234,7 @@ router.post('/:id/webhooks', requireRenterOwner, validateWebhookUrl('url'), (req
  * GET /api/renters/:id/webhooks
  * List all active webhooks for the renter (secret is masked).
  */
-router.get('/:id/webhooks', requireRenterOwner, (req, res) => {
+router.get('/:id/webhooks', requireRenterReadOnly, (req, res) => {
   try {
     const webhooks = db.all(
       `SELECT id, url, events, active, created_at
@@ -2011,7 +2258,7 @@ router.get('/:id/webhooks', requireRenterOwner, (req, res) => {
  * DELETE /api/renters/:id/webhooks/:webhookId
  * Deactivate a webhook (soft-delete).
  */
-router.delete('/:id/webhooks/:webhookId', requireRenterOwner, (req, res) => {
+router.delete('/:id/webhooks/:webhookId', requireRenterAdmin, (req, res) => {
   const { webhookId } = req.params;
   try {
     const webhook = db.get(

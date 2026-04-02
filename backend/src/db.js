@@ -764,6 +764,22 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS inference_stream_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    model_id TEXT,
+    provider_tier TEXT,
+    stream_success INTEGER NOT NULL CHECK(stream_success IN (0, 1)),
+    stream_error_code TEXT,
+    duration_ms REAL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_events_provider_created ON inference_stream_events(provider_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_events_tier_created ON inference_stream_events(provider_tier, created_at DESC)`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS bottleneck_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider_id INTEGER NOT NULL,
@@ -1077,6 +1093,8 @@ db.exec(`
     key TEXT NOT NULL UNIQUE,
     label TEXT,
     scopes TEXT NOT NULL DEFAULT '["inference"]',
+    org_id TEXT,
+    org_role TEXT NOT NULL DEFAULT 'member' CHECK(org_role IN ('owner', 'admin', 'member', 'read-only')),
     expires_at TEXT,
     revoked_at TEXT,
     last_used_at TEXT,
@@ -1084,8 +1102,33 @@ db.exec(`
     FOREIGN KEY (renter_id) REFERENCES renters(id)
   )
 `);
+try { db.prepare(`ALTER TABLE renter_api_keys ADD COLUMN org_id TEXT`).run(); } catch (_) {}
+try { db.prepare(`ALTER TABLE renter_api_keys ADD COLUMN org_role TEXT NOT NULL DEFAULT 'member' CHECK(org_role IN ('owner', 'admin', 'member', 'read-only'))`).run(); } catch (_) {}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_key ON renter_api_keys(key)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_renter ON renter_api_keys(renter_id, revoked_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_renter_api_keys_org ON renter_api_keys(org_id, org_role, revoked_at)`);
+
+// ─── ORG RBAC AUDIT LOG TABLE ─── (DCP-320)
+// Immutable per-organization trail for RBAC access decisions and privileged mutations.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS org_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id TEXT NOT NULL,
+    actor_type TEXT NOT NULL CHECK(actor_type IN ('master_key', 'scoped_key', 'unknown')),
+    actor_id TEXT,
+    actor_role TEXT NOT NULL CHECK(actor_role IN ('owner', 'admin', 'member', 'read-only', 'unknown')),
+    renter_id INTEGER,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT,
+    outcome TEXT NOT NULL CHECK(outcome IN ('allow', 'deny')),
+    reason TEXT,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_org_audit_org_time ON org_audit_log(org_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_org_audit_action_time ON org_audit_log(action, created_at DESC)`);
 
 // ─── IMAGE SECURITY TABLES ───
 // Trivy scan evidence + approved image digest pinning for container execution policy.
@@ -1133,6 +1176,29 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_rate_limit_log_action_actor_time ON admin_rate_limit_log(action_key, actor_fingerprint, created_at DESC)`);
+
+// ─── SENSITIVE SECURITY AUDIT EVENTS TABLE ─── (DCP-394)
+// Captures high-sensitivity runtime route access/mutations with deterministic action labels.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS security_audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT,
+    method TEXT NOT NULL,
+    route_path TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('success', 'error')),
+    actor_type TEXT NOT NULL CHECK(actor_type IN ('admin', 'provider', 'renter', 'unknown')),
+    actor_id TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_events_action_time ON security_audit_events(action, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_events_resource_time ON security_audit_events(resource_type, resource_id, created_at DESC)`);
 
 // ─── PDPL REQUEST AUDIT TABLE ───
 // Records immutable export/deletion requests for compliance evidence.
@@ -1348,6 +1414,49 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider_time ON provider_metrics(provider_id, recorded_at)`);
+
+// ─── CONVERSION FUNNEL EVENTS TABLE — DCP-357 ───
+// Canonical provider + renter activation funnel contract:
+// view -> register -> first_action -> first_success
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversion_funnel_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,
+    occurred_at TEXT NOT NULL,
+    journey TEXT NOT NULL CHECK(journey IN ('provider','renter')),
+    stage TEXT NOT NULL CHECK(stage IN ('view','register','first_action','first_success')),
+    actor_type TEXT NOT NULL DEFAULT 'anonymous' CHECK(actor_type IN ('provider','renter','anonymous','admin','system')),
+    actor_id INTEGER,
+    actor_key TEXT,
+    anonymous_id TEXT,
+    session_id TEXT,
+    correlation_id TEXT,
+    locale TEXT,
+    locale_raw TEXT,
+    language TEXT,
+    country_code TEXT,
+    source_surface TEXT,
+    source_channel TEXT,
+    utm_source TEXT,
+    utm_medium TEXT,
+    utm_campaign TEXT,
+    utm_content TEXT,
+    utm_term TEXT,
+    referrer TEXT,
+    referrer_host TEXT,
+    referrer_path TEXT,
+    request_path TEXT,
+    request_method TEXT,
+    success INTEGER NOT NULL DEFAULT 1,
+    metadata_json TEXT,
+    dedupe_key TEXT,
+    created_at TEXT NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_time ON conversion_funnel_events(occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_journey_stage ON conversion_funnel_events(journey, stage, occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_conversion_funnel_actor ON conversion_funnel_events(actor_key, occurred_at DESC)`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_conversion_funnel_dedupe_key ON conversion_funnel_events(dedupe_key) WHERE dedupe_key IS NOT NULL`);
 
 // ─── CONTROL PLANE POLICY TABLE ───
 // Queue/SLO policy inputs used by autoscale and pre-warm recommendations.
@@ -1651,6 +1760,10 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_i
 db.exec(`
   CREATE TABLE IF NOT EXISTS openrouter_usage_ledger (
     id                 TEXT PRIMARY KEY,
+    request_id         TEXT,
+    provider_response_id TEXT,
+    job_id             TEXT,
+    request_path       TEXT,
     renter_id          INTEGER NOT NULL,
     provider_id        INTEGER,
     model              TEXT NOT NULL,
@@ -1658,6 +1771,7 @@ db.exec(`
     prompt_tokens      INTEGER NOT NULL DEFAULT 0,
     completion_tokens  INTEGER NOT NULL DEFAULT 0,
     total_tokens       INTEGER NOT NULL DEFAULT 0,
+    token_rate_halala  INTEGER,
     cost_halala        INTEGER NOT NULL,
     currency           TEXT NOT NULL DEFAULT 'SAR',
     settlement_status  TEXT NOT NULL DEFAULT 'pending'
@@ -1666,9 +1780,16 @@ db.exec(`
     created_at         TEXT NOT NULL
   )
 `);
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN request_id TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN provider_response_id TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN job_id TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN request_path TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN token_rate_halala INTEGER').run(); } catch (_) {}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_pending ON openrouter_usage_ledger(settlement_status, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_settlement ON openrouter_usage_ledger(settlement_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_renter ON openrouter_usage_ledger(renter_id, created_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_job ON openrouter_usage_ledger(job_id, created_at DESC)`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_or_usage_request_id ON openrouter_usage_ledger(request_id) WHERE request_id IS NOT NULL`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS openrouter_settlements (

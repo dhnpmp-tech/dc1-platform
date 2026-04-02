@@ -154,10 +154,10 @@ export default function DocsPage({ params }: DocsPageProps) {
           <section className="mt-10">
             <h2 className="mb-5 text-xl font-semibold text-dc1-text-primary">Documentation Map</h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Link href="/docs/quickstart" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
-                <h3 className="text-base font-semibold text-dc1-text-primary">Quickstart</h3>
-                <p className="mt-1 text-sm text-dc1-text-secondary">Start a full renter flow from setup through output review.</p>
-                <p className="mt-2 text-sm text-dc1-text-secondary">ابدأ من الإعداد إلى مراجعة المخرجات عبر تدفق كامل للمستأجر.</p>
+              <Link href="/docs/api/openrouter-60s-quickstart" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
+                <h3 className="text-base font-semibold text-dc1-text-primary">60s First Request</h3>
+                <p className="mt-1 text-sm text-dc1-text-secondary">Go from signup to first `/v1/chat/completions` call with cURL, Node, and Python paths.</p>
+                <p className="mt-2 text-sm text-dc1-text-secondary">من التسجيل إلى أول طلب `/v1/chat/completions` خلال 60 ثانية مع مسارات cURL وNode وPython.</p>
               </Link>
               <Link href="/docs/provider-guide" className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-5">
                 <h3 className="text-base font-semibold text-dc1-text-primary">Provider Onboarding</h3>

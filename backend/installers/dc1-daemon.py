@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DCP Provider Daemon v3.3.0 — GPU Compute Marketplace
+DCP Provider Daemon v3.4.0 — GPU Compute Marketplace
 Runs as a background service on provider machines.
 
 Features:
@@ -53,7 +53,7 @@ HMAC_SECRET = "{{HMAC_SECRET}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.3.1"
+DAEMON_VERSION = "3.4.0"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
@@ -85,7 +85,10 @@ VRAM_REQUIREMENTS = {
     "training": 6000,           # Fine-tuning needs ~6 GB
     "benchmark": 1000,          # Matrix multiply needs ~1 GB
     "rendering": 2000,          # General GPU rendering
-    "vllm_serve": 14336,        # vLLM 7B model in FP16 needs ~14 GB
+    "vllm_serve": 7168,             # vLLM 7B AWQ/fp8-kv needs ~7 GB
+    "vllm_serve_fp16": 14336,       # vLLM 7B FP16 needs ~14 GB
+    "vllm_serve_13b": 14336,        # 13B AWQ (Jais-13B, ALLaM-13B)
+    "vllm_serve_70b": 46080,        # 70B NVLink 48GB
 }
 VRAM_DEFAULT_REQUIREMENT = 2000  # Default if job type unknown
 
@@ -1449,15 +1452,33 @@ def run_vllm_serve_job(task_spec, job_id=None):
     dtype = task_spec.get("dtype", "float16")
 
     ALLOWED_VLLM_MODELS = {
+        # Arabic-first (DCP strategic priority)
+        "SDAIA/ALLaM-7B-Instruct",
+        "SDAIA/ALLaM-7B-Instruct-AWQ",
+        "inceptionai/jais-13b-chat",
+        "inceptionai/jais-adapted-13b-chat",
+        # Arabic-capable multilingual
+        "Qwen/Qwen2.5-7B-Instruct",
+        "Qwen/Qwen2.5-7B-Instruct-AWQ",
+        "Qwen/Qwen2.5-14B-Instruct-AWQ",
+        # Standard models
         "mistralai/Mistral-7B-Instruct-v0.2",
+        "mistralai/Mistral-7B-Instruct-v0.3",
+        "TheBloke/Mistral-7B-Instruct-v0.2-AWQ",
         "meta-llama/Meta-Llama-3-8B-Instruct",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4",
+        "meta-llama/Meta-Llama-3-70B-Instruct",
         "microsoft/Phi-3-mini-4k-instruct",
+        "microsoft/Phi-3.5-mini-instruct",
+        "nvidia/Nemotron-Mini-4B-Instruct",
         "google/gemma-2b-it",
+        "google/gemma-2-9b-it",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     }
     if model not in ALLOWED_VLLM_MODELS:
-        log.warning(f"Rejected vllm model '{model}' — not in whitelist. Using TinyLlama.")
-        model = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        log.warning(f"Rejected vllm model '{model}' — not in whitelist. Defaulting to ALLaM-7B-AWQ.")
+        model = "SDAIA/ALLaM-7B-Instruct-AWQ"
 
     image = "vllm/vllm-openai:latest"
     container_name = f"dc1-vllm-{job_id or int(time.time())}"
@@ -1827,6 +1848,8 @@ def auto_verify():
 # Default models to pre-cache (small ones that fit on most GPUs)
 PRECACHE_MODELS = [
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    # "SDAIA/ALLaM-7B-Instruct-AWQ",  # Uncomment when GPU >= 8GB
+    # "Qwen/Qwen2.5-7B-Instruct-AWQ", # Uncomment when GPU >= 8GB
 ]
 
 def precache_models():

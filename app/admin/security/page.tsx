@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatCard from '../../components/ui/StatCard'
@@ -58,20 +58,7 @@ export default function SecurityPage() {
     { label: t('nav.containers'), href: '/admin/containers', icon: <ContainerIcon /> },
   ]
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    fetchSecurityData()
-    const interval = setInterval(fetchSecurityData, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (token) {
-      fetchAuditLog()
-    }
-  }, [auditPage])
-
-  const fetchSecurityData = async () => {
+  const fetchSecurityData = useCallback(async () => {
     try {
       setLoading(true)
       const [eventsRes, summaryRes] = await Promise.all([
@@ -95,9 +82,9 @@ export default function SecurityPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [router, token])
 
-  const fetchAuditLog = async () => {
+  const fetchAuditLog = useCallback(async () => {
     try {
       const auditRes = await fetch(`${API_BASE}/admin/audit?page=${auditPage}&limit=20`, {
         headers: { 'x-admin-token': token || '' }
@@ -115,7 +102,20 @@ export default function SecurityPage() {
     } catch (err) {
       console.error('Error fetching audit log:', err)
     }
-  }
+  }, [auditPage, router, token])
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return }
+    fetchSecurityData()
+    const interval = setInterval(fetchSecurityData, 30000)
+    return () => clearInterval(interval)
+  }, [fetchSecurityData, router, token])
+
+  useEffect(() => {
+    if (token) {
+      fetchAuditLog()
+    }
+  }, [auditPage, fetchAuditLog, token])
 
   const getActionColor = (action: string) => {
     const lowerAction = action?.toLowerCase() || ''
