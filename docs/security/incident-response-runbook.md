@@ -36,6 +36,33 @@ For all incidents, follow this sequence before applying a scenario-specific fix:
 
 ---
 
+## Quarterly IAM Control Evidence (Preventive)
+
+This runbook includes a quarterly preventive control for privileged-access review and key-rotation attestations.
+
+- Runbook: `docs/compliance/iam-quarterly-evidence-runbook.md`
+- Artifact directory: `artifacts/compliance/iam/`
+- Current baseline linkage: `docs/compliance/pdpl-baseline-v1.md`
+
+Generate evidence artifacts:
+
+```bash
+npm run compliance:iam:evidence -- \
+  --reviewer="<reviewer name>" \
+  --principals="<comma-separated privileged principal scope>" \
+  --secrets="<comma-separated secret/key scope>"
+```
+
+Validate freshness policy (must be <= 90 days old):
+
+```bash
+npm run compliance:iam:verify | tee artifacts/compliance/iam/latest-verification.txt
+```
+
+The verifier exits non-zero if evidence is stale/missing, so it can be used as a CI/manual gate before release sign-off.
+
+---
+
 ## Scenario A — Data Breach / Unauthorized Access
 
 ### Detection Signals

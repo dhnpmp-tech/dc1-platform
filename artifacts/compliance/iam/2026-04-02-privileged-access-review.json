@@ -1,0 +1,17 @@
+{
+  "control_id": "IAM-PRIV-ACCESS-QUARTERLY-REVIEW",
+  "evidence_type": "privileged_access_review",
+  "period": "Q2-2026",
+  "reviewed_at": "2026-04-02T15:50:42.745Z",
+  "reviewer": "CTO delegate (Backend Developer)",
+  "reviewed_principals_scope": [
+    "founder-admin-token custodians",
+    "operations on-call maintainers",
+    "paperclip automation service account"
+  ],
+  "decision_outcomes": {
+    "summary": "approved_with_actions",
+    "notes": "Validated least-privilege scope; no unauthorized principals found. Follow-up actions are tracked for stale access cleanup."
+  },
+  "next_review_date": "2026-07-01"
+}

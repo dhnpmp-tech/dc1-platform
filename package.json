@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "compliance:iam:evidence": "node scripts/compliance/generate-iam-quarterly-evidence.mjs",
+    "compliance:iam:verify": "node scripts/compliance/verify-iam-evidence-freshness.mjs",
     "smoke:gpu-job": "node scripts/gpu-job-lifecycle-smoke.mjs",
     "test:e2e": "playwright test",
     "test:e2e:debug": "playwright test --debug",

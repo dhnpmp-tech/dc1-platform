@@ -1,0 +1,12 @@
+
+> dc1-platform@1.0.0 compliance:iam:verify
+> node scripts/compliance/verify-iam-evidence-freshness.mjs
+
+# IAM Evidence Freshness Report
+
+- Checked at: 2026-04-02T15:50:56.076Z
+- Max age policy (days): 90
+- Latest privileged access review: 2026-04-02-privileged-access-review.json (0 days old)
+- Latest key rotation attestation: 2026-04-02-key-rotation-attestation.json (0 days old)
+
+- Result: PASS

@@ -1,0 +1,17 @@
+{
+  "control_id": "IAM-SECRETS-ROTATION-ATTESTATION",
+  "evidence_type": "key_rotation_attestation",
+  "attested_at": "2026-04-02T15:50:42.745Z",
+  "reviewer": "CTO delegate (Backend Developer)",
+  "reviewed_secrets_scope": [
+    "DC1_ADMIN_TOKEN",
+    "DC1_JWT_SECRET",
+    "OPENROUTER_API_KEY",
+    "PAPERCLIP_API_KEY"
+  ],
+  "decision_outcomes": {
+    "summary": "completed",
+    "notes": "Production secrets covered by this control were reviewed for current rotation state and attested as rotated within policy window."
+  },
+  "next_review_date": "2026-07-01"
+}
