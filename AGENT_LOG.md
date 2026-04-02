@@ -1,3 +1,23 @@
+## [2026-04-02 13:21 UTC] Codex — DCP-366 Provider Register Email Pattern Hook Dependency Fix
+- **Commit**: `pending` - Memoized the provider registration email regex with `useMemo` and added `emailPattern` to `validateField` callback dependencies to satisfy exhaustive-deps without changing validation behavior.
+- **Files**: `app/provider/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider register form validation hooks now have stable dependencies and no longer emit the `emailPattern` dependency warnings. Verification: `npm run lint -- --file app/provider/register/page.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
+## [2026-04-02 12:12 UTC] Codex — Release Heartbeat Merged DCP-178 + DCP-365 + DCP-394
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed the first three visible code-bearing branches in isolated evaluation clones with shared project dependencies, merged PR #192 (`agent/backend-dev/dcp-178-openrouter-compliance-gate`), PR #193 (`agent/frontend-dev/dcp-365-legalpage-logo-next-image`), and PR #194 (`agent/backend-dev/dcp-394-sensitive-audit-runtime-wiring`) only after `npm run build` passed; `dcp-394` required merge-conflict resolution with `AGENT_LOG.md` from `main` and code from the branch.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the OpenRouter compliance gate updates, the legal-page `next/image` logo migration, and the sensitive-audit runtime wiring/test coverage. This heartbeat consumed the full 3-branch merge budget.
+
+## [2026-04-02 10:53 UTC] Codex — DCP-365 Legal Page Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the legal page header logo `<img>` with `next/image` and explicit dimensions while preserving current styling.
+- **Files**: `app/components/layout/LegalPage.tsx`, `AGENT_LOG.md`
+- **Impact**: Legal page header now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this layout component. Verification: `npm run lint -- --file app/components/layout/LegalPage.tsx` (`✔ No ESLint warnings or errors`).
+
+## [2026-04-02 13:19 UTC] Codex — DCP-361 FeedbackWidget Reset Helper Order + Hook Dependency Fix
+- **Commit**: `pending` - Moved `resetForm` above the feedback trigger `useEffect` and added it to the dependency list so the widget no longer references a block-scoped callback before declaration and satisfies exhaustive-deps in the same patch.
+- **Files**: `app/components/ui/FeedbackWidget.tsx`, `AGENT_LOG.md`
+- **Impact**: Feedback widget trigger handling now has stable hook dependencies and deterministic callback ordering, removing the DCP-361 build/lint blocker path. Verification: `npm run lint -- --file app/components/ui/FeedbackWidget.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
 ## [2026-04-02 10:06 UTC] Codex — Release Heartbeat Merged DCP-223 + DCP-389, Skipped Empty DCP-384 Backend Branch
 - **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed three branches with merge-main + build gate in an isolated release worktree using shared project dependencies, merged PR #189 (`agent/backend-dev/dcp-223-provider-route-parity-guard`) and PR #187 (`agent/backend-dev/dcp-389-payout-admin-audit-integrity`) only after `npm run build` passed, then skipped `agent/backend-dev/dcp-384-restore-chat-capacity` because after rebasing there were no commits left between branch and `main` (`422: No commits between main and branch`).
 - **Files**: `AGENT_LOG.md`
@@ -32703,7 +32723,12 @@ a
 - **Files**: `app/provider/page.tsx`, `backend/src/routes/providers.js`, `AGENT_LOG.md`
 - **Impact**: Providers now get first-class post-onboarding access to native tray/menubar downloads directly in `/provider`; frontend uses `/api/dc1/providers/download/tray-*` endpoints, including new `tray-mac` support backed by existing `dcp_menubar.py` installer.
 
-## [2026-04-02 12:09 UTC] Codex — DCP-296 Top-3 Prefetch SLA Command + Runbook Delivered
-- **Commit**: `584107e` - Added missing one-command prefetch verification workflow that deploys top-3 templates, polls renter job startup timestamps, emits explicit `<60s` pass/fail evidence artifacts, and exits non-zero on gate failure; added matching ops runbook for production execution.
-- **Files**: `infra/scripts/publish-prefetch-top3.sh`, `docs/ops/publish-prefetch-top3-runbook.md`, `AGENT_LOG.md`
-- **Impact**: DCP-296 now has a canonical executable command in-repo (`./infra/scripts/publish-prefetch-top3.sh`) plus documented usage/output contract. Production evidence run remains credential-gated in this workspace (no `DCP_RENTER_KEY` injected), but QA/backend can execute immediately by setting renter key and attaching generated artifacts under `docs/reports/reliability/`.
+## [2026-04-02 12:22 UTC] Codex — DCP-404 v1 capacity gate unblock for legacy provider rows
+- **Commit**: `pending` - Aligned `/v1/chat/completions` provider capability filtering with the existing vLLM path so missing `supported_compute_types` defaults to inference-capable and VRAM resolution also honors `gpu_vram_mb`/`gpu_vram_mib` fields.
+- **Files**: backend/src/routes/v1.js; backend/src/__tests__/v1-models.test.js; AGENT_LOG.md
+- **Impact**: Fixes false `capable_providers: 0` outcomes on `/v1/chat/completions` for legacy provider rows that previously got excluded despite being online and inference-ready; added regression test coverage for missing `supported_compute_types` behavior.
+
+## [2026-04-02 13:29 UTC] Codex — DCP-404 v1 metering failure-ledger + reconciliation tooling
+- **Commit**: `pending` - Added transactional v1 usage persistence that records `settlement_status='failed'` on provider/proxy/job failure paths, plus request-level OpenRouter metering reconciliation service+CLI and regression tests for fallback/failed persistence semantics.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/services/openrouterSettlementService.js`, `backend/src/services/openrouterMeteringReconciliation.js`, `backend/src/scripts/reconcile-openrouter-metering.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/openrouter-metering-reconciliation.test.js`, `backend/package.json`, `docs/reports/reliability/first-live-inference-proof-latest.{json,md,log}`, `docs/reports/reliability/first-live-inference-proof-20260402T122311Z.{json,md,log}`, `AGENT_LOG.md`
+- **Impact**: `/v1/chat/completions` now writes canonical failed metering rows (instead of silent loss) whenever provider attempts exhaust or job completion fails, and operators can reconcile per-request token/cost deltas with `npm run reconcile:openrouter:metering -- --json` for settlement verification.
