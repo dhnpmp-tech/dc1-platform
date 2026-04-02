@@ -32402,3 +32402,8 @@ a
 - **Commit**: `0cf8bfa` - Hardened provider installer/download endpoints to require a single normalized API key query param and reject malformed duplicate key input safely.
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
+
+## [2026-04-02 17:17 UTC] Codex — DCP-437 Real uptime/latency reliability contract shipped
+- **Commit**: `pending` - Expanded `/api/admin/daemon-health` with real rolling reliability telemetry (`24h`/`7d`) and added a public-safe reliability summary endpoint.
+- **Files**: `backend/src/services/daemonHealthSummary.js`, `backend/src/routes/admin.js`, `backend/src/routes/public-health.js`, `backend/src/server.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
+- **Impact**: Admin daemon health now includes persisted-metric uptime (`heartbeat_log`), latency percentiles (`inference_stream_events.duration_ms`), and online-capacity snapshots with deterministic nulls for absent data (no synthetic defaults). Public consumers can read `/api/health/reliability` without admin auth and without provider-identifying fields. Proof tests added for zero-data + populated telemetry schema behavior.
