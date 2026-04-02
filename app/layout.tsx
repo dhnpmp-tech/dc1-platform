@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: 'DCP — GPU Compute Marketplace',
   description: 'Power, Digitalized. Connect GPU providers and renters on the transparent, reliable GPU compute marketplace.',
   icons: {
-    icon: '/logo.svg',
+    icon: "/dcp-logo-primary.png",
   },
 }
 

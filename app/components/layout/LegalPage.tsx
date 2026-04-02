@@ -20,7 +20,7 @@ export default function LegalPage({ title, lastUpdated, children }: LegalPagePro
       <header className="bg-dc1-surface-l1 border-b border-dc1-border">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center">
-            <Image src="/logo.svg" alt="DCP" width={96} height={32} className="h-8 w-auto" />
+            <Image src="/dcp-logo-primary.png" alt="DCP" width={96} height={32} className="h-8 w-auto" />
           </Link>
           <Link href="/login" className="text-sm text-dc1-amber hover:underline">{t('auth.sign_in')}</Link>
         </div>

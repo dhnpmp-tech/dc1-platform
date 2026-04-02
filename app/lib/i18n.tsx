@@ -1496,11 +1496,11 @@ const translations: Record<Language, Record<string, string>> = {
     'provider.trust.earnings_estimate': 'Earnings examples are planning estimates only, not guaranteed payouts.',
 
     // Landing page
-    'landing.hero_badge': 'INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY',
+    'landing.hero_badge': 'GPU COMPUTE — ARABIC AI — SAUDI DATA RESIDENCY',
     'landing.hero_title_1': 'Borderless',
     'landing.hero_title_2': 'GPU Compute.',
-    'landing.hero_title': 'Infinite Compute. Real Power. — GPU inference for builders everywhere, powered by Saudi energy.',
-    'landing.hero_desc': 'OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.',
+    'landing.hero_title': 'Infinite Compute. Real Power.',
+    'landing.hero_desc': 'OpenAI-compatible API. Arabic models. Saudi data residency. Per-token billing.',
     'landing.hero_helper': 'Billing uses estimate hold in halala, runtime settlement, and automatic unused-hold return after completion.',
     'mode.strip.title': 'Choose your mode',
     'mode.strip.subtitle': 'Use the same entry lanes everywhere: Marketplace, Playground, Docs/API, Enterprise Support.',
