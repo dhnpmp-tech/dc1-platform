@@ -32407,3 +32407,8 @@ a
 - **Commit**: `7ce3b9b` - Reworked provider dashboard narrow-screen layout for 375–414px viewports by switching KPI cards to 1-column below 400px, preventing horizontal overflow, and adding a dedicated mobile card presentation for recent jobs.
 - **Files**: `app/provider/dashboard/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider dashboard now renders without squeeze/overflow on common mobile widths while preserving desktop table behavior from `sm` and up.
+
+## [2026-04-02 18:38 UTC] Codex — DCP-443 Provider Activation Conversion Contract + Endpoint Shipped
+- **Commit**: `pending` - Added provider activation download-event persistence, implemented `/api/admin/providers/activation-conversion` with 24h/7d stage counts + conversion rates + machine-readable blocker taxonomy, and replaced the conversion test shim with real integration coverage.
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/provider-activation-conversion.test.js`, `AGENT_LOG.md`
+- **Impact**: Backend now exposes deterministic activation conversion telemetry (`registered -> installer_downloaded -> first_heartbeat -> online_within_24h`) with non-synthetic empty-window behavior and blocker taxonomy derived from lifecycle + daemon error logs; regression coverage is in place for the new admin contract.
