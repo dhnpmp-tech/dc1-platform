@@ -8,6 +8,11 @@
 - **Files**: `backend/src/routes/jobs.js`, `backend/tests/e2e-marketplace.test.js`, `AGENT_LOG.md`
 - **Impact**: Manual completion now returns deterministic success payloads and completed-job email dispatch metadata without throwing. Verification: `cd backend && npm test -- --runInBand tests/e2e-marketplace.test.js` (`25/25` passing).
 
+## [2026-04-02 05:50 UTC] Codex — Release Heartbeat Landed Two Branches, Frontend Lint Fix Still Blocked
+- **Commit**: `6d917ba` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate for PRs #183 (`agent/frontend-dev/dcp-362-footer-logo-next-image`) and #184 (`agent/backend-dev/dcp-376-template-catalog-contract`), and re-blocked `agent/frontend-dev/dcp-361-next-frontend-lint-fix` after `npm run build` failed again with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200` even after rebasing onto the latest `main`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the footer logo `next/image` fix and the renter template-catalog contract endpoint/test branch contents. The remaining visible frontend lint-fix branch is still not releasable because it breaks the Next.js production build.
+
 ## [2026-04-02 03:44 UTC] Codex — Release Heartbeat Landed Two Branches, Blocked One On Build Gate
 - **Commit**: `6b1f81b` - Ran the release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff checks), rebased three qualifying visible agent branches onto current `main` in the clean release worktree, cleared the root `npm run build` gate for PRs #181 (`agent/backend-dev/dcp-358-openrouter-gate`) and #182 (`agent/backend-dev/dcp-369-vllm-bootstrap`), and blocked `agent/frontend-dev/dcp-361-next-frontend-lint-fix` after `npm run build` failed with `Type error: Block-scoped variable 'resetForm' used before its declaration` in `app/components/ui/FeedbackWidget.tsx:200`.
 - **Files**: `AGENT_LOG.md`
