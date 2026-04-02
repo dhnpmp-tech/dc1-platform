@@ -3,6 +3,11 @@
 - **Files**: `app/provider/register/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider register form validation hooks now have stable dependencies and no longer emit the `emailPattern` dependency warnings. Verification: `npm run lint -- --file app/provider/register/page.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
 
+## [2026-04-02 14:16 UTC] Codex — Release Heartbeat Merged DCP-296 + DCP-364 + DCP-373
+- **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed the first three visible code-bearing branches in isolated evaluation clones with shared project dependencies, merged PR #196 (`agent/backend-dev/dcp-296-top3-template-sla`), PR #197 (`agent/frontend-dev/dcp-364-dashboard-sidebar-next-image`), and PR #198 (`agent/backend-dev/dcp-373-self-serve-smoke-principal`) only after `npm run build` passed; all three required merge-conflict resolution with `AGENT_LOG.md` from `main` and code from the branch.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `main` now includes the top-3 template SLA publish path, the dashboard sidebar image migration, and the self-serve smoke principal updates. This heartbeat consumed the full 3-branch merge budget.
+
 ## [2026-04-02 12:12 UTC] Codex — Release Heartbeat Merged DCP-178 + DCP-365 + DCP-394
 - **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed the first three visible code-bearing branches in isolated evaluation clones with shared project dependencies, merged PR #192 (`agent/backend-dev/dcp-178-openrouter-compliance-gate`), PR #193 (`agent/frontend-dev/dcp-365-legalpage-logo-next-image`), and PR #194 (`agent/backend-dev/dcp-394-sensitive-audit-runtime-wiring`) only after `npm run build` passed; `dcp-394` required merge-conflict resolution with `AGENT_LOG.md` from `main` and code from the branch.
 - **Files**: `AGENT_LOG.md`
