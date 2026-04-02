@@ -32407,3 +32407,8 @@ a
 - **Commit**: `7ce3b9b` - Reworked provider dashboard narrow-screen layout for 375–414px viewports by switching KPI cards to 1-column below 400px, preventing horizontal overflow, and adding a dedicated mobile card presentation for recent jobs.
 - **Files**: `app/provider/dashboard/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider dashboard now renders without squeeze/overflow on common mobile widths while preserving desktop table behavior from `sm` and up.
+
+## [2026-04-02 18:29 UTC] Codex — DCP-450 deterministic /v1 failure envelope + retry contract shipped
+- **Commit**: `pending` - Standardized `/v1/models` and `/v1/chat/completions` error envelopes around deterministic machine-readable `error.code` values, added retry semantics metadata, and locked the failure contract for rate-limit/no-capacity/provider-unavailable/upstream-timeout with unit coverage and docs updates.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/middleware/rateLimiter.js`, `backend/src/services/runtimeRouteParityMonitor.js`, `backend/src/__tests__/runtimeRouteParityMonitor.test.js`, `backend/src/__tests__/v1-models.test.js`, `docs/api-reference.mdx`, `docs/api/openrouter-60s-quickstart.md`, `docs/ar/openrouter-60s-quickstart.mdx`, `AGENT_LOG.md`
+- **Impact**: SDK and OpenRouter-facing `/v1` clients now receive deterministic failure semantics with stable `error.code` and retry metadata (`retry_after_seconds`/`retry_after_ms` on 429), enabling predictable retry/fallback behavior and reducing error-message drift across reliability gates.

@@ -101,4 +101,9 @@ with urllib.request.urlopen(req, timeout=40) as resp:
 ## Notes
 
 - Auth for this surface uses renter keys (`x-renter-key`).
-- If you see `{"error":"no_capacity"}`, your request path is valid and auth is accepted; retry when provider capacity is online.
+- `/v1` failures include `error.code` for deterministic handling:
+  - `rate_limit_exceeded` (`429`, check `retry_after_seconds`)
+  - `no_capacity_available` (`503`)
+  - `provider_unavailable` (`503`)
+  - `upstream_timeout` (`504`)
+- Retry only when `error.retryable === true`; use exponential backoff and prefer `retry_after_seconds` when present.

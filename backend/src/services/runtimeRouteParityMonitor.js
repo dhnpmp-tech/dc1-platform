@@ -70,7 +70,7 @@ const DEFAULT_ROUTE_DEFINITIONS = [
       }
       if (!json.error || typeof json.error !== 'object') mismatches.push('body.error must be an object');
       if (typeof json.error?.message !== 'string') mismatches.push('body.error.message must be a string');
-      if (typeof json.error?.code !== 'number') mismatches.push('body.error.code must be a number');
+      if (typeof json.error?.code !== 'string') mismatches.push('body.error.code must be a string');
       return mismatches;
     },
   },
