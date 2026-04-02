@@ -32407,3 +32407,8 @@ a
 - **Commit**: `pending` - Implemented a shared `/v1` renter auth parser with deterministic auth error codes for missing/invalid/conflicting credentials, enforced parity auth handling on both `/v1/models` and `/v1/chat/completions`, and aligned proof tooling to canonical bearer auth usage.
 - **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-auth-contract.test.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `backend/tests/helpers/openrouterComplianceHarness.js`, `backend/tests/first-live-inference-proof-package.js`, `backend/tests/README.md`, `AGENT_LOG.md`
 - **Impact**: `/v1` auth behavior is now deterministic (`auth_missing`, `auth_invalid`, `auth_conflict`) across model-list and completion endpoints, both `Authorization: Bearer` and `x-renter-key` are accepted consistently, and first-live proof artifacts no longer mix query-param auth with header auth on `/v1`.
+
+## [2026-04-02 16:35 UTC] Codex — DCP-429 /v1 malformed credential handling hardened
+- **Commit**: `pending` - Hardened `/v1` renter auth parsing so malformed credential formats now fail as deterministic `auth_invalid` instead of incorrectly falling through as `auth_missing`.
+- **Files**: `backend/src/routes/v1.js`, `backend/tests/integration/v1-auth-contract.test.js`, `AGENT_LOG.md`
+- **Impact**: `/v1/models` and `/v1/chat/completions` now reject malformed auth headers predictably (for example non-Bearer `Authorization` schemes or blank `x-renter-key` values), preserving a stable OpenRouter-facing error contract. Focused validation passed: `cd backend && npm test -- --runInBand tests/integration/v1-auth-contract.test.js`.

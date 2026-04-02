@@ -59,13 +59,53 @@ function normalizeModelToken(value) {
 
 function parseRenterAuth(req) {
   const authHeader = req.headers['authorization'];
+  const renterHeader = req.headers['x-renter-key'];
+  let malformedCredential = false;
   let bearerKey = null;
-  if (typeof authHeader === 'string') {
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (match) bearerKey = normalizeString(match[1], { maxLen: 128, trim: false });
+  let renterHeaderKey = null;
+
+  if (authHeader != null) {
+    if (Array.isArray(authHeader)) {
+      malformedCredential = true;
+    } else if (typeof authHeader === 'string') {
+      const trimmedAuthHeader = authHeader.trim();
+      if (!trimmedAuthHeader) {
+        malformedCredential = true;
+      } else {
+        const match = trimmedAuthHeader.match(/^Bearer\s+(.+)$/i);
+        if (!match) {
+          malformedCredential = true;
+        } else {
+          bearerKey = normalizeString(match[1], { maxLen: 128, trim: true });
+          if (!bearerKey) malformedCredential = true;
+        }
+      }
+    } else {
+      malformedCredential = true;
+    }
   }
 
-  const renterHeaderKey = normalizeString(req.headers['x-renter-key'], { maxLen: 128, trim: false });
+  if (renterHeader != null) {
+    if (Array.isArray(renterHeader)) {
+      malformedCredential = true;
+    } else {
+      renterHeaderKey = normalizeString(renterHeader, { maxLen: 128, trim: true });
+      if (!renterHeaderKey) malformedCredential = true;
+    }
+  }
+
+  if (malformedCredential) {
+    return {
+      ok: false,
+      status: 401,
+      error: {
+        message: 'Invalid API key format. Pass Authorization: Bearer <key> or x-renter-key.',
+        type: 'authentication_error',
+        code: 'auth_invalid',
+      },
+    };
+  }
+
   if (bearerKey && renterHeaderKey && bearerKey !== renterHeaderKey) {
     return {
       ok: false,

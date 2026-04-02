@@ -77,6 +77,24 @@ describe('/v1 renter auth contract', () => {
       type: 'authentication_error',
       code: 'auth_conflict',
     });
+
+    const malformedAuthorizationRes = await request(app)
+      .get('/v1/models')
+      .set('Authorization', 'Basic dGVzdDp0ZXN0');
+    expect(malformedAuthorizationRes.status).toBe(401);
+    expect(malformedAuthorizationRes.body?.error).toMatchObject({
+      type: 'authentication_error',
+      code: 'auth_invalid',
+    });
+
+    const malformedRenterHeaderRes = await request(app)
+      .get('/v1/models')
+      .set('x-renter-key', '   ');
+    expect(malformedRenterHeaderRes.status).toBe(401);
+    expect(malformedRenterHeaderRes.body?.error).toMatchObject({
+      type: 'authentication_error',
+      code: 'auth_invalid',
+    });
   });
 
   test('POST /v1/chat/completions accepts bearer and x-renter-key before downstream routing checks', async () => {
