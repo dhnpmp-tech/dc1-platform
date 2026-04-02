@@ -13,6 +13,8 @@
     "verify:v1:latency-gate": "node src/scripts/verify-v1-latency-budget.js",
     "monitor:route-parity": "node src/scripts/run-runtime-route-parity-monitor.js",
     "monitor:v1:reliability-scoreboard": "node src/scripts/generate-v1-reliability-scoreboard.js",
+    "gate:openrouter-reliability": "NODE_ENV=test node src/scripts/run-openrouter-reliability-gate.js",
+    "gate:openrouter-reliability:raw": "NODE_ENV=test node tests/openrouter-compliance-harness.js",
     "templates:validate": "node src/scripts/validate-deploy-templates.js",
     "test": "NODE_ENV=test jest --runInBand",
     "test:integration": "NODE_ENV=test jest tests/integration/ --runInBand",
