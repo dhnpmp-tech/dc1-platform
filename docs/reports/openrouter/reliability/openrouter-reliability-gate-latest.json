@@ -1,0 +1,113 @@
+{
+  "generated_at": "2026-04-02T03:12:05.606Z",
+  "commit": "dd34821",
+  "branch": "agent/backend-dev/dcp-358-openrouter-gate",
+  "command": "cd backend && npm run gate:openrouter-reliability",
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "blockingFailures": 0,
+    "nonBlockingFailures": 0,
+    "readiness": "pass"
+  },
+  "checks": [
+    {
+      "id": "models_contract",
+      "title": "GET /v1/models returns an OpenAI-compatible list payload",
+      "severity": "blocking",
+      "status": "pass",
+      "details": "Model catalog contract matches the OpenAI list shape expected by OpenRouter.",
+      "evidence": [
+        "status=200",
+        "model_present=true"
+      ]
+    },
+    {
+      "id": "auth_required",
+      "title": "POST /v1/chat/completions rejects requests without a renter API key",
+      "severity": "blocking",
+      "status": "pass",
+      "details": "Auth guard correctly rejects anonymous requests with an OpenAI-style authentication error.",
+      "evidence": [
+        "status=401",
+        "error_type=authentication_error"
+      ]
+    },
+    {
+      "id": "billing_guard",
+      "title": "POST /v1/chat/completions rejects renters without enough balance",
+      "severity": "blocking",
+      "status": "pass",
+      "details": "Billing guard correctly returns a 402 billing error before proxying the request.",
+      "evidence": [
+        "status=402",
+        "error_type=billing_error"
+      ]
+    },
+    {
+      "id": "chat_completion_proxy",
+      "title": "POST /v1/chat/completions proxies a healthy completion response",
+      "severity": "blocking",
+      "status": "pass",
+      "details": "Healthy OpenRouter-style completion requests reach the provider proxy and return a standard chat completion payload.",
+      "evidence": [
+        "status=200",
+        "content=mock provider response"
+      ]
+    },
+    {
+      "id": "stream_stability",
+      "title": "Streaming responses preserve SSE headers and emit a DONE terminator",
+      "severity": "blocking",
+      "status": "pass",
+      "details": "Healthy streaming requests keep the SSE content type and terminate cleanly with [DONE].",
+      "evidence": [
+        "status=200",
+        "content_type=text/event-stream",
+        "done_seen=true"
+      ]
+    },
+    {
+      "id": "tool_result_roundtrip",
+      "title": "Assistant tool_calls and tool result messages survive the proxy transform",
+      "severity": "non_blocking",
+      "status": "pass",
+      "details": "Conversation history with tool calls and tool outputs is preserved when the request is proxied.",
+      "evidence": [
+        "assistant_tool_calls=1",
+        "tool_message_seen=true"
+      ]
+    },
+    {
+      "id": "tool_definition_passthrough",
+      "title": "Tool definitions and tool_choice are forwarded to the provider",
+      "severity": "blocking",
+      "status": "pass",
+      "details": "Tool definitions reach the provider proxy intact.",
+      "evidence": [
+        "tools_forwarded=1",
+        "tool_choice_forwarded=true"
+      ]
+    },
+    {
+      "id": "mid_stream_failure_handling",
+      "title": "Mid-stream provider failures are surfaced cleanly to QA",
+      "severity": "blocking",
+      "status": "pass",
+      "details": "The harness observed a cleanly surfaced mid-stream failure mode.",
+      "evidence": [
+        "fetch_error=none",
+        "done_seen=false",
+        "body_prefix={\"error\":{\"message\":\"Provider failover exhausted after initial error: connection"
+      ]
+    }
+  ],
+  "formatted_report": "# OpenRouter Compliance Readiness Report\n\nGenerated: 2026-04-02T03:12:05.731Z\nReadiness: PASS\nChecks: 8/8 passing\nBlocking failures: 0\nNon-blocking failures: 0\n\n## Check Results\n\n- [PASS] models_contract (blocking) — GET /v1/models returns an OpenAI-compatible list payload\n  Model catalog contract matches the OpenAI list shape expected by OpenRouter.\n  evidence: status=200\n  evidence: model_present=true\n- [PASS] auth_required (blocking) — POST /v1/chat/completions rejects requests without a renter API key\n  Auth guard correctly rejects anonymous requests with an OpenAI-style authentication error.\n  evidence: status=401\n  evidence: error_type=authentication_error\n- [PASS] billing_guard (blocking) — POST /v1/chat/completions rejects renters without enough balance\n  Billing guard correctly returns a 402 billing error before proxying the request.\n  evidence: status=402\n  evidence: error_type=billing_error\n- [PASS] chat_completion_proxy (blocking) — POST /v1/chat/completions proxies a healthy completion response\n  Healthy OpenRouter-style completion requests reach the provider proxy and return a standard chat completion payload.\n  evidence: status=200\n  evidence: content=mock provider response\n- [PASS] stream_stability (blocking) — Streaming responses preserve SSE headers and emit a DONE terminator\n  Healthy streaming requests keep the SSE content type and terminate cleanly with [DONE].\n  evidence: status=200\n  evidence: content_type=text/event-stream\n  evidence: done_seen=true\n- [PASS] tool_result_roundtrip (non_blocking) — Assistant tool_calls and tool result messages survive the proxy transform\n  Conversation history with tool calls and tool outputs is preserved when the request is proxied.\n  evidence: assistant_tool_calls=1\n  evidence: tool_message_seen=true\n- [PASS] tool_definition_passthrough (blocking) — Tool definitions and tool_choice are forwarded to the provider\n  Tool definitions reach the provider proxy intact.\n  evidence: tools_forwarded=1\n  evidence: tool_choice_forwarded=true\n- [PASS] mid_stream_failure_handling (blocking) — Mid-stream provider failures are surfaced cleanly to QA\n  The harness observed a cleanly surfaced mid-stream failure mode.\n  evidence: fetch_error=none\n  evidence: done_seen=false\n  evidence: body_prefix={\"error\":{\"message\":\"Provider failover exhausted after initial error: connection\n\n## Leadership Handoff\n\n- Blocking: none\n- Non-blocking: none",
+  "artifacts": {
+    "json": "docs/reports/openrouter/reliability/openrouter-reliability-gate-20260402T031205Z.json",
+    "markdown": "docs/reports/openrouter/reliability/openrouter-reliability-gate-20260402T031205Z.md",
+    "latest_json": "docs/reports/openrouter/reliability/openrouter-reliability-gate-latest.json",
+    "latest_markdown": "docs/reports/openrouter/reliability/openrouter-reliability-gate-latest.md"
+  }
+}
