@@ -12,7 +12,7 @@ Before doing anything:
 CRITICAL: Never run git pull, git push, git commit, or any git commands. They will fail with permission errors.
 
 ## What Is DCP
-DCP is a GPU compute marketplace for Saudi Arabia. Providers register NVIDIA GPUs, install a Python daemon, and earn SAR. Renters submit compute jobs (LLM inference, image gen, training) that run on provider hardware. DCP takes 25% fee; providers earn 75%. Currency: SAR (halala = 1/100 SAR).
+DCP is a global GPU compute marketplace powered by Saudi energy economics. Providers register NVIDIA GPUs, install a Python daemon, and earn SAR. Renters submit compute jobs (LLM inference, image gen, training) that run on provider hardware. DCP takes 25% fee; providers earn 75%. Currency: SAR (halala = 1/100 SAR).
 
 ## Live Systems
 

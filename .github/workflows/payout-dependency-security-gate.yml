@@ -1,0 +1,72 @@
+name: Payout Dependency Security Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/src/routes/payouts.js"
+      - "backend/src/routes/payments.js"
+      - "backend/src/routes/settlement.js"
+      - "backend/src/routes/providers.js"
+      - "backend/src/routes/jobs.js"
+      - "backend/src/routes/admin.js"
+      - "backend/src/services/payoutService.js"
+      - "backend/src/services/payoutBatchService.js"
+      - "backend/src/services/settlementService.js"
+      - "backend/src/services/escrowListener.js"
+      - "backend/src/services/escrow-chain.js"
+      - "backend/src/services/creditService.js"
+      - "backend/src/services/reconciliation-engine.js"
+      - "backend/migrations/**"
+      - "backend/package.json"
+      - "backend/package-lock.json"
+      - ".github/workflows/payout-dependency-security-gate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/src/routes/payouts.js"
+      - "backend/src/routes/payments.js"
+      - "backend/src/routes/settlement.js"
+      - "backend/src/routes/providers.js"
+      - "backend/src/routes/jobs.js"
+      - "backend/src/routes/admin.js"
+      - "backend/src/services/payoutService.js"
+      - "backend/src/services/payoutBatchService.js"
+      - "backend/src/services/settlementService.js"
+      - "backend/src/services/escrowListener.js"
+      - "backend/src/services/escrow-chain.js"
+      - "backend/src/services/creditService.js"
+      - "backend/src/services/reconciliation-engine.js"
+      - "backend/migrations/**"
+      - "backend/package.json"
+      - "backend/package-lock.json"
+      - ".github/workflows/payout-dependency-security-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  payout-dependency-audit:
+    name: Payout dependency audit (high/critical gate)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --include=dev
+
+      - name: Enforce dependency vulnerability threshold (high/critical)
+        run: npm audit --omit=dev --audit-level=high

@@ -119,6 +119,11 @@ function normalizeEmail(value) {
     return normalized;
 }
 
+function normalizeSingleQueryParam(value, { maxLen = 128 } = {}) {
+    if (typeof value !== 'string') return null;
+    return normalizeString(value, { maxLen, trim: false });
+}
+
 function toFiniteNumber(value, { min = null, max = null } = {}) {
     const num = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(num)) return null;
@@ -476,9 +481,17 @@ router.post('/login-email', loginEmailLimiter, (req, res) => {
 router.get('/installer', (req, res) => {
     try {
         const { key, os } = req.query;
-        
-        if (!key || !os) {
+
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        const cleanOs = normalizeSingleQueryParam(os, { maxLen: 24 });
+
+        if (!cleanKey || !cleanOs) {
             return res.status(400).json({ error: 'Missing API key or OS' });
+        }
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanKey);
+        if (!provider) {
+            return res.status(401).json({ error: 'Invalid API key' });
         }
         
         // Determine installer path
@@ -488,7 +501,7 @@ router.get('/installer', (req, res) => {
             'Linux': 'dc1-provider-setup-Linux.deb'
         };
         
-        const installerFile = installerMap[os];
+        const installerFile = installerMap[cleanOs];
         if (!installerFile) {
             return res.status(400).json({ error: 'Invalid OS' });
         }
@@ -1893,9 +1906,10 @@ router.post('/preferences', async (req, res) => {
 router.get('/download', async (req, res) => {
     try {
         const { key, platform } = req.query;
-        if (!key) return res.status(400).json({ error: 'API key required' });
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [key]);
+        const provider = db.get('SELECT * FROM providers WHERE api_key = ?', [cleanKey]);
         if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
         const isUnix = platform === 'linux' || platform === 'mac' || platform === 'darwin';
@@ -1908,7 +1922,7 @@ router.get('/download', async (req, res) => {
         }
 
         let script = fs.readFileSync(templatePath, 'utf-8');
-        script = script.replace(/\{\{API_KEY\}\}/g, key);
+        script = script.replace(/\{\{API_KEY\}\}/g, cleanKey);
         script = script.replace(/\{\{RUN_MODE\}\}/g, provider.run_mode || 'always-on');
         script = script.replace(/\{\{SCHEDULED_START\}\}/g, provider.scheduled_start || '23:00');
         script = script.replace(/\{\{SCHEDULED_END\}\}/g, provider.scheduled_end || '07:00');
@@ -3135,9 +3149,10 @@ router.post('/:id/jobs/:jobId/complete', async (req, res) => {
 router.get('/download/daemon', (req, res) => {
     try {
         const { key, check_only } = req.query;
-        if (!key) return res.status(400).json({ error: 'API key required' });
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         const daemonCandidates = [
@@ -3159,7 +3174,7 @@ router.get('/download/daemon', (req, res) => {
             return res.json({
                 version: currentVersion,
                 min_version: MIN_DAEMON_VERSION,
-                download_url: `/api/providers/download/daemon?key=${key}`,
+                download_url: `/api/providers/download/daemon?key=${cleanKey}`,
             });
         }
 
@@ -3168,10 +3183,10 @@ router.get('/download/daemon', (req, res) => {
         const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa';
         const hmacSecret = process.env.DC1_HMAC_SECRET || '';
         let injected = script
-            .replace('API_KEY = "{{API_KEY}}"', `API_KEY = "${key}"`)
+            .replace('API_KEY = "{{API_KEY}}"', `API_KEY = "${cleanKey}"`)
             .replace('API_URL = "{{API_URL}}"', `API_URL = "${apiUrl}"`)
             .replace('HMAC_SECRET = "{{HMAC_SECRET}}"', `HMAC_SECRET = "${hmacSecret}"`)
-            .replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${key}"`)
+            .replace('API_KEY = "INJECT_KEY_HERE"', `API_KEY = "${cleanKey}"`)
             .replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 
         const downloadName = path.basename(daemonPath);
@@ -3275,9 +3290,10 @@ router.get('/download/tray-mac', (req, res) => {
 router.get('/download/setup', (req, res) => {
     try {
         const { key, os: osType } = req.query;
-        if (!key) return res.status(400).json({ error: 'API key required' });
+        const cleanKey = normalizeSingleQueryParam(key, { maxLen: 128 });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
 
-        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', key);
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
         const isWindows = (osType || '').toLowerCase() === 'windows';
@@ -3290,7 +3306,7 @@ router.get('/download/setup', (req, res) => {
 
         const apiUrl = process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa';
         let script = fs.readFileSync(templatePath, 'utf-8');
-        script = script.replace(/INJECT_KEY_HERE/g, key);
+        script = script.replace(/INJECT_KEY_HERE/g, cleanKey);
         script = script.replace(/INJECT_URL_HERE/g, apiUrl);
 
         const contentType = isWindows ? 'text/plain' : 'text/x-shellscript';
