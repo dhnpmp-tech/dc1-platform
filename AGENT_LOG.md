@@ -1,3 +1,8 @@
+## [2026-04-02 08:52 UTC] Codex — DCP-364 Dashboard Sidebar Logos Migrated To Next Image
+- **Commit**: `pending` - Replaced both dashboard sidebar logo `<img>` tags (desktop sidebar header and mobile topbar) with `next/image` and explicit dimensions while preserving existing classes/visual sizing.
+- **Files**: `app/components/layout/DashboardSidebar.tsx`, `AGENT_LOG.md`
+- **Impact**: Dashboard sidebar branding now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` in this layout component. Verification: `npm run lint -- --file app/components/layout/DashboardSidebar.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-02 06:50 UTC] Codex — DCP-363 Header Logo Migrated To Next Image
 - **Commit**: `pending` - Replaced the header brand logo `<img>` with `next/image` and explicit dimensions, preserving existing sizing/styling classes.
 - **Files**: `app/components/layout/Header.tsx`, `AGENT_LOG.md`

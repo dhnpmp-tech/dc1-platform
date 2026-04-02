@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { LanguageToggle, useLanguage } from '../../lib/i18n'
@@ -41,9 +42,11 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
       {/* Logo & Role */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-dc1-border">
         <Link href="/" className="shrink-0">
-          <img
+          <Image
             src="/logo.svg"
             alt="DCP."
+            width={96}
+            height={32}
             className="h-8 w-auto"
           />
         </Link>
@@ -139,7 +142,7 @@ export default function DashboardSidebar({ navItems, role, userName }: Dashboard
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <img src="/logo.svg" alt="DCP." className="h-7" />
+        <Image src="/logo.svg" alt="DCP." width={84} height={28} className="h-7 w-auto" />
         <span className="text-sm font-semibold text-dc1-amber">{roleLabels[role]}</span>
       </div>
 
