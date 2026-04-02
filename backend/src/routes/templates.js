@@ -13,6 +13,8 @@ const { readInstantTierManifest, listInstantTierImageRefs, resolveTemplateImageR
 
 // Templates are stored as JSON files in /docker-templates at the repo root
 const TEMPLATES_DIR = path.join(__dirname, '../../../docker-templates');
+const TEMPLATE_CATALOG_CONTRACT = 'dcp.template_catalog.v1';
+const TEMPLATE_CATALOG_VERSION = '2026-04-02';
 
 // Collect all approved images across all templates (for daemon whitelist)
 const APPROVED_IMAGES_EXTRA = [
@@ -41,6 +43,113 @@ function loadTemplates() {
   } catch {
     return [];
   }
+}
+
+function getTemplatesDir() {
+  const override = process.env.DCP_TEMPLATES_DIR;
+  if (typeof override === 'string' && override.trim()) {
+    return path.resolve(override.trim());
+  }
+  return TEMPLATES_DIR;
+}
+
+function getModelNameFromTemplate(template) {
+  if (template && template.params && typeof template.params.model === 'string' && template.params.model.trim()) {
+    return template.params.model.trim();
+  }
+  if (Array.isArray(template?.env_vars)) {
+    const modelEnvVar = template.env_vars.find((item) => item && item.key === 'MODEL_ID' && typeof item.default === 'string' && item.default.trim());
+    if (modelEnvVar) return modelEnvVar.default.trim();
+  }
+  return typeof template?.name === 'string' ? template.name.trim() : '';
+}
+
+function readTemplateCatalogContract() {
+  const templatesDir = getTemplatesDir();
+  if (!fs.existsSync(templatesDir)) {
+    return { templates: [], errors: [`Template directory not found: ${templatesDir}`] };
+  }
+
+  let files = [];
+  try {
+    files = fs.readdirSync(templatesDir).filter((f) => f.endsWith('.json')).sort();
+  } catch (error) {
+    return { templates: [], errors: [`Failed to read template directory: ${error.message}`] };
+  }
+
+  if (files.length === 0) {
+    return { templates: [], errors: [`No template JSON files found in ${templatesDir}`] };
+  }
+
+  const errors = [];
+  const templates = [];
+
+  for (const file of files) {
+    const fullPath = path.join(templatesDir, file);
+    let parsed;
+
+    try {
+      parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+    } catch (error) {
+      errors.push(`${file}: invalid JSON (${error.message})`);
+      continue;
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      errors.push(`${file}: template root must be a JSON object`);
+      continue;
+    }
+
+    if (typeof parsed.id !== 'string' || !parsed.id.trim()) {
+      errors.push(`${file}: missing required string field "id"`);
+    }
+    if (typeof parsed.name !== 'string' || !parsed.name.trim()) {
+      errors.push(`${file}: missing required string field "name"`);
+    }
+    if (!Number.isFinite(parsed.min_vram_gb) || Number(parsed.min_vram_gb) <= 0) {
+      errors.push(`${file}: missing or invalid numeric field "min_vram_gb"`);
+    }
+    if (typeof parsed.job_type !== 'string' || !parsed.job_type.trim()) {
+      errors.push(`${file}: missing required string field "job_type"`);
+    }
+    if (!parsed.params || typeof parsed.params !== 'object' || Array.isArray(parsed.params)) {
+      errors.push(`${file}: missing required object field "params"`);
+    }
+
+    const modelName = getModelNameFromTemplate(parsed);
+    if (!modelName) {
+      errors.push(`${file}: unable to derive non-empty model name (params.model or env_vars.MODEL_ID.default)`);
+    }
+
+    if (errors.some((msg) => msg.startsWith(`${file}:`))) continue;
+
+    templates.push({
+      id: parsed.id.trim(),
+      model_name: modelName,
+      min_vram_gb: Number(parsed.min_vram_gb),
+      tier_hint: {
+        tier: typeof parsed.tier === 'string' && parsed.tier.trim() ? parsed.tier.trim() : 'standard',
+        notes: typeof parsed.tier_notes === 'string' ? parsed.tier_notes.trim() : '',
+      },
+      deploy_defaults: {
+        duration_minutes: Number.isFinite(parsed.default_duration_minutes) && Number(parsed.default_duration_minutes) > 0
+          ? Number(parsed.default_duration_minutes)
+          : 60,
+        pricing_class: typeof parsed.default_pricing_class === 'string' && parsed.default_pricing_class.trim()
+          ? parsed.default_pricing_class.trim()
+          : 'standard',
+        job_type: parsed.job_type.trim(),
+        params: parsed.params,
+      },
+      sort_order: Number.isFinite(parsed.sort_order) ? Number(parsed.sort_order) : 99,
+    });
+  }
+
+  const sorted = templates
+    .sort((a, b) => (a.sort_order - b.sort_order) || a.id.localeCompare(b.id))
+    .map(({ sort_order, ...template }) => template);
+
+  return { templates: sorted, errors };
 }
 
 // Category -> tag mappings for the ?category= filter
@@ -140,6 +249,25 @@ router.get('/bundles', publicEndpointLimiter, (req, res) => {
     price_per_hour_sar: parseFloat((b.price_per_hour_usd * SAR_USD_RATE).toFixed(2)),
   }));
   return res.json({ bundles, count: bundles.length });
+});
+
+// GET /api/templates/catalog -- strict renter-facing template catalog contract
+router.get('/catalog', publicEndpointLimiter, (req, res) => {
+  const { templates, errors } = readTemplateCatalogContract();
+  if (errors.length > 0) {
+    return res.status(500).json({
+      error: 'Template catalog contract validation failed',
+      contract: TEMPLATE_CATALOG_CONTRACT,
+      details: errors,
+    });
+  }
+
+  return res.json({
+    contract: TEMPLATE_CATALOG_CONTRACT,
+    version: TEMPLATE_CATALOG_VERSION,
+    templates,
+    count: templates.length,
+  });
 });
 
 // GET /api/templates/:id -- single template with full detail
