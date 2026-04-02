@@ -20,6 +20,22 @@ cd backend
 npm run monitor:route-parity
 ```
 
+## Release Preflight Gate
+
+Before requesting merge/deploy approval, run the provider route parity guard:
+
+```bash
+cd backend
+npm run gate:provider-route-parity
+```
+
+This hard-gates runtime parity specifically for:
+
+- `GET /api/providers/model-catalog`
+- `GET /api/providers/models`
+
+Runbook: `docs/ops/provider-route-parity-guard-runbook.md`.
+
 ## Environment Variables
 
 - `ROUTE_PARITY_BASE_URL` (default: `https://api.dcp.sa`)
