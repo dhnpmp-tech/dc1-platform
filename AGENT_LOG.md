@@ -1,5 +1,5 @@
 ## [2026-04-02 09:43 UTC] Codex — DCP-384 Restore AWQ Chat Capacity Routing
-- **Commit**: `pending` - Patched `/v1/chat/completions` to use the vLLM compatibility matrix during provider admission and proxy model selection so low-VRAM providers can serve compatible AWQ variants for quickstart models such as `mistralai/Mistral-7B-Instruct-v0.2`.
+- **Commit**: `0c677c5` - Patched `/v1/chat/completions` to use the vLLM compatibility matrix during provider admission and proxy model selection so low-VRAM providers can serve compatible AWQ variants for quickstart models such as `mistralai/Mistral-7B-Instruct-v0.2`.
 - **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
 - **Impact**: Staff-engineer branch `agent/staff-engineer/dcp-384-restore-chat-capacity` now restores 12 GB-class eligibility for the Mistral quickstart path; QA should re-run the authenticated non-stream and stream smoke on deployed infra before shipping.
 
