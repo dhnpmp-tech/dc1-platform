@@ -1,0 +1,81 @@
+{
+  "version": "2026-04-01",
+  "notes": "Low-VRAM (<=12GB) admission is AWQ-first. ALLaM-7B AWQ currently falls back to fp16 when unavailable.",
+  "models": [
+    {
+      "id": "qwen-2.5-7b-instruct",
+      "aliases": [
+        "qwen/qwen2.5-7b-instruct",
+        "qwen/qwen2.5-7b-instruct-awq",
+        "qwen2.5-7b",
+        "qwen2.5-7b-awq"
+      ],
+      "default_variant": "awq",
+      "variants": {
+        "awq": {
+          "model_id": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+          "aliases": ["qwen-awq", "qwen-7b-awq"],
+          "min_vram_mb": 8192,
+          "available": true,
+          "recommended_script": "infra/vllm-configs/awq-8gb-bootstrap.sh"
+        },
+        "fp16": {
+          "model_id": "Qwen/Qwen2.5-7B-Instruct",
+          "min_vram_mb": 20480,
+          "available": true,
+          "recommended_script": "infra/vllm-configs/qwen25-7b.sh"
+        }
+      }
+    },
+    {
+      "id": "mistral-7b-instruct-v0.2",
+      "aliases": [
+        "mistralai/mistral-7b-instruct-v0.2",
+        "mistralai/mistral-7b-instruct-v0.2-awq",
+        "mistral-7b",
+        "mistral-7b-awq"
+      ],
+      "default_variant": "awq",
+      "variants": {
+        "awq": {
+          "model_id": "mistralai/Mistral-7B-Instruct-v0.2-AWQ",
+          "min_vram_mb": 10240,
+          "available": true,
+          "recommended_script": "infra/vllm-configs/awq-12gb-bootstrap.sh"
+        },
+        "fp16": {
+          "model_id": "mistralai/Mistral-7B-Instruct-v0.2",
+          "min_vram_mb": 20480,
+          "available": true,
+          "recommended_script": "infra/vllm-configs/mistral-7b.sh"
+        }
+      }
+    },
+    {
+      "id": "allam-7b-it",
+      "aliases": [
+        "allam-7b",
+        "allam-7b-awq",
+        "bolt-is/allam-it-7b",
+        "bolt-is/allam-it-7b-awq"
+      ],
+      "default_variant": "awq",
+      "fallback_variant": "fp16",
+      "variants": {
+        "awq": {
+          "model_id": "BOLT-IS/ALLaM-IT-7B-AWQ",
+          "min_vram_mb": 11264,
+          "available": false,
+          "availability_note": "ALLaM-7B AWQ weights are not currently published upstream",
+          "recommended_script": "infra/vllm-configs/awq-12gb-bootstrap.sh"
+        },
+        "fp16": {
+          "model_id": "BOLT-IS/ALLaM-IT-7B",
+          "min_vram_mb": 20480,
+          "available": true,
+          "recommended_script": "infra/vllm-configs/allam-7b.sh"
+        }
+      }
+    }
+  ]
+}
