@@ -32417,3 +32417,8 @@ a
 - **Commit**: `pending` - Added explicit Suspense fallback boundaries on `/docs/quickstart` and `/renter/register` client pages to keep Next.js `useSearchParams` CSR boundary requirements resilient during production builds.
 - **Files**: `app/docs/quickstart/page.tsx`, `app/renter/register/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Production build with typecheck and static generation succeeds (`npm run build -- --no-lint`), including prerender output for both target routes. Existing EN/AR UX flows remain unchanged.
+
+## [2026-04-02 23:46 UTC] Codex — DCP-408 Provider install CTA conversion polish shipped on earn/provider/download
+- **Commit**: `pending` - Implemented EN/AR i18n CTA copy, deterministic primary/secondary install routing, and unified provider-install telemetry/error-help states across `/earn`, `/provider`, and `/provider/download`.
+- **Files**: `app/earn/page.tsx`, `app/provider/page.tsx`, `app/provider/download/page.tsx`, `app/lib/provider-install-telemetry.ts`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider install surfaces now enforce one dominant next action (install), route deterministic troubleshooting/support links by onboarding state, and emit consistent analytics dimensions (`source_page`, `surface`, `cta_tier`, `destination`, `next_action_state`, `os_target`, `has_provider_key`, `step`). Production build passes with `npm run build -- --no-lint`. Screenshot automation attempt failed in this container due missing headless browser runtime library `libglib-2.0.so.0`.
