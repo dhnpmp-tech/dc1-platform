@@ -32402,3 +32402,8 @@ a
 - **Commit**: `0cf8bfa` - Hardened provider installer/download endpoints to require a single normalized API key query param and reject malformed duplicate key input safely.
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
+
+## [2026-04-02 17:31 UTC] Codex — DCP-446 provider dashboard mobile responsiveness shipped
+- **Commit**: `7ce3b9b` - Reworked provider dashboard narrow-screen layout for 375–414px viewports by switching KPI cards to 1-column below 400px, preventing horizontal overflow, and adding a dedicated mobile card presentation for recent jobs.
+- **Files**: `app/provider/dashboard/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider dashboard now renders without squeeze/overflow on common mobile widths while preserving desktop table behavior from `sm` and up.
