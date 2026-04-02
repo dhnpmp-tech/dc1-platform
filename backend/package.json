@@ -12,6 +12,8 @@
     "providers:export-reactivation": "node src/scripts/export-provider-reactivation-queue.js",
     "verify:v1:latency-gate": "node src/scripts/verify-v1-latency-budget.js",
     "monitor:route-parity": "node src/scripts/run-runtime-route-parity-monitor.js",
+    "gate:provider-route-parity": "node src/scripts/run-provider-route-parity-guard.js",
+    "reconcile:openrouter:metering": "node src/scripts/reconcile-openrouter-metering.js",
     "monitor:v1:reliability-scoreboard": "node src/scripts/generate-v1-reliability-scoreboard.js",
     "gate:openrouter-reliability": "NODE_ENV=test node src/scripts/run-openrouter-reliability-gate.js",
     "gate:openrouter-reliability:raw": "NODE_ENV=test node tests/openrouter-compliance-harness.js",
