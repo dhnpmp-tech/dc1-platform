@@ -1,3 +1,8 @@
+## [2026-04-02 14:26 UTC] Codex — DCP-367 Support + Job Monitor Hook Dependency Stabilization
+- **Commit**: `pending` - Memoized support contact category options and included them in prefill effect dependencies, then added `renterKey` to job monitor status polling callback dependencies to satisfy exhaustive-deps with no behavior change.
+- **Files**: `app/support/page.tsx`, `components/jobs/JobMonitor.tsx`, `AGENT_LOG.md`
+- **Impact**: Support prefill state and renter job status polling now use explicit stable hook dependency wiring, removing two frontend lint warnings in the touched surfaces. Verification: `npm run lint -- --file app/support/page.tsx --file components/jobs/JobMonitor.tsx` (`✔ No ESLint warnings or errors`) and `npm run build` (passes).
+
 ## [2026-04-02 13:21 UTC] Codex — DCP-366 Provider Register Email Pattern Hook Dependency Fix
 - **Commit**: `pending` - Memoized the provider registration email regex with `useMemo` and added `emailPattern` to `validateField` callback dependencies to satisfy exhaustive-deps without changing validation behavior.
 - **Files**: `app/provider/register/page.tsx`, `AGENT_LOG.md`

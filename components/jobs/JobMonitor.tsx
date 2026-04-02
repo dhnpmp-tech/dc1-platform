@@ -76,7 +76,7 @@ export default function JobMonitor({ jobId }: { jobId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [jobId]);
+  }, [jobId, renterKey]);
 
   useEffect(() => {
     fetchStatus();
