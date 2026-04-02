@@ -64,7 +64,9 @@ describe('v1 models route', () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].id).toBe('fallback-model');
     expect(res.body.data[0]).toHaveProperty('parameter_count', null);
-    expect(res.body.data[0].pricing).toEqual({
+    expect(res.body.data[0].pricing).toMatchObject({
+      prompt: expect.any(String),
+      completion: expect.any(String),
       prompt_tokens: expect.any(String),
       completion_tokens: expect.any(String),
       usd_per_minute: expect.any(String),
@@ -77,6 +79,9 @@ describe('v1 models route', () => {
     expect(res.body.data[0].pricing.usd_per_1m_input_tokens).toMatch(/^\d+\.\d{6}$/);
     expect(res.body.data[0].pricing.usd_per_1m_output_tokens).toMatch(/^\d+\.\d{6}$/);
     expect(res.body.data[0].description).toEqual(expect.any(String));
+    expect(res.body.data[0].input_modalities).toEqual(['text']);
+    expect(res.body.data[0].output_modalities).toEqual(['text']);
+    expect(res.body.data[0].supported_sampling_parameters).toEqual(expect.arrayContaining(['temperature', 'top_p', 'max_tokens']));
     expect(res.body.data[0].architecture).toEqual({
       tokenizer: 'mistral',
       instruct_type: 'instruct',
@@ -87,6 +92,8 @@ describe('v1 models route', () => {
     ]);
     expect(res.body.data[0].provider_priority).toEqual(['dcp']);
     expect(typeof res.body.data[0].pricing.usd_per_minute).toBe('string');
+    expect(res.body.data[0].pricing.prompt).toMatch(/^\d+\.\d{6}$/);
+    expect(res.body.data[0].pricing.completion).toMatch(/^\d+\.\d{6}$/);
     expect(mockDb.all).toHaveBeenCalledTimes(3);
   });
 
@@ -117,7 +124,9 @@ describe('v1 models route', () => {
     expect(res.body.data[0].display_name).toBe('legacy-model');
     expect(res.body.data[0].context_window).toBe(4096);
     expect(res.body.data[0].parameter_count).toBeNull();
-    expect(res.body.data[0].pricing).toEqual({
+    expect(res.body.data[0].pricing).toMatchObject({
+      prompt: expect.any(String),
+      completion: expect.any(String),
       prompt_tokens: expect.any(String),
       completion_tokens: expect.any(String),
       usd_per_minute: expect.any(String),
@@ -512,6 +521,114 @@ describe('v1 models route', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     fetchSpy.mockRestore();
+  });
+
+  test('chat completions forwards tools and tool_choice payload without shape mutation', async () => {
+    const providerRequestBodies = [];
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (_url, init = {}) => {
+      providerRequestBodies.push(JSON.parse(init.body || '{}'));
+      return {
+        ok: true,
+        json: async () => ({
+          id: 'chatcmpl-tools',
+          object: 'chat.completion',
+          model: 'tool-model',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'tool forwarded' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        }),
+      };
+    });
+
+    const toolsPayload = [{
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: 'Get weather by city',
+        parameters: {
+          type: 'object',
+          properties: { city: { type: 'string' } },
+          required: ['city'],
+        },
+      },
+    }];
+    const toolChoicePayload = { type: 'function', function: { name: 'get_weather' } };
+
+    mockDb.all.mockImplementation((sql) => {
+      const query = String(sql);
+      if (query.includes('PRAGMA table_info(model_registry)')) {
+        return [{ name: 'model_id' }, { name: 'min_gpu_vram_gb' }, { name: 'context_window' }];
+      }
+      if (query.includes('FROM providers')) {
+        return [{
+          id: 177,
+          status: 'online',
+          is_paused: 0,
+          deleted_at: null,
+          supported_compute_types: '["inference"]',
+          vram_gb: 24,
+          last_heartbeat: new Date().toISOString(),
+          vllm_endpoint_url: 'http://provider.test',
+          gpu_util_pct: 2,
+        }];
+      }
+      return [];
+    });
+    mockDb.get.mockImplementation((sql) => {
+      const query = String(sql);
+      if (query.includes('FROM renter_api_keys')) return null;
+      if (query.includes('FROM renters WHERE api_key')) {
+        return { id: 17, api_key: 'test-key', balance_halala: 5000, status: 'active' };
+      }
+      if (query.includes('FROM model_registry WHERE model_id = ?')) {
+        return { model_id: 'tool-model', min_gpu_vram_gb: 8, context_window: 4096 };
+      }
+      if (query.includes('FROM cost_rates')) {
+        return { token_rate_halala: 1 };
+      }
+      return null;
+    });
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', 'Bearer test-key')
+      .send({
+        model: 'tool-model',
+        messages: [{ role: 'user', content: 'call tool' }],
+        tools: toolsPayload,
+        tool_choice: toolChoicePayload,
+      });
+
+    expect(res.status).toBe(200);
+    expect(providerRequestBodies).toHaveLength(1);
+    expect(providerRequestBodies[0].tools).toEqual(toolsPayload);
+    expect(providerRequestBodies[0].tool_choice).toEqual(toolChoicePayload);
+
+    fetchSpy.mockRestore();
+  });
+
+  test('chat completions error payload keeps top-level string error contract', async () => {
+    mockDb.all.mockImplementation(() => []);
+    mockDb.get.mockImplementation((sql) => {
+      const query = String(sql);
+      if (query.includes('FROM renter_api_keys')) return null;
+      if (query.includes('FROM renters WHERE api_key')) {
+        return { id: 99, api_key: 'test-key', balance_halala: 5000, status: 'active' };
+      }
+      return null;
+    });
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', 'Bearer test-key')
+      .send({
+        model: 'unavailable-model',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+
+    expect(res.status).toBe(503);
+    expect(typeof res.body.error).toBe('string');
+    expect(res.body.type).toBe('server_error');
+    expect(res.body.code).toBe(503);
   });
 
 });

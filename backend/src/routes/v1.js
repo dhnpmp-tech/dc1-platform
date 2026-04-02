@@ -69,10 +69,19 @@ function getRenterKey(req) {
   return header || query || null;
 }
 
+function sendV1Error(res, statusCode, message, { type = null, code = null, details = null } = {}) {
+  const payload = { error: String(message || 'Request failed') };
+  if (type) payload.type = type;
+  if (Number.isFinite(Number(code))) payload.code = Number(code);
+  if (details && typeof details === 'object') payload.details = details;
+  return res.status(statusCode).json(payload);
+}
+
 function requireAuth(req, res, next) {
   const key = getRenterKey(req);
-  if (!key) return res.status(401).json({
-    error: { message: 'API key required. Pass via Authorization: Bearer <key>', type: 'authentication_error', code: 401 }
+  if (!key) return sendV1Error(res, 401, 'API key required. Pass via Authorization: Bearer <key>', {
+    type: 'authentication_error',
+    code: 401,
   });
 
   const now = new Date().toISOString();
@@ -89,12 +98,18 @@ function requireAuth(req, res, next) {
 
   if (scopedKey) {
     if (scopedKey.expires_at && scopedKey.expires_at < now) {
-      return res.status(403).json({ error: { message: 'API key has expired', type: 'authentication_error', code: 403 } });
+      return sendV1Error(res, 403, 'API key has expired', {
+        type: 'authentication_error',
+        code: 403,
+      });
     }
     let scopes = [];
     try { scopes = JSON.parse(scopedKey.scopes || '[]'); } catch (_) {}
     if (!scopes.includes('inference') && !scopes.includes('admin')) {
-      return res.status(403).json({ error: { message: 'API key does not have inference scope', type: 'authentication_error', code: 403 } });
+      return sendV1Error(res, 403, 'API key does not have inference scope', {
+        type: 'authentication_error',
+        code: 403,
+      });
     }
     try { db.prepare('UPDATE renter_api_keys SET last_used_at = ? WHERE id = ?').run(now, scopedKey.id); } catch (_) {}
     req.renter = { id: scopedKey.r_id, api_key: scopedKey.api_key, balance_halala: scopedKey.balance_halala, status: scopedKey.status };
@@ -107,8 +122,9 @@ function requireAuth(req, res, next) {
     'SELECT id, api_key, balance_halala, status FROM renters WHERE api_key = ? AND status = ?',
     key, 'active'
   );
-  if (!renter) return res.status(401).json({
-    error: { message: 'Invalid or inactive API key', type: 'authentication_error', code: 401 }
+  if (!renter) return sendV1Error(res, 401, 'Invalid or inactive API key', {
+    type: 'authentication_error',
+    code: 401,
   });
 
   req.renter = renter;
@@ -216,6 +232,84 @@ function buildModelDescription(row, contractCore) {
   const useCases = Array.isArray(contractCore?.supported_features) ? contractCore.supported_features.join(', ') : 'chat.completions';
   const modelName = normalizeString(row?.display_name, { maxLen: 200 }) || normalizeString(row?.model_id, { maxLen: 200 }) || 'Model';
   return `${modelName} hosted by DCP for ${useCases}.`;
+}
+
+const OPENROUTER_SAMPLING_PARAMETERS = [
+  'temperature',
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'repetition_penalty',
+  'stop',
+  'seed',
+  'max_tokens',
+  'logit_bias',
+  'logprobs',
+  'top_logprobs',
+];
+
+function buildOpenRouterPricing(usdPerToken, contractCorePricing = {}) {
+  return {
+    prompt: usdPerToken,
+    completion: usdPerToken,
+    image: '0.000000',
+    request: '0.000000',
+    input_cache_read: '0.000000',
+    // Backward-compatible aliases kept while clients converge.
+    prompt_tokens: usdPerToken,
+    completion_tokens: usdPerToken,
+    usd_per_minute: contractCorePricing.usd_per_minute || '0.000000',
+    usd_per_1m_input_tokens: contractCorePricing.usd_per_1m_input_tokens || '0.000000',
+    usd_per_1m_output_tokens: contractCorePricing.usd_per_1m_output_tokens || '0.000000',
+  };
+}
+
+function buildOpenRouterModelContract({ row, contractCore, endpointUrl, usdPerToken }) {
+  const modalities = Array.isArray(contractCore?.modalities) && contractCore.modalities.length > 0
+    ? contractCore.modalities
+    : ['text'];
+
+  return {
+    ...contractCore,
+    object: 'model',
+    owned_by: 'dc1-platform',
+    permission: [],
+    root: row.model_id,
+    parent: null,
+    description: buildModelDescription(row, contractCore),
+    pricing: buildOpenRouterPricing(usdPerToken, contractCore.pricing),
+    architecture: {
+      tokenizer: resolveTokenizerFamily(row),
+      instruct_type: 'instruct',
+      modality: 'text',
+    },
+    input_modalities: modalities,
+    output_modalities: ['text'],
+    max_output_length: contractCore.max_output_tokens,
+    supported_sampling_parameters: OPENROUTER_SAMPLING_PARAMETERS,
+    endpoints: [{ url: endpointUrl, type: 'chat' }],
+    provider_priority: ['dcp'],
+    // Legacy aliases kept for existing clients while catalog parity migrates.
+    display_name: contractCore.name,
+    context_window: contractCore.context_length,
+    parameter_count: row.parameter_count ?? null,
+  };
+}
+
+function hasOpenRouterModelContractShape(model) {
+  if (!model || typeof model !== 'object') return false;
+  if (!normalizeString(model.id, { maxLen: 300 })) return false;
+  if (!normalizeString(model.name, { maxLen: 300 })) return false;
+  if (!Number.isFinite(Number(model.created))) return false;
+  if (!Number.isFinite(Number(model.context_length))) return false;
+  if (!Number.isFinite(Number(model.max_output_length))) return false;
+  if (!Array.isArray(model.input_modalities) || model.input_modalities.length === 0) return false;
+  if (!Array.isArray(model.output_modalities) || model.output_modalities.length === 0) return false;
+  if (!Array.isArray(model.supported_sampling_parameters) || model.supported_sampling_parameters.length === 0) return false;
+  if (!model.pricing || typeof model.pricing !== 'object') return false;
+  if (!normalizeString(model.pricing.prompt, { maxLen: 64 })) return false;
+  if (!normalizeString(model.pricing.completion, { maxLen: 64 })) return false;
+  return true;
 }
 
 function resolveTokenizerFamily(row) {
@@ -391,51 +485,21 @@ router.get('/models', (req, res) => {
       });
       const tokenRateHalala = tokenRateByModel.get(row.model_id) ?? tokenRateByModel.get('__default__') ?? 1;
       const usdPerToken = toUsdStringFromHalala(tokenRateHalala);
-      const architecture = {
-        tokenizer: resolveTokenizerFamily(row),
-        instruct_type: 'instruct',
-        modality: 'text',
-      };
-
-      // OpenRouter provider model contract shape:
-      // {
-      //   id, name, description,
-      //   pricing: { prompt_tokens, completion_tokens, ... },
-      //   context_length,
-      //   architecture: { tokenizer, instruct_type|modality },
-      //   endpoints: [{ url, type }],
-      //   provider_priority?: string[]
-      // }
-      return {
-        ...contractCore,
-        object: 'model',
-        owned_by: 'dc1-platform',
-        permission: [],
-        root: row.model_id,
-        parent: null,
-        description: buildModelDescription(row, contractCore),
-        pricing: {
-          prompt_tokens: usdPerToken,
-          completion_tokens: usdPerToken,
-          usd_per_minute: contractCore.pricing.usd_per_minute,
-          usd_per_1m_input_tokens: contractCore.pricing.usd_per_1m_input_tokens,
-          usd_per_1m_output_tokens: contractCore.pricing.usd_per_1m_output_tokens,
-        },
-        architecture,
-        endpoints: [{ url: endpointUrl, type: 'chat' }],
-        provider_priority: ['dcp'],
-        // Legacy aliases kept for existing clients while catalog parity migrates.
-        display_name: contractCore.name,
-        context_window: contractCore.context_length,
-        parameter_count: row.parameter_count ?? null,
-      };
-    });
+      const modelContract = buildOpenRouterModelContract({
+        row,
+        contractCore,
+        endpointUrl,
+        usdPerToken,
+      });
+      return hasOpenRouterModelContractShape(modelContract) ? modelContract : null;
+    }).filter(Boolean);
 
     return res.json({ object: 'list', data });
   } catch (error) {
     console.error('[v1/models] Error:', error);
-    return res.status(500).json({
-      error: { message: 'Failed to fetch model list', type: 'server_error', code: 500 }
+    return sendV1Error(res, 500, 'Failed to fetch model list', {
+      type: 'server_error',
+      code: 500,
     });
   }
 });
@@ -479,7 +543,7 @@ function getCapableProviders(minVramMb) {
   const providers = db.all(
     `SELECT * FROM providers
      WHERE status = 'online' AND COALESCE(is_paused, 0) = 0
-       AND deleted_at IS NULL`
+       AND (deleted_at IS NULL OR deleted_at = '')`
   );
   const nowMs = Date.now();
   const capable = [];
@@ -653,14 +717,16 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
   let persistFailureUsageBestEffort = null;
   try {
     const model = normalizeString(req.body?.model, { maxLen: 200 });
-    if (!model) return res.status(400).json({
-      error: { message: '`model` is required', type: 'invalid_request_error', code: 400 }
+    if (!model) return sendV1Error(res, 400, '`model` is required', {
+      type: 'invalid_request_error',
+      code: 400,
     });
 
     const messagesRaw = req.body?.messages;
     if (!Array.isArray(messagesRaw) || messagesRaw.length === 0) {
-      return res.status(400).json({
-        error: { message: '`messages` must be a non-empty array', type: 'invalid_request_error', code: 400 }
+      return sendV1Error(res, 400, '`messages` must be a non-empty array', {
+        type: 'invalid_request_error',
+        code: 400,
       });
     }
 
@@ -698,8 +764,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     }
 
     if (messages.length === 0) {
-      return res.status(400).json({
-        error: { message: 'messages must include at least one non-empty content string', type: 'invalid_request_error', code: 400 }
+      return sendV1Error(res, 400, 'messages must include at least one non-empty content string', {
+        type: 'invalid_request_error',
+        code: 400,
       });
     }
 
@@ -717,16 +784,23 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const modelReq = resolveModelRequirements(model);
     const registryMinVramMb = modelReq.min_vram_gb * 1024;
     const effectiveMinVramMb = resolveEffectiveMinVramMb(modelReq.model_id, registryMinVramMb);
-    const capableProviders = getCapableProviders(effectiveMinVramMb).filter((provider) => {
+    const baseCapableProviders = getCapableProviders(effectiveMinVramMb);
+    let capableProviders = baseCapableProviders.filter((provider) => {
       const providerVramMb = resolveProviderVramMb(provider);
       return resolveProviderRoutingModel({
         requestedModelId: modelReq.model_id,
         providerVramMb,
       }).eligible;
     });
+    // If variant mapping yields zero eligible providers but base health/VRAM checks found capacity,
+    // fail open to preserve OpenRouter compatibility for custom model IDs.
+    if (capableProviders.length === 0 && baseCapableProviders.length > 0) {
+      capableProviders = baseCapableProviders;
+    }
     if (capableProviders.length === 0) {
-      return res.status(503).json({
-        error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
+      return sendV1Error(res, 503, 'No inference providers available for this model', {
+        type: 'server_error',
+        code: 503,
       });
     }
 
@@ -735,26 +809,23 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       providers: capableProviders,
     });
     if (!gateSelection.pass || !gateSelection.selectedProviderId) {
-      return res.status(503).json({
-        error: {
-          message: 'Latency budget gate failed before provider submission',
-          type: 'latency_budget_gate_error',
-          code: 503,
-          details: {
-            mode: gateSelection.mode,
-            reasons: gateSelection.reasons,
-            tiers: gateSelection.tiers,
-            thresholds: {
-              max_p50_ms: gateSelection.thresholds.maxP50Ms,
-              baseline_p95_ms: gateSelection.thresholds.baselineP95Ms,
-              max_p95_regression_pct: gateSelection.thresholds.maxP95RegressionPct,
-              baseline_stream_failure_rate: gateSelection.thresholds.baselineStreamFailureRate,
-              max_stream_failure_regression_pct: gateSelection.thresholds.maxStreamFailureRegressionPct,
-              min_latency_samples: gateSelection.thresholds.minLatencySamples,
-              min_stream_samples: gateSelection.thresholds.minStreamSamples,
-            },
+      return sendV1Error(res, 503, 'Latency budget gate failed before provider submission', {
+        type: 'latency_budget_gate_error',
+        code: 503,
+        details: {
+          mode: gateSelection.mode,
+          reasons: gateSelection.reasons,
+          tiers: gateSelection.tiers,
+          thresholds: {
+            max_p50_ms: gateSelection.thresholds.maxP50Ms,
+            baseline_p95_ms: gateSelection.thresholds.baselineP95Ms,
+            max_p95_regression_pct: gateSelection.thresholds.maxP95RegressionPct,
+            baseline_stream_failure_rate: gateSelection.thresholds.baselineStreamFailureRate,
+            max_stream_failure_regression_pct: gateSelection.thresholds.maxStreamFailureRegressionPct,
+            min_latency_samples: gateSelection.thresholds.minLatencySamples,
+            min_stream_samples: gateSelection.thresholds.minStreamSamples,
           },
-        }
+        },
       });
     }
 
@@ -765,8 +836,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       .filter(Boolean);
 
     if (!assignedProvider) {
-      return res.status(503).json({
-        error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
+      return sendV1Error(res, 503, 'No inference providers available for this model', {
+        type: 'server_error',
+        code: 503,
       });
     }
 
@@ -873,8 +945,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
     };
     if (Number(req.renter.balance_halala || 0) < estimatedCostHalala) {
-      return res.status(402).json({
-        error: { message: 'Insufficient balance', type: 'billing_error', code: 402 }
+      return sendV1Error(res, 402, 'Insufficient balance', {
+        type: 'billing_error',
+        code: 402,
       });
     }
 
@@ -1090,15 +1163,17 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         providerForUsage: assignedProvider,
         usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
       });
-      return res.status(502).json({
-        error: {
-          message: proxyResult.proxyError
-            ? `Provider failover exhausted after initial error: ${proxyResult.proxyError}`
-            : 'Provider failover exhausted',
+      return sendV1Error(
+        res,
+        502,
+        proxyResult.proxyError
+          ? `Provider failover exhausted after initial error: ${proxyResult.proxyError}`
+          : 'Provider failover exhausted',
+        {
           type: 'upstream_error',
-          code: 502
+          code: 502,
         }
-      });
+      );
     }
 
     // Fallback: create job in queue (non-streaming only for job-based flow)
@@ -1113,6 +1188,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       gpu_count: 1,
       compute_type: 'inference',
     };
+    if (tools !== undefined) containerSpec.tools = tools;
+    if (toolChoice !== undefined) containerSpec.tool_choice = toolChoice;
+    if (Object.keys(passthroughBody).length > 0) {
+      containerSpec.request_passthrough = passthroughBody;
+    }
 
     try {
       db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
@@ -1135,8 +1215,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         providerResponseId: `chatcmpl-${jobId}`,
         usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
       });
-      return res.status(500).json({
-        error: { message: 'Failed to submit inference job', type: 'server_error', code: 500 }
+      return sendV1Error(res, 500, 'Failed to submit inference job', {
+        type: 'server_error',
+        code: 500,
       });
     }
 
@@ -1209,8 +1290,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           providerResponseId: `chatcmpl-${jobId}`,
           usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
         });
-        return res.status(502).json({
-          error: { message: `Inference ${job.status}: ${job.error || 'unknown'}`, type: 'upstream_error', code: 502 }
+        return sendV1Error(res, 502, `Inference ${job.status}: ${job.error || 'unknown'}`, {
+          type: 'upstream_error',
+          code: 502,
         });
       }
 
@@ -1222,8 +1304,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       providerResponseId: `chatcmpl-${jobId}`,
       usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
     });
-    return res.status(504).json({
-      error: { message: 'Inference did not complete within timeout', type: 'timeout_error', code: 504 }
+    return sendV1Error(res, 504, 'Inference did not complete within timeout', {
+      type: 'timeout_error',
+      code: 504,
     });
 
   } catch (error) {
@@ -1231,8 +1314,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       persistFailureUsageBestEffort();
     }
     console.error('[v1/chat/completions] Error:', error);
-    return res.status(500).json({
-      error: { message: 'Internal server error', type: 'server_error', code: 500 }
+    return sendV1Error(res, 500, 'Internal server error', {
+      type: 'server_error',
+      code: 500,
     });
   }
 });

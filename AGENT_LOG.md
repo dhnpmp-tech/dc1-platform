@@ -32402,3 +32402,8 @@ a
 - **Commit**: `0cf8bfa` - Hardened provider installer/download endpoints to require a single normalized API key query param and reject malformed duplicate key input safely.
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
+
+## [2026-04-02 15:46 UTC] Codex — DCP-423 OpenRouter Contract Closure (/v1/models + tool passthrough)
+- **Commit**: `pending` - Hardened `/v1` OpenRouter contract behavior: `/v1/models` now emits contract-validated OpenRouter fields (`input_modalities`, `output_modalities`, `max_output_length`, `supported_sampling_parameters`, expanded pricing keys), `chat/completions` now keeps top-level string `error` payloads with typed metadata, and queued fallback preserves raw `tools` + `tool_choice` payloads.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `backend/tests/helpers/openrouterComplianceHarness.js`, `backend/tests/integration/v1-openrouter-parity.test.js`, `AGENT_LOG.md`
+- **Impact**: DCP-423 acceptance scope is covered by automated tests in `src/__tests__/v1-models.test.js` (12/12 passing), including explicit validation of OpenRouter model contract fields and non-mutating tool-definition passthrough to provider requests.

@@ -549,8 +549,8 @@ describe('/v1 OpenRouter parity', () => {
         });
 
       expect(res.status).toBe(503);
-      expect(res.body?.error?.type).toBe('latency_budget_gate_error');
-      expect(JSON.stringify(res.body?.error?.details?.reasons || [])).toMatch(/p50|p95|latency/i);
+      expect(res.body?.type || res.body?.error?.type).toBe('latency_budget_gate_error');
+      expect(JSON.stringify((res.body?.details || res.body?.error?.details)?.reasons || [])).toMatch(/p50|p95|latency/i);
     } finally {
       await provider.close();
     }

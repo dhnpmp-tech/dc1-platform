@@ -210,6 +210,10 @@ async function fetchJson(url, options) {
   return { response, text, json };
 }
 
+function resolveErrorType(payload) {
+  return payload?.type || payload?.error?.type || null;
+}
+
 function createCheck(id, title, severity) {
   return { id, title, severity, status: 'fail', details: '', evidence: [] };
 }
@@ -319,11 +323,11 @@ async function runOpenRouterComplianceHarness() {
         });
         checks.push(finalizeCheck(
           check,
-          response.status === 401 && json?.error?.type === 'authentication_error',
+          response.status === 401 && resolveErrorType(json) === 'authentication_error',
           response.status === 401
             ? 'Auth guard correctly rejects anonymous requests with an OpenAI-style authentication error.'
             : 'Auth guard did not return the expected OpenAI-style authentication error.',
-          [`status=${response.status}`, `error_type=${json?.error?.type || 'missing'}`]
+          [`status=${response.status}`, `error_type=${resolveErrorType(json) || 'missing'}`]
         ));
       }
 
@@ -342,11 +346,11 @@ async function runOpenRouterComplianceHarness() {
         });
         checks.push(finalizeCheck(
           check,
-          response.status === 402 && json?.error?.type === 'billing_error',
+          response.status === 402 && resolveErrorType(json) === 'billing_error',
           response.status === 402
             ? 'Billing guard correctly returns a 402 billing error before proxying the request.'
             : 'Billing guard did not return the expected 402 billing error.',
-          [`status=${response.status}`, `error_type=${json?.error?.type || 'missing'}`]
+          [`status=${response.status}`, `error_type=${resolveErrorType(json) || 'missing'}`]
         ));
       }
 
