@@ -1,3 +1,8 @@
+## [2026-04-02 10:53 UTC] Codex — DCP-365 Legal Page Logo Migrated To Next Image
+- **Commit**: `pending` - Replaced the legal page header logo `<img>` with `next/image` and explicit dimensions while preserving current styling.
+- **Files**: `app/components/layout/LegalPage.tsx`, `AGENT_LOG.md`
+- **Impact**: Legal page header now uses framework-native image rendering and no longer triggers `@next/next/no-img-element` for this layout component. Verification: `npm run lint -- --file app/components/layout/LegalPage.tsx` (`✔ No ESLint warnings or errors`).
+
 ## [2026-04-02 10:06 UTC] Codex — Release Heartbeat Merged DCP-223 + DCP-389, Skipped Empty DCP-384 Backend Branch
 - **Commit**: `pending` - Ran release heartbeat preflight (`git fetch origin --prune`, recent `agent/` branch scan, code-only diff filter), processed three branches with merge-main + build gate in an isolated release worktree using shared project dependencies, merged PR #189 (`agent/backend-dev/dcp-223-provider-route-parity-guard`) and PR #187 (`agent/backend-dev/dcp-389-payout-admin-audit-integrity`) only after `npm run build` passed, then skipped `agent/backend-dev/dcp-384-restore-chat-capacity` because after rebasing there were no commits left between branch and `main` (`422: No commits between main and branch`).
 - **Files**: `AGENT_LOG.md`
