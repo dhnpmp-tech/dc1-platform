@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -13,7 +13,23 @@ interface RegistrationResult {
   message: string
 }
 
-export default function RenterRegisterPage() {
+function RenterRegisterLoadingState() {
+  return (
+    <>
+      <Header />
+      <main className="min-h-screen bg-dc1-void py-12">
+        <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-8">
+            <p className="text-sm text-dc1-text-secondary">Loading renter registration...</p>
+          </div>
+        </section>
+      </main>
+      <Footer />
+    </>
+  )
+}
+
+function RenterRegisterPageInner() {
   const { t, language } = useLanguage()
   const isRTL = language === 'ar'
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
@@ -706,5 +722,13 @@ export default function RenterRegisterPage() {
       </main>
       <Footer />
     </>
+  )
+}
+
+export default function RenterRegisterPage() {
+  return (
+    <Suspense fallback={<RenterRegisterLoadingState />}>
+      <RenterRegisterPageInner />
+    </Suspense>
   )
 }
