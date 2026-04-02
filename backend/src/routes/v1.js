@@ -650,6 +650,7 @@ async function proxyToProvider({
 }
 
 router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res) => {
+  let persistFailureUsageBestEffort = null;
   try {
     const model = normalizeString(req.body?.model, { maxLen: 200 });
     if (!model) return res.status(400).json({
@@ -779,6 +780,20 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const tokenRateHalala = resolveTokenRateHalala(modelReq.model_id);
     const meteringRequestId = extractRequestId(req);
     let usagePersisted = false;
+    const dbHandle = db._db || db;
+    const transactionFactory = typeof dbHandle?.transaction === 'function'
+      ? dbHandle.transaction.bind(dbHandle)
+      : null;
+
+    const runUsageTransaction = (work) => {
+      if (!transactionFactory) {
+        work();
+        return;
+      }
+      transactionFactory(() => {
+        work();
+      })();
+    };
 
     const toUsageSnapshot = (rawUsage = {}, completionText = '') => {
       const billedPromptTokens = toFiniteInt(rawUsage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? promptTokens;
@@ -794,11 +809,17 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       };
     };
 
-    const persistUsageOnce = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
+    const persistUsageOnce = ({
+      providerForUsage,
+      providerResponseId = null,
+      usage,
+      completionText = '',
+      settlementStatus = 'pending',
+    }) => {
       if (usagePersisted) return;
       const snapshot = toUsageSnapshot(usage, completionText);
       try {
-        recordOpenRouterUsage(db._db || db, {
+        recordOpenRouterUsage(dbHandle, {
           requestId: meteringRequestId,
           providerResponseId,
           requestPath: normalizeString(req.path || req.originalUrl || '/v1/chat/completions', { maxLen: 160 }),
@@ -812,6 +833,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           totalTokens: snapshot.totalTokens,
           costHalala: snapshot.costHalala,
           currency: 'SAR',
+          settlementStatus,
         });
       } catch (error) {
         console.error('[v1/chat/completions] usage ledger persist failed:', error?.message || error);
@@ -828,8 +850,27 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     const debitAndPersistUsage = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
       const snapshot = toUsageSnapshot(usage, completionText);
-      debitRenterSafe(snapshot.costHalala);
-      persistUsageOnce({ providerForUsage, providerResponseId, usage, completionText });
+      runUsageTransaction(() => {
+        debitRenterSafe(snapshot.costHalala);
+        persistUsageOnce({ providerForUsage, providerResponseId, usage, completionText, settlementStatus: 'pending' });
+      });
+    };
+
+    persistFailureUsageBestEffort = ({
+      providerForUsage = null,
+      providerResponseId = null,
+      usage = null,
+      completionText = '',
+    } = {}) => {
+      runUsageTransaction(() => {
+        persistUsageOnce({
+          providerForUsage,
+          providerResponseId,
+          usage: usage || { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+          completionText,
+          settlementStatus: 'failed',
+        });
+      });
     };
     if (Number(req.renter.balance_halala || 0) < estimatedCostHalala) {
       return res.status(402).json({
@@ -981,6 +1022,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             durationMs: Date.now() - startedAt,
           });
         } catch (error) {
+          persistFailureUsageBestEffort({
+            providerForUsage,
+            providerResponseId,
+            usage: finalUsage || { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+            completionText,
+          });
           recordStreamOutcome(db, {
             providerId: providerForUsage?.id || null,
             providerTier: resolveProviderTier(providerForUsage),
@@ -1039,6 +1086,10 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         }
       }
 
+      persistFailureUsageBestEffort({
+        providerForUsage: assignedProvider,
+        usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+      });
       return res.status(502).json({
         error: {
           message: proxyResult.proxyError
@@ -1079,6 +1130,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         JSON.stringify(containerSpec), now, now
       );
     } catch (error) {
+      persistFailureUsageBestEffort({
+        providerForUsage: assignedProvider,
+        providerResponseId: `chatcmpl-${jobId}`,
+        usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+      });
       return res.status(500).json({
         error: { message: 'Failed to submit inference job', type: 'server_error', code: 500 }
       });
@@ -1148,6 +1204,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       }
 
       if (['failed', 'cancelled', 'permanently_failed', 'timed_out'].includes(job.status)) {
+        persistFailureUsageBestEffort({
+          providerForUsage: assignedProvider,
+          providerResponseId: `chatcmpl-${jobId}`,
+          usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+        });
         return res.status(502).json({
           error: { message: `Inference ${job.status}: ${job.error || 'unknown'}`, type: 'upstream_error', code: 502 }
         });
@@ -1156,11 +1217,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       await new Promise(r => setTimeout(r, POLL_MS));
     }
 
+    persistFailureUsageBestEffort({
+      providerForUsage: assignedProvider,
+      providerResponseId: `chatcmpl-${jobId}`,
+      usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
+    });
     return res.status(504).json({
       error: { message: 'Inference did not complete within timeout', type: 'timeout_error', code: 504 }
     });
 
   } catch (error) {
+    if (typeof persistFailureUsageBestEffort === 'function') {
+      persistFailureUsageBestEffort();
+    }
     console.error('[v1/chat/completions] Error:', error);
     return res.status(500).json({
       error: { message: 'Internal server error', type: 'server_error', code: 500 }
