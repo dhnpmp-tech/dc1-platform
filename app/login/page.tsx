@@ -62,6 +62,13 @@ function LoginPageInner() {
     return withRenterIntentInPath(targetBase, intent)
   }
 
+  const getReasonMessage = (reason: string) => {
+    if (reason === 'expired_session') return t('auth.error.expired_session')
+    if (reason === 'missing_credentials') return t('auth.error.missing_credentials')
+    if (reason === 'invalid_credentials') return t('auth.error.invalid_credentials')
+    return t('auth.error.sign_in_failed')
+  }
+
   const normalizeAuthError = (status: number, rawError: string, fallback: string) => {
     const lower = rawError.toLowerCase()
     // OTP-specific: if the error mentions token/code/otp expiry, show the code-specific message
@@ -82,16 +89,7 @@ function LoginPageInner() {
     const methodParam = searchParams.get('method')
     if (methodParam === 'email' || methodParam === 'apikey') setLoginMethod(methodParam)
     const reasonParam = searchParams.get('reason')
-    if (reasonParam) {
-      const reasonMessage = reasonParam === 'expired_session'
-        ? t('auth.error.expired_session')
-        : reasonParam === 'missing_credentials'
-          ? t('auth.error.missing_credentials')
-          : reasonParam === 'invalid_credentials'
-            ? t('auth.error.invalid_credentials')
-            : t('auth.error.sign_in_failed')
-      setError(reasonMessage)
-    }
+    if (reasonParam) setError(getReasonMessage(reasonParam))
   }, [searchParams, t])
 
   const handleSendOtp = async () => {
