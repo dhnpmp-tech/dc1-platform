@@ -26,6 +26,17 @@ function withUsdPricingFromHalala(value) {
   };
 }
 
+function withUsdPricingFromPersistedOrHalala(usdValue, halalaValue) {
+  const parsed = typeof usdValue === 'number' ? usdValue : Number(usdValue);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return {
+      currency: 'USD',
+      usd: parsed.toFixed(6),
+    };
+  }
+  return withUsdPricingFromHalala(halalaValue);
+}
+
 function enrichDryRunSummary(summary) {
   if (!summary || typeof summary !== 'object') return summary;
   return {
@@ -70,7 +81,10 @@ function enrichTopup(topup) {
 
 function enrichSettlementItem(item) {
   if (!item || typeof item !== 'object') return item;
-  return { ...item, pricing: withUsdPricingFromHalala(item.cost_halala) };
+  return {
+    ...item,
+    pricing: withUsdPricingFromPersistedOrHalala(item.usd_total, item.cost_halala),
+  };
 }
 
 router.post('/settlements/dry-run', (req, res) => {
@@ -140,10 +154,11 @@ router.get('/settlements/:id', (req, res) => {
     if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
 
     const items = db.all(
-      `SELECT usage_id, renter_id, provider_id, cost_halala, created_at
-         FROM openrouter_settlement_items
-        WHERE settlement_id = ?
-        ORDER BY created_at ASC`,
+      `SELECT i.usage_id, i.renter_id, i.provider_id, i.cost_halala, i.created_at, u.usd_total
+         FROM openrouter_settlement_items i
+    LEFT JOIN openrouter_usage_ledger u ON u.id = i.usage_id
+        WHERE i.settlement_id = ?
+        ORDER BY i.created_at ASC`,
       settlement.id
     );
     const alerts = db.all(

@@ -101,7 +101,12 @@ describe('openrouterSettlementService', () => {
       providerResponseId: 'chatcmpl-metadata-1',
       jobId: 'job-metadata-1',
       requestPath: '/api/vllm/chat/completions',
+      promptCostHalala: 27,
+      completionCostHalala: 18,
       tokenRateHalala: 3,
+      usdPrompt: '0.072000',
+      usdCompletion: '0.048000',
+      usdTotal: '0.120000',
       renterId: renter.id,
       providerId: provider.id,
       model: 'meta-llama/Meta-Llama-3-8B-Instruct',
@@ -115,7 +120,12 @@ describe('openrouterSettlementService', () => {
     expect(usage.provider_response_id).toBe('chatcmpl-metadata-1');
     expect(usage.job_id).toBe('job-metadata-1');
     expect(usage.request_path).toBe('/api/vllm/chat/completions');
+    expect(usage.prompt_cost_halala).toBe(27);
+    expect(usage.completion_cost_halala).toBe(18);
     expect(usage.token_rate_halala).toBe(3);
+    expect(usage.usd_prompt).toBe('0.072000');
+    expect(usage.usd_completion).toBe('0.048000');
+    expect(usage.usd_total).toBe('0.120000');
     expect(usage.source).toBe('api_vllm');
   });
 
@@ -175,6 +185,7 @@ describe('openrouter-settlement admin routes', () => {
       promptTokens: 75,
       completionTokens: 25,
       costHalala: 180,
+      usdTotal: '0.999999',
     });
 
     const app = buildApp();
@@ -230,7 +241,7 @@ describe('openrouter-settlement admin routes', () => {
     expect(detailRes.status).toBe(200);
     expect(detailRes.body.items[0].pricing).toEqual({
       currency: 'USD',
-      usd: expect.any(String),
+      usd: '0.999999',
     });
     expect(typeof detailRes.body.items[0].pricing.usd).toBe('string');
   });

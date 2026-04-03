@@ -298,6 +298,11 @@ describe('v1 models route', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('legacy-chat-model');
+    expect(res.headers['x-dcp-provider-id']).toBe('99');
+    expect(res.headers['x-dcp-provider-tier']).toBe('tier_unknown');
+    expect(res.headers['x-dcp-provider-endpoint-host']).toBe('provider.test');
+    expect(res.headers['x-dcp-requested-model-id']).toBe('legacy-chat-model');
+    expect(res.headers['x-dcp-routed-model-id']).toBe('legacy-chat-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('vram_gb AS min_gpu_vram_gb'))).toBe(true);
@@ -448,6 +453,72 @@ describe('v1 models route', () => {
     const [, fetchInit] = fetchSpy.mock.calls[0];
     const providerBody = JSON.parse(fetchInit.body);
     expect(providerBody.model).toBe('mistralai/Mistral-7B-Instruct-v0.2-AWQ');
+
+    fetchSpy.mockRestore();
+  });
+
+  test('chat completions routes ALLaM preview alias to compatible 12GB variant', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'chatcmpl-allam-alias',
+        object: 'chat.completion',
+        model: 'BOLT-IS/ALLaM-IT-7B',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'allam alias route works' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 6, completion_tokens: 5, total_tokens: 11 },
+      }),
+    });
+
+    mockDb.all.mockImplementation((sql) => {
+      if (String(sql).includes('PRAGMA table_info(model_registry)')) {
+        return [{ name: 'model_id' }, { name: 'min_gpu_vram_gb' }, { name: 'context_window' }];
+      }
+      if (String(sql).includes('FROM providers')) {
+        return [{
+          id: 102,
+          status: 'online',
+          is_paused: 0,
+          deleted_at: null,
+          supported_compute_types: '["inference"]',
+          vram_gb: 12,
+          last_heartbeat: new Date().toISOString(),
+          vllm_endpoint_url: 'http://provider.test',
+          gpu_util_pct: 2,
+        }];
+      }
+      return [];
+    });
+
+    mockDb.get.mockImplementation((sql) => {
+      const query = String(sql);
+      if (query.includes('FROM renter_api_keys')) return null;
+      if (query.includes('FROM renters WHERE api_key')) {
+        return { id: 19, api_key: 'test-key', balance_halala: 5000, status: 'active' };
+      }
+      if (query.includes('FROM model_registry WHERE model_id = ?')) {
+        return { model_id: 'ALLaM-AI/ALLaM-7B-Instruct-preview', min_gpu_vram_gb: 24, context_window: 32768 };
+      }
+      if (query.includes('FROM cost_rates')) {
+        return { token_rate_halala: 1 };
+      }
+      return null;
+    });
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', 'Bearer test-key')
+      .send({
+        model: 'ALLaM-AI/ALLaM-7B-Instruct-preview',
+        messages: [{ role: 'user', content: 'hello' }],
+        max_tokens: 64,
+      });
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const [, fetchInit] = fetchSpy.mock.calls[0];
+    const providerBody = JSON.parse(fetchInit.body);
+    expect(providerBody.model).toBe('BOLT-IS/ALLaM-IT-7B');
 
     fetchSpy.mockRestore();
   });

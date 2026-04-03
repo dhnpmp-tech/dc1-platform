@@ -8,43 +8,15 @@ import { useLanguage } from '../../lib/i18n'
 import {
   buildProviderInstallCommand,
   buildProviderTroubleshootingHref,
+  getProviderOnboardingStep,
   getProviderInstallApiBase,
   ProviderNextActionState,
 } from '../../lib/provider-install'
+import { trackProviderInstallEvent } from '../../lib/provider-install-telemetry'
 
 const DAEMON_VERSION = 'v3.3.0'
 
 type OS = 'windows' | 'linux' | 'macos'
-
-const OS_CARDS: {
-  id: OS
-  label: string
-  icon: string
-  primaryLabel: string
-  description: string
-}[] = [
-  {
-    id: 'windows',
-    label: 'Windows',
-    icon: '⊞',
-    primaryLabel: 'Copy Install Command',
-    description: 'PowerShell setup script with your provider API key.',
-  },
-  {
-    id: 'linux',
-    label: 'Linux',
-    icon: '🐧',
-    primaryLabel: 'Copy Install Command',
-    description: 'Shell installer using the canonical providers/download/setup route.',
-  },
-  {
-    id: 'macos',
-    label: 'macOS',
-    icon: '🍎',
-    primaryLabel: 'Copy Install Command',
-    description: 'Uses the same injected setup endpoint with macOS target.',
-  },
-]
 
 const REQUIREMENTS = [
   { icon: '🎮', label: 'NVIDIA GPU', detail: 'RTX 2060 or better (8 GB+ VRAM)' },
@@ -54,11 +26,44 @@ const REQUIREMENTS = [
 ]
 
 export default function ProviderDownloadPage() {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const [copied, setCopied] = useState<OS | null>(null)
   const [providerKey, setProviderKey] = useState('')
+  const [copyError, setCopyError] = useState('')
   const [nextActionState, setNextActionState] = useState<ProviderNextActionState>('waiting')
   const installApiBase = useMemo(() => getProviderInstallApiBase(), [])
+  const osCards: {
+    id: OS
+    label: string
+    icon: string
+    primaryLabel: string
+    description: string
+  }[] = useMemo(
+    () => [
+      {
+        id: 'windows',
+        label: 'Windows',
+        icon: '⊞',
+        primaryLabel: t('register.provider.copy_install_command'),
+        description: t('provider.download.os_windows_desc'),
+      },
+      {
+        id: 'linux',
+        label: 'Linux',
+        icon: '🐧',
+        primaryLabel: t('register.provider.copy_install_command'),
+        description: t('provider.download.os_linux_desc'),
+      },
+      {
+        id: 'macos',
+        label: 'macOS',
+        icon: '🍎',
+        primaryLabel: t('register.provider.copy_install_command'),
+        description: t('provider.download.os_macos_desc'),
+      },
+    ],
+    [t]
+  )
   const installCommands: Record<OS, string> = useMemo(
     () => ({
       windows: buildProviderInstallCommand('windows', installApiBase, providerKey),
@@ -104,15 +109,58 @@ export default function ProviderDownloadPage() {
   }
   const nextAction = nextActionMap[nextActionState]
   const troubleshootingHref = buildProviderTroubleshootingHref(nextActionState)
+  const supportHref = `/support?category=provider_install&source=provider_download&state=${nextActionState}#contact-form`
   const stateOptions: ProviderNextActionState[] = ['waiting', 'heartbeat', 'ready', 'paused', 'stale']
 
   async function handleCopy(os: OS, text: string) {
+    if (!providerKey.trim()) {
+      const nextError = t('provider.download.error_missing_key')
+      setCopyError(nextError)
+      trackProviderInstallEvent('provider_install_copy_blocked', {
+        source_page: 'provider_download',
+        surface: 'install_command',
+        destination: `copy:${os}`,
+        locale: language,
+        cta_tier: 'primary',
+        next_action_state: nextActionState,
+        os_target: os,
+        has_provider_key: false,
+        error_state: 'missing_provider_key',
+        step: getProviderOnboardingStep(nextActionState),
+      })
+      return
+    }
+
     try {
       await navigator.clipboard.writeText(text)
+      setCopyError('')
       setCopied(os)
+      trackProviderInstallEvent('provider_install_copy_clicked', {
+        source_page: 'provider_download',
+        surface: 'install_command',
+        destination: `copy:${os}`,
+        locale: language,
+        cta_tier: 'primary',
+        next_action_state: nextActionState,
+        os_target: os,
+        has_provider_key: true,
+        step: getProviderOnboardingStep(nextActionState),
+      })
       setTimeout(() => setCopied(null), 2000)
     } catch {
-      // fallback: select text
+      setCopyError(t('provider.download.error_copy_failed'))
+      trackProviderInstallEvent('provider_install_copy_failed', {
+        source_page: 'provider_download',
+        surface: 'install_command',
+        destination: `copy:${os}`,
+        locale: language,
+        cta_tier: 'primary',
+        next_action_state: nextActionState,
+        os_target: os,
+        has_provider_key: true,
+        error_state: 'clipboard_write_failed',
+        step: getProviderOnboardingStep(nextActionState),
+      })
     }
   }
 
@@ -158,17 +206,20 @@ export default function ProviderDownloadPage() {
         <section className="mb-8">
           <div className="rounded-xl p-5" style={{ background: '#0D0D1A', border: '1px solid rgba(245,165,36,0.22)' }}>
             <label className="block text-sm font-semibold mb-2" style={{ color: '#F0F0F0' }}>
-              Provider API Key
+              {t('register.provider.api_key_title')}
             </label>
             <input
               value={providerKey}
-              onChange={(event) => setProviderKey(event.target.value)}
+              onChange={(event) => {
+                setProviderKey(event.target.value)
+                if (copyError) setCopyError('')
+              }}
               placeholder="dc1-provider-..."
               className="w-full rounded-lg px-3 py-2 text-sm"
               style={{ background: '#07070E', color: '#F0F0F0', border: '1px solid rgba(255,255,255,0.12)' }}
             />
             <p className="text-xs mt-2" style={{ color: '#94A3B8' }}>
-              Commands below are generated from canonical `/api/providers/download/setup` routes.
+              {t('provider.download.key_hint')}
             </p>
           </div>
         </section>
@@ -197,7 +248,7 @@ export default function ProviderDownloadPage() {
         </section>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-14">
-          {OS_CARDS.map((card) => (
+          {osCards.map((card) => (
             <div
               key={card.id}
               className="rounded-xl p-6 flex flex-col gap-5"
@@ -238,14 +289,74 @@ export default function ProviderDownloadPage() {
           ))}
         </div>
 
+        {copyError && (
+          <section className="mb-10">
+            <div className="rounded-xl border border-status-warning/40 bg-status-warning/10 p-4">
+              <p className="text-sm font-semibold text-status-warning">{copyError}</p>
+              <p className="text-xs mt-2 text-dc1-text-secondary">{t('provider.download.error_help')}</p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <Link
+                  href={troubleshootingHref}
+                  className="text-xs font-semibold text-dc1-amber hover:underline"
+                  onClick={() =>
+                    trackProviderInstallEvent('provider_install_help_clicked', {
+                      source_page: 'provider_download',
+                      surface: 'copy_error',
+                      destination: troubleshootingHref,
+                      locale: language,
+                      cta_tier: 'secondary',
+                      next_action_state: nextActionState,
+                      has_provider_key: Boolean(providerKey.trim()),
+                      step: getProviderOnboardingStep(nextActionState),
+                    })
+                  }
+                >
+                  {t('register.provider.status_matrix.guide_cta')}
+                </Link>
+                <Link
+                  href={supportHref}
+                  className="text-xs font-semibold text-dc1-amber hover:underline"
+                  onClick={() =>
+                    trackProviderInstallEvent('provider_install_help_clicked', {
+                      source_page: 'provider_download',
+                      surface: 'copy_error',
+                      destination: supportHref,
+                      locale: language,
+                      cta_tier: 'secondary',
+                      next_action_state: nextActionState,
+                      has_provider_key: Boolean(providerKey.trim()),
+                      step: getProviderOnboardingStep(nextActionState),
+                    })
+                  }
+                >
+                  {t('register.provider.next_action_support_cta')}
+                </Link>
+              </div>
+            </div>
+          </section>
+        )}
+
         <div className="mb-14">
           <a
             href="/api/dc1/providers/download-windows-exe"
             download
             className="inline-flex px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
             style={{ background: 'rgba(245,165,36,0.12)', color: '#F5A524', border: '1px solid rgba(245,165,36,0.25)' }}
+            onClick={() =>
+              trackProviderInstallEvent('provider_install_cta_clicked', {
+                source_page: 'provider_download',
+                surface: 'windows_installer',
+                destination: '/api/dc1/providers/download-windows-exe',
+                locale: language,
+                cta_tier: 'secondary',
+                next_action_state: nextActionState,
+                os_target: 'windows',
+                has_provider_key: Boolean(providerKey.trim()),
+                step: getProviderOnboardingStep(nextActionState),
+              })
+            }
           >
-            Download Generic Windows Installer (.exe)
+            {t('provider.download.windows_installer_cta')}
           </a>
         </div>
 
@@ -274,6 +385,18 @@ export default function ProviderDownloadPage() {
                 href={nextAction.href}
                 className="inline-flex mt-3 px-3 py-2 rounded-lg text-xs font-semibold"
                 style={{ background: 'rgba(245,165,36,0.18)', color: '#F5A524', border: '1px solid rgba(245,165,36,0.35)' }}
+                onClick={() =>
+                  trackProviderInstallEvent('provider_install_cta_clicked', {
+                    source_page: 'provider_download',
+                    surface: 'next_action',
+                    destination: nextAction.href,
+                    locale: language,
+                    cta_tier: 'primary',
+                    next_action_state: nextActionState,
+                    has_provider_key: Boolean(providerKey.trim()),
+                    step: getProviderOnboardingStep(nextActionState),
+                  })
+                }
               >
                 {nextAction.cta}
               </Link>
@@ -281,6 +404,18 @@ export default function ProviderDownloadPage() {
                 href={troubleshootingHref}
                 className="inline-flex mt-3 ms-0 sm:ms-3 px-3 py-2 rounded-lg text-xs font-semibold"
                 style={{ background: 'rgba(148,163,184,0.12)', color: '#CBD5E1', border: '1px solid rgba(148,163,184,0.35)' }}
+                onClick={() =>
+                  trackProviderInstallEvent('provider_install_cta_clicked', {
+                    source_page: 'provider_download',
+                    surface: 'next_action',
+                    destination: troubleshootingHref,
+                    locale: language,
+                    cta_tier: 'secondary',
+                    next_action_state: nextActionState,
+                    has_provider_key: Boolean(providerKey.trim()),
+                    step: getProviderOnboardingStep(nextActionState),
+                  })
+                }
               >
                 {t('register.provider.status_matrix.guide_cta')}
               </Link>
@@ -336,9 +471,21 @@ export default function ProviderDownloadPage() {
             </p>
           </div>
           <a
-            href="/support"
+            href={supportHref}
             className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
             style={{ background: '#F5A524', color: '#07070E' }}
+            onClick={() =>
+              trackProviderInstallEvent('provider_install_cta_clicked', {
+                source_page: 'provider_download',
+                surface: 'help_module',
+                destination: supportHref,
+                locale: language,
+                cta_tier: 'secondary',
+                next_action_state: nextActionState,
+                has_provider_key: Boolean(providerKey.trim()),
+                step: getProviderOnboardingStep(nextActionState),
+              })
+            }
           >
             {t('provider.download.get_support')}
           </a>

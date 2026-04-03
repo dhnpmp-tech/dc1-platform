@@ -54,6 +54,7 @@ The JSON/Markdown report includes:
 
 - smoke principal metadata (`renter_id`, `key_hint`, scoped key id/expiry),
 - request IDs and response hashes for each probe,
+- provider route evidence headers (`x-dcp-provider-id`, `x-dcp-provider-tier`, `x-dcp-provider-endpoint-host`, requested/routed model IDs),
 - explicit verdict (`PASS` / `FAIL`),
 - structured failure classification with actionable remediation.
 
@@ -62,5 +63,6 @@ The JSON/Markdown report includes:
 - `auth_scope_failure`: scoped key invalid/missing inference scope
 - `provider_unreachable_or_unavailable`: provider route cannot serve completion
 - `sse_done_missing`: streaming path does not terminate with `data: [DONE]`
+- `provider_route_evidence_missing`: completion succeeded but route evidence headers were absent
 - `model_or_route_not_found`: requested model or endpoint contract mismatch
 - `unexpected_completion_status`: fallback bucket for non-contract responses
