@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage, LanguageToggle } from '../lib/i18n'
+import { buildProviderInstallCommand, getProviderInstallApiBase } from '../lib/provider-install'
+import { trackProviderInstallEvent } from '../lib/provider-install-telemetry'
 
 // GPU pricing in halala/hr (matches backend gpu_pricing seed data)
 const GPU_RATES = [
@@ -56,11 +58,16 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
 }
 
 export default function EarnPage() {
-  const { t, dir, isRTL } = useLanguage()
+  const { t, dir, isRTL, language } = useLanguage()
 
   const [selectedGpu, setSelectedGpu] = useState(GPU_RATES[2]) // RTX 4090 default
   const [hours, setHours]             = useState(8)
   const [utilPct, setUtilPct]         = useState(50)
+  const installApiBase = useMemo(() => getProviderInstallApiBase(), [])
+  const quickInstallCommand = useMemo(
+    () => buildProviderInstallCommand('linux', installApiBase, ''),
+    [installApiBase]
+  )
 
   // Formula: gpu_rate_halala * hours_per_day * (util/100) * 30 days * 0.75 provider_share / 100 halala→SAR
   const grossHalala = selectedGpu.rate_halala * hours * (utilPct / 100) * 30
@@ -284,35 +291,56 @@ export default function EarnPage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
         <div className="rounded-2xl border border-dc1-amber/30 bg-dc1-surface-l1 p-8">
           <h2 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary mb-2">
-            Get started in one command
+            {t('earn.quick_install.title')}
           </h2>
           <p className="text-dc1-text-secondary text-sm mb-6">
-            Linux / macOS — requires NVIDIA GPU with 8GB+ VRAM
+            {t('earn.quick_install.subtitle')}
           </p>
           <div className="bg-dc1-void rounded-xl border border-dc1-border p-4 font-mono text-sm overflow-x-auto">
-            <span className="text-dc1-text-muted select-none">$ </span>
-            <span className="text-dc1-amber">curl</span>
-            <span className="text-dc1-text-primary"> -fsSL https://api.dcp.sa/install | bash</span>
+            <span className="text-dc1-text-primary">{quickInstallCommand}</span>
           </div>
           <p className="text-xs text-dc1-text-muted mt-3">
-            Detects your GPU, generates a WireGuard keypair, and walks you through the rest.
+            {t('earn.quick_install.note')}
           </p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <a
-              href="https://api.dcp.sa/install"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-dc1-amber hover:underline"
+          <div className="mt-4 flex flex-wrap gap-3 items-center">
+            <Link
+              href="/provider/download"
+              className="btn btn-primary btn-sm"
+              onClick={() =>
+                trackProviderInstallEvent('provider_install_cta_clicked', {
+                  source_page: 'earn',
+                  surface: 'quick_install',
+                  destination: '/provider/download',
+                  locale: language,
+                  cta_tier: 'primary',
+                  next_action_state: 'waiting',
+                  os_target: 'linux',
+                  has_provider_key: false,
+                  step: 'open_download',
+                })
+              }
             >
-              View script source →
-            </a>
-            <span className="text-dc1-text-muted text-sm">|</span>
-            <a
-              href="/docs"
+              {t('earn.quick_install.primary_cta')}
+            </Link>
+            <Link
+              href="/docs/provider-guide#status-waiting-install-daemon"
               className="text-sm text-dc1-amber hover:underline"
+              onClick={() =>
+                trackProviderInstallEvent('provider_install_cta_clicked', {
+                  source_page: 'earn',
+                  surface: 'quick_install',
+                  destination: '/docs/provider-guide#status-waiting-install-daemon',
+                  locale: language,
+                  cta_tier: 'secondary',
+                  next_action_state: 'waiting',
+                  os_target: 'linux',
+                  has_provider_key: false,
+                  step: 'open_docs',
+                })
+              }
             >
-              Manual setup guide →
-            </a>
+              {t('earn.quick_install.secondary_cta')}
+            </Link>
           </div>
         </div>
       </section>

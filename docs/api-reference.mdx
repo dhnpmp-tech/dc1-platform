@@ -34,6 +34,46 @@ Example (`400`):
 { "error": "Missing required fields: job_type, duration_minutes" }
 ```
 
+### `/v1` deterministic error envelope (`/v1/models`, `/v1/chat/completions`)
+
+`/v1` endpoints return a canonical machine-readable envelope:
+
+```json
+{
+  "error": {
+    "message": "Provider failover exhausted after initial error: timeout",
+    "type": "timeout_error",
+    "code": "upstream_timeout",
+    "status": 504,
+    "retryable": true
+  }
+}
+```
+
+For rate limits (`429`), retry metadata is always present:
+
+```json
+{
+  "error": {
+    "message": "Rate limit exceeded. Retry after 60 seconds.",
+    "type": "rate_limit_error",
+    "code": "rate_limit_exceeded",
+    "status": 429,
+    "retryable": true,
+    "retry_after_seconds": 60,
+    "retry_after_ms": 60000
+  },
+  "retry_after_seconds": 60,
+  "retry_after_ms": 60000
+}
+```
+
+SDK retry guidance for `/v1`:
+
+- Retry with backoff when `error.code` is `rate_limit_exceeded`, `no_capacity_available`, `provider_unavailable`, or `upstream_timeout`.
+- Use `retry_after_seconds` when present (especially on `429`).
+- Do not retry without request changes on non-retryable validation/auth/billing errors.
+
 ## Critical endpoint parity examples
 
 The following examples are aligned with production route contracts in `backend/src/routes/*.js` and `docs/openapi.yaml`.

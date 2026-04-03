@@ -471,6 +471,104 @@ describe('DCP-324 Docker wave integration suite', () => {
       }));
     });
 
+    it('enforces tier-availability admission contract (cached blocked, on-demand allowed)', async () => {
+      const cachedModelId = 'dcp-tests/cached-tier-warm-model';
+      const onDemandModelId = 'dcp-tests/on-demand-cold-model';
+      for (const modelId of [cachedModelId, onDemandModelId]) {
+        db.prepare(
+          `INSERT OR REPLACE INTO model_registry
+           (model_id, display_name, family, vram_gb, quantization, context_window, use_cases, min_gpu_vram_gb, default_price_halala_per_min, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        ).run(
+          modelId,
+          `Tier Test ${modelId}`,
+          'dcp-tests',
+          8,
+          'fp16',
+          4096,
+          JSON.stringify(['test']),
+          8,
+          10,
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
+      }
+      db.prepare('UPDATE model_registry SET prewarm_class = ? WHERE model_id = ?').run('warm', cachedModelId);
+      db.prepare('UPDATE model_registry SET prewarm_class = ? WHERE model_id = ?').run('cold', onDemandModelId);
+
+      const { providerKey, providerId } = await registerProvider();
+      setProviderCapabilities(providerId, { vramMb: 24576, gpuCount: 1 });
+      db.prepare('UPDATE providers SET cached_models = ?, available_gpu_tiers = ? WHERE id = ?')
+        .run(JSON.stringify([]), JSON.stringify(['C']), providerId);
+
+      const { renterKey } = await registerRenter({ balance_halala: 50_000 });
+      const warmSubmit = await submitContainerJob(renterKey, {
+        container_spec: {
+          image_type: 'llm',
+          image: 'dcp/vllm-serve:latest',
+          vram_required_mb: 4096,
+          gpu_count: 1,
+          compute_type: 'inference',
+          model_id: cachedModelId,
+        },
+      });
+      expect(warmSubmit.status).toBe(201);
+
+      const warmPoll = await request(app).get(`/api/providers/jobs/next?key=${providerKey}`);
+      expect(warmPoll.status).toBe(200);
+      expect(warmPoll.body.job).toBeNull();
+      expect(warmPoll.body.admission).toEqual(expect.objectContaining({
+        accepted: false,
+        reason_code: 'TIER_MODE_NOT_AVAILABLE',
+        tier_mode: 'cached',
+        model_id: cachedModelId,
+      }));
+      expect(warmPoll.body.admission.tier_capability).toEqual(expect.objectContaining({
+        required_tier_mode: 'cached',
+        source: 'available_gpu_tiers',
+      }));
+      expect(warmPoll.body.admission.tier_capability.provider_tier_modes).toContain('on-demand');
+      expect(warmPoll.body.admission.tier_capability.provider_tier_modes).not.toContain('cached');
+
+      const rejectionEvent = db.prepare(
+        `SELECT metadata_json
+         FROM provider_activation_events
+         WHERE provider_id = ?
+           AND event_code = 'tier_admission_rejected'
+         ORDER BY id DESC
+         LIMIT 1`
+      ).get(providerId);
+      expect(rejectionEvent).toBeTruthy();
+      expect(JSON.parse(rejectionEvent.metadata_json).rejection_code).toBe('TIER_MODE_NOT_AVAILABLE');
+
+      const coldSubmit = await submitContainerJob(renterKey, {
+        container_spec: {
+          image_type: 'llm',
+          image: 'dcp/vllm-serve:latest',
+          vram_required_mb: 4096,
+          gpu_count: 1,
+          compute_type: 'inference',
+          model_id: onDemandModelId,
+        },
+      });
+      expect(coldSubmit.status).toBe(201);
+
+      const coldPoll = await request(app).get(`/api/providers/jobs/next?key=${providerKey}`);
+      expect(coldPoll.status).toBe(200);
+      expect(coldPoll.body.job).toBeTruthy();
+      expect(coldPoll.body.job.job_id).toBe(coldSubmit.body.job.job_id);
+      expect(coldPoll.body.admission).toEqual(expect.objectContaining({
+        accepted: true,
+        reason_code: 'ADMISSION_OK',
+        tier_mode: 'on-demand',
+        model_id: onDemandModelId,
+      }));
+      expect(coldPoll.body.admission.tier_capability).toEqual(expect.objectContaining({
+        required_tier_mode: 'on-demand',
+        source: 'available_gpu_tiers',
+      }));
+    });
+
     it('returns queue depth grouped by compute_type', async () => {
       const { renterKey } = await registerRenter({ balance_halala: 20_000 });
 

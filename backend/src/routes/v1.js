@@ -18,7 +18,11 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
-const { vllmCompleteLimiter, vllmStreamLimiter } = require('../middleware/rateLimiter');
+const rateLimiterMiddleware = require('../middleware/rateLimiter');
+const {
+  vllmCompleteLimiter,
+  vllmStreamLimiter,
+} = rateLimiterMiddleware;
 const { toCatalogContractCore, toUsdStringFromHalala } = require('../lib/model-catalog-contract');
 const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
 const {
@@ -69,10 +73,68 @@ function getRenterKey(req) {
   return header || query || null;
 }
 
+function buildV1ErrorPayload({
+  status,
+  type,
+  code,
+  message,
+  details = undefined,
+  retryAfterSeconds = null,
+  retryable = null,
+}) {
+  const safeStatus = toFiniteInt(status, { min: 100, max: 599 }) || 500;
+  const safeRetryAfter = toFiniteInt(retryAfterSeconds, { min: 1, max: 86400 });
+  const payload = {
+    error: {
+      message: normalizeString(message, { maxLen: 500, trim: true }) || 'Internal server error',
+      type: normalizeString(type, { maxLen: 64, trim: true }) || 'server_error',
+      code: normalizeString(code, { maxLen: 64, trim: true }) || 'internal_error',
+      status: safeStatus,
+      retryable: typeof retryable === 'boolean' ? retryable : [429, 503, 504].includes(safeStatus),
+    },
+  };
+  if (details != null) payload.error.details = details;
+  if (safeRetryAfter != null) {
+    payload.error.retry_after_seconds = safeRetryAfter;
+    payload.error.retry_after_ms = safeRetryAfter * 1000;
+    payload.retry_after_seconds = safeRetryAfter;
+    payload.retry_after_ms = safeRetryAfter * 1000;
+  }
+  return payload;
+}
+
+function sendV1Error(res, {
+  status,
+  type,
+  code,
+  message,
+  details = undefined,
+  retryAfterSeconds = null,
+  retryable = null,
+}) {
+  const safeRetryAfter = toFiniteInt(retryAfterSeconds, { min: 1, max: 86400 });
+  if (safeRetryAfter != null) {
+    res.setHeader('Retry-After', String(safeRetryAfter));
+  }
+  return res.status(status).json(buildV1ErrorPayload({
+    status,
+    type,
+    code,
+    message,
+    details,
+    retryAfterSeconds: safeRetryAfter,
+    retryable,
+  }));
+}
+
 function requireAuth(req, res, next) {
   const key = getRenterKey(req);
-  if (!key) return res.status(401).json({
-    error: { message: 'API key required. Pass via Authorization: Bearer <key>', type: 'authentication_error', code: 401 }
+  if (!key) return sendV1Error(res, {
+    status: 401,
+    type: 'authentication_error',
+    code: 'authentication_required',
+    message: 'API key required. Pass via Authorization: Bearer <key>',
+    retryable: false,
   });
 
   const now = new Date().toISOString();
@@ -89,12 +151,24 @@ function requireAuth(req, res, next) {
 
   if (scopedKey) {
     if (scopedKey.expires_at && scopedKey.expires_at < now) {
-      return res.status(403).json({ error: { message: 'API key has expired', type: 'authentication_error', code: 403 } });
+      return sendV1Error(res, {
+        status: 403,
+        type: 'authentication_error',
+        code: 'authentication_key_expired',
+        message: 'API key has expired',
+        retryable: false,
+      });
     }
     let scopes = [];
     try { scopes = JSON.parse(scopedKey.scopes || '[]'); } catch (_) {}
     if (!scopes.includes('inference') && !scopes.includes('admin')) {
-      return res.status(403).json({ error: { message: 'API key does not have inference scope', type: 'authentication_error', code: 403 } });
+      return sendV1Error(res, {
+        status: 403,
+        type: 'authentication_error',
+        code: 'authentication_scope_missing',
+        message: 'API key does not have inference scope',
+        retryable: false,
+      });
     }
     try { db.prepare('UPDATE renter_api_keys SET last_used_at = ? WHERE id = ?').run(now, scopedKey.id); } catch (_) {}
     req.renter = { id: scopedKey.r_id, api_key: scopedKey.api_key, balance_halala: scopedKey.balance_halala, status: scopedKey.status };
@@ -107,8 +181,12 @@ function requireAuth(req, res, next) {
     'SELECT id, api_key, balance_halala, status FROM renters WHERE api_key = ? AND status = ?',
     key, 'active'
   );
-  if (!renter) return res.status(401).json({
-    error: { message: 'Invalid or inactive API key', type: 'authentication_error', code: 401 }
+  if (!renter) return sendV1Error(res, {
+    status: 401,
+    type: 'authentication_error',
+    code: 'authentication_invalid_key',
+    message: 'Invalid or inactive API key',
+    retryable: false,
   });
 
   req.renter = renter;
@@ -434,8 +512,11 @@ router.get('/models', (req, res) => {
     return res.json({ object: 'list', data });
   } catch (error) {
     console.error('[v1/models] Error:', error);
-    return res.status(500).json({
-      error: { message: 'Failed to fetch model list', type: 'server_error', code: 500 }
+    return sendV1Error(res, {
+      status: 503,
+      type: 'server_error',
+      code: 'provider_unavailable',
+      message: 'Model catalog is temporarily unavailable',
     });
   }
 });
@@ -611,6 +692,33 @@ function collectProviderOptionalPassthroughFields(requestBody = {}) {
   return passthrough;
 }
 
+function extractEndpointHost(endpointUrl) {
+  try {
+    return new URL(String(endpointUrl || '')).host || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setProviderRouteEvidenceHeaders(res, {
+  provider = null,
+  requestedModelId = null,
+  routedModelId = null,
+} = {}) {
+  if (!res || typeof res.setHeader !== 'function' || !provider) return;
+  const providerId = toFiniteInt(provider.id, { min: 1 });
+  if (providerId) res.setHeader('x-dcp-provider-id', String(providerId));
+
+  const providerTier = resolveProviderTier(provider);
+  if (providerTier) res.setHeader('x-dcp-provider-tier', String(providerTier));
+
+  const endpointHost = extractEndpointHost(provider.vllm_endpoint_url);
+  if (endpointHost) res.setHeader('x-dcp-provider-endpoint-host', endpointHost);
+
+  if (requestedModelId) res.setHeader('x-dcp-requested-model-id', String(requestedModelId));
+  if (routedModelId) res.setHeader('x-dcp-routed-model-id', String(routedModelId));
+}
+
 async function proxyToProvider({
   endpointUrl,
   modelId,
@@ -653,14 +761,22 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
   let persistFailureUsageBestEffort = null;
   try {
     const model = normalizeString(req.body?.model, { maxLen: 200 });
-    if (!model) return res.status(400).json({
-      error: { message: '`model` is required', type: 'invalid_request_error', code: 400 }
+    if (!model) return sendV1Error(res, {
+      status: 400,
+      type: 'invalid_request_error',
+      code: 'invalid_request_model_required',
+      message: '`model` is required',
+      retryable: false,
     });
 
     const messagesRaw = req.body?.messages;
     if (!Array.isArray(messagesRaw) || messagesRaw.length === 0) {
-      return res.status(400).json({
-        error: { message: '`messages` must be a non-empty array', type: 'invalid_request_error', code: 400 }
+      return sendV1Error(res, {
+        status: 400,
+        type: 'invalid_request_error',
+        code: 'invalid_request_messages_required',
+        message: '`messages` must be a non-empty array',
+        retryable: false,
       });
     }
 
@@ -698,8 +814,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     }
 
     if (messages.length === 0) {
-      return res.status(400).json({
-        error: { message: 'messages must include at least one non-empty content string', type: 'invalid_request_error', code: 400 }
+      return sendV1Error(res, {
+        status: 400,
+        type: 'invalid_request_error',
+        code: 'invalid_request_messages_empty',
+        message: 'messages must include at least one non-empty content string',
+        retryable: false,
       });
     }
 
@@ -725,8 +845,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       }).eligible;
     });
     if (capableProviders.length === 0) {
-      return res.status(503).json({
-        error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
+      return sendV1Error(res, {
+        status: 503,
+        type: 'server_error',
+        code: 'no_capacity_available',
+        message: 'No inference providers available for this model',
       });
     }
 
@@ -735,26 +858,25 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       providers: capableProviders,
     });
     if (!gateSelection.pass || !gateSelection.selectedProviderId) {
-      return res.status(503).json({
-        error: {
-          message: 'Latency budget gate failed before provider submission',
-          type: 'latency_budget_gate_error',
-          code: 503,
-          details: {
-            mode: gateSelection.mode,
-            reasons: gateSelection.reasons,
-            tiers: gateSelection.tiers,
-            thresholds: {
-              max_p50_ms: gateSelection.thresholds.maxP50Ms,
-              baseline_p95_ms: gateSelection.thresholds.baselineP95Ms,
-              max_p95_regression_pct: gateSelection.thresholds.maxP95RegressionPct,
-              baseline_stream_failure_rate: gateSelection.thresholds.baselineStreamFailureRate,
-              max_stream_failure_regression_pct: gateSelection.thresholds.maxStreamFailureRegressionPct,
-              min_latency_samples: gateSelection.thresholds.minLatencySamples,
-              min_stream_samples: gateSelection.thresholds.minStreamSamples,
-            },
+      return sendV1Error(res, {
+        status: 503,
+        type: 'latency_budget_gate_error',
+        code: 'no_capacity_available',
+        message: 'Latency budget gate failed before provider submission',
+        details: {
+          mode: gateSelection.mode,
+          reasons: gateSelection.reasons,
+          tiers: gateSelection.tiers,
+          thresholds: {
+            max_p50_ms: gateSelection.thresholds.maxP50Ms,
+            baseline_p95_ms: gateSelection.thresholds.baselineP95Ms,
+            max_p95_regression_pct: gateSelection.thresholds.maxP95RegressionPct,
+            baseline_stream_failure_rate: gateSelection.thresholds.baselineStreamFailureRate,
+            max_stream_failure_regression_pct: gateSelection.thresholds.maxStreamFailureRegressionPct,
+            min_latency_samples: gateSelection.thresholds.minLatencySamples,
+            min_stream_samples: gateSelection.thresholds.minStreamSamples,
           },
-        }
+        },
       });
     }
 
@@ -765,8 +887,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       .filter(Boolean);
 
     if (!assignedProvider) {
-      return res.status(503).json({
-        error: { message: 'No inference providers available for this model', type: 'server_error', code: 503 }
+      return sendV1Error(res, {
+        status: 503,
+        type: 'server_error',
+        code: 'no_capacity_available',
+        message: 'No inference providers available for this model',
       });
     }
 
@@ -873,8 +998,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
     };
     if (Number(req.renter.balance_halala || 0) < estimatedCostHalala) {
-      return res.status(402).json({
-        error: { message: 'Insufficient balance', type: 'billing_error', code: 402 }
+      return sendV1Error(res, {
+        status: 402,
+        type: 'billing_error',
+        code: 'billing_insufficient_balance',
+        message: 'Insufficient balance',
+        retryable: false,
       });
     }
 
@@ -884,10 +1013,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         requestedModelId: modelReq.model_id,
         providerVramMb: resolveProviderVramMb(assignedProvider),
       });
+      const routedModelId = assignedProviderProxyModel.proxyModelId;
 
       const proxyResult = await proxyToProvider({
         endpointUrl: assignedProvider.vllm_endpoint_url,
-        modelId: assignedProviderProxyModel.proxyModelId,
+        modelId: routedModelId,
         messages,
         maxTokens,
         temperature,
@@ -898,6 +1028,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
 
       const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
+        setProviderRouteEvidenceHeaders(res, {
+          provider: providerForUsage,
+          requestedModelId: modelReq.model_id,
+          routedModelId: resultBody?.model || routedModelId,
+        });
         const usageForResponse = withUsdUsagePricing(resultBody?.usage || {}, tokenRateHalala);
         debitAndPersistUsage({
           providerForUsage,
@@ -920,6 +1055,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
+        setProviderRouteEvidenceHeaders(res, {
+          provider: providerForUsage,
+          requestedModelId: modelReq.model_id,
+          routedModelId,
+        });
         if (res.flushHeaders) res.flushHeaders();
 
         let providerResponseId = null;
@@ -1090,20 +1230,25 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         providerForUsage: assignedProvider,
         usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
       });
-      return res.status(502).json({
-        error: {
-          message: proxyResult.proxyError
-            ? `Provider failover exhausted after initial error: ${proxyResult.proxyError}`
-            : 'Provider failover exhausted',
-          type: 'upstream_error',
-          code: 502
-        }
+      const isUpstreamTimeout = proxyResult.proxyError === 'timeout';
+      return sendV1Error(res, {
+        status: isUpstreamTimeout ? 504 : 503,
+        type: isUpstreamTimeout ? 'timeout_error' : 'upstream_error',
+        code: isUpstreamTimeout ? 'upstream_timeout' : 'provider_unavailable',
+        message: proxyResult.proxyError
+          ? `Provider failover exhausted after initial error: ${proxyResult.proxyError}`
+          : 'Provider failover exhausted',
       });
     }
 
     // Fallback: create job in queue (non-streaming only for job-based flow)
     const now = new Date().toISOString();
     const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setProviderRouteEvidenceHeaders(res, {
+      provider: assignedProvider,
+      requestedModelId: modelReq.model_id,
+      routedModelId: modelReq.model_id,
+    });
 
     const containerSpec = {
       image_type: 'vllm-serve',
@@ -1135,8 +1280,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         providerResponseId: `chatcmpl-${jobId}`,
         usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
       });
-      return res.status(500).json({
-        error: { message: 'Failed to submit inference job', type: 'server_error', code: 500 }
+      return sendV1Error(res, {
+        status: 500,
+        type: 'server_error',
+        code: 'internal_error',
+        message: 'Failed to submit inference job',
+        retryable: false,
       });
     }
 
@@ -1209,8 +1358,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           providerResponseId: `chatcmpl-${jobId}`,
           usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
         });
-        return res.status(502).json({
-          error: { message: `Inference ${job.status}: ${job.error || 'unknown'}`, type: 'upstream_error', code: 502 }
+        return sendV1Error(res, {
+          status: 503,
+          type: 'upstream_error',
+          code: 'provider_unavailable',
+          message: `Inference ${job.status}: ${job.error || 'unknown'}`,
         });
       }
 
@@ -1222,8 +1374,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       providerResponseId: `chatcmpl-${jobId}`,
       usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
     });
-    return res.status(504).json({
-      error: { message: 'Inference did not complete within timeout', type: 'timeout_error', code: 504 }
+    return sendV1Error(res, {
+      status: 504,
+      type: 'timeout_error',
+      code: 'upstream_timeout',
+      message: 'Inference did not complete within timeout',
     });
 
   } catch (error) {
@@ -1231,8 +1386,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       persistFailureUsageBestEffort();
     }
     console.error('[v1/chat/completions] Error:', error);
-    return res.status(500).json({
-      error: { message: 'Internal server error', type: 'server_error', code: 500 }
+    return sendV1Error(res, {
+      status: 500,
+      type: 'server_error',
+      code: 'internal_error',
+      message: 'Internal server error',
+      retryable: false,
     });
   }
 });

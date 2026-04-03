@@ -35,6 +35,22 @@ function CodeBlock({ code }: { code: string }) {
   )
 }
 
+function QuickstartLoadingState() {
+  return (
+    <>
+      <Header />
+      <main className="min-h-screen bg-dc1-void py-8">
+        <section className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-2xl border border-dc1-border bg-dc1-surface-l1 p-6">
+            <p className="text-sm text-dc1-text-secondary">Loading quickstart...</p>
+          </div>
+        </section>
+      </main>
+      <Footer />
+    </>
+  )
+}
+
 type SdkKey = 'node' | 'python' | 'cli'
 
 interface SdkCard {
@@ -852,7 +868,7 @@ function QuickstartPageInner() {
 
 export default function QuickstartPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<QuickstartLoadingState />}>
       <QuickstartPageInner />
     </Suspense>
   )

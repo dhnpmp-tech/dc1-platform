@@ -4,6 +4,11 @@ import { useState, useEffect, useRef, useCallback, Suspense, Component, ErrorInf
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useLanguage } from '../../lib/i18n';
+import {
+  consumeRestoredRenterAuthIntent,
+  type RenterAuthIntent,
+  setPendingRenterAuthIntent,
+} from '../../lib/renter-auth-intent';
 
 // ErrorBoundary to capture the actual crash error
 class PlaygroundErrorBoundary extends Component<
@@ -259,16 +264,6 @@ type Phase = 'idle' | 'submitting' | 'polling' | 'done' | 'error';
 type ViewMode = 'new' | 'history';
 type ImageType = 'pytorch-cuda' | 'vllm-serve' | 'training' | 'rendering';
 type PresetJobType = 'llm_inference' | 'image_generation';
-type RestoredAuthIntent = {
-  providerId?: number;
-  model?: string;
-  mode?: 'llm_inference' | 'image_generation' | 'vllm_serve';
-  restoredAt?: string;
-};
-
-const PENDING_AUTH_INTENT_KEY = 'dc1_pending_auth_intent';
-const RESTORED_AUTH_INTENT_KEY = 'dc1_restored_auth_intent';
-
 const IMAGE_TYPE_TO_COMPUTE: Record<ImageType, string> = {
   'pytorch-cuda': 'inference',
   'vllm-serve': 'inference',
@@ -348,6 +343,9 @@ function GpuPlayground() {
   const preselectedProvider = searchParams.get('provider');
   const preselectedModel = searchParams.get('model');
   const preselectedMode = searchParams.get('mode');
+  const preselectedTemplate = searchParams.get('template');
+  const preselectedJobType = searchParams.get('job_type');
+  const preselectedSource = searchParams.get('source');
 
   // Auth
   const [renterKey, setRenterKey] = useState('');
@@ -414,7 +412,7 @@ function GpuPlayground() {
   const [containerImages, setContainerImages] = useState<string[]>([]);
   const [queueWait, setQueueWait] = useState<number | null>(null);
   const [authRedirecting, setAuthRedirecting] = useState(false);
-  const [restoredAuthIntent, setRestoredAuthIntent] = useState<RestoredAuthIntent | null>(null);
+  const [restoredAuthIntent, setRestoredAuthIntent] = useState<RenterAuthIntent | null>(null);
   const [firstSubmitTracked, setFirstSubmitTracked] = useState(false);
 
   // Job execution
@@ -456,12 +454,24 @@ function GpuPlayground() {
 
   const pendingIntentPayload = useCallback(() => {
     const provider = preselectedProvider ? Number(preselectedProvider) : undefined;
-    return {
+    const normalizedMode: RenterAuthIntent['mode'] =
+      preselectedMode === 'llm_inference' || preselectedMode === 'image_generation' || preselectedMode === 'vllm_serve'
+        ? preselectedMode
+        : undefined;
+    const normalizedJobType: RenterAuthIntent['jobType'] =
+      preselectedJobType === 'llm_inference' || preselectedJobType === 'image_generation' || preselectedJobType === 'vllm_serve'
+        ? preselectedJobType
+        : normalizedMode;
+    const nextIntent: RenterAuthIntent = {
       providerId: provider != null && Number.isFinite(provider) ? provider : undefined,
       model: preselectedModel || undefined,
-      mode: (preselectedMode as RestoredAuthIntent['mode']) || undefined,
+      mode: normalizedMode,
+      template: preselectedTemplate || undefined,
+      jobType: normalizedJobType,
+      source: preselectedSource || undefined,
     };
-  }, [preselectedModel, preselectedMode, preselectedProvider]);
+    return nextIntent;
+  }, [preselectedJobType, preselectedModel, preselectedMode, preselectedProvider, preselectedSource, preselectedTemplate]);
 
   useEffect(() => {
     if (!preselectedModel) return;
@@ -482,6 +492,12 @@ function GpuPlayground() {
     setVllmModel(selectedModel);
   }, [preselectedModel, preselectedMode]);
 
+  useEffect(() => {
+    if (preselectedJobType === 'llm_inference' || preselectedJobType === 'image_generation' || preselectedJobType === 'vllm_serve') {
+      setJobType(preselectedJobType);
+    }
+  }, [preselectedJobType]);
+
   // ── Auth ──────────────────────────────────────────────────────────
   useEffect(() => {
     const saved = typeof window !== 'undefined'
@@ -497,38 +513,37 @@ function GpuPlayground() {
 
   useEffect(() => {
     if (authChecking || renterName || typeof window === 'undefined') return;
-    const hasIntent = Boolean(preselectedProvider || preselectedModel || preselectedMode);
+    const hasIntent = Boolean(preselectedProvider || preselectedModel || preselectedMode || preselectedTemplate || preselectedJobType || preselectedSource);
     if (!hasIntent) return;
 
     const intent = pendingIntentPayload();
-    sessionStorage.setItem(PENDING_AUTH_INTENT_KEY, JSON.stringify(intent));
+    setPendingRenterAuthIntent(intent);
     trackPlaygroundEvent('auth_wall_entered', {
       provider_id: intent.providerId ?? null,
       model: intent.model ?? null,
       mode: intent.mode ?? null,
+      template: intent.template ?? null,
+      job_type: intent.jobType ?? null,
+      source: intent.source ?? null,
     });
     setAuthRedirecting(true);
     window.location.href = '/login?role=renter&method=email&redirect=/renter/playground';
-  }, [authChecking, renterName, preselectedProvider, preselectedModel, preselectedMode, pendingIntentPayload, trackPlaygroundEvent]);
+  }, [authChecking, pendingIntentPayload, preselectedJobType, preselectedMode, preselectedModel, preselectedProvider, preselectedSource, preselectedTemplate, renterName, trackPlaygroundEvent]);
 
   useEffect(() => {
     if (!renterName || typeof window === 'undefined') return;
-    const raw = sessionStorage.getItem(RESTORED_AUTH_INTENT_KEY);
-    if (!raw) return;
-    try {
-      const restored = JSON.parse(raw) as RestoredAuthIntent;
-      setRestoredAuthIntent(restored);
-      setFirstSubmitTracked(false);
-      trackPlaygroundEvent('auth_intent_restored', {
-        provider_id: restored.providerId ?? null,
-        model: restored.model ?? null,
-        mode: restored.mode ?? null,
-      });
-    } catch {
-      // Ignore malformed payload and continue with normal flow.
-    } finally {
-      sessionStorage.removeItem(RESTORED_AUTH_INTENT_KEY);
-    }
+    const restored = consumeRestoredRenterAuthIntent();
+    if (!restored) return;
+    setRestoredAuthIntent(restored);
+    setFirstSubmitTracked(false);
+    trackPlaygroundEvent('auth_intent_restored', {
+      provider_id: restored.providerId ?? null,
+      model: restored.model ?? null,
+      mode: restored.mode ?? null,
+      template: restored.template ?? null,
+      job_type: restored.jobType ?? null,
+      source: restored.source ?? null,
+    });
   }, [renterName, trackPlaygroundEvent]);
 
   async function verifyKey(key: string) {
@@ -867,6 +882,8 @@ function GpuPlayground() {
       model: jobType === 'llm_inference' ? llmModel : jobType === 'image_generation' ? sdModel : vllmModel,
       first_time: showFirstJobWizard,
       preset_id: selectedPresetId,
+      template: preselectedTemplate || restoredAuthIntent?.template || null,
+      source: preselectedSource || restoredAuthIntent?.source || null,
     });
     if (submitWasBlockedRef.current) {
       trackPlaygroundEvent('submit_after_block_resolution', {
@@ -881,6 +898,9 @@ function GpuPlayground() {
         provider_id: providerId,
         model: jobType === 'llm_inference' ? llmModel : jobType === 'image_generation' ? sdModel : vllmModel,
         mode: jobType,
+        template: restoredAuthIntent.template ?? preselectedTemplate ?? null,
+        job_type: restoredAuthIntent.jobType ?? jobType,
+        source: restoredAuthIntent.source ?? preselectedSource ?? null,
       });
       setFirstSubmitTracked(true);
       setRestoredAuthIntent(null);
