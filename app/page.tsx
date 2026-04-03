@@ -7,30 +7,7 @@ import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import { useLanguage } from './lib/i18n'
 import { persistRoleIntent, readRoleIntent, RoleIntent, trackRoleIntentApplied } from './lib/role-intent'
-
-const GPU_RATES: { model: string; rate: number }[] = []
-const RELIABILITY_POLL_MS = 30_000
-
-interface AvailabilityProvider {
-  gpu_model?: string | null
-  is_live?: boolean | null
-}
-
-function extractGpuFamily(gpuModel: string | null | undefined): string {
-  const model = String(gpuModel || '').toUpperCase()
-  if (!model) return 'Unknown'
-  if (model.includes('H200')) return 'H200'
-  if (model.includes('H100')) return 'H100'
-  if (model.includes('A100')) return 'A100'
-  if (model.includes('A40')) return 'A40'
-  if (model.includes('L40')) return 'L40'
-  if (model.includes('4090')) return 'RTX 4090'
-  if (model.includes('3090')) return 'RTX 3090'
-  if (model.includes('A6000')) return 'RTX A6000'
-  if (model.includes('A5000')) return 'RTX A5000'
-  if (model.includes('RTX')) return 'RTX'
-  return model.split(/[\s/-]+/).slice(0, 2).join(' ') || 'Unknown'
-}
+import { usePublicMetricsContract } from './lib/usePublicMetricsContract'
 
 function formatReliabilityTimestamp(date: Date | null): string {
   if (!date) return '—'
@@ -45,7 +22,7 @@ function formatReliabilityTimestamp(date: Date | null): string {
 }
 
 interface DetailedHealth {
-  providers: { registered: number; online: number }
+  providers: { registered: number | null; online: number | null }
 }
 
 function LaunchBanner({ health }: { health: DetailedHealth | null }) {
@@ -93,7 +70,14 @@ function LaunchBanner({ health }: { health: DetailedHealth | null }) {
   )
 }
 
-function ProviderCountWidget({ health }: { health: DetailedHealth | null }) {
+function ProviderCountWidget({
+  health,
+  unavailableLabel,
+}: {
+  health: DetailedHealth | null
+  unavailableLabel: string
+}) {
+  const { t } = useLanguage()
   const online = health?.providers?.online ?? null
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
@@ -103,22 +87,31 @@ function ProviderCountWidget({ health }: { health: DetailedHealth | null }) {
         }`}
       />
       <span className={`font-bold tabular-nums transition-all ${online !== null && online > 0 ? 'text-emerald-400' : 'text-dc1-text-muted'}`}>
-        {online ?? '—'}
+        {online !== null ? online.toLocaleString() : unavailableLabel}
       </span>
-      <span className="text-dc1-text-secondary">providers online</span>
+      <span className="text-dc1-text-secondary">{t('landing.stat_gpus_online')}</span>
     </span>
   )
 }
 
 export default function HomePage() {
   const { t } = useLanguage()
-  const [liveGpuCount, setLiveGpuCount] = useState<number | null>(null)
-  const [gpuFamilyCoverage, setGpuFamilyCoverage] = useState<number | null>(null)
-  const [reliabilityUpdatedAt, setReliabilityUpdatedAt] = useState<Date | null>(null)
+  const { snapshot } = usePublicMetricsContract()
   const [selectedIntent, setSelectedIntent] = useState<RoleIntent>('renter')
-  const [detailedHealth, setDetailedHealth] = useState<DetailedHealth | null>(null)
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
   const hasTrackedBillingExplainerView = useRef(false)
+  const liveProviderCount = snapshot?.providersOnline ?? null
+  const registeredProviderCount = snapshot?.providersRegistered ?? null
+  const reliabilityUpdatedAt = snapshot?.snapshotAt ? new Date(snapshot.snapshotAt) : null
+  const detailedHealth: DetailedHealth | null = snapshot
+    ? {
+        providers: {
+          registered: snapshot.providersRegistered,
+          online: snapshot.providersOnline,
+        },
+      }
+    : null
+  const unavailableLabel = t('landing.metric_unavailable_neutral')
 
   const trackLandingEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
     if (typeof window === 'undefined') return
@@ -202,58 +195,6 @@ export default function HomePage() {
       setSelectedIntent(storedIntent)
       trackRoleIntentApplied(storedIntent, { source: 'landing', destination: 'hero_paths' })
     }
-
-    const fetchReliability = async () => {
-      try {
-        const res = await fetch('/api/dc1/providers/available')
-        if (!res.ok) return
-
-        const payload = await res.json()
-        const providers: AvailabilityProvider[] = Array.isArray(payload)
-          ? payload
-          : Array.isArray(payload?.providers)
-            ? payload.providers
-            : []
-
-        const hasLiveFlag = providers.some((p) => typeof p?.is_live === 'boolean')
-        const liveCount = hasLiveFlag
-          ? providers.filter((p) => p?.is_live).length
-          : providers.length
-        const families = new Set(
-          providers
-            .map((p) => extractGpuFamily(p?.gpu_model))
-            .filter((family) => family !== 'Unknown')
-        )
-
-        setLiveGpuCount(liveCount)
-        setGpuFamilyCoverage(families.size)
-        setReliabilityUpdatedAt(new Date())
-      } catch {
-        // Keep last successful values visible.
-      }
-    }
-
-    fetchReliability()
-    const interval = setInterval(fetchReliability, RELIABILITY_POLL_MS)
-
-    const fetchDetailedHealth = async () => {
-      try {
-        const res = await fetch('/api/dc1/health/detailed', { cache: 'no-store' })
-        if (!res.ok) return
-        const data = await res.json()
-        setDetailedHealth(data)
-      } catch {
-        // silently keep last value
-      }
-    }
-
-    fetchDetailedHealth()
-    const healthInterval = setInterval(fetchDetailedHealth, 60_000)
-
-    return () => {
-      clearInterval(interval)
-      clearInterval(healthInterval)
-    }
   }, [])
 
   useEffect(() => {
@@ -281,10 +222,18 @@ export default function HomePage() {
   }, [trackLandingEvent])
 
   const liveStats = [
-    { value: liveGpuCount !== null ? `${liveGpuCount}` : '—', label: t('landing.stat_gpus_online'), live: liveGpuCount !== null },
-    { value: gpuFamilyCoverage !== null ? `${gpuFamilyCoverage}` : '—', label: t('landing.reliability_gpu_families'), live: gpuFamilyCoverage !== null },
     {
-      value: reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable'),
+      value: liveProviderCount !== null ? liveProviderCount.toLocaleString() : unavailableLabel,
+      label: t('landing.stat_gpus_online'),
+      live: liveProviderCount !== null,
+    },
+    {
+      value: registeredProviderCount !== null ? registeredProviderCount.toLocaleString() : unavailableLabel,
+      label: t('landing.stat_providers_registered'),
+      live: registeredProviderCount !== null,
+    },
+    {
+      value: reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : unavailableLabel,
       label: t('landing.live_stat_last_updated'),
       live: reliabilityUpdatedAt !== null,
     },
@@ -421,7 +370,7 @@ export default function HomePage() {
               </Link>
             </p>
             <div className="mb-8 flex justify-center">
-              <ProviderCountWidget health={detailedHealth} />
+              <ProviderCountWidget health={detailedHealth} unavailableLabel={unavailableLabel} />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
               <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
@@ -529,13 +478,13 @@ export default function HomePage() {
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
                 <p>
-                  <span className="text-dc1-text-primary font-semibold">{liveGpuCount ?? '—'}</span> {t('landing.reliability_live_providers')}
+                  <span className="text-dc1-text-primary font-semibold">{liveProviderCount !== null ? liveProviderCount.toLocaleString() : unavailableLabel}</span> {t('landing.reliability_live_providers')}
                 </p>
                 <p>
-                  <span className="text-dc1-text-primary font-semibold">{gpuFamilyCoverage ?? '—'}</span> {t('landing.reliability_gpu_families')}
+                  <span className="text-dc1-text-primary font-semibold">{registeredProviderCount !== null ? registeredProviderCount.toLocaleString() : unavailableLabel}</span> {t('landing.stat_providers_registered')}
                 </p>
                 <p>
-                  <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : t('landing.reliability_unavailable')}</span>
+                  <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : unavailableLabel}</span>
                 </p>
               </div>
             </div>
