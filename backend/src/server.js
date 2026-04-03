@@ -491,6 +491,9 @@ if (supabaseSync.init()) { supabaseSync.startPeriodicSync(); }
 const fallbackRouter = require('./routes/fallback');
 app.use('/api/fallback', fallbackRouter);
 
+const publicHealthRouter = require('./routes/public-health');
+app.use('/api/health', publicHealthRouter);
+
 const payoutsRouter = require('./routes/payouts');
 app.use('/api', payoutsRouter);
 

@@ -16,6 +16,7 @@ const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../servi
 const { sendWithdrawalApprovedEmail } = require('../services/emailService');
 const { resolveAttemptLogPath } = require('../services/job-execution-logs');
 const { buildFunnelReport } = require('../services/conversionFunnelService');
+const { buildDaemonHealthSummary } = require('../services/daemonHealthSummary');
 const {
   listPolicies: listControlPlanePolicies,
   updatePolicy: updateControlPlanePolicy,
@@ -2348,6 +2349,7 @@ router.get('/daemon-health', (req, res) => {
     const successCount = jobStats.find(s => s.event_type === 'job_success')?.count || 0;
     const failCount = jobStats.find(s => s.event_type === 'job_failure')?.count || 0;
     const totalJobs = successCount + failCount;
+    const reliability = buildDaemonHealthSummary(db);
 
     res.json({
       period_hours: parseInt(hours),
@@ -2356,10 +2358,11 @@ router.get('/daemon-health', (req, res) => {
         total_events: events.length,
         total_crashes: crashes.reduce((sum, c) => sum + c.crash_count, 0),
         total_jobs: totalJobs,
-        job_success_rate: totalJobs > 0 ? `${((successCount / totalJobs) * 100).toFixed(1)}%` : 'N/A',
+        job_success_rate_pct: totalJobs > 0 ? Number(((successCount / totalJobs) * 100).toFixed(2)) : null,
         providers_online: providers.filter(p => p.status === 'online').length,
         providers_total: providers.length,
       },
+      reliability,
       crashes,
       versions,
       job_stats: { success: successCount, failure: failCount, total: totalJobs },
