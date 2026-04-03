@@ -1,5 +1,5 @@
 ## [2026-04-03 19:53 UTC] Codex — Renter Auth Intent Flow Restored Across Template-to-Playground Login Redirect
-- **Commit**: `pending` - Restored renter auth intent handoff on the updated mainline by wiring template catalog prefill redirects and playground/login intent consumption to the shared auth-intent helpers, preserving source/template/model/mode/job_type context through auth walls.
+- **Commit**: `35ef94c` - Restored renter auth intent handoff on the updated mainline by wiring template catalog prefill redirects and playground/login intent consumption to the shared auth-intent helpers, preserving source/template/model/mode/job_type context through auth walls.
 - **Files**: `app/login/page.tsx`, `app/renter/marketplace/templates/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Unauthenticated renter template launches now persist deployment context into login and reliably rehydrate playground defaults after auth, including analytics source attribution. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
 
