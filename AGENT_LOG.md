@@ -32452,3 +32452,8 @@ a
 - **Commit**: `pending` - Implemented renter first-deploy fast lane improvements: promoted a single dominant success CTA on `/renter/register`, made template deploy actions auth-aware (signed-in users route to prefilled playground; signed-out users store pending auth intent then route to login), and expanded auth-intent persistence to carry `template`, `model`, `job_type`, and `source` across login restoration.
 - **Files**: `app/lib/renter-auth-intent.ts`, `app/login/page.tsx`, `app/renter/register/page.tsx`, `app/renter/marketplace/templates/page.tsx`, `app/renter/marketplace/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Renter onboarding now has an above-the-fold fast lane from registration to first deploy, template/model/job-type selections survive auth transitions deterministically, and submit analytics include intent/source fields to measure register-to-first-submit conversion.
+
+## [2026-04-03 14:07 UTC] Codex — DCP-516 OpenRouter eligibility regression + failover proof contract restored
+- **Commit**: `pending` - Fixed `/v1/chat/completions` provider VRAM eligibility so null `vram_mb` no longer collapses valid `gpu_vram_mib` providers to zero capacity, and added the missing `test:openrouter:failover-proof` verification command/script.
+- **Files**: `backend/src/routes/v1.js`, `backend/package.json`, `backend/tests/openrouter-failover-proof.js`, `AGENT_LOG.md`
+- **Impact**: Seeded online providers are eligible again in OpenRouter compliance harness, healthy JSON/SSE requests proxy successfully, and failover verification now has a deterministic command contract covering JSON fallback, SSE fallback with single `[DONE]`, and fallback-exhausted non-200 behavior.
