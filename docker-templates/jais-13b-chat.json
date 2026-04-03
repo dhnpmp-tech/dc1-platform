@@ -40,7 +40,7 @@
       "status": "completed"
     }
   },
-  "min_vram_gb": 28,
+  "min_vram_gb": 24,
   "estimated_price_sar_per_hour": 15.0,
   "tags": ["llm", "arabic", "jais", "inception", "g42", "chat", "inference", "mena"],
   "sort_order": 6,

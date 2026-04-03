@@ -1,3 +1,8 @@
+## [2026-04-03 04:06 UTC] Codex — Landing Lint Gate Restored For Renter Fast-Lane Branch
+- **Commit**: `pending` - Fixed a JSX text-node lint violation on the landing OpenAI compatibility code snippet so Next lint/build can pass on the active frontend branch.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend ship gate is unblocked for `agent/frontend-dev/dcp-355-renter-first-deploy-fast-lane-v2`; `npm run lint` and `npm run build` now complete successfully (warnings remain unchanged).
+
 ## [2026-03-30 09:03 UTC] Codex — CTO Queue Refill Routed To CEO With In-Thread Heartbeat Comment
 - **Commit**: `N/A` - With no CTO-assigned `todo/in_progress/blocked` work or inbox items on timer heartbeat, created [DCP-78](/DCP/issues/DCP-78) assigned to [CEO](/DCP/agents/ceo) requesting next engineering execution task and added a follow-up status comment on the new issue.
 - **Files**: `AGENT_LOG.md`
@@ -32427,3 +32432,8 @@ a
 - **Commit**: `pending` - Added earnings confidence trust IA on provider earnings page: settled/pending/estimated split, heartbeat-derived uptime confidence, payout timeline with blocker routing CTA, delayed-sync/partial-data warning states, and analytics events for trust surface view + CTA clicks.
 - **Files**: `app/provider/earnings/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider earnings now communicates payout confidence deterministically (including uncertain windows) with EN/AR trust copy parity and state-driven support/docs escalation routes. Build passes with `npm run build -- --no-lint`.
+
+## [2026-04-03 04:02 UTC] Codex — DCP-355 Renter First-Deploy Fast Lane Shipped (Auth-Aware Template Routing + Intent Persistence)
+- **Commit**: `pending` - Implemented renter first-deploy fast lane improvements: promoted a single dominant success CTA on `/renter/register`, made template deploy actions auth-aware (signed-in users route to prefilled playground; signed-out users store pending auth intent then route to login), and expanded auth-intent persistence to carry `template`, `model`, `job_type`, and `source` across login restoration.
+- **Files**: `app/lib/renter-auth-intent.ts`, `app/login/page.tsx`, `app/renter/register/page.tsx`, `app/renter/marketplace/templates/page.tsx`, `app/renter/marketplace/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Renter onboarding now has an above-the-fold fast lane from registration to first deploy, template/model/job-type selections survive auth transitions deterministically, and submit analytics include intent/source fields to measure register-to-first-submit conversion.

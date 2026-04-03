@@ -40,7 +40,7 @@
       "status": "completed"
     }
   },
-  "min_vram_gb": 20,
+  "min_vram_gb": 16,
   "estimated_price_sar_per_hour": 12.0,
   "tags": ["llm", "arabic", "allam", "sdaia", "humain", "enterprise", "saudi", "inference", "mena", "vision-2030"],
   "sort_order": 7,

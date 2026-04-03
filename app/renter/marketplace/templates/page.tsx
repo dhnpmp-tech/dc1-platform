@@ -1,115 +1,17 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
-import { useLanguage, type Language } from '../../../lib/i18n'
-
-const UI_COPY = {
-  en: {
-    title: 'GPU Template Catalog',
-    subtitle: 'Ready-to-deploy templates for LLMs, fine-tuning, embeddings, and image generation.',
-    back: 'Back to Marketplace',
-    deployTemplate: 'Deploy Template',
-    deployNow: 'Deploy Now',
-    submitting: 'Submitting...',
-    close: 'Close',
-    cancel: 'Cancel',
-    reviewAndDeploy: 'Review & Deploy',
-    configure: 'Configure',
-    review: 'Review',
-    status: 'Status',
-    duration: 'Duration',
-    durationHelp: 'Billing is usage-based and starts when execution begins.',
-    noFilters: 'No templates match your filters.',
-    clearFilters: 'Clear filters',
-    troubleshooting: 'Troubleshooting',
-    templatePreview: 'Template Preview',
-    estimatedCost: 'Estimated Cost',
-    minVram: 'Min VRAM',
-    dcpPrice: 'DCP Price',
-    vsHyperscalers: 'vs hyperscalers',
-    save: 'Save',
-    successSubmitted: 'Deployment submitted!',
-    successRedirect: 'Redirecting to live status...',
-    viewLiveStatus: 'View Live Status',
-    viewJobs: 'View Jobs',
-    noProvider: 'No providers available right now.',
-    noProviderAction: 'Join Waitlist',
-    insufficientBalance: 'Insufficient balance. Add credits to continue.',
-    addCredits: 'Add Credits',
-    authRequired: 'Session expired. Please sign in again.',
-    rateLimited: 'Too many deployment attempts. Please wait a minute and retry.',
-    serverError: 'The deployment service is temporarily unavailable.',
-    networkError: 'Network error. Please check your connection and retry.',
-    genericError: 'Failed to submit deployment. Please try again.',
-    templateCount: 'templates',
-    arabicCapable: 'Arabic-capable',
-    browseArabic: 'Browse Arabic AI',
-    filtersLoading: 'Loading...',
-    filtersSummary: (visible: number, total: number) => `${visible} of ${total} templates`,
-    languageBadge: 'EN/AR Ready',
-  },
-  ar: {
-    title: 'كتالوج قوالب GPU',
-    subtitle: 'قوالب جاهزة للنشر لنماذج اللغة، الضبط الدقيق، التضمين، وتوليد الصور.',
-    back: 'العودة إلى السوق',
-    deployTemplate: 'نشر القالب',
-    deployNow: 'انشر الآن',
-    submitting: 'جارٍ الإرسال...',
-    close: 'إغلاق',
-    cancel: 'إلغاء',
-    reviewAndDeploy: 'مراجعة ثم نشر',
-    configure: 'الإعداد',
-    review: 'المراجعة',
-    status: 'الحالة',
-    duration: 'المدة',
-    durationHelp: 'تبدأ الفوترة حسب الاستخدام عند بدء التنفيذ.',
-    noFilters: 'لا توجد قوالب مطابقة للفلاتر الحالية.',
-    clearFilters: 'مسح الفلاتر',
-    troubleshooting: 'استكشاف الأخطاء',
-    templatePreview: 'معاينة القالب',
-    estimatedCost: 'التكلفة التقديرية',
-    minVram: 'الحد الأدنى للذاكرة',
-    dcpPrice: 'سعر DCP',
-    vsHyperscalers: 'مقارنة بالسحابات الكبرى',
-    save: 'توفير',
-    successSubmitted: 'تم إرسال النشر بنجاح!',
-    successRedirect: 'جارٍ التحويل إلى حالة المهمة...',
-    viewLiveStatus: 'عرض الحالة المباشرة',
-    viewJobs: 'عرض المهام',
-    noProvider: 'لا يوجد مزود متاح حالياً.',
-    noProviderAction: 'الانضمام لقائمة الانتظار',
-    insufficientBalance: 'الرصيد غير كافٍ. أضف رصيداً للمتابعة.',
-    addCredits: 'إضافة رصيد',
-    authRequired: 'انتهت الجلسة. يرجى تسجيل الدخول مرة أخرى.',
-    rateLimited: 'محاولات نشر كثيرة جداً. انتظر دقيقة ثم أعد المحاولة.',
-    serverError: 'خدمة النشر غير متاحة مؤقتاً.',
-    networkError: 'خطأ في الشبكة. تحقق من الاتصال وأعد المحاولة.',
-    genericError: 'تعذر إرسال النشر. حاول مرة أخرى.',
-    templateCount: 'قالب',
-    arabicCapable: 'يدعم العربية',
-    browseArabic: 'تصفح قوالب العربية',
-    filtersLoading: 'جارٍ التحميل...',
-    filtersSummary: (visible: number, total: number) => `${visible} من ${total} قالب`,
-    languageBadge: 'جاهز EN/AR',
-  },
-} as const
-
-type CopyPack = (typeof UI_COPY)[Language]
-
-function getCategoryLabel(id: TemplateCategory | 'all', language: Language): string {
-  const labels: Record<TemplateCategory | 'all', { en: string; ar: string }> = {
-    all: { en: 'All Templates', ar: 'كل القوالب' },
-    'Arabic AI': { en: 'Arabic AI', ar: 'ذكاء اصطناعي عربي' },
-    LLM: { en: 'LLM', ar: 'نماذج لغوية' },
-    Training: { en: 'Training', ar: 'تدريب' },
-    'Dev Tools': { en: 'Dev Tools', ar: 'أدوات المطور' },
-    Image: { en: 'Image Gen', ar: 'توليد الصور' },
-  }
-  return labels[id][language]
-}
+import { useLanguage } from '../../../lib/i18n'
+import {
+  buildRenterLoginRedirect,
+  buildRenterPlaygroundPath,
+  setPendingRenterAuthIntent,
+  type RenterAuthIntent,
+  type RenterJobType,
+} from '../../../lib/renter-auth-intent'
 
 // ── Nav icons ─────────────────────────────────────────────────────────────────
 const HomeIcon = () => (
@@ -154,14 +56,17 @@ const ChartIcon = () => (
   </svg>
 )
 
-// Hyperscaler reference baseline (SAR/hr) used when template-specific benchmark data is not available.
-const HYPERSCALER_SAR_PER_HR_FALLBACK = 14.0
+// ── Template data (static — loaded from docker-templates/*.json at build/runtime) ──
+// These match the files in docker-templates/ exactly.
+// Hyperscaler reference prices (SAR/hr) for savings calculation:
+// AWS p3.2xlarge (~V100 16GB): ~73 SAR/hr; A10G: ~28 SAR/hr; RunPod RTX 4090: ~14 SAR/hr
+const HYPERSCALER_SAR_PER_HR_FALLBACK = 14.0  // RunPod RTX 4090 baseline
 
 interface Template {
   id: string
   name: string
   description: string
-  icon?: string
+  icon: string
   category: TemplateCategory
   min_vram_gb: number
   estimated_price_sar_per_hour: number
@@ -173,6 +78,294 @@ interface Template {
 }
 
 type TemplateCategory = 'Arabic AI' | 'LLM' | 'Training' | 'Dev Tools' | 'Image'
+
+const TEMPLATES: Template[] = [
+  // ── Arabic AI ──────────────────────────────────────────────────────────────
+  {
+    id: 'arabic-rag-complete',
+    name: 'Arabic RAG Pipeline',
+    description: 'Full-stack Arabic RAG: BGE-M3 embeddings + BGE reranker + ALLaM/JAIS. PDPL-compliant, in-kingdom. Enterprise document retrieval.',
+    icon: '🔍',
+    category: 'Arabic AI',
+    min_vram_gb: 40,
+    estimated_price_sar_per_hour: 45,
+    hyperscaler_price_sar_per_hour: 110,
+    tags: ['rag', 'arabic', 'nlp', 'embedding', 'reranking', 'llm', 'pdpl-compliant', 'enterprise'],
+    difficulty: 'easy',
+    is_arabic: true,
+    sort_order: 1,
+  },
+  {
+    id: 'arabic-embeddings',
+    name: 'Arabic Embeddings API',
+    description: 'High-throughput embedding service for Arabic and bilingual retrieval pipelines using BAAI/bge-m3.',
+    icon: '🌙',
+    category: 'Arabic AI',
+    min_vram_gb: 8,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 25,
+    tags: ['llm', 'embedding', 'rag', 'arabic'],
+    difficulty: 'easy',
+    is_arabic: true,
+    sort_order: 2,
+  },
+  {
+    id: 'arabic-reranker',
+    name: 'Arabic Reranker API',
+    description: 'Semantic reranking for Arabic search and RAG quality uplift. Improves retrieval precision by 30–40%.',
+    icon: '🌙',
+    category: 'Arabic AI',
+    min_vram_gb: 8,
+    estimated_price_sar_per_hour: 11,
+    hyperscaler_price_sar_per_hour: 25,
+    tags: ['llm', 'reranker', 'rag', 'arabic'],
+    difficulty: 'easy',
+    is_arabic: true,
+    sort_order: 3,
+  },
+  {
+    id: 'qwen25-7b',
+    name: 'Qwen 2.5 7B',
+    description: 'Alibaba Qwen 2.5 7B Instruct — strong multilingual model with Arabic support. OpenAI-compatible.',
+    icon: '🌐',
+    category: 'Arabic AI',
+    min_vram_gb: 16,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['llm', 'inference', 'qwen', 'arabic', 'multilingual', 'openai-compatible'],
+    difficulty: 'easy',
+    is_arabic: true,
+    sort_order: 4,
+  },
+  {
+    id: 'llama3-8b',
+    name: 'Llama 3 8B Instruct',
+    description: 'Meta Llama 3 8B Instruct — fast, capable LLM for chat, summarization, and reasoning. OpenAI-compatible.',
+    icon: '🦙',
+    category: 'Arabic AI',
+    min_vram_gb: 16,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['llm', 'inference', 'llama', 'meta', 'openai-compatible', 'arabic'],
+    difficulty: 'easy',
+    is_arabic: true,
+    sort_order: 5,
+  },
+  {
+    id: 'mistral-7b',
+    name: 'Mistral 7B Instruct',
+    description: 'Mistral AI 7B Instruct — strong reasoning and coding. Low latency, low cost. OpenAI-compatible.',
+    icon: '🌊',
+    category: 'Arabic AI',
+    min_vram_gb: 16,
+    estimated_price_sar_per_hour: 8,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['llm', 'inference', 'mistral', 'openai-compatible', 'coding', 'reasoning', 'arabic'],
+    difficulty: 'easy',
+    is_arabic: true,
+    sort_order: 6,
+  },
+  // ── LLM ───────────────────────────────────────────────────────────────────
+  {
+    id: 'nemotron-nano',
+    name: 'Nemotron Nano 4B',
+    description: 'NVIDIA Nemotron-Mini 4B Instruct — compact, efficient LLM optimized for instruction following. Fits in 8 GB.',
+    icon: '⚡',
+    category: 'LLM',
+    min_vram_gb: 8,
+    estimated_price_sar_per_hour: 5,
+    hyperscaler_price_sar_per_hour: 14,
+    tags: ['llm', 'inference', 'nvidia', 'nemotron', 'efficient', 'openai-compatible'],
+    difficulty: 'easy',
+    is_arabic: false,
+    sort_order: 7,
+  },
+  {
+    id: 'nemotron-super',
+    name: 'Nemotron Super 70B',
+    description: 'NVIDIA Llama-3.1-Nemotron-70B — high-capability enterprise LLM. Multi-GPU, OpenAI-compatible.',
+    icon: '🏆',
+    category: 'LLM',
+    min_vram_gb: 80,
+    estimated_price_sar_per_hour: 45,
+    hyperscaler_price_sar_per_hour: 150,
+    tags: ['llm', 'inference', 'nvidia', 'nemotron', '70b', 'enterprise', 'multi-gpu', 'openai-compatible'],
+    difficulty: 'medium',
+    is_arabic: false,
+    sort_order: 8,
+  },
+  {
+    id: 'vllm-serve',
+    name: 'vLLM Serve',
+    description: 'OpenAI-compatible LLM serving API. Deploy Mistral, Llama, Qwen and other models via vLLM.',
+    icon: '🤖',
+    category: 'LLM',
+    min_vram_gb: 16,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['llm', 'inference', 'api', 'openai-compatible'],
+    difficulty: 'medium',
+    is_arabic: false,
+    sort_order: 9,
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama LLM',
+    description: 'Run local LLMs via Ollama. Supports llama3, mistral, gemma and 50+ quantized models. Easy UI.',
+    icon: '🦙',
+    category: 'LLM',
+    min_vram_gb: 4,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 14,
+    tags: ['llm', 'ollama', 'small-models', 'inference', 'quantized'],
+    difficulty: 'easy',
+    is_arabic: false,
+    sort_order: 10,
+  },
+  // ── Training ──────────────────────────────────────────────────────────────
+  {
+    id: 'lora-finetune',
+    name: 'LoRA Fine-Tuning',
+    description: 'Parameter-efficient LoRA fine-tuning workflow for adapter training with low VRAM overhead.',
+    icon: '🧩',
+    category: 'Training',
+    min_vram_gb: 16,
+    estimated_price_sar_per_hour: 14,
+    hyperscaler_price_sar_per_hour: 40,
+    tags: ['lora', 'fine-tuning', 'llm', 'peft'],
+    difficulty: 'medium',
+    is_arabic: false,
+    sort_order: 11,
+  },
+  {
+    id: 'qlora-finetune',
+    name: 'QLoRA Fine-Tuning',
+    description: '4-bit QLoRA fine-tuning optimized for memory-constrained GPUs. Train 7B models on 12 GB VRAM.',
+    icon: '🧠',
+    category: 'Training',
+    min_vram_gb: 12,
+    estimated_price_sar_per_hour: 13,
+    hyperscaler_price_sar_per_hour: 35,
+    tags: ['qlora', 'fine-tuning', 'quantization', 'llm'],
+    difficulty: 'medium',
+    is_arabic: false,
+    sort_order: 12,
+  },
+  {
+    id: 'pytorch-training',
+    name: 'PyTorch Training',
+    description: 'Run PyTorch training jobs on GPU. Supports custom scripts with dataset mounting and checkpoint saving.',
+    icon: '🔥',
+    category: 'Training',
+    min_vram_gb: 8,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['training', 'pytorch', 'ml', 'deep-learning'],
+    difficulty: 'medium',
+    is_arabic: false,
+    sort_order: 13,
+  },
+  {
+    id: 'pytorch-single-gpu',
+    name: 'PyTorch Single GPU',
+    description: 'One-command PyTorch training/inference on a single GPU with deterministic CUDA seeds.',
+    icon: '🔥',
+    category: 'Training',
+    min_vram_gb: 12,
+    estimated_price_sar_per_hour: 11,
+    hyperscaler_price_sar_per_hour: 28,
+    tags: ['pytorch', 'single-gpu', 'training', 'inference'],
+    difficulty: 'easy',
+    is_arabic: false,
+    sort_order: 14,
+  },
+  {
+    id: 'pytorch-multi-gpu',
+    name: 'PyTorch Multi GPU',
+    description: 'Multi-GPU PyTorch template for distributed workloads with NCCL-friendly defaults.',
+    icon: '⚡',
+    category: 'Training',
+    min_vram_gb: 24,
+    estimated_price_sar_per_hour: 18,
+    hyperscaler_price_sar_per_hour: 60,
+    tags: ['pytorch', 'multi-gpu', 'distributed', 'training'],
+    difficulty: 'advanced',
+    is_arabic: false,
+    sort_order: 15,
+  },
+  {
+    id: 'jupyter-gpu',
+    name: 'Jupyter GPU Notebook',
+    description: 'GPU-accelerated Jupyter notebook with PyTorch, CUDA, and popular ML libraries pre-installed.',
+    icon: '📓',
+    category: 'Dev Tools',
+    min_vram_gb: 4,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['jupyter', 'notebook', 'interactive', 'development', 'training'],
+    difficulty: 'easy',
+    is_arabic: false,
+    sort_order: 16,
+  },
+  // ── Dev Tools ─────────────────────────────────────────────────────────────
+  {
+    id: 'python-scientific-compute',
+    name: 'Python Scientific Compute',
+    description: 'CUDA-ready scientific Python template for linear algebra, simulation, and data processing.',
+    icon: '🔬',
+    category: 'Dev Tools',
+    min_vram_gb: 8,
+    estimated_price_sar_per_hour: 10,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['scientific', 'python', 'cuda', 'simulation'],
+    difficulty: 'easy',
+    is_arabic: false,
+    sort_order: 17,
+  },
+  {
+    id: 'custom-container',
+    name: 'Custom Container',
+    description: 'Bring your own Docker image. Run any GPU workload using an approved base image. Full flexibility.',
+    icon: '📦',
+    category: 'Dev Tools',
+    min_vram_gb: 4,
+    estimated_price_sar_per_hour: 9,
+    hyperscaler_price_sar_per_hour: 14,
+    tags: ['custom', 'advanced', 'bring-your-own', 'flexible'],
+    difficulty: 'advanced',
+    is_arabic: false,
+    sort_order: 18,
+  },
+  // ── Image ─────────────────────────────────────────────────────────────────
+  {
+    id: 'sdxl',
+    name: 'Stable Diffusion XL',
+    description: 'Stability AI SDXL — high-resolution 1024×1024 image generation. Significantly better than SD 1.5.',
+    icon: '🎨',
+    category: 'Image',
+    min_vram_gb: 8,
+    estimated_price_sar_per_hour: 12,
+    hyperscaler_price_sar_per_hour: 28,
+    tags: ['image-gen', 'diffusion', 'sdxl', 'creative', 'art', '1024px'],
+    difficulty: 'easy',
+    is_arabic: false,
+    sort_order: 19,
+  },
+  {
+    id: 'stable-diffusion',
+    name: 'Stable Diffusion',
+    description: 'Image generation with Stable Diffusion. Generate high-quality images from text prompts.',
+    icon: '🎨',
+    category: 'Image',
+    min_vram_gb: 4,
+    estimated_price_sar_per_hour: 12,
+    hyperscaler_price_sar_per_hour: 22,
+    tags: ['image-gen', 'diffusion', 'creative', 'art'],
+    difficulty: 'easy',
+    is_arabic: false,
+    sort_order: 20,
+  },
+]
 
 const CATEGORIES: { id: TemplateCategory | 'all'; label: string; emoji: string }[] = [
   { id: 'all',       label: 'All Templates', emoji: '🗂️' },
@@ -209,86 +402,47 @@ function deriveCategory(id: string, tags: string[]): TemplateCategory {
   return 'LLM'
 }
 
-function estimateHyperscalerPriceSarHr(template: Pick<Template, 'min_vram_gb' | 'category' | 'is_arabic'>): number {
-  if (template.is_arabic) return 25
-  if (template.category === 'Training') return template.min_vram_gb >= 24 ? 60 : 35
-  if (template.category === 'Image') return 28
-  if (template.min_vram_gb >= 80) return 150
-  if (template.min_vram_gb >= 40) return 110
-  if (template.min_vram_gb >= 24) return 40
-  return HYPERSCALER_SAR_PER_HR_FALLBACK
-}
-
 function getSavingsPct(t: Template): number | null {
   const ref = t.hyperscaler_price_sar_per_hour ?? HYPERSCALER_SAR_PER_HR_FALLBACK
   if (t.estimated_price_sar_per_hour >= ref) return null
   return Math.round((1 - t.estimated_price_sar_per_hour / ref) * 100)
 }
 
+function deriveTemplateIntentDefaults(template: Template): { mode: RenterJobType; model: string } {
+  const lowerId = template.id.toLowerCase()
+  if (template.category === 'Image' || lowerId.includes('sdxl') || lowerId.includes('stable-diffusion')) {
+    return { mode: 'image_generation', model: 'CompVis/stable-diffusion-v1-4' }
+  }
+  if (lowerId.includes('vllm')) {
+    return { mode: 'vllm_serve', model: 'mistralai/Mistral-7B-Instruct-v0.2' }
+  }
+  if (template.is_arabic || lowerId.includes('arabic') || lowerId.includes('qwen') || lowerId.includes('jais') || lowerId.includes('allam')) {
+    return { mode: 'llm_inference', model: 'Qwen/Qwen2-7B-Instruct' }
+  }
+  return { mode: 'llm_inference', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' }
+}
+
 // ── Deploy Modal (inline — mirrors DCP-857 modal pattern) ─────────────────────
 interface DeployModalState {
   template: Template | null
-  step: 'configure' | 'review' | 'status'
-  durationMinutes: number
   loading: boolean
   error: string
-  troubleshoot: string[]
   jobId: string | null
 }
 
-function resolveDeployError(status: number, copy: CopyPack): { message: string; troubleshooting: string[] } {
-  if (status === 503) {
-    return {
-      message: copy.noProvider,
-      troubleshooting: ['Check back in 1-2 minutes.', 'Try a lower VRAM template.', 'Use the waitlist link for notification.'],
-    }
-  }
-  if (status === 402) {
-    return {
-      message: copy.insufficientBalance,
-      troubleshooting: ['Top up your renter wallet.', 'Try a lower-cost template.', 'Reduce duration and retry.'],
-    }
-  }
-  if (status === 401 || status === 403) {
-    return {
-      message: copy.authRequired,
-      troubleshooting: ['Sign in again.', 'Regenerate renter API key if needed.', 'Retry deployment from this catalog.'],
-    }
-  }
-  if (status === 429) {
-    return {
-      message: copy.rateLimited,
-      troubleshooting: ['Wait 60 seconds before retrying.', 'Avoid repeated rapid deploy clicks.', 'If persistent, contact support with timestamp.'],
-    }
-  }
-  if (status >= 500) {
-    return {
-      message: copy.serverError,
-      troubleshooting: ['Retry in a minute.', 'Use another template category.', 'Open renter jobs page to verify platform status.'],
-    }
-  }
-  return {
-    message: copy.genericError,
-    troubleshooting: ['Retry once.', 'Refresh the page if issue persists.', 'Collect browser console logs for support.'],
-  }
-}
-
-function DeployModal({ state, copy, isRTL, onClose, onChange, onConfirm }: {
+function DeployModal({ state, onClose, onConfirm }: {
   state: DeployModalState
-  copy: CopyPack
-  isRTL: boolean
   onClose: () => void
-  onChange: (patch: Partial<DeployModalState>) => void
   onConfirm: () => void
 }) {
   const router = useRouter()
   const t = state.template!
   const savingsPct = getSavingsPct(t)
-  const estCostSar = ((t.estimated_price_sar_per_hour * state.durationMinutes) / 60).toFixed(2)
-  const stepIndex = state.step === 'configure' ? 1 : state.step === 'review' ? 2 : 3
+  const isInsufficientBalance = state.error.toLowerCase().includes('insufficient balance')
+  const isNoProvider = state.error.toLowerCase().includes('no provider')
 
   // Auto-redirect after successful submit
-  if (state.step === 'status' && state.jobId && state.jobId !== 'submitted') {
+  if (state.jobId && state.jobId !== 'submitted') {
     setTimeout(() => router.push(`/renter/jobs/${state.jobId}`), 1200)
   }
 
@@ -299,7 +453,7 @@ function DeployModal({ state, copy, isRTL, onClose, onChange, onConfirm }: {
       aria-modal="true"
       aria-labelledby="tmpl-deploy-title"
     >
-      <div className="card w-full max-w-xl p-6 space-y-5" dir={isRTL ? 'rtl' : 'ltr'}>
+      <div className="card w-full max-w-md p-6 space-y-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -308,28 +462,22 @@ function DeployModal({ state, copy, isRTL, onClose, onChange, onConfirm }: {
             </div>
             <p className="text-xs text-dc1-text-muted">{t.category} • {t.min_vram_gb} GB VRAM min</p>
           </div>
-          <button onClick={onClose} className="text-dc1-text-muted hover:text-dc1-text-primary p-1" aria-label={copy.close}>
+          <button onClick={onClose} className="text-dc1-text-muted hover:text-dc1-text-primary p-1" aria-label="Close">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
-          <span className={`px-2 py-1 rounded border ${stepIndex >= 1 ? 'bg-dc1-amber/10 border-dc1-amber/30 text-dc1-amber' : 'border-dc1-border text-dc1-text-muted'}`}>1. {copy.configure}</span>
-          <span className={`px-2 py-1 rounded border ${stepIndex >= 2 ? 'bg-dc1-amber/10 border-dc1-amber/30 text-dc1-amber' : 'border-dc1-border text-dc1-text-muted'}`}>2. {copy.review}</span>
-          <span className={`px-2 py-1 rounded border ${stepIndex >= 3 ? 'bg-dc1-amber/10 border-dc1-amber/30 text-dc1-amber' : 'border-dc1-border text-dc1-text-muted'}`}>3. {copy.status}</span>
-        </div>
-
         {/* Pricing */}
         <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-xs grid grid-cols-2 gap-3">
           <div>
-            <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">{copy.dcpPrice}</p>
+            <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">DCP Price</p>
             <p className="font-bold text-dc1-amber text-base">{t.estimated_price_sar_per_hour.toFixed(0)} <span className="text-xs font-normal text-dc1-text-muted">SAR/hr</span></p>
           </div>
           {t.hyperscaler_price_sar_per_hour && (
             <div>
-              <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">{copy.vsHyperscalers}</p>
+              <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">vs RunPod/AWS</p>
               <p className="font-semibold text-dc1-text-secondary line-through text-sm">{t.hyperscaler_price_sar_per_hour} SAR/hr</p>
             </div>
           )}
@@ -338,8 +486,8 @@ function DeployModal({ state, copy, isRTL, onClose, onChange, onConfirm }: {
         {/* Savings badge */}
         {savingsPct !== null && savingsPct > 0 && (
           <div className="bg-status-success/5 border border-status-success/20 rounded-lg px-4 py-2.5 flex items-center justify-between text-sm">
-            <span className="text-dc1-text-muted">{copy.vsHyperscalers}</span>
-            <span className="text-status-success font-bold">{copy.save} {savingsPct}%</span>
+            <span className="text-dc1-text-muted">vs hyperscalers</span>
+            <span className="text-status-success font-bold">You save {savingsPct}%</span>
           </div>
         )}
 
@@ -349,100 +497,60 @@ function DeployModal({ state, copy, isRTL, onClose, onChange, onConfirm }: {
           </div>
         )}
 
-        {state.step === 'configure' && (
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-dc1-text-primary">
-              {copy.duration}
-              <select
-                value={state.durationMinutes}
-                onChange={(e) => onChange({ durationMinutes: Number(e.target.value), error: '', troubleshoot: [] })}
-                className="input mt-1 min-h-[44px] w-full"
-              >
-                <option value={15}>15 min</option>
-                <option value={30}>30 min</option>
-                <option value={60}>60 min</option>
-                <option value={120}>120 min</option>
-              </select>
-            </label>
-            <p className="text-xs text-dc1-text-secondary">{copy.durationHelp}</p>
-          </div>
-        )}
-
-        {state.step === 'review' && (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l1 p-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-dc1-text-muted">{copy.estimatedCost}</span>
-                <span className="font-bold text-dc1-amber">{estCostSar} SAR</span>
-              </div>
-            </div>
-            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l1 p-3">
-              <p className="text-xs text-dc1-text-muted mb-2">{copy.templatePreview}</p>
-              <pre dir="ltr" className="text-[11px] text-dc1-text-secondary bg-dc1-surface-l2 rounded p-2 overflow-x-auto">{JSON.stringify({ template_id: t.id, duration_minutes: state.durationMinutes }, null, 2)}</pre>
-            </div>
-          </div>
-        )}
+        <p className="text-sm text-dc1-text-secondary">
+          Your job will be queued and assigned to an available GPU provider.
+          Billing starts when execution begins.
+        </p>
 
         {/* Error states */}
-        {state.error && (
+        {isNoProvider && (
+          <div className="bg-dc1-amber/5 border border-dc1-amber/30 rounded-lg px-4 py-3 space-y-1">
+            <p className="text-sm font-semibold text-dc1-amber">No providers available</p>
+            <p className="text-xs text-dc1-text-secondary">Join the waitlist to be notified when capacity opens.</p>
+            <Link href={`/renter/waitlist?template=${encodeURIComponent(t.id)}`} className="inline-block btn btn-outline btn-sm text-dc1-amber border-dc1-amber/40">Join Waitlist →</Link>
+          </div>
+        )}
+        {isInsufficientBalance && (
+          <div className="bg-status-error/5 border border-status-error/30 rounded-lg px-4 py-3 space-y-1">
+            <p className="text-sm font-semibold text-status-error">Insufficient balance</p>
+            <Link href="/renter/billing" className="inline-block btn btn-outline btn-sm text-status-error border-status-error/40">Add Credits →</Link>
+          </div>
+        )}
+        {state.error && !isNoProvider && !isInsufficientBalance && (
           <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
-            <p className="font-semibold mb-1">{state.error}</p>
-            {state.troubleshoot.length > 0 && (
-              <div className="text-xs text-dc1-text-secondary">
-                <p className="mb-1">{copy.troubleshooting}</p>
-                <ul className="list-disc ps-5 space-y-0.5">
-                  {state.troubleshoot.map((hint) => <li key={hint}>{hint}</li>)}
-                </ul>
-              </div>
-            )}
-            {state.error === copy.noProvider && (
-              <Link href={`/renter/waitlist?template=${encodeURIComponent(t.id)}`} className="inline-block mt-2 btn btn-outline btn-sm text-dc1-amber border-dc1-amber/40">{copy.noProviderAction}</Link>
-            )}
-            {state.error === copy.insufficientBalance && (
-              <Link href="/renter/billing" className="inline-block mt-2 btn btn-outline btn-sm text-status-error border-status-error/40">{copy.addCredits}</Link>
-            )}
+            {state.error}
           </div>
         )}
 
         {/* Success */}
-        {state.step === 'status' && state.jobId && (
+        {state.jobId && (
           <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 space-y-2">
             <div className="flex items-center gap-2 text-sm text-status-success font-semibold">
               <span className="animate-spin h-4 w-4 border-2 border-status-success border-t-transparent rounded-full" />
-              {copy.successSubmitted} {copy.successRedirect}
+              Job submitted — redirecting to live status…
             </div>
             {state.jobId !== 'submitted' && (
-              <Link href={`/renter/jobs/${state.jobId}`} className="text-xs text-status-success underline">{copy.viewLiveStatus}</Link>
+              <Link href={`/renter/jobs/${state.jobId}`} className="text-xs text-status-success underline">View Live Status →</Link>
             )}
           </div>
         )}
 
-        {state.step === 'configure' && (
+        {!state.jobId && (
           <div className="flex gap-3 justify-end">
-            <button onClick={onClose} disabled={state.loading} className="btn btn-secondary min-h-[44px] px-4">{copy.cancel}</button>
-            <button onClick={() => onChange({ step: 'review' })} disabled={state.loading} className="btn btn-primary min-h-[44px] px-5">
-              {copy.reviewAndDeploy}
-            </button>
-          </div>
-        )}
-
-        {state.step === 'review' && (
-          <div className="flex gap-3 justify-end">
-            <button onClick={() => onChange({ step: 'configure' })} disabled={state.loading} className="btn btn-secondary min-h-[44px] px-4">{copy.configure}</button>
+            <button onClick={onClose} disabled={state.loading} className="btn btn-secondary min-h-[44px] px-4">Cancel</button>
             <button onClick={onConfirm} disabled={state.loading} className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2">
               {state.loading && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />}
-              {state.loading ? copy.submitting : copy.deployNow}
+              {state.loading ? 'Submitting…' : 'Deploy Now'}
             </button>
           </div>
         )}
-
-        {state.step === 'status' && state.jobId && (
+        {state.jobId && (
           <div className="flex gap-3 justify-end">
-            <button onClick={onClose} className="btn btn-secondary min-h-[44px] px-4">{copy.close}</button>
+            <button onClick={onClose} className="btn btn-secondary min-h-[44px] px-4">Close</button>
             {state.jobId !== 'submitted' ? (
-              <Link href={`/renter/jobs/${state.jobId}`} className="btn btn-primary min-h-[44px] px-5">{copy.viewLiveStatus}</Link>
+              <Link href={`/renter/jobs/${state.jobId}`} className="btn btn-primary min-h-[44px] px-5">View Live Status →</Link>
             ) : (
-              <Link href="/renter/jobs" className="btn btn-primary min-h-[44px] px-5">{copy.viewJobs}</Link>
+              <Link href="/renter/jobs" className="btn btn-primary min-h-[44px] px-5">View Jobs →</Link>
             )}
           </div>
         )}
@@ -452,7 +560,7 @@ function DeployModal({ state, copy, isRTL, onClose, onChange, onConfirm }: {
 }
 
 // ── Template Card ─────────────────────────────────────────────────────────────
-function TemplateCard({ template, copy, onDeploy }: { template: Template; copy: CopyPack; onDeploy: (t: Template) => void }) {
+function TemplateCard({ template, onDeploy }: { template: Template; onDeploy: (t: Template) => void }) {
   const savingsPct = getSavingsPct(template)
 
   return (
@@ -515,7 +623,7 @@ function TemplateCard({ template, copy, onDeploy }: { template: Template; copy: 
         onClick={() => onDeploy(template)}
         className="btn btn-primary w-full text-sm mt-auto min-h-[44px]"
       >
-        {copy.deployTemplate}
+        Launch in Playground
       </button>
     </article>
   )
@@ -542,26 +650,16 @@ function SkeletonCard() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TemplateCatalogPage() {
   const router = useRouter()
-  const { t, language, dir, isRTL } = useLanguage()
-  const copy = UI_COPY[language]
+  const { t } = useLanguage()
 
   const [category, setCategory] = useState<TemplateCategory | 'all'>('all')
   const [search, setSearch] = useState('')
   const [maxVram, setMaxVram] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | 'easy' | 'medium' | 'advanced'>('all')
-  const [deploy, setDeploy] = useState<DeployModalState>({
-    template: null,
-    step: 'configure',
-    durationMinutes: 60,
-    loading: false,
-    error: '',
-    troubleshoot: [],
-    jobId: null,
-  })
-  const [apiTemplates, setApiTemplates] = useState<Template[]>([])
+  const [deploy, setDeploy] = useState<DeployModalState>({ template: null, loading: false, error: '', jobId: null })
+  const [apiTemplates, setApiTemplates] = useState<Template[] | null>(null)
   const [loadingTemplates, setLoadingTemplates] = useState(true)
-  const [templatesError, setTemplatesError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/dc1/templates')
@@ -571,25 +669,17 @@ export default function TemplateCatalogPage() {
         const mapped: Template[] = list.map(raw => {
           const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
           const rawId = String(raw.id ?? '')
-          const lowerId = rawId.toLowerCase()
           const isArabic = tags.some(tag => tag.toLowerCase().includes('arabic')) ||
-            lowerId.includes('arabic') || lowerId.includes('allam') || lowerId.includes('jais')
-          const category = deriveCategory(rawId, tags)
-          const minVram = Number(raw.min_vram_gb ?? 8)
-          const estimatedPrice = Number(raw.estimated_price_sar_per_hour ?? 0)
+            rawId.includes('arabic') || rawId.includes('allam') || rawId.includes('jais')
           return {
             id: rawId,
             name: String(raw.name ?? ''),
             description: String(raw.description ?? ''),
-            icon: String(raw.icon ?? ''),
-            category,
-            min_vram_gb: minVram,
-            estimated_price_sar_per_hour: estimatedPrice,
-            hyperscaler_price_sar_per_hour: estimateHyperscalerPriceSarHr({
-              min_vram_gb: minVram,
-              category,
-              is_arabic: isArabic,
-            }),
+            icon: String(raw.icon ?? '📦'),
+            category: deriveCategory(rawId, tags),
+            min_vram_gb: Number(raw.min_vram_gb ?? 8),
+            estimated_price_sar_per_hour: Number(raw.estimated_price_sar_per_hour ?? 0),
+            hyperscaler_price_sar_per_hour: undefined,
             tags,
             difficulty: (['easy', 'medium', 'advanced'].includes(String(raw.difficulty ?? ''))
               ? String(raw.difficulty) : 'easy') as Template['difficulty'],
@@ -597,16 +687,32 @@ export default function TemplateCatalogPage() {
             sort_order: Number(raw.sort_order ?? 99),
           }
         })
-        setApiTemplates(mapped)
-        setTemplatesError(mapped.length > 0 ? null : 'Template catalog is currently empty.')
+        if (mapped.length > 0) setApiTemplates(mapped)
       })
-      .catch(() => {
-        setTemplatesError('Failed to load template catalog from API.')
-      })
+      .catch(() => { /* fallback to static TEMPLATES */ })
       .finally(() => setLoadingTemplates(false))
   }, [])
 
-  const activeTemplates = apiTemplates
+  const activeTemplates = apiTemplates ?? TEMPLATES
+  const trackTemplateEvent = useCallback((event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return
+    const detail = {
+      event,
+      source_page: 'renter_template_catalog',
+      role_intent: 'renter',
+      surface: 'template_catalog',
+      destination: 'none',
+      step: 'view',
+      ...payload,
+    }
+    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+    const win = window as typeof window & {
+      dataLayer?: Array<Record<string, unknown>>
+      gtag?: (...args: unknown[]) => void
+    }
+    if (Array.isArray(win.dataLayer)) win.dataLayer.push(detail)
+    if (typeof win.gtag === 'function') win.gtag('event', event, detail)
+  }, [])
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -642,111 +748,73 @@ export default function TemplateCatalogPage() {
 
   const arabicCount = activeTemplates.filter(tt => tt.is_arabic).length
 
-  const trackTemplateEvent = (event: string, payload: Record<string, unknown> = {}) => {
-    if (typeof window === 'undefined') return
-    const detail = {
-      event,
-      source_page: 'renter_template_catalog',
-      role_intent: 'renter',
-      surface: 'template_catalog',
-      locale: language,
-      ...payload,
-    }
-    window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
-  }
-
-  useEffect(() => {
-    trackTemplateEvent('template_catalog_viewed', {
-      total_templates: activeTemplates.length,
-      arabic_templates: arabicCount,
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTemplates.length, arabicCount, language])
-
   const openDeploy = (tmpl: Template) => {
+    const defaults = deriveTemplateIntentDefaults(tmpl)
+    const intent: RenterAuthIntent = {
+      template: tmpl.id,
+      model: defaults.model,
+      mode: defaults.mode,
+      jobType: defaults.mode,
+      source: 'renter_template_catalog',
+    }
+    const prefilledPlaygroundPath = buildRenterPlaygroundPath(intent)
     const key = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key')
     if (!key) {
-      router.push('/login?role=renter&reason=missing_credentials')
+      setPendingRenterAuthIntent(intent)
+      trackTemplateEvent('template_deploy_auth_redirect', {
+        surface: 'template_card',
+        destination: '/login',
+        step: 'auth_required',
+        template: tmpl.id,
+        model: defaults.model,
+        mode: defaults.mode,
+      })
+      router.push(buildRenterLoginRedirect('/renter/playground', 'renter_template_catalog'))
       return
     }
-    trackTemplateEvent('template_deploy_config_opened', {
-      template_id: tmpl.id,
-      category: tmpl.category,
-      language,
+    trackTemplateEvent('template_prefill_playground_clicked', {
+      surface: 'template_card',
+      destination: prefilledPlaygroundPath,
+      step: 'prefill_playground',
+      template: tmpl.id,
+      model: defaults.model,
+      mode: defaults.mode,
+      auth_state: 'signed_in',
     })
-    setDeploy({
-      template: tmpl,
-      step: 'configure',
-      durationMinutes: 60,
-      loading: false,
-      error: '',
-      troubleshoot: [],
-      jobId: null,
-    })
+    router.push(prefilledPlaygroundPath)
   }
 
-  const closeDeploy = () => setDeploy({
-    template: null,
-    step: 'configure',
-    durationMinutes: 60,
-    loading: false,
-    error: '',
-    troubleshoot: [],
-    jobId: null,
-  })
+  const closeDeploy = () => setDeploy({ template: null, loading: false, error: '', jobId: null })
 
   const confirmDeploy = async () => {
     const tmpl = deploy.template
     if (!tmpl) return
     const apiKey = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key') || ''
-    trackTemplateEvent('template_deploy_submitted', {
-      template_id: tmpl.id,
-      duration_minutes: deploy.durationMinutes,
-      locale: language,
-    })
-    setDeploy(d => ({ ...d, loading: true, error: '', troubleshoot: [] }))
+    setDeploy(d => ({ ...d, loading: true, error: '' }))
     try {
       const res = await fetch(`/api/dc1/templates/${encodeURIComponent(tmpl.id)}/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
-        body: JSON.stringify({ duration_minutes: deploy.durationMinutes }),
+        body: JSON.stringify({ duration_minutes: 60 }),
       })
+      if (res.status === 503) {
+        setDeploy(d => ({ ...d, loading: false, error: 'No GPU provider available right now. Please try again shortly.' }))
+        return
+      }
+      if (res.status === 402) {
+        setDeploy(d => ({ ...d, loading: false, error: 'Insufficient balance. Please top up your wallet before deploying.' }))
+        return
+      }
       if (!res.ok) {
-        const fallback = resolveDeployError(res.status, copy)
         const err = await res.json().catch(() => ({}))
-        trackTemplateEvent('template_deploy_failed', {
-          template_id: tmpl.id,
-          status_code: res.status,
-          locale: language,
-        })
-        setDeploy(d => ({
-          ...d,
-          loading: false,
-          error: typeof err.error === 'string' && err.error.trim().length > 0 ? err.error : fallback.message,
-          troubleshoot: fallback.troubleshooting,
-        }))
+        setDeploy(d => ({ ...d, loading: false, error: err.error || 'Failed to submit job. Please try again.' }))
         return
       }
       const data = await res.json()
       const jobId = data.jobId || data.job_id || data.id || 'submitted'
-      trackTemplateEvent('template_deploy_succeeded', {
-        template_id: tmpl.id,
-        job_id: jobId,
-        locale: language,
-      })
-      setDeploy(d => ({ ...d, loading: false, step: 'status', jobId }))
+      setDeploy(d => ({ ...d, loading: false, jobId }))
     } catch {
-      trackTemplateEvent('template_deploy_failed', {
-        template_id: tmpl.id,
-        status_code: 'network_error',
-        locale: language,
-      })
-      setDeploy(d => ({
-        ...d,
-        loading: false,
-        error: copy.networkError,
-        troubleshoot: ['Check internet connectivity.', 'Refresh and retry deployment.', 'Try again in 1 minute if API is under load.'],
-      }))
+      setDeploy(d => ({ ...d, loading: false, error: 'Network error. Please try again.' }))
     }
   }
 
@@ -762,17 +830,17 @@ export default function TemplateCatalogPage() {
 
   return (
     <DashboardLayout navItems={navItems} role="renter">
-      <div className="space-y-6" dir={dir}>
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-dc1-text-primary">{copy.title}</h1>
+            <h1 className="text-2xl font-bold text-dc1-text-primary">GPU Template Catalog</h1>
             <p className="text-sm text-dc1-text-secondary mt-1">
-              {copy.subtitle}
+              {activeTemplates.length} ready-to-deploy templates — LLMs, fine-tuning, embeddings, image generation.
             </p>
           </div>
           <Link href="/renter/marketplace" className="btn btn-secondary btn-sm self-start sm:self-auto">
-            {isRTL ? '→ ' : '← '}{copy.back}
+            ← Back to Marketplace
           </Link>
         </div>
 
@@ -780,15 +848,11 @@ export default function TemplateCatalogPage() {
         <div className="flex flex-wrap gap-3 text-sm">
           <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
             <span className="text-dc1-amber font-bold">{activeTemplates.length}</span>
-            <span className="text-dc1-text-secondary">{copy.templateCount}</span>
+            <span className="text-dc1-text-secondary">templates</span>
           </div>
           <div className="flex items-center gap-2 bg-dc1-amber/10 rounded-lg px-3 py-2 border border-dc1-amber/20">
             <span className="text-dc1-amber font-bold">🌙 {arabicCount}</span>
-            <span className="text-dc1-amber font-medium">{copy.arabicCapable}</span>
-          </div>
-          <div className="flex items-center gap-2 bg-status-info/10 rounded-lg px-3 py-2 border border-status-info/30">
-            <span className="text-status-info font-bold">↔</span>
-            <span className="text-status-info font-medium">{copy.languageBadge}</span>
+            <span className="text-dc1-amber font-medium">Arabic-capable</span>
           </div>
           <div className="flex items-center gap-2 bg-status-success/10 rounded-lg px-3 py-2 border border-status-success/20">
             <span className="text-status-success font-bold">Save 35–65%</span>
@@ -813,7 +877,7 @@ export default function TemplateCatalogPage() {
             onClick={() => setCategory('Arabic AI')}
             className="btn btn-primary shrink-0 text-sm"
           >
-            {copy.browseArabic}
+            Browse Arabic AI →
           </button>
         </div>
 
@@ -830,7 +894,7 @@ export default function TemplateCatalogPage() {
               }`}
             >
               <span>{cat.emoji}</span>
-              {getCategoryLabel(cat.id, language)}
+              {cat.label}
             </button>
           ))}
         </div>
@@ -884,11 +948,11 @@ export default function TemplateCatalogPage() {
           {/* Results count + clear */}
           <div className="ms-auto flex items-center gap-3">
             <span className="text-xs text-dc1-text-muted whitespace-nowrap">
-              {loadingTemplates ? copy.filtersLoading : copy.filtersSummary(filtered.length, activeTemplates.length)}
+              {loadingTemplates ? 'Loading…' : `${filtered.length} of ${activeTemplates.length} templates`}
             </span>
             {hasFilters && (
               <button onClick={clearFilters} className="text-xs text-dc1-amber hover:underline">
-                {copy.clearFilters}
+                Clear filters
               </button>
             )}
           </div>
@@ -899,22 +963,16 @@ export default function TemplateCatalogPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
           </div>
-        ) : activeTemplates.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-2xl mb-3">⚠️</p>
-            <p className="text-dc1-text-secondary mb-1">{templatesError ?? 'Template catalog unavailable.'}</p>
-            <button onClick={() => window.location.reload()} className="btn btn-outline btn-sm mt-3">Retry</button>
-          </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-2xl mb-3">🔍</p>
-            <p className="text-dc1-text-secondary mb-1">{copy.noFilters}</p>
-            <button onClick={clearFilters} className="btn btn-outline btn-sm mt-3">{copy.clearFilters}</button>
+            <p className="text-dc1-text-secondary mb-1">No templates match your filters.</p>
+            <button onClick={clearFilters} className="btn btn-outline btn-sm mt-3">Clear filters</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {filtered.map(tmpl => (
-              <TemplateCard key={tmpl.id} template={tmpl} copy={copy} onDeploy={openDeploy} />
+              <TemplateCard key={tmpl.id} template={tmpl} onDeploy={openDeploy} />
             ))}
           </div>
         )}
@@ -926,16 +984,7 @@ export default function TemplateCatalogPage() {
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <Link href="/renter/marketplace" className="btn btn-secondary btn-sm">Browse Providers</Link>
-            <button
-              onClick={() => {
-                const customContainer = activeTemplates.find(t => t.id === 'custom-container')
-                const fallback = activeTemplates[0]
-                if (customContainer) openDeploy(customContainer)
-                else if (fallback) openDeploy(fallback)
-              }}
-              disabled={activeTemplates.length === 0}
-              className="btn btn-outline btn-sm"
-            >
+            <button onClick={() => openDeploy(activeTemplates.find(t => t.id === 'custom-container') ?? activeTemplates[0])} className="btn btn-outline btn-sm">
               📦 Custom Container
             </button>
           </div>
@@ -944,14 +993,7 @@ export default function TemplateCatalogPage() {
 
       {/* Deploy modal */}
       {deploy.template && (
-        <DeployModal
-          state={deploy}
-          copy={copy}
-          isRTL={isRTL}
-          onClose={closeDeploy}
-          onChange={(patch) => setDeploy((prev) => ({ ...prev, ...patch }))}
-          onConfirm={confirmDeploy}
-        />
+        <DeployModal state={deploy} onClose={closeDeploy} onConfirm={confirmDeploy} />
       )}
     </DashboardLayout>
   )
