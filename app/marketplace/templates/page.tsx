@@ -10,6 +10,15 @@ import { useLanguage, type Language } from '../../lib/i18n'
 const API_BASE = '/api/dc1'
 
 type CategoryKey = 'all' | 'llm' | 'embedding' | 'image' | 'training' | 'notebook'
+type DeployContractState =
+  | 'PUBLIC_NO_AUTH'
+  | 'RENTER_READY'
+  | 'SUBMITTING'
+  | 'AUTH_EXPIRED'
+  | 'INSUFFICIENT_BALANCE'
+  | 'NO_PROVIDER'
+  | 'RATE_LIMITED'
+  | 'SUCCESS_SUBMITTED'
 
 interface DockerTemplate {
   id: string
@@ -36,6 +45,13 @@ interface DockerTemplate {
     job_type?: string
     params?: Record<string, unknown>
   }
+}
+
+interface DeployInteractionState {
+  template: DockerTemplate | null
+  state: DeployContractState
+  jobId: string | null
+  httpStatus: number | null
 }
 
 const VRAM_SAVINGS_TIERS: { minVram: number; savingsPct: number }[] = [
@@ -166,6 +182,93 @@ const COPY = {
     arabicTag: 'عربي',
   },
 } as const
+
+const DEPLOY_STATE_COPY: Record<Language, Record<DeployContractState, { title: string; body: string; tone: 'neutral' | 'warning' | 'error' | 'success' }>> = {
+  en: {
+    PUBLIC_NO_AUTH: {
+      title: 'Sign in to deploy this template',
+      body: 'Continue with renter login, then deploy immediately with this template pre-selected.',
+      tone: 'neutral',
+    },
+    RENTER_READY: {
+      title: 'Ready to submit this deployment',
+      body: 'DCP will assign an available GPU provider and start billing when execution begins.',
+      tone: 'neutral',
+    },
+    SUBMITTING: {
+      title: 'Submitting deployment request',
+      body: 'Hold on while we reserve capacity and create your job.',
+      tone: 'neutral',
+    },
+    AUTH_EXPIRED: {
+      title: 'Session expired',
+      body: 'Your renter key is missing or inactive. Sign in again to continue.',
+      tone: 'warning',
+    },
+    INSUFFICIENT_BALANCE: {
+      title: 'Insufficient balance',
+      body: 'Top up renter credits, then retry the same template deploy.',
+      tone: 'error',
+    },
+    NO_PROVIDER: {
+      title: 'No compatible provider online',
+      body: 'No active GPU currently matches this template. Retry shortly.',
+      tone: 'warning',
+    },
+    RATE_LIMITED: {
+      title: 'Deploy queue is busy',
+      body: 'Request throttled or temporarily unavailable. Retry in a few seconds.',
+      tone: 'warning',
+    },
+    SUCCESS_SUBMITTED: {
+      title: 'Deployment submitted',
+      body: 'Your job was created. Continue to the OpenRouter 60s quickstart for the first API call path.',
+      tone: 'success',
+    },
+  },
+  ar: {
+    PUBLIC_NO_AUTH: {
+      title: 'سجّل الدخول لنشر هذا القالب',
+      body: 'أكمل تسجيل دخول المستأجر ثم انشر فوراً مع تحديد القالب مسبقاً.',
+      tone: 'neutral',
+    },
+    RENTER_READY: {
+      title: 'جاهز لإرسال النشر',
+      body: 'ستقوم DCP بتعيين مزوّد GPU متاح وتبدأ الفوترة عند بدء التنفيذ.',
+      tone: 'neutral',
+    },
+    SUBMITTING: {
+      title: 'جارٍ إرسال طلب النشر',
+      body: 'انتظر قليلاً بينما نحجز السعة وننشئ المهمة.',
+      tone: 'neutral',
+    },
+    AUTH_EXPIRED: {
+      title: 'انتهت الجلسة',
+      body: 'مفتاح المستأجر مفقود أو غير نشط. سجّل الدخول مجدداً للمتابعة.',
+      tone: 'warning',
+    },
+    INSUFFICIENT_BALANCE: {
+      title: 'الرصيد غير كافٍ',
+      body: 'اشحن رصيد المستأجر ثم أعد محاولة نشر القالب نفسه.',
+      tone: 'error',
+    },
+    NO_PROVIDER: {
+      title: 'لا يوجد مزوّد متوافق حالياً',
+      body: 'لا يوجد مزوّد GPU نشط يطابق هذا القالب الآن. أعد المحاولة بعد قليل.',
+      tone: 'warning',
+    },
+    RATE_LIMITED: {
+      title: 'طابور النشر مزدحم',
+      body: 'تم تقييد الطلب أو الخدمة مزدحمة مؤقتاً. أعد المحاولة بعد ثوانٍ.',
+      tone: 'warning',
+    },
+    SUCCESS_SUBMITTED: {
+      title: 'تم إرسال النشر',
+      body: 'تم إنشاء المهمة. انتقل إلى دليل OpenRouter خلال 60 ثانية لمسار أول استدعاء API.',
+      tone: 'success',
+    },
+  },
+}
 
 function getVramSavings(vramGb: number | undefined): { savingsPct: number } {
   const vram = vramGb ?? 0
@@ -373,6 +476,83 @@ function TemplateCard({
   )
 }
 
+function DeployContractModal({
+  language,
+  flow,
+  onClose,
+  onPrimaryAction,
+  onSecondaryAction,
+}: {
+  language: Language
+  flow: DeployInteractionState
+  onClose: () => void
+  onPrimaryAction: () => void
+  onSecondaryAction: () => void
+}) {
+  if (!flow.template) return null
+  const stateCopy = DEPLOY_STATE_COPY[language][flow.state]
+  const isLoading = flow.state === 'SUBMITTING'
+  const toneClass =
+    stateCopy.tone === 'success'
+      ? 'border-status-success/30 bg-status-success/10 text-status-success'
+      : stateCopy.tone === 'error'
+      ? 'border-status-error/30 bg-status-error/10 text-status-error'
+      : stateCopy.tone === 'warning'
+      ? 'border-dc1-amber/30 bg-dc1-amber/10 text-dc1-amber'
+      : 'border-dc1-border bg-dc1-surface-l1 text-dc1-text-primary'
+
+  const primaryLabel =
+    flow.state === 'PUBLIC_NO_AUTH' || flow.state === 'AUTH_EXPIRED'
+      ? (language === 'ar' ? 'تسجيل الدخول' : 'Sign In')
+      : flow.state === 'SUCCESS_SUBMITTED'
+      ? (language === 'ar' ? 'دليل OpenRouter (60 ثانية)' : 'OpenRouter 60s Quickstart')
+      : flow.state === 'INSUFFICIENT_BALANCE'
+      ? (language === 'ar' ? 'إضافة رصيد' : 'Add Credits')
+      : flow.state === 'NO_PROVIDER' || flow.state === 'RATE_LIMITED'
+      ? (language === 'ar' ? 'إعادة المحاولة' : 'Retry Deploy')
+      : (language === 'ar' ? 'نشر الآن' : 'Deploy Now')
+
+  const secondaryLabel =
+    flow.state === 'SUCCESS_SUBMITTED'
+      ? (language === 'ar' ? 'عرض حالة المهمة' : 'View Job Status')
+      : (language === 'ar' ? 'إغلاق' : 'Close')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true">
+      <div className="card w-full max-w-lg p-6 space-y-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs text-dc1-text-muted">{flow.template.name}</p>
+            <h2 className="text-lg font-bold text-dc1-text-primary mt-1">{stateCopy.title}</h2>
+          </div>
+          <button onClick={onClose} className="text-dc1-text-muted hover:text-dc1-text-primary p-1" aria-label="Close">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className={`rounded-lg border px-4 py-3 text-sm ${toneClass}`}>
+          <p>{stateCopy.body}</p>
+          {flow.httpStatus ? (
+            <p className="mt-2 text-xs opacity-80">{language === 'ar' ? 'رمز الاستجابة' : 'HTTP status'}: {flow.httpStatus}</p>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+          <button onClick={onSecondaryAction} className="btn btn-secondary min-h-[44px] px-4">
+            {secondaryLabel}
+          </button>
+          <button onClick={onPrimaryAction} disabled={isLoading} className="btn btn-primary min-h-[44px] px-5 flex items-center justify-center gap-2">
+            {isLoading ? <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+            {isLoading ? (language === 'ar' ? 'جارٍ الإرسال…' : 'Submitting...') : primaryLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MarketplaceTemplatesPage() {
   const router = useRouter()
   const { language, dir } = useLanguage()
@@ -386,6 +566,12 @@ export default function MarketplaceTemplatesPage() {
   const [filterVram, setFilterVram] = useState('')
   const [filterArabic, setFilterArabic] = useState(false)
   const [filterTier, setFilterTier] = useState<'all' | 'instant' | 'cached' | 'on-demand'>('all')
+  const [deployFlow, setDeployFlow] = useState<DeployInteractionState>({
+    template: null,
+    state: 'RENTER_READY',
+    jobId: null,
+    httpStatus: null,
+  })
 
   const categories = useMemo(
     () => (['all', 'llm', 'embedding', 'image', 'training', 'notebook'] as CategoryKey[]).map((key) => ({
@@ -473,6 +659,8 @@ export default function MarketplaceTemplatesPage() {
   useEffect(() => {
     if (loading || templates.length === 0) return
     trackTemplateEvent('template_catalog_viewed', {
+      contract: 'dcp_483_template_first_deploy_v1',
+      funnel_step: 'discover',
       total_templates: templates.length,
       arabic_templates: templates.filter((template) => (template.tags ?? []).some((tag) => tag.toLowerCase().includes('arabic'))).length,
     })
@@ -501,45 +689,175 @@ export default function MarketplaceTemplatesPage() {
     })
   }, [templates, activeCategory, filterVram, filterArabic, filterTier, search])
 
-  const createQuickstartHref = useCallback((template: DockerTemplate) => {
-    const model = resolveTemplateModel(template)
-    const params = new URLSearchParams({
-      template: template.id,
-      source: 'public_marketplace_templates',
-    })
-    if (model) params.set('model', model)
-
-    const quickstartPath = `/renter/marketplace/templates?${params.toString()}`
-
-    const hasRenterSession = typeof window !== 'undefined' && (
-      Boolean(window.localStorage.getItem('dc1_renter_key')) ||
-      Boolean(window.localStorage.getItem('dc1_api_key'))
-    )
-
-    if (hasRenterSession) return quickstartPath
-    const loginParams = new URLSearchParams({
-      role: 'renter',
-      redirect: quickstartPath,
-      source: 'public_marketplace_templates',
-    })
-    return `/login?${loginParams.toString()}`
+  const getRenterApiKey = useCallback(() => {
+    if (typeof window === 'undefined') return ''
+    return window.localStorage.getItem('dc1_renter_key') || window.localStorage.getItem('dc1_api_key') || ''
   }, [])
 
-  const handleDeployClick = useCallback((template: DockerTemplate) => {
-    const destination = createQuickstartHref(template)
-    trackTemplateEvent('template_deploy_clicked', {
+  const openDeployState = useCallback((template: DockerTemplate) => {
+    const hasKey = Boolean(getRenterApiKey())
+    const state: DeployContractState = hasKey ? 'RENTER_READY' : 'PUBLIC_NO_AUTH'
+    setDeployFlow({
+      template,
+      state,
+      jobId: null,
+      httpStatus: null,
+    })
+    trackTemplateEvent('template_select_clicked', {
+      contract: 'dcp_483_template_first_deploy_v1',
+      funnel_step: 'select',
       template_id: template.id,
-      destination,
+      cta_state: state,
       has_model_intent: Boolean(resolveTemplateModel(template)),
     })
-    router.push(destination)
-  }, [createQuickstartHref, router, trackTemplateEvent])
+  }, [getRenterApiKey, trackTemplateEvent])
+
+  const handleDeployClick = useCallback((template: DockerTemplate) => {
+    openDeployState(template)
+  }, [openDeployState])
+
+  const submitTemplateDeploy = useCallback(async () => {
+    const template = deployFlow.template
+    if (!template) return
+
+    const apiKey = getRenterApiKey()
+    if (!apiKey) {
+      setDeployFlow((current) => ({ ...current, state: 'PUBLIC_NO_AUTH', httpStatus: null }))
+      return
+    }
+
+    setDeployFlow((current) => ({ ...current, state: 'SUBMITTING', jobId: null, httpStatus: null }))
+    trackTemplateEvent('template_deploy_requested', {
+      contract: 'dcp_483_template_first_deploy_v1',
+      funnel_step: 'deploy',
+      template_id: template.id,
+      cta_state: 'SUBMITTING',
+    })
+
+    try {
+      const res = await fetch(`/api/dc1/templates/${encodeURIComponent(template.id)}/deploy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-renter-key': apiKey,
+        },
+        body: JSON.stringify({ duration_minutes: 60 }),
+      })
+
+      if (res.status === 201) {
+        const data = await res.json().catch(() => ({}))
+        const jobId = data?.jobId || data?.job_id || data?.id || null
+        setDeployFlow((current) => ({
+          ...current,
+          state: 'SUCCESS_SUBMITTED',
+          jobId,
+          httpStatus: res.status,
+        }))
+        trackTemplateEvent('template_deploy_state_changed', {
+          contract: 'dcp_483_template_first_deploy_v1',
+          funnel_step: 'success',
+          template_id: template.id,
+          cta_state: 'SUCCESS_SUBMITTED',
+          http_status: res.status,
+          job_id: jobId,
+        })
+        return
+      }
+
+      let nextState: DeployContractState = 'RATE_LIMITED'
+      if (res.status === 401 || res.status === 403) nextState = 'AUTH_EXPIRED'
+      else if (res.status === 402) nextState = 'INSUFFICIENT_BALANCE'
+      else if (res.status === 503) nextState = 'NO_PROVIDER'
+      else if (res.status === 429 || res.status === 500) nextState = 'RATE_LIMITED'
+
+      setDeployFlow((current) => ({
+        ...current,
+        state: nextState,
+        httpStatus: res.status,
+      }))
+      trackTemplateEvent('template_deploy_state_changed', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        funnel_step: 'deploy',
+        template_id: template.id,
+        cta_state: nextState,
+        http_status: res.status,
+      })
+    } catch {
+      setDeployFlow((current) => ({
+        ...current,
+        state: 'RATE_LIMITED',
+        httpStatus: 500,
+      }))
+      trackTemplateEvent('template_deploy_state_changed', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        funnel_step: 'deploy',
+        template_id: template.id,
+        cta_state: 'RATE_LIMITED',
+        http_status: 500,
+      })
+    }
+  }, [deployFlow.template, getRenterApiKey, trackTemplateEvent])
+
+  const closeDeployFlow = useCallback(() => {
+    setDeployFlow({ template: null, state: 'RENTER_READY', jobId: null, httpStatus: null })
+  }, [])
+
+  const handleDeployPrimaryAction = useCallback(() => {
+    if (!deployFlow.template) return
+    const template = deployFlow.template
+    if (deployFlow.state === 'PUBLIC_NO_AUTH' || deployFlow.state === 'AUTH_EXPIRED') {
+      const loginParams = new URLSearchParams({
+        role: 'renter',
+        source: 'public_marketplace_templates',
+        redirect: `/marketplace/templates?source=public_marketplace_templates&template=${encodeURIComponent(template.id)}`,
+      })
+      trackTemplateEvent('template_deploy_auth_redirect', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        template_id: template.id,
+        cta_state: deployFlow.state,
+        destination: '/login',
+      })
+      router.push(`/login?${loginParams.toString()}`)
+      return
+    }
+    if (deployFlow.state === 'SUCCESS_SUBMITTED') {
+      const params = new URLSearchParams({
+        source: 'public_marketplace_templates',
+        template: template.id,
+      })
+      if (deployFlow.jobId) params.set('job', deployFlow.jobId)
+      trackTemplateEvent('template_deploy_success_handoff_clicked', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        funnel_step: 'success',
+        template_id: template.id,
+        cta_state: 'SUCCESS_SUBMITTED',
+        destination: '/docs/api/openrouter-60s-quickstart',
+        job_id: deployFlow.jobId,
+      })
+      router.push(`/docs/api/openrouter-60s-quickstart?${params.toString()}`)
+      return
+    }
+    if (deployFlow.state === 'INSUFFICIENT_BALANCE') {
+      router.push('/renter/billing?source=public_marketplace_templates')
+      return
+    }
+    submitTemplateDeploy()
+  }, [deployFlow, router, submitTemplateDeploy, trackTemplateEvent])
+
+  const handleDeploySecondaryAction = useCallback(() => {
+    if (!deployFlow.template) return
+    if (deployFlow.state === 'SUCCESS_SUBMITTED' && deployFlow.jobId) {
+      router.push(`/renter/jobs/${deployFlow.jobId}?source=public_marketplace_templates`)
+      return
+    }
+    closeDeployFlow()
+  }, [closeDeployFlow, deployFlow, router])
 
   const handleCustomDeploy = useCallback(() => {
     const custom = templates.find((template) => template.id === 'custom-container')
     if (!custom) return
-    handleDeployClick(custom)
-  }, [templates, handleDeployClick])
+    openDeployState(custom)
+  }, [templates, openDeployState])
 
   const resetFilters = () => {
     setSearch('')
@@ -708,6 +1026,16 @@ export default function MarketplaceTemplatesPage() {
           </div>
         </section>
       </main>
+
+      {deployFlow.template ? (
+        <DeployContractModal
+          language={language}
+          flow={deployFlow}
+          onClose={closeDeployFlow}
+          onPrimaryAction={handleDeployPrimaryAction}
+          onSecondaryAction={handleDeploySecondaryAction}
+        />
+      ) : null}
 
       <Footer />
     </div>

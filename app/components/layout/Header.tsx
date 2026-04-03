@@ -88,7 +88,7 @@ export default function Header() {
               alt="DCP"
               width={36}
               height={36}
-              className="h-16 w-auto"
+              className="h-20 w-auto"
             />
           </Link>
 

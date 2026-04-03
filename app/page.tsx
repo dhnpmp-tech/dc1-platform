@@ -681,7 +681,7 @@ export default function HomePage() {
         </div>
         <div className="max-w-3xl mx-auto">
           <div className="bg-dc1-void rounded-xl border border-dc1-border p-6 font-mono text-sm overflow-x-auto">
-            <div className="text-dc1-text-muted mb-2 text-xs">// Drop-in replacement for OpenAI</div>
+            <div className="text-dc1-text-muted mb-2 text-xs">{'// Drop-in replacement for OpenAI'}</div>
             <div><span className="text-purple-400">from</span> <span className="text-dc1-amber">openai</span> <span className="text-purple-400">import</span> OpenAI</div>
             <div className="mt-2"><span className="text-blue-400">client</span> = OpenAI(</div>
             <div className="ml-4"><span className="text-green-400">base_url</span>=<span className="text-yellow-300">&quot;https://api.dcp.sa/v1&quot;</span>,</div>

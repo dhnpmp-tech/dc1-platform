@@ -13,6 +13,8 @@
     "providers:export-reactivation": "node src/scripts/export-provider-reactivation-queue.js",
     "verify:v1:latency-gate": "node src/scripts/verify-v1-latency-budget.js",
     "monitor:route-parity": "node src/scripts/run-runtime-route-parity-monitor.js",
+    "monitor:provider-activation": "npm run native:ensure:better-sqlite3 && node src/scripts/run-provider-activation-monitor.js",
+    "monitor:template-capacity": "node src/scripts/run-template-capacity-proof.js",
     "gate:provider-route-parity": "node src/scripts/run-provider-route-parity-guard.js",
     "reconcile:openrouter:metering": "node src/scripts/reconcile-openrouter-metering.js",
     "monitor:v1:reliability-scoreboard": "node src/scripts/generate-v1-reliability-scoreboard.js",
