@@ -125,6 +125,13 @@ function insertProvider(db, { vramGb = 24, heartbeatOffsetMs = -60 * 1000 } = {}
   ).run('TestProvider', `provider-${Date.now()}-${Math.random().toString(36).slice(2)}@test.com`, 'RTX 4090', vramGb, vramGb * 1024, lastHeartbeat);
 }
 
+function insertActiveJobForProvider(db, { providerId, renterId = 1, status = 'running' } = {}) {
+  db.prepare(
+    `INSERT INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at, duration_minutes, cost_halala, created_at)
+     VALUES (?, ?, ?, 'llm-inference', 'meta-llama/Meta-Llama-3-8B-Instruct', ?, ?, 60, 100, ?)`
+  ).run(`job-active-${Date.now()}-${Math.random().toString(36).slice(2)}`, providerId, renterId, status, new Date().toISOString(), new Date().toISOString());
+}
+
 // ── Setup / teardown ─────────────────────────────────────────────────────────
 beforeEach(() => {
   global.__testDb = buildDb();
@@ -339,6 +346,32 @@ describe('POST /api/templates/:id/deploy', () => {
       .set('x-renter-key', RENTER_KEY)
       .send({ duration_minutes: 60 });
     expect(res.status).toBe(503);
+  });
+
+  it('returns deploy capacity snapshot for a template', async () => {
+    insertProvider(global.__testDb, { vramGb: 24 });
+
+    const res = await request(app).get('/api/templates/jais-13b-chat/deploy/check');
+    expect(res.status).toBe(200);
+    expect(res.body.template.id).toBe('jais-13b-chat');
+    expect(res.body.required_vram_gb).toBe(24);
+    expect(res.body.capable_provider_count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('allows deploy when matching provider exists but is currently running work', async () => {
+    insertRenter(global.__testDb, { apiKey: RENTER_KEY, balanceHalala: 100000 });
+    insertProvider(global.__testDb, { vramGb: 24 });
+    const provider = global.__testDb.prepare('SELECT id FROM providers ORDER BY id DESC LIMIT 1').get();
+    insertActiveJobForProvider(global.__testDb, { providerId: provider.id, status: 'running' });
+
+    const res = await request(app)
+      .post('/api/templates/allam-7b-instruct/deploy')
+      .set('x-renter-key', RENTER_KEY)
+      .send({ duration_minutes: 60 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.template.id).toBe('allam-7b-instruct');
+    expect(res.body.provider.id).toBe(provider.id);
   });
 
   it('returns 503 when provider heartbeat is stale (>10 min old)', async () => {
