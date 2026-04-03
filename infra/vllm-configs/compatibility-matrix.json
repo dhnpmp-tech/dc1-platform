@@ -56,6 +56,10 @@
       "aliases": [
         "allam-7b",
         "allam-7b-awq",
+        "allam-ai/allam-7b-instruct-preview",
+        "allam-ai/allam-7b-instruct-preview-awq",
+        "allam-7b-instruct",
+        "allam-7b-instruct-preview",
         "bolt-is/allam-it-7b",
         "bolt-is/allam-it-7b-awq"
       ],
@@ -71,9 +75,9 @@
         },
         "fp16": {
           "model_id": "BOLT-IS/ALLaM-IT-7B",
-          "min_vram_mb": 20480,
+          "min_vram_mb": 11264,
           "available": true,
-          "recommended_script": "infra/vllm-configs/allam-7b.sh"
+          "recommended_script": "infra/vllm-configs/allam-7b-12gb.sh"
         }
       }
     }
