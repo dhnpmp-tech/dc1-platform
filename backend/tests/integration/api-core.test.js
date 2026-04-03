@@ -12,6 +12,8 @@
 // Kept here as a fallback when running this file directly outside Jest
 if (!process.env.DC1_DB_PATH) process.env.DC1_DB_PATH = ':memory:';
 if (!process.env.DC1_ADMIN_TOKEN) process.env.DC1_ADMIN_TOKEN = 'test-admin-token-jest';
+// This suite validates API contracts, not rate-limit behavior; disable limiter state carry-over.
+if (!process.env.DISABLE_RATE_LIMIT) process.env.DISABLE_RATE_LIMIT = '1';
 
 const request = require('supertest');
 const express = require('express');
@@ -25,6 +27,7 @@ function createTestApp() {
   app.use('/api/providers', require('../../src/routes/providers'));
   app.use('/api/renters',   require('../../src/routes/renters'));
   app.use('/api/admin',     require('../../src/routes/admin'));
+  app.use('/api/health',    require('../../src/routes/public-health'));
 
   return app;
 }
@@ -35,6 +38,8 @@ const ADMIN_TOKEN = process.env.DC1_ADMIN_TOKEN || 'test-admin-token-jest';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function cleanDb() {
+  try { db.run('DELETE FROM inference_stream_events'); } catch (_) {}
+  try { db.run('DELETE FROM daemon_events'); } catch (_) {}
   try { db.run('DELETE FROM heartbeat_log'); } catch (_) {}
   try { db.run('DELETE FROM jobs'); }         catch (_) {}
   try { db.run('DELETE FROM renters'); }      catch (_) {}
@@ -402,5 +407,100 @@ describe('Admin API — GET /api/admin/providers', () => {
   it('returns 401 without token', async () => {
     const res = await request(app).get('/api/admin/providers');
     expect(res.status).toBe(401);
+  });
+});
+
+describe('Admin API — GET /api/admin/daemon-health', () => {
+  it('returns reliability windows with null percentile metrics when no telemetry exists', async () => {
+    const res = await request(app)
+      .get('/api/admin/daemon-health')
+      .set('x-admin-token', ADMIN_TOKEN);
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.generated_at).toBe('string');
+    expect(typeof res.body.reliability?.generated_at).toBe('string');
+    expect(res.body.reliability?.windows?.['24h']?.latency_ms).toEqual({
+      sample_count: 0,
+      p50_ms: null,
+      p95_ms: null,
+    });
+    expect(res.body.reliability?.windows?.['7d']?.latency_ms).toEqual({
+      sample_count: 0,
+      p50_ms: null,
+      p95_ms: null,
+    });
+  });
+
+  it('computes rolling uptime and latency percentile telemetry from persisted metrics', async () => {
+    const now = Date.now();
+    const nowIso = new Date(now).toISOString();
+    const twoDaysAgoIso = new Date(now - (2 * 24 * 60 * 60 * 1000)).toISOString();
+    const providerApiKey = `dc1-provider-health-${Date.now()}`;
+    const providerEmail = `health-${Date.now()}-${Math.random().toString(36).slice(2)}@dc1.test`;
+    const insertProvider = db.prepare(
+      `INSERT INTO providers
+        (name, email, api_key, gpu_model, os, status, created_at, updated_at, last_heartbeat)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const providerResult = insertProvider.run(
+      'Health Provider',
+      providerEmail,
+      providerApiKey,
+      'RTX 4090',
+      'linux',
+      'online',
+      twoDaysAgoIso,
+      nowIso,
+      nowIso
+    );
+    const providerId = Number(providerResult.lastInsertRowid);
+
+    const insertHeartbeat = db.prepare(
+      'INSERT INTO heartbeat_log (provider_id, received_at) VALUES (?, ?)'
+    );
+    for (let i = 0; i < 120; i += 1) {
+      insertHeartbeat.run(providerId, new Date(now - (i * 5 * 60 * 1000)).toISOString());
+    }
+
+    const insertStream = db.prepare(
+      `INSERT INTO inference_stream_events
+        (provider_id, model_id, provider_tier, stream_success, duration_ms, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
+    const durationSamples = [80, 95, 100, 130, 200, 210, 260, 400];
+    for (const durationMs of durationSamples) {
+      insertStream.run(providerId, 'test-model', 'tier_1', 1, durationMs, nowIso);
+    }
+
+    const res = await request(app)
+      .get('/api/admin/daemon-health')
+      .set('x-admin-token', ADMIN_TOKEN);
+
+    expect(res.status).toBe(200);
+    expect(res.body.reliability?.windows?.['24h']?.uptime?.sample_count).toBeGreaterThan(0);
+    expect(res.body.reliability?.windows?.['24h']?.uptime?.pct).not.toBeNull();
+    expect(res.body.reliability?.windows?.['24h']?.latency_ms).toEqual({
+      sample_count: durationSamples.length,
+      p50_ms: 130,
+      p95_ms: 400,
+    });
+    expect(res.body.reliability?.windows?.['24h']?.online_capacity?.providers_seen).toBeGreaterThan(0);
+  });
+});
+
+describe('Public API — GET /api/health/reliability', () => {
+  it('returns public-safe reliability telemetry without admin auth', async () => {
+    const res = await request(app).get('/api/health/reliability');
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.generated_at).toBe('string');
+    expect(typeof res.body.windows?.['24h']?.generated_at).toBe('string');
+    expect(res.body.windows?.['24h']?.uptime?.sample_count).toBe(0);
+    expect(res.body.windows?.['24h']?.latency_ms).toEqual({
+      sample_count: 0,
+      p50_ms: null,
+      p95_ms: null,
+    });
+    expect(typeof res.body.windows?.['24h']?.online_capacity?.online_now).toBe('number');
   });
 });

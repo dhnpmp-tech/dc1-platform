@@ -618,72 +618,28 @@ export default function HomePage() {
       </section>
       {/* Pricing section removed — rates not yet finalized */}
 
-      {/* Usage Paths */}
+      {/* Instant API Access */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            {t('landing.workflow_title')}
+            {t('landing.instant_api_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            {t('landing.workflow_desc')}
+            {t('landing.instant_api_desc')}
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Playground */}
-          <div className="bg-dc1-surface-l2 border border-dc1-border rounded-lg p-8 transition-all duration-200 hover:border-dc1-border-light hover:shadow-md group">
-            <div className="w-12 h-12 rounded-lg bg-dc1-amber/10 flex items-center justify-center text-dc1-amber mb-6 group-hover:bg-dc1-amber/20 transition-colors">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">{t('landing.workflow_playground_title')}</h3>
-            <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              {t('landing.workflow_playground_desc')}
-            </p>
-            <ul className="space-y-2 mb-8">
-              {[
-                t('landing.workflow_playground_bullet1'),
-                t('landing.workflow_playground_bullet2'),
-                t('landing.workflow_playground_bullet3'),
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
-                  <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <Link href="/renter/register" className="btn btn-primary btn-sm">
-              {t('landing.workflow_playground_cta')}
-            </Link>
+        <div className="max-w-3xl mx-auto">
+          <div className="bg-dc1-void rounded-xl border border-dc1-border p-6 font-mono text-sm overflow-x-auto" dir="ltr">
+            <div className="text-dc1-text-muted mb-2 text-xs">{t('landing.instant_api_comment')}</div>
+            <div><span className="text-purple-400">from</span> <span className="text-dc1-amber">openai</span> <span className="text-purple-400">import</span> OpenAI</div>
+            <div className="mt-2"><span className="text-blue-400">client</span> = OpenAI(</div>
+            <div className="ml-4"><span className="text-green-400">base_url</span>=<span className="text-yellow-300">&quot;https://api.dcp.sa/v1&quot;</span>,</div>
+            <div className="ml-4"><span className="text-green-400">api_key</span>=<span className="text-yellow-300">&quot;your-key&quot;</span></div>
+            <div>)</div>
           </div>
-
-          {/* Custom Jobs */}
-          <div className="bg-dc1-surface-l2 border border-dc1-border rounded-lg p-8 transition-all duration-200 hover:border-dc1-border-light hover:shadow-md group">
-            <div className="w-12 h-12 rounded-lg bg-dc1-amber/10 flex items-center justify-center text-dc1-amber mb-6 group-hover:bg-dc1-amber/20 transition-colors">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-dc1-text-primary mb-2">{t('landing.workflow_container_title')}</h3>
-            <p className="text-sm text-dc1-text-secondary mb-6 leading-relaxed">
-              {t('landing.workflow_container_desc')}
-            </p>
-            <ul className="space-y-2 mb-8">
-              {[
-                t('landing.workflow_container_bullet1'),
-                t('landing.workflow_container_bullet2'),
-                t('landing.workflow_container_bullet3'),
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-2 text-sm text-dc1-text-secondary">
-                  <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full flex-shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <Link href="/docs" className="btn btn-secondary btn-sm">
-              {t('landing.workflow_container_cta')}
-            </Link>
+          <div className="mt-6 flex justify-center gap-4">
+            <a href="/renter/register" className="btn btn-primary">{t('landing.instant_api_get_key')}</a>
+            <a href="/docs/api" className="btn btn-secondary">{t('landing.instant_api_view_docs')}</a>
           </div>
         </div>
       </section>

@@ -49,6 +49,12 @@ async function requestJson(baseUrl, route, options = {}) {
     headers: {
       'x-request-id': response.headers.get('x-request-id'),
       'content-type': response.headers.get('content-type'),
+      'x-dcp-provider-id': response.headers.get('x-dcp-provider-id'),
+      'x-dcp-provider-tier': response.headers.get('x-dcp-provider-tier'),
+      'x-dcp-provider-endpoint-host': response.headers.get('x-dcp-provider-endpoint-host'),
+      'x-dcp-requested-model-id': response.headers.get('x-dcp-requested-model-id'),
+      'x-dcp-routed-model-id': response.headers.get('x-dcp-routed-model-id'),
+      'x-dcp-latency-gate-mode': response.headers.get('x-dcp-latency-gate-mode'),
     },
     text,
     json,
@@ -65,6 +71,12 @@ async function probeHealth(baseUrl) {
 function classifyFailure(results) {
   const completion = results.completion_json;
   const stream = results.completion_stream;
+  const hasProviderEvidence = Boolean(
+    completion.provider_id
+    || completion.provider_endpoint_host
+    || stream.provider_id
+    || stream.provider_endpoint_host
+  );
   if ((completion.status === 401 || completion.status === 403) || (stream.status === 401 || stream.status === 403)) {
     return {
       code: 'auth_scope_failure',
@@ -84,6 +96,13 @@ function classifyFailure(results) {
       code: 'sse_done_missing',
       severity: 'blocking',
       action: 'Fix SSE contract to guarantee terminal `data: [DONE]` for stream=true responses.',
+    };
+  }
+  if ((completion.status === 200 || stream.status === 200) && !hasProviderEvidence) {
+    return {
+      code: 'provider_route_evidence_missing',
+      severity: 'blocking',
+      action: 'Ensure /v1/chat/completions emits x-dcp-provider-* route evidence headers for both JSON and streaming responses.',
     };
   }
   if (completion.status === 404 || stream.status === 404) {
@@ -124,6 +143,15 @@ function buildMarkdown(report) {
       : (result.error_message || '');
     lines.push(`| ${step} | ${result.status} | ${result.elapsed_ms ?? ''} | ${result.request_id || ''} | ${String(notes || '').replace(/\|/g, '\\|')} |`);
   }
+  lines.push('');
+  lines.push('## Provider Route Evidence');
+  lines.push('');
+  lines.push(`- completion_json.provider_id: \`${report.probes.completion_json.provider_id || ''}\``);
+  lines.push(`- completion_json.provider_tier: \`${report.probes.completion_json.provider_tier || ''}\``);
+  lines.push(`- completion_json.provider_endpoint_host: \`${report.probes.completion_json.provider_endpoint_host || ''}\``);
+  lines.push(`- completion_stream.provider_id: \`${report.probes.completion_stream.provider_id || ''}\``);
+  lines.push(`- completion_stream.provider_tier: \`${report.probes.completion_stream.provider_tier || ''}\``);
+  lines.push(`- completion_stream.provider_endpoint_host: \`${report.probes.completion_stream.provider_endpoint_host || ''}\``);
   lines.push('');
   if (report.failure) {
     lines.push('## Failure Classification');
@@ -220,6 +248,12 @@ async function run() {
       elapsed_ms: completionJson.elapsed_ms,
       request_id: completionJson.headers['x-request-id'] || null,
       response_hash: makeSha256(completionJson.text),
+      provider_id: completionJson.headers['x-dcp-provider-id'] || null,
+      provider_tier: completionJson.headers['x-dcp-provider-tier'] || null,
+      provider_endpoint_host: completionJson.headers['x-dcp-provider-endpoint-host'] || null,
+      requested_model_id: completionJson.headers['x-dcp-requested-model-id'] || null,
+      routed_model_id: completionJson.headers['x-dcp-routed-model-id'] || null,
+      latency_gate_mode: completionJson.headers['x-dcp-latency-gate-mode'] || null,
       error_message: completionJson.ok ? null : (completionJson.json?.error?.message || completionJson.text?.slice(0, 240) || null),
     },
     completion_stream: {
@@ -228,6 +262,12 @@ async function run() {
       request_id: streamRes.headers['x-request-id'] || null,
       stream_done: streamDone,
       response_hash: makeSha256(streamRes.text),
+      provider_id: streamRes.headers['x-dcp-provider-id'] || null,
+      provider_tier: streamRes.headers['x-dcp-provider-tier'] || null,
+      provider_endpoint_host: streamRes.headers['x-dcp-provider-endpoint-host'] || null,
+      requested_model_id: streamRes.headers['x-dcp-requested-model-id'] || null,
+      routed_model_id: streamRes.headers['x-dcp-routed-model-id'] || null,
+      latency_gate_mode: streamRes.headers['x-dcp-latency-gate-mode'] || null,
       error_message: streamRes.ok ? null : (streamRes.json?.error?.message || streamRes.text?.slice(0, 240) || null),
     },
   };

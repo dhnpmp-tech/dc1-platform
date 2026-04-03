@@ -181,6 +181,36 @@ describe('GET /api/providers/activation-state', () => {
     expect(res.body.next_action?.hint_key).toBe('refresh_heartbeat');
   });
 
+  test('includes latest tier-admission rejection code contract for provider-facing diagnostics', async () => {
+    const { apiKey, providerId } = await registerProvider(request, app, {
+      name: 'Admission Blocked Provider',
+      email: 'admission-blocked@dc1.test',
+      gpu_model: 'RTX 3060',
+    });
+
+    db.prepare(
+      `INSERT INTO provider_activation_events (provider_id, event_code, occurred_at, metadata_json, created_at)
+       VALUES (?, 'tier_admission_rejected', ?, ?, ?)`
+    ).run(
+      providerId,
+      nowIsoMinus(60),
+      JSON.stringify({
+        rejection_code: 'MODEL_COMPATIBILITY_UNSUPPORTED',
+        reason: 'Model requires more VRAM',
+      }),
+      nowIsoMinus(60)
+    );
+
+    const res = await request(app)
+      .get('/api/providers/activation-state')
+      .set('x-provider-key', apiKey);
+
+    expect(res.status).toBe(200);
+    expect(res.body.admission?.latest_rejection_code).toBe('MODEL_COMPATIBILITY_UNSUPPORTED');
+    expect(res.body.admission?.latest_rejection_at).toBeTruthy();
+    expect(res.body.admission?.code_enum).toContain('MODEL_COMPATIBILITY_UNSUPPORTED');
+  });
+
   test('supports admin lookup with provider_id', async () => {
     const { providerId } = await registerProvider(request, app, {
       name: 'Admin Lookup Provider',

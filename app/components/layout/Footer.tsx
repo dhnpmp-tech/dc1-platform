@@ -15,11 +15,11 @@ export default function Footer() {
           <div className="md:col-span-1">
             <div className="flex items-center mb-4">
               <Image
-                src="/logo.svg"
+                src="/dcp-logo-primary.png"
                 alt="DCP"
-                width={120}
-                height={40}
-                className="h-10 w-auto"
+                width={64}
+                height={64}
+                className="h-16 w-16 object-contain rounded-xl"
               />
             </div>
             <p className="text-sm text-dc1-text-secondary leading-relaxed">

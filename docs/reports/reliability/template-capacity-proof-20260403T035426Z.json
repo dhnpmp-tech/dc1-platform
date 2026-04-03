@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-04-03T03:54:26.655Z",
+  "base_url": "https://api.dcp.sa",
+  "command": "node src/scripts/run-template-capacity-proof.js",
+  "verdict": "FAIL",
+  "checks": [
+    {
+      "template_id": "allam-7b-instruct",
+      "route": "/api/templates/allam-7b-instruct/deploy/check",
+      "status": 404,
+      "elapsed_ms": 73,
+      "response_hash": "a239b3e9bd7e214fb090666e27bb427aae54c864a924a619315c493d22ba54de",
+      "capable_provider_count": 0,
+      "idle_provider_count": 0,
+      "required_vram_gb": 0,
+      "selected_provider": null,
+      "error": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/templates/allam-7b-instruct/deploy/check</pre>\n</body>\n</html>\n"
+    },
+    {
+      "template_id": "jais-13b-chat",
+      "route": "/api/templates/jais-13b-chat/deploy/check",
+      "status": 404,
+      "elapsed_ms": 4,
+      "response_hash": "8cad231639efe65ae4876cbadf471545eb7dbd81d224eba0f71160319d01ff85",
+      "capable_provider_count": 0,
+      "idle_provider_count": 0,
+      "required_vram_gb": 0,
+      "selected_provider": null,
+      "error": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/templates/jais-13b-chat/deploy/check</pre>\n</body>\n</html>\n"
+    }
+  ],
+  "failures": [
+    {
+      "template_id": "allam-7b-instruct",
+      "reason": "HTTP 404: <!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/templates/allam-7b-instruct/deploy/check</pre>\n</body>\n</html>\n"
+    },
+    {
+      "template_id": "jais-13b-chat",
+      "reason": "HTTP 404: <!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /api/templates/jais-13b-chat/deploy/check</pre>\n</body>\n</html>\n"
+    }
+  ],
+  "artifacts": {
+    "json": "docs/reports/reliability/template-capacity-proof-20260403T035426Z.json",
+    "markdown": "docs/reports/reliability/template-capacity-proof-20260403T035426Z.md",
+    "latest_json": "docs/reports/reliability/template-capacity-proof-latest.json",
+    "latest_markdown": "docs/reports/reliability/template-capacity-proof-latest.md"
+  }
+}
