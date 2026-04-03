@@ -673,15 +673,15 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            API access in 60 seconds
+            {t('landing.instant_api_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            OpenAI-compatible. Drop in your API key and start generating. No setup, no queue.
+            {t('landing.instant_api_desc')}
           </p>
         </div>
         <div className="max-w-3xl mx-auto">
-          <div className="bg-dc1-void rounded-xl border border-dc1-border p-6 font-mono text-sm overflow-x-auto">
-            <div className="text-dc1-text-muted mb-2 text-xs">{'// Drop-in replacement for OpenAI'}</div>
+          <div className="bg-dc1-void rounded-xl border border-dc1-border p-6 font-mono text-sm overflow-x-auto" dir="ltr">
+            <div className="text-dc1-text-muted mb-2 text-xs">{t('landing.instant_api_comment')}</div>
             <div><span className="text-purple-400">from</span> <span className="text-dc1-amber">openai</span> <span className="text-purple-400">import</span> OpenAI</div>
             <div className="mt-2"><span className="text-blue-400">client</span> = OpenAI(</div>
             <div className="ml-4"><span className="text-green-400">base_url</span>=<span className="text-yellow-300">&quot;https://api.dcp.sa/v1&quot;</span>,</div>
@@ -689,8 +689,8 @@ export default function HomePage() {
             <div>)</div>
           </div>
           <div className="mt-6 flex justify-center gap-4">
-            <a href="/renter/register" className="btn btn-primary">Get API key</a>
-            <a href="/docs/api" className="btn btn-secondary">View docs</a>
+            <a href="/renter/register" className="btn btn-primary">{t('landing.instant_api_get_key')}</a>
+            <a href="/docs/api" className="btn btn-secondary">{t('landing.instant_api_view_docs')}</a>
           </div>
         </div>
       </section>
