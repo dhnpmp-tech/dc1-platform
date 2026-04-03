@@ -4,10 +4,9 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
-import { useLanguage } from '../../../lib/i18n'
+import { useLanguage, type Language } from '../../../lib/i18n'
 import {
   buildRenterLoginRedirect,
-  buildRenterPlaygroundPath,
   setPendingRenterAuthIntent,
   type RenterAuthIntent,
   type RenterJobType,
@@ -78,6 +77,109 @@ interface Template {
 }
 
 type TemplateCategory = 'Arabic AI' | 'LLM' | 'Training' | 'Dev Tools' | 'Image'
+type DeployContractState =
+  | 'PUBLIC_NO_AUTH'
+  | 'RENTER_READY'
+  | 'SUBMITTING'
+  | 'AUTH_EXPIRED'
+  | 'INSUFFICIENT_BALANCE'
+  | 'NO_PROVIDER'
+  | 'RATE_LIMITED'
+  | 'SUCCESS_SUBMITTED'
+
+interface DeployModalState {
+  template: Template | null
+  state: DeployContractState
+  jobId: string | null
+  httpStatus: number | null
+}
+
+const DEPLOY_STATE_COPY: Record<Language, Record<DeployContractState, { title: string; body: string; tone: 'neutral' | 'warning' | 'error' | 'success' }>> = {
+  en: {
+    PUBLIC_NO_AUTH: {
+      title: 'Sign in to deploy this template',
+      body: 'Continue with renter login, then deploy with this template preselected.',
+      tone: 'neutral',
+    },
+    RENTER_READY: {
+      title: 'Ready to submit',
+      body: 'DCP will assign an available GPU provider once you confirm deployment.',
+      tone: 'neutral',
+    },
+    SUBMITTING: {
+      title: 'Submitting deployment',
+      body: 'Creating your job and reserving capacity now.',
+      tone: 'neutral',
+    },
+    AUTH_EXPIRED: {
+      title: 'Session expired',
+      body: 'Your renter key is missing or inactive. Sign in again to continue.',
+      tone: 'warning',
+    },
+    INSUFFICIENT_BALANCE: {
+      title: 'Insufficient balance',
+      body: 'Top up credits, then retry this template deployment.',
+      tone: 'error',
+    },
+    NO_PROVIDER: {
+      title: 'No compatible provider online',
+      body: 'No active GPU currently matches this template. Retry shortly.',
+      tone: 'warning',
+    },
+    RATE_LIMITED: {
+      title: 'Deploy queue is busy',
+      body: 'Request throttled or temporarily unavailable. Retry in a few seconds.',
+      tone: 'warning',
+    },
+    SUCCESS_SUBMITTED: {
+      title: 'Deployment submitted',
+      body: 'Your job was created. Continue to the OpenRouter 60s quickstart handoff.',
+      tone: 'success',
+    },
+  },
+  ar: {
+    PUBLIC_NO_AUTH: {
+      title: 'سجّل الدخول لنشر هذا القالب',
+      body: 'أكمل تسجيل دخول المستأجر ثم انشر مع تحديد القالب مسبقاً.',
+      tone: 'neutral',
+    },
+    RENTER_READY: {
+      title: 'جاهز للإرسال',
+      body: 'ستقوم DCP بتعيين مزوّد GPU متاح بعد تأكيد النشر.',
+      tone: 'neutral',
+    },
+    SUBMITTING: {
+      title: 'جارٍ إرسال النشر',
+      body: 'نقوم الآن بإنشاء المهمة وحجز السعة.',
+      tone: 'neutral',
+    },
+    AUTH_EXPIRED: {
+      title: 'انتهت الجلسة',
+      body: 'مفتاح المستأجر مفقود أو غير نشط. سجّل الدخول مجدداً للمتابعة.',
+      tone: 'warning',
+    },
+    INSUFFICIENT_BALANCE: {
+      title: 'الرصيد غير كافٍ',
+      body: 'اشحن الرصيد ثم أعد محاولة نشر هذا القالب.',
+      tone: 'error',
+    },
+    NO_PROVIDER: {
+      title: 'لا يوجد مزوّد متوافق حالياً',
+      body: 'لا يوجد مزوّد GPU نشط يطابق هذا القالب الآن. أعد المحاولة بعد قليل.',
+      tone: 'warning',
+    },
+    RATE_LIMITED: {
+      title: 'طابور النشر مزدحم',
+      body: 'تم تقييد الطلب أو الخدمة مزدحمة مؤقتاً. أعد المحاولة بعد ثوانٍ.',
+      tone: 'warning',
+    },
+    SUCCESS_SUBMITTED: {
+      title: 'تم إرسال النشر',
+      body: 'تم إنشاء المهمة. انتقل إلى دليل OpenRouter خلال 60 ثانية لمسار أول استدعاء API.',
+      tone: 'success',
+    },
+  },
+}
 
 const TEMPLATES: Template[] = [
   // ── Arabic AI ──────────────────────────────────────────────────────────────
@@ -422,45 +524,53 @@ function deriveTemplateIntentDefaults(template: Template): { mode: RenterJobType
   return { mode: 'llm_inference', model: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' }
 }
 
-// ── Deploy Modal (inline — mirrors DCP-857 modal pattern) ─────────────────────
-interface DeployModalState {
-  template: Template | null
-  loading: boolean
-  error: string
-  jobId: string | null
-}
-
-function DeployModal({ state, onClose, onConfirm }: {
+// ── Deploy Modal (DCP-483 contract states) ────────────────────────────────────
+function DeployModal({ state, language, onClose, onPrimaryAction, onSecondaryAction }: {
   state: DeployModalState
+  language: Language
   onClose: () => void
-  onConfirm: () => void
+  onPrimaryAction: () => void
+  onSecondaryAction: () => void
 }) {
-  const router = useRouter()
-  const t = state.template!
-  const savingsPct = getSavingsPct(t)
-  const isInsufficientBalance = state.error.toLowerCase().includes('insufficient balance')
-  const isNoProvider = state.error.toLowerCase().includes('no provider')
+  if (!state.template) return null
+  const template = state.template
+  const stateCopy = DEPLOY_STATE_COPY[language][state.state]
+  const isLoading = state.state === 'SUBMITTING'
+  const toneClass =
+    stateCopy.tone === 'success'
+      ? 'border-status-success/30 bg-status-success/10 text-status-success'
+      : stateCopy.tone === 'error'
+      ? 'border-status-error/30 bg-status-error/10 text-status-error'
+      : stateCopy.tone === 'warning'
+      ? 'border-dc1-amber/30 bg-dc1-amber/10 text-dc1-amber'
+      : 'border-dc1-border bg-dc1-surface-l1 text-dc1-text-primary'
 
-  // Auto-redirect after successful submit
-  if (state.jobId && state.jobId !== 'submitted') {
-    setTimeout(() => router.push(`/renter/jobs/${state.jobId}`), 1200)
-  }
+  const primaryLabel =
+    state.state === 'PUBLIC_NO_AUTH' || state.state === 'AUTH_EXPIRED'
+      ? (language === 'ar' ? 'تسجيل الدخول' : 'Sign In')
+      : state.state === 'SUCCESS_SUBMITTED'
+      ? (language === 'ar' ? 'دليل OpenRouter (60 ثانية)' : 'OpenRouter 60s Quickstart')
+      : state.state === 'INSUFFICIENT_BALANCE'
+      ? (language === 'ar' ? 'إضافة رصيد' : 'Add Credits')
+      : state.state === 'NO_PROVIDER' || state.state === 'RATE_LIMITED'
+      ? (language === 'ar' ? 'إعادة المحاولة' : 'Retry Deploy')
+      : (language === 'ar' ? 'نشر الآن' : 'Deploy Now')
+
+  const secondaryLabel =
+    state.state === 'SUCCESS_SUBMITTED'
+      ? (language === 'ar' ? 'عرض حالة المهمة' : 'View Job Status')
+      : (language === 'ar' ? 'إغلاق' : 'Close')
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="tmpl-deploy-title"
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true">
       <div className="card w-full max-w-md p-6 space-y-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-2xl">{t.icon}</span>
-              <h2 id="tmpl-deploy-title" className="text-lg font-bold text-dc1-text-primary">{t.name}</h2>
+              <span className="text-2xl">{template.icon}</span>
+              <h2 className="text-lg font-bold text-dc1-text-primary">{template.name}</h2>
             </div>
-            <p className="text-xs text-dc1-text-muted">{t.category} • {t.min_vram_gb} GB VRAM min</p>
+            <p className="text-xs text-dc1-text-muted">{template.category} • {template.min_vram_gb} GB VRAM min</p>
           </div>
           <button onClick={onClose} className="text-dc1-text-muted hover:text-dc1-text-primary p-1" aria-label="Close">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -469,91 +579,22 @@ function DeployModal({ state, onClose, onConfirm }: {
           </button>
         </div>
 
-        {/* Pricing */}
-        <div className="bg-dc1-surface-l2 rounded-lg px-4 py-3 text-xs grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">DCP Price</p>
-            <p className="font-bold text-dc1-amber text-base">{t.estimated_price_sar_per_hour.toFixed(0)} <span className="text-xs font-normal text-dc1-text-muted">SAR/hr</span></p>
-          </div>
-          {t.hyperscaler_price_sar_per_hour && (
-            <div>
-              <p className="text-dc1-text-muted uppercase tracking-wide text-[9px]">vs RunPod/AWS</p>
-              <p className="font-semibold text-dc1-text-secondary line-through text-sm">{t.hyperscaler_price_sar_per_hour} SAR/hr</p>
-            </div>
-          )}
+        <div className={`rounded-lg border px-4 py-3 text-sm ${toneClass}`}>
+          <p>{stateCopy.body}</p>
+          {state.httpStatus ? (
+            <p className="mt-2 text-xs opacity-80">{language === 'ar' ? 'رمز الاستجابة' : 'HTTP status'}: {state.httpStatus}</p>
+          ) : null}
         </div>
 
-        {/* Savings badge */}
-        {savingsPct !== null && savingsPct > 0 && (
-          <div className="bg-status-success/5 border border-status-success/20 rounded-lg px-4 py-2.5 flex items-center justify-between text-sm">
-            <span className="text-dc1-text-muted">vs hyperscalers</span>
-            <span className="text-status-success font-bold">You save {savingsPct}%</span>
-          </div>
-        )}
-
-        {t.is_arabic && (
-          <div className="bg-dc1-amber/5 border border-dc1-amber/20 rounded-lg px-4 py-2.5 text-xs text-dc1-amber font-medium">
-            🌙 Arabic-capable — PDPL-compliant, in-kingdom processing
-          </div>
-        )}
-
-        <p className="text-sm text-dc1-text-secondary">
-          Your job will be queued and assigned to an available GPU provider.
-          Billing starts when execution begins.
-        </p>
-
-        {/* Error states */}
-        {isNoProvider && (
-          <div className="bg-dc1-amber/5 border border-dc1-amber/30 rounded-lg px-4 py-3 space-y-1">
-            <p className="text-sm font-semibold text-dc1-amber">No providers available</p>
-            <p className="text-xs text-dc1-text-secondary">Join the waitlist to be notified when capacity opens.</p>
-            <Link href={`/renter/waitlist?template=${encodeURIComponent(t.id)}`} className="inline-block btn btn-outline btn-sm text-dc1-amber border-dc1-amber/40">Join Waitlist →</Link>
-          </div>
-        )}
-        {isInsufficientBalance && (
-          <div className="bg-status-error/5 border border-status-error/30 rounded-lg px-4 py-3 space-y-1">
-            <p className="text-sm font-semibold text-status-error">Insufficient balance</p>
-            <Link href="/renter/billing" className="inline-block btn btn-outline btn-sm text-status-error border-status-error/40">Add Credits →</Link>
-          </div>
-        )}
-        {state.error && !isNoProvider && !isInsufficientBalance && (
-          <div className="bg-status-error/10 border border-status-error/30 rounded-lg px-4 py-3 text-sm text-status-error">
-            {state.error}
-          </div>
-        )}
-
-        {/* Success */}
-        {state.jobId && (
-          <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm text-status-success font-semibold">
-              <span className="animate-spin h-4 w-4 border-2 border-status-success border-t-transparent rounded-full" />
-              Job submitted — redirecting to live status…
-            </div>
-            {state.jobId !== 'submitted' && (
-              <Link href={`/renter/jobs/${state.jobId}`} className="text-xs text-status-success underline">View Live Status →</Link>
-            )}
-          </div>
-        )}
-
-        {!state.jobId && (
-          <div className="flex gap-3 justify-end">
-            <button onClick={onClose} disabled={state.loading} className="btn btn-secondary min-h-[44px] px-4">Cancel</button>
-            <button onClick={onConfirm} disabled={state.loading} className="btn btn-primary min-h-[44px] px-5 flex items-center gap-2">
-              {state.loading && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />}
-              {state.loading ? 'Submitting…' : 'Deploy Now'}
-            </button>
-          </div>
-        )}
-        {state.jobId && (
-          <div className="flex gap-3 justify-end">
-            <button onClick={onClose} className="btn btn-secondary min-h-[44px] px-4">Close</button>
-            {state.jobId !== 'submitted' ? (
-              <Link href={`/renter/jobs/${state.jobId}`} className="btn btn-primary min-h-[44px] px-5">View Live Status →</Link>
-            ) : (
-              <Link href="/renter/jobs" className="btn btn-primary min-h-[44px] px-5">View Jobs →</Link>
-            )}
-          </div>
-        )}
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+          <button onClick={onSecondaryAction} className="btn btn-secondary min-h-[44px] px-4">
+            {secondaryLabel}
+          </button>
+          <button onClick={onPrimaryAction} disabled={isLoading} className="btn btn-primary min-h-[44px] px-5 flex items-center justify-center gap-2">
+            {isLoading ? <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+            {isLoading ? (language === 'ar' ? 'جارٍ الإرسال…' : 'Submitting...') : primaryLabel}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -623,7 +664,7 @@ function TemplateCard({ template, onDeploy }: { template: Template; onDeploy: (t
         onClick={() => onDeploy(template)}
         className="btn btn-primary w-full text-sm mt-auto min-h-[44px]"
       >
-        Launch in Playground
+        Deploy Now
       </button>
     </article>
   )
@@ -650,14 +691,14 @@ function SkeletonCard() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TemplateCatalogPage() {
   const router = useRouter()
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
 
   const [category, setCategory] = useState<TemplateCategory | 'all'>('all')
   const [search, setSearch] = useState('')
   const [maxVram, setMaxVram] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | 'easy' | 'medium' | 'advanced'>('all')
-  const [deploy, setDeploy] = useState<DeployModalState>({ template: null, loading: false, error: '', jobId: null })
+  const [deploy, setDeploy] = useState<DeployModalState>({ template: null, state: 'RENTER_READY', jobId: null, httpStatus: null })
   const [apiTemplates, setApiTemplates] = useState<Template[] | null>(null)
   const [loadingTemplates, setLoadingTemplates] = useState(true)
 
@@ -714,6 +755,16 @@ export default function TemplateCatalogPage() {
     if (typeof win.gtag === 'function') win.gtag('event', event, detail)
   }, [])
 
+  useEffect(() => {
+    if (loadingTemplates) return
+    trackTemplateEvent('template_catalog_viewed', {
+      contract: 'dcp_483_template_first_deploy_v1',
+      funnel_step: 'discover',
+      total_templates: activeTemplates.length,
+      arabic_templates: activeTemplates.filter((tmpl) => tmpl.is_arabic).length,
+    })
+  }, [activeTemplates, loadingTemplates, trackTemplateEvent])
+
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
     { label: t('nav.marketplace'), href: '/renter/marketplace', icon: <MarketplaceIcon /> },
@@ -749,73 +800,134 @@ export default function TemplateCatalogPage() {
   const arabicCount = activeTemplates.filter(tt => tt.is_arabic).length
 
   const openDeploy = (tmpl: Template) => {
-    const defaults = deriveTemplateIntentDefaults(tmpl)
-    const intent: RenterAuthIntent = {
-      template: tmpl.id,
-      model: defaults.model,
-      mode: defaults.mode,
-      jobType: defaults.mode,
-      source: 'renter_template_catalog',
-    }
-    const prefilledPlaygroundPath = buildRenterPlaygroundPath(intent)
     const key = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key')
-    if (!key) {
-      setPendingRenterAuthIntent(intent)
-      trackTemplateEvent('template_deploy_auth_redirect', {
-        surface: 'template_card',
-        destination: '/login',
-        step: 'auth_required',
-        template: tmpl.id,
-        model: defaults.model,
-        mode: defaults.mode,
-      })
-      router.push(buildRenterLoginRedirect('/renter/playground', 'renter_template_catalog'))
-      return
-    }
-    trackTemplateEvent('template_prefill_playground_clicked', {
-      surface: 'template_card',
-      destination: prefilledPlaygroundPath,
-      step: 'prefill_playground',
+    const nextState: DeployContractState = key ? 'RENTER_READY' : 'PUBLIC_NO_AUTH'
+    setDeploy({ template: tmpl, state: nextState, jobId: null, httpStatus: null })
+    trackTemplateEvent('template_select_clicked', {
+      contract: 'dcp_483_template_first_deploy_v1',
+      funnel_step: 'select',
+      cta_state: nextState,
       template: tmpl.id,
-      model: defaults.model,
-      mode: defaults.mode,
-      auth_state: 'signed_in',
     })
-    router.push(prefilledPlaygroundPath)
   }
 
-  const closeDeploy = () => setDeploy({ template: null, loading: false, error: '', jobId: null })
+  const closeDeploy = () => setDeploy({ template: null, state: 'RENTER_READY', jobId: null, httpStatus: null })
 
   const confirmDeploy = async () => {
     const tmpl = deploy.template
     if (!tmpl) return
     const apiKey = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key') || ''
-    setDeploy(d => ({ ...d, loading: true, error: '' }))
+    if (!apiKey) {
+      setDeploy(d => ({ ...d, state: 'PUBLIC_NO_AUTH', httpStatus: null }))
+      return
+    }
+    setDeploy(d => ({ ...d, state: 'SUBMITTING', httpStatus: null }))
+    trackTemplateEvent('template_deploy_requested', {
+      contract: 'dcp_483_template_first_deploy_v1',
+      funnel_step: 'deploy',
+      cta_state: 'SUBMITTING',
+      template: tmpl.id,
+    })
     try {
       const res = await fetch(`/api/dc1/templates/${encodeURIComponent(tmpl.id)}/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-renter-key': apiKey },
         body: JSON.stringify({ duration_minutes: 60 }),
       })
-      if (res.status === 503) {
-        setDeploy(d => ({ ...d, loading: false, error: 'No GPU provider available right now. Please try again shortly.' }))
+
+      if (res.status === 201) {
+        const data = await res.json().catch(() => ({}))
+        const jobId = data.jobId || data.job_id || data.id || null
+        setDeploy(d => ({ ...d, state: 'SUCCESS_SUBMITTED', jobId, httpStatus: res.status }))
+        trackTemplateEvent('template_deploy_state_changed', {
+          contract: 'dcp_483_template_first_deploy_v1',
+          funnel_step: 'success',
+          cta_state: 'SUCCESS_SUBMITTED',
+          template: tmpl.id,
+          http_status: res.status,
+          job_id: jobId,
+        })
         return
       }
-      if (res.status === 402) {
-        setDeploy(d => ({ ...d, loading: false, error: 'Insufficient balance. Please top up your wallet before deploying.' }))
-        return
-      }
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setDeploy(d => ({ ...d, loading: false, error: err.error || 'Failed to submit job. Please try again.' }))
-        return
-      }
-      const data = await res.json()
-      const jobId = data.jobId || data.job_id || data.id || 'submitted'
-      setDeploy(d => ({ ...d, loading: false, jobId }))
+
+      let nextState: DeployContractState = 'RATE_LIMITED'
+      if (res.status === 401 || res.status === 403) nextState = 'AUTH_EXPIRED'
+      else if (res.status === 402) nextState = 'INSUFFICIENT_BALANCE'
+      else if (res.status === 503) nextState = 'NO_PROVIDER'
+      else if (res.status === 429 || res.status === 500) nextState = 'RATE_LIMITED'
+      setDeploy(d => ({ ...d, state: nextState, httpStatus: res.status }))
+      trackTemplateEvent('template_deploy_state_changed', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        funnel_step: 'deploy',
+        cta_state: nextState,
+        template: tmpl.id,
+        http_status: res.status,
+      })
     } catch {
-      setDeploy(d => ({ ...d, loading: false, error: 'Network error. Please try again.' }))
+      setDeploy(d => ({ ...d, state: 'RATE_LIMITED', httpStatus: 500 }))
+      trackTemplateEvent('template_deploy_state_changed', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        funnel_step: 'deploy',
+        cta_state: 'RATE_LIMITED',
+        template: tmpl.id,
+        http_status: 500,
+      })
     }
+  }
+
+  const handleDeployPrimaryAction = () => {
+    const tmpl = deploy.template
+    if (!tmpl) return
+    if (deploy.state === 'PUBLIC_NO_AUTH' || deploy.state === 'AUTH_EXPIRED') {
+      const defaults = deriveTemplateIntentDefaults(tmpl)
+      const intent: RenterAuthIntent = {
+        template: tmpl.id,
+        model: defaults.model,
+        mode: defaults.mode,
+        jobType: defaults.mode,
+        source: 'renter_template_catalog',
+      }
+      setPendingRenterAuthIntent(intent)
+      trackTemplateEvent('template_deploy_auth_redirect', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        funnel_step: 'deploy',
+        cta_state: deploy.state,
+        template: tmpl.id,
+        destination: '/login',
+      })
+      router.push(buildRenterLoginRedirect('/renter/playground', 'renter_template_catalog'))
+      return
+    }
+    if (deploy.state === 'SUCCESS_SUBMITTED') {
+      const params = new URLSearchParams({
+        source: 'renter_template_catalog',
+        template: tmpl.id,
+      })
+      if (deploy.jobId) params.set('job', deploy.jobId)
+      trackTemplateEvent('template_deploy_success_handoff_clicked', {
+        contract: 'dcp_483_template_first_deploy_v1',
+        funnel_step: 'success',
+        cta_state: 'SUCCESS_SUBMITTED',
+        template: tmpl.id,
+        destination: '/docs/api/openrouter-60s-quickstart',
+        job_id: deploy.jobId,
+      })
+      router.push(`/docs/api/openrouter-60s-quickstart?${params.toString()}`)
+      return
+    }
+    if (deploy.state === 'INSUFFICIENT_BALANCE') {
+      router.push('/renter/billing?source=renter_template_catalog')
+      return
+    }
+    confirmDeploy()
+  }
+
+  const handleDeploySecondaryAction = () => {
+    if (deploy.state === 'SUCCESS_SUBMITTED' && deploy.jobId) {
+      router.push(`/renter/jobs/${deploy.jobId}?source=renter_template_catalog`)
+      return
+    }
+    closeDeploy()
   }
 
   const clearFilters = () => {
@@ -993,7 +1105,13 @@ export default function TemplateCatalogPage() {
 
       {/* Deploy modal */}
       {deploy.template && (
-        <DeployModal state={deploy} onClose={closeDeploy} onConfirm={confirmDeploy} />
+        <DeployModal
+          state={deploy}
+          language={language}
+          onClose={closeDeploy}
+          onPrimaryAction={handleDeployPrimaryAction}
+          onSecondaryAction={handleDeploySecondaryAction}
+        />
       )}
     </DashboardLayout>
   )
