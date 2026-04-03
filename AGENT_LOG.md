@@ -1,3 +1,8 @@
+## [2026-04-03 19:53 UTC] Codex — Renter Auth Intent Flow Restored Across Template-to-Playground Login Redirect
+- **Commit**: `pending` - Restored renter auth intent handoff on the updated mainline by wiring template catalog prefill redirects and playground/login intent consumption to the shared auth-intent helpers, preserving source/template/model/mode/job_type context through auth walls.
+- **Files**: `app/login/page.tsx`, `app/renter/marketplace/templates/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Unauthenticated renter template launches now persist deployment context into login and reliably rehydrate playground defaults after auth, including analytics source attribution. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
+
 ## [2026-04-03 10:21 UTC] Codex - Release Heartbeat Merged PRs #246 #247 #248 After Refresh Build Gates
 - **Commit**: `c2cbb80` - Fetched `origin`, evaluated `agent/frontend-dev/dcp-206-admin-containers-hook-deps-ship`, `agent/frontend-dev/dcp-491-homepage-api-demo-i18n`, and `agent/backend-dev/dcp-472-restore-allam-capacity` in isolated worktrees, merged `main` into each candidate branch, and passed `npm run build` on every refreshed head. Opened PRs `#246`, `#247`, and `#248`, merged `#246`, refreshed `#247` and `#248` against the updated `main`, reran `npm run build`, pushed the refreshed branch heads, then merged `#247` and `#248` sequentially. Focused backend verification passed for `dcp-472` via `NODE_ENV=test npx jest --runInBand src/__tests__/v1-models.test.js`.
 - **Files**: `AGENT_LOG.md`

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense, Component, ErrorInfo, ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense, Component, ErrorInfo, ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useLanguage } from '../../lib/i18n';
@@ -473,31 +473,6 @@ function GpuPlayground() {
     return nextIntent;
   }, [preselectedJobType, preselectedModel, preselectedMode, preselectedProvider, preselectedSource, preselectedTemplate]);
 
-  const verifyKey = useCallback(async (key: string) => {
-    setAuthChecking(true);
-    try {
-      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setRenterName(data.renter?.name || t('playground.default_renter_name'));
-        setRenterBalance(data.renter?.balance_halala != null ? data.renter.balance_halala / 100 : null);
-        setRenterKey(key);
-        sessionStorage.setItem('dc1_renter_key', key);
-        if (data.recent_jobs) {
-          setJobHistory(data.recent_jobs);
-        }
-        fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(key)}`)
-          .then(r => r.ok ? r.json() : null)
-          .then(d => { if (d?.templates) setTemplates(d.templates); })
-          .catch(() => {});
-      } else {
-        setRenterName(null);
-        sessionStorage.removeItem('dc1_renter_key');
-      }
-    } catch { /* keep key */ }
-    finally { setAuthChecking(false); }
-  }, [t]);
-
   useEffect(() => {
     if (!preselectedModel) return;
     const selectedModel = preselectedModel;
@@ -534,7 +509,7 @@ function GpuPlayground() {
     } else {
       setAuthChecking(false);
     }
-  }, [verifyKey]);
+  }, []);
 
   useEffect(() => {
     if (authChecking || renterName || typeof window === 'undefined') return;
@@ -570,6 +545,33 @@ function GpuPlayground() {
       source: restored.source ?? null,
     });
   }, [renterName, trackPlaygroundEvent]);
+
+  async function verifyKey(key: string) {
+    setAuthChecking(true);
+    try {
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRenterName(data.renter?.name || t('playground.default_renter_name'));
+        setRenterBalance(data.renter?.balance_halala != null ? data.renter.balance_halala / 100 : null);
+        setRenterKey(key);
+        sessionStorage.setItem('dc1_renter_key', key);
+        // Load job history
+        if (data.recent_jobs) {
+          setJobHistory(data.recent_jobs);
+        }
+        // Load templates
+        fetch(`${API_BASE}/renters/me/templates?key=${encodeURIComponent(key)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d?.templates) setTemplates(d.templates); })
+          .catch(() => {});
+      } else {
+        setRenterName(null);
+        sessionStorage.removeItem('dc1_renter_key');
+      }
+    } catch { /* keep key */ }
+    finally { setAuthChecking(false); }
+  }
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -814,7 +816,7 @@ function GpuPlayground() {
       }
     } catch { /* ignore */ }
     finally { setLoadingProviders(false); }
-  }, [providerId, preselectedProvider]);
+  }, [providerId]);
 
   useEffect(() => {
     if (renterName) fetchProviders();
@@ -976,45 +978,6 @@ function GpuPlayground() {
     }
   }
 
-  const fetchProof = useCallback(async (id: number) => {
-    try {
-      const res = await fetch(`${API_BASE}/jobs/${id}`, {
-        headers: { 'x-renter-key': renterKey },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const job = data.job || {};
-
-      setProof({
-        job_id: job.job_id || `#${job.id}`,
-        provider_name: 'Restricted',
-        provider_gpu: 'Restricted',
-        provider_hostname: '',
-        status: job.status,
-        started_at: job.started_at || '',
-        completed_at: job.completed_at || '',
-        actual_duration_minutes: job.actual_duration_minutes || 0,
-        cost_halala: job.actual_cost_halala || 0,
-        provider_earned_halala: job.provider_earned_halala || 0,
-        dc1_fee_halala: job.dc1_fee_halala || 0,
-        raw_log: job.result || '',
-      });
-
-      verifyKey(renterKey);
-    } catch { /* ignore */ }
-  }, [renterKey, verifyKey]);
-
-  const refreshJobHistory = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(renterKey)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.recent_jobs) setJobHistory(data.recent_jobs);
-        if (data.renter?.balance_halala != null) setRenterBalance(data.renter.balance_halala / 100);
-      }
-    } catch { /* ignore */ }
-  }, [renterKey]);
-
   // ── Poll for result ──────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'polling' || !jobId) return;
@@ -1093,7 +1056,7 @@ function GpuPlayground() {
     poll();
     pollRef.current = setInterval(poll, 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fetchProof, jobId, jobType, phase, refreshJobHistory, renterKey, t]);
+  }, [phase, jobId, jobType]);
 
   // Stop polling after 15 minutes (image gen can take longer)
   useEffect(() => {
@@ -1102,7 +1065,48 @@ function GpuPlayground() {
       setPhase('error');
       if (pollRef.current) clearInterval(pollRef.current);
     }
-  }, [phase, pollCount, t]);
+  }, [phase, pollCount]);
+
+  async function fetchProof(id: number) {
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${id}`, {
+        headers: { 'x-renter-key': renterKey },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const job = data.job || {};
+
+      setProof({
+        job_id: job.job_id || `#${job.id}`,
+        provider_name: 'Restricted',
+        provider_gpu: 'Restricted',
+        provider_hostname: '',
+        status: job.status,
+        started_at: job.started_at || '',
+        completed_at: job.completed_at || '',
+        actual_duration_minutes: job.actual_duration_minutes || 0,
+        cost_halala: job.actual_cost_halala || 0,
+        provider_earned_halala: job.provider_earned_halala || 0,
+        dc1_fee_halala: job.dc1_fee_halala || 0,
+        raw_log: job.result || '',
+      });
+
+      // Refresh balance
+      verifyKey(renterKey);
+    } catch { /* ignore */ }
+  }
+
+  // Refresh job history from API
+  async function refreshJobHistory() {
+    try {
+      const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(renterKey)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.recent_jobs) setJobHistory(data.recent_jobs);
+        if (data.renter?.balance_halala != null) setRenterBalance(data.renter.balance_halala / 100);
+      }
+    } catch { /* ignore */ }
+  }
 
   async function fetchTemplates() {
     if (!renterKey) return;
@@ -1304,111 +1308,85 @@ function GpuPlayground() {
     },
   ];
 
-  const submitBlockers = useMemo<Array<{
+  const submitBlockers: Array<{
     code: string;
     reason: string;
     ctaLabel: string;
     onRecover: () => void;
-  }>>(() => {
-    const nextSubmitBlockers: Array<{
-      code: string;
-      reason: string;
-      ctaLabel: string;
-      onRecover: () => void;
-    }> = [];
-    if (!providerId) {
-      nextSubmitBlockers.push({
-        code: 'provider_missing',
-        reason: t('playground.blocker.provider_missing.reason'),
-        ctaLabel: t('playground.blocker.provider_missing.cta'),
-        onRecover: fetchProviders,
-      });
-    }
-    if (!hasAuthKey) {
-      nextSubmitBlockers.push({
-        code: 'auth_missing',
-        reason: 'Authentication key missing. Re-authenticate before submitting.',
-        ctaLabel: 'Go to login',
-        onRecover: () => {
-          window.location.href = '/login?role=renter&source=playground-submit';
-        },
-      });
-    }
-    if (providerId && selectedProvider && !isProviderOnline) {
-      nextSubmitBlockers.push({
-        code: 'provider_offline',
-        reason: 'Selected provider is offline. Pick an online provider before submit.',
-        ctaLabel: 'Refresh providers',
-        onRecover: fetchProviders,
-      });
-    }
-    if (providerId && selectedProvider && !isModelCompatible) {
-      nextSubmitBlockers.push({
-        code: 'model_incompatible',
-        reason: `Selected GPU VRAM is below model requirement (~${selectedModelVramGb} GB).`,
-        ctaLabel: 'Choose compatible provider',
-        onRecover: fetchProviders,
-      });
-    }
-    if (jobType !== 'vllm_serve' && !prompt.trim()) {
-      nextSubmitBlockers.push({
-        code: 'prompt_missing',
-        reason: t('playground.blocker.prompt_missing.reason'),
-        ctaLabel: t('playground.blocker.prompt_missing.cta'),
-        onRecover: () => promptRef.current?.focus(),
-      });
-    }
-    if (showFirstJobWizard && !fitConfirmed) {
-      nextSubmitBlockers.push({
-        code: 'fit_not_confirmed',
-        reason: t('playground.blocker.fit_not_confirmed.reason'),
-        ctaLabel: t('playground.blocker.fit_not_confirmed.cta'),
-        onRecover: () => setFitConfirmed(true),
-      });
-    }
-    if (canRecoverLowBalance) {
-      nextSubmitBlockers.push({
-        code: 'insufficient_balance',
-        reason: `${t('playground.blocker.insufficient_balance.reason_prefix')} ${(estimatedMaxHalala / 100).toFixed(2)} SAR ${t('playground.blocker.insufficient_balance.reason_suffix')}`,
-        ctaLabel: t('playground.blocker.insufficient_balance.cta'),
-        onRecover: () => {
-          trackPlaygroundEvent('topup_cta_clicked_from_playground', {
-            balance_halala: availableBalanceHalala,
-            estimated_max_halala: estimatedMaxHalala,
-            job_type: jobType,
-          });
-          window.location.href = '/renter/billing';
-        },
-      });
-    }
-    if (isRunning) {
-      nextSubmitBlockers.push({
-        code: 'job_in_progress',
-        reason: t('playground.blocker.job_in_progress.reason'),
-        ctaLabel: t('playground.blocker.job_in_progress.cta'),
-        onRecover: () => setViewMode('history'),
-      });
-    }
-    return nextSubmitBlockers;
-  }, [
-    availableBalanceHalala,
-    canRecoverLowBalance,
-    estimatedMaxHalala,
-    fetchProviders,
-    fitConfirmed,
-    hasAuthKey,
-    isModelCompatible,
-    isProviderOnline,
-    isRunning,
-    jobType,
-    prompt,
-    providerId,
-    selectedModelVramGb,
-    selectedProvider,
-    showFirstJobWizard,
-    t,
-    trackPlaygroundEvent,
-  ]);
+  }> = [];
+  if (!providerId) {
+    submitBlockers.push({
+      code: 'provider_missing',
+      reason: t('playground.blocker.provider_missing.reason'),
+      ctaLabel: t('playground.blocker.provider_missing.cta'),
+      onRecover: fetchProviders,
+    });
+  }
+  if (!hasAuthKey) {
+    submitBlockers.push({
+      code: 'auth_missing',
+      reason: 'Authentication key missing. Re-authenticate before submitting.',
+      ctaLabel: 'Go to login',
+      onRecover: () => {
+        window.location.href = '/login?role=renter&source=playground-submit';
+      },
+    });
+  }
+  if (providerId && selectedProvider && !isProviderOnline) {
+    submitBlockers.push({
+      code: 'provider_offline',
+      reason: 'Selected provider is offline. Pick an online provider before submit.',
+      ctaLabel: 'Refresh providers',
+      onRecover: fetchProviders,
+    });
+  }
+  if (providerId && selectedProvider && !isModelCompatible) {
+    submitBlockers.push({
+      code: 'model_incompatible',
+      reason: `Selected GPU VRAM is below model requirement (~${selectedModelVramGb} GB).`,
+      ctaLabel: 'Choose compatible provider',
+      onRecover: fetchProviders,
+    });
+  }
+  if (jobType !== 'vllm_serve' && !prompt.trim()) {
+    submitBlockers.push({
+      code: 'prompt_missing',
+      reason: t('playground.blocker.prompt_missing.reason'),
+      ctaLabel: t('playground.blocker.prompt_missing.cta'),
+      onRecover: () => promptRef.current?.focus(),
+    });
+  }
+  if (showFirstJobWizard && !fitConfirmed) {
+    submitBlockers.push({
+      code: 'fit_not_confirmed',
+      reason: t('playground.blocker.fit_not_confirmed.reason'),
+      ctaLabel: t('playground.blocker.fit_not_confirmed.cta'),
+      onRecover: () => setFitConfirmed(true),
+    });
+  }
+  if (canRecoverLowBalance) {
+    submitBlockers.push({
+      code: 'insufficient_balance',
+      reason: `${t('playground.blocker.insufficient_balance.reason_prefix')} ${(estimatedMaxHalala / 100).toFixed(2)} SAR ${t('playground.blocker.insufficient_balance.reason_suffix')}`,
+      ctaLabel: t('playground.blocker.insufficient_balance.cta'),
+      onRecover: () => {
+        trackPlaygroundEvent('topup_cta_clicked_from_playground', {
+          balance_halala: availableBalanceHalala,
+          estimated_max_halala: estimatedMaxHalala,
+          job_type: jobType,
+        });
+        window.location.href = '/renter/billing';
+      },
+    });
+  }
+  if (isRunning) {
+    submitBlockers.push({
+      code: 'job_in_progress',
+      reason: t('playground.blocker.job_in_progress.reason'),
+      ctaLabel: t('playground.blocker.job_in_progress.cta'),
+      onRecover: () => setViewMode('history'),
+    });
+  }
 
   const primaryBlocker = submitBlockers[0] ?? null;
   const isSubmitDisabled = submitBlockers.length > 0;
