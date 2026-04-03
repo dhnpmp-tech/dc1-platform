@@ -875,6 +875,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN p2p_peer_id TEXT',
   'ALTER TABLE providers ADD COLUMN daemon_version TEXT',
   'ALTER TABLE providers ADD COLUMN current_job_id TEXT',
+  'ALTER TABLE providers ADD COLUMN available_gpu_tiers TEXT',
   'ALTER TABLE providers ADD COLUMN approval_status TEXT DEFAULT \'pending\'',
   'ALTER TABLE providers ADD COLUMN approved_at TEXT',
   'ALTER TABLE providers ADD COLUMN rejected_reason TEXT',
