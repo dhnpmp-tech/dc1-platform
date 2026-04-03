@@ -16,6 +16,95 @@ function toSarString(amountHalala) {
   return (Number(amountHalala) / HALALA_PER_SAR).toFixed(2);
 }
 
+function buildProviderSettlementPreview(db, {
+  windowStart,
+  windowEnd,
+  providerId = null,
+} = {}) {
+  const startIso = assertIso(windowStart, 'windowStart');
+  const endIso = assertIso(windowEnd, 'windowEnd');
+  if (new Date(startIso).getTime() > new Date(endIso).getTime()) {
+    throw new Error('windowStart must be <= windowEnd');
+  }
+  ensureBatchSourceTables(db);
+  const sqlDb = resolveSqlDb(db);
+
+  const filters = [
+    "js.status = 'completed'",
+    'js.provider_id IS NOT NULL',
+    'js.settled_at >= ?',
+    'js.settled_at <= ?',
+  ];
+  const params = [startIso, endIso];
+  if (providerId != null) {
+    filters.push('js.provider_id = ?');
+    params.push(providerId);
+  }
+  const whereSql = filters.join(' AND ');
+
+  const rows = sqlDb.prepare(`
+    SELECT
+      js.provider_id AS provider_id,
+      COUNT(*) AS settled_jobs,
+      COALESCE(SUM(js.gross_amount_halala), 0) AS gross_halala,
+      COALESCE(SUM(js.platform_fee_halala), 0) AS platform_fee_halala,
+      COALESCE(SUM(js.provider_payout_halala), 0) AS provider_net_halala
+    FROM job_settlements js
+    WHERE ${whereSql}
+    GROUP BY js.provider_id
+    ORDER BY js.provider_id ASC
+  `).all(...params);
+
+  const providers = rows.map((row) => {
+    const grossHalala = Number(row.gross_halala || 0);
+    const platformFeeHalala = Number(row.platform_fee_halala || 0);
+    const providerNetHalala = Number(row.provider_net_halala || 0);
+    return {
+      provider_id: Number(row.provider_id),
+      settled_jobs: Number(row.settled_jobs || 0),
+      gross_halala: grossHalala,
+      gross_sar: toSarString(grossHalala),
+      platform_fee_halala: platformFeeHalala,
+      platform_fee_sar: toSarString(platformFeeHalala),
+      provider_net_halala: providerNetHalala,
+      provider_net_sar: toSarString(providerNetHalala),
+      reconciliation_ok: grossHalala === (platformFeeHalala + providerNetHalala),
+    };
+  });
+
+  const totals = providers.reduce((acc, row) => {
+    acc.gross_halala += row.gross_halala;
+    acc.platform_fee_halala += row.platform_fee_halala;
+    acc.provider_net_halala += row.provider_net_halala;
+    acc.settled_jobs += row.settled_jobs;
+    return acc;
+  }, {
+    gross_halala: 0,
+    platform_fee_halala: 0,
+    provider_net_halala: 0,
+    settled_jobs: 0,
+  });
+
+  return {
+    settlement_window: { start: startIso, end: endIso },
+    providers,
+    totals: {
+      providers_count: providers.length,
+      settled_jobs: totals.settled_jobs,
+      gross_halala: totals.gross_halala,
+      gross_sar: toSarString(totals.gross_halala),
+      platform_fee_halala: totals.platform_fee_halala,
+      platform_fee_sar: toSarString(totals.platform_fee_halala),
+      provider_net_halala: totals.provider_net_halala,
+      provider_net_sar: toSarString(totals.provider_net_halala),
+    },
+    reconciliation: {
+      gross_equals_split: totals.gross_halala === (totals.platform_fee_halala + totals.provider_net_halala),
+      delta_halala: totals.gross_halala - (totals.platform_fee_halala + totals.provider_net_halala),
+    },
+  };
+}
+
 function buildBatchChecksum(entries, windowStart, windowEnd, currency) {
   const digest = crypto.createHash('sha256');
   for (const entry of entries) {
@@ -204,6 +293,7 @@ function toBankCsv(batch) {
 }
 
 module.exports = {
+  buildProviderSettlementPreview,
   generateProviderPayoutBatch,
   toBankCsv,
   toSarString,
