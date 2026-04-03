@@ -507,11 +507,11 @@ export default function EarningsPage() {
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">Earnings & History</h1>
-            <p className="text-dc1-text-secondary text-sm mt-1">Track your GPU earnings, job history, and daemon status</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-dc1-text-primary">{t('provider.earnings_history_title')}</h1>
+            <p className="text-dc1-text-secondary text-sm mt-1">{t('provider.earnings_history_desc')}</p>
           </div>
           <button onClick={fetchAll} className="btn btn-secondary text-sm">
-            Refresh
+            {t('provider.refresh')}
           </button>
         </div>
 
@@ -643,24 +643,30 @@ export default function EarningsPage() {
         {/* Summary Cards */}
         {earnings && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Available" value={`${earnings.available_sar.toFixed(2)} SAR`} accent="amber" />
-            <StatCard label="Total Earned" value={`${earnings.total_earned_sar.toFixed(2)} SAR`} accent="success" />
-            <StatCard label="Withdrawn" value={`${earnings.withdrawn_sar.toFixed(2)} SAR`} accent="default" />
-            <StatCard label="Jobs Done" value={String(earnings.total_jobs)} accent="info" />
+            <StatCard label={t('provider.available')} value={`${earnings.available_sar.toFixed(2)} SAR`} accent="amber" />
+            <StatCard label={t('provider.total_earnings')} value={`${earnings.total_earned_sar.toFixed(2)} SAR`} accent="success" />
+            <StatCard label={t('provider.withdrawn')} value={`${earnings.withdrawn_sar.toFixed(2)} SAR`} accent="default" />
+            <StatCard label={t('provider.jobs_completed')} value={String(earnings.total_jobs)} accent="info" />
           </div>
         )}
 
         {/* Tabs */}
         <div className="flex gap-1 bg-dc1-surface-l2 rounded-xl p-1">
-          {(['overview', 'jobs', 'daemon', 'withdrawals'] as const).map(t => (
+          {(['overview', 'jobs', 'daemon', 'withdrawals'] as const).map(tabKey => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={tabKey}
+              onClick={() => setTab(tabKey)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
-                tab === t ? 'bg-dc1-amber/10 text-dc1-amber' : 'text-dc1-text-muted hover:text-dc1-text-secondary'
+                tab === tabKey ? 'bg-dc1-amber/10 text-dc1-amber' : 'text-dc1-text-muted hover:text-dc1-text-secondary'
               }`}
             >
-              {t === 'overview' ? 'Earnings' : t === 'jobs' ? 'Job History' : t === 'daemon' ? 'Daemon' : 'Withdrawals'}
+              {tabKey === 'overview'
+                ? t('provider.tab_earnings')
+                : tabKey === 'jobs'
+                  ? t('provider.tab_job_history')
+                  : tabKey === 'daemon'
+                    ? t('provider.tab_daemon')
+                    : t('provider.tab_withdrawals')}
             </button>
           ))}
         </div>
