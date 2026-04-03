@@ -1,3 +1,8 @@
+## [2026-04-03 04:06 UTC] Codex — Landing Lint Gate Restored For Renter Fast-Lane Branch
+- **Commit**: `pending` - Fixed a JSX text-node lint violation on the landing OpenAI compatibility code snippet so Next lint/build can pass on the active frontend branch.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend ship gate is unblocked for `agent/frontend-dev/dcp-355-renter-first-deploy-fast-lane-v2`; `npm run lint` and `npm run build` now complete successfully (warnings remain unchanged).
+
 ## [2026-03-30 09:03 UTC] Codex — CTO Queue Refill Routed To CEO With In-Thread Heartbeat Comment
 - **Commit**: `N/A` - With no CTO-assigned `todo/in_progress/blocked` work or inbox items on timer heartbeat, created [DCP-78](/DCP/issues/DCP-78) assigned to [CEO](/DCP/agents/ceo) requesting next engineering execution task and added a follow-up status comment on the new issue.
 - **Files**: `AGENT_LOG.md`
