@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { toUsdStringFromHalala } = require('../lib/model-catalog-contract');
 
 function nowIso() {
   return new Date().toISOString();
@@ -22,12 +23,23 @@ function toInt(value, { min = null, max = null } = {}) {
   return num;
 }
 
+function toCanonicalUsdString(value, fallbackHalala = 0) {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num) || num < 0) return toUsdStringFromHalala(fallbackHalala);
+  return num.toFixed(6);
+}
+
 function recordOpenRouterUsage(db, {
   requestId = null,
   providerResponseId = null,
   jobId = null,
   requestPath = null,
+  promptCostHalala = null,
+  completionCostHalala = null,
   tokenRateHalala = null,
+  usdPrompt = null,
+  usdCompletion = null,
+  usdTotal = null,
   renterId,
   providerId = null,
   model,
@@ -51,7 +63,16 @@ function recordOpenRouterUsage(db, {
   const cleanPrompt = toInt(promptTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanCompletion = toInt(completionTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const cleanTotal = toInt(totalTokens, { min: 0, max: 1_000_000_000 }) ?? (cleanPrompt + cleanCompletion);
-  const cleanCost = toInt(costHalala, { min: 0, max: 100_000_000_000 });
+  const safeTokenRate = cleanTokenRateHalala ?? 0;
+  const cleanPromptCost = toInt(promptCostHalala, { min: 0, max: 100_000_000_000 })
+    ?? (cleanPrompt * safeTokenRate);
+  const cleanCompletionCost = toInt(completionCostHalala, { min: 0, max: 100_000_000_000 })
+    ?? (cleanCompletion * safeTokenRate);
+  const cleanCost = toInt(costHalala, { min: 0, max: 100_000_000_000 })
+    ?? (cleanPromptCost + cleanCompletionCost);
+  const cleanUsdPrompt = toCanonicalUsdString(usdPrompt, cleanPromptCost);
+  const cleanUsdCompletion = toCanonicalUsdString(usdCompletion, cleanCompletionCost);
+  const cleanUsdTotal = toCanonicalUsdString(usdTotal, cleanCost);
   const cleanSettlementStatus = settlementStatus === 'failed'
     ? 'failed'
     : (settlementStatus === 'settled' ? 'settled' : 'pending');
@@ -65,7 +86,12 @@ function recordOpenRouterUsage(db, {
   const hasProviderResponseId = ledgerColumns.some((col) => col?.name === 'provider_response_id');
   const hasJobId = ledgerColumns.some((col) => col?.name === 'job_id');
   const hasRequestPath = ledgerColumns.some((col) => col?.name === 'request_path');
+  const hasPromptCostHalala = ledgerColumns.some((col) => col?.name === 'prompt_cost_halala');
+  const hasCompletionCostHalala = ledgerColumns.some((col) => col?.name === 'completion_cost_halala');
   const hasTokenRateHalala = ledgerColumns.some((col) => col?.name === 'token_rate_halala');
+  const hasUsdPrompt = ledgerColumns.some((col) => col?.name === 'usd_prompt');
+  const hasUsdCompletion = ledgerColumns.some((col) => col?.name === 'usd_completion');
+  const hasUsdTotal = ledgerColumns.some((col) => col?.name === 'usd_total');
 
   if (cleanRequestId && hasRequestId) {
     const existing = db.prepare('SELECT * FROM openrouter_usage_ledger WHERE request_id = ? LIMIT 1').get(cleanRequestId);
@@ -108,9 +134,29 @@ function recordOpenRouterUsage(db, {
     insertColumns.push('request_path');
     insertValues.push(cleanRequestPath || null);
   }
+  if (hasPromptCostHalala) {
+    insertColumns.push('prompt_cost_halala');
+    insertValues.push(cleanPromptCost);
+  }
+  if (hasCompletionCostHalala) {
+    insertColumns.push('completion_cost_halala');
+    insertValues.push(cleanCompletionCost);
+  }
   if (hasTokenRateHalala) {
     insertColumns.push('token_rate_halala');
     insertValues.push(cleanTokenRateHalala);
+  }
+  if (hasUsdPrompt) {
+    insertColumns.push('usd_prompt');
+    insertValues.push(cleanUsdPrompt);
+  }
+  if (hasUsdCompletion) {
+    insertColumns.push('usd_completion');
+    insertValues.push(cleanUsdCompletion);
+  }
+  if (hasUsdTotal) {
+    insertColumns.push('usd_total');
+    insertValues.push(cleanUsdTotal);
   }
   const placeholders = insertColumns.map(() => '?').join(', ');
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
@@ -13,23 +13,7 @@ interface RegistrationResult {
   message: string
 }
 
-function RenterRegisterLoadingState() {
-  return (
-    <>
-      <Header />
-      <main className="min-h-screen bg-dc1-void py-12">
-        <section className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-          <div className="rounded-xl border border-dc1-border bg-dc1-surface-l1 p-8">
-            <p className="text-sm text-dc1-text-secondary">Loading renter registration...</p>
-          </div>
-        </section>
-      </main>
-      <Footer />
-    </>
-  )
-}
-
-function RenterRegisterPageInner() {
+export default function RenterRegisterPage() {
   const { t, language } = useLanguage()
   const isRTL = language === 'ar'
   const billingExplainerRef = useRef<HTMLDivElement | null>(null)
@@ -105,7 +89,7 @@ function RenterRegisterPageInner() {
     () => [
       { label: t('mode.label.marketplace'), detail: t('mode.desc.marketplace'), href: '/renter/marketplace' },
       { label: t('mode.label.playground'), detail: t('mode.desc.playground'), href: '/renter/playground?starter=1' },
-      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api/openrouter-60s-quickstart' },
+      { label: t('mode.label.docs_api'), detail: t('mode.desc.docs_api'), href: '/docs/api-reference' },
       { label: t('mode.label.enterprise_support'), detail: t('mode.desc.enterprise_support'), href: '/support?category=enterprise&source=renter_register_success#contact-form' },
     ],
     [t]
@@ -239,6 +223,7 @@ function RenterRegisterPageInner() {
   }, [success, trackRegisterEvent])
 
   if (success && result) {
+    const firstDeployFastLaneHref = '/renter/marketplace/templates?source=renter_register_success_fast_lane'
     const supportRoutes = [
       {
         label: t('conversion.support.route.billing'),
@@ -289,6 +274,29 @@ function RenterRegisterPageInner() {
               <p className="text-sm text-status-warning bg-status-warning/5 border border-status-warning/20 rounded-lg p-4 mb-6">
                 {t('register.renter.key_security')}
               </p>
+
+              <div className={`rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-5 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-dc1-amber mb-2">
+                  First deploy fast lane
+                </p>
+                <h3 className="text-lg font-semibold text-dc1-text-primary mb-2">{t('conversion.first_workload.title')}</h3>
+                <p className="text-sm text-dc1-text-secondary mb-4">{t('conversion.first_workload.subtitle')}</p>
+                <a
+                  href={firstDeployFastLaneHref}
+                  onClick={() =>
+                    trackRegisterEvent('register_success_fast_lane_cta_clicked', {
+                      source_page: 'renter_register_success',
+                      surface: 'fast_lane_primary',
+                      destination: firstDeployFastLaneHref,
+                      step: 'launch_first_deploy',
+                      cta_type: 'first_deploy_fast_lane',
+                    })
+                  }
+                  className="btn btn-primary w-full sm:w-auto"
+                >
+                  {t('conversion.first_workload.primary_cta')}
+                </a>
+              </div>
 
               <div className={`bg-dc1-surface-l2 border border-dc1-border rounded-lg p-5 mb-6 ${isRTL ? 'text-right' : 'text-left'}`}>
                 <h3 className="text-base font-semibold text-dc1-text-primary mb-3">
@@ -400,34 +408,33 @@ function RenterRegisterPageInner() {
                 <p className="mt-3 text-xs text-dc1-text-muted">{t('conversion.arabic_models.note')}</p>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className={`flex flex-wrap items-center gap-3 text-sm ${isRTL ? 'justify-end' : 'justify-start'}`}>
                 <a
-                  href="/renter/playground?starter=1"
-                  onClick={() =>
-                    trackRegisterEvent('register_success_primary_cta_clicked', {
-                      source_page: 'renter_register_success',
-                      surface: 'success_actions',
-                      destination: '/renter/playground?starter=1',
-                      step: 'primary_cta',
-                      cta_type: 'start_first_job',
-                    })
-                  }
-                  className="btn btn-primary flex-1"
-                >
-                  {t('nav.playground')}
-                </a>
-                <a
-                  href="/renter/marketplace"
+                  href="/renter/playground?starter=1&source=renter_register_success_secondary"
                   onClick={() =>
                     trackRegisterEvent('register_success_secondary_cta_clicked', {
                       source_page: 'renter_register_success',
-                      surface: 'success_actions',
-                      destination: '/renter/marketplace',
-                      step: 'secondary_cta',
-                      cta_type: 'go_dashboard',
+                      surface: 'success_secondary_actions',
+                      destination: '/renter/playground?starter=1&source=renter_register_success_secondary',
+                      step: 'open_playground',
                     })
                   }
-                  className="btn btn-secondary flex-1"
+                  className="text-dc1-amber hover:underline"
+                >
+                  {t('nav.playground')}
+                </a>
+                <span className="text-dc1-text-muted">•</span>
+                <a
+                  href="/renter/marketplace?source=renter_register_success_secondary"
+                  onClick={() =>
+                    trackRegisterEvent('register_success_secondary_cta_clicked', {
+                      source_page: 'renter_register_success',
+                      surface: 'success_secondary_actions',
+                      destination: '/renter/marketplace?source=renter_register_success_secondary',
+                      step: 'open_marketplace',
+                    })
+                  }
+                  className="text-dc1-amber hover:underline"
                 >
                   {t('nav.marketplace')}
                 </a>
@@ -722,13 +729,5 @@ function RenterRegisterPageInner() {
       </main>
       <Footer />
     </>
-  )
-}
-
-export default function RenterRegisterPage() {
-  return (
-    <Suspense fallback={<RenterRegisterLoadingState />}>
-      <RenterRegisterPageInner />
-    </Suspense>
   )
 }

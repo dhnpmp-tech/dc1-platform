@@ -692,6 +692,33 @@ function collectProviderOptionalPassthroughFields(requestBody = {}) {
   return passthrough;
 }
 
+function extractEndpointHost(endpointUrl) {
+  try {
+    return new URL(String(endpointUrl || '')).host || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setProviderRouteEvidenceHeaders(res, {
+  provider = null,
+  requestedModelId = null,
+  routedModelId = null,
+} = {}) {
+  if (!res || typeof res.setHeader !== 'function' || !provider) return;
+  const providerId = toFiniteInt(provider.id, { min: 1 });
+  if (providerId) res.setHeader('x-dcp-provider-id', String(providerId));
+
+  const providerTier = resolveProviderTier(provider);
+  if (providerTier) res.setHeader('x-dcp-provider-tier', String(providerTier));
+
+  const endpointHost = extractEndpointHost(provider.vllm_endpoint_url);
+  if (endpointHost) res.setHeader('x-dcp-provider-endpoint-host', endpointHost);
+
+  if (requestedModelId) res.setHeader('x-dcp-requested-model-id', String(requestedModelId));
+  if (routedModelId) res.setHeader('x-dcp-routed-model-id', String(routedModelId));
+}
+
 async function proxyToProvider({
   endpointUrl,
   modelId,
@@ -986,10 +1013,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         requestedModelId: modelReq.model_id,
         providerVramMb: resolveProviderVramMb(assignedProvider),
       });
+      const routedModelId = assignedProviderProxyModel.proxyModelId;
 
       const proxyResult = await proxyToProvider({
         endpointUrl: assignedProvider.vllm_endpoint_url,
-        modelId: assignedProviderProxyModel.proxyModelId,
+        modelId: routedModelId,
         messages,
         maxTokens,
         temperature,
@@ -1000,6 +1028,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
 
       const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
+        setProviderRouteEvidenceHeaders(res, {
+          provider: providerForUsage,
+          requestedModelId: modelReq.model_id,
+          routedModelId: resultBody?.model || routedModelId,
+        });
         const usageForResponse = withUsdUsagePricing(resultBody?.usage || {}, tokenRateHalala);
         debitAndPersistUsage({
           providerForUsage,
@@ -1022,6 +1055,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
+        setProviderRouteEvidenceHeaders(res, {
+          provider: providerForUsage,
+          requestedModelId: modelReq.model_id,
+          routedModelId,
+        });
         if (res.flushHeaders) res.flushHeaders();
 
         let providerResponseId = null;
@@ -1206,6 +1244,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     // Fallback: create job in queue (non-streaming only for job-based flow)
     const now = new Date().toISOString();
     const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setProviderRouteEvidenceHeaders(res, {
+      provider: assignedProvider,
+      requestedModelId: modelReq.model_id,
+      routedModelId: modelReq.model_id,
+    });
 
     const containerSpec = {
       image_type: 'vllm-serve',

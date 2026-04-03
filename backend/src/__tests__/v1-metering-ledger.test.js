@@ -128,7 +128,12 @@ describe('v1 chat metering ledger persistence', () => {
     expect(payload.promptTokens).toBe(9);
     expect(payload.completionTokens).toBe(4);
     expect(payload.totalTokens).toBe(13);
+    expect(payload.promptCostHalala).toBe(18);
+    expect(payload.completionCostHalala).toBe(8);
     expect(payload.costHalala).toBe(26);
+    expect(payload.usdPrompt).toBe('0.048000');
+    expect(payload.usdCompletion).toBe('0.021333');
+    expect(payload.usdTotal).toBe('0.069333');
     expect(payload.settlementStatus).toBe('pending');
 
     fetchSpy.mockRestore();
@@ -168,7 +173,12 @@ describe('v1 chat metering ledger persistence', () => {
     expect(payload.promptTokens).toBe(11);
     expect(payload.completionTokens).toBe(7);
     expect(payload.totalTokens).toBe(18);
+    expect(payload.promptCostHalala).toBe(22);
+    expect(payload.completionCostHalala).toBe(14);
     expect(payload.costHalala).toBe(36);
+    expect(payload.usdPrompt).toBe('0.058667');
+    expect(payload.usdCompletion).toBe('0.037333');
+    expect(payload.usdTotal).toBe('0.096000');
     expect(payload.settlementStatus).toBe('pending');
 
     fetchSpy.mockRestore();
@@ -218,7 +228,12 @@ describe('v1 chat metering ledger persistence', () => {
     expect(payload.promptTokens).toBe(10);
     expect(payload.completionTokens).toBe(3);
     expect(payload.totalTokens).toBe(13);
+    expect(payload.promptCostHalala).toBe(20);
+    expect(payload.completionCostHalala).toBe(6);
     expect(payload.costHalala).toBe(26);
+    expect(payload.usdPrompt).toBe('0.053333');
+    expect(payload.usdCompletion).toBe('0.016000');
+    expect(payload.usdTotal).toBe('0.069333');
     expect(payload.settlementStatus).toBe('pending');
 
     fetchSpy.mockRestore();
@@ -251,7 +266,7 @@ describe('v1 chat metering ledger persistence', () => {
         messages: [{ role: 'user', content: 'hello failure path' }],
       });
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(503);
     expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     const payload = mockRecordOpenRouterUsage.mock.calls[0][1];
     expect(payload.requestId).toBe('req-failed-123');
@@ -260,6 +275,11 @@ describe('v1 chat metering ledger persistence', () => {
     expect(payload.promptTokens).toBeGreaterThan(0);
     expect(payload.completionTokens).toBe(0);
     expect(payload.totalTokens).toBe(payload.promptTokens);
+    expect(payload.promptCostHalala).toBeGreaterThan(0);
+    expect(payload.completionCostHalala).toBe(0);
+    expect(typeof payload.usdPrompt).toBe('string');
+    expect(payload.usdCompletion).toBe('0.000000');
+    expect(typeof payload.usdTotal).toBe('string');
 
     fetchSpy.mockRestore();
   });
