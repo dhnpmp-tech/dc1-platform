@@ -1,5 +1,5 @@
 ## [2026-04-03 23:58 UTC] Codex — Playground Provider Prefill Hook Dependency Stabilized
-- **Commit**: `pending` - Added `preselectedProvider` to the provider-fetch callback dependency list so marketplace-prefill selection stays explicit in hook semantics and lint no longer flags the callback dependency omission.
+- **Commit**: `fcbaf74` - Added `preselectedProvider` to the provider-fetch callback dependency list so marketplace-prefill selection stays explicit in hook semantics and lint no longer flags the callback dependency omission.
 - **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider preselection behavior remains unchanged while the prior playground callback dependency warning is removed from ship checks. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
 
