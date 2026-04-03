@@ -1,5 +1,5 @@
 ## [2026-04-03 21:56 UTC] Codex — Login Reason Message Hook Dependency Stabilized
-- **Commit**: `pending` - Memoized login reason-to-message mapping with `useCallback` and wired the effect dependency to the callback, removing the stale exhaustive-deps warning without behavior changes.
+- **Commit**: `28e1244` - Memoized login reason-to-message mapping with `useCallback` and wired the effect dependency to the callback, removing the stale exhaustive-deps warning without behavior changes.
 - **Files**: `app/login/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Login reason query-parameter error hydration remains unchanged, while lint/build no longer report the prior `getReasonMessage` hook dependency warning on this page. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
 
