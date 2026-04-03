@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "smoke:gpu-job": "node scripts/gpu-job-lifecycle-smoke.mjs",
+    "proof:prefetch-top3-sla": "node scripts/run-prefetch-top3-sla-proof.mjs",
     "test:e2e": "playwright test",
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:ui": "playwright test --ui"

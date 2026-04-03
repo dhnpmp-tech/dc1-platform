@@ -10,6 +10,12 @@ import { useLanguage } from '../lib/i18n'
 import ProviderWizard from './components/ProviderWizard'
 import ProviderActivationCard from './components/ProviderActivationCard'
 import { getProviderActivationNarrative } from '../lib/provider-activation-narrative'
+import {
+  buildProviderTroubleshootingHref,
+  getProviderOnboardingStep,
+  ProviderNextActionState,
+} from '../lib/provider-install'
+import { trackProviderInstallEvent } from '../lib/provider-install-telemetry'
 
 interface ProviderData {
   id: string
@@ -493,6 +499,21 @@ export default function ProviderDashboard() {
 
         {/* Activate Your GPU banner — shown when approved but offline (DCP-963) */}
         {providerData.approvalStatus === 'approved' && providerData.status === 'offline' && (
+          (() => {
+            const onboardingState: ProviderNextActionState = providerData.isPaused
+              ? 'paused'
+              : !providerData.lastHeartbeat
+                ? 'waiting'
+                : providerData.status === 'offline'
+                  ? 'stale'
+                  : providerData.jobsCompleted > 0
+                    ? 'ready'
+                    : 'heartbeat'
+            const troubleshootingHref = buildProviderTroubleshootingHref(onboardingState)
+            const supportHref = `/support?category=provider_install&source=provider_dashboard_banner&state=${onboardingState}#contact-form`
+            const onboardingStep = getProviderOnboardingStep(onboardingState)
+
+            return (
           <div className="rounded-2xl border-2 border-dc1-amber/50 bg-gradient-to-br from-dc1-amber/10 to-dc1-amber/5 p-6">
             <div className="flex flex-col sm:flex-row sm:items-start gap-5">
               <div className="text-4xl select-none">⚡</div>
@@ -507,11 +528,23 @@ export default function ProviderDashboard() {
                   <Link
                     href="/provider/download"
                     className="flex items-start gap-3 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l2 px-4 py-3 hover:border-dc1-amber/60 transition-colors group"
+                    onClick={() =>
+                      trackProviderInstallEvent('provider_install_cta_clicked', {
+                        source_page: 'provider_dashboard',
+                        surface: 'activation_banner_step',
+                        destination: '/provider/download',
+                        locale: isRTL ? 'ar' : 'en',
+                        cta_tier: 'primary',
+                        next_action_state: onboardingState,
+                        step: onboardingStep,
+                        has_provider_key: Boolean(providerApiKey),
+                      })
+                    }
                   >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm group-hover:bg-dc1-amber/30 transition-colors">1</span>
                     <div>
-                      <p className="text-sm font-semibold text-dc1-text-primary">Connect Endpoint</p>
-                      <p className="text-xs text-dc1-text-muted mt-0.5">Download & run the DCP daemon on your GPU machine</p>
+                      <p className="text-sm font-semibold text-dc1-text-primary">{t('provider.install_banner.step1_title')}</p>
+                      <p className="text-xs text-dc1-text-muted mt-0.5">{t('provider.install_banner.step1_desc')}</p>
                     </div>
                   </Link>
                   <Link
@@ -520,30 +553,73 @@ export default function ProviderDashboard() {
                   >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm group-hover:bg-dc1-amber/30 transition-colors">2</span>
                     <div>
-                      <p className="text-sm font-semibold text-dc1-text-primary">Verify Heartbeat</p>
-                      <p className="text-xs text-dc1-text-muted mt-0.5">Confirm your GPU is sending live heartbeats to DCP</p>
+                      <p className="text-sm font-semibold text-dc1-text-primary">{t('provider.install_banner.step2_title')}</p>
+                      <p className="text-xs text-dc1-text-muted mt-0.5">{t('provider.install_banner.step2_desc')}</p>
                     </div>
                   </Link>
                   <div className="flex items-start gap-3 rounded-xl border border-dc1-border bg-dc1-surface-l2 px-4 py-3 opacity-60">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-dc1-surface-l3 text-dc1-text-muted font-bold text-sm">3</span>
                     <div>
-                      <p className="text-sm font-semibold text-dc1-text-secondary">Go Live</p>
-                      <p className="text-xs text-dc1-text-muted mt-0.5">Status turns online automatically once heartbeat is confirmed</p>
+                      <p className="text-sm font-semibold text-dc1-text-secondary">{t('provider.install_banner.step3_title')}</p>
+                      <p className="text-xs text-dc1-text-muted mt-0.5">{t('provider.install_banner.step3_desc')}</p>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <Link href="/provider/download" className="btn btn-primary btn-sm">
-                    Download Daemon →
+                  <Link
+                    href="/provider/download"
+                    className="btn btn-primary btn-sm"
+                    onClick={() =>
+                      trackProviderInstallEvent('provider_install_cta_clicked', {
+                        source_page: 'provider_dashboard',
+                        surface: 'activation_banner',
+                        destination: '/provider/download',
+                        locale: isRTL ? 'ar' : 'en',
+                        cta_tier: 'primary',
+                        next_action_state: onboardingState,
+                        step: onboardingStep,
+                        has_provider_key: Boolean(providerApiKey),
+                      })
+                    }
+                  >
+                    {t('provider.install_banner.primary_cta')}
                   </Link>
-                  {activationNarrative.ctaFlow.map((cta) => (
-                    <Link key={cta.href} href={cta.href} className="text-sm text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80">
-                      {cta.label}
-                    </Link>
-                  ))}
-                  <a href="https://docs.dcp.sa/provider/quickstart" target="_blank" rel="noopener noreferrer" className="text-sm text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80">
-                    Provider Quickstart Guide
-                  </a>
+                  <Link
+                    href={troubleshootingHref}
+                    className="text-sm text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80"
+                    onClick={() =>
+                      trackProviderInstallEvent('provider_install_cta_clicked', {
+                        source_page: 'provider_dashboard',
+                        surface: 'activation_banner',
+                        destination: troubleshootingHref,
+                        locale: isRTL ? 'ar' : 'en',
+                        cta_tier: 'secondary',
+                        next_action_state: onboardingState,
+                        step: onboardingStep,
+                        has_provider_key: Boolean(providerApiKey),
+                      })
+                    }
+                  >
+                    {t('register.provider.status_matrix.guide_cta')}
+                  </Link>
+                  <Link
+                    href={supportHref}
+                    className="text-sm text-dc1-amber underline underline-offset-2 hover:text-dc1-amber/80"
+                    onClick={() =>
+                      trackProviderInstallEvent('provider_install_cta_clicked', {
+                        source_page: 'provider_dashboard',
+                        surface: 'activation_banner',
+                        destination: supportHref,
+                        locale: isRTL ? 'ar' : 'en',
+                        cta_tier: 'secondary',
+                        next_action_state: onboardingState,
+                        step: onboardingStep,
+                        has_provider_key: Boolean(providerApiKey),
+                      })
+                    }
+                  >
+                    {t('register.provider.next_action_support_cta')}
+                  </Link>
                 </div>
                 <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-3">
                   <p className="text-xs font-semibold text-dc1-text-primary mb-1">{activationNarrative.assumptionsTitle}</p>
@@ -556,6 +632,8 @@ export default function ProviderDashboard() {
               </div>
             </div>
           </div>
+            )
+          })()
         )}
 
         {/* Page Header */}

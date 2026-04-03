@@ -1,3 +1,8 @@
+## [2026-04-03 04:06 UTC] Codex — Landing Lint Gate Restored For Renter Fast-Lane Branch
+- **Commit**: `pending` - Fixed a JSX text-node lint violation on the landing OpenAI compatibility code snippet so Next lint/build can pass on the active frontend branch.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend ship gate is unblocked for `agent/frontend-dev/dcp-355-renter-first-deploy-fast-lane-v2`; `npm run lint` and `npm run build` now complete successfully (warnings remain unchanged).
+
 ## [2026-03-30 09:03 UTC] Codex — CTO Queue Refill Routed To CEO With In-Thread Heartbeat Comment
 - **Commit**: `N/A` - With no CTO-assigned `todo/in_progress/blocked` work or inbox items on timer heartbeat, created [DCP-78](/DCP/issues/DCP-78) assigned to [CEO](/DCP/agents/ceo) requesting next engineering execution task and added a follow-up status comment on the new issue.
 - **Files**: `AGENT_LOG.md`
@@ -32418,7 +32423,17 @@ a
 - **Files**: `app/docs/quickstart/page.tsx`, `app/renter/register/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Production build with typecheck and static generation succeeds (`npm run build -- --no-lint`), including prerender output for both target routes. Existing EN/AR UX flows remain unchanged.
 
-## [2026-04-03 02:46 UTC] Codex — feat: DCP-371 deterministic first-live proof route evidence + rate-limit-tolerant smoke principal recovery
-- **Commit**: `pending` - Added deterministic provider-route evidence headers on `/v1/chat/completions`, extended first-live proof artifacts to capture/validate route evidence, and made smoke principal bootstrap resilient to register 429 by recovering via deterministic login-email.
-- **Files**: backend/src/routes/v1.js, backend/tests/first-live-inference-proof-package.js, backend/tests/ensure-inference-smoke-principal.js, backend/src/__tests__/v1-models.test.js, docs/ops/first-live-inference-proof-runbook.md, docs/reports/reliability/first-live-inference-proof-latest.{json,md,log}, docs/reports/reliability/first-live-inference-proof-20260403T024628Z.{json,md,log}
-- **Impact**: DCP-371 proof package now emits machine-checkable provider route evidence fields when available and fails explicitly for missing route evidence on successful completions. Live run currently fails for capacity (`provider_unreachable_or_unavailable`) but produces deterministic artifact links for issue reporting.
+## [2026-04-02 23:46 UTC] Codex — DCP-408 Provider install CTA conversion polish shipped on earn/provider/download
+- **Commit**: `pending` - Implemented EN/AR i18n CTA copy, deterministic primary/secondary install routing, and unified provider-install telemetry/error-help states across `/earn`, `/provider`, and `/provider/download`.
+- **Files**: `app/earn/page.tsx`, `app/provider/page.tsx`, `app/provider/download/page.tsx`, `app/lib/provider-install-telemetry.ts`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider install surfaces now enforce one dominant next action (install), route deterministic troubleshooting/support links by onboarding state, and emit consistent analytics dimensions (`source_page`, `surface`, `cta_tier`, `destination`, `next_action_state`, `os_target`, `has_provider_key`, `step`). Production build passes with `npm run build -- --no-lint`. Screenshot automation attempt failed in this container due missing headless browser runtime library `libglib-2.0.so.0`.
+
+## [2026-04-03 01:50 UTC] Codex — DCP-315 provider earnings trust surfaces implemented (settled/pending/estimated + sync confidence)
+- **Commit**: `pending` - Added earnings confidence trust IA on provider earnings page: settled/pending/estimated split, heartbeat-derived uptime confidence, payout timeline with blocker routing CTA, delayed-sync/partial-data warning states, and analytics events for trust surface view + CTA clicks.
+- **Files**: `app/provider/earnings/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider earnings now communicates payout confidence deterministically (including uncertain windows) with EN/AR trust copy parity and state-driven support/docs escalation routes. Build passes with `npm run build -- --no-lint`.
+
+## [2026-04-03 04:02 UTC] Codex — DCP-355 Renter First-Deploy Fast Lane Shipped (Auth-Aware Template Routing + Intent Persistence)
+- **Commit**: `pending` - Implemented renter first-deploy fast lane improvements: promoted a single dominant success CTA on `/renter/register`, made template deploy actions auth-aware (signed-in users route to prefilled playground; signed-out users store pending auth intent then route to login), and expanded auth-intent persistence to carry `template`, `model`, `job_type`, and `source` across login restoration.
+- **Files**: `app/lib/renter-auth-intent.ts`, `app/login/page.tsx`, `app/renter/register/page.tsx`, `app/renter/marketplace/templates/page.tsx`, `app/renter/marketplace/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Renter onboarding now has an above-the-fold fast lane from registration to first deploy, template/model/job-type selections survive auth transitions deterministically, and submit analytics include intent/source fields to measure register-to-first-submit conversion.

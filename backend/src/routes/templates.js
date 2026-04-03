@@ -310,21 +310,74 @@ function findAvailableProvider(minVramGb) {
   const minVramMib = (minVramGb || 0) * 1024;
   const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   return db.get(
-    `SELECT id, name, gpu_model, vram_gb, gpu_vram_mib FROM providers
-     WHERE status IN ('active', 'online')
-       AND last_heartbeat >= ?
-       AND COALESCE(gpu_vram_mib, vram_gb * 1024, 0) >= ?
-       AND NOT EXISTS (
-         SELECT 1 FROM jobs j
-         WHERE j.provider_id = providers.id
-           AND j.status IN ('assigned', 'pulling', 'running', 'pending')
-       )
-     ORDER BY last_heartbeat DESC
+    `SELECT p.id, p.name, p.gpu_model, p.vram_gb, p.gpu_vram_mib,
+            COUNT(CASE WHEN j.status IN ('assigned', 'pulling', 'running', 'pending') THEN 1 END) AS active_jobs
+     FROM providers p
+     LEFT JOIN jobs j ON j.provider_id = p.id
+     WHERE p.status IN ('active', 'online')
+       AND p.last_heartbeat >= ?
+       AND COALESCE(p.gpu_vram_mib, p.vram_gb * 1024, 0) >= ?
+     GROUP BY p.id, p.name, p.gpu_model, p.vram_gb, p.gpu_vram_mib
+     ORDER BY active_jobs ASC, p.last_heartbeat DESC
      LIMIT 1`,
     tenMinAgo,
     minVramMib
   );
 }
+
+function getTemplateCapacitySnapshot(minVramGb) {
+  const minVramMib = (minVramGb || 0) * 1024;
+  const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const rows = db.all(
+    `SELECT p.id, p.name, p.gpu_model, p.vram_gb, p.gpu_vram_mib,
+            COUNT(CASE WHEN j.status IN ('assigned', 'pulling', 'running', 'pending') THEN 1 END) AS active_jobs
+     FROM providers p
+     LEFT JOIN jobs j ON j.provider_id = p.id
+     WHERE p.status IN ('active', 'online')
+       AND p.last_heartbeat >= ?
+       AND COALESCE(p.gpu_vram_mib, p.vram_gb * 1024, 0) >= ?
+     GROUP BY p.id, p.name, p.gpu_model, p.vram_gb, p.gpu_vram_mib
+     ORDER BY active_jobs ASC, p.last_heartbeat DESC`,
+    tenMinAgo,
+    minVramMib
+  );
+
+  const capableCount = Array.isArray(rows) ? rows.length : 0;
+  const idleCount = Array.isArray(rows) ? rows.filter((row) => Number(row.active_jobs || 0) === 0).length : 0;
+  const selectedProvider = capableCount > 0 ? rows[0] : null;
+
+  return {
+    required_vram_gb: minVramGb || 0,
+    provider_heartbeat_stale_ms: 10 * 60 * 1000,
+    capable_provider_count: capableCount,
+    idle_provider_count: idleCount,
+    selected_provider: selectedProvider
+      ? {
+          id: selectedProvider.id,
+          name: selectedProvider.name,
+          gpu_model: selectedProvider.gpu_model,
+          vram_gb: selectedProvider.vram_gb,
+          active_jobs: Number(selectedProvider.active_jobs || 0),
+        }
+      : null,
+  };
+}
+
+// GET /api/templates/:id/deploy/check -- non-mutating deploy capacity check
+router.get('/:id/deploy/check', publicEndpointLimiter, (req, res) => {
+  const templates = loadTemplates();
+  const template = templates.find((entry) => entry.id === req.params.id);
+  if (!template) {
+    return res.status(404).json({ error: `Template '${req.params.id}' not found` });
+  }
+
+  const snapshot = getTemplateCapacitySnapshot(template.min_vram_gb || 0);
+  return res.json({
+    template: { id: template.id, name: template.name },
+    checked_at: new Date().toISOString(),
+    ...snapshot,
+  });
+});
 
 // POST /api/templates/:id/deploy -- one-click deploy; requires renter auth
 // Body: { duration_minutes?, pricing_class?, params? }
@@ -425,9 +478,12 @@ router.post('/:id/deploy', templateDeployLimiter, (req, res) => {
     // 6. Find an available GPU provider matching template VRAM requirements
     const provider = findAvailableProvider(template.min_vram_gb || 0);
     if (!provider) {
+      const snapshot = getTemplateCapacitySnapshot(template.min_vram_gb || 0);
       return res.status(503).json({
         error: 'No GPU provider currently available for this template',
         required_vram_gb: template.min_vram_gb || 0,
+        capable_provider_count: snapshot.capable_provider_count,
+        idle_provider_count: snapshot.idle_provider_count,
         hint: 'Retry shortly or use POST /api/jobs/submit with queued fallback.',
       });
     }
