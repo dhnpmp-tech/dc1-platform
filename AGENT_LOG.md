@@ -32422,3 +32422,8 @@ a
 - **Commit**: `pending` - Implemented EN/AR i18n CTA copy, deterministic primary/secondary install routing, and unified provider-install telemetry/error-help states across `/earn`, `/provider`, and `/provider/download`.
 - **Files**: `app/earn/page.tsx`, `app/provider/page.tsx`, `app/provider/download/page.tsx`, `app/lib/provider-install-telemetry.ts`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider install surfaces now enforce one dominant next action (install), route deterministic troubleshooting/support links by onboarding state, and emit consistent analytics dimensions (`source_page`, `surface`, `cta_tier`, `destination`, `next_action_state`, `os_target`, `has_provider_key`, `step`). Production build passes with `npm run build -- --no-lint`. Screenshot automation attempt failed in this container due missing headless browser runtime library `libglib-2.0.so.0`.
+
+## [2026-04-03 01:50 UTC] Codex — DCP-315 provider earnings trust surfaces implemented (settled/pending/estimated + sync confidence)
+- **Commit**: `pending` - Added earnings confidence trust IA on provider earnings page: settled/pending/estimated split, heartbeat-derived uptime confidence, payout timeline with blocker routing CTA, delayed-sync/partial-data warning states, and analytics events for trust surface view + CTA clicks.
+- **Files**: `app/provider/earnings/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider earnings now communicates payout confidence deterministically (including uncertain windows) with EN/AR trust copy parity and state-driven support/docs escalation routes. Build passes with `npm run build -- --no-lint`.
