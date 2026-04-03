@@ -46,6 +46,10 @@ const IMAGE_APPROVAL_WINDOW_MINUTES = Number.parseInt(process.env.DCP_IMAGE_APPR
 const IMAGE_APPROVAL_MAX_REQUESTS = Number.parseInt(process.env.DCP_IMAGE_APPROVAL_MAX_REQUESTS || '20', 10);
 const TRIVY_TIMEOUT_MS = Number.parseInt(process.env.DCP_TRIVY_TIMEOUT_MS || '180000', 10);
 const DOCKER_TIMEOUT_MS = Number.parseInt(process.env.DCP_DOCKER_TIMEOUT_MS || '30000', 10);
+const PROVIDER_APPROVAL_SLA_HOURS = Number.parseInt(process.env.DCP_PROVIDER_APPROVAL_SLA_HOURS || '24', 10);
+const PROVIDER_APPROVAL_SLA_SECONDS = Number.isFinite(PROVIDER_APPROVAL_SLA_HOURS) && PROVIDER_APPROVAL_SLA_HOURS > 0
+  ? PROVIDER_APPROVAL_SLA_HOURS * 3600
+  : 24 * 3600;
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
 // DCP-768: requireAdminRbac = token auth + RBAC role check + audit log.
@@ -81,6 +85,42 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
   const num = toFiniteNumber(value, { min, max });
   if (num == null || !Number.isInteger(num)) return null;
   return num;
+}
+
+function parseTimestampMs(value) {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function buildProviderApprovalQueueEntry(provider, nowMs = Date.now()) {
+  const createdAt = provider.created_at || provider.updated_at || null;
+  const createdAtMs = parseTimestampMs(createdAt);
+  const pendingDurationSeconds = createdAtMs == null
+    ? null
+    : Math.max(0, Math.floor((nowMs - createdAtMs) / 1000));
+  const slaDeadlineAt = createdAtMs == null
+    ? null
+    : new Date(createdAtMs + (PROVIDER_APPROVAL_SLA_SECONDS * 1000)).toISOString();
+  const slaDeadlineMs = parseTimestampMs(slaDeadlineAt);
+  const slaRemainingSeconds = slaDeadlineMs == null
+    ? null
+    : Math.max(0, Math.floor((slaDeadlineMs - nowMs) / 1000));
+
+  return {
+    provider_id: provider.id,
+    name: provider.name,
+    email: provider.email,
+    approval_status: provider.approval_status || 'pending',
+    created_at: createdAt,
+    pending_duration_seconds: pendingDurationSeconds,
+    pending_duration: pendingDurationSeconds == null ? null : `${pendingDurationSeconds}s`,
+    reason: normalizeString(provider.rejected_reason, { maxLen: 400 }) || 'awaiting_manual_review',
+    sla_target_seconds: PROVIDER_APPROVAL_SLA_SECONDS,
+    sla_deadline_at: slaDeadlineAt,
+    sla_remaining_seconds: slaRemainingSeconds,
+    sla_breached: slaRemainingSeconds == null ? null : slaRemainingSeconds === 0,
+  };
 }
 
 function parseBooleanLike(value, defaultValue = false) {
@@ -1125,6 +1165,172 @@ router.get('/providers', (req, res) => {
   } catch (error) {
     console.error('Admin providers error:', error);
     res.status(500).json({ error: 'Failed to fetch providers' });
+  }
+});
+
+// === GET /api/admin/providers/approval-queue - Pending approval providers with SLA metadata ===
+router.get('/providers/approval-queue', (req, res) => {
+  try {
+    const limit = toFiniteInt(req.query.limit, { min: 1, max: 500 }) || 100;
+    const nowMs = Date.now();
+    const pending = db.all(
+      `SELECT id, name, email, approval_status, rejected_reason, created_at, updated_at
+       FROM providers
+       WHERE COALESCE(approval_status, 'pending') = 'pending'
+       ORDER BY datetime(created_at) ASC, id ASC
+       LIMIT ?`,
+      limit
+    );
+
+    const providers = pending.map((provider) => buildProviderApprovalQueueEntry(provider, nowMs));
+
+    return res.json({
+      count: providers.length,
+      generated_at: new Date(nowMs).toISOString(),
+      sla_target_seconds: PROVIDER_APPROVAL_SLA_SECONDS,
+      providers,
+    });
+  } catch (error) {
+    console.error('Admin provider approval-queue error:', error);
+    return res.status(500).json({ error: 'Failed to fetch provider approval queue' });
+  }
+});
+
+// === PATCH /api/admin/providers/:id/approval-decision - Explicit approve/reject with immutable audit row ===
+router.patch('/providers/:id/approval-decision', (req, res) => {
+  try {
+    const providerId = toFiniteInt(req.params.id, { min: 1 });
+    if (providerId == null) return res.status(400).json({ error: 'Invalid provider id' });
+
+    const decisionRaw = normalizeString(req.body?.decision, { maxLen: 20 });
+    const decision = decisionRaw ? decisionRaw.toLowerCase() : null;
+    if (!decision || !['approve', 'reject'].includes(decision)) {
+      return res.status(400).json({ error: 'decision must be approve or reject' });
+    }
+
+    const reason = normalizeString(req.body?.reason, { maxLen: 400 });
+    if (decision === 'reject' && !reason) {
+      return res.status(400).json({ error: 'reason is required when decision is reject' });
+    }
+
+    const provider = db.get(
+      `SELECT id, name, approval_status
+       FROM providers
+       WHERE id = ?`,
+      providerId
+    );
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    if ((provider.approval_status || 'pending') !== 'pending') {
+      return res.status(409).json({ error: `Provider approval_status is already ${provider.approval_status}` });
+    }
+
+    const now = new Date().toISOString();
+    const actor = normalizeString(getAdminTokenFromReq(req), { maxLen: 120 }) || 'system';
+    let action;
+    let details;
+    let nextStatus;
+    let approvedAt = null;
+    let rejectedReason = null;
+
+    if (decision === 'approve') {
+      nextStatus = 'approved';
+      approvedAt = now;
+      action = 'provider_approved';
+      details = `Approved provider "${provider.name}"`;
+      db.prepare(
+        `UPDATE providers
+         SET approval_status = 'approved',
+             approved_at = ?,
+             rejected_reason = NULL,
+             updated_at = ?
+         WHERE id = ?`
+      ).run(now, now, providerId);
+    } else {
+      nextStatus = 'rejected';
+      rejectedReason = reason;
+      action = 'provider_rejected';
+      details = `Rejected provider "${provider.name}": ${reason}`;
+      db.prepare(
+        `UPDATE providers
+         SET approval_status = 'rejected',
+             approved_at = NULL,
+             rejected_reason = ?,
+             updated_at = ?
+         WHERE id = ?`
+      ).run(reason, now, providerId);
+    }
+
+    db.prepare(
+      `INSERT INTO admin_audit_log
+         (admin_user_id, action, target_type, target_id, details, timestamp)
+       VALUES (?, ?, 'provider', ?, ?, ?)`
+    ).run(actor, action, String(providerId), details, now);
+
+    const latestAudit = db.get(
+      `SELECT id, admin_user_id, action, target_type, target_id, details, timestamp
+       FROM admin_audit_log
+       WHERE target_type = 'provider'
+         AND target_id = ?
+         AND action IN ('provider_approved', 'provider_rejected')
+       ORDER BY id DESC
+       LIMIT 1`,
+      String(providerId)
+    );
+
+    return res.json({
+      success: true,
+      provider_id: providerId,
+      approval_status: nextStatus,
+      approved_at: approvedAt,
+      rejected_reason: rejectedReason,
+      decided_at: now,
+      audit_entry: latestAudit || null,
+    });
+  } catch (error) {
+    console.error('Provider approval-decision error:', error);
+    return res.status(500).json({ error: 'Failed to update provider approval decision' });
+  }
+});
+
+// === GET /api/admin/providers/:id/approval-audit - Read immutable provider approval decisions ===
+router.get('/providers/:id/approval-audit', (req, res) => {
+  try {
+    const providerId = toFiniteInt(req.params.id, { min: 1 });
+    if (providerId == null) return res.status(400).json({ error: 'Invalid provider id' });
+
+    const provider = db.get(
+      `SELECT id, approval_status, approved_at, rejected_reason
+       FROM providers
+       WHERE id = ?`,
+      providerId
+    );
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const limit = toFiniteInt(req.query.limit, { min: 1, max: 500 }) || 100;
+    const entries = db.all(
+      `SELECT id, admin_user_id, action, target_type, target_id, details, timestamp
+       FROM admin_audit_log
+       WHERE target_type = 'provider'
+         AND target_id = ?
+         AND action IN ('provider_approved', 'provider_rejected')
+       ORDER BY id DESC
+       LIMIT ?`,
+      String(providerId),
+      limit
+    );
+
+    return res.json({
+      provider_id: providerId,
+      approval_status: provider.approval_status || 'pending',
+      approved_at: provider.approved_at || null,
+      rejected_reason: provider.rejected_reason || null,
+      count: entries.length,
+      entries,
+    });
+  } catch (error) {
+    console.error('Provider approval-audit error:', error);
+    return res.status(500).json({ error: 'Failed to fetch provider approval audit' });
   }
 });
 
