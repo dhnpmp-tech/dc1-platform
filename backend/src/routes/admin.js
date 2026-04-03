@@ -16,6 +16,7 @@ const { getConfig: getNotifConfig, sendAlert, sendTelegram } = require('../servi
 const { sendWithdrawalApprovedEmail } = require('../services/emailService');
 const { resolveAttemptLogPath } = require('../services/job-execution-logs');
 const { buildFunnelReport } = require('../services/conversionFunnelService');
+const { buildDaemonHealthSummary } = require('../services/daemonHealthSummary');
 const {
   listPolicies: listControlPlanePolicies,
   updatePolicy: updateControlPlanePolicy,
@@ -498,23 +499,6 @@ function parseIsoTimestamp(value) {
   return parsed;
 }
 
-function parseJsonObject(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function normalizeAdmissionRejectionCode(value) {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  return /^[A-Z0-9_]+$/.test(trimmed) ? trimmed : null;
-}
-
 function asPercent(numerator, denominator) {
   if (!(denominator > 0)) return null;
   return Number(((numerator / denominator) * 100).toFixed(2));
@@ -552,7 +536,6 @@ function buildActivationConversionWindowReport(windowHours, nowIso = new Date().
         online_within_24h_rate: null,
       },
       blocker_taxonomy: [],
-      admission_rejection_counts: [],
       sample_size: 0,
     };
   }
@@ -609,36 +592,6 @@ function buildActivationConversionWindowReport(windowHours, nowIso = new Date().
     addTaxonomyReason(taxonomy, reasonCode, providerId, Number(row.count) || 0, 'daemon_events');
   }
 
-  const admissionRows = db.all(
-    `SELECT provider_id, metadata_json
-       FROM provider_activation_events
-      WHERE provider_id IN ${providerInClause.clause}
-        AND event_code = 'tier_admission_rejected'
-        AND occurred_at >= ?`,
-    ...providerInClause.params,
-    sinceIso
-  );
-  const admissionTaxonomy = new Map();
-  for (const row of admissionRows) {
-    const providerId = Number(row.provider_id);
-    if (!providerIdSet.has(providerId)) continue;
-    const metadata = parseJsonObject(row.metadata_json);
-    const rejectionCode = normalizeAdmissionRejectionCode(metadata?.rejection_code || metadata?.reason_code);
-    if (!rejectionCode) continue;
-    if (!admissionTaxonomy.has(rejectionCode)) {
-      admissionTaxonomy.set(rejectionCode, {
-        code: rejectionCode,
-        count: 0,
-        sample_provider_ids: [],
-      });
-    }
-    const entry = admissionTaxonomy.get(rejectionCode);
-    entry.count += 1;
-    if (!entry.sample_provider_ids.includes(providerId) && entry.sample_provider_ids.length < 5) {
-      entry.sample_provider_ids.push(providerId);
-    }
-  }
-
   let firstHeartbeatCount = 0;
   let onlineWithin24hCount = 0;
 
@@ -676,14 +629,6 @@ function buildActivationConversionWindowReport(windowHours, nowIso = new Date().
   const blockerTaxonomy = Array.from(taxonomy.values())
     .filter((entry) => entry.count > 0)
     .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
-  const admissionRejectionCounts = Array.from(admissionTaxonomy.values())
-    .filter((entry) => entry.count > 0)
-    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
-    .map((entry) => ({
-      rejection_code: entry.code,
-      count: entry.count,
-      sample_provider_ids: entry.sample_provider_ids,
-    }));
 
   return {
     window_hours: windowHours,
@@ -701,7 +646,6 @@ function buildActivationConversionWindowReport(windowHours, nowIso = new Date().
       online_within_24h_rate: asPercent(onlineWithin24hCount, registeredCount),
     },
     blocker_taxonomy: blockerTaxonomy,
-    admission_rejection_counts: admissionRejectionCounts,
     sample_size: registeredCount,
   };
 }
@@ -2611,6 +2555,7 @@ router.get('/daemon-health', (req, res) => {
     const successCount = jobStats.find(s => s.event_type === 'job_success')?.count || 0;
     const failCount = jobStats.find(s => s.event_type === 'job_failure')?.count || 0;
     const totalJobs = successCount + failCount;
+    const reliability = buildDaemonHealthSummary(db);
 
     res.json({
       period_hours: parseInt(hours),
@@ -2619,10 +2564,11 @@ router.get('/daemon-health', (req, res) => {
         total_events: events.length,
         total_crashes: crashes.reduce((sum, c) => sum + c.crash_count, 0),
         total_jobs: totalJobs,
-        job_success_rate: totalJobs > 0 ? `${((successCount / totalJobs) * 100).toFixed(1)}%` : 'N/A',
+        job_success_rate_pct: totalJobs > 0 ? Number(((successCount / totalJobs) * 100).toFixed(2)) : null,
         providers_online: providers.filter(p => p.status === 'online').length,
         providers_total: providers.length,
       },
+      reliability,
       crashes,
       versions,
       job_stats: { success: successCount, failure: failCount, total: totalJobs },
