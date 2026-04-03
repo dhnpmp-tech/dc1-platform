@@ -1,7 +1,11 @@
 'use strict';
 
 const Database = require('better-sqlite3');
-const { generateProviderPayoutBatch, toBankCsv } = require('../services/payoutBatchService');
+const {
+  buildProviderSettlementPreview,
+  generateProviderPayoutBatch,
+  toBankCsv,
+} = require('../services/payoutBatchService');
 
 function makeDb() {
   const db = new Database(':memory:');
@@ -118,3 +122,85 @@ describe('payoutBatchService', () => {
   });
 });
 
+describe('buildProviderSettlementPreview', () => {
+  test('returns per-provider gross/platform/net totals and deterministic 2dp SAR strings', () => {
+    const db = makeDb();
+    db.prepare(`
+      INSERT INTO job_settlements
+        (id, job_id, provider_id, renter_id, duration_seconds, gpu_rate_per_second, gross_amount_halala, platform_fee_halala, provider_payout_halala, status, settled_at)
+      VALUES (?, ?, ?, 1, 120, 0.1, ?, ?, ?, 'completed', ?)
+    `).run('px-1', 'job-1', 11, 101, 15, 86, '2026-03-31T01:00:00.000Z');
+    db.prepare(`
+      INSERT INTO job_settlements
+        (id, job_id, provider_id, renter_id, duration_seconds, gpu_rate_per_second, gross_amount_halala, platform_fee_halala, provider_payout_halala, status, settled_at)
+      VALUES (?, ?, ?, 1, 120, 0.1, ?, ?, ?, 'completed', ?)
+    `).run('px-2', 'job-2', 11, 99, 14, 85, '2026-03-31T01:10:00.000Z');
+    db.prepare(`
+      INSERT INTO job_settlements
+        (id, job_id, provider_id, renter_id, duration_seconds, gpu_rate_per_second, gross_amount_halala, platform_fee_halala, provider_payout_halala, status, settled_at)
+      VALUES (?, ?, ?, 2, 240, 0.2, ?, ?, ?, 'completed', ?)
+    `).run('px-3', 'job-3', 22, 205, 30, 175, '2026-03-31T02:00:00.000Z');
+
+    const preview = buildProviderSettlementPreview(db, {
+      windowStart: '2026-03-31T00:00:00.000Z',
+      windowEnd: '2026-03-31T23:59:59.999Z',
+    });
+
+    expect(preview.providers).toHaveLength(2);
+    expect(preview.providers[0]).toMatchObject({
+      provider_id: 11,
+      settled_jobs: 2,
+      gross_halala: 200,
+      gross_sar: '2.00',
+      platform_fee_halala: 29,
+      platform_fee_sar: '0.29',
+      provider_net_halala: 171,
+      provider_net_sar: '1.71',
+      reconciliation_ok: true,
+    });
+    expect(preview.providers[1]).toMatchObject({
+      provider_id: 22,
+      settled_jobs: 1,
+      gross_halala: 205,
+      gross_sar: '2.05',
+      platform_fee_halala: 30,
+      platform_fee_sar: '0.30',
+      provider_net_halala: 175,
+      provider_net_sar: '1.75',
+      reconciliation_ok: true,
+    });
+    expect(preview.totals).toMatchObject({
+      providers_count: 2,
+      settled_jobs: 3,
+      gross_halala: 405,
+      gross_sar: '4.05',
+      platform_fee_halala: 59,
+      platform_fee_sar: '0.59',
+      provider_net_halala: 346,
+      provider_net_sar: '3.46',
+    });
+    expect(preview.reconciliation).toEqual({
+      gross_equals_split: true,
+      delta_halala: 0,
+    });
+  });
+
+  test('supports provider_id filter and validates window bounds', () => {
+    const db = makeDb();
+    seedSettlement(db, { id: 'p-only-1', jobId: 'po-1', providerId: 11, payoutHalala: 100, settledAt: '2026-03-31T01:00:00.000Z' });
+    seedSettlement(db, { id: 'p-only-2', jobId: 'po-2', providerId: 22, payoutHalala: 200, settledAt: '2026-03-31T01:30:00.000Z' });
+
+    const preview = buildProviderSettlementPreview(db, {
+      windowStart: '2026-03-31T00:00:00.000Z',
+      windowEnd: '2026-03-31T23:59:59.999Z',
+      providerId: 11,
+    });
+
+    expect(preview.providers).toHaveLength(1);
+    expect(preview.providers[0].provider_id).toBe(11);
+    expect(() => buildProviderSettlementPreview(db, {
+      windowStart: '2026-04-01T00:00:00.000Z',
+      windowEnd: '2026-03-31T00:00:00.000Z',
+    })).toThrow('windowStart must be <= windowEnd');
+  });
+});

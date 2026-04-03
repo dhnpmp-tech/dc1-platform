@@ -33,6 +33,7 @@ const {
   markPayoutPaid,
   rejectPayout,
 } = require('../services/payoutService');
+const { buildProviderSettlementPreview } = require('../services/payoutBatchService');
 const { sendWithdrawalApprovedEmail, sendWithdrawalRejectedEmail } = require('../services/emailService');
 const { sendAlert } = require('../services/notifications');
 
@@ -208,6 +209,52 @@ router.get('/admin/payouts/pending', requireAdminRbac, (req, res) => {
     return res.json({ payouts, total });
   } catch (err) {
     console.error('[payouts] GET /admin/payouts/pending error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /api/admin/payouts/settlement-preview ───────────────────────────────
+//
+// Read-only finance preview for a settlement window.
+// Query: window_start, window_end (ISO; required), provider_id (optional)
+//
+// Returns:
+// {
+//   settlement_window,
+//   providers: [{ provider_id, settled_jobs, gross_*, platform_fee_*, provider_net_*, reconciliation_ok }],
+//   totals: { ...aggregate sums... },
+//   reconciliation: { gross_equals_split, delta_halala }
+// }
+router.get('/admin/payouts/settlement-preview', requireAdminRbac, (req, res) => {
+  try {
+    const windowStart = req.query.window_start || req.query.windowStart;
+    const windowEnd = req.query.window_end || req.query.windowEnd;
+    if (!windowStart || !windowEnd) {
+      return res.status(400).json({
+        error: 'window_start and window_end are required ISO timestamps',
+      });
+    }
+
+    let providerId = null;
+    if (req.query.provider_id != null && req.query.provider_id !== '') {
+      providerId = Number(req.query.provider_id);
+      if (!Number.isInteger(providerId) || providerId <= 0) {
+        return res.status(400).json({ error: 'provider_id must be a positive integer' });
+      }
+    }
+
+    const preview = buildProviderSettlementPreview(db._db || db, {
+      windowStart,
+      windowEnd,
+      providerId,
+    });
+
+    return res.json(preview);
+  } catch (err) {
+    if (err?.message && /windowStart|windowEnd/.test(err.message)) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[payouts] GET /admin/payouts/settlement-preview error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
