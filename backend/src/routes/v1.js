@@ -657,6 +657,21 @@ function withUsdUsagePricing(rawUsage = {}, tokenRateHalala = 1) {
   };
 }
 
+function pricingFromLedgerRecord(ledgerRecord, fallbackPricing) {
+  const usdPrompt = normalizeString(ledgerRecord?.usd_prompt, { maxLen: 40, trim: true })
+    || fallbackPricing.usd_prompt;
+  const usdCompletion = normalizeString(ledgerRecord?.usd_completion, { maxLen: 40, trim: true })
+    || fallbackPricing.usd_completion;
+  const usdTotal = normalizeString(ledgerRecord?.usd_total, { maxLen: 40, trim: true })
+    || fallbackPricing.usd_total;
+  return {
+    currency: 'USD',
+    usd_prompt: usdPrompt,
+    usd_completion: usdCompletion,
+    usd_total: usdTotal,
+  };
+}
+
 function v1ChatRateLimiter(req, res, next) {
   if (req.body?.stream) {
     return vllmStreamLimiter(req, res, next);
@@ -899,11 +914,22 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       const billedCompletionTokens = toFiniteInt(rawUsage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? defaultCompletionTokens;
       const billedTotalTokens = toFiniteInt(rawUsage.total_tokens, { min: 0, max: 1_000_000_000 })
         ?? (billedPromptTokens + billedCompletionTokens);
+      const promptCostHalala = billedPromptTokens * tokenRateHalala;
+      const completionCostHalala = billedCompletionTokens * tokenRateHalala;
+      const totalCostHalala = Math.max(1, billedTotalTokens * tokenRateHalala);
       return {
         promptTokens: billedPromptTokens,
         completionTokens: billedCompletionTokens,
         totalTokens: billedTotalTokens,
-        costHalala: Math.max(1, billedTotalTokens * tokenRateHalala),
+        promptCostHalala,
+        completionCostHalala,
+        costHalala: totalCostHalala,
+        pricing: {
+          currency: 'USD',
+          usd_prompt: toUsdStringFromHalala(promptCostHalala),
+          usd_completion: toUsdStringFromHalala(completionCostHalala),
+          usd_total: toUsdStringFromHalala(totalCostHalala),
+        },
       };
     };
 
@@ -911,17 +937,24 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       providerForUsage,
       providerResponseId = null,
       usage,
+      usageSnapshot = null,
       completionText = '',
       settlementStatus = 'pending',
     }) => {
-      if (usagePersisted) return;
-      const snapshot = toUsageSnapshot(usage, completionText);
+      const snapshot = usageSnapshot || toUsageSnapshot(usage, completionText);
+      if (usagePersisted) return { snapshot, persistedUsage: null };
+      let persistedUsage = null;
       try {
-        recordOpenRouterUsage(dbHandle, {
+        persistedUsage = recordOpenRouterUsage(dbHandle, {
           requestId: meteringRequestId,
           providerResponseId,
           requestPath: normalizeString(req.path || req.originalUrl || '/v1/chat/completions', { maxLen: 160 }),
+          promptCostHalala: snapshot.promptCostHalala,
+          completionCostHalala: snapshot.completionCostHalala,
           tokenRateHalala,
+          usdPrompt: snapshot.pricing.usd_prompt,
+          usdCompletion: snapshot.pricing.usd_completion,
+          usdTotal: snapshot.pricing.usd_total,
           renterId: req.renter.id,
           providerId: providerForUsage?.id || null,
           model: modelReq.model_id,
@@ -937,6 +970,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         console.error('[v1/chat/completions] usage ledger persist failed:', error?.message || error);
       }
       usagePersisted = true;
+      return { snapshot, persistedUsage };
     };
 
     const debitRenterSafe = (costHalala) => {
@@ -948,10 +982,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
 
     const debitAndPersistUsage = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
       const snapshot = toUsageSnapshot(usage, completionText);
+      let persistenceResult = { snapshot, persistedUsage: null };
       runUsageTransaction(() => {
         debitRenterSafe(snapshot.costHalala);
-        persistUsageOnce({ providerForUsage, providerResponseId, usage, completionText, settlementStatus: 'pending' });
+        persistenceResult = persistUsageOnce({
+          providerForUsage,
+          providerResponseId,
+          usage,
+          usageSnapshot: snapshot,
+          completionText,
+          settlementStatus: 'pending',
+        });
       });
+      return persistenceResult;
     };
 
     persistFailureUsageBestEffort = ({
@@ -1000,12 +1043,13 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
 
       const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
-        const usageForResponse = withUsdUsagePricing(resultBody?.usage || {}, tokenRateHalala);
-        debitAndPersistUsage({
+        const { snapshot, persistedUsage } = debitAndPersistUsage({
           providerForUsage,
           providerResponseId: normalizeString(resultBody?.id, { maxLen: 200 }),
-          usage: usageForResponse,
+          usage: resultBody?.usage || {},
         });
+        const usageForResponse = withUsdUsagePricing(resultBody?.usage || {}, tokenRateHalala);
+        usageForResponse.pricing = pricingFromLedgerRecord(persistedUsage, snapshot.pricing);
         return res.json({
           ...resultBody,
           usage: usageForResponse,
