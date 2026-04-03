@@ -1,3 +1,8 @@
+## [2026-04-03 23:58 UTC] Codex — Playground Provider Prefill Hook Dependency Stabilized
+- **Commit**: `pending` - Added `preselectedProvider` to the provider-fetch callback dependency list so marketplace-prefill selection stays explicit in hook semantics and lint no longer flags the callback dependency omission.
+- **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider preselection behavior remains unchanged while the prior playground callback dependency warning is removed from ship checks. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
+
 ## [2026-04-03 21:56 UTC] Codex — Login Reason Message Hook Dependency Stabilized
 - **Commit**: `28e1244` - Memoized login reason-to-message mapping with `useCallback` and wired the effect dependency to the callback, removing the stale exhaustive-deps warning without behavior changes.
 - **Files**: `app/login/page.tsx`, `AGENT_LOG.md`
