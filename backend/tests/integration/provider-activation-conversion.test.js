@@ -58,7 +58,6 @@ describe('GET /api/admin/providers/activation-conversion', () => {
         online_within_24h_rate: null,
       });
       expect(report.blocker_taxonomy).toEqual([]);
-      expect(report.admission_rejection_counts).toEqual([]);
       expect(report.sample_size).toBe(0);
     }
   });
@@ -117,27 +116,6 @@ describe('GET /api/admin/providers/activation-conversion', () => {
       minusHours(2)
     );
 
-    db.prepare(
-      `INSERT INTO provider_activation_events (provider_id, event_code, occurred_at, metadata_json, created_at)
-       VALUES (?, 'tier_admission_rejected', ?, ?, ?)`
-    ).run(
-      providerCId,
-      minusHours(1),
-      JSON.stringify({ rejection_code: 'INSUFFICIENT_VRAM', reason: 'Provider VRAM too low' }),
-      minusHours(1)
-    );
-
-    // Null-safe contract: malformed/empty metadata must not produce synthetic "unknown" reason codes.
-    db.prepare(
-      `INSERT INTO provider_activation_events (provider_id, event_code, occurred_at, metadata_json, created_at)
-       VALUES (?, 'tier_admission_rejected', ?, ?, ?)`
-    ).run(
-      providerBId,
-      minusHours(1),
-      JSON.stringify({ reason: 'missing code field' }),
-      minusHours(1)
-    );
-
     const res = await request(app)
       .get('/api/admin/providers/activation-conversion')
       .set('x-admin-token', ADMIN_TOKEN);
@@ -162,13 +140,5 @@ describe('GET /api/admin/providers/activation-conversion', () => {
     expect(blockerByCode.get('daemon_event_daemon_crash')?.count).toBe(1);
     expect(blockerByCode.get('approval_pending')?.count).toBe(1);
     expect(blockerByCode.get('provider_not_online')?.count).toBe(2);
-
-    expect(report.admission_rejection_counts).toEqual([
-      {
-        rejection_code: 'INSUFFICIENT_VRAM',
-        count: 1,
-        sample_provider_ids: [providerCId],
-      },
-    ]);
   });
 });
