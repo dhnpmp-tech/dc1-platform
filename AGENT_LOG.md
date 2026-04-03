@@ -32454,6 +32454,6 @@ a
 - **Impact**: Renter onboarding now has an above-the-fold fast lane from registration to first deploy, template/model/job-type selections survive auth transitions deterministically, and submit analytics include intent/source fields to measure register-to-first-submit conversion.
 
 ## [2026-04-03 14:07 UTC] Codex — DCP-516 OpenRouter eligibility regression + failover proof contract restored
-- **Commit**: `pending` - Fixed `/v1/chat/completions` provider VRAM eligibility so null `vram_mb` no longer collapses valid `gpu_vram_mib` providers to zero capacity, and added the missing `test:openrouter:failover-proof` verification command/script.
+- **Commit**: `001fd49` - Fixed `/v1/chat/completions` provider VRAM eligibility so null `vram_mb` no longer collapses valid `gpu_vram_mib` providers to zero capacity, and added the missing `test:openrouter:failover-proof` verification command/script.
 - **Files**: `backend/src/routes/v1.js`, `backend/package.json`, `backend/tests/openrouter-failover-proof.js`, `AGENT_LOG.md`
 - **Impact**: Seeded online providers are eligible again in OpenRouter compliance harness, healthy JSON/SSE requests proxy successfully, and failover verification now has a deterministic command contract covering JSON fallback, SSE fallback with single `[DONE]`, and fallback-exhausted non-200 behavior.
