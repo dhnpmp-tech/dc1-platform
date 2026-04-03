@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
@@ -62,12 +62,12 @@ function LoginPageInner() {
     return withRenterIntentInPath(targetBase, intent)
   }
 
-  const getReasonMessage = (reason: string) => {
+  const getReasonMessage = useCallback((reason: string) => {
     if (reason === 'expired_session') return t('auth.error.expired_session')
     if (reason === 'missing_credentials') return t('auth.error.missing_credentials')
     if (reason === 'invalid_credentials') return t('auth.error.invalid_credentials')
     return t('auth.error.sign_in_failed')
-  }
+  }, [t])
 
   const normalizeAuthError = (status: number, rawError: string, fallback: string) => {
     const lower = rawError.toLowerCase()
@@ -90,7 +90,7 @@ function LoginPageInner() {
     if (methodParam === 'email' || methodParam === 'apikey') setLoginMethod(methodParam)
     const reasonParam = searchParams.get('reason')
     if (reasonParam) setError(getReasonMessage(reasonParam))
-  }, [searchParams, t])
+  }, [searchParams, getReasonMessage])
 
   const handleSendOtp = async () => {
     setError(''); setSuccessMsg(''); setIsLoading(true)

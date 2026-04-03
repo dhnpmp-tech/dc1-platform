@@ -1,3 +1,8 @@
+## [2026-04-03 06:08 UTC] Codex — Login Auth Reason Mapping Hook Stability Fix
+- **Commit**: `pending` - Converted `getReasonMessage` to a memoized callback and updated the effect dependencies so login reason-based error rendering remains stable without exhaustive-deps lint noise.
+- **Files**: `app/login/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend auth/login surface remains behaviorally identical, but branch ship hygiene improves by removing one recurring hook warning from `npm run lint` / build-time lint checks.
+
 ## [2026-04-03 04:06 UTC] Codex — Landing Lint Gate Restored For Renter Fast-Lane Branch
 - **Commit**: `pending` - Fixed a JSX text-node lint violation on the landing OpenAI compatibility code snippet so Next lint/build can pass on the active frontend branch.
 - **Files**: `app/page.tsx`, `AGENT_LOG.md`
