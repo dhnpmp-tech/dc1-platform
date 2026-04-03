@@ -547,7 +547,7 @@ export default function StatusPage() {
       <nav className="border-b border-dc1-border bg-dc1-surface-l1">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-            <img src="/logo.svg" alt="DCP" className="h-8 w-auto" />
+            <img src="/dcp-logo-primary.png" alt="DCP" className="h-8 w-auto" />
             <span className="font-bold text-dc1-text-primary">DCP.</span>
           </Link>
           <LanguageToggle />

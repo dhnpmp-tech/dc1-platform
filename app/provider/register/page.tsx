@@ -78,6 +78,82 @@ interface StatusStep {
 
 type SupportCategory = 'provider' | 'bug'
 
+type ProviderActivationState = 'not_started' | 'install_started' | 'heartbeat_received' | 'ready_for_jobs' | 'blocked'
+
+interface ProviderActivationBlocker {
+  code: string
+  severity: 'soft' | 'hard' | string
+  hint_key?: string
+  hint_en?: string
+  hint_ar?: string
+}
+
+interface ProviderActivationStatePayload {
+  provider_id?: number
+  activation_state?: ProviderActivationState
+  blocker_codes?: string[]
+  blockers?: ProviderActivationBlocker[]
+  next_action?: {
+    hint_key?: string
+    hint_en?: string
+    hint_ar?: string
+  }
+  signals?: {
+    provider_status?: string
+    heartbeat_age_seconds?: number | null
+    heartbeat_fresh?: boolean
+  }
+}
+
+interface ActivationConversionWindow {
+  stage_counts: {
+    registered: number
+    installer_downloaded: number
+    first_heartbeat: number
+    online_within_24h: number
+  }
+  conversion_rates: {
+    installer_download_rate: number | null
+    first_heartbeat_rate: number | null
+    online_within_24h_rate: number | null
+  }
+  blocker_taxonomy: Array<{
+    code: string
+    count: number
+  }>
+  sample_size: number
+}
+
+interface ActivationConversionPayload {
+  windows?: {
+    last_24h?: ActivationConversionWindow
+    last_7d?: ActivationConversionWindow
+  }
+}
+
+function mapActivationStateToNextActionState(payload: ProviderActivationStatePayload): ProviderNextActionState {
+  const activationState = payload.activation_state
+  const blockers = payload.blocker_codes || []
+
+  if (activationState === 'ready_for_jobs') return 'ready'
+  if (activationState === 'heartbeat_received') return 'heartbeat'
+  if (activationState === 'blocked' && blockers.includes('provider_paused')) return 'paused'
+  if (activationState === 'blocked') return 'stale'
+  return 'waiting'
+}
+
+function mapActivationStateToStep(payload: ProviderActivationStatePayload): number {
+  const activationState = payload.activation_state
+  const blockers = payload.blocker_codes || []
+
+  if (activationState === 'ready_for_jobs') return 4
+  if (activationState === 'heartbeat_received') return 3
+  if (activationState === 'install_started') return 2
+  if (activationState === 'blocked' && blockers.includes('provider_paused')) return 3
+  if (activationState === 'blocked') return 2
+  return 1
+}
+
 function ProviderRegisterPageContent() {
   const { t, isRTL } = useLanguage()
   const activationNarrative = getProviderActivationNarrative(isRTL)
@@ -123,9 +199,13 @@ function ProviderRegisterPageContent() {
   const [showSuccess, setShowSuccess] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [nextActionState, setNextActionState] = useState<ProviderNextActionState>('waiting')
+  const [activationStatePayload, setActivationStatePayload] = useState<ProviderActivationStatePayload | null>(null)
+  const [conversionWindow, setConversionWindow] = useState<ActivationConversionWindow | null>(null)
+  const [conversionUnavailable, setConversionUnavailable] = useState(false)
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollingKeyRef = useRef<string | null>(null)
   const lastTrackedStateRef = useRef<ProviderNextActionState | null>(null)
+  const conversionTrackedRef = useRef(false)
   const pathChooserLanes = [
     {
       key: 'self_serve_renter',
@@ -184,6 +264,85 @@ function ProviderRegisterPageContent() {
     }
     pollingKeyRef.current = null
   }, [])
+
+  const fetchActivationConversion = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/providers/activation-conversion', {
+        cache: 'no-store',
+      })
+      if (!response.ok) {
+        setConversionUnavailable(true)
+        setConversionWindow(null)
+        return
+      }
+      const payload = (await response.json()) as ActivationConversionPayload
+      const windowData = payload.windows?.last_24h || payload.windows?.last_7d || null
+      setConversionWindow(windowData)
+      setConversionUnavailable(false)
+      if (!conversionTrackedRef.current && windowData) {
+        conversionTrackedRef.current = true
+        trackProviderRegisterEvent('provider_activation_conversion_contract_seen', {
+          surface: 'activation_conversion_card',
+          destination: '/api/admin/providers/activation-conversion',
+          step: 'conversion_contract',
+          sample_size: windowData.sample_size,
+          registered: windowData.stage_counts.registered,
+          installer_downloaded: windowData.stage_counts.installer_downloaded,
+          first_heartbeat: windowData.stage_counts.first_heartbeat,
+          online_within_24h: windowData.stage_counts.online_within_24h,
+        })
+      }
+    } catch {
+      setConversionUnavailable(true)
+      setConversionWindow(null)
+    }
+  }, [trackProviderRegisterEvent])
+
+  const fetchActivationState = useCallback(
+    async (key: string) => {
+      const response = await fetch(`${API_BASE}/providers/activation-state?key=${encodeURIComponent(key)}`, {
+        cache: 'no-store',
+      })
+      if (!response.ok) return
+
+      const payload = (await response.json()) as ProviderActivationStatePayload
+      setActivationStatePayload(payload)
+
+      const nextAction = mapActivationStateToNextActionState(payload)
+      const currentStep = mapActivationStateToStep(payload)
+      setNextActionState(nextAction)
+      if (lastTrackedStateRef.current !== nextAction) {
+        lastTrackedStateRef.current = nextAction
+        trackProviderRegisterEvent('provider_onboarding_state_seen', {
+          state: nextAction,
+          surface: 'onboarding_status',
+          destination:
+            nextAction === 'ready' || nextAction === 'heartbeat' || nextAction === 'paused'
+              ? '/provider/dashboard'
+              : '/docs/provider-guide',
+          step: getProviderOnboardingStep(nextAction),
+          activation_state: payload.activation_state || 'unknown',
+          blocker_codes: payload.blocker_codes || [],
+          heartbeat_age_seconds: payload.signals?.heartbeat_age_seconds ?? null,
+          provider_status: payload.signals?.provider_status || 'unknown',
+        })
+      }
+
+      setStatusSteps((prev) =>
+        prev.map((s) => {
+          if (s.step < currentStep) return { ...s, status: 'completed' }
+          if (s.step === currentStep) return { ...s, status: 'in-progress' }
+          return s
+        })
+      )
+
+      if (currentStep >= 4) {
+        setStatusSteps((prev) => prev.map((s) => ({ ...s, status: 'completed' })))
+        stopStatusPolling()
+      }
+    },
+    [stopStatusPolling, trackProviderRegisterEvent]
+  )
 
   useEffect(() => {
     return () => {
@@ -367,10 +526,14 @@ function ProviderRegisterPageContent() {
       lastTrackedStateRef.current = null
 
       setShowSuccess(true)
+      void fetchActivationConversion()
       trackProviderRegisterEvent('provider_register_success', {
         surface: 'registration_form',
         destination: '/api/dc1/providers/register',
         step: 'submit_success',
+        activation_funnel_stage: 'registered',
+        activation_contract: 'provider_activation_state_v1',
+        conversion_contract: 'provider_activation_conversion_v1',
         provider_id: data.provider_id,
         gpu_model: formData.gpuModel,
         os: formData.operatingSystem,
@@ -398,61 +561,11 @@ function ProviderRegisterPageContent() {
     stopStatusPolling()
     pollingKeyRef.current = key
 
+    void fetchActivationState(key)
+
     pollingIntervalRef.current = setInterval(async () => {
       try {
-        const response = await fetch(`${API_BASE}/providers/me?key=${encodeURIComponent(key)}`)
-        if (!response.ok) return
-
-        const data = await response.json()
-        const provider = data.provider || {}
-
-        // Determine current step based on provider status
-        let currentStep = 1 // registered
-        let nextAction: ProviderNextActionState = 'waiting'
-        if (provider.status === 'online' || provider.status === 'idle') {
-          currentStep = 4 // fully connected and ready
-          nextAction = 'ready'
-        } else if (provider.status === 'paused') {
-          currentStep = 3
-          nextAction = 'paused'
-        } else if (provider.status === 'offline' || provider.status === 'disconnected') {
-          currentStep = 2
-          nextAction = 'stale'
-        } else if (provider.last_heartbeat) {
-          currentStep = 3 // connected (sent heartbeat)
-          nextAction = 'heartbeat'
-        } else if (provider.status === 'registered') {
-          currentStep = 1 // just registered, waiting for daemon
-          nextAction = 'waiting'
-        }
-        setNextActionState(nextAction)
-        if (lastTrackedStateRef.current !== nextAction) {
-          lastTrackedStateRef.current = nextAction
-          trackProviderRegisterEvent('provider_onboarding_state_seen', {
-            state: nextAction,
-            surface: 'onboarding_status',
-            destination: provider.status === 'online' || provider.status === 'idle' || provider.status === 'paused' ? '/provider/dashboard' : '/docs/provider-guide',
-            step: getProviderOnboardingStep(nextAction),
-            provider_status: provider.status || 'unknown',
-            has_heartbeat: Boolean(provider.last_heartbeat),
-          })
-        }
-
-        setStatusSteps((prev) =>
-          prev.map((s) => {
-            if (s.step < currentStep) return { ...s, status: 'completed' }
-            if (s.step === currentStep) return { ...s, status: 'in-progress' }
-            return s
-          })
-        )
-
-        // Stop polling if all steps are completed
-        if (currentStep >= 4) {
-          setStatusSteps((prev) =>
-            prev.map((s) => ({ ...s, status: 'completed' }))
-          )
-          stopStatusPolling()
-        }
+        await fetchActivationState(key)
       } catch (err) {
         console.error('Failed to fetch status:', err)
       }
@@ -473,7 +586,9 @@ function ProviderRegisterPageContent() {
             ? 'install_linux'
             : index === 2
               ? 'install_windows'
-              : 'other',
+              : index === 3
+                ? 'install_one_command'
+                : 'other',
     })
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
@@ -522,6 +637,13 @@ function ProviderRegisterPageContent() {
 
   if (showSuccess && apiKey) {
     const installApiBase = getProviderInstallApiBase()
+    const preferredInstallTarget =
+      normalizedOperatingSystem === 'windows'
+        ? 'windows'
+        : normalizedOperatingSystem === 'mac' || normalizedOperatingSystem === 'darwin'
+          ? 'macos'
+          : 'linux'
+    const oneCommandInstall = buildProviderInstallCommand(preferredInstallTarget, installApiBase, apiKey)
     const linuxInstallCommand = buildProviderInstallCommand('linux', installApiBase, apiKey)
     const windowsInstallCommand = buildProviderInstallCommand('windows', installApiBase, apiKey)
     const reachabilityCheckCommand = `curl -I ${buildProviderDaemonDownloadUrl(installApiBase, apiKey)}`
@@ -711,11 +833,57 @@ function ProviderRegisterPageContent() {
                 </div>
               </div>
 
+              <div className="card border-dc1-amber/30 bg-dc1-amber/5">
+                <h2 className="text-xl font-semibold text-dc1-text-primary mb-4 flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm">
+                    2
+                  </span>
+                  {isRTL ? 'أمر واحد للتشغيل' : 'One-command install'}
+                </h2>
+                <p className="text-dc1-text-secondary mb-3">
+                  {isRTL
+                    ? 'نستخدم نظام التشغيل الذي اخترته لتوليد أمر واحد قابل للنسخ والتشغيل مباشرة.'
+                    : 'We use your selected operating system to generate one command you can copy and run immediately.'}
+                </p>
+                <p className="text-xs text-dc1-text-muted mb-4">
+                  {isRTL
+                    ? `النظام المحدد: ${formData.operatingSystem || 'Linux'}`
+                    : `Selected OS: ${formData.operatingSystem || 'Linux'}`}
+                </p>
+                <div className="relative bg-dc1-surface-l3 rounded-md border border-dc1-amber/40 p-4 font-mono text-xs overflow-x-auto">
+                  <code className="text-dc1-amber">{oneCommandInstall}</code>
+                  <button
+                    onClick={() => copyToClipboard(oneCommandInstall, 3)}
+                    className="absolute top-3 right-3 p-2 rounded-md hover:bg-dc1-surface-l2 transition-colors"
+                    title={isRTL ? 'نسخ الأمر' : 'Copy command'}
+                  >
+                    {copiedIndex === 3 ? (
+                      <svg className="w-5 h-5 text-status-success" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-dc1-text-secondary hover:text-dc1-text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
               {/* Installation Instructions */}
               <div className="card">
                 <h2 className="text-xl font-semibold text-dc1-text-primary mb-4 flex items-center gap-2">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm">
-                    2
+                    3
                   </span>
                   {t('register.provider.install_title')}
                 </h2>
@@ -813,40 +981,99 @@ function ProviderRegisterPageContent() {
 
               </div>
 
-              {/* Status Tracker */}
-              <div className="card border-dc1-amber/20">
-                <h2 className="text-xl font-semibold text-dc1-text-primary mb-4">{t('provider.trust.title')}</h2>
-                <p className="text-dc1-text-secondary text-sm mb-4">
-                  {t('provider.trust.description')}
-                </p>
-                <ul className="space-y-2 text-sm text-dc1-text-secondary">
-                  <li className="flex items-start gap-2">
-                    <span className="text-dc1-amber">•</span>
-                    <span>{t('provider.trust.heartbeat')}</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-dc1-amber">•</span>
-                    <span>{t('provider.trust.polling')}</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-dc1-amber">•</span>
-                    <span>{t('provider.trust.pause_resume')}</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-dc1-amber">•</span>
-                    <span>{t('provider.trust.runtime')}</span>
-                  </li>
-                </ul>
-                <p className="mt-4 text-xs text-dc1-text-muted">
-                  {t('provider.trust.earnings_estimate')}
-                </p>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className={`card border-dc1-amber/20 ${isRTL ? 'text-right' : 'text-left'}`}>
+                  <h2 className="text-xl font-semibold text-dc1-text-primary mb-2">
+                    {isRTL ? 'بطاقة حالة التفعيل المباشرة' : 'Live activation state'}
+                  </h2>
+                  <p className="text-sm text-dc1-text-secondary mb-4">
+                    {isRTL
+                      ? 'تُقرأ هذه الحالة مباشرة من عقد `/providers/activation-state` بدون افتراضات محلية.'
+                      : 'This card reads directly from the `/providers/activation-state` contract without synthetic local assumptions.'}
+                  </p>
+                  <p className="text-xs text-dc1-text-muted mb-1">
+                    {isRTL ? 'الحالة' : 'Activation state'}
+                  </p>
+                  <p className="text-base font-semibold text-dc1-text-primary mb-3">
+                    {activationStatePayload?.activation_state || (isRTL ? 'بانتظار أول قراءة' : 'Waiting for first contract read')}
+                  </p>
+                  <p className="text-xs text-dc1-text-muted mb-1">
+                    {isRTL ? 'الإجراء التالي' : 'Next action'}
+                  </p>
+                  <p className="text-sm text-dc1-text-secondary">
+                    {activationStatePayload?.next_action
+                      ? isRTL
+                        ? activationStatePayload.next_action.hint_ar || activationStatePayload.next_action.hint_en
+                        : activationStatePayload.next_action.hint_en || activationStatePayload.next_action.hint_ar
+                      : isRTL
+                        ? 'لا توجد إشارة بعد. استمر بتشغيل الديمون وانتظر تحديث البيانات.'
+                        : 'No hint yet. Keep the daemon running and wait for the next telemetry refresh.'}
+                  </p>
+                  <div className="mt-3 space-y-1 text-xs text-dc1-text-secondary">
+                    {(activationStatePayload?.blockers || []).slice(0, 3).map((blocker) => (
+                      <p key={blocker.code}>
+                        <span className="font-semibold text-dc1-text-primary">{blocker.code}</span>
+                        {' · '}
+                        {isRTL ? blocker.hint_ar || blocker.hint_en : blocker.hint_en || blocker.hint_ar}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={`card border-dc1-border ${isRTL ? 'text-right' : 'text-left'}`}>
+                  <h2 className="text-xl font-semibold text-dc1-text-primary mb-2">
+                    {isRTL ? 'بطاقة تحويل التفعيل (آخر 24 ساعة)' : 'Activation conversion contract (24h)'}
+                  </h2>
+                  <p className="text-sm text-dc1-text-secondary mb-4">
+                    {isRTL
+                      ? 'مصدرها عقد `/admin/providers/activation-conversion`. عند غياب الصلاحية نظهر حالة غير متاحة بدل أرقام مصطنعة.'
+                      : 'Backed by `/admin/providers/activation-conversion`. If admin telemetry is unavailable, we show unavailable state instead of fabricated numbers.'}
+                  </p>
+                  {conversionWindow ? (
+                    <div className="space-y-2 text-sm">
+                      <p className="text-dc1-text-secondary">
+                        <span className="font-semibold text-dc1-text-primary">{isRTL ? 'حجم العينة' : 'Sample size'}:</span>{' '}
+                        {conversionWindow.sample_size}
+                      </p>
+                      <p className="text-dc1-text-secondary">
+                        <span className="font-semibold text-dc1-text-primary">registered:</span>{' '}
+                        {conversionWindow.stage_counts.registered}
+                        {' • '}
+                        <span className="font-semibold text-dc1-text-primary">installer_downloaded:</span>{' '}
+                        {conversionWindow.stage_counts.installer_downloaded}
+                      </p>
+                      <p className="text-dc1-text-secondary">
+                        <span className="font-semibold text-dc1-text-primary">first_heartbeat:</span>{' '}
+                        {conversionWindow.stage_counts.first_heartbeat}
+                        {' • '}
+                        <span className="font-semibold text-dc1-text-primary">online_within_24h:</span>{' '}
+                        {conversionWindow.stage_counts.online_within_24h}
+                      </p>
+                      <p className="text-xs text-dc1-text-muted">
+                        installer_download_rate: {conversionWindow.conversion_rates.installer_download_rate ?? 'n/a'}% •
+                        first_heartbeat_rate: {conversionWindow.conversion_rates.first_heartbeat_rate ?? 'n/a'}% •
+                        online_within_24h_rate: {conversionWindow.conversion_rates.online_within_24h_rate ?? 'n/a'}%
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-dc1-text-secondary">
+                      {conversionUnavailable
+                        ? isRTL
+                          ? 'بيانات التحويل غير متاحة حالياً في هذا البيئة.'
+                          : 'Conversion telemetry is currently unavailable in this environment.'
+                        : isRTL
+                          ? 'جاري انتظار أول تحميل لعقد التحويل...'
+                          : 'Waiting for conversion contract payload...'}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Status Tracker */}
               <div className="card">
                 <h2 className="text-xl font-semibold text-dc1-text-primary mb-6 flex items-center gap-2">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-dc1-amber/20 text-dc1-amber font-bold text-sm">
-                    3
+                    4
                   </span>
                   {t('register.provider.progress_title')}
                 </h2>

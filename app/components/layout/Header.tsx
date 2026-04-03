@@ -80,15 +80,15 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 bg-dc1-void/95 backdrop-blur-md border-b border-dc1-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-20">
           {/* Logo */}
           <Link href="/" className="flex items-center shrink-0">
             <Image
-              src="/logo.svg"
+              src="/dcp-logo-primary.png"
               alt="DCP"
-              width={108}
+              width={36}
               height={36}
-              className="h-9 w-auto"
+              className="h-20 w-auto"
             />
           </Link>
 

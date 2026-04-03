@@ -17,6 +17,8 @@ function cleanDb() {
     'job_executions',
     'escrow_holds',
     'conversion_funnel_events',
+    'provider_activation_events',
+    'daemon_events',
     'heartbeat_log',
     'withdrawal_requests',
     'approved_container_images',

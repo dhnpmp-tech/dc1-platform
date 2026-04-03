@@ -793,7 +793,7 @@ function GPUCard({
           onClick={() => {
             onCtaClick({
               surface: 'gpu_card',
-              destination: `/renter/playground?provider=${provider.id}`,
+              destination: `/renter/playground?provider=${provider.id}&source=renter_marketplace_gpu_card`,
               step: 'rent_now',
             })
             setShowDeployModal(true)
@@ -812,7 +812,7 @@ function GPUCard({
         onClose={() => setShowDeployModal(false)}
         onConfirm={() => {
           setShowDeployModal(false)
-          window.location.href = `/renter/playground?provider=${provider.id}`
+          window.location.href = `/renter/playground?provider=${provider.id}&source=renter_marketplace_gpu_card`
         }}
       />
     )}
@@ -967,11 +967,11 @@ function ModelCard({
       {model.providers_online > 0 ? (
         <div className="mt-auto grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Link
-            href={`/renter/playground?model=${encodeURIComponent(model.model_id)}`}
+            href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=llm_inference&source=renter_marketplace_model_card`}
             onClick={() =>
               onCtaClick({
                 surface: 'model_card',
-                destination: `/renter/playground?model=${encodeURIComponent(model.model_id)}`,
+                destination: `/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=llm_inference&source=renter_marketplace_model_card`,
                 step: 'use_playground',
               })
             }
@@ -980,11 +980,11 @@ function ModelCard({
             {t('marketplace.use_playground')}
           </Link>
           <Link
-            href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve`}
+            href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve&source=renter_marketplace_model_card`}
             onClick={() =>
               onCtaClick({
                 surface: 'model_card',
-                destination: `/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve`,
+                destination: `/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve&source=renter_marketplace_model_card`,
                 step: 'one_click_deploy',
               })
             }
@@ -1740,13 +1740,13 @@ export default function MarketplacePage() {
                         <td key={model.model_id} className="py-2 px-3">
                           <div className="flex gap-2">
                             <Link
-                              href={`/renter/playground?model=${encodeURIComponent(model.model_id)}`}
+                              href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=llm_inference&source=renter_marketplace_compare`}
                               className="px-2.5 py-1 text-xs rounded border border-dc1-border text-dc1-text-secondary hover:text-dc1-text-primary"
                             >
                               {t('nav.playground')}
                             </Link>
                             <Link
-                              href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve`}
+                              href={`/renter/playground?model=${encodeURIComponent(model.model_id)}&mode=vllm_serve&source=renter_marketplace_compare`}
                               className="px-2.5 py-1 text-xs rounded bg-dc1-amber text-dc1-void font-medium"
                             >
                               {t('marketplace.deploy')}

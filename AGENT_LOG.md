@@ -1,3 +1,23 @@
+## [2026-04-03 10:21 UTC] Codex - Release Heartbeat Merged PRs #246 #247 #248 After Refresh Build Gates
+- **Commit**: `c2cbb80` - Fetched `origin`, evaluated `agent/frontend-dev/dcp-206-admin-containers-hook-deps-ship`, `agent/frontend-dev/dcp-491-homepage-api-demo-i18n`, and `agent/backend-dev/dcp-472-restore-allam-capacity` in isolated worktrees, merged `main` into each candidate branch, and passed `npm run build` on every refreshed head. Opened PRs `#246`, `#247`, and `#248`, merged `#246`, refreshed `#247` and `#248` against the updated `main`, reran `npm run build`, pushed the refreshed branch heads, then merged `#247` and `#248` sequentially. Focused backend verification passed for `dcp-472` via `NODE_ENV=test npx jest --runInBand src/__tests__/v1-models.test.js`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `origin/main` now includes merge commits `80ab7ae` (`#246`), `ed41375` (`#247`), and `c2cbb80` (`#248`). Release gating remained green on the refreshed heads. Local fetches and pushes continue to emit remote-tracking ref permission warnings for some agent branches, but the warnings did not block branch updates or `main` pushes.
+
+## [2026-04-03 08:14 UTC] Codex - Release Heartbeat Merged PRs #243 #244 #245 After Refresh Build Gates
+- **Commit**: `1669813` - Fetched `origin`, evaluated `agent/frontend-dev/dcp-484-template-first-deploy-contract`, `agent/backend-dev/dcp-371-first-live-route-evidence`, and `agent/backend-dev/dcp-475-deploy-allam-routing-fix` in isolated worktrees, merged `main` into each candidate branch, installed missing worktree dependencies with `npm ci --include=dev`, and passed `npm run build` on every refreshed head. Opened PRs `#243`, `#244`, and `#245`, merged them to `main` sequentially while refreshing later branches against newly advanced `main`, and reverified `dcp-371`/`dcp-475` after the intermediate merge. Focused backend verification passed for `dcp-371` via `NODE_ENV=test npx jest --runInBand src/__tests__/v1-models.test.js` plus `npm run test:reliability:ensure-smoke-principal`; `npm run test:reliability:first-live-proof` returned external `provider_unreachable_or_unavailable`. Focused backend verification passed for `dcp-475` via `NODE_ENV=test npx jest --runInBand src/__tests__/v1-models.test.js` and `NODE_ENV=test npx jest --runInBand src/__tests__/templates.test.js`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `origin/main` now includes merge commits `3b19a33` (`#243`), `46246e1` (`#244`), and `1669813` (`#245`). Release gating remained green on the refreshed heads. Local fetch/push operations continue to emit remote-tracking ref permission warnings for some agent branches, but the warnings did not block branch updates or `main` pushes.
+
+## [2026-04-03 06:08 UTC] Codex — Login Auth Reason Mapping Hook Stability Fix
+- **Commit**: `pending` - Converted `getReasonMessage` to a memoized callback and updated the effect dependencies so login reason-based error rendering remains stable without exhaustive-deps lint noise.
+- **Files**: `app/login/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend auth/login surface remains behaviorally identical, but branch ship hygiene improves by removing one recurring hook warning from `npm run lint` / build-time lint checks.
+
+## [2026-04-03 04:06 UTC] Codex — Landing Lint Gate Restored For Renter Fast-Lane Branch
+- **Commit**: `pending` - Fixed a JSX text-node lint violation on the landing OpenAI compatibility code snippet so Next lint/build can pass on the active frontend branch.
+- **Files**: `app/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend ship gate is unblocked for `agent/frontend-dev/dcp-355-renter-first-deploy-fast-lane-v2`; `npm run lint` and `npm run build` now complete successfully (warnings remain unchanged).
+
 ## [2026-03-30 09:03 UTC] Codex — CTO Queue Refill Routed To CEO With In-Thread Heartbeat Comment
 - **Commit**: `N/A` - With no CTO-assigned `todo/in_progress/blocked` work or inbox items on timer heartbeat, created [DCP-78](/DCP/issues/DCP-78) assigned to [CEO](/DCP/agents/ceo) requesting next engineering execution task and added a follow-up status comment on the new issue.
 - **Files**: `AGENT_LOG.md`
@@ -32403,7 +32423,32 @@ a
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
 - **Impact**: Prevents malformed query arrays from surfacing as 500s on provider download routes; endpoints now return contract-safe JSON `400/401` errors, and integration tests lock behavior for setup/daemon/script downloads plus legacy installer invalid-key handling.
 
-## [2026-04-02 17:17 UTC] Codex — DCP-437 Real uptime/latency reliability contract shipped
-- **Commit**: `pending` - Expanded `/api/admin/daemon-health` with real rolling reliability telemetry (`24h`/`7d`) and added a public-safe reliability summary endpoint.
-- **Files**: `backend/src/services/daemonHealthSummary.js`, `backend/src/routes/admin.js`, `backend/src/routes/public-health.js`, `backend/src/server.js`, `backend/tests/integration/api-core.test.js`, `AGENT_LOG.md`
-- **Impact**: Admin daemon health now includes persisted-metric uptime (`heartbeat_log`), latency percentiles (`inference_stream_events.duration_ms`), and online-capacity snapshots with deterministic nulls for absent data (no synthetic defaults). Public consumers can read `/api/health/reliability` without admin auth and without provider-identifying fields. Proof tests added for zero-data + populated telemetry schema behavior.
+## [2026-04-02 17:31 UTC] Codex — DCP-446 provider dashboard mobile responsiveness shipped
+- **Commit**: `7ce3b9b` - Reworked provider dashboard narrow-screen layout for 375–414px viewports by switching KPI cards to 1-column below 400px, preventing horizontal overflow, and adding a dedicated mobile card presentation for recent jobs.
+- **Files**: `app/provider/dashboard/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider dashboard now renders without squeeze/overflow on common mobile widths while preserving desktop table behavior from `sm` and up.
+
+## [2026-04-02 18:38 UTC] Codex — DCP-443 Provider Activation Conversion Contract + Endpoint Shipped
+- **Commit**: `pending` - Added provider activation download-event persistence, implemented `/api/admin/providers/activation-conversion` with 24h/7d stage counts + conversion rates + machine-readable blocker taxonomy, and replaced the conversion test shim with real integration coverage.
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/admin.js`, `backend/tests/integration/helpers.js`, `backend/tests/integration/provider-activation-conversion.test.js`, `AGENT_LOG.md`
+- **Impact**: Backend now exposes deterministic activation conversion telemetry (`registered -> installer_downloaded -> first_heartbeat -> online_within_24h`) with non-synthetic empty-window behavior and blocker taxonomy derived from lifecycle + daemon error logs; regression coverage is in place for the new admin contract.
+
+## [2026-04-02 21:37 UTC] Codex — Frontend: Suspense CSR boundary hardening for docs quickstart + renter register
+- **Commit**: `pending` - Added explicit Suspense fallback boundaries on `/docs/quickstart` and `/renter/register` client pages to keep Next.js `useSearchParams` CSR boundary requirements resilient during production builds.
+- **Files**: `app/docs/quickstart/page.tsx`, `app/renter/register/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Production build with typecheck and static generation succeeds (`npm run build -- --no-lint`), including prerender output for both target routes. Existing EN/AR UX flows remain unchanged.
+
+## [2026-04-02 23:46 UTC] Codex — DCP-408 Provider install CTA conversion polish shipped on earn/provider/download
+- **Commit**: `pending` - Implemented EN/AR i18n CTA copy, deterministic primary/secondary install routing, and unified provider-install telemetry/error-help states across `/earn`, `/provider`, and `/provider/download`.
+- **Files**: `app/earn/page.tsx`, `app/provider/page.tsx`, `app/provider/download/page.tsx`, `app/lib/provider-install-telemetry.ts`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider install surfaces now enforce one dominant next action (install), route deterministic troubleshooting/support links by onboarding state, and emit consistent analytics dimensions (`source_page`, `surface`, `cta_tier`, `destination`, `next_action_state`, `os_target`, `has_provider_key`, `step`). Production build passes with `npm run build -- --no-lint`. Screenshot automation attempt failed in this container due missing headless browser runtime library `libglib-2.0.so.0`.
+
+## [2026-04-03 01:50 UTC] Codex — DCP-315 provider earnings trust surfaces implemented (settled/pending/estimated + sync confidence)
+- **Commit**: `pending` - Added earnings confidence trust IA on provider earnings page: settled/pending/estimated split, heartbeat-derived uptime confidence, payout timeline with blocker routing CTA, delayed-sync/partial-data warning states, and analytics events for trust surface view + CTA clicks.
+- **Files**: `app/provider/earnings/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
+- **Impact**: Provider earnings now communicates payout confidence deterministically (including uncertain windows) with EN/AR trust copy parity and state-driven support/docs escalation routes. Build passes with `npm run build -- --no-lint`.
+
+## [2026-04-03 04:02 UTC] Codex — DCP-355 Renter First-Deploy Fast Lane Shipped (Auth-Aware Template Routing + Intent Persistence)
+- **Commit**: `pending` - Implemented renter first-deploy fast lane improvements: promoted a single dominant success CTA on `/renter/register`, made template deploy actions auth-aware (signed-in users route to prefilled playground; signed-out users store pending auth intent then route to login), and expanded auth-intent persistence to carry `template`, `model`, `job_type`, and `source` across login restoration.
+- **Files**: `app/lib/renter-auth-intent.ts`, `app/login/page.tsx`, `app/renter/register/page.tsx`, `app/renter/marketplace/templates/page.tsx`, `app/renter/marketplace/page.tsx`, `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Renter onboarding now has an above-the-fold fast lane from registration to first deploy, template/model/job-type selections survive auth transitions deterministically, and submit analytics include intent/source fields to measure register-to-first-submit conversion.

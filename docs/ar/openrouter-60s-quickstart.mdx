@@ -101,4 +101,9 @@ with urllib.request.urlopen(req, timeout=40) as resp:
 ## ملاحظات
 
 - المصادقة في هذا المسار تكون عبر مفتاح المستأجر (`x-renter-key`).
-- إذا ظهرت رسالة `{"error":"no_capacity"}` فهذا يعني أن المسار صحيح والمصادقة سليمة، لكن السعة غير متاحة الآن.
+- أخطاء `/v1` تحتوي `error.code` للتعامل البرمجي الثابت:
+  - `rate_limit_exceeded` (`429` مع `retry_after_seconds`)
+  - `no_capacity_available` (`503`)
+  - `provider_unavailable` (`503`)
+  - `upstream_timeout` (`504`)
+- أعد المحاولة فقط عندما تكون `error.retryable === true`، ويفضّل الاعتماد على `retry_after_seconds` إن وُجدت.

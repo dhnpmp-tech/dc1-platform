@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
@@ -271,9 +271,25 @@ function statusLabel(status: Withdrawal['status']): string {
   return 'Failed'
 }
 
+function trackProviderEarningsTrustEvent(event: string, payload: Record<string, unknown>) {
+  if (typeof window === 'undefined') return
+  const detail = { event, source_page: 'provider_earnings', ...payload }
+  window.dispatchEvent(new CustomEvent('dc1_analytics', { detail }))
+  const win = window as typeof window & {
+    dataLayer?: Array<Record<string, unknown>>
+    gtag?: (...args: unknown[]) => void
+  }
+  if (Array.isArray(win.dataLayer)) {
+    win.dataLayer.push(detail)
+  }
+  if (typeof win.gtag === 'function') {
+    win.gtag('event', event, detail)
+  }
+}
+
 export default function EarningsPage() {
   const router = useRouter()
-  const { t, isRTL } = useLanguage()
+  const { t, isRTL, language } = useLanguage()
   const navItems = [
     { label: t('nav.dashboard'), href: '/provider', icon: <HomeIcon /> },
     { label: t('nav.jobs'), href: '/provider/jobs', icon: <LightningIcon /> },
@@ -301,6 +317,7 @@ export default function EarningsPage() {
   const [trendData, setTrendData] = useState<TrendPoint[]>([])
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>('30d')
   const [trendLoading, setTrendLoading] = useState(false)
+  const hasTrackedTrustView = useRef(false)
 
   const fetchAll = useCallback(async () => {
     const key = localStorage.getItem('dc1_provider_key')
@@ -419,6 +436,59 @@ export default function EarningsPage() {
     fetchTrend(trendPeriod)
   }, [fetchTrend, trendPeriod])
 
+  const trustMetrics = useMemo(() => {
+    const settledSar = earnings ? Number((earnings.available_sar + earnings.withdrawn_sar).toFixed(2)) : 0
+    const pendingSar = earnings ? Number((earnings.pending_withdrawal_sar || 0).toFixed(2)) : 0
+    const estimatedSar = earnings
+      ? Number(Math.max((earnings.total_earned_sar || 0) - settledSar - pendingSar, 0).toFixed(2))
+      : 0
+
+    const nowMs = Date.now()
+    const heartbeatMs = daemonInfo?.last_heartbeat ? new Date(daemonInfo.last_heartbeat).getTime() : 0
+    const heartbeatAgeMinutes = heartbeatMs ? Math.max(0, (nowMs - heartbeatMs) / 60000) : Infinity
+
+    const syncState = !Number.isFinite(heartbeatAgeMinutes)
+      ? 'uncertain'
+      : heartbeatAgeMinutes <= 5
+        ? 'fresh'
+        : heartbeatAgeMinutes <= 30
+          ? 'delayed'
+          : 'stale'
+
+    const uptimeConfidence = !daemonInfo?.last_heartbeat
+      ? 'uncertain'
+      : heartbeatAgeMinutes <= 2
+        ? 'high'
+        : heartbeatAgeMinutes <= 10
+          ? 'medium'
+          : 'low'
+
+    const hasPartialData = !earnings || !jobStats || !daemonInfo
+
+    return {
+      settledSar,
+      pendingSar,
+      estimatedSar,
+      heartbeatAgeMinutes,
+      syncState,
+      uptimeConfidence,
+      hasPartialData,
+    }
+  }, [daemonInfo, earnings, jobStats])
+
+  useEffect(() => {
+    if (hasTrackedTrustView.current || loading) return
+    hasTrackedTrustView.current = true
+    trackProviderEarningsTrustEvent('provider_earnings_trust_surface_seen', {
+      locale: language,
+      sync_state: trustMetrics.syncState,
+      uptime_confidence: trustMetrics.uptimeConfidence,
+      has_partial_data: trustMetrics.hasPartialData,
+      pending_sar: trustMetrics.pendingSar,
+      estimated_sar: trustMetrics.estimatedSar,
+    })
+  }, [language, loading, trustMetrics])
+
   const maxDailyEarning = Math.max(...daily.map(d => d.earned_halala), 1)
 
   if (loading) {
@@ -460,6 +530,113 @@ export default function EarningsPage() {
             <span className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-3 py-2 text-dc1-amber">
               4. {t('nav.earnings')}
             </span>
+          </div>
+        </div>
+
+        {(trustMetrics.syncState === 'delayed' || trustMetrics.syncState === 'stale' || trustMetrics.hasPartialData) && (
+          <div className="rounded-xl border border-status-warning/40 bg-status-warning/10 p-4">
+            <p className="text-sm font-semibold text-status-warning">
+              {trustMetrics.syncState === 'stale'
+                ? t('provider.earnings_trust.sync_stale_title')
+                : trustMetrics.syncState === 'delayed'
+                  ? t('provider.earnings_trust.sync_delayed_title')
+                  : t('provider.earnings_trust.sync_partial_title')}
+            </p>
+            <p className="text-xs text-dc1-text-secondary mt-1">
+              {trustMetrics.syncState === 'stale'
+                ? t('provider.earnings_trust.sync_stale_desc')
+                : trustMetrics.syncState === 'delayed'
+                  ? t('provider.earnings_trust.sync_delayed_desc')
+                  : t('provider.earnings_trust.sync_partial_desc')}
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="card border border-dc1-amber/25">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-3">{t('provider.earnings_trust.split_title')}</p>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2">
+                <span className="text-dc1-text-secondary">{t('provider.earnings_trust.settled')}</span>
+                <span className="font-semibold text-status-success">{trustMetrics.settledSar.toFixed(2)} SAR</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2">
+                <span className="text-dc1-text-secondary">{t('provider.earnings_trust.pending')}</span>
+                <span className="font-semibold text-status-warning">{trustMetrics.pendingSar.toFixed(2)} SAR</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2">
+                <span className="text-dc1-text-secondary">{t('provider.earnings_trust.estimated')}</span>
+                <span className="font-semibold text-dc1-amber">{trustMetrics.estimatedSar.toFixed(2)} SAR</span>
+              </div>
+            </div>
+            <p className="text-xs text-dc1-text-muted mt-3">{t('provider.earnings_trust.split_note')}</p>
+          </div>
+
+          <div className="card border border-dc1-border">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-3">{t('provider.earnings_trust.uptime_title')}</p>
+            <div className={`rounded-lg border px-3 py-3 ${
+              trustMetrics.uptimeConfidence === 'high'
+                ? 'border-status-success/30 bg-status-success/10'
+                : trustMetrics.uptimeConfidence === 'medium'
+                  ? 'border-status-warning/30 bg-status-warning/10'
+                  : 'border-status-error/30 bg-status-error/10'
+            }`}>
+              <p className="text-sm font-semibold text-dc1-text-primary">
+                {t(`provider.earnings_trust.uptime_${trustMetrics.uptimeConfidence}`)}
+              </p>
+              <p className="text-xs text-dc1-text-secondary mt-1">
+                {Number.isFinite(trustMetrics.heartbeatAgeMinutes)
+                  ? t('provider.earnings_trust.uptime_heartbeat_age').replace('{minutes}', String(Math.round(trustMetrics.heartbeatAgeMinutes)))
+                  : t('provider.earnings_trust.uptime_no_heartbeat')}
+              </p>
+            </div>
+            <p className="text-xs text-dc1-text-muted mt-3">{t('provider.earnings_trust.uptime_note')}</p>
+          </div>
+
+          <div className="card border border-dc1-border">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-3">{t('provider.earnings_trust.payout_title')}</p>
+            <ol className="space-y-2 text-xs text-dc1-text-secondary">
+              <li className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2">{t('provider.earnings_trust.payout_step_settle')}</li>
+              <li className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2">{t('provider.earnings_trust.payout_step_request')}</li>
+              <li className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2">{t('provider.earnings_trust.payout_step_process')}</li>
+              <li className="rounded-lg border border-dc1-border bg-dc1-surface-l2 px-3 py-2">{t('provider.earnings_trust.payout_step_paid')}</li>
+            </ol>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setTab('withdrawals')
+                  trackProviderEarningsTrustEvent('provider_earnings_trust_cta_clicked', {
+                    locale: language,
+                    surface: 'payout_timeline',
+                    destination: 'tab:withdrawals',
+                    cta_tier: 'primary',
+                    sync_state: trustMetrics.syncState,
+                  })
+                }}
+                className="btn btn-primary btn-sm"
+              >
+                {t('provider.earnings_trust.payout_primary_cta')}
+              </button>
+              <Link
+                href={trustMetrics.syncState === 'stale' ? '/docs/provider-guide#status-stale-restart-daemon' : '/support?category=billing&source=provider_earnings_trust#contact-form'}
+                className="btn btn-secondary btn-sm"
+                onClick={() =>
+                  trackProviderEarningsTrustEvent('provider_earnings_trust_cta_clicked', {
+                    locale: language,
+                    surface: 'payout_timeline',
+                    destination: trustMetrics.syncState === 'stale'
+                      ? '/docs/provider-guide#status-stale-restart-daemon'
+                      : '/support?category=billing&source=provider_earnings_trust#contact-form',
+                    cta_tier: 'secondary',
+                    sync_state: trustMetrics.syncState,
+                  })
+                }
+              >
+                {trustMetrics.syncState === 'stale'
+                  ? t('register.provider.status_matrix.guide_cta')
+                  : t('register.provider.next_action_support_cta')}
+              </Link>
+            </div>
           </div>
         </div>
 

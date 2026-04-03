@@ -55,6 +55,26 @@ function runStatement(sql, ...params) {
     return db.prepare(sql).run(...flattenRunParams(params));
 }
 
+function recordActivationEvent(providerId, eventCode, metadata = null) {
+    try {
+        runStatement(
+            `INSERT INTO provider_activation_events (provider_id, event_code, occurred_at, metadata_json, created_at)
+             VALUES (?, ?, ?, ?, ?)`,
+            providerId,
+            eventCode,
+            new Date().toISOString(),
+            metadata ? JSON.stringify(metadata) : null,
+            new Date().toISOString()
+        );
+    } catch (error) {
+        console.warn('[provider-activation-event] failed to persist event', {
+            providerId,
+            eventCode,
+            message: error?.message || String(error),
+        });
+    }
+}
+
 // ── Heartbeat HMAC validation ────────────────────────────────────────────────
 // Daemons sign the raw request body with HMAC-SHA256 using DC1_HMAC_SECRET.
 // Header format: X-DC1-Signature: sha256=<hex>
@@ -710,7 +730,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
 
         // Verify API key (sync — better-sqlite3)
         const p = db.get(
-            `SELECT id, approval_status, model_preload_status, model_preload_model, p2p_peer_id
+            `SELECT id, approval_status, model_preload_status, model_preload_model, p2p_peer_id, available_gpu_tiers
              FROM providers
              WHERE api_key = ? AND deleted_at IS NULL`,
             cleanApiKey
@@ -789,6 +809,11 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
                 .map((model) => normalizeString(model, { maxLen: 200 }))
                 .filter(Boolean)
             : [];
+        const tierCapability = getProviderRoutingProfile({
+            cached_models: JSON.stringify(normalizedCachedModels),
+            available_gpu_tiers: p.available_gpu_tiers || null,
+            model_preload_status: p.model_preload_status || null,
+        });
         const preloadModel = normalizeString(p.model_preload_model, { maxLen: 200 });
         const preloadModelFound = preloadModel
             ? normalizedCachedModels.some((entry) => entry.toLowerCase() === preloadModel.toLowerCase())
@@ -969,6 +994,11 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
                 available_gpu_slots: availableGpuSlots,
                 estimated_wait_seconds: estimatedWaitSeconds,
                 generated_at: now,
+            },
+            tier_capability: {
+                available_tier_modes: Array.from(tierCapability.available_tier_modes || []),
+                available_gpu_tiers: Array.from(tierCapability.available_gpu_tiers || []),
+                source: tierCapability.tier_capability_source || 'heuristic',
             },
         });
         
@@ -2107,15 +2137,36 @@ const PROVIDER_ADMISSION_REASON_CODES = Object.freeze({
     INSUFFICIENT_VRAM: 'INSUFFICIENT_VRAM',
     INSUFFICIENT_GPU_COUNT: 'INSUFFICIENT_GPU_COUNT',
     MODEL_COMPATIBILITY_UNSUPPORTED: 'MODEL_COMPATIBILITY_UNSUPPORTED',
+    TIER_MODE_NOT_AVAILABLE: 'TIER_MODE_NOT_AVAILABLE',
     INSTANT_MODEL_NOT_CACHED: 'INSTANT_MODEL_NOT_CACHED',
     MODEL_UNSUPPORTED_ON_PROVIDER: 'MODEL_UNSUPPORTED_ON_PROVIDER',
     NO_ELIGIBLE_JOB_FOR_PROVIDER: 'NO_ELIGIBLE_JOB_FOR_PROVIDER',
 });
 
+const TIER_ADMISSION_REJECTION_CODES = Object.freeze([
+    PROVIDER_ADMISSION_REASON_CODES.PROVIDER_PAUSED,
+    PROVIDER_ADMISSION_REASON_CODES.PROVIDER_OFFLINE,
+    PROVIDER_ADMISSION_REASON_CODES.JOB_TIER_UNSUPPORTED,
+    PROVIDER_ADMISSION_REASON_CODES.COMPUTE_TYPE_UNSUPPORTED,
+    PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_VRAM,
+    PROVIDER_ADMISSION_REASON_CODES.INSUFFICIENT_GPU_COUNT,
+    PROVIDER_ADMISSION_REASON_CODES.MODEL_COMPATIBILITY_UNSUPPORTED,
+    PROVIDER_ADMISSION_REASON_CODES.TIER_MODE_NOT_AVAILABLE,
+    PROVIDER_ADMISSION_REASON_CODES.INSTANT_MODEL_NOT_CACHED,
+    PROVIDER_ADMISSION_REASON_CODES.MODEL_UNSUPPORTED_ON_PROVIDER,
+    PROVIDER_ADMISSION_REASON_CODES.NO_ELIGIBLE_JOB_FOR_PROVIDER,
+]);
+const TIER_ADMISSION_REJECTION_CODE_SET = new Set(TIER_ADMISSION_REJECTION_CODES);
+
 const TIER_MODE_BY_PREWARM_CLASS = Object.freeze({
     hot: 'instant',
     warm: 'cached',
     cold: 'on-demand',
+});
+const TIER_MODE_BY_GPU_TIER = Object.freeze({
+    A: ['instant', 'cached', 'on-demand'],
+    B: ['cached', 'on-demand'],
+    C: ['on-demand'],
 });
 
 const LOW_VRAM_AWQ_ENFORCEMENT_MAX_MB = 12288;
@@ -2306,6 +2357,17 @@ function resolveTierMode(prewarmClass) {
     };
 }
 
+function parseAvailableGpuTiers(raw) {
+    const parsed = safeJsonParse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    const tiers = new Set();
+    for (const value of parsed) {
+        const tier = normalizeString(value, { maxLen: 4, trim: true })?.toUpperCase();
+        if (tier && TIER_MODE_BY_GPU_TIER[tier]) tiers.add(tier);
+    }
+    return tiers;
+}
+
 function getProviderRoutingProfile(provider) {
     const vramMb =
         toFiniteInt(provider.vram_mb, { min: 0, max: 1024 * 1024 }) ||
@@ -2345,14 +2407,80 @@ function getProviderRoutingProfile(provider) {
         }
     }
 
+    const availableGpuTiers = parseAvailableGpuTiers(provider.available_gpu_tiers);
+    const availableTierModes = new Set();
+    if (availableGpuTiers.size > 0) {
+        for (const tier of availableGpuTiers) {
+            const supportedModes = TIER_MODE_BY_GPU_TIER[tier] || [];
+            supportedModes.forEach((mode) => availableTierModes.add(mode));
+        }
+    } else {
+        // Backward-compatible fallback: if daemon does not publish explicit tier contract yet,
+        // keep legacy behavior and defer tier gating to model/cache-specific checks.
+        availableTierModes.add('on-demand');
+        availableTierModes.add('cached');
+        availableTierModes.add('instant');
+    }
+
     return {
         vram_mb: Number(vramMb || 0),
         gpu_count: Number(gpuCount || 1),
         supported_compute_types: supported,
         cached_models: cachedModels,
+        available_gpu_tiers: availableGpuTiers,
+        available_tier_modes: availableTierModes,
+        tier_capability_source: availableGpuTiers.size > 0 ? 'available_gpu_tiers' : 'heuristic',
         gpu_label: normalizeString(provider.gpu_name_detected, { maxLen: 120 })
             || normalizeString(provider.gpu_model, { maxLen: 120 })
             || null,
+    };
+}
+
+function buildTierCapabilityContract(providerProfile, requirements) {
+    return {
+        required_tier_mode: requirements.tier_mode || null,
+        provider_tier_modes: Array.from(providerProfile.available_tier_modes || []),
+        provider_gpu_tiers: Array.from(providerProfile.available_gpu_tiers || []),
+        source: providerProfile.tier_capability_source || 'heuristic',
+    };
+}
+
+function normalizeAdmissionRejectionCode(value) {
+    const code = normalizeString(value, { maxLen: 128, trim: true });
+    return code && TIER_ADMISSION_REJECTION_CODE_SET.has(code) ? code : null;
+}
+
+function fetchLatestTierAdmissionRejection(providerId) {
+    const row = db.get(
+        `SELECT occurred_at, metadata_json
+           FROM provider_activation_events
+          WHERE provider_id = ?
+            AND event_code = 'tier_admission_rejected'
+          ORDER BY occurred_at DESC, id DESC
+          LIMIT 1`,
+        providerId
+    );
+    if (!row) {
+        return {
+            latest_rejection_code: null,
+            latest_rejection_at: null,
+            code_enum: TIER_ADMISSION_REJECTION_CODES,
+        };
+    }
+
+    let metadata = null;
+    if (row.metadata_json) {
+        try {
+            metadata = JSON.parse(row.metadata_json);
+        } catch (_) {
+            metadata = null;
+        }
+    }
+    const rejectionCode = normalizeAdmissionRejectionCode(metadata?.rejection_code);
+    return {
+        latest_rejection_code: rejectionCode,
+        latest_rejection_at: row.occurred_at || null,
+        code_enum: TIER_ADMISSION_REJECTION_CODES,
     };
 }
 
@@ -2409,6 +2537,17 @@ function evaluateProviderAdmission(providerProfile, jobRequirements) {
             reason: `Provider does not support compute type '${jobRequirements.compute_type}'`,
             tier_mode: jobRequirements.tier_mode,
             prewarm_class: jobRequirements.prewarm_class,
+        };
+    }
+    if (!providerProfile.available_tier_modes.has(jobRequirements.tier_mode)) {
+        return {
+            accepted: false,
+            reason_code: PROVIDER_ADMISSION_REASON_CODES.TIER_MODE_NOT_AVAILABLE,
+            reason: `Provider does not advertise required tier mode '${jobRequirements.tier_mode}'`,
+            tier_mode: jobRequirements.tier_mode,
+            prewarm_class: jobRequirements.prewarm_class,
+            provider_tier_modes: Array.from(providerProfile.available_tier_modes || []),
+            provider_gpu_tiers: Array.from(providerProfile.available_gpu_tiers || []),
         };
     }
     const modelCompatibility = evaluateLowVramInferenceCompatibility(providerProfile, jobRequirements);
@@ -2486,7 +2625,7 @@ function buildNextPendingJob(providerId) {
     const provider = db.get(
         `SELECT id, wallet_address, is_paused, last_heartbeat, resource_spec, supported_compute_types, gpu_count, gpu_count_reported,
                 gpu_model, gpu_name_detected,
-                vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb, cached_models
+                vram_mb, gpu_vram_mb, gpu_vram_mib, vram_gb, cached_models, available_gpu_tiers, model_preload_status
          FROM providers
          WHERE id = ?`,
         providerId
@@ -2550,12 +2689,26 @@ function buildNextPendingJob(providerId) {
         const requirements = parseJobContainerRequirements(candidate.container_spec, prewarmCache);
         const admission = evaluateProviderAdmission(providerProfile, requirements);
         if (!admission.accepted) {
+            const rejectionCode = normalizeAdmissionRejectionCode(admission.reason_code);
+            if (rejectionCode) {
+                recordActivationEvent(providerId, 'tier_admission_rejected', {
+                    rejection_code: rejectionCode,
+                    reason_code: rejectionCode,
+                    reason: admission.reason || null,
+                    tier_mode: admission.tier_mode || requirements.tier_mode || null,
+                    prewarm_class: admission.prewarm_class || requirements.prewarm_class || null,
+                    job_id: candidate.job_id || null,
+                    model_id: requirements.model_id || null,
+                    compute_type: requirements.compute_type || null,
+                });
+            }
             if (!selectedAdmission) {
                 selectedAdmission = {
                     ...admission,
                     job_id: candidate.job_id,
                     compute_type: requirements.compute_type,
                     model_id: requirements.model_id,
+                    tier_capability: buildTierCapabilityContract(providerProfile, requirements),
                 };
             }
             continue;
@@ -2586,6 +2739,7 @@ function buildNextPendingJob(providerId) {
             job_id: candidate.job_id,
             compute_type: requirements.compute_type,
             model_id: requirements.model_id,
+            tier_capability: buildTierCapabilityContract(providerProfile, requirements),
         };
         break;
     }
@@ -2601,6 +2755,12 @@ function buildNextPendingJob(providerId) {
                 reason: candidates.length > 0
                     ? 'Pending jobs exist but none pass provider admission checks'
                     : 'No pending jobs available',
+                tier_capability: {
+                    required_tier_mode: null,
+                    provider_tier_modes: Array.from(providerProfile.available_tier_modes || []),
+                    provider_gpu_tiers: Array.from(providerProfile.available_gpu_tiers || []),
+                    source: providerProfile.tier_capability_source || 'heuristic',
+                },
             },
         };
     }
@@ -2686,6 +2846,12 @@ function buildNextPendingJob(providerId) {
             accepted: true,
             reason_code: PROVIDER_ADMISSION_REASON_CODES.OK,
             reason: 'Provider satisfies admission checks',
+            tier_capability: {
+                required_tier_mode: null,
+                provider_tier_modes: Array.from(providerProfile.available_tier_modes || []),
+                provider_gpu_tiers: Array.from(providerProfile.available_gpu_tiers || []),
+                source: providerProfile.tier_capability_source || 'heuristic',
+            },
         },
     };
 }
@@ -3171,6 +3337,7 @@ router.get('/download/daemon', (req, res) => {
 
         // check_only mode: return version info without downloading the file
         if (check_only === 'true') {
+            recordActivationEvent(provider.id, 'daemon_download_check', { route: 'download/daemon' });
             return res.json({
                 version: currentVersion,
                 min_version: MIN_DAEMON_VERSION,
@@ -3190,6 +3357,11 @@ router.get('/download/daemon', (req, res) => {
             .replace('API_URL = "INJECT_URL_HERE"', `API_URL = "${apiUrl}"`);
 
         const downloadName = path.basename(daemonPath);
+        recordActivationEvent(provider.id, 'daemon_downloaded', {
+            route: 'download/daemon',
+            filename: downloadName,
+            daemon_version: currentVersion,
+        });
         res.setHeader('Content-Type', 'text/x-python');
         res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
         res.send(injected);
@@ -3311,6 +3483,12 @@ router.get('/download/setup', (req, res) => {
 
         const contentType = isWindows ? 'text/plain' : 'text/x-shellscript';
         const filename = isWindows ? 'dc1-setup.ps1' : 'dc1-setup.sh';
+
+        recordActivationEvent(provider.id, 'setup_script_downloaded', {
+            route: 'download/setup',
+            os: isWindows ? 'windows' : 'unix',
+            filename,
+        });
 
         res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -5505,6 +5683,11 @@ function buildProviderActivationScorecard(provider, opts = {}) {
         ready_to_serve: blockers.length === 0,
         checks,
         blockers,
+        admission: provider?.id ? fetchLatestTierAdmissionRejection(provider.id) : {
+            latest_rejection_code: null,
+            latest_rejection_at: null,
+            code_enum: TIER_ADMISSION_REJECTION_CODES,
+        },
         generated_at: new Date(nowMs).toISOString(),
     };
 }
@@ -6103,6 +6286,7 @@ function buildActivationStatePayload(provider, nowMs = Date.now()) {
         activation_state: activationState,
         blocker_codes: blockers.map((item) => item.code),
         blockers,
+        admission: fetchLatestTierAdmissionRejection(provider.id),
         next_action: nextAction,
         signals: {
             approval_status: evalResult.approvalStatus,
@@ -7019,6 +7203,8 @@ module.exports.__private = {
     parseJobContainerRequirements,
     evaluateProviderAdmission,
     PROVIDER_ADMISSION_REASON_CODES,
+    TIER_ADMISSION_REJECTION_CODES,
+    fetchLatestTierAdmissionRejection,
     _providerEventEmitter,
     ACTIVATION_MIN_VRAM_GB,
     ACTIVATION_MIN_TFLOPS,

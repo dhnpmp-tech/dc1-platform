@@ -875,6 +875,7 @@ const migrations = [
   'ALTER TABLE providers ADD COLUMN p2p_peer_id TEXT',
   'ALTER TABLE providers ADD COLUMN daemon_version TEXT',
   'ALTER TABLE providers ADD COLUMN current_job_id TEXT',
+  'ALTER TABLE providers ADD COLUMN available_gpu_tiers TEXT',
   'ALTER TABLE providers ADD COLUMN approval_status TEXT DEFAULT \'pending\'',
   'ALTER TABLE providers ADD COLUMN approved_at TEXT',
   'ALTER TABLE providers ADD COLUMN rejected_reason TEXT',
@@ -1415,6 +1416,22 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider_time ON provider_metrics(provider_id, recorded_at)`);
 
+// ─── PROVIDER ACTIVATION EVENTS TABLE — DCP-443 ───
+// Tracks installer/daemon download milestones to quantify provider activation conversion.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_activation_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL,
+    event_code TEXT NOT NULL,
+    occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
+    metadata_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (provider_id) REFERENCES providers(id)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_activation_events_provider_time ON provider_activation_events(provider_id, occurred_at DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_provider_activation_events_code_time ON provider_activation_events(event_code, occurred_at DESC)`);
+
 // ─── CONVERSION FUNNEL EVENTS TABLE — DCP-357 ───
 // Canonical provider + renter activation funnel contract:
 // view -> register -> first_action -> first_success
@@ -1771,8 +1788,13 @@ db.exec(`
     prompt_tokens      INTEGER NOT NULL DEFAULT 0,
     completion_tokens  INTEGER NOT NULL DEFAULT 0,
     total_tokens       INTEGER NOT NULL DEFAULT 0,
+    prompt_cost_halala INTEGER NOT NULL DEFAULT 0,
+    completion_cost_halala INTEGER NOT NULL DEFAULT 0,
     token_rate_halala  INTEGER,
     cost_halala        INTEGER NOT NULL,
+    usd_prompt         TEXT,
+    usd_completion     TEXT,
+    usd_total          TEXT,
     currency           TEXT NOT NULL DEFAULT 'SAR',
     settlement_status  TEXT NOT NULL DEFAULT 'pending'
                        CHECK(settlement_status IN ('pending','settled','failed')),
@@ -1784,7 +1806,12 @@ try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN request_id TEXT
 try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN provider_response_id TEXT').run(); } catch (_) {}
 try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN job_id TEXT').run(); } catch (_) {}
 try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN request_path TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN prompt_cost_halala INTEGER NOT NULL DEFAULT 0').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN completion_cost_halala INTEGER NOT NULL DEFAULT 0').run(); } catch (_) {}
 try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN token_rate_halala INTEGER').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN usd_prompt TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN usd_completion TEXT').run(); } catch (_) {}
+try { db.prepare('ALTER TABLE openrouter_usage_ledger ADD COLUMN usd_total TEXT').run(); } catch (_) {}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_pending ON openrouter_usage_ledger(settlement_status, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_settlement ON openrouter_usage_ledger(settlement_id, created_at DESC)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_or_usage_renter ON openrouter_usage_ledger(renter_id, created_at DESC)`);

@@ -12,6 +12,8 @@
 // Kept here as a fallback when running this file directly outside Jest
 if (!process.env.DC1_DB_PATH) process.env.DC1_DB_PATH = ':memory:';
 if (!process.env.DC1_ADMIN_TOKEN) process.env.DC1_ADMIN_TOKEN = 'test-admin-token-jest';
+// This suite validates API contracts, not rate-limit behavior; disable limiter state carry-over.
+if (!process.env.DISABLE_RATE_LIMIT) process.env.DISABLE_RATE_LIMIT = '1';
 
 const request = require('supertest');
 const express = require('express');
