@@ -1,3 +1,8 @@
+## [2026-04-03 21:56 UTC] Codex — Login Reason Message Hook Dependency Stabilized
+- **Commit**: `28e1244` - Memoized login reason-to-message mapping with `useCallback` and wired the effect dependency to the callback, removing the stale exhaustive-deps warning without behavior changes.
+- **Files**: `app/login/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Login reason query-parameter error hydration remains unchanged, while lint/build no longer report the prior `getReasonMessage` hook dependency warning on this page. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
+
 ## [2026-04-03 21:02 UTC] Codex — DCP-537 Payout Settlement Preview API + Deterministic Fixtures
 - **Commit**: `e36536c` - Implemented a read-only admin payout settlement preview contract for a date window, returning per-provider gross/platform-fee/provider-net aggregates plus reconciliation totals, and added deterministic unit/route tests covering sum integrity and 2-decimal SAR rounding outputs.
 - **Files**: `backend/src/services/payoutBatchService.js`, `backend/src/routes/payouts.js`, `backend/src/__tests__/payoutBatchService.test.js`, `backend/src/__tests__/payouts-settlement-preview.test.js`, `AGENT_LOG.md`
