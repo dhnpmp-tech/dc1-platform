@@ -64,6 +64,22 @@ db.exec(`
   )
 `);
 
+// ─── ADMIN AUDIT LOG TABLE ───
+// Immutable trail for privileged admin actions.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_user_id TEXT NOT NULL DEFAULT 'system',
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    details TEXT,
+    timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_audit_admin ON admin_audit_log(admin_user_id, timestamp DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit_log(target_type, target_id, timestamp DESC)`);
+
 try {
   db.prepare('ALTER TABLE providers ADD COLUMN wallet_address TEXT').run();
 } catch (_) {}
