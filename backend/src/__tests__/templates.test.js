@@ -252,6 +252,13 @@ describe('GET /api/templates/:id', () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
+
+  it('returns falcon-h1-arabic-7b by id', async () => {
+    const res = await request(app).get('/api/templates/falcon-h1-arabic-7b');
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe('falcon-h1-arabic-7b');
+    expect(res.body.params?.model).toBe('tiiuae/Falcon-H1-7B-Instruct');
+  });
 });
 
 // ── POST /api/templates/:id/deploy ──────────────────────────────────────────
@@ -363,6 +370,20 @@ describe('POST /api/templates/:id/deploy', () => {
     expect(res.body.totalCost.halala).toBeGreaterThan(0);
     expect(typeof res.body.totalCost.sar).toBe('string');
     expect(res.body.template.id).toBe('llama3-8b');
+  });
+
+  it('creates a job when deploying falcon-h1-arabic-7b', async () => {
+    insertRenter(global.__testDb, { apiKey: RENTER_KEY, balanceHalala: 100000 });
+    insertProvider(global.__testDb, { vramGb: 24 });
+
+    const res = await request(app)
+      .post('/api/templates/falcon-h1-arabic-7b/deploy')
+      .set('x-renter-key', RENTER_KEY)
+      .send({ duration_minutes: 60 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.template.id).toBe('falcon-h1-arabic-7b');
+    expect(res.body.template.name).toBe('Falcon-H1 7B Arabic Instruct');
   });
 
   it('uses manifest canonical image ref for instant-tier template deploys', async () => {
