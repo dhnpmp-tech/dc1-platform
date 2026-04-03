@@ -66,9 +66,7 @@ async function ensureInferenceSmokePrincipal(opts = {}) {
     body: JSON.stringify(registerBody),
   });
 
-  if (registerRes.status === 201 && registerRes.json?.api_key) {
-    masterApiKey = registerRes.json.api_key;
-  } else if (registerRes.status === 409) {
+  const loginExistingPrincipal = async () => {
     const loginRes = await requestJson(baseUrl, '/api/renters/login-email', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -86,7 +84,17 @@ async function ensureInferenceSmokePrincipal(opts = {}) {
       };
       throw error;
     }
-    masterApiKey = loginRes.json.api_key;
+    return loginRes.json.api_key;
+  };
+
+  if (registerRes.status === 201 && registerRes.json?.api_key) {
+    masterApiKey = registerRes.json.api_key;
+  } else if (registerRes.status === 409) {
+    masterApiKey = await loginExistingPrincipal();
+  } else if (registerRes.status === 429) {
+    // Registration may be rate-limited while the deterministic principal already exists.
+    // Recovering by email keeps the proof flow deterministic under API throttling.
+    masterApiKey = await loginExistingPrincipal();
   } else {
     const error = new Error('Smoke principal registration failed');
     error.code = 'SMOKE_PRINCIPAL_REGISTER_FAILED';
