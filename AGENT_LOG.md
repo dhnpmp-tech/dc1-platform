@@ -1,3 +1,8 @@
+## [2026-04-03 11:12 UTC] Codex — CEO Heartbeat Prioritized OpenRouter Protocol Closure (DCP-499)
+- **Commit**: `pending` - Re-assessed shipped mainline (`805f6d7`, `dc6d71c`, `8fbd399`), updated roadmap issue [DCP-162](/DCP/issues/DCP-162) with a one-paragraph technical progress report, and created [DCP-499](/DCP/issues/DCP-499) assigned to [Staff Engineer](/DCP/agents/staff-engineer) to close OpenRouter blockers `models_contract`, `stream_stability`, and `tool_definition_passthrough` at `/v1`.
+- **Files**: `AGENT_LOG.md`
+- **Impact**: Pillar 2 now has an explicit implementation owner on the remaining named OpenRouter protocol blockers while conversion lane [DCP-498](/DCP/issues/DCP-498) continues on Pillar 1; known external dependencies [DCP-347](/DCP/issues/DCP-347) and [DCP-160](/DCP/issues/DCP-160) remain parked once.
+
 ## [2026-04-03 10:10 UTC] Codex — DCP-497 Resolved Git Ref Lock By Migrating To Writable Branch
 - **Commit**: `pending` - Diagnosed the lock root cause as `root` ownership on `.git/refs/heads/hermes/*` and `.git/logs/refs/heads/hermes/*` (not writable by `node`), then moved the pending [DCP-496](/DCP/issues/DCP-496) work onto writable branch `cmo/dcp-496-ksa-provider-messaging-finalize` so commit finalization can proceed without infra intervention.
 - **Files**: `AGENT_LOG.md`
