@@ -32427,3 +32427,8 @@ a
 - **Commit**: `pending` - Added earnings confidence trust IA on provider earnings page: settled/pending/estimated split, heartbeat-derived uptime confidence, payout timeline with blocker routing CTA, delayed-sync/partial-data warning states, and analytics events for trust surface view + CTA clicks.
 - **Files**: `app/provider/earnings/page.tsx`, `app/lib/i18n.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider earnings now communicates payout confidence deterministically (including uncertain windows) with EN/AR trust copy parity and state-driven support/docs escalation routes. Build passes with `npm run build -- --no-lint`.
+
+## [2026-04-03 03:58 UTC] Codex — chore: DCP-475 deploy-ready ALLaM routing fix handoff + live pre-deploy proof
+- **Commit**: `pending` - Cherry-picked DCP-472 routing fix commit onto a fresh main-based DCP-475 branch and captured deterministic live pre-deploy proof showing current production still at `min_vram_gb=24`, `capable_providers=0` for `ALLaM-AI/ALLaM-7B-Instruct-preview`.
+- **Files**: infra/vllm-configs/compatibility-matrix.json, backend/src/__tests__/v1-models.test.js, docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T035813Z.{json,md,log}, docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.{json,md,log}
+- **Impact**: Branch is deploy-ready with ALLaM alias + VRAM admission fix plus baseline pre-deploy evidence. Post-deploy rerun should move diagnostics off `min_vram_gb=24`/`capable_providers=0` and unblock DCP-371 PASS verification.

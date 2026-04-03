@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-04-03T03:58:13.661Z",
+  "verdict": "FAIL",
+  "base_url": "https://api.dcp.sa",
+  "model": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+  "command": "node tests/first-live-inference-proof-package.js",
+  "principal": {
+    "renter_id": 1774351995125,
+    "renter_email": "inference-smoke-d7e7983d4161@dcp.local",
+    "key_hint": "dc1-sk-7...060e",
+    "scoped_key_id": "4f1c57cd-8f87-492b-97fe-07089676de2f",
+    "scoped_key_label": "dcp-smoke-proof:2026-04-03T03:58",
+    "scoped_key_expires_at": "2026-04-03T09:58:13.627Z",
+    "balance_halala": 1000
+  },
+  "probes": {
+    "health": {
+      "route": "/api/health",
+      "status": 200,
+      "elapsed_ms": 3,
+      "request_id": null,
+      "response_hash": "d9a1cfba08fc37c4f41ec5f743dcf27ea82f7b1e68649ca9b6da25babb388855",
+      "error_message": null
+    },
+    "models": {
+      "status": 200,
+      "elapsed_ms": 2,
+      "request_id": null,
+      "model_count": 14,
+      "response_hash": "98014800ce5f06a4416bdbe4ce9c7d8e543720b4475d0c2a19b2ec4a26888a86",
+      "error_message": null
+    },
+    "completion_json": {
+      "status": 503,
+      "elapsed_ms": 9,
+      "request_id": null,
+      "response_hash": "314a7a5e71f4430c7386b7db21a5528782735c37b961037e6d3e6d5ee3e0f420",
+      "error_message": "{\"error\":\"no_capacity\",\"message\":\"No online providers currently satisfy this model GPU requirement\",\"diagnostics\":{\"model_id\":\"ALLaM-AI/ALLaM-7B-Instruct-preview\",\"min_vram_gb\":24,\"capable_providers\":0,\"queued_vllm_jobs\":0,\"provider_heartbe"
+    },
+    "completion_stream": {
+      "status": 200,
+      "elapsed_ms": 3,
+      "request_id": null,
+      "stream_done": true,
+      "response_hash": "8728cbe134bf256e035ea2c18b94463e18d4ce104be5525b0d039fac3d017164",
+      "error_message": null
+    }
+  },
+  "failure": {
+    "code": "provider_unreachable_or_unavailable",
+    "severity": "blocking",
+    "action": "Verify provider heartbeat, reachable vLLM endpoint URL, and model is loaded on at least one online provider."
+  },
+  "artifacts": {
+    "json": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T035813Z.json",
+    "markdown": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T035813Z.md",
+    "log": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T035813Z.log",
+    "latest_json": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.json",
+    "latest_markdown": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.md",
+    "latest_log": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.log"
+  }
+}
