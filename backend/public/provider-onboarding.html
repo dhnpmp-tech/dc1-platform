@@ -169,9 +169,10 @@
 
         /* Stats row */
         .stats {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             justify-content: center;
-            gap: 40px;
+            gap: 18px;
             margin-top: 32px;
         }
         .stat {
@@ -379,6 +380,49 @@
             overflow: hidden;
             margin-top: 8px;
         }
+
+        .trust-panel {
+            margin-top: 8px;
+            margin-bottom: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            background: rgba(99, 102, 241, 0.08);
+            padding: 16px;
+        }
+        .trust-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .trust-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: rgba(99, 102, 241, 0.22);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .trust-heading {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .trust-list {
+            display: grid;
+            gap: 8px;
+        }
+        .trust-line {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.55;
+        }
+        .trust-line strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
         .submit-btn:hover:not(:disabled) {
             transform: translateY(-1px);
             box-shadow: 0 8px 25px rgba(99, 102, 241, 0.35);
@@ -419,6 +463,44 @@
             padding: 16px 20px;
             color: var(--error);
             font-size: 14px;
+        }
+        .error-title {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #fecaca;
+        }
+        .error-body {
+            color: #fecaca;
+            line-height: 1.5;
+        }
+        .error-actions {
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .error-retry-btn {
+            min-height: 44px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            color: #fff;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .error-support-link {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            color: #fecaca;
+            font-size: 13px;
+            text-decoration: underline;
+            text-underline-offset: 2px;
         }
 
         /* Success state */
@@ -552,6 +634,7 @@
         .tracker-steps {
             display: flex;
             gap: 6px;
+            flex-wrap: wrap;
         }
         .tracker-step {
             padding: 4px 10px;
@@ -577,6 +660,55 @@
             color: var(--text-muted);
             margin-top: 10px;
         }
+        .tracker-legend {
+            margin-top: 12px;
+            display: grid;
+            gap: 6px;
+        }
+        .legend-item {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.45;
+        }
+        .legend-item strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        .payout-card {
+            margin-top: 16px;
+            border: 1px solid rgba(52, 211, 153, 0.22);
+            background: rgba(52, 211, 153, 0.08);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .payout-card h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+        .payout-card p {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .status-alert {
+            margin-top: 14px;
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            border-radius: 10px;
+            background: rgba(251, 191, 36, 0.1);
+            padding: 12px;
+        }
+        .status-alert strong {
+            color: #fde68a;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .status-alert p {
+            color: #fde68a;
+            font-size: 12px;
+            line-height: 1.45;
+        }
 
         /* Footer */
         .footer {
@@ -599,9 +731,30 @@
             .card { padding: 24px; }
             .form-row { grid-template-columns: 1fr; }
             .gpu-grid { grid-template-columns: repeat(2, 1fr); }
-            .stats { gap: 24px; }
+            .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
             .stat-value { font-size: 20px; }
             .nav { padding: 12px 16px; }
+            .cmd-block { overflow-x: auto; }
+        }
+
+        html[dir="rtl"] .trust-header {
+            flex-direction: row-reverse;
+            text-align: right;
+        }
+        html[dir="rtl"] .trust-list,
+        html[dir="rtl"] .legend-item,
+        html[dir="rtl"] .payout-card,
+        html[dir="rtl"] .status-alert,
+        html[dir="rtl"] .status.error {
+            text-align: right;
+        }
+        html[dir="rtl"] .tracker-steps {
+            flex-direction: row-reverse;
+        }
+        .cmd-block,
+        .cmd-block code {
+            direction: ltr;
+            text-align: left;
         }
     </style>
 </head>
@@ -632,7 +785,11 @@
                 </div>
                 <div class="stat">
                     <div class="stat-value" id="hero-stats-updated">—</div>
-                    <div class="stat-label">Last updated</div>
+                    <div class="stat-label" id="stats-updated-label">Last updated</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="hero-weekly-payouts">Every Sunday</div>
+                    <div class="stat-label" id="stats-payout-label">Weekly payouts</div>
                 </div>
             </div>
         </div>
@@ -757,6 +914,18 @@
                     </div>
                 </div>
 
+                <div class="trust-panel">
+                    <div class="trust-header">
+                        <div class="trust-icon">&#128176;</div>
+                        <div class="trust-heading" id="trust-heading">How your earnings work</div>
+                    </div>
+                    <div class="trust-list">
+                        <p class="trust-line" id="trust-formula"><strong>Estimated hourly earnings</strong> = GPU base rate × uptime × demand.</p>
+                        <p class="trust-line" id="trust-settlement">Payouts are settled weekly after fraud and uptime checks.</p>
+                        <p class="trust-line" id="trust-track">You can track pending and settled earnings from your provider dashboard.</p>
+                    </div>
+                </div>
+
                 <button type="submit" class="submit-btn" id="submitBtn">
                     Register &amp; Download Installer
                 </button>
@@ -784,6 +953,118 @@
             'RX 7900 XTX': ['7900 xtx', '7900xtx'],
             'MI300X': ['mi300x', 'mi300'],
         };
+
+        const I18N = {
+            en: {
+                weeklyPayoutsLabel: 'Weekly payouts',
+                weeklyPayoutsValue: 'Every Sunday',
+                trustHeading: 'How your earnings work',
+                trustFormula: 'Estimated hourly earnings = GPU base rate × uptime × demand.',
+                trustSettlement: 'Payouts are settled weekly after fraud and uptime checks.',
+                trustTrack: 'You can track pending and settled earnings from your provider dashboard.',
+                onboardingReady: 'Your provider account is ready',
+                payoutHeading: 'Payout timeline',
+                payoutBody: 'Your earnings start after daemon is online. Pending earnings settle in the next weekly cycle.',
+                statusWaiting: 'Waiting for daemon...',
+                statusOnline: 'Daemon is online!',
+                statusReady: 'Ready for jobs!',
+                statusInstalling: 'Installing...',
+                trackerNote: 'Checking status every 5 seconds...',
+                trackerRegistered: 'Registered',
+                trackerInstalling: 'Installing',
+                trackerOnline: 'Online',
+                trackerReady: 'Ready',
+                legendRegistered: 'account created, waiting install.',
+                legendInstalling: 'daemon setup in progress on provider machine.',
+                legendOnline: 'heartbeat received.',
+                legendReady: 'eligible for job dispatch.',
+                errorRegisterDuplicate: 'An account with this email already exists. Use your existing provider key or contact support.',
+                errorRegisterValidation: 'Some fields are missing or invalid. Review highlighted fields and retry.',
+                errorStatusTimeout: 'Daemon not online yet. Confirm installer ran as administrator/root and internet access is available.',
+                errorStatusUnreachable: 'We cannot confirm your status right now. We will retry automatically.',
+                retry: 'Retry',
+                contactSupport: 'Contact support',
+                registerBtn: 'Register & Download Installer',
+                registering: 'Registering...',
+                setupMessage: 'Setting up your provider account...',
+                registerFailedTitle: 'Registration issue',
+                statusIssueTitle: 'Status issue',
+                gpuSelectError: 'Please select a GPU model.'
+            },
+            ar: {
+                weeklyPayoutsLabel: 'دفعات أسبوعية',
+                weeklyPayoutsValue: 'كل يوم أحد',
+                trustHeading: 'كيف تعمل أرباحك',
+                trustFormula: 'الأرباح التقديرية بالساعة = سعر البطاقة الأساسي × وقت التشغيل × الطلب.',
+                trustSettlement: 'تُسوّى الدفعات أسبوعيًا بعد فحوصات النزاهة ووقت التشغيل.',
+                trustTrack: 'يمكنك متابعة الأرباح المعلّقة والمسواة من لوحة مزوّد الخدمة.',
+                onboardingReady: 'حساب المزوّد جاهز',
+                payoutHeading: 'الجدول الزمني للدفعات',
+                payoutBody: 'تبدأ أرباحك بعد اتصال الـDaemon. تُسوّى الأرباح المعلّقة في الدورة الأسبوعية التالية.',
+                statusWaiting: 'بانتظار اتصال الـDaemon...',
+                statusOnline: 'تم اتصال الـDaemon!',
+                statusReady: 'جاهز لاستقبال الوظائف!',
+                statusInstalling: 'جارٍ التثبيت...',
+                trackerNote: 'يتم التحقق من الحالة كل 5 ثوانٍ...',
+                trackerRegistered: 'تم التسجيل',
+                trackerInstalling: 'جارٍ التثبيت',
+                trackerOnline: 'متصل',
+                trackerReady: 'جاهز',
+                legendRegistered: 'تم إنشاء الحساب وبانتظار التثبيت.',
+                legendInstalling: 'إعداد الـDaemon جارٍ على جهاز المزوّد.',
+                legendOnline: 'تم استلام نبضة الاتصال.',
+                legendReady: 'مؤهل لاستقبال الوظائف.',
+                errorRegisterDuplicate: 'يوجد حساب بهذا البريد بالفعل. استخدم مفتاح المزوّد الحالي أو تواصل مع الدعم.',
+                errorRegisterValidation: 'بعض الحقول ناقصة أو غير صحيحة. راجع الحقول المحددة ثم أعد المحاولة.',
+                errorStatusTimeout: 'لم يتصل الـDaemon بعد. تأكد من تشغيل المُثبّت بصلاحية Administrator/root وتوفّر الاتصال بالإنترنت.',
+                errorStatusUnreachable: 'لا يمكننا تأكيد الحالة الآن. سنعيد المحاولة تلقائيًا.',
+                retry: 'إعادة المحاولة',
+                contactSupport: 'تواصل مع الدعم',
+                registerBtn: 'تسجيل وتحميل المُثبّت',
+                registering: 'جارٍ التسجيل...',
+                setupMessage: 'جارٍ إعداد حساب المزوّد...',
+                registerFailedTitle: 'مشكلة في التسجيل',
+                statusIssueTitle: 'مشكلة في الحالة',
+                gpuSelectError: 'يرجى اختيار نوع البطاقة الرسومية.'
+            }
+        };
+
+        const SUPPORT_HREF = 'mailto:support@dcp.sa';
+        let pollState = null;
+        let pollTimer = null;
+        let locale = 'en';
+
+        function resolveLocale() {
+            const langParam = new URLSearchParams(window.location.search).get('lang');
+            if (langParam && langParam.toLowerCase().startsWith('ar')) return 'ar';
+            const htmlLang = (document.documentElement.lang || '').toLowerCase();
+            if (htmlLang.startsWith('ar')) return 'ar';
+            return 'en';
+        }
+
+        function t(key) {
+            return (I18N[locale] && I18N[locale][key]) || I18N.en[key] || key;
+        }
+
+        function applyLocale() {
+            locale = resolveLocale();
+            document.documentElement.lang = locale;
+            document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr';
+            const trustHeading = document.getElementById('trust-heading');
+            const trustFormula = document.getElementById('trust-formula');
+            const trustSettlement = document.getElementById('trust-settlement');
+            const trustTrack = document.getElementById('trust-track');
+            const weeklyPayoutLabel = document.getElementById('stats-payout-label');
+            const weeklyPayoutValue = document.getElementById('hero-weekly-payouts');
+            if (trustHeading) trustHeading.textContent = t('trustHeading');
+            if (trustFormula) trustFormula.textContent = t('trustFormula');
+            if (trustSettlement) trustSettlement.textContent = t('trustSettlement');
+            if (trustTrack) trustTrack.textContent = t('trustTrack');
+            if (weeklyPayoutLabel) weeklyPayoutLabel.textContent = t('weeklyPayoutsLabel');
+            if (weeklyPayoutValue) weeklyPayoutValue.textContent = t('weeklyPayoutsValue');
+            const submitBtn = document.getElementById('submitBtn');
+            if (submitBtn) submitBtn.textContent = t('registerBtn');
+        }
 
         function detectGPU() {
             const banner = document.getElementById('gpu-detect-banner');
@@ -893,6 +1174,66 @@
             }
         }
 
+        function classifyRegisterError(message) {
+            const value = String(message || '').toLowerCase();
+            if (value.includes('already exists') || value.includes('duplicate') || value.includes('email')) {
+                return 'register_duplicate_email';
+            }
+            if (value.includes('validation') || value.includes('invalid') || value.includes('missing') || value.includes('required')) {
+                return 'register_validation_error';
+            }
+            return 'register_validation_error';
+        }
+
+        function renderErrorVariant(kind, opts = {}) {
+            const isStatusVariant = kind === 'status_timeout' || kind === 'status_endpoint_unreachable';
+            const title = opts.title || (isStatusVariant ? t('statusIssueTitle') : t('registerFailedTitle'));
+            let body = t('errorRegisterValidation');
+            if (kind === 'register_duplicate_email') body = t('errorRegisterDuplicate');
+            if (kind === 'register_validation_error') body = t('errorRegisterValidation');
+            if (kind === 'status_timeout') body = t('errorStatusTimeout');
+            if (kind === 'status_endpoint_unreachable') body = t('errorStatusUnreachable');
+            const countdown = opts.countdown ? `<p style="margin-top:8px;font-size:12px;opacity:0.9;">${opts.countdown}</p>` : '';
+            return `
+                <div class="error-title">${title}</div>
+                <div class="error-body">${body}${countdown}</div>
+                <div class="error-actions">
+                    <button type="button" class="error-retry-btn" onclick="${isStatusVariant ? 'retryStatusPolling()' : 'resetRegistrationState()'}">${t('retry')}</button>
+                    <a class="error-support-link" href="${SUPPORT_HREF}">${t('contactSupport')}</a>
+                </div>
+            `;
+        }
+
+        function renderStatusAlert(kind, opts = {}) {
+            const container = document.getElementById('status-alert');
+            if (!container) return;
+            container.innerHTML = `
+                <div class="status-alert">
+                    <strong>${t('statusIssueTitle')}</strong>
+                    ${renderErrorVariant(kind, opts)}
+                </div>
+            `;
+            container.style.display = 'block';
+            container.setAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+        }
+
+        function hideStatusAlert() {
+            const container = document.getElementById('status-alert');
+            if (!container) return;
+            container.style.display = 'none';
+            container.innerHTML = '';
+        }
+
+        function resetRegistrationState() {
+            const statusDiv = document.getElementById('status');
+            const submitBtn = document.getElementById('submitBtn');
+            statusDiv.className = 'status';
+            statusDiv.innerHTML = '';
+            submitBtn.disabled = false;
+            submitBtn.textContent = t('registerBtn');
+        }
+
+        applyLocale();
         detectGPU();
         detectOS();
         loadHeroStats();
@@ -930,13 +1271,16 @@
             const submitBtn = document.getElementById('submitBtn');
 
             if (!document.getElementById('gpu_model').value) {
-                showStatus(statusDiv, 'error', 'Please select a GPU model.');
+                showStatus(statusDiv, 'error', renderErrorVariant('register_validation_error', {
+                    title: t('registerFailedTitle'),
+                    countdown: t('gpuSelectError')
+                }));
                 return;
             }
 
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Registering...';
-            showStatus(statusDiv, 'loading', '<div class="loader"></div><p>Setting up your provider account...</p>');
+            submitBtn.textContent = t('registering');
+            showStatus(statusDiv, 'loading', `<div class="loader"></div><p>${t('setupMessage')}</p>`);
 
             try {
                 const data = {
@@ -967,7 +1311,7 @@
                         <div class="success-icon">\u2705</div>
                         <div>
                             <h3>Welcome to DC1, ${data.name}</h3>
-                            <p>Your provider account is ready</p>
+                            <p>${t('onboardingReady')}</p>
                         </div>
                     </div>
 
@@ -1001,31 +1345,47 @@
                     <div class="status-tracker">
                         <div class="tracker-header">
                             <div class="tracker-dot active" id="status-dot"></div>
-                            <span class="tracker-text" id="status-text">Waiting for daemon...</span>
+                            <span class="tracker-text" id="status-text">${t('statusWaiting')}</span>
                         </div>
                         <div class="tracker-steps">
-                            <span class="tracker-step done" id="step-registered">Registered</span>
-                            <span class="tracker-step" id="step-installing">Installing</span>
-                            <span class="tracker-step" id="step-online">Online</span>
-                            <span class="tracker-step" id="step-ready">Ready</span>
+                            <span class="tracker-step done" id="step-registered">${t('trackerRegistered')}</span>
+                            <span class="tracker-step" id="step-installing">${t('trackerInstalling')}</span>
+                            <span class="tracker-step" id="step-online">${t('trackerOnline')}</span>
+                            <span class="tracker-step" id="step-ready">${t('trackerReady')}</span>
                         </div>
-                        <div class="tracker-note">Checking status every 5 seconds...</div>
+                        <div class="tracker-note">${t('trackerNote')}</div>
+                        <div class="tracker-legend">
+                            <div class="legend-item"><strong>${t('trackerRegistered')}</strong> = ${t('legendRegistered')}</div>
+                            <div class="legend-item"><strong>${t('trackerInstalling')}</strong> = ${t('legendInstalling')}</div>
+                            <div class="legend-item"><strong>${t('trackerOnline')}</strong> = ${t('legendOnline')}</div>
+                            <div class="legend-item"><strong>${t('trackerReady')}</strong> = ${t('legendReady')}</div>
+                        </div>
                     </div>
+
+                    <div class="payout-card">
+                        <h4>${t('payoutHeading')}</h4>
+                        <p>${t('payoutBody')}</p>
+                    </div>
+
+                    <div id="status-alert" style="display:none;"></div>
                 `;
 
                 showStatus(statusDiv, 'success', successHTML);
-                setTimeout(() => startStatusPolling(apiKey), 2000);
+                hideStatusAlert();
+                setTimeout(() => startStatusPolling(apiKey, true), 2000);
 
             } catch (error) {
-                showStatus(statusDiv, 'error', `Registration failed: ${error.message}`);
+                const kind = classifyRegisterError(error.message);
+                showStatus(statusDiv, 'error', renderErrorVariant(kind));
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Register & Download Installer';
+                submitBtn.textContent = t('registerBtn');
             }
         });
 
         function showStatus(div, type, content) {
             div.className = `status show ${type}`;
             div.innerHTML = content;
+            div.setAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
         }
 
         function copyText(text, btn) {
@@ -1037,14 +1397,45 @@
             });
         }
 
-        function startStatusPolling(apiKey) {
+        function retryStatusPolling() {
+            if (!pollState || !pollState.apiKey) return;
+            hideStatusAlert();
+            startStatusPolling(pollState.apiKey, true);
+        }
+
+        function startStatusPolling(apiKey, reset = false) {
+            if (pollTimer) clearTimeout(pollTimer);
+            if (reset || !pollState || pollState.apiKey !== apiKey) {
+                pollState = {
+                    apiKey,
+                    startedAt: Date.now(),
+                    timeoutMs: 120000,
+                    onlineSeen: false,
+                    endpointUnreachable: false
+                };
+            }
+
             const poll = async () => {
+                if (!pollState || pollState.apiKey !== apiKey) return;
+                const elapsed = Date.now() - pollState.startedAt;
+                if (!pollState.onlineSeen && elapsed >= pollState.timeoutMs) {
+                    renderStatusAlert('status_timeout');
+                }
                 try {
                     const res = await fetch(`/api/providers/status/${apiKey}`);
-                    if (!res.ok) return;
+                    if (!res.ok) {
+                        renderStatusAlert('status_endpoint_unreachable', {
+                            countdown: locale === 'ar' ? 'إعادة المحاولة تلقائيًا خلال 5 ثوانٍ...' : 'Retrying automatically in 5 seconds...'
+                        });
+                        pollState.endpointUnreachable = true;
+                        pollTimer = setTimeout(poll, 5000);
+                        return;
+                    }
+
                     const data = await res.json();
                     const dot = document.getElementById('status-dot');
                     const text = document.getElementById('status-text');
+                    if (!dot || !text) return;
                     const steps = {
                         installing: document.getElementById('step-installing'),
                         online: document.getElementById('step-online'),
@@ -1052,23 +1443,34 @@
                     };
                     const status = data.status || 'registered';
                     if (status === 'online' || status === 'connected') {
+                        pollState.onlineSeen = true;
+                        hideStatusAlert();
                         dot.className = 'tracker-dot online';
-                        text.textContent = 'Daemon is online!';
+                        text.textContent = t('statusOnline');
                         text.style.color = 'var(--success)';
                         steps.installing.className = 'tracker-step done';
                         steps.online.className = 'tracker-step active';
                     }
                     if (data.readiness_status === 'ready') {
-                        text.textContent = 'Ready for jobs!';
+                        text.textContent = t('statusReady');
                         steps.ready.className = 'tracker-step active';
+                        hideStatusAlert();
                         return;
                     }
                     if (status === 'registered' && data.last_heartbeat) {
                         steps.installing.className = 'tracker-step done';
-                        text.textContent = 'Installing...';
+                        text.textContent = t('statusInstalling');
                     }
-                } catch {}
-                setTimeout(poll, 5000);
+                    if (pollState.endpointUnreachable) {
+                        hideStatusAlert();
+                        pollState.endpointUnreachable = false;
+                    }
+                } catch {
+                    renderStatusAlert('status_endpoint_unreachable', {
+                        countdown: locale === 'ar' ? 'إعادة المحاولة تلقائيًا خلال 5 ثوانٍ...' : 'Retrying automatically in 5 seconds...'
+                    });
+                }
+                pollTimer = setTimeout(poll, 5000);
             };
             poll();
         }
