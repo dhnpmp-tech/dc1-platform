@@ -1,5 +1,5 @@
 ## [2026-04-03 21:02 UTC] Codex — DCP-537 Payout Settlement Preview API + Deterministic Fixtures
-- **Commit**: `pending` - Implemented a read-only admin payout settlement preview contract for a date window, returning per-provider gross/platform-fee/provider-net aggregates plus reconciliation totals, and added deterministic unit/route tests covering sum integrity and 2-decimal SAR rounding outputs.
+- **Commit**: `e36536c` - Implemented a read-only admin payout settlement preview contract for a date window, returning per-provider gross/platform-fee/provider-net aggregates plus reconciliation totals, and added deterministic unit/route tests covering sum integrity and 2-decimal SAR rounding outputs.
 - **Files**: `backend/src/services/payoutBatchService.js`, `backend/src/routes/payouts.js`, `backend/src/__tests__/payoutBatchService.test.js`, `backend/src/__tests__/payouts-settlement-preview.test.js`, `AGENT_LOG.md`
 - **Impact**: FinOps now has a backend-only API lane to preview payout settlement math before payout execution. Endpoint: `GET /api/admin/payouts/settlement-preview?window_start=<ISO>&window_end=<ISO>[&provider_id=<id>]` (admin RBAC). Test coverage validates reconciliation (`gross == platform_fee + provider_net`) and deterministic windowed output.
 
