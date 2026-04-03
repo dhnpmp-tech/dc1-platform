@@ -1,0 +1,30 @@
+{
+  "base": "origin/main",
+  "defaultGates": [
+    "npm ci --include=dev",
+    "npm run build"
+  ],
+  "candidates": [
+    {
+      "branch": "origin/agent/backend-dev/dcp-510-provider-approval-queue",
+      "issue": "DCP-516",
+      "label": "OpenRouter eligibility fix",
+      "notes": "Completed backend fix queued for mainline landing via DCP-520.",
+      "gates": [
+        "npm --prefix backend ci --include=dev",
+        "npm --prefix backend run test:openrouter:compliance",
+        "npm --prefix backend run test:openrouter:failover-proof"
+      ]
+    },
+    {
+      "branch": "origin/agent/backend-dev/dcp-472-restore-allam-capacity",
+      "issue": "DCP-475",
+      "label": "ALLaM routing deployment candidate",
+      "notes": "Critical branch still awaiting deterministic release verification before deployment proof.",
+      "gates": [
+        "npm --prefix backend ci --include=dev",
+        "npm --prefix backend run test:openrouter:compliance"
+      ]
+    }
+  ]
+}
