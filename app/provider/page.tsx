@@ -678,9 +678,7 @@ export default function ProviderDashboard() {
           <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
             <div>
               <h2 className="text-lg font-semibold text-dc1-text-primary">Native Status App</h2>
-              <p className="text-sm text-dc1-text-secondary mt-1">
-                Download the tray/menubar helper to monitor node status and earnings in real time.
-              </p>
+              <p className="text-sm text-dc1-text-secondary mt-1">{t('provider.native_helper')}</p>
             </div>
             <span className="text-xs font-semibold rounded-full border border-dc1-amber/40 bg-dc1-amber/10 px-3 py-1 text-dc1-amber">
               Detected OS: {detectedNativeAppLabel}
