@@ -298,6 +298,11 @@ describe('v1 models route', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.model).toBe('legacy-chat-model');
+    expect(res.headers['x-dcp-provider-id']).toBe('99');
+    expect(res.headers['x-dcp-provider-tier']).toBe('tier_unknown');
+    expect(res.headers['x-dcp-provider-endpoint-host']).toBe('provider.test');
+    expect(res.headers['x-dcp-requested-model-id']).toBe('legacy-chat-model');
+    expect(res.headers['x-dcp-routed-model-id']).toBe('legacy-chat-model');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(mockRecordOpenRouterUsage).toHaveBeenCalledTimes(1);
     expect(mockDb.get.mock.calls.some(([sql]) => String(sql).includes('vram_gb AS min_gpu_vram_gb'))).toBe(true);

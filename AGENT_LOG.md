@@ -32417,3 +32417,8 @@ a
 - **Commit**: `pending` - Added explicit Suspense fallback boundaries on `/docs/quickstart` and `/renter/register` client pages to keep Next.js `useSearchParams` CSR boundary requirements resilient during production builds.
 - **Files**: `app/docs/quickstart/page.tsx`, `app/renter/register/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Production build with typecheck and static generation succeeds (`npm run build -- --no-lint`), including prerender output for both target routes. Existing EN/AR UX flows remain unchanged.
+
+## [2026-04-03 02:46 UTC] Codex — feat: DCP-371 deterministic first-live proof route evidence + rate-limit-tolerant smoke principal recovery
+- **Commit**: `pending` - Added deterministic provider-route evidence headers on `/v1/chat/completions`, extended first-live proof artifacts to capture/validate route evidence, and made smoke principal bootstrap resilient to register 429 by recovering via deterministic login-email.
+- **Files**: backend/src/routes/v1.js, backend/tests/first-live-inference-proof-package.js, backend/tests/ensure-inference-smoke-principal.js, backend/src/__tests__/v1-models.test.js, docs/ops/first-live-inference-proof-runbook.md, docs/reports/reliability/first-live-inference-proof-latest.{json,md,log}, docs/reports/reliability/first-live-inference-proof-20260403T024628Z.{json,md,log}
+- **Impact**: DCP-371 proof package now emits machine-checkable provider route evidence fields when available and fails explicitly for missing route evidence on successful completions. Live run currently fails for capacity (`provider_unreachable_or_unavailable`) but produces deterministic artifact links for issue reporting.
