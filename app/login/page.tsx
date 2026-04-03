@@ -1,26 +1,22 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage } from '../lib/i18n'
 import { setSession } from '../lib/auth'
+import {
+  consumePendingRenterAuthIntent,
+  setRestoredRenterAuthIntent,
+  withRenterIntentInPath,
+} from '../lib/renter-auth-intent'
 
 const API_BASE = '/api/dc1'
 
 type Role = 'provider' | 'renter' | 'admin'
 type LoginMethod = 'email' | 'apikey'
 type AuthStep = 'email' | 'otp'
-
-type PendingPlaygroundIntent = {
-  providerId?: number
-  model?: string
-  mode?: 'llm_inference' | 'image_generation' | 'vllm_serve'
-}
-
-const PENDING_AUTH_INTENT_KEY = 'dc1_pending_auth_intent'
-const RESTORED_AUTH_INTENT_KEY = 'dc1_restored_auth_intent'
 
 function LoginPageInner() {
   const router = useRouter()
@@ -59,30 +55,19 @@ function LoginPageInner() {
   const getRenterPostLoginRedirect = () => {
     const defaultRedirect = getSafeRedirect('/renter')
     if (typeof window === 'undefined') return defaultRedirect
-    const rawIntent = sessionStorage.getItem(PENDING_AUTH_INTENT_KEY)
-    if (!rawIntent) return defaultRedirect
-    try {
-      const intent = JSON.parse(rawIntent) as PendingPlaygroundIntent
-      const params = new URLSearchParams()
-      if (intent.providerId != null && Number.isFinite(intent.providerId)) params.set('provider', String(intent.providerId))
-      if (intent.model) params.set('model', intent.model)
-      if (intent.mode) params.set('mode', intent.mode)
-      sessionStorage.setItem(RESTORED_AUTH_INTENT_KEY, JSON.stringify({ ...intent, restoredAt: new Date().toISOString() }))
-      sessionStorage.removeItem(PENDING_AUTH_INTENT_KEY)
-      const targetBase = defaultRedirect === '/renter' ? '/renter/playground' : defaultRedirect
-      return params.size > 0 ? `${targetBase}?${params.toString()}` : targetBase
-    } catch {
-      sessionStorage.removeItem(PENDING_AUTH_INTENT_KEY)
-      return defaultRedirect
-    }
+    const intent = consumePendingRenterAuthIntent()
+    if (!intent) return defaultRedirect
+    setRestoredRenterAuthIntent(intent)
+    const targetBase = defaultRedirect === '/renter' ? '/renter/playground' : defaultRedirect
+    return withRenterIntentInPath(targetBase, intent)
   }
 
-  const getReasonMessage = useCallback((reason: string) => {
+  const getReasonMessage = (reason: string) => {
     if (reason === 'expired_session') return t('auth.error.expired_session')
     if (reason === 'missing_credentials') return t('auth.error.missing_credentials')
     if (reason === 'invalid_credentials') return t('auth.error.invalid_credentials')
     return t('auth.error.sign_in_failed')
-  }, [t])
+  }
 
   const normalizeAuthError = (status: number, rawError: string, fallback: string) => {
     const lower = rawError.toLowerCase()
@@ -105,7 +90,7 @@ function LoginPageInner() {
     if (methodParam === 'email' || methodParam === 'apikey') setLoginMethod(methodParam)
     const reasonParam = searchParams.get('reason')
     if (reasonParam) setError(getReasonMessage(reasonParam))
-  }, [getReasonMessage, searchParams])
+  }, [searchParams, t])
 
   const handleSendOtp = async () => {
     setError(''); setSuccessMsg(''); setIsLoading(true)
@@ -227,7 +212,7 @@ function LoginPageInner() {
         <div className="w-full max-w-md">
           <div className="card border-dc1-border/50 shadow-lg">
             <div className="flex justify-center mb-8">
-              <img src="/dcp-logo-primary.png" alt="DCP" className="h-12 w-auto" />
+              <img src="/logo.svg" alt="DCP" className="h-12 w-auto" />
             </div>
             <h1 className="text-2xl font-bold text-dc1-text-primary text-center mb-2">{t('auth.sign_in')}</h1>
             <p className="text-sm text-dc1-text-secondary text-center mb-6">
