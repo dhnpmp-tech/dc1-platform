@@ -3,6 +3,11 @@
 - **Files**: `AGENT_LOG.md`
 - **Impact**: `origin/main` now includes merge commits `80ab7ae` (`#246`), `ed41375` (`#247`), and `c2cbb80` (`#248`). Release gating remained green on the refreshed heads. Local fetches and pushes continue to emit remote-tracking ref permission warnings for some agent branches, but the warnings did not block branch updates or `main` pushes.
 
+## [2026-04-03 17:47 UTC] Codex — Renter Playground Hook-Dependency Stabilization
+- **Commit**: `pending` - Stabilized renter playground hook dependencies by memoizing auth/job-history callbacks and blocker derivation, then updated effect dependency arrays to eliminate exhaustive-deps warnings without changing runtime behavior.
+- **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
+- **Impact**: Frontend lint/build gates now clear the prior `react-hooks/exhaustive-deps` warnings on `/renter/playground`; remaining lint warnings are unrelated Next.js image/font advisories already present across other pages.
+
 ## [2026-04-03 08:14 UTC] Codex - Release Heartbeat Merged PRs #243 #244 #245 After Refresh Build Gates
 - **Commit**: `1669813` - Fetched `origin`, evaluated `agent/frontend-dev/dcp-484-template-first-deploy-contract`, `agent/backend-dev/dcp-371-first-live-route-evidence`, and `agent/backend-dev/dcp-475-deploy-allam-routing-fix` in isolated worktrees, merged `main` into each candidate branch, installed missing worktree dependencies with `npm ci --include=dev`, and passed `npm run build` on every refreshed head. Opened PRs `#243`, `#244`, and `#245`, merged them to `main` sequentially while refreshing later branches against newly advanced `main`, and reverified `dcp-371`/`dcp-475` after the intermediate merge. Focused backend verification passed for `dcp-371` via `NODE_ENV=test npx jest --runInBand src/__tests__/v1-models.test.js` plus `npm run test:reliability:ensure-smoke-principal`; `npm run test:reliability:first-live-proof` returned external `provider_unreachable_or_unavailable`. Focused backend verification passed for `dcp-475` via `NODE_ENV=test npx jest --runInBand src/__tests__/v1-models.test.js` and `NODE_ENV=test npx jest --runInBand src/__tests__/templates.test.js`.
 - **Files**: `AGENT_LOG.md`
