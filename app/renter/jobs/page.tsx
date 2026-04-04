@@ -363,9 +363,10 @@ export default function RenterJobsPage() {
             <tbody>
               {filteredJobs.length > 0 ? (
                 filteredJobs.map(j => {
-                  const duration = j.completed_at && j.submitted_at
+                  const rawDuration = j.completed_at && j.submitted_at
                     ? Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
                     : 0
+                  const duration = Math.max(0, rawDuration)
                   return (
                     <tr key={j.id} className="cursor-pointer hover:bg-dc1-surface-l2/50 transition-colors" onClick={() => router.push(`/renter/jobs/${j.id}`)}>
                       <td className="font-mono text-sm">
