@@ -523,6 +523,130 @@ describe('v1 models route', () => {
     fetchSpy.mockRestore();
   });
 
+  test('chat completions normalizes provider endpoint ending with /v1', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'chatcmpl-endpoint-v1',
+        object: 'chat.completion',
+        model: 'endpoint-model',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
+      }),
+    });
+
+    mockDb.all.mockImplementation((sql) => {
+      if (String(sql).includes('PRAGMA table_info(model_registry)')) {
+        return [{ name: 'model_id' }, { name: 'min_gpu_vram_gb' }, { name: 'context_window' }];
+      }
+      if (String(sql).includes('FROM providers')) {
+        return [{
+          id: 190,
+          status: 'online',
+          is_paused: 0,
+          deleted_at: null,
+          supported_compute_types: '["inference"]',
+          vram_gb: 24,
+          last_heartbeat: new Date().toISOString(),
+          vllm_endpoint_url: 'http://provider.test/v1',
+          gpu_util_pct: 2,
+        }];
+      }
+      return [];
+    });
+
+    mockDb.get.mockImplementation((sql) => {
+      const query = String(sql);
+      if (query.includes('FROM renter_api_keys')) return null;
+      if (query.includes('FROM renters WHERE api_key')) {
+        return { id: 90, api_key: 'test-key', balance_halala: 5000, status: 'active' };
+      }
+      if (query.includes('FROM model_registry WHERE model_id = ?')) {
+        return { model_id: 'endpoint-model', min_gpu_vram_gb: 4, context_window: 4096 };
+      }
+      if (query.includes('FROM cost_rates')) {
+        return { token_rate_halala: 1 };
+      }
+      return null;
+    });
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', 'Bearer test-key')
+      .send({
+        model: 'endpoint-model',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe('http://provider.test/v1/chat/completions');
+
+    fetchSpy.mockRestore();
+  });
+
+  test('chat completions keeps provider endpoint already set to chat/completions', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'chatcmpl-endpoint-full',
+        object: 'chat.completion',
+        model: 'endpoint-model',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
+      }),
+    });
+
+    mockDb.all.mockImplementation((sql) => {
+      if (String(sql).includes('PRAGMA table_info(model_registry)')) {
+        return [{ name: 'model_id' }, { name: 'min_gpu_vram_gb' }, { name: 'context_window' }];
+      }
+      if (String(sql).includes('FROM providers')) {
+        return [{
+          id: 191,
+          status: 'online',
+          is_paused: 0,
+          deleted_at: null,
+          supported_compute_types: '["inference"]',
+          vram_gb: 24,
+          last_heartbeat: new Date().toISOString(),
+          vllm_endpoint_url: 'http://provider.test/v1/chat/completions',
+          gpu_util_pct: 2,
+        }];
+      }
+      return [];
+    });
+
+    mockDb.get.mockImplementation((sql) => {
+      const query = String(sql);
+      if (query.includes('FROM renter_api_keys')) return null;
+      if (query.includes('FROM renters WHERE api_key')) {
+        return { id: 91, api_key: 'test-key', balance_halala: 5000, status: 'active' };
+      }
+      if (query.includes('FROM model_registry WHERE model_id = ?')) {
+        return { model_id: 'endpoint-model', min_gpu_vram_gb: 4, context_window: 4096 };
+      }
+      if (query.includes('FROM cost_rates')) {
+        return { token_rate_halala: 1 };
+      }
+      return null;
+    });
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .set('Authorization', 'Bearer test-key')
+      .send({
+        model: 'endpoint-model',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe('http://provider.test/v1/chat/completions');
+
+    fetchSpy.mockRestore();
+  });
+
   test('chat completions treats missing supported_compute_types as inference-capable', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
