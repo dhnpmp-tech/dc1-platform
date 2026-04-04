@@ -1,5 +1,5 @@
 ## [2026-04-04 05:47 UTC] Codex — DCP-569 Renter v1 Usage Surfaces Shipped Across Jobs/Billing/Analytics
-- **Commit**: `pending` - Implemented renter-facing v1 usage visibility by wiring `/api/renters/me/usage`, `/api/renters/me`, and `/api/renters/me/analytics` into the jobs, billing, and analytics surfaces.
+- **Commit**: `e647718` - Implemented renter-facing v1 usage visibility by wiring `/api/renters/me/usage`, `/api/renters/me`, and `/api/renters/me/analytics` into the jobs, billing, and analytics surfaces.
 - **Files**: `app/renter/jobs/page.tsx`, `app/renter/billing/page.tsx`, `app/renter/analytics/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Renter users now see paginated `/v1/chat/completions` usage rows (model/tokens/cost/time) on Jobs via an `API Usage` tab, Billing now includes explicit v1 API spend + requests/tokens alongside job spend, and Analytics now renders daily API token trends and period summaries from `v1_usage` so the previously empty v1 lane is visible in-product.
 
