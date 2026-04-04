@@ -1,22 +1,7 @@
-## [2026-04-04 05:01 UTC] Codex — Release Heartbeat Merged Three Build-Gated Agent Branches
-- **Commit**: `ad5aff3`, `a1767bc`, `faa2c51` - Refreshed `agent/frontend-dev/dcp-543-playground-preselected-provider-callback-deps`, `agent/backend-dev/dcp-475-proof-snapshot-r4`, and `agent/backend-dev/dcp-510-provider-approval-queue` against `main` in isolated clones, resolved refresh conflicts with `AGENT_LOG.md`/docs from `main` and code from branch, ran the required root `npm run build` on all three refreshed heads, reran `cd backend && npm test -- --runTestsByPath src/__tests__/provider-approval-queue.test.js` for `dcp-510`, and merged [PR #266](https://github.com/dhnpmp-tech/dc1-platform/pull/266), [PR #268](https://github.com/dhnpmp-tech/dc1-platform/pull/268), and [PR #269](https://github.com/dhnpmp-tech/dc1-platform/pull/269).
-- **Files**: `AGENT_LOG.md`
-- **Impact**: `origin/main` now includes the renter playground callback-dependency fix, the refreshed first-live proof package snapshot, and the provider approval queue API/reliability follow-ons. Shared-worktree `.git` object permissions still block direct fetch/log verification there, so future release heartbeats should continue using isolated clones for refresh/build/merge confirmation.
-
-## [2026-04-04 04:03 UTC] Codex — Playground Provider Prefill Callback Dependency Alignment
-- **Commit**: `da8088e` - Added `preselectedProvider` to the provider list fetch callback dependency array so marketplace-prefill provider context is explicitly tracked by hook dependencies.
-- **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
-- **Impact**: Provider prefill behavior remains unchanged while removing the stale callback dependency warning at the fetch-provider callback site. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
-
-## [2026-04-04 01:21 UTC] Codex — DCP-555 OpenRouter Certification Train Command + Bundle
-- **Commit**: `477f52c` - Added a single `main`-ready certification train command (`npm run certify:openrouter:train`) that executes OpenRouter compliance + live runtime proof and emits one deterministic artifact bundle with commit SHA, timestamp, per-contract PASS/FAIL (models, stream `[DONE]`, tools passthrough, failover), and explicit blocker list.
-- **Files**: `backend/src/scripts/run-openrouter-certification-train.js`, `backend/package.json`, `docs/reports/openrouter/certification/openrouter-certification-train-20260404T012123Z.json`, `docs/reports/openrouter/certification/openrouter-certification-train-20260404T012123Z.md`, `docs/reports/openrouter/certification/openrouter-certification-train-latest.json`, `docs/reports/openrouter/certification/openrouter-certification-train-latest.md`, `docs/reports/reliability/first-live-inference-proof-20260404T011336Z.json`, `docs/reports/reliability/first-live-inference-proof-20260404T011336Z.md`, `docs/reports/reliability/first-live-inference-proof-20260404T011336Z.log`, `docs/reports/reliability/first-live-inference-proof-latest.json`, `docs/reports/reliability/first-live-inference-proof-latest.md`, `docs/reports/reliability/first-live-inference-proof-latest.log`, `AGENT_LOG.md`
-- **Impact**: DCP now has one authoritative OpenRouter certification-train output from `main` with deterministic decision artifacts and no workflow ambiguity around what was run. Current blockers are explicitly captured in-bundle (contract failures + runtime rate-limit facts) with stable evidence paths for DCP-520/DCP-543/DCP-551 decisioning.
-
-## [2026-04-03 21:56 UTC] Codex — Login Reason Message Hook Dependency Stabilized
-- **Commit**: `28e1244` - Memoized login reason-to-message mapping with `useCallback` and wired the effect dependency to the callback, removing the stale exhaustive-deps warning without behavior changes.
-- **Files**: `app/login/page.tsx`, `AGENT_LOG.md`
-- **Impact**: Login reason query-parameter error hydration remains unchanged, while lint/build no longer report the prior `getReasonMessage` hook dependency warning on this page. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
+## [2026-04-03 23:04 UTC] Codex — DCP-472 Live Proof Re-run (Blocked On Production Capacity)
+- **Commit**: `ae9bd0b` - Re-ran deterministic ALLaM live inference proof package against production and captured fresh reliability artifacts; latest run still fails with `provider_unreachable_or_unavailable` / `no_capacity` and `capable_providers=0` for `ALLaM-AI/ALLaM-7B-Instruct-preview`.
+- **Files**: `docs/reports/reliability/first-live-inference-proof-20260403T230442Z.json`, `docs/reports/reliability/first-live-inference-proof-20260403T230442Z.md`, `docs/reports/reliability/first-live-inference-proof-20260403T230442Z.log`, `docs/reports/reliability/first-live-inference-proof-latest.json`, `docs/reports/reliability/first-live-inference-proof-latest.md`, `docs/reports/reliability/first-live-inference-proof-latest.log`, `AGENT_LOG.md`
+- **Impact**: Local `main` already contains ALLaM alias + 12GB compatibility logic, but production still reports zero capable providers for the target model. DCP-472 remains blocked until at least one matching live provider heartbeat/capacity path is restored; rerun proof immediately after provider activation.
 
 ## [2026-04-03 21:02 UTC] Codex — DCP-537 Payout Settlement Preview API + Deterministic Fixtures
 - **Commit**: `e36536c` - Implemented a read-only admin payout settlement preview contract for a date window, returning per-provider gross/platform-fee/provider-net aggregates plus reconciliation totals, and added deterministic unit/route tests covering sum integrity and 2-decimal SAR rounding outputs.
@@ -32488,22 +32473,7 @@ a
 - **Files**: `package.json`, `scripts/release-train.mjs`, `docs/release-train.md`, `docs/reports/release-train/dcp-526-candidates.json`, `docs/reports/release-train/2026-04-03T17-52-13-845Z.md`, `docs/reports/release-train/2026-04-03T17-52-13-845Z.json`, `AGENT_LOG.md`
 - **Impact**: Release Engineer can now batch-release critical agent branches without serial manual refresh work; proof artifacts already show the OpenRouter eligibility branch is release-gate clean after rebase while the ALLaM routing candidate is already shipped and should be skipped instead of re-landed.
 
-## [2026-04-04 01:28 UTC] Codex — DCP-475 proof pack hardened with provider heartbeat snapshot fallback
-- **Commit**: `pending` - Added additive `last_heartbeat` output to `/api/providers/active` and upgraded `backend/tests/first-live-inference-proof-package.js` to emit `capacity_snapshot` evidence (model id, capable provider count source, provider ids, heartbeat timestamps, VRAM eligibility) plus refreshed DCP-475 production proof artifacts.
-- **Files**: `backend/src/routes/providers.js`, `backend/tests/first-live-inference-proof-package.js`, `docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T012839Z.{json,md,log}`, `docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.{json,md,log}`, `AGENT_LOG.md`
-- **Impact**: DCP-475 proof output now includes the exact evidence fields requested for deployment verification even when runtime diagnostics omit them. Latest live run still fails (`provider_http_404` on completion route) but now captures `capable_providers=2` fallback snapshot with concrete provider ids + observed heartbeat timestamps for escalation.
-
-## [2026-04-04 03:32 UTC] Codex — DCP-475 v1 provider endpoint path normalization + refreshed live proof
-- **Commit**: `pending` - Normalized v1 provider proxy URL assembly to avoid double-appending `/v1/chat/completions` when `providers.vllm_endpoint_url` already contains `/v1` or a full chat-completions path, added regression tests for both endpoint forms, and refreshed live DCP-475 proof artifacts.
-- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T033218Z.{json,md,log}`, `docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.{json,md,log}`, `AGENT_LOG.md`
-- **Impact**: Backend now routes provider proxy requests correctly for mixed endpoint URL formats (base `/`, `/v1`, and full `/v1/chat/completions`). Latest production proof still fails with `provider_http_404`, indicating the live provider endpoint itself remains unhealthy/misconfigured despite client-side path normalization coverage.
-
-## [2026-04-04 05:53 UTC] Codex — DCP-571 renter job failure reasons surfaced in list + detail
-- **Commit**: `pending` - Exposed backend-provided `last_error`/`error` failure reasons directly in renter job surfaces instead of generic failure messaging.
-- **Files**: `app/renter/jobs/page.tsx`, `app/renter/jobs/[id]/page.tsx`, `AGENT_LOG.md`
-- **Impact**: Failed jobs now show actionable failure reasons in the jobs table and a dedicated failure-reason card on job detail, with state-machine failure text reflecting the same reason when available. Renters can triage common failures (provider offline, retries exhausted, etc.) without digging through logs first.
-
-## [2026-04-04 05:56 UTC] Codex — DCP-571 daemon emits additive execution progress into job logs
-- **Commit**: `pending` - Added additive daemon-side progress/failure log emission to `/api/jobs/:job_id/logs` so `jobs.logs_jsonl` captures key lifecycle events even when stdout/stderr is empty.
-- **Files**: `backend/installers/dc1-daemon.py`, `AGENT_LOG.md`
-- **Impact**: Jobs now persist explicit daemon lifecycle log lines (picked up, execution started, completed/failed, and pre-execution rejection reasons) via existing backend log ingestion. This closes the empty-log visibility gap for failed/rejected jobs without touching Gate 0 logic.
+## [2026-04-04 05:51 UTC] Codex — DCP-570 token pricing unit fix shipped for /v1 billing
+- **Commit**: `7beaaf2` - Converted `/v1` token billing from implicit halala-per-token to explicit halala-per-1M-tokens, corrected default `cost_rates` seeds/migration fallback, and aligned metering/model route tests to the new pricing contract.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/db.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: `DCP-570` overbilling path is closed for `/v1/chat/completions`; cost persistence now writes explicit prompt/completion/total halala+USD fields using per-million token semantics, and default pricing fallback uses market-aligned `19 halala / 1M tokens` instead of `1 halala / token`.

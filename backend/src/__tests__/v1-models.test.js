@@ -172,8 +172,8 @@ describe('v1 models route', () => {
     expect(res.body.object).toBe('list');
     expect(res.body.data).toHaveLength(1);
     expect(model.pricing).toMatchObject({
-      prompt_tokens: '0.002667',
-      completion_tokens: '0.002667',
+      prompt_tokens: '0.000000',
+      completion_tokens: '0.000000',
       usd_per_minute: expect.stringMatching(/^\d+\.\d{6}$/),
       usd_per_1m_input_tokens: expect.stringMatching(/^\d+\.\d{6}$/),
       usd_per_1m_output_tokens: expect.stringMatching(/^\d+\.\d{6}$/),

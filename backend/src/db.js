@@ -248,17 +248,18 @@ db.exec(`
 `);
 const nowIso = new Date().toISOString();
 try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
-   VALUES (?, ?, 1, ?)`).run('__default__', 1, nowIso); } catch(e) {}
+   VALUES (?, ?, 1, ?)`).run('__default__', 19, nowIso); } catch(e) {}
 try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
-   VALUES (?, ?, 1, ?)`).run('mistralai/Mistral-7B-Instruct-v0.2', 2, nowIso); } catch(e) {}
+   VALUES (?, ?, 1, ?)`).run('mistralai/Mistral-7B-Instruct-v0.2', 22, nowIso); } catch(e) {}
 try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
-   VALUES (?, ?, 1, ?)`).run('meta-llama/Meta-Llama-3-8B-Instruct', 3, nowIso); } catch(e) {}
+   VALUES (?, ?, 1, ?)`).run('meta-llama/Meta-Llama-3-8B-Instruct', 19, nowIso); } catch(e) {}
 try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
-   VALUES (?, ?, 1, ?)`).run('microsoft/Phi-3-mini-4k-instruct', 1, nowIso); } catch(e) {}
+   VALUES (?, ?, 1, ?)`).run('microsoft/Phi-3-mini-4k-instruct', 17, nowIso); } catch(e) {}
 try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
-   VALUES (?, ?, 1, ?)`).run('google/gemma-2b-it', 1, nowIso); } catch(e) {}
+   VALUES (?, ?, 1, ?)`).run('google/gemma-2b-it', 15, nowIso); } catch(e) {}
 try { db.prepare(`INSERT OR IGNORE INTO cost_rates (model, token_rate_halala, is_active, created_at)
-   VALUES (?, ?, 1, ?)`).run('TinyLlama/TinyLlama-1.1B-Chat-v1.0', 1, nowIso); } catch(e) {}
+   VALUES (?, ?, 1, ?)`).run('TinyLlama/TinyLlama-1.1B-Chat-v1.0', 10, nowIso); } catch(e) {}
+try { db.prepare(`UPDATE cost_rates SET token_rate_halala = 19 WHERE model = '__default__' AND token_rate_halala = 1`).run(); } catch (e) {}
 
 // ─── GPU PRICING TABLE ───
 // Admin-controlled base rental rates per GPU model in halala/hour.
