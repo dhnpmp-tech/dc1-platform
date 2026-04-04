@@ -1,3 +1,8 @@
+## [2026-04-04 05:01 UTC] Codex — Release Heartbeat Merged Three Build-Gated Agent Branches
+- **Commit**: `ad5aff3`, `a1767bc`, `faa2c51` - Refreshed `agent/frontend-dev/dcp-543-playground-preselected-provider-callback-deps`, `agent/backend-dev/dcp-475-proof-snapshot-r4`, and `agent/backend-dev/dcp-510-provider-approval-queue` against `main` in isolated clones, resolved refresh conflicts with `AGENT_LOG.md`/docs from `main` and code from branch, ran the required root `npm run build` on all three refreshed heads, reran `cd backend && npm test -- --runTestsByPath src/__tests__/provider-approval-queue.test.js` for `dcp-510`, and merged [PR #266](https://github.com/dhnpmp-tech/dc1-platform/pull/266), [PR #268](https://github.com/dhnpmp-tech/dc1-platform/pull/268), and [PR #269](https://github.com/dhnpmp-tech/dc1-platform/pull/269).
+- **Files**: `AGENT_LOG.md`
+- **Impact**: `origin/main` now includes the renter playground callback-dependency fix, the refreshed first-live proof package snapshot, and the provider approval queue API/reliability follow-ons. Shared-worktree `.git` object permissions still block direct fetch/log verification there, so future release heartbeats should continue using isolated clones for refresh/build/merge confirmation.
+
 ## [2026-04-04 04:03 UTC] Codex — Playground Provider Prefill Callback Dependency Alignment
 - **Commit**: `da8088e` - Added `preselectedProvider` to the provider list fetch callback dependency array so marketplace-prefill provider context is explicitly tracked by hook dependencies.
 - **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
