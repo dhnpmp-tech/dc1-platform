@@ -716,6 +716,14 @@ function buildProviderChatCompletionsUrl(endpointUrl) {
   if (/\/v1\/chat\/completions$/i.test(path) || /\/chat\/completions$/i.test(path)) {
     return parsed.toString();
   }
+  if (/\/v1\/completions$/i.test(path)) {
+    parsed.pathname = path.replace(/\/v1\/completions$/i, '/v1/chat/completions');
+    return parsed.toString();
+  }
+  if (/\/completions$/i.test(path)) {
+    parsed.pathname = path.replace(/\/completions$/i, '/v1/chat/completions');
+    return parsed.toString();
+  }
   if (/\/v1$/i.test(path)) {
     parsed.pathname = `${path}/chat/completions`;
     return parsed.toString();

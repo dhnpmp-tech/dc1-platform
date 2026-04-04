@@ -32497,3 +32497,8 @@ a
 - **Commit**: `pending` - Normalized v1 provider proxy URL assembly to avoid double-appending `/v1/chat/completions` when `providers.vllm_endpoint_url` already contains `/v1` or a full chat-completions path, added regression tests for both endpoint forms, and refreshed live DCP-475 proof artifacts.
 - **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T033218Z.{json,md,log}`, `docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.{json,md,log}`, `AGENT_LOG.md`
 - **Impact**: Backend now routes provider proxy requests correctly for mixed endpoint URL formats (base `/`, `/v1`, and full `/v1/chat/completions`). Latest production proof still fails with `provider_http_404`, indicating the live provider endpoint itself remains unhealthy/misconfigured despite client-side path normalization coverage.
+
+## [2026-04-04 05:44 UTC] Codex — DCP-559 fix: normalize legacy provider completions endpoint paths to /v1/chat/completions
+- **Commit**: `pending` - Updated v1 provider URL normalization to rewrite legacy `/v1/completions` and `/completions` endpoint URLs to `/v1/chat/completions`, and added regression tests covering both path variants.
+- **Files**: `backend/src/routes/v1.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
+- **Impact**: Prevents false `provider_http_404` failover exhaustion when provider records use completions-style base paths; `/v1/chat/completions` now routes deterministically to the expected provider chat endpoint.
