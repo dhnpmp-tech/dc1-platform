@@ -36,40 +36,6 @@ function redactSecret(secret) {
   return secret.length <= 12 ? secret : `${secret.slice(0, 8)}...${secret.slice(-4)}`;
 }
 
-function normalizeModelToken(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
-}
-
-function buildModelTokenSet(modelId) {
-  const raw = String(modelId || '').trim();
-  const modelTail = raw.includes('/') ? raw.split('/').pop() : raw;
-  const compactTail = String(modelTail || '').replace(/(instruct|preview|chat|model|ai)/gi, '');
-  const tokens = [
-    normalizeModelToken(raw),
-    normalizeModelToken(modelTail),
-    normalizeModelToken(compactTail),
-  ].filter(Boolean);
-  return new Set(tokens);
-}
-
-function extractProbeError(result) {
-  if (!result || result.ok) return null;
-  const jsonError = result.json?.error;
-  if (typeof jsonError === 'string') return jsonError;
-  if (typeof jsonError?.message === 'string') return jsonError.message;
-  if (typeof result.json?.message === 'string') return result.json.message;
-  return result.text?.slice(0, 240) || null;
-}
-
-function extractNoCapacityDiagnostics(result) {
-  const json = result?.json;
-  if (!json || typeof json !== 'object') return null;
-  return json?.diagnostics || json?.error?.diagnostics || json?.error?.details?.diagnostics || null;
-}
-
 async function requestJson(baseUrl, route, options = {}) {
   const startedAt = Date.now();
   const response = await fetch(new URL(route, baseUrl), options);
@@ -100,86 +66,6 @@ async function probeHealth(baseUrl) {
   if (primary.status !== 404) return { route: '/health', result: primary };
   const fallback = await requestJson(baseUrl, '/api/health');
   return { route: '/api/health', result: fallback };
-}
-
-async function fetchActiveProviders(baseUrl, masterApiKey) {
-  if (!masterApiKey) {
-    return {
-      ok: false,
-      status: null,
-      elapsed_ms: null,
-      providers: [],
-      error: 'master_api_key_unavailable',
-    };
-  }
-  const result = await requestJson(baseUrl, '/api/providers/active', {
-    method: 'GET',
-    headers: {
-      authorization: `Bearer ${masterApiKey}`,
-    },
-  });
-  return {
-    ok: result.ok,
-    status: result.status,
-    elapsed_ms: result.elapsed_ms,
-    providers: Array.isArray(result.json?.providers) ? result.json.providers : [],
-    error: extractProbeError(result),
-  };
-}
-
-function buildCapacitySnapshot({ requestedModel, diagnostics, activeProviders, capturedAt }) {
-  const modelId = String(diagnostics?.model_id || requestedModel || '').trim() || null;
-  const minVramGb = Number.isFinite(Number(diagnostics?.min_vram_gb)) ? Number(diagnostics.min_vram_gb) : null;
-  const diagnosticsCapableProviders = Number.isFinite(Number(diagnostics?.capable_providers))
-    ? Number(diagnostics.capable_providers)
-    : null;
-  const modelTokens = buildModelTokenSet(modelId || requestedModel);
-  const capturedAtMs = Date.parse(String(capturedAt || ''));
-
-  const providerEvidence = (activeProviders || [])
-    .map((provider) => {
-      const providerVramGb = Number.isFinite(Number(provider?.vram_gb)) ? Number(provider.vram_gb) : null;
-      const cachedModels = Array.isArray(provider?.cached_models) ? provider.cached_models : [];
-      const providerTokens = [
-        normalizeModelToken(provider?.gpu_model),
-        ...cachedModels.map((entry) => normalizeModelToken(entry)),
-      ].filter(Boolean);
-      const modelCacheMatch = providerTokens.some((token) => modelTokens.has(token));
-      const vramEligible = minVramGb == null || (providerVramGb != null && providerVramGb >= minVramGb);
-      const heartbeatAgeSeconds = Number.isFinite(Number(provider?.heartbeat_age_seconds))
-        ? Number(provider.heartbeat_age_seconds)
-        : null;
-      const observedHeartbeatAt = provider?.last_heartbeat
-        || (Number.isFinite(capturedAtMs) && Number.isFinite(heartbeatAgeSeconds)
-          ? new Date(capturedAtMs - (heartbeatAgeSeconds * 1000)).toISOString()
-          : null);
-      return {
-        provider_id: provider?.id ?? null,
-        last_heartbeat: provider?.last_heartbeat || null,
-        heartbeat_observed_at: observedHeartbeatAt,
-        heartbeat_age_seconds: heartbeatAgeSeconds,
-        vram_gb: providerVramGb,
-        vram_eligible: vramEligible,
-        model_cache_match: modelCacheMatch,
-      };
-    })
-    .filter((entry) => entry.provider_id != null);
-
-  const fallbackCapableProviders = providerEvidence.filter((provider) => provider.vram_eligible).length;
-  const capableProviders = diagnosticsCapableProviders ?? fallbackCapableProviders;
-  const capableProvidersSource = diagnosticsCapableProviders == null
-    ? 'active_providers_vram_gate'
-    : 'runtime_diagnostics';
-
-  return {
-    captured_at: capturedAt,
-    model_id: modelId,
-    min_vram_gb: minVramGb,
-    capable_providers: capableProviders,
-    capable_providers_source: capableProvidersSource,
-    candidate_provider_count: providerEvidence.length,
-    provider_evidence: providerEvidence.slice(0, 20),
-  };
 }
 
 function classifyFailure(results) {
@@ -236,6 +122,66 @@ function classifyFailure(results) {
   return null;
 }
 
+function toFiniteInt(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
+function pickFirstMatch(messages, pattern) {
+  for (const message of messages) {
+    const match = String(message || '').match(pattern);
+    if (match && match[1] != null) return match[1];
+  }
+  return null;
+}
+
+function extractCapacitySnapshot(probes, model) {
+  const completionHeaders = probes?.completion_json || {};
+  const streamHeaders = probes?.completion_stream || {};
+  const completionDetails = completionHeaders.raw_error_details || {};
+  const streamDetails = streamHeaders.raw_error_details || {};
+  const messages = [completionHeaders.error_message, streamHeaders.error_message];
+
+  const modelId = completionDetails.model_id
+    || streamDetails.model_id
+    || completionHeaders.requested_model_id
+    || streamHeaders.requested_model_id
+    || model;
+  const minVramGb = toFiniteInt(
+    completionDetails.min_vram_gb
+    ?? streamDetails.min_vram_gb
+    ?? pickFirstMatch(messages, /min[_\s-]?vram[_\s-]?gb[=:\s]+(\d+)/i)
+  );
+  const capableProviders = toFiniteInt(
+    completionDetails.capable_providers
+    ?? streamDetails.capable_providers
+    ?? pickFirstMatch(messages, /capable[_\s-]?providers[=:\s]+(\d+)/i)
+  );
+  const providerHttpCode = toFiniteInt(
+    pickFirstMatch(messages, /provider[_\s-]?http[_\s-]?(\d{3})/i)
+  );
+
+  return {
+    model_id: modelId || null,
+    min_vram_gb: minVramGb,
+    capable_providers: capableProviders,
+    provider_id: completionHeaders.provider_id || streamHeaders.provider_id || null,
+    provider_tier: completionHeaders.provider_tier || streamHeaders.provider_tier || null,
+    provider_endpoint_host: completionHeaders.provider_endpoint_host || streamHeaders.provider_endpoint_host || null,
+    request_id: completionHeaders.request_id || streamHeaders.request_id || null,
+    latency_gate_mode: completionHeaders.latency_gate_mode || streamHeaders.latency_gate_mode || null,
+    provider_http_status: providerHttpCode,
+    route_error_message: completionHeaders.error_message || streamHeaders.error_message || null,
+    inferred_heartbeat_timestamp: completionDetails.last_heartbeat
+      || streamDetails.last_heartbeat
+      || completionDetails.heartbeat_at
+      || streamDetails.heartbeat_at
+      || null,
+    evidence_complete: Boolean(modelId && minVramGb != null && capableProviders != null),
+  };
+}
+
 function buildMarkdown(report) {
   const lines = [];
   lines.push('# First-Live Inference Proof Report');
@@ -267,23 +213,19 @@ function buildMarkdown(report) {
   lines.push(`- completion_stream.provider_tier: \`${report.probes.completion_stream.provider_tier || ''}\``);
   lines.push(`- completion_stream.provider_endpoint_host: \`${report.probes.completion_stream.provider_endpoint_host || ''}\``);
   lines.push('');
-  if (report.capacity_snapshot) {
-    lines.push('## Capacity Snapshot');
-    lines.push('');
-    lines.push(`- captured_at: \`${report.capacity_snapshot.captured_at}\``);
-    lines.push(`- model_id: \`${report.capacity_snapshot.model_id || ''}\``);
-    lines.push(`- min_vram_gb: \`${report.capacity_snapshot.min_vram_gb ?? ''}\``);
-    lines.push(`- capable_providers: \`${report.capacity_snapshot.capable_providers ?? ''}\``);
-    lines.push(`- capable_providers_source: \`${report.capacity_snapshot.capable_providers_source || ''}\``);
-    lines.push(`- candidate_provider_count: \`${report.capacity_snapshot.candidate_provider_count}\``);
-    lines.push('');
-    lines.push('| provider_id | heartbeat_observed_at | heartbeat_age_seconds | vram_gb | vram_eligible | model_cache_match |');
-    lines.push('|---:|---|---:|---:|---|---|');
-    for (const provider of report.capacity_snapshot.provider_evidence || []) {
-      lines.push(`| ${provider.provider_id} | ${provider.heartbeat_observed_at || ''} | ${provider.heartbeat_age_seconds ?? ''} | ${provider.vram_gb ?? ''} | ${provider.vram_eligible ? 'yes' : 'no'} | ${provider.model_cache_match ? 'yes' : 'no'} |`);
-    }
-    lines.push('');
-  }
+  lines.push('## Capacity Snapshot');
+  lines.push('');
+  lines.push(`- model_id: \`${report.capacity_snapshot.model_id || ''}\``);
+  lines.push(`- min_vram_gb: \`${report.capacity_snapshot.min_vram_gb ?? ''}\``);
+  lines.push(`- capable_providers: \`${report.capacity_snapshot.capable_providers ?? ''}\``);
+  lines.push(`- provider_id: \`${report.capacity_snapshot.provider_id || ''}\``);
+  lines.push(`- provider_tier: \`${report.capacity_snapshot.provider_tier || ''}\``);
+  lines.push(`- provider_endpoint_host: \`${report.capacity_snapshot.provider_endpoint_host || ''}\``);
+  lines.push(`- provider_http_status: \`${report.capacity_snapshot.provider_http_status ?? ''}\``);
+  lines.push(`- route_error_message: \`${report.capacity_snapshot.route_error_message || ''}\``);
+  lines.push(`- inferred_heartbeat_timestamp: \`${report.capacity_snapshot.inferred_heartbeat_timestamp || ''}\``);
+  lines.push(`- evidence_complete: \`${report.capacity_snapshot.evidence_complete}\``);
+  lines.push('');
   if (report.failure) {
     lines.push('## Failure Classification');
     lines.push('');
@@ -357,9 +299,6 @@ async function run() {
   });
   const streamDone = /\bdata:\s*\[DONE\]/.test(String(streamRes.text || ''));
 
-  addLog('probe /api/providers/active');
-  const activeProvidersProbe = await fetchActiveProviders(baseUrl, principal.masterApiKey);
-
   const probes = {
     health: {
       route: healthProbe.route,
@@ -367,7 +306,7 @@ async function run() {
       elapsed_ms: health.elapsed_ms,
       request_id: health.headers['x-request-id'] || null,
       response_hash: makeSha256(health.text),
-      error_message: extractProbeError(health),
+      error_message: health.ok ? null : (health.json?.error?.message || health.text?.slice(0, 240) || null),
     },
     models: {
       status: models.status,
@@ -375,7 +314,7 @@ async function run() {
       request_id: models.headers['x-request-id'] || null,
       model_count: Array.isArray(models.json?.data) ? models.json.data.length : null,
       response_hash: makeSha256(models.text),
-      error_message: extractProbeError(models),
+      error_message: models.ok ? null : (models.json?.error?.message || models.text?.slice(0, 240) || null),
     },
     completion_json: {
       status: completionJson.status,
@@ -388,7 +327,8 @@ async function run() {
       requested_model_id: completionJson.headers['x-dcp-requested-model-id'] || null,
       routed_model_id: completionJson.headers['x-dcp-routed-model-id'] || null,
       latency_gate_mode: completionJson.headers['x-dcp-latency-gate-mode'] || null,
-      error_message: extractProbeError(completionJson),
+      raw_error_details: completionJson.json?.error?.details || null,
+      error_message: completionJson.ok ? null : (completionJson.json?.error?.message || completionJson.text?.slice(0, 240) || null),
     },
     completion_stream: {
       status: streamRes.status,
@@ -402,24 +342,12 @@ async function run() {
       requested_model_id: streamRes.headers['x-dcp-requested-model-id'] || null,
       routed_model_id: streamRes.headers['x-dcp-routed-model-id'] || null,
       latency_gate_mode: streamRes.headers['x-dcp-latency-gate-mode'] || null,
-      error_message: extractProbeError(streamRes),
-    },
-    active_providers: {
-      status: activeProvidersProbe.status,
-      elapsed_ms: activeProvidersProbe.elapsed_ms,
-      provider_count: activeProvidersProbe.providers.length,
-      error_message: activeProvidersProbe.error,
+      raw_error_details: streamRes.json?.error?.details || null,
+      error_message: streamRes.ok ? null : (streamRes.json?.error?.message || streamRes.text?.slice(0, 240) || null),
     },
   };
 
-  const diagnostics = extractNoCapacityDiagnostics(completionJson) || extractNoCapacityDiagnostics(streamRes);
-  const capacitySnapshot = buildCapacitySnapshot({
-    requestedModel: model,
-    diagnostics,
-    activeProviders: activeProvidersProbe.providers,
-    capturedAt: new Date().toISOString(),
-  });
-
+  const capacitySnapshot = extractCapacitySnapshot(probes, model);
   const failure = classifyFailure(probes);
   const verdict = failure ? 'FAIL' : 'PASS';
   addLog(`verdict=${verdict}${failure ? ` failure=${failure.code}` : ''}`);
@@ -445,7 +373,6 @@ async function run() {
       scoped_key_label: principal.inferenceKeyLabel,
       scoped_key_expires_at: principal.inferenceKeyExpiresAt,
       balance_halala: principal.balanceHalala,
-      master_key_hint: redactSecret(principal.masterApiKey),
     },
     probes,
     capacity_snapshot: capacitySnapshot,
@@ -471,6 +398,7 @@ async function run() {
   process.stdout.write(`${JSON.stringify({
     verdict,
     failure_code: failure?.code || null,
+    capacity_snapshot: capacitySnapshot,
     artifacts: report.artifacts,
     principal: report.principal,
   }, null, 2)}\n`);

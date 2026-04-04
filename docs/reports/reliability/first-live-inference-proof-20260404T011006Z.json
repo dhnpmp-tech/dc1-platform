@@ -1,0 +1,90 @@
+{
+  "generated_at": "2026-04-04T01:10:08.578Z",
+  "verdict": "FAIL",
+  "base_url": "https://api.dcp.sa",
+  "model": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+  "command": "node tests/first-live-inference-proof-package.js",
+  "principal": {
+    "renter_id": 1774351995125,
+    "renter_email": "inference-smoke-d7e7983d4161@dcp.local",
+    "key_hint": "dc1-sk-d...6ee3",
+    "scoped_key_id": "f8e7f632-4818-4c0b-a14f-72a9ea69dc6d",
+    "scoped_key_label": "dcp-smoke-proof:2026-04-04T01:10",
+    "scoped_key_expires_at": "2026-04-04T07:10:06.970Z",
+    "balance_halala": 1000
+  },
+  "probes": {
+    "health": {
+      "route": "/api/health",
+      "status": 200,
+      "elapsed_ms": 4,
+      "request_id": null,
+      "response_hash": "87036fc1addb5e48b53313aa5281081175ac9eb56e19aa965cf0b73878060a36",
+      "error_message": null
+    },
+    "models": {
+      "status": 200,
+      "elapsed_ms": 5,
+      "request_id": null,
+      "model_count": 14,
+      "response_hash": "589f59c301ded4ab2215657cae4199d6da5c85f526075f86ce0e7ca7c161c103",
+      "error_message": null
+    },
+    "completion_json": {
+      "status": 503,
+      "elapsed_ms": 1266,
+      "request_id": null,
+      "response_hash": "6767ccdd39966147131dbf454184b3d7a1cbaf17e2aeab6f1cbee21f880f65e2",
+      "provider_id": null,
+      "provider_tier": null,
+      "provider_endpoint_host": null,
+      "requested_model_id": null,
+      "routed_model_id": null,
+      "latency_gate_mode": "telemetry_unavailable_fallback",
+      "raw_error_details": null,
+      "error_message": "Provider failover exhausted after initial error: provider_http_404"
+    },
+    "completion_stream": {
+      "status": 503,
+      "elapsed_ms": 317,
+      "request_id": null,
+      "stream_done": false,
+      "response_hash": "6767ccdd39966147131dbf454184b3d7a1cbaf17e2aeab6f1cbee21f880f65e2",
+      "provider_id": null,
+      "provider_tier": null,
+      "provider_endpoint_host": null,
+      "requested_model_id": null,
+      "routed_model_id": null,
+      "latency_gate_mode": "telemetry_unavailable_fallback",
+      "raw_error_details": null,
+      "error_message": "Provider failover exhausted after initial error: provider_http_404"
+    }
+  },
+  "capacity_snapshot": {
+    "model_id": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+    "min_vram_gb": 0,
+    "capable_providers": 0,
+    "provider_id": null,
+    "provider_tier": null,
+    "provider_endpoint_host": null,
+    "request_id": null,
+    "latency_gate_mode": "telemetry_unavailable_fallback",
+    "provider_http_status": 404,
+    "route_error_message": "Provider failover exhausted after initial error: provider_http_404",
+    "inferred_heartbeat_timestamp": null,
+    "evidence_complete": true
+  },
+  "failure": {
+    "code": "provider_unreachable_or_unavailable",
+    "severity": "blocking",
+    "action": "Verify provider heartbeat, reachable vLLM endpoint URL, and model is loaded on at least one online provider."
+  },
+  "artifacts": {
+    "json": "docs/reports/reliability/first-live-inference-proof-20260404T011006Z.json",
+    "markdown": "docs/reports/reliability/first-live-inference-proof-20260404T011006Z.md",
+    "log": "docs/reports/reliability/first-live-inference-proof-20260404T011006Z.log",
+    "latest_json": "docs/reports/reliability/first-live-inference-proof-latest.json",
+    "latest_markdown": "docs/reports/reliability/first-live-inference-proof-latest.md",
+    "latest_log": "docs/reports/reliability/first-live-inference-proof-latest.log"
+  }
+}
