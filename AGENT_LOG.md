@@ -1,5 +1,5 @@
 ## [2026-04-04 02:01 UTC] Codex — Playground Auth Bootstrap Hook Dependency Stabilized
-- **Commit**: `pending` - Memoized renter auth key verification with `useCallback` and wired the auth bootstrap effect to depend on it, preserving behavior while removing the missing `verifyKey` effect dependency warning.
+- **Commit**: `1bd7794` - Memoized renter auth key verification with `useCallback` and wired the auth bootstrap effect to depend on it, preserving behavior while removing the missing `verifyKey` effect dependency warning.
 - **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Renter auth bootstrap continues to hydrate from session/local storage as before, with cleaner hook dependency semantics in lint/build checks. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
 
