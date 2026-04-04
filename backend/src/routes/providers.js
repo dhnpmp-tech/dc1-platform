@@ -4718,6 +4718,7 @@ router.get('/active', (req, res) => {
                 available_gpu_tiers: p.available_gpu_tiers ? (function() { try { return JSON.parse(p.available_gpu_tiers); } catch(e) { return []; } })() : [],
                 status: 'online',
                 is_live: true,
+                last_heartbeat: p.last_heartbeat || null,
                 heartbeat_age_seconds,
                 location: p.location,
                 run_mode: p.run_mode,
