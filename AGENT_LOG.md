@@ -32474,6 +32474,6 @@ a
 - **Impact**: Release Engineer can now batch-release critical agent branches without serial manual refresh work; proof artifacts already show the OpenRouter eligibility branch is release-gate clean after rebase while the ALLaM routing candidate is already shipped and should be skipped instead of re-landed.
 
 ## [2026-04-04 05:51 UTC] Codex — DCP-570 token pricing unit fix shipped for /v1 billing
-- **Commit**: `pending` - Converted `/v1` token billing from implicit halala-per-token to explicit halala-per-1M-tokens, corrected default `cost_rates` seeds/migration fallback, and aligned metering/model route tests to the new pricing contract.
+- **Commit**: `7beaaf2` - Converted `/v1` token billing from implicit halala-per-token to explicit halala-per-1M-tokens, corrected default `cost_rates` seeds/migration fallback, and aligned metering/model route tests to the new pricing contract.
 - **Files**: `backend/src/routes/v1.js`, `backend/src/db.js`, `backend/src/__tests__/v1-metering-ledger.test.js`, `backend/src/__tests__/v1-models.test.js`, `AGENT_LOG.md`
 - **Impact**: `DCP-570` overbilling path is closed for `/v1/chat/completions`; cost persistence now writes explicit prompt/completion/total halala+USD fields using per-million token semantics, and default pricing fallback uses market-aligned `19 halala / 1M tokens` instead of `1 halala / token`.
