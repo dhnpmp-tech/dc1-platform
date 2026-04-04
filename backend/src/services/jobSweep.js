@@ -139,11 +139,6 @@ function buildSweepStatements(db) {
     `
     : null;
 
-  const failedCandidatesSql = `
-    SELECT * FROM jobs
-    WHERE status = 'failed'
-  `;
-
   const webhookCandidatesSql = hasRenterId && hasWebhookNotifiedAt
     ? `
       SELECT id, job_id, status, renter_id, provider_id, completed_at, result, cost_halala, actual_cost_halala
@@ -199,7 +194,6 @@ function buildSweepStatements(db) {
     queuedCandidatesStmt: queuedCandidatesSql
       ? safePrepare(db, queuedCandidatesSql, 'prepare queued candidates statement')
       : null,
-    failedCandidatesStmt: safePrepare(db, failedCandidatesSql, 'prepare failed candidates statement'),
     webhookCandidatesStmt: webhookCandidatesSql
       ? safePrepare(db, webhookCandidatesSql, 'prepare webhook candidates statement')
       : null,
@@ -281,7 +275,10 @@ function updateJobForRetry(state, job, reason) {
     try {
       safePrepare(
         state.db,
-        `UPDATE jobs SET ${clauses.join(', ')} WHERE id = ?`,
+        `UPDATE jobs
+         SET ${clauses.join(', ')}
+         WHERE id = ?
+           AND status NOT IN ('failed', 'permanently_failed', 'cancelled', 'completed', 'done')`,
         'prepare retry queue update'
       ).run(...params);
     } catch (error) {
@@ -292,7 +289,7 @@ function updateJobForRetry(state, job, reason) {
     return;
   }
 
-  const clauses = ["status = 'permanently_failed'"];
+  const clauses = ["status = 'failed'"];
   const params = [];
   if (state.hasRetryReason) {
     clauses.push('retry_reason = ?');
@@ -309,14 +306,17 @@ function updateJobForRetry(state, job, reason) {
   try {
     safePrepare(
       state.db,
-      `UPDATE jobs SET ${clauses.join(', ')} WHERE id = ?`,
+      `UPDATE jobs
+       SET ${clauses.join(', ')}
+       WHERE id = ?
+         AND status NOT IN ('failed', 'permanently_failed', 'cancelled', 'completed', 'done')`,
       'prepare permanent failure update'
     ).run(...params);
   } catch (error) {
-    recordSweepError(`mark job ${job.id} permanently_failed`, error);
+    recordSweepError(`mark job ${job.id} failed`, error);
     return;
   }
-  writeSweepLog(state, job, job.status, 'permanently_failed', retryReason);
+  writeSweepLog(state, job, job.status, 'failed', retryReason);
 }
 
 function appendWebhookLogLine(nowIso, detail) {
@@ -525,9 +525,6 @@ async function runSweep(state) {
         candidates.push(...safeAll(state.queuedCandidatesStmt, 'query queued candidates')
           .map((j) => ({ job: j, reason: 'queue_timeout' })));
       }
-      candidates.push(...safeAll(state.failedCandidatesStmt, 'query failed candidates')
-        .map((j) => ({ job: j, reason: 'execution_failed' })));
-
       const seen = new Set();
       for (const item of candidates) {
         if (!item.job || seen.has(item.job.id)) continue;
