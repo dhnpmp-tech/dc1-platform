@@ -33,6 +33,8 @@ const {
 
 const router = express.Router();
 const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm-configs/compatibility-matrix.json');
+const TOKEN_RATE_BILLING_UNIT_TOKENS = 1_000_000;
+const DEFAULT_TOKEN_RATE_HALALA = 19;
 
 // ── Helpers (shared with vllm.js — keep lightweight to avoid circular deps) ──
 
@@ -467,8 +469,8 @@ router.get('/models', (req, res) => {
         maxVramGb: Number(row.vram_gb || row.min_gpu_vram_gb || 0),
         created: nowSecs,
       });
-      const tokenRateHalala = tokenRateByModel.get(row.model_id) ?? tokenRateByModel.get('__default__') ?? 1;
-      const usdPerToken = toUsdStringFromHalala(tokenRateHalala);
+      const tokenRateHalala = tokenRateByModel.get(row.model_id) ?? tokenRateByModel.get('__default__') ?? DEFAULT_TOKEN_RATE_HALALA;
+      const usdPerToken = toUsdStringFromHalala(tokenRateHalala / TOKEN_RATE_BILLING_UNIT_TOKENS);
       const architecture = {
         tokenizer: resolveTokenizerFamily(row),
         instruct_type: 'instruct',
@@ -609,10 +611,10 @@ function resolveTokenRateHalala(modelId) {
       'SELECT token_rate_halala FROM cost_rates WHERE model = ? AND is_active = 1',
       '__default__'
     );
-    return toFiniteInt(row?.token_rate_halala, { min: 0, max: 100_000_000 }) ?? 1;
+    return toFiniteInt(row?.token_rate_halala, { min: 0, max: 100_000_000 }) ?? DEFAULT_TOKEN_RATE_HALALA;
   } catch (error) {
     if (!isMissingCostRatesSchemaError(error)) throw error;
-    return 1;
+    return DEFAULT_TOKEN_RATE_HALALA;
   }
 }
 
@@ -634,15 +636,50 @@ function estimatePromptFromMessages(messages) {
   return messages.map(m => `${m.role}: ${m.content}`).join('\n');
 }
 
-function withUsdUsagePricing(rawUsage = {}, tokenRateHalala = 1) {
+function computeTokenCostHalala(tokens, tokenRateHalala) {
+  const safeTokens = toFiniteInt(tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+  const safeTokenRate = toFiniteInt(tokenRateHalala, { min: 0, max: 100_000_000 }) ?? 0;
+  if (safeTokens <= 0 || safeTokenRate <= 0) return 0;
+  return Math.ceil((safeTokens * safeTokenRate) / TOKEN_RATE_BILLING_UNIT_TOKENS);
+}
+
+function computeUsageCostBreakdown({
+  promptTokens = 0,
+  completionTokens = 0,
+  totalTokens = 0,
+  tokenRateHalala = DEFAULT_TOKEN_RATE_HALALA,
+}) {
+  const safePromptTokens = toFiniteInt(promptTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+  const safeCompletionTokens = toFiniteInt(completionTokens, { min: 0, max: 1_000_000_000 }) ?? 0;
+  const safeTotalTokens = toFiniteInt(totalTokens, { min: 0, max: 1_000_000_000 })
+    ?? (safePromptTokens + safeCompletionTokens);
+  const totalCostHalala = computeTokenCostHalala(safeTotalTokens, tokenRateHalala);
+  if (totalCostHalala <= 0 || safeTotalTokens <= 0) {
+    return { promptCostHalala: 0, completionCostHalala: 0, totalCostHalala: 0 };
+  }
+
+  const promptShare = Math.max(0, Math.min(1, safePromptTokens / safeTotalTokens));
+  const promptCostHalala = Math.round(totalCostHalala * promptShare);
+  const completionCostHalala = Math.max(0, totalCostHalala - promptCostHalala);
+
+  return {
+    promptCostHalala,
+    completionCostHalala,
+    totalCostHalala,
+  };
+}
+
+function withUsdUsagePricing(rawUsage = {}, tokenRateHalala = DEFAULT_TOKEN_RATE_HALALA) {
   const promptTokens = toFiniteInt(rawUsage.prompt_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const completionTokens = toFiniteInt(rawUsage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? 0;
   const totalTokens = toFiniteInt(rawUsage.total_tokens, { min: 0, max: 1_000_000_000 })
     ?? (promptTokens + completionTokens);
-  const safeTokenRate = toFiniteInt(tokenRateHalala, { min: 0, max: 100_000_000 }) ?? 0;
-  const promptCostHalala = promptTokens * safeTokenRate;
-  const completionCostHalala = completionTokens * safeTokenRate;
-  const totalCostHalala = totalTokens * safeTokenRate;
+  const { promptCostHalala, completionCostHalala, totalCostHalala } = computeUsageCostBreakdown({
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    tokenRateHalala,
+  });
 
   return {
     ...rawUsage,
@@ -957,11 +994,22 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       const billedCompletionTokens = toFiniteInt(rawUsage.completion_tokens, { min: 0, max: 1_000_000_000 }) ?? defaultCompletionTokens;
       const billedTotalTokens = toFiniteInt(rawUsage.total_tokens, { min: 0, max: 1_000_000_000 })
         ?? (billedPromptTokens + billedCompletionTokens);
+      const { promptCostHalala, completionCostHalala, totalCostHalala } = computeUsageCostBreakdown({
+        promptTokens: billedPromptTokens,
+        completionTokens: billedCompletionTokens,
+        totalTokens: billedTotalTokens,
+        tokenRateHalala,
+      });
       return {
         promptTokens: billedPromptTokens,
         completionTokens: billedCompletionTokens,
         totalTokens: billedTotalTokens,
-        costHalala: Math.max(1, billedTotalTokens * tokenRateHalala),
+        promptCostHalala,
+        completionCostHalala,
+        costHalala: totalCostHalala,
+        usdPrompt: toUsdStringFromHalala(promptCostHalala),
+        usdCompletion: toUsdStringFromHalala(completionCostHalala),
+        usdTotal: toUsdStringFromHalala(totalCostHalala),
       };
     };
 
@@ -987,7 +1035,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           promptTokens: snapshot.promptTokens,
           completionTokens: snapshot.completionTokens,
           totalTokens: snapshot.totalTokens,
+          promptCostHalala: snapshot.promptCostHalala,
+          completionCostHalala: snapshot.completionCostHalala,
           costHalala: snapshot.costHalala,
+          usdPrompt: snapshot.usdPrompt,
+          usdCompletion: snapshot.usdCompletion,
+          usdTotal: snapshot.usdTotal,
           currency: 'SAR',
           settlementStatus,
         });
