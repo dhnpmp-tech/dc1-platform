@@ -1931,6 +1931,40 @@ router.post('/preferences', async (req, res) => {
 });
 
 // ============================================================================
+// POST /api/providers/endpoint - Update vLLM endpoint URL
+// ============================================================================
+router.post('/endpoint', (req, res) => {
+    try {
+        const { key, vllm_endpoint_url } = req.body;
+        const cleanKey = normalizeString(key, { maxLen: 128, trim: false });
+        if (!cleanKey) return res.status(400).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id FROM providers WHERE api_key = ?', [cleanKey]);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        // Validate URL if provided
+        let cleanUrl = null;
+        if (vllm_endpoint_url) {
+            cleanUrl = normalizeString(vllm_endpoint_url, { maxLen: 512, trim: true });
+            if (cleanUrl && !/^https?:\/\//.test(cleanUrl)) {
+                return res.status(400).json({ error: 'Endpoint URL must start with http:// or https://' });
+            }
+        }
+
+        runStatement(
+            'UPDATE providers SET vllm_endpoint_url = ? WHERE id = ?',
+            cleanUrl, provider.id
+        );
+
+        res.json({ success: true, vllm_endpoint_url: cleanUrl });
+    } catch (error) {
+        console.error('Endpoint update error:', error);
+        res.status(500).json({ error: 'Endpoint update failed' });
+    }
+});
+
+
+// ============================================================================
 // GET /api/providers/download - Download daemon installer with injected key
 // ============================================================================
 router.get('/download', async (req, res) => {
@@ -4718,6 +4752,7 @@ router.get('/active', (req, res) => {
                 available_gpu_tiers: p.available_gpu_tiers ? (function() { try { return JSON.parse(p.available_gpu_tiers); } catch(e) { return []; } })() : [],
                 status: 'online',
                 is_live: true,
+                last_heartbeat: p.last_heartbeat || null,
                 heartbeat_age_seconds,
                 location: p.location,
                 run_mode: p.run_mode,

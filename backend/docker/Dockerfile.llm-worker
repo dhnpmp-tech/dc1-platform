@@ -1,6 +1,5 @@
 # DC1 LLM Inference Worker — vLLM serving (OpenAI-compatible)
-# Instant tier: pre-bakes Nemotron-Mini-4B-Instruct (~8 GB) into the image
-# Cached tier: all other models resolved from /opt/dcp/model-cache volume at runtime
+# Build args let CI publish per-template instant-tier images with one Dockerfile.
 ARG BASE_IMAGE=dc1/base-worker:latest
 FROM ${BASE_IMAGE}
 
@@ -15,11 +14,13 @@ RUN pip3 install --no-cache-dir \
     protobuf \
     huggingface_hub
 
-# Instant tier: pre-bake Nemotron-Mini-4B-Instruct weights (~8 GB)
-# Providers with 8 GB+ VRAM get zero-download cold start for this model.
-# Build with --build-arg SKIP_MODEL_PREBAKE=1 to skip (CI or slim builds).
+# Instant tier: pre-bake the selected model into the worker image.
+# Build with --build-arg SKIP_MODEL_PREBAKE=1 to skip (CI smoke or slim builds).
 ARG SKIP_MODEL_PREBAKE=0
 ARG PREBAKE_MODEL=nvidia/Nemotron-Mini-4B-Instruct
+ARG INSTANT_TEMPLATE_ID=nemotron-nano
+ENV PREBAKE_MODEL=${PREBAKE_MODEL}
+ENV DC1_INSTANT_TEMPLATE_ID=${INSTANT_TEMPLATE_ID}
 ENV HF_HOME=/opt/dcp/model-cache/hf
 RUN if [ "$SKIP_MODEL_PREBAKE" != "1" ]; then \
       python3 -c "\
@@ -41,6 +42,7 @@ USER dcp:dcp
 LABEL dc1.worker.type="llm-inference"
 LABEL dc1.worker.version="2.0"
 LABEL dc1.worker.engine="vllm"
-LABEL dc1.worker.instant-model="nvidia/Nemotron-Mini-4B-Instruct"
+LABEL dc1.worker.instant-model="${PREBAKE_MODEL}"
+LABEL dc1.worker.instant-template-id="${INSTANT_TEMPLATE_ID}"
 
 CMD ["python", "/dc1/job/task.py"]

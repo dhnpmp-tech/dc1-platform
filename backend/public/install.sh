@@ -94,6 +94,13 @@ write_config() {
     printf "DCP_API_BASE='%s'\n" "$(shell_quote "${API_BASE}")"
   } > "${CONFIG_FILE}"
   chmod 600 "${CONFIG_FILE}"
+
+  # Write systemd-compatible env file for the daemon
+  {
+    printf "DCP_API_KEY=%s\n" "${DCP_PROVIDER_KEY}"
+    printf "DCP_API_URL=%s\n" "${API_BASE}"
+  } > "${CONFIG_DIR}/env"
+  chmod 600 "${CONFIG_DIR}/env"
 }
 
 detect_gpu() {
@@ -159,6 +166,85 @@ JSON
   info "Provider registration complete (id: ${DCP_PROVIDER_ID:-unknown})."
 }
 
+setup_wireguard() {
+  if [ "${DCP_OS}" = "mac" ]; then
+    if ! command -v wg >/dev/null 2>&1; then
+      info "Installing WireGuard via Homebrew..."
+      brew install wireguard-tools 2>/dev/null || warn "Could not install WireGuard. Install manually: brew install wireguard-tools"
+    fi
+  else
+    if ! command -v wg >/dev/null 2>&1; then
+      info "Installing WireGuard..."
+      if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools 2>&1 | tail -2
+      elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y wireguard-tools 2>&1 | tail -2
+      elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y wireguard-tools 2>&1 | tail -2
+      else
+        warn "Could not install WireGuard automatically. Install wireguard-tools manually."
+      fi
+    fi
+  fi
+
+  if ! command -v wg >/dev/null 2>&1; then
+    warn "WireGuard not available. VPN setup will be needed later for NAT traversal."
+    return
+  fi
+
+  local wg_dir="${CONFIG_DIR}/wireguard"
+  mkdir -p "${wg_dir}"
+
+  if [ -f "${wg_dir}/private.key" ]; then
+    info "WireGuard keypair already exists."
+  else
+    wg genkey > "${wg_dir}/private.key"
+    chmod 600 "${wg_dir}/private.key"
+    wg pubkey < "${wg_dir}/private.key" > "${wg_dir}/public.key"
+    info "WireGuard keypair generated."
+  fi
+
+  local wg_pubkey
+  wg_pubkey="$(cat "${wg_dir}/public.key")"
+
+  # Register WireGuard public key with the backend
+  local wg_response
+  wg_response="$(curl -sS -X POST "${API_BASE}/api/providers/wireguard" \
+    -H "Content-Type: application/json" \
+    -H "x-provider-key: ${DCP_PROVIDER_KEY}" \
+    -d "{\"public_key\":\"${wg_pubkey}\"}" 2>/dev/null || echo "{}")"
+
+  local wg_ip
+  wg_ip="$(json_get_string "${wg_response}" "assigned_ip")"
+  local wg_endpoint
+  wg_endpoint="$(json_get_string "${wg_response}" "endpoint")"
+  local wg_server_pubkey
+  wg_server_pubkey="$(json_get_string "${wg_response}" "server_public_key")"
+
+  if [ -n "${wg_ip}" ] && [ -n "${wg_server_pubkey}" ]; then
+    # Write WireGuard config
+    cat > "${wg_dir}/wg0.conf" <<WGCONF
+[Interface]
+PrivateKey = $(cat "${wg_dir}/private.key")
+Address = ${wg_ip}/24
+
+[Peer]
+PublicKey = ${wg_server_pubkey}
+Endpoint = ${wg_endpoint:-76.13.179.86:51820}
+AllowedIPs = 10.0.0.0/24
+PersistentKeepalive = 25
+WGCONF
+    chmod 600 "${wg_dir}/wg0.conf"
+    info "WireGuard config written. Activating VPN..."
+    sudo cp "${wg_dir}/wg0.conf" /etc/wireguard/wg0.conf 2>/dev/null || true
+    sudo wg-quick up wg0 2>/dev/null || warn "Could not activate WireGuard. Run manually: sudo wg-quick up wg0"
+    info "VPN public key: ${wg_pubkey}"
+  else
+    info "WireGuard public key: ${wg_pubkey}"
+    info "VPN config will be assigned by DCP after approval."
+  fi
+}
+
 download_daemon() {
   mkdir -p "${INSTALL_DIR}" "${LOG_DIR}"
   local tmp
@@ -198,7 +284,7 @@ restart_nohup_daemon() {
     sleep 1
   fi
 
-  nohup "${PYTHON_BIN}" "${DAEMON_PATH}" >> "${LOG_DIR}/daemon.log" 2>> "${LOG_DIR}/daemon-error.log" &
+  DCP_API_KEY="${DCP_PROVIDER_KEY}" DCP_API_URL="${API_BASE}" nohup "${PYTHON_BIN}" "${DAEMON_PATH}" >> "${LOG_DIR}/daemon.log" 2>> "${LOG_DIR}/daemon-error.log" &
   echo $! > "${PID_FILE}"
   info "Daemon started in background (pid: $(cat "${PID_FILE}"))."
 }
@@ -224,6 +310,7 @@ Wants=network-online.target
 Type=simple
 User=${USER}
 WorkingDirectory=${INSTALL_DIR}
+EnvironmentFile=${CONFIG_DIR}/env
 ExecStart=${PYTHON_BIN} ${DAEMON_PATH}
 Restart=always
 RestartSec=5
@@ -260,6 +347,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
+EnvironmentFile=${CONFIG_DIR}/env
 ExecStart=${PYTHON_BIN} ${DAEMON_PATH}
 Restart=always
 RestartSec=5
@@ -300,6 +388,13 @@ setup_macos_launchagent() {
   </array>
   <key>WorkingDirectory</key>
   <string>${INSTALL_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DCP_API_KEY</key>
+    <string>${DCP_PROVIDER_KEY}</string>
+    <key>DCP_API_URL</key>
+    <string>${API_BASE}</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -421,6 +516,9 @@ register_provider_if_needed
 step "Saving local config"
 write_config
 info "Config saved at ${CONFIG_FILE}"
+
+step "Setting up WireGuard VPN"
+setup_wireguard
 
 step "Downloading daemon"
 download_daemon
