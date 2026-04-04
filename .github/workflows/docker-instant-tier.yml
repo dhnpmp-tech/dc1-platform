@@ -5,12 +5,11 @@ on:
     branches:
       - main
     paths:
-      - 'docker-templates/nemotron-nano.json'
-      - 'docker-templates/sdxl.json'
-      - 'docker-templates/stable-diffusion.json'
+      - 'docker-templates/allam-7b-instruct.json'
+      - 'docker-templates/falcon-h1-arabic-7b.json'
+      - 'docker-templates/jais-13b-chat.json'
       - 'backend/docker/Dockerfile.base'
       - 'backend/docker/Dockerfile.llm-worker'
-      - 'backend/docker/Dockerfile.sd-worker'
       - 'scripts/emit-instant-tier-manifest.mjs'
       - '.github/workflows/docker-instant-tier.yml'
   schedule:
@@ -51,8 +50,9 @@ jobs:
         run: |
           echo "immutable_tag=sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
           echo "base_ref=${REGISTRY}/${IMAGE_NAMESPACE}/base-worker" >> "$GITHUB_OUTPUT"
-          echo "llm_ref=${REGISTRY}/${IMAGE_NAMESPACE}/llm-worker" >> "$GITHUB_OUTPUT"
-          echo "sd_ref=${REGISTRY}/${IMAGE_NAMESPACE}/sd-worker" >> "$GITHUB_OUTPUT"
+          echo "allam_ref=${REGISTRY}/${IMAGE_NAMESPACE}/instant-allam-7b-instruct" >> "$GITHUB_OUTPUT"
+          echo "falcon_ref=${REGISTRY}/${IMAGE_NAMESPACE}/instant-falcon-h1-arabic-7b" >> "$GITHUB_OUTPUT"
+          echo "jais_ref=${REGISTRY}/${IMAGE_NAMESPACE}/instant-jais-13b-chat" >> "$GITHUB_OUTPUT"
 
       - name: Build and push base worker
         id: build_base
@@ -67,39 +67,59 @@ jobs:
           cache-from: type=gha,scope=instant-tier-base
           cache-to: type=gha,mode=max,scope=instant-tier-base
 
-      - name: Build and push LLM worker
-        id: build_llm
+      - name: Build and push ALLaM 7B instant worker
+        id: build_allam
         uses: docker/build-push-action@v5
         with:
           context: ./backend/docker
           file: ./backend/docker/Dockerfile.llm-worker
           push: true
           tags: |
-            ${{ steps.refs.outputs.llm_ref }}:latest
-            ${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.immutable_tag }}
+            ${{ steps.refs.outputs.allam_ref }}:latest
+            ${{ steps.refs.outputs.allam_ref }}:${{ steps.refs.outputs.immutable_tag }}
           build-args: |
             BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
             SKIP_MODEL_PREBAKE=0
-            PREBAKE_MODEL=nvidia/Nemotron-Mini-4B-Instruct
-          cache-from: type=gha,scope=instant-tier-llm
-          cache-to: type=gha,mode=max,scope=instant-tier-llm
+            PREBAKE_MODEL=HUMAIN-AI/ALLaM-7B-Instruct
+            INSTANT_TEMPLATE_ID=allam-7b-instruct
+          cache-from: type=gha,scope=instant-tier-allam
+          cache-to: type=gha,mode=max,scope=instant-tier-allam
 
-      - name: Build and push SD worker
-        id: build_sd
+      - name: Build and push Falcon H1 instant worker
+        id: build_falcon
         uses: docker/build-push-action@v5
         with:
           context: ./backend/docker
-          file: ./backend/docker/Dockerfile.sd-worker
+          file: ./backend/docker/Dockerfile.llm-worker
           push: true
           tags: |
-            ${{ steps.refs.outputs.sd_ref }}:latest
-            ${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.immutable_tag }}
+            ${{ steps.refs.outputs.falcon_ref }}:latest
+            ${{ steps.refs.outputs.falcon_ref }}:${{ steps.refs.outputs.immutable_tag }}
           build-args: |
             BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
             SKIP_MODEL_PREBAKE=0
-            PREBAKE_MODEL=stabilityai/stable-diffusion-xl-base-1.0
-          cache-from: type=gha,scope=instant-tier-sd
-          cache-to: type=gha,mode=max,scope=instant-tier-sd
+            PREBAKE_MODEL=tiiuae/Falcon-H1-7B-Instruct
+            INSTANT_TEMPLATE_ID=falcon-h1-arabic-7b
+          cache-from: type=gha,scope=instant-tier-falcon
+          cache-to: type=gha,mode=max,scope=instant-tier-falcon
+
+      - name: Build and push JAIS 13B instant worker
+        id: build_jais
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/docker
+          file: ./backend/docker/Dockerfile.llm-worker
+          push: true
+          tags: |
+            ${{ steps.refs.outputs.jais_ref }}:latest
+            ${{ steps.refs.outputs.jais_ref }}:${{ steps.refs.outputs.immutable_tag }}
+          build-args: |
+            BASE_IMAGE=${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}
+            SKIP_MODEL_PREBAKE=0
+            PREBAKE_MODEL=inceptionai/jais-13b-chat
+            INSTANT_TEMPLATE_ID=jais-13b-chat
+          cache-from: type=gha,scope=instant-tier-jais
+          cache-to: type=gha,mode=max,scope=instant-tier-jais
 
       - name: Emit manifest
         run: |
@@ -108,14 +128,30 @@ jobs:
         env:
           IMAGE_REGISTRY: ${{ env.REGISTRY }}
           IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
-          BASE_WORKER_DIGEST: ${{ steps.build_base.outputs.digest }}
-          BASE_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
-          LLM_WORKER_DIGEST: ${{ steps.build_llm.outputs.digest }}
-          LLM_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
-          SD_WORKER_DIGEST: ${{ steps.build_sd.outputs.digest }}
-          SD_WORKER_SHA_TAG: ${{ steps.refs.outputs.immutable_tag }}
-          LLM_TEMPLATE_IDS: nemotron-nano
-          SD_TEMPLATE_IDS: sdxl,stable-diffusion
+          INSTANT_TIER_IMAGE_SPECS: |
+            [
+              {
+                "name": "instant-allam-7b-instruct",
+                "template_id": "allam-7b-instruct",
+                "model_id": "HUMAIN-AI/ALLaM-7B-Instruct",
+                "digest": "${{ steps.build_allam.outputs.digest }}",
+                "sha_tag": "${{ steps.refs.outputs.immutable_tag }}"
+              },
+              {
+                "name": "instant-falcon-h1-arabic-7b",
+                "template_id": "falcon-h1-arabic-7b",
+                "model_id": "tiiuae/Falcon-H1-7B-Instruct",
+                "digest": "${{ steps.build_falcon.outputs.digest }}",
+                "sha_tag": "${{ steps.refs.outputs.immutable_tag }}"
+              },
+              {
+                "name": "instant-jais-13b-chat",
+                "template_id": "jais-13b-chat",
+                "model_id": "inceptionai/jais-13b-chat",
+                "digest": "${{ steps.build_jais.outputs.digest }}",
+                "sha_tag": "${{ steps.refs.outputs.immutable_tag }}"
+              }
+            ]
 
       - name: Upload manifest artifact
         uses: actions/upload-artifact@v4
@@ -123,21 +159,29 @@ jobs:
           name: instant-tier-image-manifest
           path: artifacts/instant-tier-images.json
 
-      - name: Smoke pull and bootstrap LLM worker
+      - name: Smoke pull and bootstrap ALLaM worker
         run: |
-          docker pull "${{ steps.refs.outputs.llm_ref }}@${{ steps.build_llm.outputs.digest }}"
+          docker pull "${{ steps.refs.outputs.allam_ref }}@${{ steps.build_allam.outputs.digest }}"
           docker run --rm \
             --entrypoint python \
-            "${{ steps.refs.outputs.llm_ref }}@${{ steps.build_llm.outputs.digest }}" \
-            -c "import torch, vllm; print('llm-worker smoke ok')"
+            "${{ steps.refs.outputs.allam_ref }}@${{ steps.build_allam.outputs.digest }}" \
+            -c "import torch, vllm; print('allam instant worker smoke ok')"
 
-      - name: Smoke pull and bootstrap SD worker
+      - name: Smoke pull and bootstrap Falcon worker
         run: |
-          docker pull "${{ steps.refs.outputs.sd_ref }}@${{ steps.build_sd.outputs.digest }}"
+          docker pull "${{ steps.refs.outputs.falcon_ref }}@${{ steps.build_falcon.outputs.digest }}"
           docker run --rm \
             --entrypoint python \
-            "${{ steps.refs.outputs.sd_ref }}@${{ steps.build_sd.outputs.digest }}" \
-            -c "import torch, diffusers; print('sd-worker smoke ok')"
+            "${{ steps.refs.outputs.falcon_ref }}@${{ steps.build_falcon.outputs.digest }}" \
+            -c "import torch, vllm; print('falcon instant worker smoke ok')"
+
+      - name: Smoke pull and bootstrap JAIS worker
+        run: |
+          docker pull "${{ steps.refs.outputs.jais_ref }}@${{ steps.build_jais.outputs.digest }}"
+          docker run --rm \
+            --entrypoint python \
+            "${{ steps.refs.outputs.jais_ref }}@${{ steps.build_jais.outputs.digest }}" \
+            -c "import torch, vllm; print('jais instant worker smoke ok')"
 
       - name: Publish summary
         run: |
@@ -147,8 +191,9 @@ jobs:
             echo "| Image | Mutable tag | Immutable ref | Digest | Templates |"
             echo "|---|---|---|---|---|"
             echo "| base-worker | \`${{ steps.refs.outputs.base_ref }}:latest\` | \`${{ steps.refs.outputs.base_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_base.outputs.digest }}\` | runtime base |"
-            echo "| llm-worker | \`${{ steps.refs.outputs.llm_ref }}:latest\` | \`${{ steps.refs.outputs.llm_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_llm.outputs.digest }}\` | nemotron-nano |"
-            echo "| sd-worker | \`${{ steps.refs.outputs.sd_ref }}:latest\` | \`${{ steps.refs.outputs.sd_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_sd.outputs.digest }}\` | sdxl, stable-diffusion |"
+            echo "| instant-allam-7b-instruct | \`${{ steps.refs.outputs.allam_ref }}:latest\` | \`${{ steps.refs.outputs.allam_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_allam.outputs.digest }}\` | allam-7b-instruct |"
+            echo "| instant-falcon-h1-arabic-7b | \`${{ steps.refs.outputs.falcon_ref }}:latest\` | \`${{ steps.refs.outputs.falcon_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_falcon.outputs.digest }}\` | falcon-h1-arabic-7b |"
+            echo "| instant-jais-13b-chat | \`${{ steps.refs.outputs.jais_ref }}:latest\` | \`${{ steps.refs.outputs.jais_ref }}:${{ steps.refs.outputs.immutable_tag }}\` | \`${{ steps.build_jais.outputs.digest }}\` | jais-13b-chat |"
             echo ""
             echo "Manifest artifact: \`instant-tier-image-manifest\`"
           } >> "$GITHUB_STEP_SUMMARY"
