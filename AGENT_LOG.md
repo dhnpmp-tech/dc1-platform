@@ -32479,6 +32479,6 @@ a
 - **Impact**: `DCP-570` overbilling path is closed for `/v1/chat/completions`; cost persistence now writes explicit prompt/completion/total halala+USD fields using per-million token semantics, and default pricing fallback uses market-aligned `19 halala / 1M tokens` instead of `1 halala / token`.
 
 ## [2026-04-04 09:36 UTC] Codex — DCP-578 self-serve provider reactivation bundle shipped
-- **Commit**: `pending` - Added signed short-lived provider reactivation token issuance plus token-redeem install bundle endpoint returning deterministic linux/mac/windows setup commands and daemon download URL, with invalid/expired token JSON error handling + integration coverage.
+- **Commit**: `bb9817b` - Added signed short-lived provider reactivation token issuance plus token-redeem install bundle endpoint returning deterministic linux/mac/windows setup commands and daemon download URL, with invalid/expired token JSON error handling + integration coverage.
 - **Files**: `backend/src/routes/providers.js`, `backend/tests/integration/api-core.test.js`, `docs/reports/reliability/dcp-578-reactivation-proof-20260404T093916Z.json`, `docs/reports/reliability/dcp-578-reactivation-proof-20260404T093916Z.md`, `AGENT_LOG.md`
 - **Impact**: Dormant providers can self-serve reactivation bootstrap without operator hand-editing; issued tokens are HMAC-signed, time-bound, and key-fingerprint-bound so rotated keys invalidate prior tokens while preserving deterministic install command generation for all supported OS targets.
