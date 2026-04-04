@@ -18,14 +18,54 @@ function parseTemplates(value) {
     .filter(Boolean);
 }
 
-function buildImageRecord({ name, digest, shaTag, templates }) {
+function parseJsonEnv(name) {
+  const raw = requireEnv(name);
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Invalid JSON in ${name}: ${error.message}`);
+  }
+}
+
+function normalizeSpecs(rawSpecs) {
+  if (!Array.isArray(rawSpecs) || rawSpecs.length === 0) {
+    throw new Error('INSTANT_TIER_IMAGE_SPECS must be a non-empty JSON array');
+  }
+  return rawSpecs.map((spec, index) => {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      throw new Error(`INSTANT_TIER_IMAGE_SPECS[${index}] must be an object`);
+    }
+    const name = String(spec.name || '').trim();
+    const digest = String(spec.digest || '').trim();
+    const shaTag = String(spec.sha_tag || '').trim();
+    const templateId = String(spec.template_id || '').trim();
+    const templates = Array.isArray(spec.templates)
+      ? spec.templates.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : [];
+    const modelId = String(spec.model_id || '').trim();
+    if (!name || !digest || !shaTag || (!templateId && templates.length === 0)) {
+      throw new Error(`INSTANT_TIER_IMAGE_SPECS[${index}] requires name, digest, sha_tag, and template_id or templates`);
+    }
+    return {
+      name,
+      digest,
+      shaTag,
+      templateId: templateId || templates[0],
+      templates: templates.length > 0 ? templates : [templateId],
+      modelId,
+    };
+  });
+}
+
+function buildImageRecord({ name, digest, shaTag, templateId, templates, modelId }) {
   const registry = requireEnv('IMAGE_REGISTRY');
   const namespace = requireEnv('IMAGE_NAMESPACE');
   const imageRef = `${registry}/${namespace}/${name}`;
 
   return {
     name,
-    templates,
+    templates: Array.isArray(templates) && templates.length > 0 ? templates : [templateId],
+    model_id: modelId || null,
     published_refs: {
       mutable: `${imageRef}:latest`,
       immutable: `${imageRef}:${shaTag}`,
@@ -41,7 +81,9 @@ function main() {
     throw new Error('Usage: node scripts/emit-instant-tier-manifest.mjs <output-path>');
   }
 
-  const shaTag = requireEnv('LLM_WORKER_SHA_TAG');
+  const specs = process.env.INSTANT_TIER_IMAGE_SPECS
+    ? normalizeSpecs(parseJsonEnv('INSTANT_TIER_IMAGE_SPECS'))
+    : null;
   const manifest = {
     generated_at: new Date().toISOString(),
     source: {
@@ -56,26 +98,31 @@ function main() {
       host: requireEnv('IMAGE_REGISTRY'),
       namespace: requireEnv('IMAGE_NAMESPACE'),
     },
-    images: [
-      buildImageRecord({
-        name: 'base-worker',
-        digest: requireEnv('BASE_WORKER_DIGEST'),
-        shaTag: requireEnv('BASE_WORKER_SHA_TAG'),
-        templates: ['runtime-base'],
-      }),
-      buildImageRecord({
-        name: 'llm-worker',
-        digest: requireEnv('LLM_WORKER_DIGEST'),
-        shaTag,
-        templates: parseTemplates(process.env.LLM_TEMPLATE_IDS),
-      }),
-      buildImageRecord({
-        name: 'sd-worker',
-        digest: requireEnv('SD_WORKER_DIGEST'),
-        shaTag: requireEnv('SD_WORKER_SHA_TAG'),
-        templates: parseTemplates(process.env.SD_TEMPLATE_IDS),
-      }),
-    ],
+    images: specs
+      ? specs.map((spec) => buildImageRecord(spec))
+      : [
+          buildImageRecord({
+            name: 'base-worker',
+            digest: requireEnv('BASE_WORKER_DIGEST'),
+            shaTag: requireEnv('BASE_WORKER_SHA_TAG'),
+            templateId: 'runtime-base',
+            modelId: null,
+          }),
+          buildImageRecord({
+            name: 'llm-worker',
+            digest: requireEnv('LLM_WORKER_DIGEST'),
+            shaTag: requireEnv('LLM_WORKER_SHA_TAG'),
+            templateId: parseTemplates(process.env.LLM_TEMPLATE_IDS)[0] || 'llm-worker',
+            modelId: process.env.LLM_MODEL_ID || null,
+          }),
+          buildImageRecord({
+            name: 'sd-worker',
+            digest: requireEnv('SD_WORKER_DIGEST'),
+            shaTag: requireEnv('SD_WORKER_SHA_TAG'),
+            templateId: parseTemplates(process.env.SD_TEMPLATE_IDS)[0] || 'sd-worker',
+            modelId: process.env.SD_MODEL_ID || null,
+          }),
+        ],
   };
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
