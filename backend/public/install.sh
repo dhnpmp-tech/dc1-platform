@@ -99,6 +99,9 @@ write_config() {
   {
     printf "DCP_API_KEY=%s\n" "${DCP_PROVIDER_KEY}"
     printf "DCP_API_URL=%s\n" "${API_BASE}"
+    if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
+      printf "VLLM_ENDPOINT_URL=%s\n" "${VLLM_ENDPOINT_URL}"
+    fi
   } > "${CONFIG_DIR}/env"
   chmod 600 "${CONFIG_DIR}/env"
 }
@@ -245,6 +248,50 @@ WGCONF
   fi
 }
 
+detect_cloud_gpu() {
+  # Auto-detect if we're running inside a cloud GPU environment
+  local is_cloud=false
+
+  # RunPod detection
+  if [ -n "${RUNPOD_POD_ID:-}" ] || [ -f /etc/runpod.conf ] || hostname 2>/dev/null | grep -qE '^[0-9a-f]{12}$'; then
+    is_cloud=true
+    info "Detected cloud GPU environment (RunPod)"
+  # Lambda Labs detection
+  elif [ -n "${LAMBDA_NODE_ID:-}" ] || [ -d /opt/lambda ]; then
+    is_cloud=true
+    info "Detected cloud GPU environment (Lambda Labs)"
+  # Generic Docker/container detection
+  elif [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
+    is_cloud=true
+    info "Detected containerized environment"
+  fi
+
+  # Allow env var override: VLLM_ENDPOINT_URL or DCP_CLOUD_GPU=true
+  if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
+    info "vLLM endpoint URL: ${VLLM_ENDPOINT_URL}"
+    return
+  fi
+
+  if [ "${is_cloud}" = "true" ] || [ "${DCP_CLOUD_GPU:-}" = "true" ]; then
+    echo ""
+    info "Your GPU is in the cloud. DCP needs the public URL where your vLLM server is reachable."
+    info "Examples:"
+    info "  RunPod:  https://<pod-id>-8000.proxy.runpod.net"
+    info "  Lambda:  http://<instance-ip>:8000"
+    echo ""
+    if [ -r /dev/tty ]; then
+      read -r -p "  Enter your vLLM endpoint URL (or press Enter to set later): " VLLM_ENDPOINT_URL </dev/tty
+    fi
+    if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
+      success "vLLM endpoint URL set: ${VLLM_ENDPOINT_URL}"
+    else
+      info "No endpoint URL set. You can add it later at dcp.sa/provider/settings"
+    fi
+  else
+    info "Local GPU detected — WireGuard VPN will handle connectivity"
+  fi
+}
+
 download_daemon() {
   mkdir -p "${INSTALL_DIR}" "${LOG_DIR}"
   local tmp
@@ -284,7 +331,7 @@ restart_nohup_daemon() {
     sleep 1
   fi
 
-  DCP_API_KEY="${DCP_PROVIDER_KEY}" DCP_API_URL="${API_BASE}" nohup "${PYTHON_BIN}" "${DAEMON_PATH}" >> "${LOG_DIR}/daemon.log" 2>> "${LOG_DIR}/daemon-error.log" &
+  DCP_API_KEY="${DCP_PROVIDER_KEY}" DCP_API_URL="${API_BASE}" VLLM_ENDPOINT_URL="${VLLM_ENDPOINT_URL:-}" nohup "${PYTHON_BIN}" "${DAEMON_PATH}" >> "${LOG_DIR}/daemon.log" 2>> "${LOG_DIR}/daemon-error.log" &
   echo $! > "${PID_FILE}"
   info "Daemon started in background (pid: $(cat "${PID_FILE}"))."
 }
@@ -519,6 +566,9 @@ info "Config saved at ${CONFIG_FILE}"
 
 step "Setting up WireGuard VPN"
 setup_wireguard
+
+step "GPU location"
+detect_cloud_gpu
 
 step "Downloading daemon"
 download_daemon
