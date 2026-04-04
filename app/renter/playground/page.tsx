@@ -816,7 +816,7 @@ function GpuPlayground() {
       }
     } catch { /* ignore */ }
     finally { setLoadingProviders(false); }
-  }, [providerId]);
+  }, [preselectedProvider, providerId]);
 
   useEffect(() => {
     if (renterName) fetchProviders();
