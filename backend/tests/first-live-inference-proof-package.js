@@ -122,6 +122,66 @@ function classifyFailure(results) {
   return null;
 }
 
+function toFiniteInt(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
+function pickFirstMatch(messages, pattern) {
+  for (const message of messages) {
+    const match = String(message || '').match(pattern);
+    if (match && match[1] != null) return match[1];
+  }
+  return null;
+}
+
+function extractCapacitySnapshot(probes, model) {
+  const completionHeaders = probes?.completion_json || {};
+  const streamHeaders = probes?.completion_stream || {};
+  const completionDetails = completionHeaders.raw_error_details || {};
+  const streamDetails = streamHeaders.raw_error_details || {};
+  const messages = [completionHeaders.error_message, streamHeaders.error_message];
+
+  const modelId = completionDetails.model_id
+    || streamDetails.model_id
+    || completionHeaders.requested_model_id
+    || streamHeaders.requested_model_id
+    || model;
+  const minVramGb = toFiniteInt(
+    completionDetails.min_vram_gb
+    ?? streamDetails.min_vram_gb
+    ?? pickFirstMatch(messages, /min[_\s-]?vram[_\s-]?gb[=:\s]+(\d+)/i)
+  );
+  const capableProviders = toFiniteInt(
+    completionDetails.capable_providers
+    ?? streamDetails.capable_providers
+    ?? pickFirstMatch(messages, /capable[_\s-]?providers[=:\s]+(\d+)/i)
+  );
+  const providerHttpCode = toFiniteInt(
+    pickFirstMatch(messages, /provider[_\s-]?http[_\s-]?(\d{3})/i)
+  );
+
+  return {
+    model_id: modelId || null,
+    min_vram_gb: minVramGb,
+    capable_providers: capableProviders,
+    provider_id: completionHeaders.provider_id || streamHeaders.provider_id || null,
+    provider_tier: completionHeaders.provider_tier || streamHeaders.provider_tier || null,
+    provider_endpoint_host: completionHeaders.provider_endpoint_host || streamHeaders.provider_endpoint_host || null,
+    request_id: completionHeaders.request_id || streamHeaders.request_id || null,
+    latency_gate_mode: completionHeaders.latency_gate_mode || streamHeaders.latency_gate_mode || null,
+    provider_http_status: providerHttpCode,
+    route_error_message: completionHeaders.error_message || streamHeaders.error_message || null,
+    inferred_heartbeat_timestamp: completionDetails.last_heartbeat
+      || streamDetails.last_heartbeat
+      || completionDetails.heartbeat_at
+      || streamDetails.heartbeat_at
+      || null,
+    evidence_complete: Boolean(modelId && minVramGb != null && capableProviders != null),
+  };
+}
+
 function buildMarkdown(report) {
   const lines = [];
   lines.push('# First-Live Inference Proof Report');
@@ -152,6 +212,19 @@ function buildMarkdown(report) {
   lines.push(`- completion_stream.provider_id: \`${report.probes.completion_stream.provider_id || ''}\``);
   lines.push(`- completion_stream.provider_tier: \`${report.probes.completion_stream.provider_tier || ''}\``);
   lines.push(`- completion_stream.provider_endpoint_host: \`${report.probes.completion_stream.provider_endpoint_host || ''}\``);
+  lines.push('');
+  lines.push('## Capacity Snapshot');
+  lines.push('');
+  lines.push(`- model_id: \`${report.capacity_snapshot.model_id || ''}\``);
+  lines.push(`- min_vram_gb: \`${report.capacity_snapshot.min_vram_gb ?? ''}\``);
+  lines.push(`- capable_providers: \`${report.capacity_snapshot.capable_providers ?? ''}\``);
+  lines.push(`- provider_id: \`${report.capacity_snapshot.provider_id || ''}\``);
+  lines.push(`- provider_tier: \`${report.capacity_snapshot.provider_tier || ''}\``);
+  lines.push(`- provider_endpoint_host: \`${report.capacity_snapshot.provider_endpoint_host || ''}\``);
+  lines.push(`- provider_http_status: \`${report.capacity_snapshot.provider_http_status ?? ''}\``);
+  lines.push(`- route_error_message: \`${report.capacity_snapshot.route_error_message || ''}\``);
+  lines.push(`- inferred_heartbeat_timestamp: \`${report.capacity_snapshot.inferred_heartbeat_timestamp || ''}\``);
+  lines.push(`- evidence_complete: \`${report.capacity_snapshot.evidence_complete}\``);
   lines.push('');
   if (report.failure) {
     lines.push('## Failure Classification');
@@ -254,6 +327,7 @@ async function run() {
       requested_model_id: completionJson.headers['x-dcp-requested-model-id'] || null,
       routed_model_id: completionJson.headers['x-dcp-routed-model-id'] || null,
       latency_gate_mode: completionJson.headers['x-dcp-latency-gate-mode'] || null,
+      raw_error_details: completionJson.json?.error?.details || null,
       error_message: completionJson.ok ? null : (completionJson.json?.error?.message || completionJson.text?.slice(0, 240) || null),
     },
     completion_stream: {
@@ -268,10 +342,12 @@ async function run() {
       requested_model_id: streamRes.headers['x-dcp-requested-model-id'] || null,
       routed_model_id: streamRes.headers['x-dcp-routed-model-id'] || null,
       latency_gate_mode: streamRes.headers['x-dcp-latency-gate-mode'] || null,
+      raw_error_details: streamRes.json?.error?.details || null,
       error_message: streamRes.ok ? null : (streamRes.json?.error?.message || streamRes.text?.slice(0, 240) || null),
     },
   };
 
+  const capacitySnapshot = extractCapacitySnapshot(probes, model);
   const failure = classifyFailure(probes);
   const verdict = failure ? 'FAIL' : 'PASS';
   addLog(`verdict=${verdict}${failure ? ` failure=${failure.code}` : ''}`);
@@ -299,6 +375,7 @@ async function run() {
       balance_halala: principal.balanceHalala,
     },
     probes,
+    capacity_snapshot: capacitySnapshot,
     failure,
     artifacts: {
       json: path.relative(REPO_ROOT, jsonFile),
@@ -321,6 +398,7 @@ async function run() {
   process.stdout.write(`${JSON.stringify({
     verdict,
     failure_code: failure?.code || null,
+    capacity_snapshot: capacitySnapshot,
     artifacts: report.artifacts,
     principal: report.principal,
   }, null, 2)}\n`);

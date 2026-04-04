@@ -1,3 +1,8 @@
+## [2026-04-04 01:10 UTC] Codex — DCP-475 Proof Harness Capacity Snapshot Upgrade
+- **Commit**: `pending` - Enhanced `backend/tests/first-live-inference-proof-package.js` to emit a normalized `capacity_snapshot` payload (model, min_vram, capable_providers, provider route fields, latency gate mode, provider HTTP status, route error message, heartbeat hint, evidence completeness) in both console output and markdown/json artifacts.
+- **Files**: `backend/tests/first-live-inference-proof-package.js`, `docs/reports/reliability/first-live-inference-proof-20260404T011006Z.json`, `docs/reports/reliability/first-live-inference-proof-20260404T011006Z.md`, `docs/reports/reliability/first-live-inference-proof-20260404T011006Z.log`, `docs/reports/reliability/first-live-inference-proof-latest.json`, `docs/reports/reliability/first-live-inference-proof-latest.md`, `docs/reports/reliability/first-live-inference-proof-latest.log`, `AGENT_LOG.md`
+- **Impact**: DCP-475 closeout evidence is now deterministic and machine-parsable for DCP-371 comments, even on failover/no-capacity paths. Latest live run still fails (`provider_http_404`, `capable_providers=0`) but now records route-cause context in a single stable snapshot block.
+
 ## [2026-04-03 21:56 UTC] Codex — Login Reason Message Hook Dependency Stabilized
 - **Commit**: `28e1244` - Memoized login reason-to-message mapping with `useCallback` and wired the effect dependency to the callback, removing the stale exhaustive-deps warning without behavior changes.
 - **Files**: `app/login/page.tsx`, `AGENT_LOG.md`
