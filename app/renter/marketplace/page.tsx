@@ -1,10 +1,17 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import StatusBadge from '../../components/ui/StatusBadge'
 import { useLanguage } from '../../lib/i18n'
+import {
+  buildRenterLoginRedirect,
+  buildRenterPlaygroundPath,
+  setPendingRenterAuthIntent,
+  type RenterAuthIntent,
+} from '../../lib/renter-auth-intent'
 
 const API_BASE = '/api/dc1'
 
@@ -90,6 +97,16 @@ interface ModelCardFeedEntry {
     cost_per_1k_tokens_sar?: number | null
     cold_start_ms?: number | null
   }
+}
+
+interface TemplateCatalogEntry {
+  id: string
+  name: string
+  model_name: string
+  description: string
+  startup_tier: string
+  startup_seconds: number | null
+  p95_latency_ms: number | null
 }
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -1004,6 +1021,7 @@ function ModelCard({
 
 // ── Main Page ──────────────────────────────────────────────────────
 export default function MarketplacePage() {
+  const router = useRouter()
   const { t, language } = useLanguage()
   const modelDocsHref = language === 'ar' ? '/docs/ar/models' : '/docs/models'
   const navItems = [
@@ -1039,7 +1057,11 @@ export default function MarketplacePage() {
   const [modelMaxVram, setModelMaxVram] = useState(80)
   const [modelMaxPrice, setModelMaxPrice] = useState(10)
   const [compareModelIds, setCompareModelIds] = useState<string[]>([])
+  const [templateCatalog, setTemplateCatalog] = useState<TemplateCatalogEntry[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(true)
+  const [templatesError, setTemplatesError] = useState('')
   const countdownRef = useRef<number>(POLL_INTERVAL_MS / 1000)
+  const catalogTrackedRef = useRef(false)
   const [countdown, setCountdown] = useState(POLL_INTERVAL_MS / 1000)
   const segmentProofItems = [
     t('proof.segment.item_energy'),
@@ -1139,6 +1161,48 @@ export default function MarketplacePage() {
     }
   }, [])
 
+  const fetchTemplateCatalog = useCallback(async () => {
+    setTemplatesLoading(true)
+    setTemplatesError('')
+    try {
+      const res = await fetch(`${API_BASE}/templates/catalog`)
+      if (!res.ok) {
+        throw new Error(`catalog_http_${res.status}`)
+      }
+      const payload = await res.json()
+      const list = Array.isArray(payload?.templates) ? payload.templates : []
+      const normalized = list
+        .map((raw: Record<string, unknown>): TemplateCatalogEntry => {
+          const startupTierRaw = raw?.tier_hint && typeof raw.tier_hint === 'object'
+            ? (raw.tier_hint as Record<string, unknown>).tier
+            : raw.startup_tier
+          const startupSecondsRaw = raw?.tier_hint && typeof raw.tier_hint === 'object'
+            ? (raw.tier_hint as Record<string, unknown>).startup_seconds
+            : raw.startup_seconds
+          const p95Raw = raw?.metrics && typeof raw.metrics === 'object'
+            ? ((raw.metrics as Record<string, unknown>).latency_ms as Record<string, unknown> | undefined)?.p95
+            : null
+          return {
+            id: String(raw.id || raw.template_id || ''),
+            name: String(raw.name || raw.display_name || raw.model_name || raw.id || 'Template'),
+            model_name: String(raw.model_name || raw.model || raw.id || ''),
+            description: String(raw.description || ''),
+            startup_tier: String(startupTierRaw || 'standard'),
+            startup_seconds: Number.isFinite(Number(startupSecondsRaw)) ? Number(startupSecondsRaw) : null,
+            p95_latency_ms: Number.isFinite(Number(p95Raw)) ? Number(p95Raw) : null,
+          }
+        })
+        .filter((entry: TemplateCatalogEntry) => Boolean(entry.id))
+      setTemplateCatalog(normalized)
+    } catch (err) {
+      console.error('Failed to load template catalog:', err)
+      setTemplateCatalog([])
+      setTemplatesError('template_catalog_failed')
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }, [])
+
   // Auth — get renter name
   useEffect(() => {
     const key = typeof window !== 'undefined' ? localStorage.getItem('dc1_renter_key') : null
@@ -1157,10 +1221,12 @@ export default function MarketplacePage() {
   useEffect(() => {
     fetchProviders()
     fetchModels()
+    fetchTemplateCatalog()
 
     const pollInterval = setInterval(() => {
       fetchProviders()
       fetchModels()
+      fetchTemplateCatalog()
       countdownRef.current = POLL_INTERVAL_MS / 1000
     }, POLL_INTERVAL_MS)
 
@@ -1173,7 +1239,7 @@ export default function MarketplacePage() {
       clearInterval(pollInterval)
       clearInterval(tickInterval)
     }
-  }, [fetchProviders, fetchModels])
+  }, [fetchProviders, fetchModels, fetchTemplateCatalog])
 
   // ── Filter + Sort ────────────────────────────────────────────────
   const filtered = providers.filter(p => {
@@ -1240,6 +1306,72 @@ export default function MarketplacePage() {
       return [...prev, modelId]
     })
   }
+
+  const featuredTemplateCards = useMemo(() => {
+    const priority = ['allam', 'jais', 'falcon']
+    const selected: TemplateCatalogEntry[] = []
+    for (const key of priority) {
+      const match = templateCatalog.find((item) => {
+        const hay = `${item.id} ${item.name} ${item.model_name}`.toLowerCase()
+        return hay.includes(key)
+      })
+      if (match && !selected.some((existing) => existing.id === match.id)) {
+        selected.push(match)
+      }
+    }
+    if (selected.length < 3) {
+      for (const item of templateCatalog) {
+        if (selected.some((existing) => existing.id === item.id)) continue
+        selected.push(item)
+        if (selected.length >= 3) break
+      }
+    }
+    return selected.slice(0, 3)
+  }, [templateCatalog])
+
+  useEffect(() => {
+    if (catalogTrackedRef.current) return
+    if (templatesLoading || featuredTemplateCards.length === 0) return
+    trackMarketplaceEvent('catalog_view', {
+      surface: 'template_catalog',
+      destination: '/renter/marketplace',
+      step: 'loaded',
+      template_count: featuredTemplateCards.length,
+      template_ids: featuredTemplateCards.map((item) => item.id).join(','),
+    })
+    catalogTrackedRef.current = true
+  }, [featuredTemplateCards, templatesLoading, trackMarketplaceEvent])
+
+  const handleTemplateDeploy = useCallback((template: TemplateCatalogEntry) => {
+    trackMarketplaceEvent('template_select', {
+      surface: 'template_catalog',
+      destination: '/renter/marketplace',
+      step: 'selected',
+      template_id: template.id,
+    })
+    const model = template.model_name || template.id
+    const intent: RenterAuthIntent = {
+      template: template.id,
+      model,
+      mode: 'llm_inference',
+      jobType: 'llm_inference',
+      source: 'renter_marketplace_template_catalog',
+    }
+    const deployPath = buildRenterPlaygroundPath(intent)
+    trackMarketplaceEvent('deploy_click', {
+      surface: 'template_catalog',
+      destination: deployPath,
+      step: 'one_click_deploy',
+      template_id: template.id,
+    })
+    const renterKey = localStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_api_key')
+    if (!renterKey) {
+      setPendingRenterAuthIntent(intent)
+      router.push(buildRenterLoginRedirect('/renter/playground', 'renter_marketplace_template_catalog'))
+      return
+    }
+    router.push(deployPath)
+  }, [router, trackMarketplaceEvent])
 
   return (
     <DashboardLayout navItems={navItems} role="renter" userName={renterName}>
@@ -1613,6 +1745,73 @@ export default function MarketplacePage() {
 
           {/* GPU cards / model cards */}
           <div className="flex-1 min-w-0">
+            {activeTab === 'models' && (
+              <section className="card mb-4">
+                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                  <div>
+                    <h2 className="text-sm font-semibold text-dc1-text-primary">
+                      {language === 'ar' ? 'قوالب الاستدلال الجاهزة' : 'Inference Template Catalog'}
+                    </h2>
+                    <p className="text-xs text-dc1-text-muted">
+                      {language === 'ar'
+                        ? 'نشر سريع لنماذج ALLaM وJAIS وFalcon مع بيانات الطبقة وزمن الإقلاع.'
+                        : 'One-click launcher for ALLaM, JAIS, and Falcon templates with startup tier and latency metadata.'}
+                    </p>
+                  </div>
+                  <Link
+                    href="/renter/marketplace/templates"
+                    className="text-xs text-dc1-amber hover:underline"
+                  >
+                    {language === 'ar' ? 'عرض كل القوالب' : 'View full template catalog'}
+                  </Link>
+                </div>
+                {templatesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin h-6 w-6 border-2 border-dc1-amber border-t-transparent rounded-full" />
+                  </div>
+                ) : templatesError ? (
+                  <p className="text-sm text-status-error">
+                    {language === 'ar' ? 'تعذر تحميل القوالب حالياً.' : 'Failed to load template catalog right now.'}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    {featuredTemplateCards.map((template) => (
+                      <article key={template.id} className="rounded-lg border border-dc1-border bg-dc1-surface-l1 p-3 flex flex-col gap-2">
+                        <h3 className="text-sm font-semibold text-dc1-text-primary">{template.name}</h3>
+                        <p className="text-[11px] text-dc1-text-muted font-mono break-all">{template.model_name}</p>
+                        {template.description && (
+                          <p className="text-xs text-dc1-text-secondary line-clamp-2">{template.description}</p>
+                        )}
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded border border-dc1-border bg-dc1-surface-l2 px-2 py-1.5">
+                            <p className="text-dc1-text-muted">Tier</p>
+                            <p className="text-dc1-text-primary font-semibold capitalize">{template.startup_tier}</p>
+                          </div>
+                          <div className="rounded border border-dc1-border bg-dc1-surface-l2 px-2 py-1.5">
+                            <p className="text-dc1-text-muted">P95 latency</p>
+                            <p className="text-dc1-text-primary font-semibold">
+                              {template.p95_latency_ms != null ? formatMilliseconds(template.p95_latency_ms) : '—'}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-dc1-text-muted">
+                          {language === 'ar' ? 'زمن الإقلاع:' : 'Startup:'}{' '}
+                          {template.startup_seconds != null ? `${template.startup_seconds}s` : '—'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleTemplateDeploy(template)}
+                          className="btn btn-primary btn-sm mt-1"
+                        >
+                          {language === 'ar' ? 'نشر الآن' : 'Deploy now'}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
             {activeTab === 'models' && (
               <div className="card mb-4">
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
