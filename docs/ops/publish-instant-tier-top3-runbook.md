@@ -1,64 +1,55 @@
 # Instant-Tier Top-3 Publish Runbook
 
-Owner: Staff Engineer  
-Related issues: [DCP-494](/DCP/issues/DCP-494), [DCP-549](/DCP/issues/DCP-549)
+This runbook covers the deterministic GitHub Actions path for publishing the instant-tier worker images and emitting the digest manifest artifact used by template deploys.
 
-## Purpose
+## Prerequisites
 
-Build and publish digest-pinned instant-tier worker images for the three Arabic priority templates:
+- GitHub Actions can run `.github/workflows/docker-instant-tier.yml` on `main`.
+- Docker Hub credentials are configured as repository secrets:
+  - `DOCKER_HUB_USERNAME`
+  - `DOCKER_HUB_TOKEN`
+- If the target Docker Hub namespace is not the same as the login username, set `DOCKER_HUB_NAMESPACE`.
 
-- `allam-7b-instruct`
-- `falcon-h1-arabic-7b`
-- `jais-13b-chat`
+Namespace resolution order in the workflow is:
 
-The workflow emits `artifacts/instant-tier-images.json`, and template deploys resolve to the canonical digest from that manifest instead of `:latest`.
+1. `DOCKER_HUB_NAMESPACE`
+2. `DOCKER_HUB_USERNAME`
+3. `dc1`
 
-## Canonical Command
+## Publish
+
+Trigger the workflow on `main`:
 
 ```bash
 gh workflow run docker-instant-tier.yml --ref main
 ```
 
-## One-Run Verification
-
-After the workflow completes, download the artifact and inspect the manifest:
+Or rerun the latest failed execution after credentials are fixed:
 
 ```bash
-gh run download <run-id> --name instant-tier-image-manifest --dir /tmp/dcp-instant-tier
-cat /tmp/dcp-instant-tier/instant-tier-images.json
+gh run rerun <run-id>
 ```
 
-Each manifest record must include:
+## Verify Outputs
 
-- `templates[0]` matching one of the three template IDs
-- `published_refs.mutable`
-- `published_refs.immutable`
-- `published_refs.canonical`
-- `digest`
+After the run finishes green, collect:
 
-## Expected Published Images
+- workflow run URL
+- `instant-tier-image-manifest` artifact
+- published digests for:
+  - `base-worker`
+  - `llm-worker`
+  - `sd-worker`
 
-- `docker.io/dc1/instant-allam-7b-instruct`
-- `docker.io/dc1/instant-falcon-h1-arabic-7b`
-- `docker.io/dc1/instant-jais-13b-chat`
-
-## Local Dry Run For Manifest Generation
-
-Use this to verify manifest shape without pushing images:
+Download the manifest artifact:
 
 ```bash
-IMAGE_REGISTRY=docker.io \
-IMAGE_NAMESPACE=dc1 \
-INSTANT_TIER_IMAGE_SPECS='[
-  {"name":"instant-allam-7b-instruct","template_id":"allam-7b-instruct","model_id":"HUMAIN-AI/ALLaM-7B-Instruct","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sha_tag":"sha-local-allam"},
-  {"name":"instant-falcon-h1-arabic-7b","template_id":"falcon-h1-arabic-7b","model_id":"tiiuae/Falcon-H1-7B-Instruct","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","sha_tag":"sha-local-falcon"},
-  {"name":"instant-jais-13b-chat","template_id":"jais-13b-chat","model_id":"inceptionai/jais-13b-chat","digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","sha_tag":"sha-local-jais"}
-]' \
-node scripts/emit-instant-tier-manifest.mjs /tmp/instant-tier-images.json
+gh run download <run-id> --name instant-tier-image-manifest --dir /tmp/dcp-instant-tier-manifest
+cat /tmp/dcp-instant-tier-manifest/instant-tier-images.json
 ```
 
-## Done Criteria
+## Post-Run Hand-Off
 
-- Workflow summary shows one digest row per top-3 image.
-- Artifact `instant-tier-image-manifest` contains canonical refs for all three templates.
-- `POST /api/templates/:id/deploy` resolves each top-3 template to the matching `@sha256:` image ref.
+- Confirm the manifest contains digest-pinned canonical refs.
+- Post the run URL and manifest evidence on [DCP-494](/DCP/issues/DCP-494).
+- Close [DCP-549](/DCP/issues/DCP-549) once artifact evidence is attached.
