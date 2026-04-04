@@ -19,6 +19,8 @@ interface Job {
   actual_cost_halala: number
   params?: string | null
   container_spec?: string | null
+  error?: string | null
+  last_error?: string | null
 }
 
 const HomeIcon = () => (
@@ -105,6 +107,16 @@ function getTemplateName(job: Job): string {
     } catch { /* noop */ }
   }
   return (job.job_type || 'GPU Job').replace(/_/g, ' ')
+}
+
+function normalizeFailureReason(value?: string | null): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function getFailureReason(job: Pick<Job, 'error' | 'last_error'>): string | null {
+  return normalizeFailureReason(job.last_error) || normalizeFailureReason(job.error)
 }
 
 export default function RenterJobsPage() {
@@ -357,6 +369,7 @@ export default function RenterJobsPage() {
                 <th>Duration</th>
                 <th>{t('table.status')}</th>
                 <th>Cost (SAR)</th>
+                <th>Failure reason</th>
                 <th className="sr-only">{t('table.action')}</th>
               </tr>
             </thead>
@@ -367,6 +380,7 @@ export default function RenterJobsPage() {
                     ? Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
                     : 0
                   const duration = Math.max(0, rawDuration)
+                  const failureReason = getFailureReason(j)
                   return (
                     <tr key={j.id} className="cursor-pointer hover:bg-dc1-surface-l2/50 transition-colors" onClick={() => router.push(`/renter/jobs/${j.id}`)}>
                       <td className="font-mono text-sm">
@@ -392,6 +406,19 @@ export default function RenterJobsPage() {
                         {j.actual_cost_halala
                           ? `${(j.actual_cost_halala / 100).toFixed(2)} SAR`
                           : '—'}
+                      </td>
+                      <td className="text-sm max-w-[260px]">
+                        {j.status === 'failed' ? (
+                          failureReason ? (
+                            <span className="text-status-error line-clamp-2 break-words" title={failureReason}>
+                              {failureReason}
+                            </span>
+                          ) : (
+                            <span className="text-dc1-text-muted">No reason captured</span>
+                          )
+                        ) : (
+                          <span className="text-dc1-text-muted">—</span>
+                        )}
                       </td>
                       <td onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
@@ -422,7 +449,7 @@ export default function RenterJobsPage() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="text-center py-14">
+                  <td colSpan={8} className="text-center py-14">
                     {statusFilter !== 'all' ? (
                       <div className="space-y-2">
                         <p className="text-dc1-text-secondary">No {statusFilter} jobs found.</p>

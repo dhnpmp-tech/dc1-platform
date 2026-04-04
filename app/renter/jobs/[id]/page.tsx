@@ -20,6 +20,7 @@ interface JobDetail {
   started_at: string
   completed_at: string
   error: string | null
+  last_error?: string | null
   actual_cost_halala: number
   cost_halala: number
   actual_duration_minutes: number
@@ -118,6 +119,17 @@ function DetailRow({ label, value, highlight, mono }: { label: string; value: st
   )
 }
 
+function normalizeFailureReason(value?: string | null): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function getFailureMessages(job: Pick<JobDetail, 'error' | 'last_error'>): string[] {
+  const messages = [normalizeFailureReason(job.last_error), normalizeFailureReason(job.error)]
+  return Array.from(new Set(messages.filter((msg): msg is string => Boolean(msg))))
+}
+
 // ── Job State Machine ─────────────────────────────────────────────────────────
 type JobPhase = 'queued' | 'assigned' | 'running' | 'completed' | 'failed'
 
@@ -136,10 +148,11 @@ const JOB_PHASES: { id: JobPhase; label: string }[] = [
   { id: 'completed', label: 'Done' },
 ]
 
-function JobStateMachine({ status, providerId, providerGpu }: {
+function JobStateMachine({ status, providerId, providerGpu, failureReason }: {
   status: string
   providerId?: number | null
   providerGpu: string | null
+  failureReason?: string | null
 }) {
   const phase = getJobPhase(status, providerId)
   const isFailed = phase === 'failed'
@@ -173,7 +186,11 @@ function JobStateMachine({ status, providerId, providerGpu }: {
           )
         })}
       </div>
-      {isFailed && <p className="text-xs text-status-error mt-2 text-center">Job failed — check logs for details</p>}
+      {isFailed && (
+        <p className="text-xs text-status-error mt-2 text-center">
+          Job failed{failureReason ? ` — ${failureReason}` : ''}
+        </p>
+      )}
       {providerGpu && phase === 'running' && <p className="text-xs text-dc1-text-muted mt-2 text-center">Running on {providerGpu}</p>}
     </div>
   )
@@ -972,6 +989,8 @@ export default function RenterJobDetailPage() {
   const isTerminal = ['completed', 'failed', 'permanently_failed', 'cancelled'].includes(job.status)
   const isCompleted = job.status === 'completed'
   const isFailed = ['failed', 'permanently_failed'].includes(job.status)
+  const failureMessages = isFailed ? getFailureMessages(job) : []
+  const primaryFailureReason = failureMessages[0] || null
   const hasTextOutput = Boolean(output?.type === 'text' && output?.response)
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: t('renter.job_detail.tab_overview') },
@@ -993,7 +1012,7 @@ export default function RenterJobDetailPage() {
           </div>
           <div className="flex items-center gap-3">
             <StatusBadge status={job.status as any} />
-            {job.status === 'failed' && (
+            {isFailed && (
               <button
                 onClick={() => setRetry(r => ({ ...r, open: true, error: '', requiredHalala: Number(job.cost_halala || 0) }))}
                 className="btn btn-primary text-sm min-h-[44px] px-4"
@@ -1005,8 +1024,25 @@ export default function RenterJobDetailPage() {
           </div>
         </div>
 
-        <JobStateMachine status={job.status} providerId={job.provider_id} providerGpu={providerGpu} />
+        <JobStateMachine status={job.status} providerId={job.provider_id} providerGpu={providerGpu} failureReason={primaryFailureReason} />
         <LiveMetrics job={job} />
+
+        {isFailed && (
+          <div className="card border-status-error/30 bg-status-error/5">
+            <h2 className="section-heading text-status-error mb-2">Failure reason</h2>
+            {failureMessages.length > 0 ? (
+              <div className="space-y-2">
+                {failureMessages.map((message, idx) => (
+                  <p key={`${idx}-${message}`} className="text-sm text-status-error break-words">
+                    {message}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-dc1-text-secondary">No failure reason was recorded for this job.</p>
+            )}
+          </div>
+        )}
 
         {(isCompleted || isFailed) && (
           <div className={`card ${isFailed ? 'border-status-error/30 bg-status-error/5' : 'border-dc1-amber/30'}`}>
