@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-04T03:32:20.727Z",
+  "generated_at": "2026-04-04T01:28:41.123Z",
   "verdict": "FAIL",
   "base_url": "https://api.dcp.sa",
   "model": "ALLaM-AI/ALLaM-7B-Instruct-preview",
@@ -7,10 +7,10 @@
   "principal": {
     "renter_id": 1774351995125,
     "renter_email": "inference-smoke-d7e7983d4161@dcp.local",
-    "key_hint": "dc1-sk-9...7bf2",
-    "scoped_key_id": "dc2ea0d6-093f-495d-afa0-dbf02df1f7f6",
-    "scoped_key_label": "dcp-smoke-proof:2026-04-04T03:32",
-    "scoped_key_expires_at": "2026-04-04T09:32:19.016Z",
+    "key_hint": "dc1-sk-b...ea08",
+    "scoped_key_id": "1f2c266f-df30-4706-ad2e-036af8522122",
+    "scoped_key_label": "dcp-smoke-proof:2026-04-04T01:28",
+    "scoped_key_expires_at": "2026-04-04T07:28:39.435Z",
     "balance_halala": 996,
     "master_key_hint": "dc1-rent...a66d"
   },
@@ -20,20 +20,20 @@
       "status": 200,
       "elapsed_ms": 2,
       "request_id": null,
-      "response_hash": "983f3743b0d8b7eb40cffd8d4b8e8a4b01fab0f14379e0ed1f45c98902c96680",
+      "response_hash": "7fb63a789f599b0caa67865b4748e353df7f3f47273c42037d4f0005d781b6e7",
       "error_message": null
     },
     "models": {
       "status": 200,
-      "elapsed_ms": 4,
+      "elapsed_ms": 2,
       "request_id": null,
       "model_count": 14,
-      "response_hash": "92bb90fd3f8316dd4acbbeaf963015dda66eff60f61526cba292fef9035421c0",
+      "response_hash": "5919cc27af5514b67ab14d8cdbfad0968ff9cc734f2e3b35cf638524684080ea",
       "error_message": null
     },
     "completion_json": {
       "status": 503,
-      "elapsed_ms": 1371,
+      "elapsed_ms": 1355,
       "request_id": null,
       "response_hash": "6767ccdd39966147131dbf454184b3d7a1cbaf17e2aeab6f1cbee21f880f65e2",
       "provider_id": null,
@@ -46,7 +46,7 @@
     },
     "completion_stream": {
       "status": 503,
-      "elapsed_ms": 308,
+      "elapsed_ms": 310,
       "request_id": null,
       "stream_done": false,
       "response_hash": "6767ccdd39966147131dbf454184b3d7a1cbaf17e2aeab6f1cbee21f880f65e2",
@@ -60,13 +60,13 @@
     },
     "active_providers": {
       "status": 200,
-      "elapsed_ms": 10,
+      "elapsed_ms": 7,
       "provider_count": 2,
       "error_message": null
     }
   },
   "capacity_snapshot": {
-    "captured_at": "2026-04-04T03:32:20.726Z",
+    "captured_at": "2026-04-04T01:28:41.122Z",
     "model_id": "ALLaM-AI/ALLaM-7B-Instruct-preview",
     "min_vram_gb": null,
     "capable_providers": 2,
@@ -76,8 +76,8 @@
       {
         "provider_id": 1774351995136,
         "last_heartbeat": null,
-        "heartbeat_observed_at": "2026-04-04T03:31:58.726Z",
-        "heartbeat_age_seconds": 22,
+        "heartbeat_observed_at": "2026-04-04T01:28:35.122Z",
+        "heartbeat_age_seconds": 6,
         "vram_gb": 0,
         "vram_eligible": true,
         "model_cache_match": false
@@ -85,8 +85,8 @@
       {
         "provider_id": 1774351995138,
         "last_heartbeat": null,
-        "heartbeat_observed_at": "2026-04-04T03:31:53.726Z",
-        "heartbeat_age_seconds": 27,
+        "heartbeat_observed_at": "2026-04-04T01:28:24.122Z",
+        "heartbeat_age_seconds": 17,
         "vram_gb": 45,
         "vram_eligible": true,
         "model_cache_match": false
@@ -99,9 +99,9 @@
     "action": "Verify provider heartbeat, reachable vLLM endpoint URL, and model is loaded on at least one online provider."
   },
   "artifacts": {
-    "json": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T033218Z.json",
-    "markdown": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T033218Z.md",
-    "log": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T033218Z.log",
+    "json": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T012839Z.json",
+    "markdown": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T012839Z.md",
+    "log": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260404T012839Z.log",
     "latest_json": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.json",
     "latest_markdown": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.md",
     "latest_log": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.log"

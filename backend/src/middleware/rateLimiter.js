@@ -117,7 +117,7 @@ const publicProvidersLimiter = createRateLimiter({ windowMs: 60*1000, max: 60, k
 const containerRegistryLimiter = createRateLimiter({ windowMs: 60*1000, max: 30, keyGenerator: (req) => ipFallbackKey(req) });
 const vllmCompleteLimiter = createRateLimiter({
   windowMs: 60*1000,
-  max: 10,
+  max: 60,
   keyGenerator: (req) => getRenterKey(req) || ipFallbackKey(req),
   buildBody: openAiRateLimitBody,
 });
@@ -145,7 +145,7 @@ const adminLimiter = createRateLimiter({ windowMs: 60*1000, max: 30, keyGenerato
 
 // Provider heartbeat: 10 per provider key per minute (DCP-855, daemon sends 2/min, raised from 4 to
 // prevent 429-loop where rate-limited responses themselves consume the budget)
-const heartbeatProviderLimiter = createRateLimiter({ windowMs: 60*1000, max: 10, keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req) });
+const heartbeatProviderLimiter = createRateLimiter({ windowMs: 60*1000, max: 30, keyGenerator: (req) => getProviderKey(req) || ipFallbackKey(req) });
 
 // Auth endpoints: 5 per IP per 15 minutes (DCP-855)
 const authLimiter = createRateLimiter({ windowMs: 15*60*1000, max: 5, keyGenerator: (req) => ipFallbackKey(req) });

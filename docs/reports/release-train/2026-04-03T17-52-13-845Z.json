@@ -1,0 +1,91 @@
+{
+  "generatedAt": "2026-04-03T17:52:13.844Z",
+  "baseRef": "origin/main",
+  "baseSha": "283dd41a66d0011a10a66ed5bb0ab7148af68e0e",
+  "defaultGates": [
+    "npm ci --include=dev",
+    "npm run build"
+  ],
+  "hardFailureCount": 0,
+  "candidates": [
+    {
+      "branch": "origin/agent/backend-dev/dcp-510-provider-approval-queue",
+      "issue": "DCP-516",
+      "label": "OpenRouter eligibility fix",
+      "notes": "Completed backend fix queued for mainline landing via DCP-520.",
+      "status": "passed",
+      "durationSeconds": 51,
+      "aheadBehind": {
+        "behind": 5,
+        "ahead": 7
+      },
+      "changedFiles": [
+        "AGENT_LOG.md",
+        "backend/package.json",
+        "backend/src/__tests__/provider-approval-queue.test.js",
+        "backend/src/db.js",
+        "backend/src/routes/admin.js",
+        "backend/src/routes/v1.js",
+        "backend/tests/openrouter-failover-proof.js",
+        "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T161308Z.json",
+        "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T161308Z.log",
+        "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T161308Z.md",
+        "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.json",
+        "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.log",
+        "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.md",
+        "scripts/dcp-475-deploy-and-proof.sh"
+      ],
+      "branchSha": "462577fffbf05784a4e2b0d425e626559d693c06",
+      "gates": [
+        {
+          "command": "npm ci --include=dev",
+          "status": "passed",
+          "durationSeconds": 8,
+          "log": "docs/reports/release-train/logs/2026-04-03T17-52-13-845Z/origin-agent-backend-dev-dcp-510-provider-approval-queue/01-npm-ci---include-dev.log"
+        },
+        {
+          "command": "npm run build",
+          "status": "passed",
+          "durationSeconds": 38,
+          "log": "docs/reports/release-train/logs/2026-04-03T17-52-13-845Z/origin-agent-backend-dev-dcp-510-provider-approval-queue/02-npm-run-build.log"
+        },
+        {
+          "command": "npm --prefix backend ci --include=dev",
+          "status": "passed",
+          "durationSeconds": 3,
+          "log": "docs/reports/release-train/logs/2026-04-03T17-52-13-845Z/origin-agent-backend-dev-dcp-510-provider-approval-queue/03-npm---prefix-backend-ci---include-dev.log"
+        },
+        {
+          "command": "npm --prefix backend run test:openrouter:compliance",
+          "status": "passed",
+          "durationSeconds": 0,
+          "log": "docs/reports/release-train/logs/2026-04-03T17-52-13-845Z/origin-agent-backend-dev-dcp-510-provider-approval-queue/04-npm---prefix-backend-run-test-openrouter-compliance.log"
+        },
+        {
+          "command": "npm --prefix backend run test:openrouter:failover-proof",
+          "status": "passed",
+          "durationSeconds": 0,
+          "log": "docs/reports/release-train/logs/2026-04-03T17-52-13-845Z/origin-agent-backend-dev-dcp-510-provider-approval-queue/05-npm---prefix-backend-run-test-openrouter-failover-proof.log"
+        }
+      ],
+      "logDir": "docs/reports/release-train/logs/2026-04-03T17-52-13-845Z/origin-agent-backend-dev-dcp-510-provider-approval-queue"
+    },
+    {
+      "branch": "origin/agent/backend-dev/dcp-472-restore-allam-capacity",
+      "issue": "DCP-475",
+      "label": "ALLaM routing deployment candidate",
+      "notes": "Critical branch still awaiting deterministic release verification before deployment proof.",
+      "status": "stale",
+      "durationSeconds": 0,
+      "aheadBehind": {
+        "behind": 11,
+        "ahead": 0
+      },
+      "changedFiles": [],
+      "branchSha": "ba9bc4d290c6758d1ef86c8431509af9e39fbdd0",
+      "gates": [],
+      "logDir": "docs/reports/release-train/logs/2026-04-03T17-52-13-845Z/origin-agent-backend-dev-dcp-472-restore-allam-capacity",
+      "failure": "Branch tip is already reachable from origin/main"
+    }
+  ]
+}

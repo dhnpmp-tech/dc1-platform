@@ -500,18 +500,6 @@ function GpuPlayground() {
 
   // ── Auth ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const saved = typeof window !== 'undefined'
-      ? (sessionStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_renter_key'))
-      : null;
-    if (saved) {
-      setRenterKey(saved);
-      verifyKey(saved);
-    } else {
-      setAuthChecking(false);
-    }
-  }, []);
-
-  useEffect(() => {
     if (authChecking || renterName || typeof window === 'undefined') return;
     const hasIntent = Boolean(preselectedProvider || preselectedModel || preselectedMode || preselectedTemplate || preselectedJobType || preselectedSource);
     if (!hasIntent) return;
@@ -546,7 +534,7 @@ function GpuPlayground() {
     });
   }, [renterName, trackPlaygroundEvent]);
 
-  async function verifyKey(key: string) {
+  const verifyKey = useCallback(async (key: string) => {
     setAuthChecking(true);
     try {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`);
@@ -571,7 +559,19 @@ function GpuPlayground() {
       }
     } catch { /* keep key */ }
     finally { setAuthChecking(false); }
-  }
+  }, [t]);
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_renter_key'))
+      : null;
+    if (saved) {
+      setRenterKey(saved);
+      verifyKey(saved);
+    } else {
+      setAuthChecking(false);
+    }
+  }, [verifyKey]);
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -816,7 +816,7 @@ function GpuPlayground() {
       }
     } catch { /* ignore */ }
     finally { setLoadingProviders(false); }
-  }, [providerId]);
+  }, [providerId, preselectedProvider]);
 
   useEffect(() => {
     if (renterName) fetchProviders();
@@ -937,6 +937,62 @@ function GpuPlayground() {
     }
 
     try {
+      // Direct v1 inference for LLM jobs — uses the OpenAI-compatible proxy
+      if (jobType === 'llm_inference') {
+        setProgressPhase('generating');
+        const v1Res = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${renterKey}` },
+          body: JSON.stringify({
+            model: llmModel,
+            messages: [{ role: 'user', content: prompt.trim() }],
+            max_tokens: maxTokens,
+            temperature,
+          }),
+        });
+
+        if (!v1Res.ok) {
+          const err = await v1Res.json().catch(() => ({}));
+          throw new Error(err.error?.message || `${t('playground.http_error_prefix')} ${v1Res.status}`);
+        }
+
+        const v1Data = await v1Res.json();
+        const reply = v1Data.choices?.[0]?.message?.content || '';
+        const usage = v1Data.usage || {};
+
+        setResult({
+          type: 'text',
+          response: reply,
+          prompt: prompt.trim(),
+          model: llmModel,
+          tokens_generated: usage.completion_tokens || 0,
+          tokens_per_second: 0,
+          gen_time_s: 0,
+          total_time_s: 0,
+          device: 'gpu',
+        });
+        setProof({
+          job_id: `v1-${Date.now()}`,
+          provider_name: 'DCP Provider',
+          provider_gpu: '',
+          provider_hostname: '',
+          status: 'completed',
+          started_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          actual_duration_minutes: 0,
+          cost_halala: 0,
+          provider_earned_halala: 0,
+        } as ProofData);
+        trackPlaygroundEvent('job_submit_success', {
+          job_type: 'llm_inference',
+          provider_id: providerId,
+          mode: 'v1_direct',
+        });
+        setPhase('done');
+        return;
+      }
+
+      // Job submission system for image generation and vLLM serve
       const containerSpec = {
         image_type: imageType,
         vram_required_mb: vramRequiredMb,

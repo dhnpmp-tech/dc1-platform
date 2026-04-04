@@ -43,7 +43,7 @@ import traceback
 import shutil
 import signal
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ─── CONFIGURATION (injected by download endpoint) ──────────────────────────
 
@@ -53,7 +53,7 @@ HMAC_SECRET = "{{HMAC_SECRET}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.4.0"
+DAEMON_VERSION = "3.5.0"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
@@ -180,7 +180,7 @@ def report_event(event_type, details=None, job_id=None, severity="info"):
         "event_type": event_type,
         "severity": severity,
         "daemon_version": DAEMON_VERSION,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "hostname": platform.node(),
         "os_info": f"{platform.system()} {platform.release()}",
         "python_version": platform.python_version(),
@@ -358,7 +358,7 @@ def measure_bandwidth():
     try:
         test_data = {"api_key": API_KEY, "event_type": "bandwidth_test",
                      "severity": "info", "daemon_version": DAEMON_VERSION,
-                     "timestamp": datetime.utcnow().isoformat() + "Z",
+                     "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                      "hostname": platform.node(),
                      "details": "x" * BANDWIDTH_TEST_SIZE}
         payload_size = len(json.dumps(test_data).encode())
@@ -374,7 +374,7 @@ def measure_bandwidth():
         "download_mbps": download_mbps,
         "upload_mbps": upload_mbps,
         "latency_ms": latency_ms,
-        "last_check": datetime.utcnow().isoformat() + "Z",
+        "last_check": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     with _bw_lock:
         global _bandwidth_stats
@@ -541,7 +541,7 @@ def detect_gpu():
         if not all_gpus:
             return None
 
-        primary = all_gpus[0]
+        primary = dict(all_gpus[0])
         primary["all_gpus"] = all_gpus
         return primary
     except FileNotFoundError:
@@ -827,13 +827,17 @@ def send_heartbeat():
             "provider_hostname": platform.node(),
             "resource_spec": build_resource_spec(gpu),
         }
+        # If provider has an external vLLM endpoint (e.g. cloud GPU with proxy URL), advertise it
+        vllm_url = os.environ.get("VLLM_ENDPOINT_URL", "")
+        if vllm_url:
+            payload["vllm_endpoint_url"] = vllm_url
         # Include bandwidth stats if available
         with _bw_lock:
             if _bandwidth_stats.get("download_mbps") is not None:
                 payload["bandwidth"] = dict(_bandwidth_stats)  # Copy to avoid race
         code, resp = http_post(url, payload)
         if code == 200:
-            log.debug("Heartbeat OK")
+            log.info("Heartbeat OK")
         else:
             log.warning(f"Heartbeat HTTP {code}: {resp}")
     except Exception as e:
@@ -1643,6 +1647,30 @@ def execute_job(job):
 
         # vLLM serverless serve — long-running detached container with health polling
         if job_type == "vllm_serve":
+            # If an external vLLM endpoint is already running (cloud GPU), report it directly
+            existing_vllm = os.environ.get("VLLM_ENDPOINT_URL", "")
+            if existing_vllm:
+                log.info(f"External vLLM endpoint detected: {existing_vllm} — reporting as ready")
+                endpoint_url = f"{existing_vllm}/v1" if not existing_vllm.endswith("/v1") else existing_vllm
+                try:
+                    http_post(f"{API_URL}/api/jobs/{job_id}/endpoint-ready", {
+                        "api_key": API_KEY,
+                        "endpoint_url": endpoint_url,
+                    })
+                except Exception as e:
+                    log.warning(f"Failed to report endpoint-ready: {e}")
+                # Keep the job alive for the requested duration
+                duration_mins = 60
+                if isinstance(task_spec, dict):
+                    duration_mins = task_spec.get("duration_minutes", 60)
+                elif isinstance(task_spec, str):
+                    try:
+                        spec = json.loads(task_spec)
+                        duration_mins = spec.get("duration_minutes", 60)
+                    except: pass
+                log.info(f"vLLM serve job {job_id} running for {duration_mins} minutes")
+                time.sleep(duration_mins * 60)
+                return {"success": True, "endpoint_url": endpoint_url, "duration_minutes": duration_mins}
             if not check_docker():
                 return {"success": False, "error": "Docker not available — vllm_serve requires Docker with NVIDIA Container Toolkit"}
             return run_vllm_serve_job(task_spec, job_id=job_id)
@@ -1917,17 +1945,22 @@ def main():
     args = parser.parse_args()
 
     global API_KEY, API_URL
+    # Resolution order: CLI arg > env var > template-injected value
     if args.key:
         API_KEY = args.key
+    elif API_KEY.startswith("{{") or API_KEY == "INJECT_KEY_HERE" or not API_KEY:
+        API_KEY = os.environ.get("DCP_API_KEY", "")
     if args.url:
         API_URL = args.url
+    elif API_URL.startswith("{{") or API_URL == "INJECT_URL_HERE" or not API_URL:
+        API_URL = os.environ.get("DCP_API_URL", "https://api.dcp.sa")
 
     # Validate configuration
-    if API_KEY == "INJECT_KEY_HERE" or not API_KEY:
-        log.error("No API key configured. Use --key or download from DCP dashboard.")
+    if not API_KEY or API_KEY.startswith("{{"):
+        log.error("No API key configured. Use --key, set DCP_API_KEY env var, or download from DCP dashboard.")
         sys.exit(1)
-    if API_URL == "INJECT_URL_HERE" or not API_URL:
-        log.error("No API URL configured. Use --url or download from DCP dashboard.")
+    if not API_URL or API_URL.startswith("{{"):
+        log.error("No API URL configured. Use --url or set DCP_API_URL env var.")
         sys.exit(1)
 
     # Register signal handlers for graceful shutdown
@@ -2081,11 +2114,13 @@ def watchdog():
     while True:
         # Build command — pass through original args, add --no-watchdog to prevent recursion
         cmd = [sys.executable, str(daemon_script), "--no-watchdog"]
-        # Pass through key/url if they were injected (not INJECT_*_HERE)
-        if API_KEY != "INJECT_KEY_HERE":
-            cmd.extend(["--key", API_KEY])
-        if API_URL != "INJECT_URL_HERE":
-            cmd.extend(["--url", API_URL])
+        # Pass through key/url if resolved (not template placeholders)
+        resolved_key = os.environ.get("DCP_API_KEY", API_KEY)
+        resolved_url = os.environ.get("DCP_API_URL", API_URL)
+        if resolved_key and not resolved_key.startswith("{{") and resolved_key != "INJECT_KEY_HERE":
+            cmd.extend(["--key", resolved_key])
+        if resolved_url and not resolved_url.startswith("{{") and resolved_url != "INJECT_URL_HERE":
+            cmd.extend(["--url", resolved_url])
 
         log.info(f"[WATCHDOG] Starting daemon (restart #{restart_count})...")
         start_time = time.time()
