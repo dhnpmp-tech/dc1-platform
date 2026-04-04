@@ -51,6 +51,7 @@ interface ProviderInfo {
   status: string
   api_key: string
   created_at: string
+  vllm_endpoint_url?: string
 }
 
 interface SshKeyItem {
@@ -131,6 +132,10 @@ export default function ProviderSettingsPage() {
   })
   const [notificationMessage, setNotificationMessage] = useState('')
   const [apiLifecycleMessage, setApiLifecycleMessage] = useState('')
+  const [endpointUrl, setEndpointUrl] = useState('')
+  const [savingEndpoint, setSavingEndpoint] = useState(false)
+  const [endpointSaved, setEndpointSaved] = useState(false)
+  const [endpointError, setEndpointError] = useState('')
 
   useEffect(() => {
     const apiKey = localStorage.getItem('dc1_provider_key')
@@ -153,6 +158,7 @@ export default function ProviderSettingsPage() {
           ...p,
           api_key: apiKey,
         })
+        setEndpointUrl(p.vllm_endpoint_url || '')
         setPrefs({
           run_mode: p.run_mode || 'always-on',
           scheduled_start: p.scheduled_start || '23:00',
@@ -271,6 +277,31 @@ export default function ProviderSettingsPage() {
       alert('Failed to save preferences. Please try again.')
     } finally {
       setSavingPrefs(false)
+    }
+  }
+
+  const handleSaveEndpoint = async () => {
+    if (!provider) return
+    setSavingEndpoint(true)
+    setEndpointSaved(false)
+    setEndpointError('')
+    try {
+      const res = await fetch(`${API_BASE}/providers/endpoint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: provider.api_key, vllm_endpoint_url: endpointUrl || null }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setEndpointError(err.error || 'Failed to save endpoint')
+        return
+      }
+      setEndpointSaved(true)
+      setTimeout(() => setEndpointSaved(false), 3000)
+    } catch {
+      setEndpointError('Failed to save. Please try again.')
+    } finally {
+      setSavingEndpoint(false)
     }
   }
 
@@ -729,6 +760,40 @@ export default function ProviderSettingsPage() {
             className="btn btn-primary w-full disabled:opacity-50"
           >
             {savingPrefs ? 'Saving...' : 'Save Preferences'}
+          </button>
+        </div>
+
+        {/* Inference Endpoint */}
+        <div className="card p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-dc1-text-primary">Inference Endpoint</h2>
+            {endpointSaved && <span className="text-sm text-status-success font-medium">Saved!</span>}
+          </div>
+          <p className="text-sm text-dc1-text-secondary">
+            If your GPU is hosted in the cloud (RunPod, Lambda, etc.), set the public URL where your vLLM instance is reachable.
+            The daemon will advertise this endpoint in every heartbeat.
+          </p>
+          <div>
+            <label className="text-sm text-dc1-text-secondary mb-1 block">vLLM Endpoint URL</label>
+            <input
+              type="url"
+              value={endpointUrl}
+              onChange={e => { setEndpointUrl(e.target.value); setEndpointError('') }}
+              placeholder="https://{pod-id}-8000.proxy.runpod.net"
+              className="input w-full"
+            />
+            <p className="text-xs text-dc1-text-muted mt-1">
+              RunPod: <code className="bg-dc1-surface-l2 px-1 rounded">https://&#123;pod-id&#125;-8000.proxy.runpod.net</code> &mdash;
+              Leave empty if running the daemon locally with WireGuard VPN.
+            </p>
+          </div>
+          {endpointError && <p className="text-sm text-status-error">{endpointError}</p>}
+          <button
+            onClick={handleSaveEndpoint}
+            disabled={savingEndpoint}
+            className="btn btn-primary w-full disabled:opacity-50"
+          >
+            {savingEndpoint ? 'Saving...' : 'Save Endpoint'}
           </button>
         </div>
 
