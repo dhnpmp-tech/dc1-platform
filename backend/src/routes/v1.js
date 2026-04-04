@@ -700,6 +700,30 @@ function extractEndpointHost(endpointUrl) {
   }
 }
 
+function buildProviderChatCompletionsUrl(endpointUrl) {
+  const raw = normalizeString(endpointUrl, { maxLen: 2000, trim: true });
+  if (!raw) return null;
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (_) {
+    return `${String(raw).replace(/\/+$/, '')}/v1/chat/completions`;
+  }
+
+  const path = String(parsed.pathname || '').replace(/\/+$/, '');
+  if (/\/v1\/chat\/completions$/i.test(path) || /\/chat\/completions$/i.test(path)) {
+    return parsed.toString();
+  }
+  if (/\/v1$/i.test(path)) {
+    parsed.pathname = `${path}/chat/completions`;
+    return parsed.toString();
+  }
+
+  parsed.pathname = `${path || ''}/v1/chat/completions`;
+  return parsed.toString();
+}
+
 function setProviderRouteEvidenceHeaders(res, {
   provider = null,
   requestedModelId = null,
@@ -730,7 +754,13 @@ async function proxyToProvider({
   toolChoice,
   passthroughBody = {},
 }) {
-  const url = `${endpointUrl}/v1/chat/completions`;
+  const url = buildProviderChatCompletionsUrl(endpointUrl);
+  if (!url) {
+    return {
+      proxyError: 'invalid_endpoint',
+      detail: 'Provider endpoint URL is missing or invalid',
+    };
+  }
   const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream, ...passthroughBody };
   if (tools !== undefined) body.tools = tools;
   if (toolChoice !== undefined) body.tool_choice = toolChoice;
