@@ -158,6 +158,146 @@ function toFiniteInt(value, { min = null, max = null } = {}) {
     return num;
 }
 
+const PROVIDER_REACTIVATION_TOKEN_TTL_SECONDS = 15 * 60;
+const PROVIDER_REACTIVATION_TOKEN_MIN_TTL_SECONDS = 1;
+const PROVIDER_REACTIVATION_TOKEN_MAX_TTL_SECONDS = 60 * 60;
+
+function toBase64Url(value) {
+    return Buffer.from(value, 'utf8')
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+}
+
+function fromBase64Url(value) {
+    if (typeof value !== 'string' || !value) return null;
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    try {
+        return Buffer.from(padded, 'base64').toString('utf8');
+    } catch (_) {
+        return null;
+    }
+}
+
+function getProviderReactivationTokenSecret() {
+    return normalizeString(
+        process.env.PROVIDER_REACTIVATION_TOKEN_SECRET || process.env.DC1_HMAC_SECRET || '',
+        { maxLen: 1024, trim: false }
+    );
+}
+
+function hashProviderApiKey(apiKey) {
+    return crypto.createHash('sha256').update(String(apiKey || '')).digest('hex');
+}
+
+function signProviderReactivationTokenPayload(payloadBase64, secret) {
+    return crypto.createHmac('sha256', secret).update(payloadBase64).digest('hex');
+}
+
+function issueProviderReactivationToken(provider, ttlSeconds = PROVIDER_REACTIVATION_TOKEN_TTL_SECONDS) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const ttl = toFiniteInt(ttlSeconds, {
+        min: PROVIDER_REACTIVATION_TOKEN_MIN_TTL_SECONDS,
+        max: PROVIDER_REACTIVATION_TOKEN_MAX_TTL_SECONDS,
+    }) || PROVIDER_REACTIVATION_TOKEN_TTL_SECONDS;
+    const secret = getProviderReactivationTokenSecret();
+    if (!secret) return { token: null, error: 'Provider reactivation token secret is not configured' };
+
+    const payload = {
+        pid: provider.id,
+        kf: hashProviderApiKey(provider.api_key),
+        iat: nowSec,
+        exp: nowSec + ttl,
+        nonce: crypto.randomBytes(8).toString('hex'),
+    };
+    const payloadBase64 = toBase64Url(JSON.stringify(payload));
+    const signature = signProviderReactivationTokenPayload(payloadBase64, secret);
+    return {
+        token: `${payloadBase64}.${signature}`,
+        expiresAtIso: new Date(payload.exp * 1000).toISOString(),
+    };
+}
+
+function verifyProviderReactivationToken(token) {
+    if (typeof token !== 'string' || !token.includes('.')) {
+        return { valid: false, reason: 'invalid' };
+    }
+
+    const [payloadBase64, signature] = token.split('.');
+    if (!payloadBase64 || !signature || signature.length !== 64 || /[^a-f0-9]/i.test(signature)) {
+        return { valid: false, reason: 'invalid' };
+    }
+
+    const secret = getProviderReactivationTokenSecret();
+    if (!secret) return { valid: false, reason: 'misconfigured' };
+
+    const expectedSignature = signProviderReactivationTokenPayload(payloadBase64, secret);
+    try {
+        const signatureMatches = crypto.timingSafeEqual(
+            Buffer.from(signature.toLowerCase(), 'hex'),
+            Buffer.from(expectedSignature, 'hex')
+        );
+        if (!signatureMatches) return { valid: false, reason: 'invalid' };
+    } catch (_) {
+        return { valid: false, reason: 'invalid' };
+    }
+
+    const payloadRaw = fromBase64Url(payloadBase64);
+    if (!payloadRaw) return { valid: false, reason: 'invalid' };
+
+    let payload = null;
+    try {
+        payload = JSON.parse(payloadRaw);
+    } catch (_) {
+        return { valid: false, reason: 'invalid' };
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const providerId = toFiniteInt(payload?.pid, { min: 1 });
+    const expiresAt = toFiniteInt(payload?.exp, { min: 1 });
+    const keyFingerprint = normalizeString(payload?.kf, { maxLen: 128, trim: false });
+    if (!providerId || !expiresAt || !keyFingerprint || keyFingerprint.length < 32) {
+        return { valid: false, reason: 'invalid' };
+    }
+    if (expiresAt <= nowSec) {
+        return { valid: false, reason: 'expired' };
+    }
+    return {
+        valid: true,
+        payload: {
+            providerId,
+            keyFingerprint,
+            expiresAt,
+        },
+    };
+}
+
+function getProviderReactivationCommands(providerApiKey) {
+    const cleanKey = normalizeString(providerApiKey, { maxLen: 128, trim: false }) || '';
+    const encodedKey = encodeURIComponent(cleanKey);
+    const backendBase = (process.env.BACKEND_URL || process.env.DC1_BACKEND_URL || 'https://api.dcp.sa').replace(/\/+$/, '');
+    const setupBase = `${backendBase}/api/providers/download/setup?key=${encodedKey}`;
+    const daemonDownloadUrl = `${backendBase}/api/providers/download/daemon?key=${encodedKey}`;
+
+    return {
+        daemon_download_url: daemonDownloadUrl,
+        linux: {
+            setup_url: `${setupBase}&os=linux`,
+            install_command: `curl -fsSL "${setupBase}&os=linux" | bash`,
+        },
+        mac: {
+            setup_url: `${setupBase}&os=mac`,
+            install_command: `curl -fsSL "${setupBase}&os=mac" | bash`,
+        },
+        windows: {
+            setup_url: `${setupBase}&os=windows`,
+            install_command: `powershell -ExecutionPolicy Bypass -Command "iwr '${setupBase}&os=windows' -UseBasicParsing | iex"`,
+        },
+    };
+}
+
 function isPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -4497,6 +4637,91 @@ router.post(['/me/rotate-key', '/rotate-key'], (req, res) => {
     } catch (error) {
         console.error('Provider key rotation error:', error);
         res.status(500).json({ error: 'Key rotation failed' });
+    }
+});
+
+// ============================================================================
+// POST /api/providers/me/reactivation-token — issue short-lived reactivation token
+// Auth: x-provider-key or Bearer token
+// ============================================================================
+router.post(['/me/reactivation-token', '/reactivation-token'], (req, res) => {
+    try {
+        const provider = getProviderFromLegacyKey(req);
+        if (!provider) return res.status(401).json({ error: 'Provider API key required' });
+
+        const ttlSeconds = toFiniteInt(req.body?.ttl_seconds, {
+            min: PROVIDER_REACTIVATION_TOKEN_MIN_TTL_SECONDS,
+            max: PROVIDER_REACTIVATION_TOKEN_MAX_TTL_SECONDS,
+        }) || PROVIDER_REACTIVATION_TOKEN_TTL_SECONDS;
+
+        const issued = issueProviderReactivationToken(provider, ttlSeconds);
+        if (!issued.token) {
+            return res.status(500).json({ error: issued.error || 'Failed to issue reactivation token' });
+        }
+
+        recordActivationEvent(provider.id, 'reactivation_token_issued', {
+            route: 'reactivation-token',
+            ttl_seconds: ttlSeconds,
+        });
+
+        return res.json({
+            success: true,
+            provider_id: provider.id,
+            reactivation_token: issued.token,
+            expires_at: issued.expiresAtIso,
+        });
+    } catch (error) {
+        console.error('[providers/reactivation-token]', error);
+        return res.status(500).json({ error: 'Failed to issue reactivation token' });
+    }
+});
+
+// ============================================================================
+// GET /api/providers/reactivation/bundle — exchange token for install bundle
+// ============================================================================
+router.get('/reactivation/bundle', (req, res) => {
+    try {
+        const token = normalizeSingleQueryParam(req.query.token, { maxLen: 4096 });
+        if (!token) return res.status(400).json({ error: 'Reactivation token required' });
+
+        const verified = verifyProviderReactivationToken(token);
+        if (!verified.valid) {
+            if (verified.reason === 'expired') {
+                return res.status(401).json({ error: 'Reactivation token expired' });
+            }
+            if (verified.reason === 'misconfigured') {
+                return res.status(500).json({ error: 'Reactivation token secret is not configured' });
+            }
+            return res.status(401).json({ error: 'Invalid reactivation token' });
+        }
+
+        const provider = db.get(
+            'SELECT id, api_key, status, is_paused, deleted_at FROM providers WHERE id = ?',
+            verified.payload.providerId
+        );
+        if (!provider || provider.deleted_at) {
+            return res.status(401).json({ error: 'Invalid reactivation token' });
+        }
+
+        if (hashProviderApiKey(provider.api_key) !== verified.payload.keyFingerprint) {
+            return res.status(401).json({ error: 'Reactivation token is no longer valid for this provider key' });
+        }
+
+        const commands = getProviderReactivationCommands(provider.api_key);
+        recordActivationEvent(provider.id, 'reactivation_bundle_downloaded', {
+            route: 'reactivation/bundle',
+        });
+
+        return res.json({
+            success: true,
+            provider_id: provider.id,
+            status: provider.status,
+            is_paused: Boolean(provider.is_paused),
+            reactivation_bundle: commands,
+        });
+    } catch (error) {
+        console.error('[providers/reactivation/bundle]', error);
+        return res.status(500).json({ error: 'Failed to fetch reactivation bundle' });
     }
 });
 

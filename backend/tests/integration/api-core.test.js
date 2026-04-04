@@ -12,6 +12,7 @@
 // Kept here as a fallback when running this file directly outside Jest
 if (!process.env.DC1_DB_PATH) process.env.DC1_DB_PATH = ':memory:';
 if (!process.env.DC1_ADMIN_TOKEN) process.env.DC1_ADMIN_TOKEN = 'test-admin-token-jest';
+if (!process.env.PROVIDER_REACTIVATION_TOKEN_SECRET) process.env.PROVIDER_REACTIVATION_TOKEN_SECRET = 'test-reactivation-secret';
 // This suite validates API contracts, not rate-limit behavior; disable limiter state carry-over.
 if (!process.env.DISABLE_RATE_LIMIT) process.env.DISABLE_RATE_LIMIT = '1';
 
@@ -245,6 +246,63 @@ describe('Provider API — installer/download key validation', () => {
     const res = await request(app).get('/api/providers/installer?key=dc1-provider-invalid&os=Linux');
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: 'Invalid API key' });
+  });
+});
+
+describe('Provider API — reactivation bundle token flow', () => {
+  it('issues reactivation token and returns deterministic linux/windows/mac install commands', async () => {
+    const reg = await registerProvider({ os: 'linux' });
+    const apiKey = reg.body.api_key;
+
+    const tokenRes = await request(app)
+      .post('/api/providers/me/reactivation-token')
+      .set('x-provider-key', apiKey)
+      .send({});
+
+    expect(tokenRes.status).toBe(200);
+    expect(tokenRes.body.success).toBe(true);
+    expect(typeof tokenRes.body.reactivation_token).toBe('string');
+    expect(tokenRes.body.reactivation_token.length).toBeGreaterThan(20);
+
+    const bundleRes = await request(app).get(
+      `/api/providers/reactivation/bundle?token=${encodeURIComponent(tokenRes.body.reactivation_token)}`
+    );
+
+    expect(bundleRes.status).toBe(200);
+    expect(bundleRes.body.success).toBe(true);
+    expect(bundleRes.body.provider_id).toBe(reg.body.provider_id);
+    expect(bundleRes.body.reactivation_bundle.daemon_download_url).toContain('/api/providers/download/daemon?key=');
+    expect(bundleRes.body.reactivation_bundle.linux.setup_url).toContain('/api/providers/download/setup?key=');
+    expect(bundleRes.body.reactivation_bundle.linux.setup_url).toContain('&os=linux');
+    expect(bundleRes.body.reactivation_bundle.mac.setup_url).toContain('&os=mac');
+    expect(bundleRes.body.reactivation_bundle.windows.setup_url).toContain('&os=windows');
+    expect(bundleRes.body.reactivation_bundle.linux.install_command).toContain('curl -fsSL');
+    expect(bundleRes.body.reactivation_bundle.windows.install_command).toContain('powershell');
+  });
+
+  it('returns 401 JSON error for invalid reactivation token', async () => {
+    const res = await request(app).get('/api/providers/reactivation/bundle?token=not-a-valid-token');
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: 'Invalid reactivation token' });
+  });
+
+  it('returns 401 JSON error when reactivation token is expired', async () => {
+    const reg = await registerProvider();
+    const apiKey = reg.body.api_key;
+
+    const tokenRes = await request(app)
+      .post('/api/providers/me/reactivation-token')
+      .set('x-provider-key', apiKey)
+      .send({ ttl_seconds: 1 });
+    expect(tokenRes.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    const res = await request(app).get(
+      `/api/providers/reactivation/bundle?token=${encodeURIComponent(tokenRes.body.reactivation_token)}`
+    );
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: 'Reactivation token expired' });
   });
 });
 
