@@ -14,6 +14,14 @@ import JobCard, { Job as JobCardJob } from '../components/JobCard'
 const API_BASE = '/api/dc1'
 
 // ── Types ──────────────────────────────────────────────────────────
+interface V1UsageSummary {
+  total_requests: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  total_cost_halala: number
+}
+
 interface RenterInfo {
   id: number
   name: string
@@ -23,6 +31,7 @@ interface RenterInfo {
   api_key: string
   total_spent_halala?: number
   total_jobs?: number
+  v1_usage_summary?: V1UsageSummary
 }
 
 interface GPU {

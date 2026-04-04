@@ -452,6 +452,7 @@ router.get('/me', (req, res) => {
         created_at: renter.created_at
       },
       recent_jobs: recentJobs
+      ,v1_usage_summary: db.get(        `SELECT COUNT(*) as total_requests,                COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,                COALESCE(SUM(completion_tokens), 0) as completion_tokens,                COALESCE(SUM(total_tokens), 0) as total_tokens,                COALESCE(SUM(cost_halala), 0) as total_cost_halala         FROM openrouter_usage_ledger WHERE renter_id = ?`,        renter.id      )
     });
   } catch (error) {
     console.error('Renter me error:', error);
@@ -1701,8 +1702,8 @@ router.get('/me/jobs/:jobId', (req, res) => {
       FROM jobs j
       LEFT JOIN providers p  ON p.id = j.provider_id
       LEFT JOIN billing_records br ON br.job_id = j.job_id
-      WHERE j.job_id = ? AND j.renter_id = ?
-    `, jobId, renter.id);
+      WHERE (j.job_id = ? OR CAST(j.id AS TEXT) = ?) AND j.renter_id = ?
+    `, jobId, jobId, renter.id);
 
     if (!job) return res.status(404).json({ error: 'Job not found' });
     return res.json({ job });
@@ -1860,6 +1861,57 @@ router.delete('/me/templates/:id', (req, res) => {
   }
 });
 
+
+// ============================================================================
+// GET /api/renters/me/usage — v1 API usage history (inference calls via /v1/chat/completions)
+// ============================================================================
+router.get('/me/usage', (req, res) => {
+  try {
+    const { key, limit: rawLimit, offset: rawOffset } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id FROM renters WHERE api_key = ?', key);
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const limit = Math.min(Math.max(parseInt(rawLimit) || 50, 1), 200);
+    const offset = Math.max(parseInt(rawOffset) || 0, 0);
+
+    const usage = db.all(
+      `SELECT id, request_id, model, source, prompt_tokens, completion_tokens, total_tokens,
+              cost_halala, currency, created_at, provider_id, usd_prompt, usd_completion, usd_total,
+              settlement_status
+       FROM openrouter_usage_ledger
+       WHERE renter_id = ?
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+      renter.id, limit, offset
+    );
+
+    const totals = db.get(
+      `SELECT COUNT(*) as total_requests,
+              COALESCE(SUM(prompt_tokens), 0) as total_prompt_tokens,
+              COALESCE(SUM(completion_tokens), 0) as total_completion_tokens,
+              COALESCE(SUM(total_tokens), 0) as total_tokens,
+              COALESCE(SUM(cost_halala), 0) as total_cost_halala
+       FROM openrouter_usage_ledger
+       WHERE renter_id = ?`,
+      renter.id
+    );
+
+    res.json({
+      usage,
+      totals: {
+        ...totals,
+        total_cost_sar: ((totals?.total_cost_halala || 0) / 100).toFixed(2),
+      },
+      pagination: { limit, offset, has_more: usage.length === limit },
+    });
+  } catch (error) {
+    console.error('Usage history error:', error);
+    res.status(500).json({ error: 'Failed to fetch usage history' });
+  }
+});
+
 // GET /api/renters/me/analytics?key=API_KEY&period=30d
 router.get('/me/analytics', (req, res) => {
   try {
@@ -1923,6 +1975,8 @@ router.get('/me/analytics', (req, res) => {
       avg_duration_minutes: durationRow?.avg_duration ?? null,
       completed_job_count: durationRow?.completed_count ?? 0,
       top_gpus: topGpus,
+
+      // v1 API usage (inference calls via /v1/chat/completions)      v1_usage: (() => {        const v1Daily = db.all(          `SELECT date(created_at) AS day,                  COALESCE(SUM(cost_halala), 0) AS total_halala,                  COUNT(*) AS request_count,                  COALESCE(SUM(total_tokens), 0) AS total_tokens           FROM openrouter_usage_ledger           WHERE renter_id = ? AND created_at >= ?           GROUP BY date(created_at)           ORDER BY day ASC`,          renter.id, cutoff        );        const v1Totals = db.get(          `SELECT COUNT(*) as total_requests,                  COALESCE(SUM(total_tokens), 0) as total_tokens,                  COALESCE(SUM(cost_halala), 0) as total_cost_halala           FROM openrouter_usage_ledger           WHERE renter_id = ? AND created_at >= ?`,          renter.id, cutoff        );        return { daily: v1Daily, totals: v1Totals };      })(),
     });
   } catch (error) {
     console.error('Renter analytics error:', error);
