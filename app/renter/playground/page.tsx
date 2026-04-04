@@ -500,18 +500,6 @@ function GpuPlayground() {
 
   // ── Auth ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const saved = typeof window !== 'undefined'
-      ? (sessionStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_renter_key'))
-      : null;
-    if (saved) {
-      setRenterKey(saved);
-      verifyKey(saved);
-    } else {
-      setAuthChecking(false);
-    }
-  }, []);
-
-  useEffect(() => {
     if (authChecking || renterName || typeof window === 'undefined') return;
     const hasIntent = Boolean(preselectedProvider || preselectedModel || preselectedMode || preselectedTemplate || preselectedJobType || preselectedSource);
     if (!hasIntent) return;
@@ -546,7 +534,7 @@ function GpuPlayground() {
     });
   }, [renterName, trackPlaygroundEvent]);
 
-  async function verifyKey(key: string) {
+  const verifyKey = useCallback(async (key: string) => {
     setAuthChecking(true);
     try {
       const res = await fetch(`${API_BASE}/renters/me?key=${encodeURIComponent(key)}`);
@@ -571,7 +559,19 @@ function GpuPlayground() {
       }
     } catch { /* keep key */ }
     finally { setAuthChecking(false); }
-  }
+  }, [t]);
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('dc1_renter_key') || localStorage.getItem('dc1_renter_key'))
+      : null;
+    if (saved) {
+      setRenterKey(saved);
+      verifyKey(saved);
+    } else {
+      setAuthChecking(false);
+    }
+  }, [verifyKey]);
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
