@@ -1,0 +1,107 @@
+{
+  "generated_at": "2026-04-04T01:21:23.644Z",
+  "command": "cd backend && npm run certify:openrouter:train",
+  "commit": {
+    "sha": "2ce499a634641dba7ec3d7ed74d8e87c77da52e2",
+    "short": "2ce499a",
+    "branch": "agent/backend-dev/dcp-555-openrouter-cert-train"
+  },
+  "contracts": {
+    "models_contract": {
+      "check_id": "models_contract",
+      "status": "pass",
+      "severity": "blocking",
+      "details": "Model catalog contract matches the OpenAI list shape expected by OpenRouter.",
+      "evidence": [
+        "status=200",
+        "model_present=true"
+      ]
+    },
+    "stream_done_contract": {
+      "check_id": "stream_stability",
+      "status": "fail",
+      "severity": "blocking",
+      "details": "Streaming requests did not preserve the expected SSE contract.",
+      "evidence": [
+        "status=503",
+        "content_type=application/json; charset=utf-8",
+        "done_seen=false"
+      ]
+    },
+    "tools_passthrough_contract": {
+      "check_id": "tool_definition_passthrough",
+      "status": "fail",
+      "severity": "blocking",
+      "details": "Tool definitions/tool_choice are currently stripped before the provider request, which blocks OpenRouter tool-calling parity.",
+      "evidence": [
+        "tools_forwarded=0",
+        "tool_choice_forwarded=false"
+      ]
+    },
+    "failover_behavior_contract": {
+      "check_id": "mid_stream_failure_handling",
+      "status": "fail",
+      "severity": "blocking",
+      "details": "Mid-stream provider disconnects currently terminate the stream without a clean OpenRouter-style error or DONE terminator.",
+      "evidence": [
+        "fetch_error=none",
+        "done_seen=false",
+        "body_prefix={\"error\":{\"message\":\"No inference providers available for this model\",\"type\":\"se"
+      ]
+    }
+  },
+  "compliance_summary": {
+    "total": 8,
+    "passed": 2,
+    "failed": 6,
+    "blockingFailures": 5,
+    "nonBlockingFailures": 1,
+    "readiness": "fail"
+  },
+  "compliance_report": "# OpenRouter Compliance Readiness Report\n\nGenerated: 2026-04-04T01:21:23.758Z\nReadiness: FAIL\nChecks: 2/8 passing\nBlocking failures: 5\nNon-blocking failures: 1\n\n## Check Results\n\n- [PASS] models_contract (blocking) — GET /v1/models returns an OpenAI-compatible list payload\n  Model catalog contract matches the OpenAI list shape expected by OpenRouter.\n  evidence: status=200\n  evidence: model_present=true\n- [PASS] auth_required (blocking) — POST /v1/chat/completions rejects requests without a renter API key\n  Auth guard correctly rejects anonymous requests with an OpenAI-style authentication error.\n  evidence: status=401\n  evidence: error_type=authentication_error\n- [FAIL] billing_guard (blocking) — POST /v1/chat/completions rejects renters without enough balance\n  Billing guard did not return the expected 402 billing error.\n  evidence: status=503\n  evidence: error_type=server_error\n- [FAIL] chat_completion_proxy (blocking) — POST /v1/chat/completions proxies a healthy completion response\n  Healthy completion requests failed to proxy through the /v1 surface.\n  evidence: status=503\n  evidence: content=missing\n- [FAIL] stream_stability (blocking) — Streaming responses preserve SSE headers and emit a DONE terminator\n  Streaming requests did not preserve the expected SSE contract.\n  evidence: status=503\n  evidence: content_type=application/json; charset=utf-8\n  evidence: done_seen=false\n- [FAIL] tool_result_roundtrip (non_blocking) — Assistant tool_calls and tool result messages survive the proxy transform\n  Tool call conversation history was dropped or malformed before reaching the provider.\n  evidence: assistant_tool_calls=0\n  evidence: tool_message_seen=false\n- [FAIL] tool_definition_passthrough (blocking) — Tool definitions and tool_choice are forwarded to the provider\n  Tool definitions/tool_choice are currently stripped before the provider request, which blocks OpenRouter tool-calling parity.\n  evidence: tools_forwarded=0\n  evidence: tool_choice_forwarded=false\n- [FAIL] mid_stream_failure_handling (blocking) — Mid-stream provider failures are surfaced cleanly to QA\n  Mid-stream provider disconnects currently terminate the stream without a clean OpenRouter-style error or DONE terminator.\n  evidence: fetch_error=none\n  evidence: done_seen=false\n  evidence: body_prefix={\"error\":{\"message\":\"No inference providers available for this model\",\"type\":\"se\n\n## Leadership Handoff\n\n- Blocking: billing_guard, chat_completion_proxy, stream_stability, tool_definition_passthrough, mid_stream_failure_handling\n- Non-blocking: tool_result_roundtrip",
+  "runtime_proof": {
+    "exit_code": 1,
+    "command": "cd backend && node tests/first-live-inference-proof-package.js",
+    "verdict": "FAIL",
+    "failure_code": null,
+    "capacity_snapshot": null,
+    "artifacts": null,
+    "stdout": null,
+    "stderr": "{\n  \"ok\": false,\n  \"message\": \"Cannot recover existing smoke principal master key via /api/renters/login-email\",\n  \"details\": {\n    \"baseUrl\": \"https://api.dcp.sa\",\n    \"email\": \"inference-smoke-d7e7983d4161@dcp.local\",\n    \"registerStatus\": 429,\n    \"loginStatus\": 429,\n    \"loginBody\": {\n      \"error\": \"Rate limit exceeded\",\n      \"retryAfterSeconds\": 64,\n      \"retryAfterMs\": 64000\n    }\n  }\n}"
+  },
+  "blockers": [
+    {
+      "type": "contract",
+      "id": "stream_done_contract",
+      "details": "stream_stability: Streaming requests did not preserve the expected SSE contract."
+    },
+    {
+      "type": "contract",
+      "id": "tools_passthrough_contract",
+      "details": "tool_definition_passthrough: Tool definitions/tool_choice are currently stripped before the provider request, which blocks OpenRouter tool-calling parity."
+    },
+    {
+      "type": "contract",
+      "id": "failover_behavior_contract",
+      "details": "mid_stream_failure_handling: Mid-stream provider disconnects currently terminate the stream without a clean OpenRouter-style error or DONE terminator."
+    },
+    {
+      "type": "runtime",
+      "id": "runtime_failure",
+      "details": "{\n  \"ok\": false,\n  \"message\": \"Cannot recover existing smoke principal master key via /api/renters/login-email\",\n  \"details\": {\n    \"baseUrl\": \"https://api.dcp.sa\",\n    \"email\": \"inference-smoke-d7e7983d4161@dcp.local\",\n    \"registerStatus\": 429,\n    \"loginStatus\": 429,\n    \"loginBody\": {\n      \"error\": \"Rate limit exceeded\",\n      \"retryAfterSeconds\": 64,\n      \"retryAfterMs\": 64000\n    }\n  }\n}"
+    }
+  ],
+  "summary": {
+    "contracts_passed": 1,
+    "contracts_total": 4,
+    "runtime_blockers": 1,
+    "contract_blockers": 3,
+    "overall_status": "FAIL"
+  },
+  "artifacts": {
+    "json": "docs/reports/openrouter/certification/openrouter-certification-train-20260404T012123Z.json",
+    "markdown": "docs/reports/openrouter/certification/openrouter-certification-train-20260404T012123Z.md",
+    "latest_json": "docs/reports/openrouter/certification/openrouter-certification-train-latest.json",
+    "latest_markdown": "docs/reports/openrouter/certification/openrouter-certification-train-latest.md"
+  }
+}
