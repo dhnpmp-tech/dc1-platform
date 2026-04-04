@@ -36,6 +36,43 @@ function redactSecret(secret) {
   return secret.length <= 12 ? secret : `${secret.slice(0, 8)}...${secret.slice(-4)}`;
 }
 
+function normalizeModelToken(value) {
+  if (typeof value !== 'string') return null;
+  const next = value.trim().toLowerCase();
+  return next || null;
+}
+
+function extractCachedModelIds(provider = {}) {
+  const source = provider.cached_models;
+  if (!Array.isArray(source)) return [];
+  const ids = [];
+  for (const entry of source) {
+    if (typeof entry === 'string') {
+      ids.push(entry);
+      continue;
+    }
+    if (entry && typeof entry === 'object') {
+      if (typeof entry.model_id === 'string') ids.push(entry.model_id);
+      else if (typeof entry.id === 'string') ids.push(entry.id);
+      else if (typeof entry.model === 'string') ids.push(entry.model);
+    }
+  }
+  return ids;
+}
+
+function resolveMatchedProviderByModel(providers, modelId) {
+  const target = normalizeModelToken(modelId);
+  if (!Array.isArray(providers) || providers.length === 0 || !target) return null;
+  for (const provider of providers) {
+    const cached = extractCachedModelIds(provider);
+    const normalized = cached.map(normalizeModelToken).filter(Boolean);
+    if (normalized.includes(target)) {
+      return provider;
+    }
+  }
+  return null;
+}
+
 async function requestJson(baseUrl, route, options = {}) {
   const startedAt = Date.now();
   const response = await fetch(new URL(route, baseUrl), options);
@@ -122,66 +159,6 @@ function classifyFailure(results) {
   return null;
 }
 
-function toFiniteInt(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  return Math.trunc(n);
-}
-
-function pickFirstMatch(messages, pattern) {
-  for (const message of messages) {
-    const match = String(message || '').match(pattern);
-    if (match && match[1] != null) return match[1];
-  }
-  return null;
-}
-
-function extractCapacitySnapshot(probes, model) {
-  const completionHeaders = probes?.completion_json || {};
-  const streamHeaders = probes?.completion_stream || {};
-  const completionDetails = completionHeaders.raw_error_details || {};
-  const streamDetails = streamHeaders.raw_error_details || {};
-  const messages = [completionHeaders.error_message, streamHeaders.error_message];
-
-  const modelId = completionDetails.model_id
-    || streamDetails.model_id
-    || completionHeaders.requested_model_id
-    || streamHeaders.requested_model_id
-    || model;
-  const minVramGb = toFiniteInt(
-    completionDetails.min_vram_gb
-    ?? streamDetails.min_vram_gb
-    ?? pickFirstMatch(messages, /min[_\s-]?vram[_\s-]?gb[=:\s]+(\d+)/i)
-  );
-  const capableProviders = toFiniteInt(
-    completionDetails.capable_providers
-    ?? streamDetails.capable_providers
-    ?? pickFirstMatch(messages, /capable[_\s-]?providers[=:\s]+(\d+)/i)
-  );
-  const providerHttpCode = toFiniteInt(
-    pickFirstMatch(messages, /provider[_\s-]?http[_\s-]?(\d{3})/i)
-  );
-
-  return {
-    model_id: modelId || null,
-    min_vram_gb: minVramGb,
-    capable_providers: capableProviders,
-    provider_id: completionHeaders.provider_id || streamHeaders.provider_id || null,
-    provider_tier: completionHeaders.provider_tier || streamHeaders.provider_tier || null,
-    provider_endpoint_host: completionHeaders.provider_endpoint_host || streamHeaders.provider_endpoint_host || null,
-    request_id: completionHeaders.request_id || streamHeaders.request_id || null,
-    latency_gate_mode: completionHeaders.latency_gate_mode || streamHeaders.latency_gate_mode || null,
-    provider_http_status: providerHttpCode,
-    route_error_message: completionHeaders.error_message || streamHeaders.error_message || null,
-    inferred_heartbeat_timestamp: completionDetails.last_heartbeat
-      || streamDetails.last_heartbeat
-      || completionDetails.heartbeat_at
-      || streamDetails.heartbeat_at
-      || null,
-    evidence_complete: Boolean(modelId && minVramGb != null && capableProviders != null),
-  };
-}
-
 function buildMarkdown(report) {
   const lines = [];
   lines.push('# First-Live Inference Proof Report');
@@ -198,7 +175,7 @@ function buildMarkdown(report) {
   lines.push('| step | status | elapsed_ms | request_id | notes |');
   lines.push('|---|---:|---:|---|---|');
   for (const [step, result] of Object.entries(report.probes)) {
-    const notes = result.stream_done === false
+    const notes = (result.stream_done === false && Number(result.status) === 200)
       ? 'missing [DONE]'
       : (result.error_message || '');
     lines.push(`| ${step} | ${result.status} | ${result.elapsed_ms ?? ''} | ${result.request_id || ''} | ${String(notes || '').replace(/\|/g, '\\|')} |`);
@@ -212,19 +189,11 @@ function buildMarkdown(report) {
   lines.push(`- completion_stream.provider_id: \`${report.probes.completion_stream.provider_id || ''}\``);
   lines.push(`- completion_stream.provider_tier: \`${report.probes.completion_stream.provider_tier || ''}\``);
   lines.push(`- completion_stream.provider_endpoint_host: \`${report.probes.completion_stream.provider_endpoint_host || ''}\``);
-  lines.push('');
-  lines.push('## Capacity Snapshot');
-  lines.push('');
-  lines.push(`- model_id: \`${report.capacity_snapshot.model_id || ''}\``);
-  lines.push(`- min_vram_gb: \`${report.capacity_snapshot.min_vram_gb ?? ''}\``);
-  lines.push(`- capable_providers: \`${report.capacity_snapshot.capable_providers ?? ''}\``);
-  lines.push(`- provider_id: \`${report.capacity_snapshot.provider_id || ''}\``);
-  lines.push(`- provider_tier: \`${report.capacity_snapshot.provider_tier || ''}\``);
-  lines.push(`- provider_endpoint_host: \`${report.capacity_snapshot.provider_endpoint_host || ''}\``);
-  lines.push(`- provider_http_status: \`${report.capacity_snapshot.provider_http_status ?? ''}\``);
-  lines.push(`- route_error_message: \`${report.capacity_snapshot.route_error_message || ''}\``);
-  lines.push(`- inferred_heartbeat_timestamp: \`${report.capacity_snapshot.inferred_heartbeat_timestamp || ''}\``);
-  lines.push(`- evidence_complete: \`${report.capacity_snapshot.evidence_complete}\``);
+  lines.push(`- providers_available.total: \`${report.probes.providers_available?.provider_count ?? ''}\``);
+  lines.push(`- providers_available.live: \`${report.probes.providers_available?.live_provider_count ?? ''}\``);
+  lines.push(`- providers_available.model_matched_provider_id: \`${report.probes.providers_available?.model_matched_provider_id || ''}\``);
+  lines.push(`- provider_liveness.last_heartbeat: \`${report.probes.provider_liveness?.last_heartbeat || ''}\``);
+  lines.push(`- provider_liveness.heartbeat_age_seconds: \`${report.probes.provider_liveness?.heartbeat_age_seconds ?? ''}\``);
   lines.push('');
   if (report.failure) {
     lines.push('## Failure Classification');
@@ -277,6 +246,29 @@ async function run() {
     headers: { 'x-renter-key': principal.inferenceKey },
   });
 
+  addLog('probe /api/providers/available');
+  const providersAvailable = await requestJson(baseUrl, '/api/providers/available', {
+    method: 'GET',
+    headers: { 'x-renter-key': principal.inferenceKey },
+  });
+  const availableProviders = Array.isArray(providersAvailable.json?.providers)
+    ? providersAvailable.json.providers
+    : [];
+  const matchedProvider = resolveMatchedProviderByModel(availableProviders, model);
+
+  let providerLiveness = null;
+  if (matchedProvider?.id != null) {
+    addLog(`probe /api/providers/${matchedProvider.id}/liveness`);
+    providerLiveness = await requestJson(
+      baseUrl,
+      `/api/providers/${encodeURIComponent(String(matchedProvider.id))}/liveness`,
+      {
+        method: 'GET',
+        headers: { 'x-renter-key': principal.inferenceKey },
+      }
+    );
+  }
+
   const completionPayload = {
     model,
     messages: [{ role: 'user', content: 'Reply with the exact token: DCP_PROOF_OK' }],
@@ -316,6 +308,40 @@ async function run() {
       response_hash: makeSha256(models.text),
       error_message: models.ok ? null : (models.json?.error?.message || models.text?.slice(0, 240) || null),
     },
+    providers_available: {
+      status: providersAvailable.status,
+      elapsed_ms: providersAvailable.elapsed_ms,
+      request_id: providersAvailable.headers['x-request-id'] || null,
+      response_hash: makeSha256(providersAvailable.text),
+      provider_count: availableProviders.length,
+      live_provider_count: availableProviders.filter((entry) => entry?.is_live === true).length,
+      providers_with_cached_models: availableProviders.filter((entry) => extractCachedModelIds(entry).length > 0).length,
+      model_matched_provider_id: matchedProvider?.id ?? null,
+      model_matched_provider_cached_models: matchedProvider ? extractCachedModelIds(matchedProvider) : [],
+      model_matched_provider_heartbeat_age_seconds: matchedProvider?.heartbeat_age_seconds ?? null,
+      error_message: providersAvailable.ok ? null : (providersAvailable.json?.error?.message || providersAvailable.text?.slice(0, 240) || null),
+    },
+    provider_liveness: providerLiveness ? {
+      status: providerLiveness.status,
+      elapsed_ms: providerLiveness.elapsed_ms,
+      request_id: providerLiveness.headers['x-request-id'] || null,
+      response_hash: makeSha256(providerLiveness.text),
+      provider_id: providerLiveness.json?.provider_id ?? matchedProvider?.id ?? null,
+      state: providerLiveness.json?.state ?? null,
+      last_heartbeat: providerLiveness.json?.last_heartbeat ?? null,
+      heartbeat_age_seconds: providerLiveness.json?.heartbeat_age_seconds ?? null,
+      error_message: providerLiveness.ok ? null : (providerLiveness.json?.error?.message || providerLiveness.text?.slice(0, 240) || null),
+    } : {
+      status: null,
+      elapsed_ms: null,
+      request_id: null,
+      response_hash: null,
+      provider_id: null,
+      state: null,
+      last_heartbeat: null,
+      heartbeat_age_seconds: null,
+      error_message: matchedProvider ? 'liveness probe was not executed' : 'no model-matched provider in /api/providers/available',
+    },
     completion_json: {
       status: completionJson.status,
       elapsed_ms: completionJson.elapsed_ms,
@@ -327,7 +353,11 @@ async function run() {
       requested_model_id: completionJson.headers['x-dcp-requested-model-id'] || null,
       routed_model_id: completionJson.headers['x-dcp-routed-model-id'] || null,
       latency_gate_mode: completionJson.headers['x-dcp-latency-gate-mode'] || null,
-      raw_error_details: completionJson.json?.error?.details || null,
+      diagnostics: completionJson.json?.diagnostics || null,
+      diagnostics_model_id: completionJson.json?.diagnostics?.model_id || null,
+      diagnostics_min_vram_gb: completionJson.json?.diagnostics?.min_vram_gb ?? null,
+      diagnostics_capable_providers: completionJson.json?.diagnostics?.capable_providers ?? null,
+      diagnostics_provider_heartbeats: completionJson.json?.diagnostics?.provider_heartbeats ?? null,
       error_message: completionJson.ok ? null : (completionJson.json?.error?.message || completionJson.text?.slice(0, 240) || null),
     },
     completion_stream: {
@@ -342,12 +372,10 @@ async function run() {
       requested_model_id: streamRes.headers['x-dcp-requested-model-id'] || null,
       routed_model_id: streamRes.headers['x-dcp-routed-model-id'] || null,
       latency_gate_mode: streamRes.headers['x-dcp-latency-gate-mode'] || null,
-      raw_error_details: streamRes.json?.error?.details || null,
       error_message: streamRes.ok ? null : (streamRes.json?.error?.message || streamRes.text?.slice(0, 240) || null),
     },
   };
 
-  const capacitySnapshot = extractCapacitySnapshot(probes, model);
   const failure = classifyFailure(probes);
   const verdict = failure ? 'FAIL' : 'PASS';
   addLog(`verdict=${verdict}${failure ? ` failure=${failure.code}` : ''}`);
@@ -375,7 +403,6 @@ async function run() {
       balance_halala: principal.balanceHalala,
     },
     probes,
-    capacity_snapshot: capacitySnapshot,
     failure,
     artifacts: {
       json: path.relative(REPO_ROOT, jsonFile),
@@ -398,7 +425,6 @@ async function run() {
   process.stdout.write(`${JSON.stringify({
     verdict,
     failure_code: failure?.code || null,
-    capacity_snapshot: capacitySnapshot,
     artifacts: report.artifacts,
     principal: report.principal,
   }, null, 2)}\n`);

@@ -550,8 +550,9 @@ function resolveProviderVramMb(provider) {
     provider.vram_gb != null ? Number(provider.vram_gb) * 1024 : null,
   ];
   for (const candidate of candidates) {
+    if (candidate == null || candidate === '') continue;
     const value = toFiniteInt(candidate, { min: 0, max: 1024 * 1024 });
-    if (value != null) return value;
+    if (value != null && value > 0) return value;
   }
   return 0;
 }

@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-04-03T20:21:48.609Z",
+  "verdict": "FAIL",
+  "base_url": "https://api.dcp.sa",
+  "model": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+  "principal": {
+    "renter_id": 1774351995125,
+    "renter_email": "inference-smoke-d7e7983d4161@dcp.local",
+    "scoped_key_id": "86da4e04-dbe5-401f-9cea-ec8d8b3928d3",
+    "scoped_key_expires_at": "2026-04-04T02:21:48.590Z"
+  },
+  "probes": {
+    "providers_available": {
+      "status": 200,
+      "elapsed_ms": 9,
+      "provider_count": 1,
+      "model_matched_provider_count": 0,
+      "response_hash": "98c1a510c242898e2da6350d8e93ad0e833e5bc9790f264bfba6968b6347c761"
+    },
+    "provider_liveness": null,
+    "completion_json": {
+      "status": 503,
+      "elapsed_ms": 4,
+      "provider_id": null,
+      "requested_model_id": null,
+      "routed_model_id": null,
+      "diagnostics": null,
+      "error_message": "No inference providers available for this model",
+      "response_hash": "9e8b2525be0e1ab1e6f6597b007f9770de5c983522abc396e7dee921a8e68287"
+    }
+  },
+  "capacity_snapshot": {
+    "provider_id": null,
+    "model_id": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+    "heartbeat_timestamp": null,
+    "capable_providers": 0
+  },
+  "failure": {
+    "code": "dcp472_capacity_not_restored",
+    "action": "Deploy ALLaM routing fix to production and ensure at least one live provider advertises the requested model in cached_models."
+  },
+  "artifacts": {
+    "json": "docs/reports/reliability/dcp-472-proof/dcp-472-capacity-proof-20260403T202148Z.json",
+    "markdown": "docs/reports/reliability/dcp-472-proof/dcp-472-capacity-proof-20260403T202148Z.md",
+    "log": "docs/reports/reliability/dcp-472-proof/dcp-472-capacity-proof-20260403T202148Z.log",
+    "latest_json": "docs/reports/reliability/dcp-472-proof/dcp-472-capacity-proof-latest.json",
+    "latest_markdown": "docs/reports/reliability/dcp-472-proof/dcp-472-capacity-proof-latest.md",
+    "latest_log": "docs/reports/reliability/dcp-472-proof/dcp-472-capacity-proof-latest.log"
+  }
+}

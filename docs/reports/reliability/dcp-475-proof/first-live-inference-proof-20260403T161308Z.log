@@ -1,0 +1,8 @@
+2026-04-03T16:13:08.242Z start base_url=https://api.dcp.sa model=ALLaM-AI/ALLaM-7B-Instruct-preview
+2026-04-03T16:13:08.242Z ensure smoke principal
+2026-04-03T16:13:08.325Z smoke principal ready renter_id=1774351995125 key_hint=dc1-sk-5...0d44
+2026-04-03T16:13:08.325Z probe health
+2026-04-03T16:13:08.332Z probe /v1/models
+2026-04-03T16:13:08.334Z probe /v1/chat/completions (json)
+2026-04-03T16:13:08.341Z probe /v1/chat/completions (stream)
+2026-04-03T16:13:08.347Z verdict=FAIL failure=provider_unreachable_or_unavailable

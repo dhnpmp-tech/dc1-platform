@@ -1,0 +1,103 @@
+{
+  "generated_at": "2026-04-03T18:18:31.487Z",
+  "verdict": "FAIL",
+  "base_url": "https://api.dcp.sa",
+  "model": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+  "command": "node tests/first-live-inference-proof-package.js",
+  "principal": {
+    "renter_id": 1774351995125,
+    "renter_email": "inference-smoke-d7e7983d4161@dcp.local",
+    "key_hint": "dc1-sk-b...e82a",
+    "scoped_key_id": "ab1807a2-36fb-4369-96ec-10d7a97d9308",
+    "scoped_key_label": "dcp-smoke-proof:2026-04-03T18:18",
+    "scoped_key_expires_at": "2026-04-04T00:18:31.460Z",
+    "balance_halala": 1000
+  },
+  "probes": {
+    "health": {
+      "route": "/api/health",
+      "status": 200,
+      "elapsed_ms": 2,
+      "request_id": null,
+      "response_hash": "c0be8d22c8e30048546e8f7330883f699cf7fa084c27497296775add6f3dda8b",
+      "error_message": null
+    },
+    "models": {
+      "status": 200,
+      "elapsed_ms": 2,
+      "request_id": null,
+      "model_count": 14,
+      "response_hash": "59e3ca3ef5524f70bb91935b3aa2d37750abdb6e24068521144e9d57cdf0ca2b",
+      "error_message": null
+    },
+    "providers_available": {
+      "status": 200,
+      "elapsed_ms": 6,
+      "request_id": null,
+      "response_hash": "c881281ae3c4694d5b35dec8d7b76e5b850536ec0ed0d5e33658b71997095072",
+      "provider_count": 1,
+      "live_provider_count": 1,
+      "providers_with_cached_models": 0,
+      "model_matched_provider_id": null,
+      "model_matched_provider_cached_models": [],
+      "model_matched_provider_heartbeat_age_seconds": null,
+      "error_message": null
+    },
+    "provider_liveness": {
+      "status": null,
+      "elapsed_ms": null,
+      "request_id": null,
+      "response_hash": null,
+      "provider_id": null,
+      "state": null,
+      "last_heartbeat": null,
+      "heartbeat_age_seconds": null,
+      "error_message": "no model-matched provider in /api/providers/available"
+    },
+    "completion_json": {
+      "status": 503,
+      "elapsed_ms": 2,
+      "request_id": null,
+      "response_hash": "9e8b2525be0e1ab1e6f6597b007f9770de5c983522abc396e7dee921a8e68287",
+      "provider_id": null,
+      "provider_tier": null,
+      "provider_endpoint_host": null,
+      "requested_model_id": null,
+      "routed_model_id": null,
+      "latency_gate_mode": null,
+      "diagnostics": null,
+      "diagnostics_model_id": null,
+      "diagnostics_min_vram_gb": null,
+      "diagnostics_capable_providers": null,
+      "diagnostics_provider_heartbeats": null,
+      "error_message": "No inference providers available for this model"
+    },
+    "completion_stream": {
+      "status": 503,
+      "elapsed_ms": 3,
+      "request_id": null,
+      "stream_done": false,
+      "response_hash": "9e8b2525be0e1ab1e6f6597b007f9770de5c983522abc396e7dee921a8e68287",
+      "provider_id": null,
+      "provider_tier": null,
+      "provider_endpoint_host": null,
+      "requested_model_id": null,
+      "routed_model_id": null,
+      "latency_gate_mode": null,
+      "error_message": "No inference providers available for this model"
+    }
+  },
+  "failure": {
+    "code": "provider_unreachable_or_unavailable",
+    "severity": "blocking",
+    "action": "Verify provider heartbeat, reachable vLLM endpoint URL, and model is loaded on at least one online provider."
+  },
+  "artifacts": {
+    "json": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T181831Z.json",
+    "markdown": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T181831Z.md",
+    "log": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-20260403T181831Z.log",
+    "latest_json": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.json",
+    "latest_markdown": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.md",
+    "latest_log": "docs/reports/reliability/dcp-475-proof/first-live-inference-proof-latest.log"
+  }
+}
