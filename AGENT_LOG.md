@@ -32472,3 +32472,8 @@ a
 - **Commit**: `ad45d20` - Added a manifest-driven `release:train` workflow that rebases candidate branches onto `origin/main`, runs deterministic gate sequences in isolated worktrees, and writes markdown/json evidence plus per-gate logs. Demonstrated it against current critical candidates with one PASS (`origin/agent/backend-dev/dcp-510-provider-approval-queue`) and one deterministic `stale` skip (`origin/agent/backend-dev/dcp-472-restore-allam-capacity`).
 - **Files**: `package.json`, `scripts/release-train.mjs`, `docs/release-train.md`, `docs/reports/release-train/dcp-526-candidates.json`, `docs/reports/release-train/2026-04-03T17-52-13-845Z.md`, `docs/reports/release-train/2026-04-03T17-52-13-845Z.json`, `AGENT_LOG.md`
 - **Impact**: Release Engineer can now batch-release critical agent branches without serial manual refresh work; proof artifacts already show the OpenRouter eligibility branch is release-gate clean after rebase while the ALLaM routing candidate is already shipped and should be skipped instead of re-landed.
+
+## [2026-04-04 05:55 UTC] Codex — DCP-572 job sweep terminal-state fix shipped
+- **Commit**: `pending` - Updated backend job sweep retry logic to stop writing `permanently_failed`, use `failed` for retries-exhausted cases, and guard sweep updates with terminal-status WHERE clauses so already terminal jobs are never mutated by timeout sweeps; added regression tests for both behaviors.
+- **Files**: `backend/src/services/jobSweep.js`, `backend/src/__tests__/job-sweep.test.js`, `AGENT_LOG.md`
+- **Impact**: Renter-visible job state is now standardized on `failed` for timeout sweep exhaustion, and sweep ticks no longer reprocess already terminal jobs (`failed`, `permanently_failed`, `cancelled`, `completed`, `done`).
