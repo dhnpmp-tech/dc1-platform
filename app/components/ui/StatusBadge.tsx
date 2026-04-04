@@ -1,6 +1,6 @@
 'use client'
 
-type StatusType = 'online' | 'offline' | 'degraded' | 'active' | 'inactive' | 'pending' | 'running' | 'completed' | 'failed' | 'paused' | 'warning'
+type StatusType = 'online' | 'offline' | 'degraded' | 'active' | 'inactive' | 'pending' | 'running' | 'completed' | 'failed' | 'permanently_failed' | 'cancelled' | 'paused' | 'warning' | 'assigned' | 'queued'
 
 interface StatusBadgeProps {
   status: StatusType
@@ -21,6 +21,10 @@ const statusConfig: Record<StatusType, { dot: string; bg: string; text: string; 
   offline:   { dot: 'bg-status-error',   bg: 'bg-status-error/10',   text: 'text-status-error',   defaultLabel: 'Offline' },
   inactive:  { dot: 'bg-dc1-text-muted', bg: 'bg-dc1-text-muted/10', text: 'text-dc1-text-muted', defaultLabel: 'Inactive' },
   failed:    { dot: 'bg-status-error',   bg: 'bg-status-error/10',   text: 'text-status-error',   defaultLabel: 'Failed' },
+  permanently_failed: { dot: 'bg-status-error', bg: 'bg-status-error/10', text: 'text-status-error', defaultLabel: 'Failed' },
+  cancelled: { dot: 'bg-dc1-text-muted', bg: 'bg-dc1-text-muted/10', text: 'text-dc1-text-muted', defaultLabel: 'Cancelled' },
+  assigned:  { dot: 'bg-status-info',    bg: 'bg-status-info/10',    text: 'text-status-info',    defaultLabel: 'Assigned' },
+  queued:    { dot: 'bg-status-warning', bg: 'bg-status-warning/10', text: 'text-status-warning', defaultLabel: 'Queued' },
 }
 
 export default function StatusBadge({ status, label, size = 'md', pulse = true }: StatusBadgeProps) {
