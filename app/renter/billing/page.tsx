@@ -106,6 +106,13 @@ interface RenterData {
   total_spent_halala: number
   total_jobs: number
   recent_jobs: any[]
+  v1_usage_summary?: {
+    total_requests: number
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+    total_cost_halala: number
+  } | null
 }
 
 export default function BillingPage() {
@@ -121,7 +128,10 @@ export default function BillingPage() {
       if (res.ok) {
         const data = await res.json()
         if (data.renter) {
-          setRenter(data.renter)
+          setRenter({
+            ...data.renter,
+            v1_usage_summary: data.v1_usage_summary || null,
+          })
           setRenterName(data.renter.name || 'Renter')
         }
       }
@@ -142,9 +152,16 @@ export default function BillingPage() {
   }, [fetchRenterData])
 
   const balance = renter ? (renter.balance_halala / 100).toFixed(2) : '0.00'
-  const totalSpent = renter ? ((renter.total_spent_halala || 0) / 100).toFixed(2) : '0.00'
+  const jobSpentHalala = renter?.total_spent_halala || 0
+  const v1SpentHalala = renter?.v1_usage_summary?.total_cost_halala || 0
+  const platformSpentHalala = jobSpentHalala + v1SpentHalala
+  const totalSpent = (platformSpentHalala / 100).toFixed(2)
+  const jobSpent = (jobSpentHalala / 100).toFixed(2)
+  const apiSpent = (v1SpentHalala / 100).toFixed(2)
   const totalJobs = renter?.total_jobs || 0
   const recentJobs = renter?.recent_jobs || []
+  const totalApiRequests = renter?.v1_usage_summary?.total_requests || 0
+  const totalApiTokens = renter?.v1_usage_summary?.total_tokens || 0
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -172,7 +189,7 @@ export default function BillingPage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
               <StatCard
                 label="Account Balance"
                 value={`${balance} SAR`}
@@ -180,10 +197,22 @@ export default function BillingPage() {
                 tooltip="Top up your balance to submit inference jobs"
               />
               <StatCard
-                label="Total Spent"
+                label="Platform Spend"
                 value={`${totalSpent} SAR`}
-                helpText="Lifetime spending across all jobs"
-                tooltip="Sum of all completed and billable job costs"
+                helpText="Jobs + v1 API usage"
+                tooltip="Combined spend across GPU jobs and /v1 API calls"
+              />
+              <StatCard
+                label="Job Spend"
+                value={`${jobSpent} SAR`}
+                helpText="Spend from GPU jobs"
+                tooltip="Sum of all job execution costs"
+              />
+              <StatCard
+                label="API Spend"
+                value={`${apiSpent} SAR`}
+                helpText="Spend from /v1 API usage"
+                tooltip="Cost of OpenRouter ledger usage"
               />
               <StatCard
                 label="Jobs Run"
@@ -192,10 +221,11 @@ export default function BillingPage() {
                 tooltip="Includes completed, failed, and cancelled jobs"
               />
               <StatCard
-                label="Recent Jobs"
-                value={recentJobs.length}
-                helpText="Jobs in recent history"
-                tooltip="Recent job activity on your account"
+                label="API Requests"
+                value={totalApiRequests}
+                subtitle={`${totalApiTokens.toLocaleString('en-US')} tokens`}
+                helpText="Total /v1 calls tracked in ledger"
+                tooltip="All prompt + completion token usage"
               />
             </div>
 

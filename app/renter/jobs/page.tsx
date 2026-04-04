@@ -21,6 +21,32 @@ interface Job {
   container_spec?: string | null
 }
 
+interface ApiUsageRecord {
+  id: number
+  request_id: string | null
+  model: string | null
+  source: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cost_halala: number
+  created_at: string
+}
+
+interface ApiUsageTotals {
+  total_requests: number
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_tokens: number
+  total_cost_halala: number
+}
+
+interface ApiUsagePagination {
+  limit: number
+  offset: number
+  has_more: boolean
+}
+
 const HomeIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 11l4-4m0 0l4 4m-4-4V5" />
@@ -79,6 +105,7 @@ interface SaveTplState {
 }
 
 type StatusFilter = 'all' | 'running' | 'queued' | 'completed' | 'failed'
+type JobsViewMode = 'jobs' | 'api_usage'
 
 const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -87,6 +114,7 @@ const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: 'completed', label: 'Completed' },
   { value: 'failed', label: 'Failed' },
 ]
+const USAGE_PAGE_LIMIT = 20
 
 function getTemplateName(job: Job): string {
   if (job.params) {
@@ -115,9 +143,26 @@ export default function RenterJobsPage() {
   const [renterName, setRenterName] = useState('Renter')
   const [totalSpent, setTotalSpent] = useState(0)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [viewMode, setViewMode] = useState<JobsViewMode>('jobs')
   const [retry, setRetry] = useState<RetryState>({ job: null, loading: false, error: '', requiredHalala: null })
   const [exportingCsv, setExportingCsv] = useState(false)
   const [saveTpl, setSaveTpl] = useState<SaveTplState>({ job: null, name: '', saving: false, saved: false })
+  const [apiKey, setApiKey] = useState('')
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [usageError, setUsageError] = useState('')
+  const [usage, setUsage] = useState<ApiUsageRecord[]>([])
+  const [usageTotals, setUsageTotals] = useState<ApiUsageTotals>({
+    total_requests: 0,
+    total_prompt_tokens: 0,
+    total_completion_tokens: 0,
+    total_tokens: 0,
+    total_cost_halala: 0,
+  })
+  const [usagePagination, setUsagePagination] = useState<ApiUsagePagination>({
+    limit: USAGE_PAGE_LIMIT,
+    offset: 0,
+    has_more: false,
+  })
 
   const navItems = [
     { label: t('nav.dashboard'), href: '/renter', icon: <HomeIcon /> },
@@ -149,16 +194,61 @@ export default function RenterJobsPage() {
     }
   }, [router])
 
+  const fetchUsage = useCallback(async (renterKey: string, offset = 0) => {
+    setUsageLoading(true)
+    setUsageError('')
+    try {
+      const res = await fetch(
+        `${API_BASE}/renters/me/usage?key=${encodeURIComponent(renterKey)}&limit=${USAGE_PAGE_LIMIT}&offset=${offset}`
+      )
+      if (res.status === 401 || res.status === 404) {
+        localStorage.removeItem('dc1_renter_key')
+        router.push('/login')
+        return
+      }
+      if (!res.ok) {
+        setUsageError('Failed to load API usage history.')
+        return
+      }
+      const data = await res.json()
+      setUsage(data.usage || [])
+      setUsageTotals({
+        total_requests: Number(data.totals?.total_requests || 0),
+        total_prompt_tokens: Number(data.totals?.total_prompt_tokens || 0),
+        total_completion_tokens: Number(data.totals?.total_completion_tokens || 0),
+        total_tokens: Number(data.totals?.total_tokens || 0),
+        total_cost_halala: Number(data.totals?.total_cost_halala || 0),
+      })
+      setUsagePagination({
+        limit: Number(data.pagination?.limit || USAGE_PAGE_LIMIT),
+        offset: Number(data.pagination?.offset || 0),
+        has_more: Boolean(data.pagination?.has_more),
+      })
+    } catch (err) {
+      console.error('Failed to load usage:', err)
+      setUsageError('Failed to load API usage history.')
+    } finally {
+      setUsageLoading(false)
+    }
+  }, [router])
+
   useEffect(() => {
-    const apiKey = localStorage.getItem('dc1_renter_key')
-    if (!apiKey) {
+    const renterKey = localStorage.getItem('dc1_renter_key')
+    if (!renterKey) {
       router.push('/login')
       return
     }
-    fetchJobs(apiKey)
-    const interval = setInterval(() => fetchJobs(apiKey), 30000)
+    setApiKey(renterKey)
+    fetchJobs(renterKey)
+    fetchUsage(renterKey, 0)
+    const interval = setInterval(() => fetchJobs(renterKey), 30000)
     return () => clearInterval(interval)
-  }, [fetchJobs, router])
+  }, [fetchJobs, fetchUsage, router])
+
+  const goToUsagePage = (nextOffset: number) => {
+    if (!apiKey) return
+    fetchUsage(apiKey, Math.max(0, nextOffset))
+  }
 
   const openRetryModal = (job: Job) => {
     setRetry({ job, loading: false, error: '', requiredHalala: Number(job.actual_cost_halala || 0) })
@@ -287,167 +377,291 @@ export default function RenterJobsPage() {
               {jobs.length} {jobs.length !== 1 ? t('dashboard.jobs_run') : t('dashboard.jobs_run')} — auto-refreshes every 30s
             </p>
           </div>
+          {viewMode === 'jobs' && (
+            <button
+              onClick={exportCsv}
+              disabled={exportingCsv || jobs.length === 0}
+              className="btn btn-secondary min-h-[44px] px-4 flex items-center gap-2 self-start disabled:opacity-50"
+              aria-label="Export job history as CSV"
+            >
+              {exportingCsv ? (
+                <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" aria-hidden="true" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              )}
+              {t('renter.export_csv')}
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-2 border-b border-dc1-border pb-2">
           <button
-            onClick={exportCsv}
-            disabled={exportingCsv || jobs.length === 0}
-            className="btn btn-secondary min-h-[44px] px-4 flex items-center gap-2 self-start disabled:opacity-50"
-            aria-label="Export job history as CSV"
+            onClick={() => setViewMode('jobs')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'jobs'
+                ? 'bg-dc1-amber text-dc1-void'
+                : 'text-dc1-text-secondary hover:text-dc1-text-primary hover:bg-dc1-surface-l2'
+            }`}
           >
-            {exportingCsv ? (
-              <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" aria-hidden="true" />
-            ) : (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            )}
-            {t('renter.export_csv')}
+            Jobs
+          </button>
+          <button
+            onClick={() => setViewMode('api_usage')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'api_usage'
+                ? 'bg-dc1-amber text-dc1-void'
+                : 'text-dc1-text-secondary hover:text-dc1-text-primary hover:bg-dc1-surface-l2'
+            }`}
+          >
+            API Usage
           </button>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">{t('dashboard.jobs_run')}</p>
-            <p className="text-2xl font-bold text-dc1-text-primary">{jobs.length}</p>
+            <p className="text-sm text-dc1-text-secondary">
+              {viewMode === 'jobs' ? t('dashboard.jobs_run') : 'API Requests'}
+            </p>
+            <p className="text-2xl font-bold text-dc1-text-primary">
+              {viewMode === 'jobs' ? jobs.length : usageTotals.total_requests}
+            </p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">{t('table.completed')}</p>
-            <p className="text-2xl font-bold text-status-success">{completedJobs}</p>
+            <p className="text-sm text-dc1-text-secondary">
+              {viewMode === 'jobs' ? t('table.completed') : 'Prompt Tokens'}
+            </p>
+            <p className="text-2xl font-bold text-status-success">
+              {viewMode === 'jobs' ? completedJobs : usageTotals.total_prompt_tokens.toLocaleString('en-US')}
+            </p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">{t('table.status')}</p>
-            <p className="text-2xl font-bold text-status-error">{failedJobs}</p>
+            <p className="text-sm text-dc1-text-secondary">
+              {viewMode === 'jobs' ? t('table.status') : 'Completion Tokens'}
+            </p>
+            <p className="text-2xl font-bold text-status-error">
+              {viewMode === 'jobs' ? failedJobs : usageTotals.total_completion_tokens.toLocaleString('en-US')}
+            </p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-dc1-text-secondary">{t('dashboard.total_spent')}</p>
-            <p className="text-2xl font-bold text-dc1-amber">{totalSpent.toFixed(2)} {t('common.sar')}</p>
+            <p className="text-sm text-dc1-text-secondary">
+              {viewMode === 'jobs' ? t('dashboard.total_spent') : 'API Cost'}
+            </p>
+            <p className="text-2xl font-bold text-dc1-amber">
+              {viewMode === 'jobs'
+                ? `${totalSpent.toFixed(2)} ${t('common.sar')}`
+                : `${(usageTotals.total_cost_halala / 100).toFixed(2)} ${t('common.sar')}`}
+            </p>
           </div>
         </div>
 
-        {/* Status Filter Pills */}
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
-          {STATUS_FILTER_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => setStatusFilter(opt.value)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                statusFilter === opt.value
-                  ? 'bg-dc1-amber text-dc1-surface-l1 border-dc1-amber'
-                  : 'bg-transparent text-dc1-text-secondary border-dc1-border hover:border-dc1-amber/50 hover:text-dc1-text-primary'
-              }`}
-            >
-              {opt.label}
-              {opt.value !== 'all' && (
-                <span className="ml-1.5 text-xs opacity-70">
-                  ({jobs.filter(j => j.status === opt.value).length})
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        {viewMode === 'jobs' && (
+          <>
+            {/* Status Filter Pills */}
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+              {STATUS_FILTER_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setStatusFilter(opt.value)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                    statusFilter === opt.value
+                      ? 'bg-dc1-amber text-dc1-surface-l1 border-dc1-amber'
+                      : 'bg-transparent text-dc1-text-secondary border-dc1-border hover:border-dc1-amber/50 hover:text-dc1-text-primary'
+                  }`}
+                >
+                  {opt.label}
+                  {opt.value !== 'all' && (
+                    <span className="ml-1.5 text-xs opacity-70">
+                      ({jobs.filter(j => j.status === opt.value).length})
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
 
-        {/* Jobs Table */}
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{t('table.job_id')}</th>
-                <th>Template</th>
-                <th>{t('billing.submitted')}</th>
-                <th>Duration</th>
-                <th>{t('table.status')}</th>
-                <th>Cost (SAR)</th>
-                <th className="sr-only">{t('table.action')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredJobs.length > 0 ? (
-                filteredJobs.map(j => {
-                  const rawDuration = j.completed_at && j.submitted_at
-                    ? Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
-                    : 0
-                  const duration = Math.max(0, rawDuration)
-                  return (
-                    <tr key={j.id} className="cursor-pointer hover:bg-dc1-surface-l2/50 transition-colors" onClick={() => router.push(`/renter/jobs/${j.id}`)}>
-                      <td className="font-mono text-sm">
-                        <Link href={`/renter/jobs/${j.id}`} className="text-dc1-amber hover:underline" onClick={e => e.stopPropagation()}>
-                          {(j.job_id || `#${j.id}`).slice(0, 12)}
-                        </Link>
-                      </td>
-                      <td className="text-sm">
-                        <span className="capitalize">{getTemplateName(j)}</span>
-                      </td>
-                      <td className="text-sm text-dc1-text-secondary">
-                        {j.submitted_at
-                          ? new Date(j.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                          : '—'}
-                      </td>
-                      <td className="text-sm text-dc1-text-secondary">
-                        {j.completed_at
-                          ? `${duration}s`
-                          : '—'}
-                      </td>
-                      <td><StatusBadge status={j.status as any} /></td>
-                      <td className="text-dc1-amber font-semibold">
-                        {j.actual_cost_halala
-                          ? `${(j.actual_cost_halala / 100).toFixed(2)} SAR`
-                          : '—'}
-                      </td>
-                      <td onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
-                          {j.status === 'failed' && (
-                            <button
-                              onClick={() => openRetryModal(j)}
-                              className="text-dc1-amber border border-dc1-amber/40 hover:bg-dc1-amber/10 rounded p-1.5 min-h-[32px] min-w-[32px] transition-colors inline-flex items-center justify-center"
-                              aria-label={`Retry job ${j.job_id || j.id}`}
-                              title="Retry Job"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M5.64 18.36A9 9 0 103.5 12" />
-                              </svg>
+            {/* Jobs Table */}
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t('table.job_id')}</th>
+                    <th>Template</th>
+                    <th>{t('billing.submitted')}</th>
+                    <th>Duration</th>
+                    <th>{t('table.status')}</th>
+                    <th>Cost (SAR)</th>
+                    <th className="sr-only">{t('table.action')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredJobs.length > 0 ? (
+                    filteredJobs.map(j => {
+                      const rawDuration = j.completed_at && j.submitted_at
+                        ? Math.round((new Date(j.completed_at).getTime() - new Date(j.submitted_at).getTime()) / 1000)
+                        : 0
+                      const duration = Math.max(0, rawDuration)
+                      return (
+                        <tr key={j.id} className="cursor-pointer hover:bg-dc1-surface-l2/50 transition-colors" onClick={() => router.push(`/renter/jobs/${j.id}`)}>
+                          <td className="font-mono text-sm">
+                            <Link href={`/renter/jobs/${j.id}`} className="text-dc1-amber hover:underline" onClick={e => e.stopPropagation()}>
+                              {(j.job_id || `#${j.id}`).slice(0, 12)}
+                            </Link>
+                          </td>
+                          <td className="text-sm">
+                            <span className="capitalize">{getTemplateName(j)}</span>
+                          </td>
+                          <td className="text-sm text-dc1-text-secondary">
+                            {j.submitted_at
+                              ? new Date(j.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </td>
+                          <td className="text-sm text-dc1-text-secondary">
+                            {j.completed_at
+                              ? `${duration}s`
+                              : '—'}
+                          </td>
+                          <td><StatusBadge status={j.status as any} /></td>
+                          <td className="text-dc1-amber font-semibold">
+                            {j.actual_cost_halala
+                              ? `${(j.actual_cost_halala / 100).toFixed(2)} SAR`
+                              : '—'}
+                          </td>
+                          <td onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-1">
+                              {j.status === 'failed' && (
+                                <button
+                                  onClick={() => openRetryModal(j)}
+                                  className="text-dc1-amber border border-dc1-amber/40 hover:bg-dc1-amber/10 rounded p-1.5 min-h-[32px] min-w-[32px] transition-colors inline-flex items-center justify-center"
+                                  aria-label={`Retry job ${j.job_id || j.id}`}
+                                  title="Retry Job"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M5.64 18.36A9 9 0 103.5 12" />
+                                  </svg>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => openSaveTemplateModal(j)}
+                                className="text-xs text-dc1-text-muted border border-white/10 hover:border-dc1-amber/40 hover:text-dc1-amber rounded px-2 py-1 min-h-[32px] transition-colors"
+                                aria-label={`Save job ${j.job_id || j.id} as template`}
+                                title="Save as Template"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="text-center py-14">
+                        {statusFilter !== 'all' ? (
+                          <div className="space-y-2">
+                            <p className="text-dc1-text-secondary">No {statusFilter} jobs found.</p>
+                            <button onClick={() => setStatusFilter('all')} className="text-dc1-amber hover:underline text-sm">
+                              Show all jobs
                             </button>
-                          )}
-                          <button
-                            onClick={() => openSaveTemplateModal(j)}
-                            className="text-xs text-dc1-text-muted border border-white/10 hover:border-dc1-amber/40 hover:text-dc1-amber rounded px-2 py-1 min-h-[32px] transition-colors"
-                            aria-label={`Save job ${j.job_id || j.id} as template`}
-                            title="Save as Template"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                          </button>
-                        </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <p className="text-dc1-text-secondary text-lg">No jobs yet.</p>
+                            <p className="text-dc1-text-muted text-sm">Browse templates to get started.</p>
+                            <a
+                              href="/marketplace/templates"
+                              className="inline-block mt-2 btn btn-primary px-6 py-2.5 text-sm"
+                            >
+                              Browse Templates →
+                            </a>
+                          </div>
+                        )}
                       </td>
                     </tr>
-                  )
-                })
-              ) : (
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {viewMode === 'api_usage' && (
+          <div className="table-container">
+            <table className="table">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="text-center py-14">
-                    {statusFilter !== 'all' ? (
-                      <div className="space-y-2">
-                        <p className="text-dc1-text-secondary">No {statusFilter} jobs found.</p>
-                        <button onClick={() => setStatusFilter('all')} className="text-dc1-amber hover:underline text-sm">
-                          Show all jobs
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <p className="text-dc1-text-secondary text-lg">No jobs yet.</p>
-                        <p className="text-dc1-text-muted text-sm">Browse templates to get started.</p>
-                        <a
-                          href="/marketplace/templates"
-                          className="inline-block mt-2 btn btn-primary px-6 py-2.5 text-sm"
-                        >
-                          Browse Templates →
-                        </a>
-                      </div>
-                    )}
-                  </td>
+                  <th>Timestamp</th>
+                  <th>Model</th>
+                  <th>Prompt Tokens</th>
+                  <th>Completion Tokens</th>
+                  <th>Total Tokens</th>
+                  <th>Cost (SAR)</th>
+                  <th>Request ID</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {usageLoading ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-dc1-text-secondary">
+                      Loading API usage...
+                    </td>
+                  </tr>
+                ) : usageError ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-status-error">
+                      {usageError}
+                    </td>
+                  </tr>
+                ) : usage.length > 0 ? (
+                  usage.map((row) => (
+                    <tr key={row.id}>
+                      <td className="text-sm text-dc1-text-secondary">
+                        {row.created_at
+                          ? new Date(row.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </td>
+                      <td className="text-sm text-dc1-text-primary">{row.model || '—'}</td>
+                      <td className="text-sm text-dc1-text-secondary">{Number(row.prompt_tokens || 0).toLocaleString('en-US')}</td>
+                      <td className="text-sm text-dc1-text-secondary">{Number(row.completion_tokens || 0).toLocaleString('en-US')}</td>
+                      <td className="text-sm text-dc1-text-primary font-medium">{Number(row.total_tokens || 0).toLocaleString('en-US')}</td>
+                      <td className="text-sm text-dc1-amber font-semibold">{(Number(row.cost_halala || 0) / 100).toFixed(4)} SAR</td>
+                      <td className="font-mono text-xs text-dc1-text-muted">{row.request_id || '—'}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-dc1-text-secondary">
+                      No API usage found for this renter key.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+
+            <div className="flex items-center justify-between px-4 py-3 border-t border-dc1-border">
+              <p className="text-xs text-dc1-text-muted">
+                Showing {usagePagination.offset + 1}-{Math.min(usagePagination.offset + usage.length, usageTotals.total_requests)} of {usageTotals.total_requests}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => goToUsagePage(usagePagination.offset - usagePagination.limit)}
+                  disabled={usageLoading || usagePagination.offset <= 0}
+                  className="btn btn-secondary min-h-[36px] px-3 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => goToUsagePage(usagePagination.offset + usagePagination.limit)}
+                  disabled={usageLoading || !usagePagination.has_more}
+                  className="btn btn-secondary min-h-[36px] px-3 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Retry Confirmation Modal */}

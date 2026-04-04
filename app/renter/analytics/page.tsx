@@ -26,6 +26,19 @@ interface TopGpu {
   total_halala: number
 }
 
+interface V1DailyUsage {
+  day: string
+  total_halala: number
+  request_count: number
+  total_tokens: number
+}
+
+interface V1UsageTotals {
+  total_requests: number
+  total_tokens: number
+  total_cost_halala: number
+}
+
 interface AnalyticsData {
   period: string
   daily_spend: DailySpend[]
@@ -33,6 +46,10 @@ interface AnalyticsData {
   avg_duration_minutes: number | null
   completed_job_count: number
   top_gpus: TopGpu[]
+  v1_usage?: {
+    daily: V1DailyUsage[]
+    totals: V1UsageTotals
+  }
 }
 
 type Period = '7d' | '30d' | '90d'
@@ -241,6 +258,64 @@ function GpuChart({ gpus }: { gpus: TopGpu[] }) {
   )
 }
 
+function TokenUsageChart({ data, period }: { data: V1DailyUsage[], period: Period }) {
+  if (!data.length) return <p className="text-dc1-text-muted text-sm">No API token usage for this period.</p>
+
+  const CHART_H = 120
+  const displayData = period === '90d'
+    ? (() => {
+        const weeks: { label: string; total_tokens: number; request_count: number }[] = []
+        for (let i = 0; i < data.length; i += 7) {
+          const chunk = data.slice(i, i + 7)
+          const start = new Date(chunk[0].day + 'T00:00:00')
+          weeks.push({
+            label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            total_tokens: chunk.reduce((sum, row) => sum + Number(row.total_tokens || 0), 0),
+            request_count: chunk.reduce((sum, row) => sum + Number(row.request_count || 0), 0),
+          })
+        }
+        return weeks
+      })()
+    : data.map((row) => {
+        const date = new Date(row.day + 'T00:00:00')
+        const label = period === '7d'
+          ? date.toLocaleDateString('en-US', { weekday: 'short' })
+          : String(date.getDate())
+        return {
+          label,
+          total_tokens: Number(row.total_tokens || 0),
+          request_count: Number(row.request_count || 0),
+        }
+      })
+
+  const maxTokens = Math.max(...displayData.map((d) => d.total_tokens), 1)
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex items-end gap-1 min-w-0" style={{ height: CHART_H + 36 }}>
+        {displayData.map((d, index) => {
+          const barH = Math.max(3, (d.total_tokens / maxTokens) * CHART_H)
+          return (
+            <div key={index} className="flex-1 flex flex-col items-center justify-end gap-0.5 group min-w-[18px]">
+              {d.total_tokens > 0 && (
+                <span className="text-[9px] text-cyan-300 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                  {d.total_tokens.toLocaleString('en-US')}
+                </span>
+              )}
+              <div
+                className="w-full rounded-t bg-gradient-to-t from-cyan-700/80 to-cyan-400/90 transition-all"
+                style={{ height: barH }}
+                title={`${d.total_tokens.toLocaleString('en-US')} tokens — ${d.request_count} requests`}
+              />
+              <span className="text-[9px] text-dc1-text-muted mt-1 truncate w-full text-center">{d.label}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ──────────────────────────────────────────────────────
 export default function RenterAnalyticsPage() {
   const router = useRouter()
@@ -304,6 +379,11 @@ export default function RenterAnalyticsPage() {
   const allCount = analytics?.status_counts.reduce((s, c) => s + c.count, 0) ?? 0
   const successRate = allCount > 0 ? Math.round((completedCount / allCount) * 100) : 0
   const avgDurMin = analytics?.avg_duration_minutes
+  const v1UsageDaily = analytics?.v1_usage?.daily || []
+  const v1Totals = analytics?.v1_usage?.totals
+  const totalV1Requests = Number(v1Totals?.total_requests || 0)
+  const totalV1Tokens = Number(v1Totals?.total_tokens || 0)
+  const totalV1CostSar = (Number(v1Totals?.total_cost_halala || 0) / 100).toFixed(2)
 
   const formatDuration = (mins: number | null) => {
     if (mins == null) return '—'
@@ -380,12 +460,37 @@ export default function RenterAnalyticsPage() {
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <StatCard
+                label={`API Requests (${period})`}
+                value={String(totalV1Requests)}
+                accent="default"
+              />
+              <StatCard
+                label={`API Tokens (${period})`}
+                value={totalV1Tokens.toLocaleString('en-US')}
+                accent="info"
+              />
+              <StatCard
+                label={`API Cost (${period})`}
+                value={`${totalV1CostSar} SAR`}
+                accent="amber"
+              />
+            </div>
+
             {/* Spend Chart */}
             <div className="card">
               <h2 className="text-base font-semibold text-dc1-text-primary mb-4">
                 {t('renter.analytics.spend_history')}
               </h2>
               <SpendBarChart data={analytics.daily_spend} period={period} />
+            </div>
+
+            <div className="card">
+              <h2 className="text-base font-semibold text-dc1-text-primary mb-4">
+                Daily API Token Usage
+              </h2>
+              <TokenUsageChart data={v1UsageDaily} period={period} />
             </div>
 
             {/* Status + GPU row */}
