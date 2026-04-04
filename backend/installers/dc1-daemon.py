@@ -1336,6 +1336,31 @@ def post_job_logs(job_id, stdout, stderr=""):
     except Exception as e:
         log.debug(f"Job log upload failed (non-critical): {e}")
 
+def post_job_progress_events(job_id, events):
+    """Send structured daemon progress/failure events as job log lines."""
+    if not events:
+        return
+    url = f"{API_URL}/api/jobs/{job_id}/logs"
+    lines = []
+    for event in events[:200]:
+        level = str(event.get("level", "info")).lower()
+        if level not in {"info", "warn", "error", "debug"}:
+            level = "info"
+        phase = str(event.get("phase", "")).strip()
+        message = str(event.get("message", "")).strip()
+        if not message:
+            continue
+        line = f"[{phase}] {message}" if phase else message
+        lines.append({"level": level, "message": line[:2000]})
+    if not lines:
+        return
+    try:
+        code, _ = http_post(url, {"api_key": API_KEY, "lines": lines}, timeout=10)
+        if code != 200:
+            log.debug(f"Job progress log upload HTTP {code} for {job_id}")
+    except Exception as e:
+        log.debug(f"Job progress log upload failed (non-critical): {e}")
+
 def run_bare_metal_job(task_spec, job_id=None):
     """Execute job as a bare-metal subprocess with real-time phase reporting."""
     script = task_spec if isinstance(task_spec, str) else task_spec.get("script", "")
@@ -1719,6 +1744,7 @@ def poll_and_execute():
     job_id = job["job_id"]
     job_type = job.get("job_type", "unknown")
     log.info(f"Job assigned: {job_id} (type: {job_type})")
+    picked_up_event = {"phase": "job_picked_up", "message": "Job picked up by provider daemon", "level": "info"}
 
     # ── Guard: Job dedup ──
     if is_duplicate_job(job_id):
@@ -1728,6 +1754,14 @@ def poll_and_execute():
     vram_ok, free_vram, required_vram = check_vram_available(job_type)
     if not vram_ok:
         log.warning(f"Job {job_id} rejected: insufficient VRAM ({free_vram}/{required_vram} MiB)")
+        post_job_progress_events(job_id, [
+            picked_up_event,
+            {
+                "phase": "job_rejected",
+                "message": f"Rejected: insufficient VRAM ({free_vram} MiB free, {required_vram} MiB required)",
+                "level": "error",
+            },
+        ])
         report_event("job_failure",
             f"Job rejected pre-execution: {free_vram} MiB free VRAM < {required_vram} MiB required for {job_type}. "
             f"GPU may be in use by another application.",
@@ -1745,6 +1779,14 @@ def poll_and_execute():
     disk_ok, disk_detail = check_disk_space()
     if not disk_ok:
         log.warning(f"Job {job_id} rejected: insufficient disk space — {disk_detail}")
+        post_job_progress_events(job_id, [
+            picked_up_event,
+            {
+                "phase": "job_rejected",
+                "message": f"Rejected: insufficient disk space ({disk_detail})",
+                "level": "error",
+            },
+        ])
         report_event("job_failure",
             f"Job rejected pre-execution: {disk_detail}",
             job_id=job_id, severity="warning")
@@ -1762,6 +1804,14 @@ def poll_and_execute():
     if task_spec_raw:
         if not verify_task_spec_hmac(task_spec_raw, task_spec_hmac):
             log.error(f"Job {job_id} REJECTED: task_spec HMAC verification failed — possible tampering or unauthorized injection")
+            post_job_progress_events(job_id, [
+                picked_up_event,
+                {
+                    "phase": "job_rejected",
+                    "message": "Rejected: task_spec HMAC verification failed",
+                    "level": "error",
+                },
+            ])
             report_event("job_failure",
                 f"Job rejected: HMAC verification failed. task_spec may have been tampered with.",
                 job_id=job_id, severity="critical")
@@ -1776,6 +1826,10 @@ def poll_and_execute():
     # Execute in background thread so heartbeats continue
     def _run():
         start_time = time.time()
+        progress_events = [
+            picked_up_event,
+            {"phase": "execution_started", "message": f"Execution started for job type {job_type}", "level": "info"},
+        ]
         try:
             outcome = execute_job(job)
         except Exception as e:
@@ -1783,6 +1837,11 @@ def poll_and_execute():
             error_detail = f"Unhandled exception in execute_job: {e}\n{traceback.format_exc()}"
             log.error(f"Job {job_id} CRASHED after {elapsed}s: {error_detail[:500]}")
             report_event("job_failure", error_detail, job_id=job_id, severity="critical")
+            progress_events.append({
+                "phase": "execution_crashed",
+                "message": f"Daemon crashed while running job: {str(e)[:300]}",
+                "level": "error",
+            })
             outcome = {"success": False, "error": error_detail[:1000]}
 
         elapsed = round(time.time() - start_time, 1)
@@ -1793,12 +1852,24 @@ def poll_and_execute():
             report_event("job_success",
                 f"Job completed in {elapsed}s, result size: {result_size} bytes",
                 job_id=job_id)
+            progress_events.append({
+                "phase": "execution_completed",
+                "message": f"Execution completed in {elapsed}s",
+                "level": "info",
+            })
         else:
             error_msg = outcome.get("error", "Unknown error")
             severity = "critical" if "timed out" in str(error_msg).lower() else "error"
             report_event("job_failure",
                 f"Job failed after {elapsed}s: {error_msg[:1000]}",
                 job_id=job_id, severity=severity)
+            progress_events.append({
+                "phase": "execution_failed",
+                "message": f"Execution failed after {elapsed}s: {str(error_msg)[:300]}",
+                "level": "error",
+            })
+
+        post_job_progress_events(job_id, progress_events)
 
         # Stream collected logs to backend (non-blocking, best-effort)
         stdout_output = outcome.get("result", "") if isinstance(outcome.get("result"), str) else ""

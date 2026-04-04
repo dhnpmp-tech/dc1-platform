@@ -32502,3 +32502,8 @@ a
 - **Commit**: `pending` - Exposed backend-provided `last_error`/`error` failure reasons directly in renter job surfaces instead of generic failure messaging.
 - **Files**: `app/renter/jobs/page.tsx`, `app/renter/jobs/[id]/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Failed jobs now show actionable failure reasons in the jobs table and a dedicated failure-reason card on job detail, with state-machine failure text reflecting the same reason when available. Renters can triage common failures (provider offline, retries exhausted, etc.) without digging through logs first.
+
+## [2026-04-04 05:56 UTC] Codex — DCP-571 daemon emits additive execution progress into job logs
+- **Commit**: `pending` - Added additive daemon-side progress/failure log emission to `/api/jobs/:job_id/logs` so `jobs.logs_jsonl` captures key lifecycle events even when stdout/stderr is empty.
+- **Files**: `backend/installers/dc1-daemon.py`, `AGENT_LOG.md`
+- **Impact**: Jobs now persist explicit daemon lifecycle log lines (picked up, execution started, completed/failed, and pre-execution rejection reasons) via existing backend log ingestion. This closes the empty-log visibility gap for failed/rejected jobs without touching Gate 0 logic.
