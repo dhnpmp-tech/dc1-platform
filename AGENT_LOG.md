@@ -1,5 +1,5 @@
 ## [2026-04-04 04:03 UTC] Codex — Playground Provider Prefill Callback Dependency Alignment
-- **Commit**: `pending` - Added `preselectedProvider` to the provider list fetch callback dependency array so marketplace-prefill provider context is explicitly tracked by hook dependencies.
+- **Commit**: `da8088e` - Added `preselectedProvider` to the provider list fetch callback dependency array so marketplace-prefill provider context is explicitly tracked by hook dependencies.
 - **Files**: `app/renter/playground/page.tsx`, `AGENT_LOG.md`
 - **Impact**: Provider prefill behavior remains unchanged while removing the stale callback dependency warning at the fetch-provider callback site. Verification: `npm run lint` (warnings only) and `npm run build` (pass).
 
