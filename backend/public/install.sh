@@ -309,41 +309,65 @@ select_model_for_vram() {
 }
 
 install_vllm() {
-  if "${PYTHON_BIN}" -c "import vllm" 2>/dev/null; then
-    if [ "${DCP_NEEDS_VLLM_UPGRADE:-false}" = "true" ]; then
-      info "Upgrading vLLM for Qwen 3.5 support..."
-      "${PYTHON_BIN}" -m pip install -U vllm --progress-bar on 2>&1 || true
-      # Clear any stale HuggingFace cache for this model
-      rm -rf ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-* 2>/dev/null || true
-      success "vLLM upgraded"
-    else
-      info "vLLM already installed"
-    fi
-    return
+  # Step 1: Detect GPU architecture
+  local compute_cap=""
+  local gpu_arch="standard"
+  compute_cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '[:space:]')"
+  if [ -n "${compute_cap}" ]; then
+    case "${compute_cap}" in
+      10.*|100) gpu_arch="blackwell" ;;
+      9.*)      gpu_arch="hopper" ;;
+      8.9)      gpu_arch="ada" ;;
+      8.6)      gpu_arch="ampere86" ;;
+      8.0)      gpu_arch="ampere" ;;
+    esac
+    info "GPU architecture: ${compute_cap} (${gpu_arch})"
   fi
 
-  # Check for PyTorch first — vLLM needs it
+  # Step 2: Install PyTorch if missing
   if ! "${PYTHON_BIN}" -c "import torch" 2>/dev/null; then
-    info "Installing PyTorch with CUDA support..."
-    "${PYTHON_BIN}" -m pip install torch --index-url https://download.pytorch.org/whl/cu121 --progress-bar on 2>&1 || \
-      "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
-        warn "Could not install PyTorch. Install manually: pip install torch"
-        return 1
-      }
+    info "Installing PyTorch..."
+    "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
+      warn "Could not install PyTorch."
+      return 1
+    }
     success "PyTorch installed"
   else
     info "PyTorch already installed"
   fi
 
-  info "Installing vLLM..."
-  "${PYTHON_BIN}" -m pip install vllm --progress-bar on 2>&1 || \
-    "${PYTHON_BIN}" -m pip install --user vllm --progress-bar on 2>&1 || \
-    "${PYTHON_BIN}" -m pip install --break-system-packages vllm --progress-bar on 2>&1 || {
-      warn "Could not install vLLM automatically."
-      warn "Install manually: pip install vllm"
+  # Step 3: Install vLLM (correct build for GPU architecture)
+  if [ "${gpu_arch}" = "blackwell" ]; then
+    info "Blackwell GPU — installing vLLM with CUDA 13.0 support..."
+    "${PYTHON_BIN}" -m pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly --progress-bar on 2>&1 || {
+      warn "Nightly failed, trying standard..."
+      "${PYTHON_BIN}" -m pip install -U vllm --progress-bar on 2>&1 || {
+        warn "Could not install vLLM."
+        return 1
+      }
+    }
+  else
+    if "${PYTHON_BIN}" -c "import vllm" 2>/dev/null; then
+      info "vLLM already installed"
+    else
+      info "Installing vLLM..."
+      "${PYTHON_BIN}" -m pip install vllm --progress-bar on 2>&1 || {
+        warn "Could not install vLLM."
+        return 1
+      }
+    fi
+  fi
+  success "vLLM ready"
+
+  # Step 4: Qwen 3.5 needs transformers 5.x+ (installed AFTER vLLM to prevent downgrade)
+  if echo "${DCP_MODEL:-}" | grep -q "Qwen3.5"; then
+    info "Qwen 3.5 requires latest transformers — installing from source..."
+    "${PYTHON_BIN}" -m pip install --no-deps git+https://github.com/huggingface/transformers.git --progress-bar on 2>&1 || {
+      warn "Could not install transformers from source."
       return 1
     }
-  success "vLLM installed"
+    success "Transformers updated for Qwen 3.5"
+  fi
 }
 
 start_vllm() {
