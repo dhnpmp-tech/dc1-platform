@@ -271,7 +271,13 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await response.json()
-    const assistantContent = data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response. Please email support@dcp.sa.'
+    let assistantContent = data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response. Please email support@dcp.sa.'
+
+    // Strip thinking/reasoning tokens that some models emit
+    assistantContent = assistantContent
+      .replace(/<think>[\s\S]*?<\/think>/g, '')
+      .replace(/\*\*think\*\*[\s\S]*?\*\*\/think\*\*/g, '')
+      .trim()
 
     // Return in OpenAI-compatible format (what ChatWidget expects)
     return NextResponse.json({

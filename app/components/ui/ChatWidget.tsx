@@ -90,6 +90,123 @@ const QUICK_QUESTIONS = [
   'How do I integrate via API?',
 ]
 
+/** Lightweight markdown renderer for chat messages */
+function renderMarkdown(text: string): React.ReactNode {
+  // Strip thinking tokens (Qwen reasoning blocks)
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '')
+  cleaned = cleaned.replace(/\*\*think\*\*[\s\S]*?\*\*\/think\*\*/g, '')
+  cleaned = cleaned.replace(/^<think>[\s\S]*/gm, '')
+  cleaned = cleaned.trim()
+  if (!cleaned) return null
+
+  // Split into blocks by double newline
+  const blocks = cleaned.split(/\n\n+/)
+
+  return blocks.map((block, bi) => {
+    const trimmed = block.trim()
+    if (!trimmed) return null
+
+    // Code block
+    if (trimmed.startsWith('```')) {
+      const code = trimmed.replace(/^```\w*\n?/, '').replace(/\n?```$/, '')
+      return (
+        <pre key={bi} className="bg-black/30 rounded-lg px-3 py-2 my-1.5 overflow-x-auto text-xs font-mono whitespace-pre-wrap">
+          <code>{code}</code>
+        </pre>
+      )
+    }
+
+    // Process inline elements in a line
+    const processInline = (line: string): React.ReactNode[] => {
+      const parts: React.ReactNode[] = []
+      let remaining = line
+      let key = 0
+
+      while (remaining.length > 0) {
+        // Inline code
+        const codeMatch = remaining.match(/^(.*?)`([^`]+)`(.*)$/)
+        if (codeMatch) {
+          if (codeMatch[1]) parts.push(<span key={key++}>{codeMatch[1]}</span>)
+          parts.push(<code key={key++} className="bg-black/30 px-1.5 py-0.5 rounded text-xs font-mono">{codeMatch[2]}</code>)
+          remaining = codeMatch[3]
+          continue
+        }
+
+        // Bold
+        const boldMatch = remaining.match(/^(.*?)\*\*([^*]+)\*\*(.*)$/)
+        if (boldMatch) {
+          if (boldMatch[1]) parts.push(<span key={key++}>{boldMatch[1]}</span>)
+          parts.push(<strong key={key++} className="font-semibold">{boldMatch[2]}</strong>)
+          remaining = boldMatch[3]
+          continue
+        }
+
+        // Markdown link [text](url)
+        const linkMatch = remaining.match(/^(.*?)\[([^\]]+)\]\(([^)]+)\)(.*)$/)
+        if (linkMatch) {
+          if (linkMatch[1]) parts.push(<span key={key++}>{linkMatch[1]}</span>)
+          parts.push(
+            <a key={key++} href={linkMatch[3]} target="_blank" rel="noopener noreferrer"
+              className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2">
+              {linkMatch[2]}
+            </a>
+          )
+          remaining = linkMatch[4]
+          continue
+        }
+
+        // Plain URL
+        const urlMatch = remaining.match(/^(.*?)(https?:\/\/[^\s,)]+)(.*)$/)
+        if (urlMatch) {
+          if (urlMatch[1]) parts.push(<span key={key++}>{urlMatch[1]}</span>)
+          parts.push(
+            <a key={key++} href={urlMatch[2]} target="_blank" rel="noopener noreferrer"
+              className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2">
+              {urlMatch[2]}
+            </a>
+          )
+          remaining = urlMatch[3]
+          continue
+        }
+
+        // No more matches — rest is plain text
+        parts.push(<span key={key++}>{remaining}</span>)
+        break
+      }
+      return parts
+    }
+
+    // List items
+    if (/^\d+\.\s|^[-*]\s/.test(trimmed)) {
+      const items = trimmed.split('\n').filter(l => l.trim())
+      const isOrdered = /^\d+\./.test(items[0])
+      const Tag = isOrdered ? 'ol' : 'ul'
+      return (
+        <Tag key={bi} className={`my-1.5 space-y-1 ${isOrdered ? 'list-decimal' : 'list-disc'} list-inside`}>
+          {items.map((item, ii) => (
+            <li key={ii} className="text-sm leading-relaxed">
+              {processInline(item.replace(/^\d+\.\s*|^[-*]\s*/, ''))}
+            </li>
+          ))}
+        </Tag>
+      )
+    }
+
+    // Regular paragraph
+    const lines = trimmed.split('\n')
+    return (
+      <p key={bi} className="text-sm leading-relaxed my-1">
+        {lines.map((line, li) => (
+          <span key={li}>
+            {li > 0 && <br />}
+            {processInline(line)}
+          </span>
+        ))}
+      </p>
+    )
+  })
+}
+
 export default function ChatWidget() {
   const { language } = useLanguage()
   const isRTL = language === 'ar'
@@ -213,7 +330,7 @@ export default function ChatWidget() {
 
   const t = (en: string, ar: string) => (isRTL ? ar : en)
 
-  const panelClass = 'fixed bottom-20 right-4 z-50 w-80 sm:w-96 rounded-xl border border-dc1-border bg-dc1-surface-l1 shadow-2xl flex flex-col max-h-[500px]'
+  const panelClass = 'fixed bottom-20 right-4 z-50 w-[340px] sm:w-[400px] rounded-2xl border border-dc1-border bg-dc1-surface-l1 shadow-2xl flex flex-col max-h-[560px]'
   const panelDir = isRTL ? 'rtl' : 'ltr'
 
   if (view === 'button') {
@@ -234,29 +351,35 @@ export default function ChatWidget() {
 
   return (
     <div className={panelClass} dir={panelDir}>
-      <div className="flex items-center justify-between border-b border-dc1-border px-4 py-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
+      <div className="flex items-center justify-between bg-gradient-to-r from-cyan-600 to-cyan-500 px-4 py-3.5 rounded-t-2xl shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-cyan-600" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-dc1-text-primary">{t('DCP Support', 'دعم DCP')}</p>
-            <p className="text-xs text-dc1-text-muted">{t('AI Assistant', 'مساعد ذكي')}</p>
+            <p className="text-sm font-semibold text-white">{t('DCP Support', 'دعم DCP')}</p>
+            <p className="text-xs text-white/70 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-green-400 rounded-full inline-block" />
+              {t('Online now', 'متصل الآن')}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={clearChat}
-            className="text-dc1-text-muted hover:text-dc1-text-primary transition-colors text-xs px-2 py-1 rounded border border-dc1-border hover:border-dc1-text-muted"
+            className="text-white/70 hover:text-white transition-colors text-xs px-2 py-1 rounded border border-white/30 hover:border-white/60"
             title={t('New chat', 'محادثة جديدة')}
           >
             {t('New', 'جديد')}
           </button>
           <button
             onClick={() => setView('button')}
-            className="text-dc1-text-muted hover:text-dc1-text-primary transition-colors text-lg leading-none"
+            className="text-white/70 hover:text-white transition-colors text-lg leading-none"
             aria-label={t('Close', 'إغلاق')}
           >
             ✕
@@ -271,16 +394,16 @@ export default function ChatWidget() {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+              className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
                 msg.role === 'user'
-                  ? 'bg-dc1-amber text-dc1-void rounded-br-md'
+                  ? 'bg-cyan-500 text-white rounded-br-sm text-sm'
                   : msg.error
-                  ? 'bg-red-500/10 border border-red-500/30 text-red-400 rounded-bl-md'
-                  : 'bg-dc1-surface-l2 text-dc1-text-primary rounded-bl-md'
+                  ? 'bg-red-500/10 border border-red-500/30 text-red-400 rounded-bl-sm text-sm'
+                  : 'bg-dc1-surface-l2 text-dc1-text-primary rounded-bl-sm'
               }`}
-              style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              style={{ wordBreak: 'break-word' }}
             >
-              {msg.content}
+              {msg.role === 'user' ? msg.content : renderMarkdown(msg.content)}
             </div>
           </div>
         ))}
@@ -347,7 +470,7 @@ export default function ChatWidget() {
           <button
             type="submit"
             disabled={!inputValue.trim() || isTyping}
-            className="h-10 w-10 rounded-xl bg-dc1-amber text-dc1-void hover:bg-dc1-amber-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center shrink-0"
+            className="h-10 w-10 rounded-xl bg-cyan-500 text-white hover:bg-cyan-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center shrink-0"
             aria-label={t('Send', 'إرسال')}
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
