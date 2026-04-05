@@ -43,10 +43,11 @@ if [ -n "${2:-}" ]; then
   API_BASE="${2}"
 fi
 
-step() { printf '\n==> %s\n' "$1"; }
-info() { printf '  - %s\n' "$1"; }
-warn() { printf '  ! %s\n' "$1"; }
-fail() { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
+step()    { printf '\n==> %s\n' "$1"; }
+info()    { printf '  - %s\n' "$1"; }
+success() { printf '  + %s\n' "$1"; }
+warn()    { printf '  ! %s\n' "$1"; }
+fail()    { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
