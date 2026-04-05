@@ -16,7 +16,7 @@ MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-32}"
 echo "[$(date)] Starting 8GB AWQ vLLM bootstrap"
 echo "  Model: $MODEL_NAME"
 echo "  Port: $PORT"
-echo "  Quantization: awq"
+echo "  Quantization: awq_marlin"
 echo "  Dtype: $DTYPE"
 echo "  Max model len: $MAX_MODEL_LEN"
 echo "  GPU memory util: $GPU_MEMORY_UTIL"
@@ -26,7 +26,7 @@ python -m vllm.entrypoints.openai.api_server \
   --model "$MODEL_NAME" \
   --host 0.0.0.0 \
   --port "$PORT" \
-  --quantization awq \
+  --quantization awq_marlin \
   --dtype "$DTYPE" \
   --gpu-memory-utilization "$GPU_MEMORY_UTIL" \
   --max-model-len "$MAX_MODEL_LEN" \

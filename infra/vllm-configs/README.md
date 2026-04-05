@@ -19,13 +19,16 @@ Low-VRAM providers use dedicated AWQ bootstraps and matrix-based admission:
 
 ## Models
 
-| Model | Script | Throughput | Cold-Start | VRAM | Context |
-|-------|--------|-----------|-----------|------|---------|
+| Model | Script | Throughput (Marlin) | Cold-Start | VRAM | Context |
+|-------|--------|--------------------|-----------|------|---------|
+| Qwen 2.5 14B AWQ | install.sh (auto) | **78+ tok/s** | 10-15s | 8-10GB | 8192 |
 | ALLaM-7B | `allam-7b.sh` | 45+ tok/s | 8-12s | 20-22GB | 4096 |
-| Qwen 2.5 7B | `qwen25-7b.sh` | 48+ tok/s | 7-10s | 19-21GB | 4096 |
-| Llama 3 8B | `llama3-8b.sh` | 42+ tok/s | 10-15s | 20-22GB | 6144 |
-| Mistral 7B | `mistral-7b.sh` | 50+ tok/s | 8-12s | 20-22GB | 8192 |
+| Qwen 2.5 7B AWQ | `qwen25-7b.sh` | **100+ tok/s** | 7-10s | 5-6GB | 8192 |
+| Llama 3 8B AWQ | `llama3-8b.sh` | **90+ tok/s** | 10-15s | 5-6GB | 8192 |
+| Mistral 7B AWQ | `mistral-7b.sh` | **95+ tok/s** | 8-12s | 5-6GB | 8192 |
 | Nemotron Nano 4B | `nemotron-nano-4b.sh` | 65+ tok/s | 5-8s | 11-13GB | 4096 |
+
+> **Note:** All AWQ models now use the Marlin kernel (`--quantization awq_marlin`) which is 5-10x faster than the legacy AWQ kernel on Ada/Ampere GPUs. Throughput measured on RTX 4090 (single user).
 
 ## Usage
 
@@ -49,7 +52,7 @@ bash infra/vllm-configs/awq-12gb-bootstrap.sh
 
 Both low-VRAM scripts default to:
 
-- `--quantization awq`
+- `--quantization awq_marlin`
 - `--dtype float16`
 - `--gpu-memory-utilization 0.90`
 - `--max-model-len 2048`

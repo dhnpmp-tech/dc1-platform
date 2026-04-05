@@ -38,7 +38,7 @@ python -m vllm.entrypoints.openai.api_server \
   --model "$MODEL_NAME" \
   --host 0.0.0.0 \
   --port "$PORT" \
-  --quantization awq \
+  --quantization awq_marlin \
   --dtype float16 \
   --max-model-len "$MAX_MODEL_LEN" \
   --gpu-memory-utilization "$GPU_MEMORY_UTIL" \

@@ -1863,6 +1863,37 @@ router.delete('/me/templates/:id', (req, res) => {
 
 
 // ============================================================================
+// GET /api/renters/me/live — Real-time inference dashboard (RunPod-style)
+// Returns active requests, recent completed, session stats with tok/s + ETA
+// ============================================================================
+router.get('/me/live', (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+
+    const renter = db.get('SELECT id, name, email, balance_halala FROM renters WHERE api_key = ?', key);
+    if (!renter) return res.status(404).json({ error: 'Renter not found' });
+
+    const inferenceTracker = require('../services/inferenceTracker');
+    const dashboard = inferenceTracker.getLiveDashboard(renter.id);
+
+    res.json({
+      renter: {
+        id: renter.id,
+        name: renter.name,
+        balanceHalala: renter.balance_halala,
+        balanceSar: ((renter.balance_halala || 0) / 100).toFixed(2),
+      },
+      ...dashboard,
+      _ts: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Live dashboard error:', error);
+    res.status(500).json({ error: 'Failed to fetch live dashboard' });
+  }
+});
+
+// ============================================================================
 // GET /api/renters/me/usage — v1 API usage history (inference calls via /v1/chat/completions)
 // ============================================================================
 router.get('/me/usage', (req, res) => {

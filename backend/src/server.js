@@ -402,6 +402,11 @@ app.get('/install.sh', (req, res) => {
     return res.sendFile(INSTALL_SCRIPT_PATH);
 });
 
+// Renter live inference dashboard (RunPod-style)
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'renter-dashboard.html'));
+});
+
 // API Routes
 const authRouter = require('./routes/auth');
 app.use('/api/auth', authRouter);

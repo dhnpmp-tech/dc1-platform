@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DCP — Live Inference Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --accent: #00d4aa;
+    --accent2: #0ea5e9;
+    --red: #f85149;
+    --yellow: #d29922;
+    --green: #3fb950;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  .header .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+  .header .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80vh;
+    padding: 24px;
+  }
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px;
+    width: 100%;
+    max-width: 400px;
+  }
+  .login-box h2 {
+    font-size: 18px;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+  .login-box p {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 20px;
+  }
+  .login-box input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .login-box input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .login-box button {
+    width: 100%;
+    padding: 10px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .login-box button:hover { opacity: 0.9; }
+
+  .dashboard { display: none; }
+  .dashboard.visible { display: block; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    padding: 16px 24px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .stat-card .label {
+    font-size: 11px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .stat-card .value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .stat-card .value.accent { color: var(--accent); }
+  .stat-card .sub {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 2px;
+  }
+
+  .section {
+    padding: 0 24px 16px;
+  }
+  .section h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .request-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 8px;
+  }
+  .request-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .request-card.error {
+    border-color: var(--red);
+  }
+  .request-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .request-model {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .request-status {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .request-status.processing {
+    background: rgba(0, 212, 170, 0.15);
+    color: var(--accent);
+  }
+  .request-status.completed {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--green);
+  }
+  .request-status.error {
+    background: rgba(248, 81, 73, 0.15);
+    color: var(--red);
+  }
+
+  .progress-bar {
+    height: 6px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  .progress-fill.complete { background: var(--green); }
+  .progress-fill.error { background: var(--red); }
+
+  .request-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  .metric {
+    font-size: 12px;
+  }
+  .metric .k {
+    color: var(--text2);
+  }
+  .metric .v {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .metric .v.accent { color: var(--accent); }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text2);
+    font-size: 13px;
+  }
+  .empty-state .icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+
+  .balance-bar {
+    padding: 8px 24px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text2);
+  }
+  .balance-bar .bal {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .error-msg {
+    color: var(--red);
+    font-size: 12px;
+    padding: 8px 24px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="login-screen">
+  <div class="login-box">
+    <h2>DCP Inference Dashboard</h2>
+    <p>Enter your renter API key to monitor live inference requests in real time.</p>
+    <input type="text" id="apiKeyInput" placeholder="dc1-renter-..." autocomplete="off" spellcheck="false">
+    <button onclick="connect()">Connect</button>
+    <div id="loginError" style="color: var(--red); font-size: 12px; margin-top: 8px;"></div>
+  </div>
+</div>
+
+<div id="dashboard" class="dashboard">
+  <div class="header">
+    <h1>DCP INFERENCE MONITOR</h1>
+    <div class="status">
+      <div class="dot" id="pollDot"></div>
+      <span id="pollStatus">Polling every 2s</span>
+    </div>
+  </div>
+
+  <div class="balance-bar">
+    <span>Renter: <strong id="renterName">—</strong></span>
+    <span>Balance: <span class="bal" id="renterBalance">—</span></span>
+    <span>Session: <span id="sessionDuration">0s</span></span>
+  </div>
+
+  <div id="errorMsg" class="error-msg"></div>
+
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card">
+      <div class="label">Requests</div>
+      <div class="value" id="statRequests">0</div>
+      <div class="sub" id="statSuccessRate">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Tokens</div>
+      <div class="value accent" id="statTokens">0</div>
+      <div class="sub" id="statTokenBreakdown">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg Tok/s</div>
+      <div class="value" id="statTokPerSec">0</div>
+      <div class="sub">generation throughput</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Errors</div>
+      <div class="value" id="statErrors">0</div>
+      <div class="sub" id="statErrorRate">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Session Cost</div>
+      <div class="value" id="statCost">$0.00</div>
+      <div class="sub" id="statCostSar">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Active Now</div>
+      <div class="value accent" id="statActive">0</div>
+      <div class="sub">in-flight requests</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Active Requests</h2>
+    <div id="activeList">
+      <div class="empty-state">
+        <div class="icon">~</div>
+        No active inference requests
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Recent Completed</h2>
+    <div id="recentList">
+      <div class="empty-state">
+        <div class="icon">~</div>
+        No recent requests yet
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let apiKey = '';
+let pollInterval = null;
+
+function connect() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) {
+    document.getElementById('loginError').textContent = 'Please enter your API key';
+    return;
+  }
+  document.getElementById('loginError').textContent = 'Connecting...';
+
+  fetch(`/api/renters/me/live?key=${encodeURIComponent(apiKey)}`)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(data => {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('dashboard').classList.add('visible');
+      updateDashboard(data);
+      pollInterval = setInterval(poll, 2000);
+    })
+    .catch(err => {
+      document.getElementById('loginError').textContent = `Failed: ${err.message}`;
+    });
+}
+
+// Allow Enter key to connect
+document.getElementById('apiKeyInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') connect();
+});
+
+function poll() {
+  const dot = document.getElementById('pollDot');
+  dot.style.background = 'var(--accent2)';
+  setTimeout(() => dot.style.background = 'var(--green)', 300);
+
+  fetch(`/api/renters/me/live?key=${encodeURIComponent(apiKey)}`)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(updateDashboard)
+    .catch(err => {
+      document.getElementById('errorMsg').textContent = `Poll failed: ${err.message}`;
+      document.getElementById('errorMsg').style.display = 'block';
+    });
+}
+
+function updateDashboard(data) {
+  document.getElementById('errorMsg').style.display = 'none';
+
+  // Renter info
+  document.getElementById('renterName').textContent = data.renter?.name || data.renter?.email || 'Renter';
+  document.getElementById('renterBalance').textContent = `${data.renter?.balanceSar || '0.00'} SAR`;
+
+  const s = data.session || {};
+  document.getElementById('sessionDuration').textContent = formatDuration(s.durationSec || 0);
+
+  // Stats
+  document.getElementById('statRequests').textContent = s.totalRequests || 0;
+  document.getElementById('statSuccessRate').textContent = `${s.successRate || 100}% success rate`;
+  document.getElementById('statTokens').textContent = formatNumber(s.totalTokens || 0);
+  document.getElementById('statTokenBreakdown').textContent =
+    `${formatNumber(s.totalPromptTokens || 0)} prompt + ${formatNumber(s.totalCompletionTokens || 0)} completion`;
+  document.getElementById('statTokPerSec').textContent = s.avgTokensPerSec || 0;
+  document.getElementById('statErrors').textContent = s.totalErrors || 0;
+  document.getElementById('statErrorRate').textContent = s.totalErrors > 0
+    ? `${Math.round((s.totalErrors / Math.max(1, s.totalRequests)) * 100)}% error rate`
+    : 'no errors';
+  document.getElementById('statCost').textContent = s.totalCostUsd || '$0.00';
+  document.getElementById('statCostSar').textContent = `${((s.totalCostHalala || 0) / 100).toFixed(2)} SAR`;
+  document.getElementById('statActive').textContent = (data.active || []).length;
+
+  // Active requests
+  const activeList = document.getElementById('activeList');
+  if (data.active && data.active.length > 0) {
+    activeList.innerHTML = data.active.map(renderActiveRequest).join('');
+  } else {
+    activeList.innerHTML = '<div class="empty-state"><div class="icon">~</div>No active inference requests</div>';
+  }
+
+  // Recent completed
+  const recentList = document.getElementById('recentList');
+  if (data.recent && data.recent.length > 0) {
+    recentList.innerHTML = data.recent.map(renderCompletedRequest).join('');
+  } else {
+    recentList.innerHTML = '<div class="empty-state"><div class="icon">~</div>No recent requests yet</div>';
+  }
+}
+
+function renderActiveRequest(req) {
+  return `
+    <div class="request-card active">
+      <div class="request-header">
+        <span class="request-model">${esc(req.model)}</span>
+        <span class="request-status processing">PROCESSING</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: ${req.progressPct}%"></div>
+      </div>
+      <div class="request-metrics">
+        <div class="metric"><span class="k">Progress </span><span class="v accent">${req.progressPct}%</span></div>
+        <div class="metric"><span class="k">Tokens </span><span class="v">${req.tokensGenerated} / ${req.maxTokens}</span></div>
+        <div class="metric"><span class="k">Tok/s </span><span class="v accent">${req.tokensPerSec}</span></div>
+        <div class="metric"><span class="k">Elapsed </span><span class="v">${req.elapsedSec}s</span></div>
+        <div class="metric"><span class="k">ETA </span><span class="v">${req.etaSeconds != null ? req.etaSeconds + 's' : '—'}</span></div>
+        <div class="metric"><span class="k">GPU </span><span class="v">${esc(req.providerGpu)}</span></div>
+        <div class="metric"><span class="k">Stream </span><span class="v">${req.stream ? 'yes' : 'no'}</span></div>
+        <div class="metric"><span class="k">Temp </span><span class="v">${req.temperature}</span></div>
+      </div>
+    </div>`;
+}
+
+function renderCompletedRequest(req) {
+  const isError = req.status === 'error';
+  const statusClass = isError ? 'error' : 'completed';
+  const cardClass = isError ? 'error' : '';
+  const fillClass = isError ? 'error' : 'complete';
+  const durationSec = req.completedAt
+    ? ((new Date(req.completedAt) - new Date(req.startedAt)) / 1000).toFixed(1)
+    : req.elapsedSec;
+
+  return `
+    <div class="request-card ${cardClass}">
+      <div class="request-header">
+        <span class="request-model">${esc(req.model)}</span>
+        <span class="request-status ${statusClass}">${isError ? 'ERROR' : 'COMPLETED'}</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill ${fillClass}" style="width: ${isError ? 100 : req.progressPct}%"></div>
+      </div>
+      <div class="request-metrics">
+        <div class="metric"><span class="k">Tokens </span><span class="v">${req.promptTokens + req.completionTokens}</span></div>
+        <div class="metric"><span class="k">Prompt </span><span class="v">${req.promptTokens}</span></div>
+        <div class="metric"><span class="k">Completion </span><span class="v">${req.completionTokens}</span></div>
+        <div class="metric"><span class="k">Tok/s </span><span class="v">${req.tokensPerSec}</span></div>
+        <div class="metric"><span class="k">Duration </span><span class="v">${durationSec}s</span></div>
+        <div class="metric"><span class="k">GPU </span><span class="v">${esc(req.providerGpu)}</span></div>
+        ${isError ? `<div class="metric"><span class="k">Error </span><span class="v" style="color:var(--red)">${esc(req.error)}</span></div>` : ''}
+      </div>
+    </div>`;
+}
+
+function formatDuration(sec) {
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec/60)}m ${sec%60}s`;
+  return `${Math.floor(sec/3600)}h ${Math.floor((sec%3600)/60)}m`;
+}
+
+function formatNumber(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>

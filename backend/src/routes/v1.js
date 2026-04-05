@@ -25,6 +25,7 @@ const {
 } = rateLimiterMiddleware;
 const { toCatalogContractCore, toUsdStringFromHalala } = require('../lib/model-catalog-contract');
 const { recordOpenRouterUsage } = require('../services/openrouterSettlementService');
+const inferenceTracker = require('../services/inferenceTracker');
 const {
   selectProvidersWithLatencyGate,
   recordStreamOutcome,
@@ -526,7 +527,10 @@ router.get('/models', (req, res) => {
 // ── POST /v1/chat/completions — unified streaming + non-streaming ──────────
 
 const PROVIDER_HEARTBEAT_STALE_MS = 10 * 60 * 1000;
-const PROXY_TIMEOUT_MS = 30000;
+// Dynamic timeout: 30s base + scales with max_tokens (14B model at ~9 tok/s)
+const PROXY_TIMEOUT_BASE_MS = 30000;
+const PROXY_TIMEOUT_PER_TOKEN_MS = 150;
+const PROXY_TIMEOUT_MAX_MS = 300000; // 5 min hard cap
 
 function parseComputeTypes(raw) {
   if (!raw) return new Set(['inference', 'training', 'rendering']);
@@ -808,7 +812,7 @@ async function proxyToProvider({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+      signal: AbortSignal.timeout(Math.min(PROXY_TIMEOUT_BASE_MS + (maxTokens || 0) * PROXY_TIMEOUT_PER_TOKEN_MS, PROXY_TIMEOUT_MAX_MS)),
     });
   } catch (err) {
     return { proxyError: err.name === 'TimeoutError' ? 'timeout' : 'connection_refused', detail: err.message };
@@ -1091,6 +1095,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
     }
 
+    // Track inference request for live renter dashboard
+    inferenceTracker.trackStart({
+      requestId: meteringRequestId,
+      renterId: req.renter.id,
+      model: modelReq.model_id,
+      maxTokens,
+      temperature,
+      stream: wantsStream,
+      providerGpu: assignedProvider.gpu_name_detected || assignedProvider.gpu_model || 'unknown',
+      providerId: assignedProvider.id,
+      providerEndpoint: assignedProvider.vllm_endpoint_url,
+    });
+
     // If provider has a vLLM endpoint, proxy directly
     if (assignedProvider.vllm_endpoint_url) {
       const assignedProviderProxyModel = resolveProviderRoutingModel({
@@ -1122,6 +1139,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           providerForUsage,
           providerResponseId: normalizeString(resultBody?.id, { maxLen: 200 }),
           usage: usageForResponse,
+        });
+        inferenceTracker.trackComplete(meteringRequestId, {
+          promptTokens: usageForResponse.prompt_tokens || 0,
+          completionTokens: usageForResponse.completion_tokens || 0,
+          costHalala: toUsageSnapshot(usageForResponse).costHalala,
         });
         return res.json({
           ...resultBody,
@@ -1185,6 +1207,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
               const delta = parsed?.choices?.[0]?.delta?.content;
               if (typeof delta === 'string' && delta) {
                 completionText += delta;
+                inferenceTracker.trackTokens(meteringRequestId, 1);
               }
               if (parsed && parsed.usage && typeof parsed.usage === 'object') {
                 const usageWithPricing = withUsdUsagePricing(parsed.usage, tokenRateHalala);
@@ -1236,6 +1259,11 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             usage: finalUsage || {},
             completionText,
           });
+          inferenceTracker.trackComplete(meteringRequestId, {
+            promptTokens: finalUsage?.prompt_tokens || promptTokens,
+            completionTokens: finalUsage?.completion_tokens || approximateTokenCount(completionText),
+            costHalala: toUsageSnapshot(finalUsage || {}, completionText).costHalala,
+          });
           writeDoneOnce();
           res.end();
           recordStreamOutcome(db, {
@@ -1246,6 +1274,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             durationMs: Date.now() - startedAt,
           });
         } catch (error) {
+          inferenceTracker.trackError(meteringRequestId, error?.message || 'stream_error');
           persistFailureUsageBestEffort({
             providerForUsage,
             providerResponseId,
@@ -1458,6 +1487,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       providerResponseId: `chatcmpl-${jobId}`,
       usage: { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: promptTokens },
     });
+    inferenceTracker.trackError(meteringRequestId, 'upstream_timeout');
     return sendV1Error(res, {
       status: 504,
       type: 'timeout_error',
@@ -1469,6 +1499,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     if (typeof persistFailureUsageBestEffort === 'function') {
       persistFailureUsageBestEffort();
     }
+    inferenceTracker.trackError(meteringRequestId, error?.message || 'internal_error');
     console.error('[v1/chat/completions] Error:', error);
     return sendV1Error(res, {
       status: 500,

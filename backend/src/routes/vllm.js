@@ -328,7 +328,9 @@ function assignProvider(minVramMb) {
 
 // DCP-922: Proxy an inference request to a provider's vLLM endpoint.
 // Returns { text, promptTokens, completionTokens } on success or { proxyError, detail } on failure.
-const PROXY_TIMEOUT_MS = 30000;
+const PROXY_TIMEOUT_BASE_MS = 30000;
+const PROXY_TIMEOUT_PER_TOKEN_MS = 150;
+const PROXY_TIMEOUT_MAX_MS = 300000;
 async function proxyToProviderEndpoint({ endpointUrl, modelId, messages, maxTokens, temperature }) {
   const url = `${endpointUrl}/v1/chat/completions`;
   let response;
@@ -337,7 +339,7 @@ async function proxyToProviderEndpoint({ endpointUrl, modelId, messages, maxToke
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, temperature, stream: false }),
-      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+      signal: AbortSignal.timeout(Math.min(PROXY_TIMEOUT_BASE_MS + (maxTokens || 0) * PROXY_TIMEOUT_PER_TOKEN_MS, PROXY_TIMEOUT_MAX_MS)),
     });
   } catch (err) {
     const reason = err.name === 'TimeoutError' ? 'timeout' : 'connection_refused';

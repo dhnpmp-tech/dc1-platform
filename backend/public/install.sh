@@ -286,15 +286,15 @@ select_model_for_vram() {
     info "Selected: Qwen 3.5 35B-A3B (${VRAM_GB}GB GPU)"
   elif [ "${VRAM_GB}" -ge 20 ]; then
     DCP_MODEL="Qwen/Qwen2.5-14B-Instruct-AWQ"
-    DCP_MODEL_EXTRA_ARGS="--quantization awq --max-model-len 8192"
-    info "Selected: Qwen 2.5 14B AWQ (${VRAM_GB}GB GPU)"
+    DCP_MODEL_EXTRA_ARGS="--quantization awq_marlin --max-model-len 8192"
+    info "Selected: Qwen 2.5 14B AWQ + Marlin kernel (${VRAM_GB}GB GPU, ~78 tok/s)"
   elif [ "${VRAM_GB}" -ge 12 ]; then
-    DCP_MODEL="Qwen/Qwen2.5-7B-Instruct"
-    DCP_MODEL_EXTRA_ARGS="--max-model-len 8192"
-    info "Selected: Qwen 2.5 7B (12-16GB GPU)"
+    DCP_MODEL="Qwen/Qwen2.5-7B-Instruct-AWQ"
+    DCP_MODEL_EXTRA_ARGS="--quantization awq_marlin --max-model-len 8192"
+    info "Selected: Qwen 2.5 7B AWQ + Marlin kernel (12-16GB GPU, ~120 tok/s)"
   elif [ "${VRAM_GB}" -ge 8 ]; then
     DCP_MODEL="Qwen/Qwen2.5-3B-Instruct"
-    DCP_MODEL_EXTRA_ARGS=""
+    DCP_MODEL_EXTRA_ARGS="--max-model-len 8192"
     info "Selected: Qwen 2.5 3B (8GB GPU)"
   else
     fail "GPU has less than 8GB VRAM. Minimum: 8GB."
