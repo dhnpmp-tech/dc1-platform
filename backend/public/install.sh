@@ -356,14 +356,14 @@ install_vllm() {
 
   case "${gpu_arch}" in
     blackwell_consumer)
-      # RTX 5090/5080: needs cu128 wheel or source build
-      info "Blackwell consumer GPU — installing vLLM cu128 build..."
+      # RTX 5090/5080: needs cu130 wheel
+      info "Blackwell consumer GPU — installing vLLM cu130 build..."
       local vllm_ver="0.19.0"
       local cpu_arch
       cpu_arch="$(uname -m)"
-      "${PYTHON_BIN}" -m pip install -U "https://github.com/vllm-project/vllm/releases/download/v${vllm_ver}/vllm-${vllm_ver}+cu128-cp38-abi3-manylinux_2_35_${cpu_arch}.whl" \
-        --extra-index-url https://download.pytorch.org/whl/cu128 --progress-bar on 2>&1 || {
-          info "cu128 wheel failed, trying nightly..."
+      "${PYTHON_BIN}" -m pip install -U "https://github.com/vllm-project/vllm/releases/download/v${vllm_ver}/vllm-${vllm_ver}+cu130-cp38-abi3-manylinux_2_35_${cpu_arch}.whl" \
+        --extra-index-url https://download.pytorch.org/whl/cu130 --progress-bar on 2>&1 || {
+          info "cu130 wheel failed, trying nightly..."
           "${PYTHON_BIN}" -m pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly --progress-bar on 2>&1 || {
             warn "Could not install vLLM for Blackwell consumer GPU."
             return 1
