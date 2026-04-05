@@ -288,6 +288,19 @@ install_vllm() {
     return
   fi
 
+  # Check for PyTorch first — vLLM needs it
+  if ! "${PYTHON_BIN}" -c "import torch" 2>/dev/null; then
+    info "Installing PyTorch with CUDA support..."
+    "${PYTHON_BIN}" -m pip install torch --index-url https://download.pytorch.org/whl/cu121 -q 2>&1 | tail -3 || \
+      "${PYTHON_BIN}" -m pip install torch -q 2>&1 | tail -3 || {
+        warn "Could not install PyTorch. Install manually: pip install torch"
+        return 1
+      }
+    success "PyTorch installed"
+  else
+    info "PyTorch already installed"
+  fi
+
   info "Installing vLLM (this may take a few minutes)..."
   "${PYTHON_BIN}" -m pip install vllm -q 2>&1 | tail -3 || \
     "${PYTHON_BIN}" -m pip install --user vllm -q 2>&1 | tail -3 || \
