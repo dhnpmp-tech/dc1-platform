@@ -275,13 +275,13 @@ select_model_for_vram() {
   # Select the best model based on available VRAM
   # Returns model ID suitable for vLLM
   if [ "${VRAM_GB}" -ge 48 ]; then
-    DCP_MODEL="Qwen/Qwen3.5-27B-GPTQ-Int4"
+    DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
     DCP_MODEL_EXTRA_ARGS="--quantization gptq"
-    info "Selected: Qwen 3.5 27B (48GB+ GPU)"
+    info "Selected: Qwen 3.5 35B-A3B (48GB+ GPU)"
   elif [ "${VRAM_GB}" -ge 28 ]; then
-    DCP_MODEL="Qwen/Qwen3.5-27B-GPTQ-Int4"
+    DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
     DCP_MODEL_EXTRA_ARGS="--quantization gptq --max-model-len 16384"
-    info "Selected: Qwen 3.5 27B (${VRAM_GB}GB GPU)"
+    info "Selected: Qwen 3.5 35B-A3B (${VRAM_GB}GB GPU)"
   elif [ "${VRAM_GB}" -ge 20 ]; then
     DCP_MODEL="Qwen/Qwen2.5-14B-Instruct-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq --max-model-len 8192"
