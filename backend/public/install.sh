@@ -274,22 +274,26 @@ WGCONF
 select_model_for_vram() {
   # Select the best model based on available VRAM
   # Returns model ID suitable for vLLM
-  if [ "${VRAM_GB}" -ge 40 ]; then
+  if [ "${VRAM_GB}" -ge 48 ]; then
     DCP_MODEL="Qwen/Qwen2.5-72B-Instruct-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq"
-    info "Selected: Qwen 2.5 72B AWQ (large GPU)"
-  elif [ "${VRAM_GB}" -ge 20 ]; then
+    info "Selected: Qwen 2.5 72B AWQ (48GB+ GPU)"
+  elif [ "${VRAM_GB}" -ge 32 ]; then
     DCP_MODEL="Qwen/Qwen2.5-32B-Instruct-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq"
-    info "Selected: Qwen 2.5 32B AWQ (24GB+ GPU)"
+    info "Selected: Qwen 2.5 32B AWQ (32GB+ GPU)"
+  elif [ "${VRAM_GB}" -ge 20 ]; then
+    DCP_MODEL="Qwen/Qwen2.5-14B-Instruct-AWQ"
+    DCP_MODEL_EXTRA_ARGS="--quantization awq --max-model-len 8192"
+    info "Selected: Qwen 2.5 14B AWQ (24GB GPU)"
   elif [ "${VRAM_GB}" -ge 12 ]; then
-    DCP_MODEL="Qwen/Qwen2.5-14B-Instruct"
-    DCP_MODEL_EXTRA_ARGS=""
-    info "Selected: Qwen 2.5 14B (16GB GPU)"
-  elif [ "${VRAM_GB}" -ge 8 ]; then
     DCP_MODEL="Qwen/Qwen2.5-7B-Instruct"
+    DCP_MODEL_EXTRA_ARGS="--max-model-len 8192"
+    info "Selected: Qwen 2.5 7B (12-16GB GPU)"
+  elif [ "${VRAM_GB}" -ge 8 ]; then
+    DCP_MODEL="Qwen/Qwen2.5-3B-Instruct"
     DCP_MODEL_EXTRA_ARGS=""
-    info "Selected: Qwen 2.5 7B (8GB+ GPU)"
+    info "Selected: Qwen 2.5 3B (8GB GPU)"
   else
     fail "GPU has less than 8GB VRAM. Minimum: 8GB."
   fi
