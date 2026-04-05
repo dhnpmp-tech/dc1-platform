@@ -312,61 +312,118 @@ install_vllm() {
   # Step 1: Detect GPU architecture
   local compute_cap=""
   local gpu_arch="standard"
+  GPU_COMPUTE_CAP=""
   compute_cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '[:space:]')"
+  GPU_COMPUTE_CAP="${compute_cap}"
   if [ -n "${compute_cap}" ]; then
     case "${compute_cap}" in
-      10.*|100) gpu_arch="blackwell" ;;
-      9.*)      gpu_arch="hopper" ;;
-      8.9)      gpu_arch="ada" ;;
-      8.6)      gpu_arch="ampere86" ;;
-      8.0)      gpu_arch="ampere" ;;
+      12.*) gpu_arch="blackwell_consumer" ;;  # RTX 5090, 5080
+      10.*) gpu_arch="blackwell_dc" ;;        # B100, B200, GB200
+      9.*)  gpu_arch="hopper" ;;              # H100, H200
+      8.9)  gpu_arch="ada" ;;                 # RTX 4090, L40S, L4
+      8.6)  gpu_arch="ampere86" ;;            # RTX 3090, A40, A5000, A6000
+      8.0)  gpu_arch="ampere" ;;              # A100
+      *)    gpu_arch="standard" ;;
     esac
-    info "GPU architecture: ${compute_cap} (${gpu_arch})"
+    info "GPU compute: ${compute_cap} (${gpu_arch})"
   fi
 
-  # Step 2: Install PyTorch if missing
+  # Step 2: Install PyTorch (correct CUDA version for architecture)
   if ! "${PYTHON_BIN}" -c "import torch" 2>/dev/null; then
-    info "Installing PyTorch..."
-    "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
-      warn "Could not install PyTorch."
-      return 1
-    }
+    case "${gpu_arch}" in
+      blackwell_consumer|blackwell_dc)
+        info "Installing PyTorch with CUDA 12.8 (Blackwell)..."
+        "${PYTHON_BIN}" -m pip install torch --index-url https://download.pytorch.org/whl/cu128 --progress-bar on 2>&1 || \
+          "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
+            warn "Could not install PyTorch."; return 1
+          }
+        ;;
+      *)
+        info "Installing PyTorch..."
+        "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
+          warn "Could not install PyTorch."; return 1
+        }
+        ;;
+    esac
     success "PyTorch installed"
   else
     info "PyTorch already installed"
   fi
 
   # Step 3: Install vLLM (correct build for GPU architecture)
-  if [ "${gpu_arch}" = "blackwell" ]; then
-    info "Blackwell GPU — installing vLLM with CUDA 13.0 support..."
-    "${PYTHON_BIN}" -m pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly --progress-bar on 2>&1 || {
-      warn "Nightly failed, trying standard..."
-      "${PYTHON_BIN}" -m pip install -U vllm --progress-bar on 2>&1 || {
-        warn "Could not install vLLM."
-        return 1
-      }
-    }
-  else
-    if "${PYTHON_BIN}" -c "import vllm" 2>/dev/null; then
-      info "vLLM already installed"
-    else
-      info "Installing vLLM..."
-      "${PYTHON_BIN}" -m pip install vllm --progress-bar on 2>&1 || {
-        warn "Could not install vLLM."
-        return 1
-      }
-    fi
-  fi
+  local vllm_installed=false
+  "${PYTHON_BIN}" -c "import vllm" 2>/dev/null && vllm_installed=true
+
+  case "${gpu_arch}" in
+    blackwell_consumer)
+      # RTX 5090/5080: needs cu128 wheel or source build
+      info "Blackwell consumer GPU — installing vLLM cu128 build..."
+      local vllm_ver="0.19.0"
+      local cpu_arch
+      cpu_arch="$(uname -m)"
+      "${PYTHON_BIN}" -m pip install -U "https://github.com/vllm-project/vllm/releases/download/v${vllm_ver}/vllm-${vllm_ver}+cu128-cp38-abi3-manylinux_2_35_${cpu_arch}.whl" \
+        --extra-index-url https://download.pytorch.org/whl/cu128 --progress-bar on 2>&1 || {
+          info "cu128 wheel failed, trying nightly..."
+          "${PYTHON_BIN}" -m pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly --progress-bar on 2>&1 || {
+            warn "Could not install vLLM for Blackwell consumer GPU."
+            return 1
+          }
+        }
+      ;;
+    blackwell_dc)
+      # B100/B200: needs cu128 or cu130 wheel
+      info "Blackwell datacenter GPU — installing vLLM cu130 build..."
+      local vllm_ver="0.19.0"
+      local cpu_arch
+      cpu_arch="$(uname -m)"
+      "${PYTHON_BIN}" -m pip install -U "https://github.com/vllm-project/vllm/releases/download/v${vllm_ver}/vllm-${vllm_ver}+cu130-cp38-abi3-manylinux_2_35_${cpu_arch}.whl" \
+        --extra-index-url https://download.pytorch.org/whl/cu130 --progress-bar on 2>&1 || {
+          warn "Could not install vLLM for Blackwell datacenter GPU."
+          return 1
+        }
+      ;;
+    *)
+      # Ampere, Ada, Hopper: standard pip install
+      if [ "${vllm_installed}" = "true" ]; then
+        info "vLLM already installed"
+      else
+        info "Installing vLLM..."
+        "${PYTHON_BIN}" -m pip install vllm --progress-bar on 2>&1 || {
+          warn "Could not install vLLM."
+          return 1
+        }
+      fi
+      ;;
+  esac
   success "vLLM ready"
 
-  # Step 4: Qwen 3.5 needs transformers 5.x+ (installed AFTER vLLM to prevent downgrade)
-  if echo "${DCP_MODEL:-}" | grep -q "Qwen3.5"; then
-    info "Qwen 3.5 requires latest transformers — installing from source..."
+  # Step 4: Set GPU-specific environment flags
+  case "${gpu_arch}" in
+    blackwell_consumer)
+      # RTX 5090 needs FA2, not FA3/FA4
+      export VLLM_FLASH_ATTN_VERSION=2
+      export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      info "Set Blackwell consumer flags (FA2, expandable segments)"
+      ;;
+    blackwell_dc)
+      info "Blackwell datacenter — FA4 default"
+      ;;
+  esac
+
+  # Step 5: Qwen 3.5 / Gemma 4 / GLM-5 need latest transformers
+  # Install AFTER vLLM with --no-deps to prevent downgrade
+  local needs_dev_transformers=false
+  if echo "${DCP_MODEL:-}" | grep -qiE "Qwen3\.5|gemma-4|glm-5"; then
+    needs_dev_transformers=true
+  fi
+
+  if [ "${needs_dev_transformers}" = "true" ]; then
+    info "Model requires latest transformers — installing from source (--no-deps)..."
     "${PYTHON_BIN}" -m pip install --no-deps git+https://github.com/huggingface/transformers.git --progress-bar on 2>&1 || {
       warn "Could not install transformers from source."
       return 1
     }
-    success "Transformers updated for Qwen 3.5"
+    success "Transformers updated for ${DCP_MODEL}"
   fi
 }
 
