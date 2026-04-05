@@ -275,13 +275,15 @@ select_model_for_vram() {
   # Select the best model based on available VRAM
   # Returns model ID suitable for vLLM
   if [ "${VRAM_GB}" -ge 48 ]; then
-    DCP_MODEL="Qwen/Qwen3-32B-AWQ"
-    DCP_MODEL_EXTRA_ARGS="--quantization awq"
-    info "Selected: Qwen 3 32B AWQ (48GB+ GPU)"
+    DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
+    DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --dtype bfloat16 --max-num-batched-tokens 2096 --trust-remote-code"
+    DCP_NEEDS_VLLM_UPGRADE=true
+    info "Selected: Qwen 3.5 35B-A3B (48GB+ GPU)"
   elif [ "${VRAM_GB}" -ge 28 ]; then
-    DCP_MODEL="Qwen/Qwen3-32B-AWQ"
-    DCP_MODEL_EXTRA_ARGS="--quantization awq --max-model-len 16384"
-    info "Selected: Qwen 3 32B AWQ (${VRAM_GB}GB GPU)"
+    DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
+    DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --dtype bfloat16 --max-model-len 16384 --max-num-batched-tokens 2096 --trust-remote-code"
+    DCP_NEEDS_VLLM_UPGRADE=true
+    info "Selected: Qwen 3.5 35B-A3B (${VRAM_GB}GB GPU)"
   elif [ "${VRAM_GB}" -ge 20 ]; then
     DCP_MODEL="Qwen/Qwen2.5-14B-Instruct-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq --max-model-len 8192"
@@ -308,9 +310,11 @@ select_model_for_vram() {
 
 install_vllm() {
   if "${PYTHON_BIN}" -c "import vllm" 2>/dev/null; then
-    if [ "${DCP_NEEDS_LATEST_VLLM:-false}" = "true" ]; then
-      info "Upgrading vLLM to latest for Qwen 3.5 support..."
-      "${PYTHON_BIN}" -m pip install --upgrade vllm transformers --progress-bar on 2>&1 || true
+    if [ "${DCP_NEEDS_VLLM_UPGRADE:-false}" = "true" ]; then
+      info "Upgrading vLLM for Qwen 3.5 support..."
+      "${PYTHON_BIN}" -m pip install -U vllm --progress-bar on 2>&1 || true
+      # Clear any stale HuggingFace cache for this model
+      rm -rf ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-* 2>/dev/null || true
       success "vLLM upgraded"
     else
       info "vLLM already installed"
