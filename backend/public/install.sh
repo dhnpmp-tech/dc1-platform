@@ -134,16 +134,35 @@ ensure_python() {
 
 register_provider_if_needed() {
   if [ -n "${DCP_PROVIDER_KEY}" ]; then
-    info "Existing provider key found; skipping registration."
+    info "Provider key found."
     return
   fi
 
+  # Ask for existing key first
+  if [ -r /dev/tty ]; then
+    echo ""
+    info "Register at https://dcp.sa/provider/register to get your API key."
+    echo ""
+    read -r -p "  Enter your DCP provider API key (dc1-provider-...): " DCP_PROVIDER_KEY </dev/tty
+    echo ""
+    if [ -n "${DCP_PROVIDER_KEY}" ]; then
+      if echo "${DCP_PROVIDER_KEY}" | grep -q "^dc1-provider-"; then
+        success "API key accepted"
+        return
+      else
+        warn "Key doesn't look right (expected dc1-provider-...). Trying auto-registration."
+        DCP_PROVIDER_KEY=""
+      fi
+    fi
+  fi
+
+  # Fallback: auto-register with email
   [ -n "${DCP_PROVIDER_NAME}" ] || DCP_PROVIDER_NAME="$(hostname 2>/dev/null || whoami)"
 
   if [ -z "${DCP_PROVIDER_EMAIL}" ] && [ -r /dev/tty ]; then
-    read -r -p "Enter provider email: " DCP_PROVIDER_EMAIL </dev/tty
+    read -r -p "  No API key? Enter your email to register: " DCP_PROVIDER_EMAIL </dev/tty
   fi
-  [ -n "${DCP_PROVIDER_EMAIL}" ] || fail "DCP_PROVIDER_EMAIL is required for auto-registration."
+  [ -n "${DCP_PROVIDER_EMAIL}" ] || fail "API key or email required. Register at https://dcp.sa/provider/register"
 
   local payload
   payload=$(cat <<JSON
