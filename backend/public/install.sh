@@ -285,9 +285,9 @@ select_model_for_vram() {
     DCP_NEEDS_VLLM_UPGRADE=true
     info "Selected: Qwen 3.5 35B-A3B (${VRAM_GB}GB GPU)"
   elif [ "${VRAM_GB}" -ge 20 ]; then
-    DCP_MODEL="Qwen/Qwen2.5-14B-Instruct-AWQ"
-    DCP_MODEL_EXTRA_ARGS="--quantization awq_marlin --max-model-len 8192"
-    info "Selected: Qwen 2.5 14B AWQ + Marlin kernel (${VRAM_GB}GB GPU, ~78 tok/s)"
+    DCP_MODEL="Qwen/Qwen3-30B-A3B-GPTQ-Int4"
+    DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --max-model-len 8192 --enable-prefix-caching --trust-remote-code"
+    info "Selected: Qwen3 30B-A3B MoE + Marlin (${VRAM_GB}GB GPU, ~138 tok/s)"
   elif [ "${VRAM_GB}" -ge 12 ]; then
     DCP_MODEL="Qwen/Qwen2.5-7B-Instruct-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq_marlin --max-model-len 8192"
