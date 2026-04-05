@@ -353,19 +353,25 @@ start_vllm() {
   select_model_for_vram
 
   # Check disk space — models need 5-30GB depending on size
-  local free_disk_gb
-  free_disk_gb="$(df -BG "${INSTALL_DIR}" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')"
-  if [ -n "${free_disk_gb}" ] && [ "${free_disk_gb}" -lt 15 ]; then
+  local free_disk_gb=""
+  free_disk_gb="$(df -BG "${INSTALL_DIR}" 2>/dev/null | awk 'NR==2{gsub(/G/,""); print $4}' || echo "")"
+  if [ -z "${free_disk_gb}" ]; then
+    # macOS fallback (df doesn't support -BG)
+    free_disk_gb="$(df -g "${INSTALL_DIR}" 2>/dev/null | awk 'NR==2{print $4}' || echo "")"
+  fi
+  if [ -n "${free_disk_gb}" ] && [ "${free_disk_gb}" -lt 15 ] 2>/dev/null; then
     warn "Low disk space: ${free_disk_gb}GB free. Model download needs 10-30GB."
     info "Cleaning up pip cache and old downloads..."
     "${PYTHON_BIN}" -m pip cache purge 2>/dev/null || true
     rm -rf /root/.cache/huggingface/hub/models--*/.no_exist 2>/dev/null || true
     rm -rf /tmp/pip-* /tmp/huggingface-* 2>/dev/null || true
-    free_disk_gb="$(df -BG "${INSTALL_DIR}" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')"
-    if [ -n "${free_disk_gb}" ] && [ "${free_disk_gb}" -lt 10 ]; then
+    free_disk_gb="$(df -BG "${INSTALL_DIR}" 2>/dev/null | awk 'NR==2{gsub(/G/,""); print $4}' || echo "0")"
+    if [ -n "${free_disk_gb}" ] && [ "${free_disk_gb}" -lt 10 ] 2>/dev/null; then
       fail "Not enough disk space (${free_disk_gb}GB free, need at least 10GB). Add more storage or clean up manually."
     fi
     info "Disk space after cleanup: ${free_disk_gb}GB free"
+  else
+    info "Disk space: ${free_disk_gb:-unknown}GB free"
   fi
 
   info "Starting vLLM with ${DCP_MODEL}..."
