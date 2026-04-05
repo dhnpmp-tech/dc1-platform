@@ -248,33 +248,144 @@ WGCONF
   fi
 }
 
-detect_cloud_gpu() {
-  # Auto-detect if we're running inside a cloud GPU environment
-  local is_cloud=false
 
-  # RunPod detection
-  if [ -n "${RUNPOD_POD_ID:-}" ] || [ -f /etc/runpod.conf ] || hostname 2>/dev/null | grep -qE '^[0-9a-f]{12}$'; then
-    is_cloud=true
-    info "Detected cloud GPU environment (RunPod)"
-  # Lambda Labs detection
-  elif [ -n "${LAMBDA_NODE_ID:-}" ] || [ -d /opt/lambda ]; then
-    is_cloud=true
-    info "Detected cloud GPU environment (Lambda Labs)"
-  # Generic Docker/container detection
-  elif [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
-    is_cloud=true
-    info "Detected containerized environment"
+
+
+select_model_for_vram() {
+  # Select the best model based on available VRAM
+  # Returns model ID suitable for vLLM
+  if [ "${VRAM_GB}" -ge 40 ]; then
+    DCP_MODEL="Qwen/Qwen2.5-72B-Instruct-AWQ"
+    DCP_MODEL_EXTRA_ARGS="--quantization awq"
+    info "Selected: Qwen 2.5 72B AWQ (large GPU)"
+  elif [ "${VRAM_GB}" -ge 20 ]; then
+    DCP_MODEL="Qwen/Qwen2.5-32B-Instruct-AWQ"
+    DCP_MODEL_EXTRA_ARGS="--quantization awq"
+    info "Selected: Qwen 2.5 32B AWQ (24GB+ GPU)"
+  elif [ "${VRAM_GB}" -ge 12 ]; then
+    DCP_MODEL="Qwen/Qwen2.5-14B-Instruct"
+    DCP_MODEL_EXTRA_ARGS=""
+    info "Selected: Qwen 2.5 14B (16GB GPU)"
+  elif [ "${VRAM_GB}" -ge 8 ]; then
+    DCP_MODEL="Qwen/Qwen2.5-7B-Instruct"
+    DCP_MODEL_EXTRA_ARGS=""
+    info "Selected: Qwen 2.5 7B (8GB+ GPU)"
+  else
+    fail "GPU has less than 8GB VRAM. Minimum: 8GB."
   fi
 
-  # Allow env var override: VLLM_ENDPOINT_URL or DCP_CLOUD_GPU=true
-  if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
-    info "vLLM endpoint URL: ${VLLM_ENDPOINT_URL}"
+  # Allow override via env var
+  if [ -n "${DCP_MODEL_OVERRIDE:-}" ]; then
+    DCP_MODEL="${DCP_MODEL_OVERRIDE}"
+    DCP_MODEL_EXTRA_ARGS="${DCP_MODEL_EXTRA_ARGS_OVERRIDE:-}"
+    info "Model overridden to: ${DCP_MODEL}"
+  fi
+}
+
+install_vllm() {
+  if "${PYTHON_BIN}" -c "import vllm" 2>/dev/null; then
+    info "vLLM already installed"
     return
   fi
 
-  if [ "${is_cloud}" = "true" ] || [ "${DCP_CLOUD_GPU:-}" = "true" ]; then
+  info "Installing vLLM (this may take a few minutes)..."
+  "${PYTHON_BIN}" -m pip install vllm -q 2>&1 | tail -3 || \
+    "${PYTHON_BIN}" -m pip install --user vllm -q 2>&1 | tail -3 || \
+    "${PYTHON_BIN}" -m pip install --break-system-packages vllm -q 2>&1 | tail -3 || {
+      warn "Could not install vLLM automatically."
+      warn "Install manually: pip install vllm"
+      return 1
+    }
+  success "vLLM installed"
+}
+
+start_vllm() {
+  # Check if vLLM is already running on port 8000
+  if curl -s http://localhost:8000/health >/dev/null 2>&1; then
+    info "vLLM already running on port 8000"
+    # Get the model name from the running instance
+    local running_model
+    running_model="$(curl -s http://localhost:8000/v1/models 2>/dev/null | "${PYTHON_BIN}" -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['id'])" 2>/dev/null || echo "")"
+    if [ -n "${running_model}" ]; then
+      DCP_MODEL="${running_model}"
+      info "Running model: ${DCP_MODEL}"
+    fi
+    return
+  fi
+
+  select_model_for_vram
+
+  info "Starting vLLM with ${DCP_MODEL}..."
+  info "This will download the model weights on first run (may take several minutes)"
+
+  local vllm_log="${LOG_DIR}/vllm.log"
+  mkdir -p "${LOG_DIR}"
+
+  # Start vLLM in background
+  nohup "${PYTHON_BIN}" -m vllm.entrypoints.openai.api_server \
+    --model "${DCP_MODEL}" \
+    --host 0.0.0.0 \
+    --port 8000 \
+    ${DCP_MODEL_EXTRA_ARGS} \
+    > "${vllm_log}" 2>&1 &
+
+  local vllm_pid=$!
+  echo "${vllm_pid}" > "${INSTALL_DIR}/vllm.pid"
+  info "vLLM starting (PID ${vllm_pid}), waiting for health check..."
+
+  # Wait for vLLM to become healthy (up to 10 minutes for model download)
+  local attempts=0
+  local max_attempts=120
+  while [ "${attempts}" -lt "${max_attempts}" ]; do
+    if curl -s http://localhost:8000/health >/dev/null 2>&1; then
+      success "vLLM is ready — serving ${DCP_MODEL}"
+      return
+    fi
+    # Check if process is still alive
+    if ! kill -0 "${vllm_pid}" 2>/dev/null; then
+      warn "vLLM process died. Check logs: ${vllm_log}"
+      tail -5 "${vllm_log}" 2>/dev/null || true
+      fail "vLLM failed to start. Check ${vllm_log} for details."
+    fi
+    attempts=$((attempts + 1))
+    sleep 5
+  done
+  warn "vLLM did not become healthy within 10 minutes."
+  warn "It may still be downloading the model. Check: tail -f ${vllm_log}"
+  warn "Once healthy, restart the daemon: systemctl restart dcp-provider"
+}
+
+detect_endpoint_url() {
+  # For cloud GPUs, figure out the public endpoint URL
+  if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
+    return
+  fi
+
+  # RunPod: construct from pod ID
+  if [ -n "${RUNPOD_POD_ID:-}" ]; then
+    VLLM_ENDPOINT_URL="https://${RUNPOD_POD_ID}-8000.proxy.runpod.net"
+    info "RunPod endpoint: ${VLLM_ENDPOINT_URL}"
+    return
+  fi
+
+  # Try to auto-detect from RunPod hostname pattern
+  local pod_hostname
+  pod_hostname="$(hostname 2>/dev/null || echo "")"
+  if echo "${pod_hostname}" | grep -qE '^[0-9a-f]{12}$'; then
+    # Looks like a RunPod container ID, but we need the pod ID
+    # Check if RUNPOD_POD_ID is in environment
+    if [ -n "${RUNPOD_POD_ID:-}" ]; then
+      VLLM_ENDPOINT_URL="https://${RUNPOD_POD_ID}-8000.proxy.runpod.net"
+      info "RunPod endpoint: ${VLLM_ENDPOINT_URL}"
+      return
+    fi
+  fi
+
+  # Cloud but can't auto-detect — ask the user
+  if [ "${IS_CLOUD:-false}" = "true" ]; then
     echo ""
-    info "Your GPU is in the cloud. DCP needs the public URL where your vLLM server is reachable."
+    info "Could not auto-detect your public endpoint URL."
+    info "Your vLLM server needs to be reachable from the internet."
     info "Examples:"
     info "  RunPod:  https://<pod-id>-8000.proxy.runpod.net"
     info "  Lambda:  http://<instance-ip>:8000"
@@ -283,12 +394,10 @@ detect_cloud_gpu() {
       read -r -p "  Enter your vLLM endpoint URL (or press Enter to set later): " VLLM_ENDPOINT_URL </dev/tty
     fi
     if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
-      success "vLLM endpoint URL set: ${VLLM_ENDPOINT_URL}"
+      success "Endpoint URL set: ${VLLM_ENDPOINT_URL}"
     else
-      info "No endpoint URL set. You can add it later at dcp.sa/provider/settings"
+      info "Set it later at dcp.sa/provider/settings"
     fi
-  else
-    info "Local GPU detected — WireGuard VPN will handle connectivity"
   fi
 }
 
@@ -564,11 +673,41 @@ step "Saving local config"
 write_config
 info "Config saved at ${CONFIG_FILE}"
 
-step "Setting up WireGuard VPN"
-setup_wireguard
+step "Detecting environment"
+IS_CLOUD=false
+# RunPod detection
+if [ -n "${RUNPOD_POD_ID:-}" ] || [ -f /etc/runpod.conf ] || hostname 2>/dev/null | grep -qE '^[0-9a-f]{12}$'; then
+  IS_CLOUD=true
+  info "Cloud GPU detected (RunPod)"
+# Lambda Labs detection
+elif [ -n "${LAMBDA_NODE_ID:-}" ] || [ -d /opt/lambda ]; then
+  IS_CLOUD=true
+  info "Cloud GPU detected (Lambda Labs)"
+# Generic Docker/container detection
+elif [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
+  IS_CLOUD=true
+  info "Containerized environment detected"
+# Manual override
+elif [ "${DCP_CLOUD_GPU:-}" = "true" ]; then
+  IS_CLOUD=true
+  info "Cloud GPU mode (manual override)"
+else
+  info "Local/home GPU detected"
+fi
 
-step "GPU location"
-detect_cloud_gpu
+if [ "${IS_CLOUD}" = "false" ]; then
+  step "Setting up WireGuard VPN"
+  setup_wireguard
+fi
+
+step "Setting up inference server"
+install_vllm
+start_vllm
+
+if [ "${IS_CLOUD}" = "true" ]; then
+  step "Configuring cloud endpoint"
+  detect_endpoint_url
+fi
 
 step "Downloading daemon"
 download_daemon
@@ -584,15 +723,18 @@ step "Finalizing"
 fetch_provider_id_if_missing
 write_config
 
-if [ -n "${DCP_PROVIDER_ID}" ]; then
-  printf '\n%s\n' "✓ DCP Provider setup complete! Your provider ID: ${DCP_PROVIDER_ID}"
-else
-  printf '\n%s\n' "✓ DCP Provider setup complete! Your provider ID: unknown"
+printf '\n%s\n' "============================================"
+printf '%s\n' "  DCP Provider is LIVE"
+printf '%s\n' "============================================"
+echo ""
+info "Provider ID:  ${DCP_PROVIDER_ID:-unknown}"
+info "GPU:          ${GPU_MODEL} (${VRAM_GB}GB)"
+info "Model:        ${DCP_MODEL:-unknown}"
+info "Status:       Heartbeating every 30s"
+if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
+  info "Endpoint:     ${VLLM_ENDPOINT_URL}"
 fi
-
-info "Provider key saved to ${CONFIG_FILE}"
-info "Daemon path: ${DAEMON_PATH}"
-info "Log path: ${LOG_DIR}/daemon.log"
-if [ "${DCP_OS}" = "linux" ]; then
-  info "Optional system service mode: DCP_SYSTEMD_MODE=system (uses sudo)"
-fi
+info "Dashboard:    https://dcp.sa/provider"
+info "Daemon logs:  ${LOG_DIR}/daemon.log"
+info "vLLM logs:    ${LOG_DIR}/vllm.log"
+echo ""
