@@ -530,7 +530,10 @@ function DeployModal({ state, onClose, onConfirm }: {
               Job submitted — redirecting to live status…
             </div>
             {state.jobId !== 'submitted' && (
-              <Link href={`/renter/jobs/${state.jobId}`} className="text-xs text-status-success underline">View Live Status →</Link>
+              <div className="flex gap-3">
+                <Link href={`/renter/jobs/${state.jobId}`} className="text-xs text-status-success underline">View Job Status →</Link>
+                <Link href="/renter/live" className="text-xs text-cyan-400 underline">Live Monitor →</Link>
+              </div>
             )}
           </div>
         )}
