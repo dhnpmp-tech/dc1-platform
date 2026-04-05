@@ -311,8 +311,8 @@ install_vllm() {
   # Check for PyTorch first — vLLM needs it
   if ! "${PYTHON_BIN}" -c "import torch" 2>/dev/null; then
     info "Installing PyTorch with CUDA support..."
-    "${PYTHON_BIN}" -m pip install torch --index-url https://download.pytorch.org/whl/cu121 -q 2>&1 | tail -3 || \
-      "${PYTHON_BIN}" -m pip install torch -q 2>&1 | tail -3 || {
+    "${PYTHON_BIN}" -m pip install torch --index-url https://download.pytorch.org/whl/cu121 --progress-bar on 2>&1 || \
+      "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
         warn "Could not install PyTorch. Install manually: pip install torch"
         return 1
       }
@@ -321,10 +321,10 @@ install_vllm() {
     info "PyTorch already installed"
   fi
 
-  info "Installing vLLM (this may take a few minutes)..."
-  "${PYTHON_BIN}" -m pip install vllm -q 2>&1 | tail -3 || \
-    "${PYTHON_BIN}" -m pip install --user vllm -q 2>&1 | tail -3 || \
-    "${PYTHON_BIN}" -m pip install --break-system-packages vllm -q 2>&1 | tail -3 || {
+  info "Installing vLLM..."
+  "${PYTHON_BIN}" -m pip install vllm --progress-bar on 2>&1 || \
+    "${PYTHON_BIN}" -m pip install --user vllm --progress-bar on 2>&1 || \
+    "${PYTHON_BIN}" -m pip install --break-system-packages vllm --progress-bar on 2>&1 || {
       warn "Could not install vLLM automatically."
       warn "Install manually: pip install vllm"
       return 1
@@ -369,17 +369,23 @@ start_vllm() {
   # Wait for vLLM to become healthy (up to 10 minutes for model download)
   local attempts=0
   local max_attempts=120
+  local spinner='|/-\'
   while [ "${attempts}" -lt "${max_attempts}" ]; do
     if curl -s http://localhost:8000/health >/dev/null 2>&1; then
-      success "vLLM is ready — serving ${DCP_MODEL}"
+      printf '\r  + vLLM is ready — serving %s                    \n' "${DCP_MODEL}"
       return
     fi
     # Check if process is still alive
     if ! kill -0 "${vllm_pid}" 2>/dev/null; then
+      printf '\n'
       warn "vLLM process died. Check logs: ${vllm_log}"
       tail -5 "${vllm_log}" 2>/dev/null || true
       fail "vLLM failed to start. Check ${vllm_log} for details."
     fi
+    # Show spinner with elapsed time
+    local spin_char="${spinner:$((attempts % 4)):1}"
+    local elapsed=$(( attempts * 5 ))
+    printf '\r  %s Waiting for model to load... (%ds elapsed)  ' "${spin_char}" "${elapsed}"
     attempts=$((attempts + 1))
     sleep 5
   done
