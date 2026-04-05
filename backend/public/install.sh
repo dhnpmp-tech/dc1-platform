@@ -418,7 +418,8 @@ install_vllm() {
   fi
 
   if [ "${needs_dev_transformers}" = "true" ]; then
-    info "Model requires latest transformers — installing from source (--no-deps)..."
+    info "Model requires latest transformers — installing from source..."
+    "${PYTHON_BIN}" -m pip install -U huggingface_hub --progress-bar on 2>&1 || true
     "${PYTHON_BIN}" -m pip install --no-deps git+https://github.com/huggingface/transformers.git --progress-bar on 2>&1 || {
       warn "Could not install transformers from source."
       return 1
