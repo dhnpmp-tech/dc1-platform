@@ -115,7 +115,7 @@ detect_gpu() {
       GPU_MODEL="NVIDIA GPU"
     fi
     if [ -n "${VRAM_MIB_RAW}" ] && [ "${VRAM_MIB_RAW}" -ge 0 ] 2>/dev/null; then
-      VRAM_GB="$((VRAM_MIB_RAW / 1024))"
+      VRAM_GB="$(( (VRAM_MIB_RAW + 512) / 1024 ))"
     else
       VRAM_GB=0
     fi
@@ -278,14 +278,14 @@ select_model_for_vram() {
     DCP_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq"
     info "Selected: Qwen 3.5 27B AWQ (48GB+ GPU)"
-  elif [ "${VRAM_GB}" -ge 32 ]; then
+  elif [ "${VRAM_GB}" -ge 28 ]; then
     DCP_MODEL="QuantTrio/Qwen3.5-27B-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq --max-model-len 16384"
-    info "Selected: Qwen 3.5 27B AWQ (32GB GPU)"
+    info "Selected: Qwen 3.5 27B AWQ (${VRAM_GB}GB GPU)"
   elif [ "${VRAM_GB}" -ge 20 ]; then
     DCP_MODEL="Qwen/Qwen2.5-14B-Instruct-AWQ"
     DCP_MODEL_EXTRA_ARGS="--quantization awq --max-model-len 8192"
-    info "Selected: Qwen 2.5 14B AWQ (24GB GPU)"
+    info "Selected: Qwen 2.5 14B AWQ (${VRAM_GB}GB GPU)"
   elif [ "${VRAM_GB}" -ge 12 ]; then
     DCP_MODEL="Qwen/Qwen2.5-7B-Instruct"
     DCP_MODEL_EXTRA_ARGS="--max-model-len 8192"
