@@ -441,7 +441,7 @@ start_vllm() {
     return
   fi
 
-  select_model_for_vram
+  # Model already selected before install_vllm was called
 
   # Check disk space — models need 5-30GB depending on size
   local free_disk_gb=""
@@ -857,6 +857,7 @@ if [ "${IS_CLOUD}" = "false" ]; then
 fi
 
 step "Setting up inference server"
+select_model_for_vram
 install_vllm
 start_vllm
 
