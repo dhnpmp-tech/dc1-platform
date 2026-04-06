@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes aurora {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(5%, -3%) scale(1.05); }
+  66% { transform: translate(-3%, 5%) scale(0.95); }
+}
+
 @layer base {
   * {
     box-sizing: border-box;
