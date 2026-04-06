@@ -242,28 +242,52 @@ export async function POST(req: NextRequest) {
     ...userMessages,
   ]
 
-  // Call OpenRouter API (OpenAI-compatible)
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://dcp.sa',
-        'X-Title': 'DCP Support Chat',
-      },
-      body: JSON.stringify({
-        model: 'qwen/qwen3.6-plus:free',
-        max_tokens: 1024,
-        temperature: 0.3,
-        messages,
-      }),
-      signal: AbortSignal.timeout(25_000),
-    })
+  // Call OpenRouter API with fallback chain (free models get rate-limited)
+  const MODELS = [
+    'qwen/qwen3.6-plus:free',
+    'nvidia/nemotron-3-nano-30b-a3b:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'minimax/minimax-m2.5:free',
+    'stepfun/step-3.5-flash:free',
+  ]
 
-    if (!response.ok) {
+  let response: Response | null = null
+  let lastError: string = ''
+
+  for (const model of MODELS) {
+    try {
+      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://dcp.sa',
+          'X-Title': 'DCP Support Chat',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1024,
+          temperature: 0.3,
+          messages,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      })
+
+      if (response.ok) break
+
       const errorData = await response.json().catch(() => ({}))
-      console.error('[DCP Chat] OpenRouter error:', response.status, errorData)
+      lastError = errorData?.error?.message || `HTTP ${response.status}`
+      console.error(`[DCP Chat] ${model} failed:`, lastError)
+      response = null
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : 'timeout'
+      console.error(`[DCP Chat] ${model} error:`, lastError)
+      response = null
+    }
+  }
+
+  try {
+    if (!response || !response.ok) {
       return NextResponse.json(
         { error: 'AI service temporarily unavailable. Please try again or email support@dcp.sa.' },
         { status: 502 }
