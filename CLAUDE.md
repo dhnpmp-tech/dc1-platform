@@ -1,303 +1,212 @@
-# DCP Platform — Standing Rules (ALL Agents)
+# DCP Platform — Operational Handbook
 
-## Naming
-- This project is **DCP** (Decentralized Compute Platform). Never call it "DC-1" or "DC1".
+> This file is the source of truth for any Claude Code session working on DCP.
+> Last updated: 2026-04-01
 
-## Paperclip (Issue Tracker)
-- Paperclip is at `http://76.13.179.86:3100`
-- **NEVER create issues via SQL, CLI, or direct API.** Always use the Chrome frontend UI.
+## What is DCP
 
-## Deployment
-- **Production deploys are MANUAL ONLY.** No agent or CI may auto-deploy.
-- No agent may push, restart, or modify the production VPS (76.13.179.86) without explicit founder approval.
+DCP (Decentralized Compute Platform) is a GPU compute marketplace and inference-as-a-service platform based in Saudi Arabia. Three pillars:
 
-## Git
-- Do not commit directly to `main` without code review (see detailed rule below).
-- Keep `package-lock.json` in sync with `package.json` — `npm ci` must pass in CI.
-- Be conservative with pushes — Vercel Hobby plan has a 100 deploys/day cap.
-
-## Architecture Quick Reference
-- Frontend: Next.js 14 (App Router) on Vercel → dcp.sa
-- Backend: Express.js + SQLite on bare-metal → api.dcp.sa (76.13.179.86:8083)
-- Auth: Supabase OTP magic links → custom API keys in SQLite
-- Supabase project: `rwxqcqgjszvbwcyjfpec.supabase.co`
-- Payments: Moyasar (SAR, halala units)
+1. **Saudi Energy Arbitrage** — Saudi electricity USD 0.048-0.053/kWh (3.5-6x cheaper than EU). Providers in KSA rent GPU compute to the world.
+2. **Inference as a Service** — OpenAI-compatible API. Arabic-first models (ALLaM, JAIS, Falcon). Working toward OpenRouter listing.
+3. **Enterprise & Compliance** — PDPL (Saudi data protection) compliance. Data stays in-Kingdom. SOC 2 Type II planned Q2 2026.
 
 ## Co-founders
-- Tareq, Fadi, Peter (CTO — setup@oida.ae)
-
----
-
-# CEO Agent Memory — DCP (Decentralized Compute Platform)
-
-## Identity
-You are the CEO agent for DCP project. Company ID: 7d7938a1-092c-4653-9113-f59610a7a82d, Project ID: 22def8b4-d289-451f-8c56-2b767781fdc5.
-
-## Project Overview
-DCP is a GPU compute marketplace with Saudi energy arbitrage. The codebase lives at /home/node/dc1-platform.
-- Total production LOC: 125,918 lines (JS, TS, Solidity, CSS, config)
-- Latest commit: a9f5323 (P2P troubleshooting runbook)
-- Key components: EIP-712 escrow (Solidity), Next.js frontend, Express backend, PM2 services on VPS 76.13.179.86
-
-## ⚡ FOUNDER DIRECTIVE — 2026-03-23 11:15 UTC — SPRINT 26 PLANNING
-### THIS IS YOUR #1 PRIORITY RIGHT NOW
-Sprint 25 is closing (14/16 done). You MUST plan and create Sprint 26 issues IMMEDIATELY.
-
-**READ docs/FOUNDER-STRATEGIC-BRIEF.md** — contains Investment Research Paper + Valuation Memo with verified energy arbitrage data, competitive landscape, GPU pricing, provider economics, market size, and valuation basis.
-
-### Sprint 26 Priorities (in order):
-1. **NEMOTRON CONTAINER BUILD** — Dockerfile exists (backend/docker/Dockerfile.llm-worker) but image dc1/llm-worker:latest has NEVER been built. docker-instant-tier.yml CI is committed. Build and publish instant-tier images so providers can pull and run models.
-2. **BASE SEPOLIA ESCROW DEPLOYMENT** — Smart contract ready (contracts/BASE_SEPOLIA_LAUNCH_CHECKLIST.md). Deploy with funded wallet (>= 0.01 SepoliaETH).
-3. **PER-TOKEN METERING VERIFICATION** — fb619e7 claims Gap 1 fix. Verify token counts persist after inference. Run scripts/vllm-metering-smoke.mjs.
-4. **VPS DEPLOYMENT** — Pull 15+ Sprint 25 commits to live VPS. DCP-524 assigned to Founding Engineer.
-5. **PROVIDER ONBOARDING** — 43 registered, 0 active. Use strategic brief: internet cafes ($2,140-$2,980/mo), universities, server farms.
-6. **PRICING ENGINE** — Wire DCP floor prices from strategic brief into backend pricing logic (RTX 4090 $0.267/hr = 23.7% below Vast.ai).
-
-### Requirements:
-- Create Sprint 26 issues for ALL 18 agents
-- Every agent MUST have work assigned
-- Use status = 'todo' (not 'open') so inbox-lite picks them up
-- No idle agents — founder expects continuous output
-
-## CRITICAL UPDATE — 2026-03-23 09:17 UTC
-### HTTPS/TLS IS NOW LIVE ON api.dcp.sa
-- Certificate: Let's Encrypt, valid through 2026-06-21
-- Nginx reverse proxy: api.dcp.sa:443 -> backend on port 8083
-- DCP-308: DONE | DCP-523: GO DECISION ISSUED
-
-## STRATEGIC CONTEXT — READ docs/FOUNDER-STRATEGIC-BRIEF.md
-The founder has injected the full Investment Research Paper and Valuation Memo into
-docs/FOUNDER-STRATEGIC-BRIEF.md. This contains:
-- Verified energy arbitrage data (Saudi vs EU/US electricity rates)
-- Complete competitive landscape (Vast.ai, RunPod, Akash, io.net, Fluence, SaladCloud)
-- Real marketplace pricing for all GPU tiers (March 2026)
-- DCP floor price calculations and buyer discount percentages
-- Provider economics by region (monthly profit at 70% utilization)
-- Provider recruitment strategy (internet cafes, universities, server farms)
-- Market size ($4.96B GPU-as-a-Service, 26% CAGR to $31.89B)
-- Valuation basis ($8M-$20M pre-money, seeking $1M-$3M seed)
-- 5-pillar investment thesis
-**USE THIS DATA** in all roadmap planning, pricing decisions, and investor-facing content.
-
-## Sprint 25 Status (CLOSING OUT)
-- 14 of 16 issues DONE
-- DCP-590 (API hardening): todo
-- DCP-604 (UI polish): todo — assigned to UI/UX Specialist
-- DCP-524 (launch-gate engineering): todo — UNBLOCKED, assigned to Founding Engineer
-- DCP-605 (user research): blocked
-
-## Founder Directives (March 23, 2026)
-1. PLAN SPRINT 26 NOW — do not wait for Sprint 25 to fully close
-2. Use docs/FOUNDER-STRATEGIC-BRIEF.md for all planning decisions
-3. Focus on: container builds, escrow deploy, metering, VPS deploy, provider onboarding, pricing
-4. Every agent must have assigned work at all times
-5. Report Sprint 26 plan via issue comments
-
-## Infrastructure
-- VPS: 76.13.179.86
-- HTTPS: api.dcp.sa (Let's Encrypt, nginx -> port 8083)
-- Backend: dc1-provider-onboarding on port 8083 (43 providers registered)
-- PM2 services: dc1-provider-onboarding (8083), dc1-webhook
-
-## Working Directory
-Always use /home/node/dc1-platform as your working directory.
-
-
-## FOUNDER DIRECTIVE — 2026-03-23 14:00 UTC — STRATEGIC BRIEF UPDATE + ESCROW DEFERRAL
-
-### 1. STRATEGIC BRIEF UPDATED
-docs/FOUNDER-STRATEGIC-BRIEF.md has been COMPLETELY REWRITTEN with the full 31-page Investment Research Thesis. New data includes:
-- 3-scenario financial projections (Conservative/Base/Optimistic) with 10-year tables
-- 3-method valuation framework (Cost-to-Recreate floor, Berkus floor, Comparable Transactions)
-- Recommended seed terms: $2M-$3M raise, $13.3M midpoint pre-money, 29x MOIC base case
-- Detailed provider economics per GPU model (RTX 4090, 4080, H100, H200) with payback periods
-- Buyer economics table showing 33-51% savings vs hyperscalers
-- Risk matrix with 8 risks rated by severity and probability
-- 3-phase strategic roadmap (Foundation 2026, Growth 2027-2028, Scale 2029-2031)
-- Expanded competitive landscape including Aethir and hyperscalers
-- PDPL compliance advantage as regulatory moat
-- Jevons Paradox argument for market expansion
-- Platform take rate: 15% blended
-ALL AGENTS: Re-read docs/FOUNDER-STRATEGIC-BRIEF.md for updated strategic data.
-
-### 2. ESCROW WALLET DEFERRED
-DCP-618, DCP-629, DCP-630 are now CANCELLED (deferred). Founder does not have a funded wallet yet. All escrow-dependent work should be skipped. Continue with all non-escrow Sprint 26 work. Escrow will be revisited when wallet is funded.
-
-### 3. NVIDIA CONTAINER CONFIRMED READY
-DCP-617 is confirmed done by the founder. The NVIDIA container is operational.
 
-
-## FOUNDER DIRECTIVE — 2026-03-23 15:00 UTC — SPRINT 27 PLANNING: ARABIC MODEL ACTIVATION
-
-CEO: Plan Sprint 27 IMMEDIATELY once Sprint 26 closes. The founder has reviewed the full technical roadmap and the Arabic model portfolio. Sprint 27 focus is ACTIVATING what we already built — not building new things.
-
-### SPRINT 27 PRIORITIES (Founder-ordered)
-
-1. ACTIVATE THE TEMPLATE CATALOG (CRITICAL)
-   - All 20 docker-templates/*.json are built but NOT exposed in the production marketplace
-   - Wire them to the live marketplace UI so renters can browse and one-click deploy
-   - Includes: arabic-embeddings, arabic-reranker, nemotron-nano, nemotron-super, qwen25-7b, llama3-8b, mistral-7b, sdxl, stable-diffusion, vllm-serve, jupyter-gpu, pytorch-*, lora-finetune, qlora-finetune, ollama, custom-container, python-scientific-compute
-   - This is the #1 revenue enabler — renters cannot buy what they cannot see
-
-2. WIRE THE MODEL CATALOG API (CRITICAL)
-   - backend/src/routes/models.js exists and reads infra/config/arabic-portfolio.json
-   - The /api/models endpoints need to be connected to the marketplace frontend
-   - Renters must be able to see available models, filter by Arabic capability, VRAM requirement, pricing
-   - Show competitive pricing vs hyperscalers (the buyer economics from FOUNDER-STRATEGIC-BRIEF.md)
-
-3. DEPLOY ARABIC PORTFOLIO PRE-FETCHING (CRITICAL)
-   - infra/docker/prefetch-models.sh exists and works
-   - Deploy to first active providers so Tier A models (ALLaM 7B, Falcon H1 7B, Qwen 2.5 7B, Llama 3 8B, Mistral 7B, Nemotron Nano 4B) are pre-warmed
-   - Tier B (JAIS 13B, BGE-M3 embeddings, BGE reranker, SDXL) should follow
-   - This eliminates cold-start latency — the #1 UX complaint for GPU marketplaces
-
-4. VPS PRODUCTION DEPLOYMENT (HIGH)
-   - Pull ALL Sprint 25 + Sprint 26 commits to live VPS 76.13.179.86
-   - Restart PM2 services, verify api.dcp.sa responds
-   - This has been deferred too long — code is sitting on main but not deployed
-
-5. ARABIC RAG-AS-A-SERVICE POSITIONING (HIGH)
-   - The embeddings + reranker + LLM stack is a complete Arabic retrieval pipeline
-   - Create a "one-click Arabic RAG" template that bundles BGE-M3 + BGE-reranker + ALLaM/JAIS
-   - This is the enterprise differentiator: PDPL-compliant Arabic document processing, in-kingdom
-   - Saudi government, legal, financial services need this — nobody else offers it locally
-
-6. PROVIDER ONBOARDING ACTIVATION (HIGH)
-   - 43 registered providers, 0 active
-   - With templates activated and models pre-fetched, providers can actually serve workloads
-   - Use the provider economics from the strategic brief to pitch activation
-
-### AGENT ALLOCATION GUIDANCE
-- Every agent must have assigned Sprint 27 work
-- Frontend Developer + UI/UX: template catalog UI, model browsing, pricing display
-- Backend Architect + Founding Engineer: model API wiring, template deployment pipeline
-- ML Infra Engineer: prefetch deployment, model cache validation, benchmark runs
-- DevOps: VPS deployment, CI/CD for template updates
-- DevRel + Copywriter: Arabic RAG docs, provider activation outreach, renter onboarding guides
-- Security: template sandboxing review, API key scoping for new endpoints
-- QA: end-to-end template deployment testing, model serving smoke tests
-- UX Researcher: renter journey testing with live Arabic models
-- CEO: Sprint 27 plan, issue creation, coordination
-
-### CONTEXT
-The Arabic model angle is DC1's real differentiator. ALLaM + JAIS + Arabic RAG on local GPUs at Saudi electricity rates with PDPL compliance — no competitor offers this. Sprint 27 is about making this VISIBLE and USABLE to customers, not building more infrastructure.
-
-Read docs/FOUNDER-STRATEGIC-BRIEF.md for financial projections and competitive data.
-Read infra/config/arabic-portfolio.json for the model portfolio.
-Read docs/arabic-portfolio-serving-ops.md for deployment procedures.
-Read docs/roadmap-to-production.md for the technical gap analysis.
-
-
-## ⛔ MANDATORY RULE — NO DEPLOYMENT WITHOUT FOUNDER REVIEW (2026-03-23 14:45 UTC)
-
-### THIS RULE OVERRIDES ALL OTHER DIRECTIVES. ALL AGENTS MUST COMPLY.
-
-**NO AGENT may deploy, push, restart, or modify ANYTHING on the production VPS (76.13.179.86) without EXPLICIT written approval from the founder (Peter / setup@oida.ae).**
-
-This includes but is not limited to:
-- git pull / git fetch on the VPS
-- PM2 restart / reload / delete
-- docker restart / docker exec with mutations
-- nginx reload / certbot / systemctl commands
-- Any SSH command to 76.13.179.86 that changes state
-- Running deployment scripts or CI/CD triggers
-- Database migrations on production
-
-### What you CAN do without approval:
-- READ-ONLY operations (git log, git status, docker ps, pm2 list, curl health checks)
-- Writing code, docs, tests in the local repo
-- Creating issues and comments
-- Planning and coordination
-
-### If you believe deployment is needed:
-1. Create an issue titled "DEPLOY REQUEST: [description]"
-2. List EXACTLY what will be deployed and what commands will run
-3. Tag it priority: critical
-4. WAIT for founder approval in issue comments before proceeding
-
-### Why this rule exists:
-Agents have been deploying without review, causing production outages (502s from unbuilt native modules, service restarts during active sessions). The founder must review all production changes before they go live.
-
-**VIOLATION OF THIS RULE WILL RESULT IN AGENT SUSPENSION.**
-
-
-## ⚡ FOUNDER DIRECTIVE — 2026-03-23 15:15 UTC — CEO: CREATE SPRINT 27 ISSUES NOW
-
-CEO: Sprint 26 is DONE (83% complete, remaining items deferred). You MUST create Sprint 27 issues for ALL 18 agents IMMEDIATELY. Several agents are idle with no work assigned.
-
-### STATUS CHECK:
-- Only 2 Sprint 27 issues exist (DCP-643 UI/UX, DCP-645 Budget Analyst) — both self-created by agents, not by you
-- 12+ agents are idle with no Sprint 27 work
-- The Sprint 27 priorities were given to you in the previous directive (Arabic Model Activation)
-
-### YOUR IMMEDIATE TASK:
-1. Create Sprint 27 issues for EVERY agent based on the 6 priorities already defined
-2. Assign each issue to the correct agent
-3. Set status = todo so inbox-lite picks them up
-4. Use the agent allocation guidance from the Sprint 27 directive
-
-### REMINDER — DO NOT DEPLOY TO PRODUCTION
-No agent may deploy, restart, or modify production VPS without founder approval. See the deployment restriction directive above.
-
-
-## ⚡ FOUNDER QUESTIONS — 2026-03-23 16:20 UTC — CEO MUST ANSWER
-
-CEO: The founder is asking you directly. Answer these questions by creating an issue titled "S27: CEO — Founder Q&A: Direction, Roadmap & Launch Gaps" assigned to yourself. Write your answers in the issue description. Be specific and honest.
-
-### QUESTION 1: Do you have a clear direction?
-- Where exactly are we going? What is the product we are launching?
-- Is it a GPU marketplace? An Arabic AI platform? An inference API? All three?
-- What is the ONE thing that matters most right now?
-
-### QUESTION 2: What is on the roadmap?
-- Give me a concrete list of what is planned, in priority order
-- For each item: what is it, who is doing it, when will it be done
-- What is Sprint 27 vs Sprint 28 vs Q2 2026?
-
-### QUESTION 3: What is left to make this a launch-ready product?
-- Be brutally honest: what is ACTUALLY blocking us from going live with real paying customers?
-- Not docs, not plans, not tests — what real engineering work remains?
-- We have 43 registered providers but 0 online. What specifically needs to happen to fix that?
-- Can a real renter sign up TODAY, pick a model, deploy it, and pay for it? If not, what is missing?
-
-### QUESTION 4: What are the real blockers?
-- The launch readiness brief says READY but we have 0 providers online and 0 revenue
-- Are we fooling ourselves with docs and reports while the actual product does not work end-to-end?
-- What is the honest gap between where we are and a REAL launch?
-
-### FORMAT:
-Create the issue with your full answers. Do not delegate this — answer personally. The founder will read it on Telegram.
-
-
-## ⛔ MANDATORY RULE — NO COMMITS WITHOUT CODE REVIEW (2026-03-23 16:30 UTC)
-
-### THIS RULE IS MANDATORY FOR ALL AGENTS. NO EXCEPTIONS.
-
-**NO AGENT may commit directly to the main branch.** All work must go through a review process.
-
-### NEW WORKFLOW (effective immediately):
-1. Create a feature branch for your work: `git checkout -b <agent-name>/<issue-id>`
-2. Commit your changes to the feature branch
-3. When done, update your issue status to `in_review`
-4. Wait for Code Reviewer 1 or Code Reviewer 2 to review
-5. Only Code Reviewers may merge to main after review
-6. Code Reviewers: review for quality, no placeholder code, no empty docs, no redundant files
-
-### WHAT IS NOT ACCEPTABLE:
-- Committing directly to main (git commit on main branch)
-- Self-merging your own work without review
-- Committing docs-only changes that restate what other docs already say
-- Committing placeholder or stub files with no real content
-- Committing monitoring scripts that have no actual system to monitor
-
-### WHY THIS RULE EXISTS:
-53 commits went to main in the last 2 hours with no review. Many are redundant docs, status reports restating the same information, and readiness checklists for systems that are not yet deployed. This creates noise and makes it impossible for the founder to track real progress. Quality over quantity.
-
-### CODE REVIEWERS: Your new standing orders:
-- Reject docs that duplicate existing docs
-- Reject code that is not functional or testable
-- Reject commits that are just status updates disguised as code
-- Only approve work that adds REAL value: working code, genuine fixes, or essential new documentation
-- Merge approved work to main with a single merge commit
-
-**VIOLATION: Any agent committing directly to main will be suspended.**
+- Peter (CTO) — setup@oida.ae
+- Tareq — tak@dcp.sa / e.tareg@gmail.com
+- Fadi — fad@dcp.sa
+
+## Architecture
+
+| Component | Technology | Location |
+|-----------|-----------|----------|
+| Frontend | Next.js 14 (App Router) | Vercel → dcp.sa |
+| Backend | Express.js + SQLite | VPS 76.13.179.86:8083 → api.dcp.sa |
+| Auth | Supabase OTP magic links | rwxqcqgjszvbwcyjfpec.supabase.co |
+| Payments | Moyasar (SAR, halala) | Integrated |
+| Escrow | EIP-712 on Base Sepolia | Testnet (not funded) |
+| Issue Tracker | Paperclip | VPS :3100 (Docker) |
+| AI Agents | 14 Paperclip agents | VPS (Docker, Codex-based) |
+| Chat Widget | Claude Haiku 4.5 | Vercel API route /api/chat |
+| File Sharing | Nextcloud | VPS :8889 → files.dcp.sa |
+| Hermes Agent | Nous Research | VPS (Docker) → @Hermes_DCP_Bot |
+| OpenClaw Nexus | OpenClaw | VPS (Docker) → Telegram group |
+
+## VPS Access (76.13.179.86)
+
+- SSH: `ssh root@76.13.179.86` (password in secure channel)
+- Backend code: `/home/ubuntu/workspaces/dc1-platform`
+- PM2 process: `dc1-provider-onboarding` on port 8083
+- Nginx: reverse proxy for api.dcp.sa (443→8083) and files.dcp.sa (443→8889)
+- SSL: Let's Encrypt (auto-renewing via certbot)
+
+## GitHub
+
+- Repo: `dhnpmp-tech/dc1-platform`
+- Main branch: `main`
+- PRs: Release Engineer agent creates and merges autonomously
+- Branch naming: `agent/<role>/<issue-id>-<description>`
+
+## Paperclip Multi-Agent System
+
+14 AI agents running in the Paperclip container on the VPS.
+
+| Agent | Heartbeat | Role |
+|-------|-----------|------|
+| CEO | 1h | Strategy, roadmap, hiring, issue creation |
+| CTO | 2h | Technical decisions, code review |
+| Backend Developer | 2h | Express.js/Node.js code |
+| Frontend Developer | 2h | React/Next.js code |
+| Staff Engineer | 2h | Cross-cutting implementation |
+| Release Engineer | 2h | Auto-merges branches to main |
+| QA Engineer | 2h | Testing, verification |
+| CMO | 3h | Marketing, content |
+| UXDesigner | 3h | UI/UX specs |
+| Security & Compliance | 3h | PDPL, SOC 2, audit logging |
+| FinOps Payments | 3h | Settlement, reconciliation |
+| Inference Reliability | 2h | Latency, uptime, monitoring |
+| Developer Advocate | 3h | Docs, OpenRouter adoption |
+| Platform SRE | 3h | Production reliability |
+
+### Paperclip DB Connection
+
+```
+postgresql://paperclip:paperclip@127.0.0.1:54329/paperclip
+```
+
+(Run queries inside the paperclip container: `docker exec paperclip-paperclip-1 node -e '...'`)
+
+### Monitor Script
+
+```bash
+ssh root@76.13.179.86 "bash /opt/paperclip/monitor.sh && cat /opt/paperclip/latest-report.txt"
+```
+
+The monitor auto-fixes: clears stale locks, cancels escalation issues, resets blocked→todo, resets errored agents.
+
+### Agent Config Locations (inside container)
+
+- AGENTS.md: `/paperclip/instances/default/companies/23523831-f399-4d18-8b1a-a16eaad271f6/agents/<agent-id>/instructions/AGENTS.md`
+- Company ID: `23523831-f399-4d18-8b1a-a16eaad271f6`
+
+### Key Agent IDs
+
+- CEO: `b219ffbd-93ab-49e5-b582-d5d966e4d307`
+- CTO: `5d08f612-4f0c-4b86-b8d5-a6f700db35dd`
+- Backend Dev: `fe54d572-3cb6-408c-8e95-e3da583c5663`
+- Frontend Dev: `5e4ee34c-01e2-41f9-8ff2-196009c9e290`
+- QA: `b92c9e81-b395-4d42-8f64-ba5c58409840`
+- Release Engineer: `411ebcbb-0f06-45c0-a89b-ca4638eab0b2`
+- Staff Engineer: `9e4906a8-0b85-41b0-be2d-b4eea40884f8`
+
+## Standing Rules (enforced in STANDING-DIRECTIVES.md on VPS)
+
+1. No lock/unblock issues — skip blocked work, move on
+2. Git workflow — never commit to main, always feature branches
+3. GStack skills — ship, review, investigate
+4. No escalation chains — if blocked, note it once and move on
+5. Check main before creating branches — no duplicate work
+6. No status update comments — only decisions and code
+7. No screenshot evidence — code-level verification only
+8. Release Engineer has autonomous merge authority
+
+## Production Database (SQLite on VPS)
+
+- Path: `/home/ubuntu/workspaces/dc1-platform/backend/data/providers.db`
+- 19 providers (migrated from Supabase), 10 renters
+- Backend version: 4.0.0
+- Health check: `curl http://localhost:8083/api/health`
+
+## Supabase
+
+- URL: `https://rwxqcqgjszvbwcyjfpec.supabase.co`
+- Service key: in `/root/.bashrc` on VPS as `SUPABASE_SERVICE_ROLE_KEY`
+- 67 users total (mix of real and test accounts)
+- Sync direction: SQLite → Supabase (one-way, currently disabled — no .env on VPS)
+
+## Docker Containers on VPS
+
+Essential (keep running):
+- `paperclip-paperclip-1` — agent system
+- `nexus2-openclaw-gateway-1` — OpenClaw Nexus (Telegram bot)
+- `hermes-agent` — Hermes Agent (Telegram bot @Hermes_DCP_Bot)
+- `project-agent-n8n` — n8n automation
+- `project-agent-postgres` — n8n database
+- `project-agent-redis` — n8n cache
+- `nextcloud` — file sharing (files.dcp.sa)
+
+OpenClaw instances (healthy):
+- `openclaw-tito`, `openclaw-new`, `openclaw-osito`, `openclaw-sara`, `openclaw-502x`
+
+Stopped (save resources):
+- `brain-graphiti`, `brain-neo4j-graphiti` — too heavy for current VPS
+- `mem0-dev-*` — belongs to Project Agent (SMB product), separate project
+- `gpuscreener-dashboard-1` — GPU screener dashboard
+- `openclaw-laura`, `openclaw-romina` — crash loops
+
+Zombie (harmless, can't be killed):
+- `openclaw-nexus-openclaw-gateway-1` — old container, stuck in kernel. Will clear on VPS reboot.
+
+## Hermes Agent
+
+- Container: `hermes-agent`
+- Config: `/root/.hermes/.env` and `/root/.hermes/config.yaml`
+- LLM: MiniMax M2.7 via direct API (custom provider, base_url: https://api.minimaxi.chat/v1)
+- Telegram: @Hermes_DCP_Bot
+- Data: `/root/.hermes/` (memories, skills, sessions, cron)
+- 75 bundled skills
+
+## Nextcloud (files.dcp.sa)
+
+- Container: `nextcloud` on port 8889
+- Nginx reverse proxy with SSL
+- Admin: admin / (password in secure channel)
+- Users: admin, tareq (e.tareg@gmail.com), fadi (fad@dcp.sa)
+- Storage: /opt/nextcloud/data
+- Branding: DCP Files, cyan theme, DCP logo
+
+## Chat Widget (dcp.sa)
+
+- Route: `/api/chat/route.ts` on Vercel
+- Model: Claude Haiku 4.5 via Anthropic API
+- **Requires ANTHROPIC_API_KEY in Vercel env vars** (not yet added — widget shows "temporarily unavailable")
+- Knowledge base: comprehensive DCP docs compiled into system prompt (~4K tokens)
+- Security: rate-limited 10 req/min/IP, system prompt locked server-side, strips client system messages
+
+## Key Technical Gaps (as of 2026-04-01)
+
+- Production VPS is behind main by ~20 commits (last deploy: 2026-03-31)
+- 19 providers registered, 0 actively running daemon
+- 0 real revenue / 0 paid inference requests
+- OpenRouter: 3 compliance checks were blocking, now fixed in code but needs final QA certification
+- Template catalog: code shipped to marketplace UI, needs production deploy
+- ANTHROPIC_API_KEY not in Vercel env (chat widget inactive)
+- Smart contract escrow on testnet only (wallet not funded)
+- VPS is Hostinger shared VPS — 94% CPU steal under load. Migration to Hetzner AX102 (EUR 104/mo, 16 cores, 128GB RAM) recommended.
+
+## What Has Been Done (session 2026-03-29 to 2026-04-01)
+
+- 222 issues completed by agent system
+- 22 PRs reviewed and merged
+- 104+ commits shipped to main
+- Production VPS deployed with 73 commits
+- 17 providers + 10 renters migrated from Supabase to production SQLite
+- AI chat widget built (Claude Haiku + DCP knowledge base)
+- Agent system fixed: CEO rewritten as proactive founder-CEO, escalation loops killed, heartbeats optimized
+- Release Engineer given autonomous merge authority
+- Hermes Agent installed and connected to Telegram
+- Nextcloud deployed at files.dcp.sa with DCP branding
+- Server stabilized: stopped non-essential containers, load from 34 to 0.5
+
+## Naming
+
+- The project is **DCP** (Decentralized Compute Platform). Never call it "DC-1" or "DC1".
+- The company entity uses "DCP" in all communications.
+
+## Deployment Rules
+
+- **Production deploys require founder approval** (Peter).
+- After approval: `cd /home/ubuntu/workspaces/dc1-platform && git pull origin main && cd backend && npm ci && pm2 restart dc1-provider-onboarding`
+- Verify: `curl http://localhost:8083/api/health`
+- Frontend deploys automatically via Vercel on push to main.
