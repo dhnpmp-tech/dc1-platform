@@ -244,11 +244,10 @@ export async function POST(req: NextRequest) {
 
   // Call OpenRouter API with fallback chain (free models get rate-limited)
   const MODELS = [
+    'google/gemma-4-26b-a4b-it',
+    'qwen/qwen3-235b-a22b-2507',
     'qwen/qwen3.6-plus:free',
     'nvidia/nemotron-3-nano-30b-a3b:free',
-    'nvidia/nemotron-3-super-120b-a12b:free',
-    'minimax/minimax-m2.5:free',
-    'stepfun/step-3.5-flash:free',
   ]
 
   let response: Response | null = null
