@@ -315,23 +315,23 @@ export default function HomePage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(16,185,129,0.04) 0%, transparent 50%)' }} />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32 lg:py-40 relative">
-          <div className="max-w-4xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full ring-1 ring-white/10 text-dc1-text-secondary text-xs font-medium tracking-wide uppercase mb-8">
-              <span className="w-1.5 h-1.5 bg-dc1-amber rounded-full" />
-              Inference API Marketplace
+        <div className="absolute inset-0 bg-gradient-to-b from-dc1-amber/5 via-transparent to-transparent pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 lg:py-36 relative">
+          <div className="text-center max-w-3xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
+              <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
+              INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY
             </div>
-            <h1 className="text-5xl sm:text-7xl lg:text-[5.5rem] font-bold tracking-[-0.04em] leading-[0.9] mb-8 text-dc1-text-primary">
+            <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
               {t('landing.hero_title')}
             </h1>
-            <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-[55ch] mb-6 leading-relaxed">
+            <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
               {t('landing.hero_desc')}
             </p>
-            <p className="text-sm text-dc1-text-muted mb-10 max-w-[60ch] leading-relaxed">
-              OpenAI-compatible API with Arabic AI models, Saudi data residency, and per-token billing — powered by decentralized GPU compute.
+            <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
+              OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.
             </p>
-            <div className="flex flex-col sm:flex-row items-start gap-3 mb-8">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <Link
                 href="/renter/register?source=landing_first_fold&intent=renter"
                 onClick={() => {
@@ -363,36 +363,27 @@ export default function HomePage() {
                 {t('landing.cta_provider')}
               </Link>
             </div>
-            <p className="text-xs text-dc1-text-muted mb-6">
+            <p className="text-xs text-dc1-text-muted mb-3">
               {t('landing.cta_alt_prefix')}{' '}
-              <Link href="/support?category=enterprise&source=landing-first-fold" className="text-dc1-amber hover:text-dc1-amber/80 font-medium">
+              <Link href="/support?category=enterprise&source=landing-first-fold" className="text-dc1-amber hover:text-dc1-amber/80 font-semibold">
                 {t('landing.cta_enterprise')}
               </Link>
             </p>
-            <div className="mb-10">
+            <div className="mb-8 flex justify-center">
               <ProviderCountWidget health={detailedHealth} unavailableLabel={unavailableLabel} />
             </div>
-            <div className="divide-y divide-white/[0.06] mb-10 max-w-xl">
-              <div className="py-4 flex gap-4 items-start">
-                <span className="text-dc1-amber font-mono text-sm mt-0.5">01</span>
-                <div>
-                  <p className="text-sm font-medium text-dc1-text-primary mb-0.5">{t('landing.diff_energy_title')}</p>
-                  <p className="text-xs text-dc1-text-muted leading-relaxed">{t('landing.diff_energy_desc')}</p>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 text-left">
+              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_energy_title')}</p>
+                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_energy_desc')}</p>
               </div>
-              <div className="py-4 flex gap-4 items-start">
-                <span className="text-dc1-amber font-mono text-sm mt-0.5">02</span>
-                <div>
-                  <p className="text-sm font-medium text-dc1-text-primary mb-0.5">{t('landing.diff_models_title')}</p>
-                  <p className="text-xs text-dc1-text-muted leading-relaxed">{t('landing.diff_models_desc')}</p>
-                </div>
+              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_models_title')}</p>
+                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_models_desc')}</p>
               </div>
-              <div className="py-4 flex gap-4 items-start">
-                <span className="text-dc1-amber font-mono text-sm mt-0.5">03</span>
-                <div>
-                  <p className="text-sm font-medium text-dc1-text-primary mb-0.5">{t('landing.diff_container_title')}</p>
-                  <p className="text-xs text-dc1-text-muted leading-relaxed">{t('landing.diff_container_desc')}</p>
-                </div>
+              <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
+                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_container_title')}</p>
+                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
               </div>
             </div>
             <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">

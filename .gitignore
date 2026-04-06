@@ -55,3 +55,4 @@ run
 sdk/node/dist/
 sdk/python/dist/
 sdk/python/dcp_provider.egg-info/
+*.py
