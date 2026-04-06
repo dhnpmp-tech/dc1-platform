@@ -83,15 +83,10 @@ export default function LiveMonitorPage() {
     return () => { clearInterval(interval); setPolling(false) }
   }, [apiKey, fetchLive])
 
-  const navItems = [
-    { label: 'Dashboard', href: '/renter' },
-    { label: 'Live Monitor', href: '/renter/live' },
-  ]
-
   const s = data?.session
 
   return (
-    <DashboardLayout navItems={navItems} role="renter" userName={data?.renter?.name || ''}>
+    <DashboardLayout navItems={[]} role="renter" userName={data?.renter?.name || ''}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
