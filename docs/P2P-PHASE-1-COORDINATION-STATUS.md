@@ -43,7 +43,7 @@ All P2P infrastructure components for Phase 1 are verified, production-ready, an
   - Features: DHT announcements, provider spec publishing, stale detection
 
 ### Provider Daemon Integration
-- ✅ **Provider Daemon** (`backend/installers/dc1_daemon.py`)
+- ✅ **Provider Daemon** (`backend/installers/dcp_daemon.py`)
   - Status: Verified heartbeat emission capability
   - Function: `emit_p2p_heartbeat()` sends heartbeats every 30 seconds
   - Environment: `P2P_DISCOVERY_ENABLED=true` enables functionality

@@ -984,7 +984,7 @@ SectionEnd
 
 Section "Uninstall"
     
-    ExecWait "taskkill /F /IM dc1-daemon.exe"
+    ExecWait "taskkill /F /IM dcp_daemon.exe"
     
     RMDir /r "$INSTDIR"
     

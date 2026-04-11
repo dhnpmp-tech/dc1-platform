@@ -3,7 +3,7 @@
 ; =============================================================================
 ; Installs to %LOCALAPPDATA%\dc1-provider (NO admin required)
 ; GUI pages: Welcome → GPU Check → API Key → Run Mode → Schedule → Install → Finish
-; Bundles: dc1_daemon.py (v3.3.0), dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
+; Bundles: dcp_daemon.py (v3.3.0), dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
 ; Build:   makensis dc1-provider-Windows.nsi
 ; =============================================================================
 
@@ -341,7 +341,7 @@ Section "Install"
     SetOutPath "$INSTDIR"
 
     ; Bundle files
-    File "dc1_daemon.py"
+    File "dcp_daemon.py"
     File "dc1-setup-helper.ps1"
     File "dc1-uninstall-helper.ps1"
 

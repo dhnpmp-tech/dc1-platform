@@ -14,7 +14,7 @@ The codebase is more complete than it appears. The daemon, tray apps, and instal
 
 | Component | Status | Location |
 |---|---|---|
-| Provider daemon v3.4.0 | ✅ Complete | `backend/installers/dc1-daemon.py` |
+| Provider daemon v3.4.0 | ✅ Complete | `backend/installers/dcp_daemon.py` |
 | Linux tray app | ✅ Complete | `backend/installers/dcp_tray_linux.py` |
 | Windows tray app | ✅ Complete | `backend/installers/dcp_tray_windows.py` |
 | Windows .ps1 installer | ✅ Complete | `backend/installers/dc1-setup-windows.ps1` |

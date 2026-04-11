@@ -37,7 +37,7 @@ DCP is a global GPU compute marketplace powered by Saudi energy economics. Provi
 ### Tech Stack
 - **Frontend**: Next.js 14 (App Router), Tailwind, deployed on Vercel
 - **Backend**: Express.js, SQLite (better-sqlite3), PM2
-- **Daemon**: Python 3 (dc1_daemon.py v3.3.0) — runs on provider GPU machines
+- **Daemon**: Python 3 (dcp_daemon.py v3.3.0) — runs on provider GPU machines
 - **Sync**: SQLite → Supabase bridge (30s interval)
 - **Design**: Amber (#F5A524), Void Black (#07070E), Inter font
 
@@ -223,7 +223,7 @@ dc1-platform/
 │   │   ├── db.js           # SQLite schema + migrations
 │   │   ├── routes/         # providers.js, jobs.js, renters.js, admin.js, verification.js
 │   │   ├── services/       # supabase-sync.js, recovery-engine.js
-│   │   └── daemon/         # dc1_daemon.py (v3.3.0)
+│   │   └── daemon/         # dcp_daemon.py (v3.3.0)
 │   ├── installers/         # daemon.ps1, NSIS installer
 │   └── data/providers.db   # SQLite database
 ├── CLAUDE.md               # Agent memory (Claude-Cowork)

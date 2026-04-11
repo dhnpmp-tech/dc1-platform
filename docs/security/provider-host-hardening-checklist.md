@@ -1,6 +1,6 @@
 # Provider Host Hardening Checklist
 
-This checklist is the minimum security baseline for GPU provider hosts running `dc1_daemon.py`.
+This checklist is the minimum security baseline for GPU provider hosts running `dcp_daemon.py`.
 
 ## P0 (must pass before production jobs)
 

@@ -21,7 +21,7 @@ makensis dc1-provider-Windows.nsi
 
 | File | Purpose |
 |------|---------|
-| `dc1_daemon.py` | Python daemon template (API key/URL replaced at install time) |
+| `dcp_daemon.py` | Python daemon template (API key/URL replaced at install time) |
 | `dc1-setup-helper.ps1` | Setup automation (Python detection, pip, scheduled task) |
 | `dc1-uninstall-helper.ps1` | Clean uninstall (remove task, shortcuts) |
 

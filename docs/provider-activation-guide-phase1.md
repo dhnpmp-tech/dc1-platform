@@ -42,10 +42,10 @@ Your daemon updates are backward-compatible.
 ⚠️ **Update recommended** (but not required yet):
 ```bash
 # Download latest daemon
-wget https://api.dcp.sa/daemon/dc1_daemon-latest.py -O dc1_daemon.py
+wget https://api.dcp.sa/daemon/dcp_daemon-latest.py -O dcp_daemon.py
 
 # Restart
-python3 dc1_daemon.py --daemon-mode
+python3 dcp_daemon.py --daemon-mode
 ```
 
 **Why**: Older versions don't support model metadata announcements, which limits your discoverability to large-VRAM queries only.
@@ -111,10 +111,10 @@ If your provider has sufficient VRAM:
 
 ```bash
 # On your provider machine
-python3 dc1_daemon.py --preload-models "allam-7b,qwen-2.5-7b,arabic-embeddings-bgem3"
+python3 dcp_daemon.py --preload-models "allam-7b,qwen-2.5-7b,arabic-embeddings-bgem3"
 
 # Monitor caching status
-python3 dc1_daemon.py --show-cache-status
+python3 dcp_daemon.py --show-cache-status
 ```
 
 ### Step 3: Market Yourself
@@ -223,14 +223,14 @@ nc -zv 76.13.179.86 4001
 # Should succeed
 
 # 2. Check daemon logs
-tail -100 dc1_daemon.log | grep -i "bootstrap\|p2p\|error"
+tail -100 dcp_daemon.log | grep -i "bootstrap\|p2p\|error"
 
 # 3. Verify your peer ID is being announced
 curl https://api.dcp.sa/api/p2p/providers?discover_all=true | grep your-node-name
 
 # 4. If stuck, restart daemon
-pkill -f dc1_daemon.py
-python3 dc1_daemon.py --daemon-mode
+pkill -f dcp_daemon.py
+python3 dcp_daemon.py --daemon-mode
 ```
 
 ### If You're Getting No Jobs
@@ -294,8 +294,8 @@ python3 dc1_daemon.py --daemon-mode
 
 | Task | Command | Result |
 |------|---------|--------|
-| Update daemon | `wget https://api.dcp.sa/daemon/latest && python3 dc1_daemon.py` | Latest features, Arabic model support |
-| Cache models | `python3 dc1_daemon.py --preload-models "llama3-8b,allam-7b"` | Faster job matching, higher earnings |
+| Update daemon | `wget https://api.dcp.sa/daemon/latest && python3 dcp_daemon.py` | Latest features, Arabic model support |
+| Cache models | `python3 dcp_daemon.py --preload-models "llama3-8b,allam-7b"` | Faster job matching, higher earnings |
 | Check status | `curl https://api.dcp.sa/api/providers/{id}` | Verify you're discoverable |
 | View earnings | `curl https://api.dcp.sa/api/providers/{id}/earnings` | Track daily revenue |
 | Report issue | `providers@dcp.sa` or Slack #support | Get help in <1 hour |

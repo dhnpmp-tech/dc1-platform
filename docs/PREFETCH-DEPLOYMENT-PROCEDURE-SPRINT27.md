@@ -61,8 +61,8 @@ curl -s -I https://huggingface.co/models
 # Expected: HTTP 200
 
 # 4. Check daemon is running
-pm2 list | grep dc1-daemon
-# Expected: dc1-daemon in "online" status
+pm2 list | grep dcp_daemon
+# Expected: dcp_daemon in "online" status
 
 # 5. Check provider registration
 curl -s http://localhost:9000/api/provider/status
@@ -373,9 +373,9 @@ bash infra/docker/prefetch-models.sh
 ```bash
 # Cause: Daemon not running or wrong IP
 # Fix:
-ssh provider@<ip> "pm2 list | grep dc1-daemon"
+ssh provider@<ip> "pm2 list | grep dcp_daemon"
 # If not online:
-ssh provider@<ip> "pm2 start dc1-daemon"
+ssh provider@<ip> "pm2 start dcp_daemon"
 # Wait 5 seconds and retry prefetch
 ```
 

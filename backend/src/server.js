@@ -57,6 +57,7 @@ function getLatestDaemonVersion() {
   if (configured) return configured;
 
   const daemonCandidates = [
+    path.join(__dirname, '../installers/dcp_daemon.py'),
     path.join(__dirname, '../installers/dc1_daemon.py'),
     path.join(__dirname, '../installers/dc1-daemon.py'),
   ];

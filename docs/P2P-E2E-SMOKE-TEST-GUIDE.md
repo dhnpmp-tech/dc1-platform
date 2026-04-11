@@ -109,7 +109,7 @@ GET /api/providers/me?key=<test_provider_key>
 **If `last_heartbeat` is old or missing:**
 - Provider heartbeat not being received
 - Check provider network connectivity
-- Verify provider daemon is running (check `dc1_daemon.py` logs)
+- Verify provider daemon is running (check `dcp_daemon.py` logs)
 
 ### 3. Monitor Backend P2P Announcement Logs
 
@@ -210,7 +210,7 @@ nc -zv 76.13.179.86 4001  # Should succeed
 **Fix:**
 ```bash
 # Provider daemon should emit peer_id automatically
-# Check dc1_daemon.py emit_p2p_heartbeat() includes peer_id
+# Check dcp_daemon.py emit_p2p_heartbeat() includes peer_id
 
 # Or manually test with peer_id in request:
 curl -X POST https://api.dcp.sa/api/providers/heartbeat \

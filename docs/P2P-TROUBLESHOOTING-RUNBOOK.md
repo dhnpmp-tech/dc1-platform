@@ -236,13 +236,13 @@ If provider daemon not sending peer_id:
 ```bash
 # Check provider daemon code
 grep -n "peer_id\|emit_p2p_heartbeat" \
-  backend/installers/dc1_daemon.py | head -10
+  backend/installers/dcp_daemon.py | head -10
 
 # Verify peer_id is being generated
-python3 backend/installers/dc1_daemon.py 2>&1 | grep -i "peer\|p2p" | head -5
+python3 backend/installers/dcp_daemon.py 2>&1 | grep -i "peer\|p2p" | head -5
 
 # Check logs
-tail -f /var/log/dc1_daemon.log | grep -i "peer_id\|announce"
+tail -f /var/log/dcp_daemon.log | grep -i "peer_id\|announce"
 ```
 
 **Prevention:**
@@ -513,10 +513,10 @@ export P2P_DISCOVERY_ENABLED=true
 export DCP_P2P_BOOTSTRAP='/ip4/76.13.179.86/tcp/4001/p2p/...'
 
 # Restart provider daemon
-python3 /backend/installers/dc1_daemon.py
+python3 /backend/installers/dcp_daemon.py
 
 # Check logs for heartbeat emission
-tail -f /var/log/dc1_daemon.log | grep -i "heartbeat\|p2p"
+tail -f /var/log/dcp_daemon.log | grep -i "heartbeat\|p2p"
 
 # Expected output every 30 seconds:
 # P2P heartbeat emitted (seq=0), status=healthy

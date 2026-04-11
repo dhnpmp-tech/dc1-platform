@@ -50,7 +50,7 @@ DCP enforces hardened Docker runtime flags for tenant jobs:
 
 - `infra/docker/run-job.sh`
 - `backend/src/services/docker-manager.ts`
-- `backend/installers/dc1_daemon.py`
+- `backend/installers/dcp_daemon.py`
 - `backend/tests/security/container-isolation.test.js`
 
 ### 4.2 Seccomp Enforcement
@@ -62,7 +62,7 @@ DCP writes and applies a restricted seccomp profile that blocks high-risk syscal
 
 **Evidence anchors**
 
-- `backend/installers/dc1_daemon.py` (`_ensure_seccomp_profile`)
+- `backend/installers/dcp_daemon.py` (`_ensure_seccomp_profile`)
 - `backend/src/services/docker-manager.ts` (`buildSecurityOpts`)
 - `backend/tests/security/container-isolation.test.js` (static and live tests)
 
@@ -76,7 +76,7 @@ DCP writes and applies a restricted seccomp profile that blocks high-risk syscal
 
 - `infra/docker/run-job.sh`
 - `backend/src/services/docker-manager.ts` (`HostConfig.NetworkMode = 'none'`)
-- `backend/installers/dc1_daemon.py` (job mode `none`, vLLM mode `bridge`)
+- `backend/installers/dcp_daemon.py` (job mode `none`, vLLM mode `bridge`)
 
 ### 4.4 Image Scanning and Integrity
 

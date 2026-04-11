@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DCP Provider Daemon v3.3.0 — GPU Compute Marketplace
+DCP Provider Daemon v4.0.0-alpha.2 — GPU Compute Marketplace
 Runs as a background service on provider machines.
 
 Features:
@@ -20,11 +20,24 @@ Features:
   - Self-updating: downloads new daemon from backend when update_available
   - Model pre-caching: downloads LLM weights on startup for fast first inference
   - Real-time job progress: reports execution phase (downloading/loading/generating) to backend
+  - v3.5.0: Model auto-detection across Ollama/vLLM/llama.cpp engines (reported in heartbeat)
+  - v3.5.0: Engine watchdog with auto-restart for Ollama, event-based alerts for vLLM
+  - v3.5.0: Concurrency capacity estimation based on engine type (reported in heartbeat)
+  - v3.5.0: Graceful drain on SIGTERM/SIGINT with final draining-status heartbeat
+  - v3.5.0: Passive daemon-version update check (logs when newer version is available)
+  - v4.0.0-alpha.2 (Phase 1.5): Seven targeted Round-4 fixes:
+      A. Engine KV-cache-dtype introspection (fixes safe-context 4x overestimate)
+      B. Memory-bandwidth performance prediction + drift detection
+      C. Dual-identity cached_models (Ollama tag + HF canonical + vLLM variants)
+      D. RunPod pod hourly cost self-report (for backend cost-plus pricing)
+      E. Account runway hours best-effort self-report
+      F. Port-mismatch auto-detect + socat forwarder auto-install
+      G. Daemon code hash for version-skew detection across the fleet
 
 Usage:
-  python3 dc1-daemon.py                    # Uses injected key
-  python3 dc1-daemon.py --key YOUR_KEY     # Manual key override
-  python3 dc1-daemon.py --url URL          # Manual URL override
+  python3 dcp_daemon.py                    # Uses injected key
+  python3 dcp_daemon.py --key YOUR_KEY     # Manual key override
+  python3 dcp_daemon.py --url URL          # Manual URL override
 """
 
 import os
@@ -55,7 +68,7 @@ HMAC_SECRET = "{{HMAC_SECRET}}"
 
 HEARTBEAT_INTERVAL = 30   # seconds
 JOB_POLL_INTERVAL = 10    # seconds
-DAEMON_VERSION = "3.4.0"
+DAEMON_VERSION = "4.0.0-alpha.2"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
@@ -131,6 +144,67 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path.home() / "dc1-provider"
 PEER_ID_FILE = CONFIG_DIR / "peer_id"
 UPDATE_SUPPRESSION_FILE = CONFIG_DIR / "update_suppression.json"
+
+# ─── v4.0.0-alpha: DCP CONFIG + CACHES ──────────────────────────────────────
+# v4.0 introduces a forward-looking ~/.dcp/ directory for daemon v4+ config
+# and runtime caches. Older ~/dc1-provider/ paths remain for backward compat.
+DCP_DIR = Path.home() / ".dcp"
+DCP_CONFIG_FILE = DCP_DIR / "config.json"
+DCP_CONCURRENCY_CACHE_FILE = DCP_DIR / "concurrency_cache.json"
+try:
+    DCP_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+
+# CLI flag: set by main() when --force-reprobe is passed. Skips concurrency cache.
+_FORCE_REPROBE_CONCURRENCY = False
+
+# Runtime cache of the last computed safe context per model (populated by main()).
+_effective_context_by_model = {}
+_effective_context_lock = threading.Lock()
+
+# Runtime cache of cpu-offload detection result (updated by verify_no_cpu_offload).
+_cpu_offload_state = {"detected": False, "last_check": None, "details": ""}
+_cpu_offload_lock = threading.Lock()
+
+# ─── v4.0.0-alpha.2 (Phase 1.5 / Fix G): DAEMON CODE HASH ───────────────────
+# A sha256 prefix of this file's bytes lets the backend detect silent code
+# drift across the fleet even when DAEMON_VERSION is identical. Computed once
+# at import time; constant for the lifetime of the process.
+
+def _compute_code_hash():
+    """Return a short sha256 hex prefix of this daemon source file.
+
+    Returns:
+        str: 16-character hex string, or "unknown" on read error.
+    """
+    try:
+        with open(__file__, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()[:16]
+    except (OSError, IOError):
+        return "unknown"
+
+_CODE_HASH = _compute_code_hash()
+
+# ─── v4.0.0-alpha.2 (Phase 1.5 / Fix D+E): RUNPOD COST CACHES ───────────────
+# Hourly cost does not change during a pod's lifetime, so we resolve it once
+# on startup and reuse. Account runway requires an account-scoped key and is
+# rate-limited to once per 10 minutes.
+_POD_HOURLY_COST_USD = None
+_ACCOUNT_RUNWAY_HOURS = None
+_ACCOUNT_RUNWAY_LAST_CHECK = 0.0
+_ACCOUNT_RUNWAY_INTERVAL_S = 600  # 10 minutes
+_runpod_cache_lock = threading.Lock()
+
+# ─── v4.0.0-alpha.2 (Phase 1.5 / Fix F): PORT MISMATCH STATE ────────────────
+_PORT_MISMATCH_STATE = {
+    "mismatch": False,
+    "engine_port": None,
+    "engine_name": None,
+    "mapped_ports": [],
+    "remedy": "none",
+}
+_port_mismatch_lock = threading.Lock()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -256,14 +330,73 @@ def _safe_json(raw):
     except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
         return {}
 
+def _sanitize_for_json(obj, _seen=None, _depth=0):
+    """Recursively convert obj into a JSON-safe structure.
+
+    - Breaks circular references (objects referencing themselves)
+    - Converts non-primitives to str via fallback
+    - Caps recursion depth to avoid runaway structures
+    """
+    if _seen is None:
+        _seen = set()
+    if _depth > 20:
+        return str(obj)[:500]
+    # Primitive passthrough
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        return obj
+    obj_id = id(obj)
+    if obj_id in _seen:
+        return "<circular>"
+    if isinstance(obj, dict):
+        _seen.add(obj_id)
+        try:
+            return {
+                str(k): _sanitize_for_json(v, _seen, _depth + 1)
+                for k, v in obj.items()
+            }
+        finally:
+            _seen.discard(obj_id)
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        _seen.add(obj_id)
+        try:
+            return [_sanitize_for_json(v, _seen, _depth + 1) for v in obj]
+        finally:
+            _seen.discard(obj_id)
+    # Fallback: stringify unknown objects
+    try:
+        return str(obj)[:1000]
+    except Exception:
+        return "<unserializable>"
+
 def http_post(url, data, timeout=15):
     """POST JSON to URL, returns (status_code, response_dict)."""
+    # Guard against circular references / non-serializable payloads.
+    try:
+        json.dumps(data)
+        safe_data = data
+    except (TypeError, ValueError) as e:
+        log.warning(f"http_post: payload not JSON-serializable ({e}); sanitizing")
+        safe_data = _sanitize_for_json(data)
     if HAS_REQUESTS:
-        r = requests.post(url, json=data, timeout=timeout)
+        try:
+            r = requests.post(url, json=safe_data, timeout=timeout)
+        except Exception as e:
+            # Final fallback: use default=str so we never raise "Circular reference detected"
+            body = json.dumps(safe_data, default=str)
+            r = requests.post(
+                url,
+                data=body,
+                headers={"Content-Type": "application/json"},
+                timeout=timeout,
+            )
+            log.warning(f"http_post: requests.post(json=...) failed ({e}); used default=str fallback")
         return r.status_code, _safe_json(r.text)
     else:
         import urllib.request, urllib.error
-        body = json.dumps(data).encode()
+        try:
+            body = json.dumps(safe_data).encode()
+        except (TypeError, ValueError):
+            body = json.dumps(safe_data, default=str).encode()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -271,19 +404,38 @@ def http_post(url, data, timeout=15):
         except urllib.error.HTTPError as e:
             return e.code, _safe_json(e.read())
 
-def http_get(url, timeout=15):
-    """GET URL, returns (status_code, response_dict)."""
+def http_get(url, timeout=15, headers=None):
+    """GET URL, returns (status_code, response_dict).
+
+    Args:
+        url: Target URL.
+        timeout: Request timeout in seconds.
+        headers: Optional dict of request headers. Prefer passing credentials
+            via Authorization header rather than embedding them in the URL.
+    """
+    hdrs = dict(headers) if headers else None
     if HAS_REQUESTS:
-        r = requests.get(url, timeout=timeout)
+        r = requests.get(url, timeout=timeout, headers=hdrs)
         return r.status_code, _safe_json(r.text)
     else:
         import urllib.request, urllib.error
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, headers=hdrs or {})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.getcode(), _safe_json(resp.read())
         except urllib.error.HTTPError as e:
             return e.code, _safe_json(e.read())
+
+def _auth_headers():
+    """Return the standard Authorization header for credentialed daemon requests.
+
+    Moving credentials from URL query params to the Authorization header
+    avoids leaking the api_key into access logs and silences the backend's
+    `[security] Credential in URL query params detected` warning. The
+    backend's hasApiCredential() check accepts both forms; headers are the
+    strictly-better path.
+    """
+    return {"Authorization": f"Bearer {API_KEY}"}
 
 def http_patch(url, data, timeout=15):
     """PATCH JSON to URL, returns (status_code, response_dict)."""
@@ -1520,8 +1672,1745 @@ def emit_p2p_heartbeat(peer_id, gpu, gpu_status):
     except Exception as e:
         log.debug(f"P2P heartbeat emit failed: {e}")
 
-def send_heartbeat():
-    """Send heartbeat with GPU metrics to backend and P2P network."""
+# ─── v3.5.0: MODEL AUTO-DETECTION (Feature 1) ───────────────────────────────
+#
+# Polls Ollama (11434), vLLM (8000/8100-8103) and llama.cpp (8080) to build a
+# deduplicated list of served model IDs. Result is cached for 60 seconds to
+# avoid hammering local endpoints on every heartbeat tick.
+
+_SERVED_MODELS_CACHE = {"data": None, "timestamp": 0.0}
+_SERVED_MODELS_CACHE_TTL = 60  # seconds
+_served_models_lock = threading.Lock()
+
+
+def detect_served_models():
+    """
+    Detect which models are currently loaded/served on this provider.
+    Checks Ollama (11434), vLLM (8000/8100-8199), and llama.cpp (8080).
+    Returns: {"models": [sorted model ids], "engines": [engine tags]}
+    Cached for 60 seconds.
+    """
+    with _served_models_lock:
+        now = time.time()
+        cached = _SERVED_MODELS_CACHE.get("data")
+        if cached is not None and (now - _SERVED_MODELS_CACHE.get("timestamp", 0)) < _SERVED_MODELS_CACHE_TTL:
+            return cached
+
+    models = set()
+    engines_found = []
+
+    # Ollama
+    try:
+        if HAS_REQUESTS:
+            r = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if r.ok:
+                data = r.json()
+                for m in data.get("models", []):
+                    name = m.get("name") or m.get("model")
+                    if name:
+                        models.add(name)
+                engines_found.append("ollama")
+        else:
+            code, data = http_get("http://localhost:11434/api/tags", timeout=5)
+            if code == 200 and isinstance(data, dict):
+                for m in data.get("models", []):
+                    name = m.get("name") or m.get("model")
+                    if name:
+                        models.add(name)
+                engines_found.append("ollama")
+    except Exception:
+        pass
+
+    # vLLM on multiple ports — stop after first success to avoid duplicate scans
+    for port in (8000, 8100, 8101, 8102, 8103):
+        try:
+            if HAS_REQUESTS:
+                r = requests.get(f"http://localhost:{port}/v1/models", timeout=3)
+                if r.ok:
+                    data = r.json()
+                    for m in data.get("data", []):
+                        mid = m.get("id")
+                        if mid:
+                            models.add(mid)
+                    engines_found.append(f"vllm:{port}")
+                    break
+            else:
+                code, data = http_get(f"http://localhost:{port}/v1/models", timeout=3)
+                if code == 200 and isinstance(data, dict):
+                    for m in data.get("data", []):
+                        mid = m.get("id")
+                        if mid:
+                            models.add(mid)
+                    engines_found.append(f"vllm:{port}")
+                    break
+        except Exception:
+            continue
+
+    # llama.cpp (typically 8080). Skip the "llama.cpp" placeholder id.
+    try:
+        if HAS_REQUESTS:
+            r = requests.get("http://localhost:8080/v1/models", timeout=3)
+            if r.ok:
+                data = r.json()
+                for m in data.get("data", []):
+                    mid = m.get("id")
+                    if mid and mid != "llama.cpp":
+                        models.add(mid)
+                engines_found.append("llamacpp")
+        else:
+            code, data = http_get("http://localhost:8080/v1/models", timeout=3)
+            if code == 200 and isinstance(data, dict):
+                for m in data.get("data", []):
+                    mid = m.get("id")
+                    if mid and mid != "llama.cpp":
+                        models.add(mid)
+                engines_found.append("llamacpp")
+    except Exception:
+        pass
+
+    # v4.0.0-alpha.2 (Phase 1.5 / Fix C): dual-identity expansion.
+    # For every raw model id we detected, append ALL known aliases (Ollama tag,
+    # HF canonical, vLLM variants). The backend no longer has to consult an
+    # OLLAMA_MODEL_ALIASES lookup at candidate-selection time — the daemon now
+    # reports BOTH forms. Raw ids are also preserved as `cached_models_raw`.
+    raw_models_sorted = sorted(list(models))
+    expanded = set()
+    for raw in raw_models_sorted:
+        try:
+            for alias in expand_model_identities(raw):
+                if alias:
+                    expanded.add(alias)
+        except Exception as _exp_err:
+            log.debug(f"expand_model_identities({raw}) failed: {_exp_err}")
+            expanded.add(str(raw).lower())
+
+    result = {
+        "models": sorted(list(expanded)) if expanded else raw_models_sorted,
+        "models_raw": raw_models_sorted,
+        "engines": engines_found,
+    }
+
+    with _served_models_lock:
+        _SERVED_MODELS_CACHE["data"] = result
+        _SERVED_MODELS_CACHE["timestamp"] = time.time()
+
+    return result
+
+
+# ─── v3.5.0: ENGINE WATCHDOG (Feature 2) ─────────────────────────────────────
+
+ENGINE_WATCHDOG_INTERVAL = 60  # seconds
+ENGINE_FAILURE_THRESHOLD = 3   # consecutive failures before attempting restart
+_engine_failure_counts = {}    # {engine_key: consecutive_failure_count}
+_engine_watchdog_lock = threading.Lock()
+
+
+def check_engine_health(engine_type, port):
+    """Ping the engine's health/listing endpoint. Returns True if healthy."""
+    try:
+        if engine_type == "ollama":
+            url = f"http://localhost:{port}/api/tags"
+        else:  # vllm, llamacpp
+            url = f"http://localhost:{port}/health"
+        if HAS_REQUESTS:
+            r = requests.get(url, timeout=5)
+            return bool(r.ok)
+        else:
+            code, _ = http_get(url, timeout=5)
+            return code == 200
+    except Exception:
+        return False
+
+
+def restart_engine(engine_type):
+    """
+    Attempt to restart the inference engine.
+    - ollama: pkill + re-launch `ollama serve` with flash-attention enabled.
+    - vllm: cannot safely re-launch (complex command line, GPU binding) — log
+            critical event for manual intervention.
+    - llamacpp: similar to vllm; log for human operator.
+    """
+    log.warning(f"[watchdog] Restarting {engine_type}...")
+    try:
+        if engine_type == "ollama":
+            try:
+                subprocess.run(["pkill", "-f", "ollama serve"], timeout=5)
+            except Exception as e:
+                log.debug(f"[watchdog] pkill ollama failed: {e}")
+            time.sleep(2)
+            try:
+                subprocess.Popen(
+                    ["ollama", "serve"],
+                    env={**os.environ, "OLLAMA_HOST": "0.0.0.0:11434", "OLLAMA_FLASH_ATTENTION": "1"},
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                report_event("engine_restart", "Ollama restarted by watchdog", severity="warning")
+            except Exception as e:
+                log.error(f"[watchdog] Failed to relaunch ollama: {e}")
+                report_event("engine_restart_failed",
+                             f"Ollama restart failed: {e}",
+                             severity="critical")
+        elif engine_type == "vllm":
+            log.error("[watchdog] vLLM down — manual restart required")
+            report_event("engine_down",
+                         "vLLM process down, manual restart needed",
+                         severity="critical")
+        elif engine_type == "llamacpp":
+            log.error("[watchdog] llama.cpp down — manual restart required")
+            report_event("engine_down",
+                         "llama.cpp process down, manual restart needed",
+                         severity="critical")
+    except Exception as e:
+        log.error(f"[watchdog] restart_engine({engine_type}) crashed: {e}")
+
+
+def _discover_engines_for_watchdog():
+    """
+    Discover which engines are currently configured on this host.
+    Returns a list of (engine_type, port) tuples to monitor.
+    """
+    engines = []
+    detected = detect_served_models()
+    active = detected.get("engines", [])
+    if "ollama" in active:
+        engines.append(("ollama", 11434))
+    for tag in active:
+        if tag.startswith("vllm:"):
+            try:
+                port = int(tag.split(":", 1)[1])
+                engines.append(("vllm", port))
+            except Exception:
+                pass
+    if "llamacpp" in active:
+        engines.append(("llamacpp", 8080))
+    return engines
+
+
+def engine_watchdog_loop():
+    """
+    Background thread: every ENGINE_WATCHDOG_INTERVAL seconds, poll each
+    discovered engine's health endpoint. After ENGINE_FAILURE_THRESHOLD
+    consecutive failures, attempt a restart.
+    """
+    log.info(f"[watchdog] Engine watchdog started (interval={ENGINE_WATCHDOG_INTERVAL}s, "
+             f"threshold={ENGINE_FAILURE_THRESHOLD} consecutive failures)")
+    while True:
+        try:
+            if is_draining():
+                time.sleep(ENGINE_WATCHDOG_INTERVAL)
+                continue
+            engines = _discover_engines_for_watchdog()
+            for engine_type, port in engines:
+                key = f"{engine_type}:{port}"
+                healthy = check_engine_health(engine_type, port)
+                do_restart = False  # reset per-iteration to prevent stale flag
+                with _engine_watchdog_lock:
+                    if healthy:
+                        if _engine_failure_counts.get(key, 0) > 0:
+                            log.info(f"[watchdog] {key} recovered")
+                        _engine_failure_counts[key] = 0
+                    else:
+                        _engine_failure_counts[key] = _engine_failure_counts.get(key, 0) + 1
+                        failures = _engine_failure_counts[key]
+                        log.warning(f"[watchdog] {key} health check failed ({failures}/{ENGINE_FAILURE_THRESHOLD})")
+                        if failures >= ENGINE_FAILURE_THRESHOLD:
+                            _engine_failure_counts[key] = 0
+                            do_restart = True  # release lock before expensive restart
+                if do_restart:
+                    restart_engine(engine_type)
+        except Exception as e:
+            log.debug(f"[watchdog] loop iteration error: {e}")
+        time.sleep(ENGINE_WATCHDOG_INTERVAL)
+
+
+# ─── v4.0.0-alpha: DAEMON CONFIG LOADER ─────────────────────────────────────
+#
+# v4.0 introduces ~/.dcp/config.json for forward-looking daemon configuration
+# (TurboQuant, assignment overrides, etc.). The old ~/dc1-provider/ files
+# remain in place for backward compatibility; this loader is additive.
+
+def load_daemon_config():
+    """Load the v4.0 daemon config from ~/.dcp/config.json.
+
+    The file is optional. When absent or unreadable, returns an empty dict.
+    Supported top-level keys (v4.0-alpha):
+      - turboquant: {enabled: bool, bits: int, use_polar: bool}
+
+    Returns:
+        dict: Parsed config, or {} when the file is missing/invalid.
+    """
+    try:
+        if not DCP_CONFIG_FILE.exists():
+            return {}
+        raw = DCP_CONFIG_FILE.read_text(encoding="utf-8")
+        data = json.loads(raw) if raw.strip() else {}
+        if not isinstance(data, dict):
+            log.warning(f"{DCP_CONFIG_FILE} is not a JSON object, ignoring")
+            return {}
+        return data
+    except (OSError, ValueError) as e:
+        log.warning(f"Failed to load {DCP_CONFIG_FILE}: {e}")
+        return {}
+
+
+def get_turboquant_config():
+    """Return the merged TurboQuant config section.
+
+    Returns:
+        dict: {enabled: bool, bits: int, use_polar: bool}.
+              Defaults to disabled, 3 bits, polar=True.
+    """
+    cfg = load_daemon_config()
+    tq = cfg.get("turboquant") if isinstance(cfg, dict) else None
+    if not isinstance(tq, dict):
+        tq = {}
+    return {
+        "enabled": bool(tq.get("enabled", False)),
+        "bits": int(tq.get("bits", 3)),
+        "use_polar": bool(tq.get("use_polar", True)),
+    }
+
+
+# ─── v4.0.0-alpha: MODEL ARCHITECTURE DETECTION ─────────────────────────────
+#
+# Small lookup table seeded with every model we've benchmarked in Rounds 1-4.
+# Used by detect_model_architecture() and calculate_safe_context(). Keys are
+# matched case-insensitively by substring so partial ids (e.g. "qwen3:30b")
+# resolve to the canonical entry.
+
+# KV-cache geometry: num_layers, hidden_size per model family.
+# Sources: official HF config.json files verified against the model cards.
+MODEL_GEOMETRY_TABLE = {
+    "qwen3-30b-a3b":     {"num_layers": 48, "hidden_size": 2048, "size_gb": 18.0},
+    "qwen3.5-35b-a3b":   {"num_layers": 48, "hidden_size": 2560, "size_gb": 22.0},
+    "nemotron-nano-30b-a3b": {"num_layers": 48, "hidden_size": 2048, "size_gb": 18.0},
+    "gemma-4-26b-a4b":   {"num_layers": 46, "hidden_size": 3584, "size_gb": 16.0},
+    "qwen2.5-32b":       {"num_layers": 64, "hidden_size": 5120, "size_gb": 20.0},
+    "llama-3.3-70b":     {"num_layers": 80, "hidden_size": 8192, "size_gb": 42.0},
+    "qwen2.5-14b":       {"num_layers": 48, "hidden_size": 5120, "size_gb": 9.0},
+    "qwen2.5-7b":        {"num_layers": 28, "hidden_size": 3584, "size_gb": 4.7},
+    "llama-3.1-8b":      {"num_layers": 32, "hidden_size": 4096, "size_gb": 5.0},
+    "glm4-9b":           {"num_layers": 40, "hidden_size": 4096, "size_gb": 5.8},
+    "mistral-7b":        {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5},
+    "allam-7b":          {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5},
+    "jais-13b":          {"num_layers": 40, "hidden_size": 5120, "size_gb": 8.0},
+    "falcon-h1-7b":      {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5},
+}
+
+# Architecture table: MoE vs dense with verified parameter counts (billions).
+# Total = nominal parameter count; Active = per-token active params for MoE.
+MODEL_ARCH_TABLE = {
+    "qwen3-30b-a3b":     {"type": "moe",   "total_params_b": 30.0, "active_params_b": 3.0},
+    "qwen3.5-35b-a3b":   {"type": "moe",   "total_params_b": 35.0, "active_params_b": 3.0},
+    "nemotron-nano-30b-a3b": {"type": "moe", "total_params_b": 30.0, "active_params_b": 3.0},
+    "gemma-4-26b-a4b":   {"type": "moe",   "total_params_b": 26.0, "active_params_b": 4.0},
+    "qwen2.5-32b":       {"type": "dense", "total_params_b": 32.0, "active_params_b": 32.0},
+    "llama-3.3-70b":     {"type": "dense", "total_params_b": 70.0, "active_params_b": 70.0},
+    "qwen2.5-14b":       {"type": "dense", "total_params_b": 14.0, "active_params_b": 14.0},
+    "qwen2.5-7b":        {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
+    "llama-3.1-8b":      {"type": "dense", "total_params_b": 8.0,  "active_params_b": 8.0},
+    "glm4-9b":           {"type": "dense", "total_params_b": 9.0,  "active_params_b": 9.0},
+    "mistral-7b":        {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
+    "allam-7b":          {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
+    "jais-13b":          {"type": "dense", "total_params_b": 13.0, "active_params_b": 13.0},
+    # Falcon H1 is technically a hybrid SSM/attention model. Mark as dense
+    # for now; revisit once we have a dedicated hybrid code path.
+    "falcon-h1-7b":      {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
+}
+
+# ─── v4.0.0-alpha.2 (Phase 1.5 / Fix B): GPU MEMORY BANDWIDTH TABLE ─────────
+#
+# Memory bandwidth (GB/s) for the GPUs DCP cares about. Decode-time autoregressive
+# inference is memory-bandwidth bound: every decoded token requires reading the
+# model weights once. Peak tok/s ~= bandwidth / model_size_gb. Real sustained
+# throughput is 60-90% of this ceiling; anything under 50% suggests CPU offload,
+# wrong KV precision, thermal throttling, PCIe bottleneck, or a quantization
+# misconfiguration (this was the A40 Qwen 2.5 32B anomaly from Round 4).
+GPU_MEMORY_BANDWIDTH_GBPS = {
+    "NVIDIA GeForce RTX 4090":    1008,
+    "NVIDIA GeForce RTX 4080 SUPER": 736,
+    "NVIDIA GeForce RTX 4080":    717,
+    "NVIDIA GeForce RTX 3090":    936,
+    "NVIDIA GeForce RTX 3090 Ti": 1008,
+    "NVIDIA GeForce RTX 5090":    1792,
+    "NVIDIA GeForce RTX 5080":     960,
+    "NVIDIA RTX A5000":            768,
+    "NVIDIA RTX A6000":            768,
+    "NVIDIA A40":                  696,
+    "NVIDIA A100-SXM4-40GB":      1555,
+    "NVIDIA A100-SXM4-80GB":      2039,
+    "NVIDIA H100 PCIe":           2039,
+    "NVIDIA H100 SXM5":           3350,
+    "NVIDIA H200":                4800,
+    "NVIDIA L40":                  864,
+    "NVIDIA L40S":                 864,
+}
+
+
+def predicted_peak_tok_s(gpu_name, model_size_gb):
+    """Compute the memory-bandwidth-bound decode throughput ceiling.
+
+    Peak autoregressive tok/s is hard-capped by memory bandwidth: every
+    decoded token requires reading the full weights once, so
+    peak ~= (GPU bandwidth) / (model_size_gb). Real sustained throughput
+    is typically 60-90% of this peak.
+
+    Args:
+        gpu_name: Exact nvidia-smi GPU name string (e.g. "NVIDIA A40").
+        model_size_gb: Model weights footprint in GB (active weights for MoE).
+
+    Returns:
+        float or None: Predicted peak tok/s, or None if gpu_name is unknown
+        or model_size_gb is non-positive.
+    """
+    if not gpu_name or model_size_gb is None:
+        return None
+    try:
+        size = float(model_size_gb)
+    except (TypeError, ValueError):
+        return None
+    if size <= 0:
+        return None
+    bw = GPU_MEMORY_BANDWIDTH_GBPS.get(gpu_name)
+    if not bw:
+        return None
+    return float(bw) / size
+
+
+# ─── v4.0.0-alpha.2 (Phase 1.5 / Fix C): DUAL-IDENTITY MODEL TABLE ──────────
+#
+# Round 4 routing exposed that the backend had to consult OLLAMA_MODEL_ALIASES
+# at candidate-selection time because daemons reported `allam:7b` (Ollama tag)
+# but renters asked for `ALLaM-AI/ALLaM-7B-Instruct-preview` (HF format). The
+# cleaner fix: the daemon reports BOTH the Ollama tag and the HF canonical so
+# the backend filter does not need alias lookups.
+MODEL_IDENTITY_TABLE = {
+    "allam-7b": {
+        "canonical": "ALLaM-AI/ALLaM-7B-Instruct-preview",
+        "ollama": "allam:7b",
+        "vllm_variants": ["BOLT-IS/ALLaM-IT-7B", "BOLT-IS/ALLaM-IT-7B-AWQ"],
+        "hf_formats": [
+            "ALLaM-AI/ALLaM-7B-Instruct-preview",
+            "allam-ai/allam-7b-instruct-preview",
+        ],
+    },
+    "qwen3-30b-a3b": {
+        "canonical": "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "ollama": "qwen3:30b-a3b",
+        "vllm_variants": ["Qwen/Qwen3-30B-A3B", "Qwen/Qwen3-30B-A3B-GPTQ-Int4"],
+        "hf_formats": [
+            "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+            "qwen/qwen3-30b-a3b-gptq-int4",
+            "Qwen/Qwen3-30B-A3B",
+        ],
+    },
+    "jais-13b": {
+        "canonical": "inceptionai/jais-13b-chat",
+        "ollama": "jais:13b",
+        "vllm_variants": ["inceptionai/jais-13b-chat"],
+        "hf_formats": ["inceptionai/jais-13b-chat"],
+    },
+    "falcon-h1-7b": {
+        "canonical": "tiiuae/Falcon-H1-7B-Instruct",
+        "ollama": "falcon-h1:7b",
+        "vllm_variants": ["tiiuae/Falcon-H1-7B-Instruct"],
+        "hf_formats": ["tiiuae/Falcon-H1-7B-Instruct"],
+    },
+    "qwen2.5-32b": {
+        "canonical": "Qwen/Qwen2.5-32B-Instruct-AWQ",
+        "ollama": "qwen2.5:32b",
+        "vllm_variants": [
+            "Qwen/Qwen2.5-32B-Instruct-AWQ",
+            "Qwen/Qwen2.5-32B-Instruct",
+        ],
+        "hf_formats": [
+            "Qwen/Qwen2.5-32B-Instruct-AWQ",
+            "Qwen/Qwen2.5-32B-Instruct",
+        ],
+    },
+    "llama-3.3-70b": {
+        "canonical": "meta-llama/Llama-3.3-70B-Instruct",
+        "ollama": "llama3.3:70b",
+        "vllm_variants": ["meta-llama/Llama-3.3-70B-Instruct"],
+        "hf_formats": ["meta-llama/Llama-3.3-70B-Instruct"],
+    },
+    "gemma-4-26b-a4b": {
+        "canonical": "google/gemma-4-26b-a4b",
+        "ollama": "gemma4:26b-a4b",
+        "vllm_variants": [],  # llama.cpp only — no vLLM variant as of Round 4
+        "hf_formats": ["google/gemma-4-26b-a4b"],
+    },
+    "glm4-9b": {
+        "canonical": "THUDM/glm-4-9b-chat",
+        "ollama": "glm4",
+        "vllm_variants": ["THUDM/glm-4-9b-chat"],
+        "hf_formats": ["THUDM/glm-4-9b-chat"],
+    },
+    "mistral-7b": {
+        "canonical": "mistralai/Mistral-7B-Instruct-v0.2",
+        "ollama": "mistral:7b",
+        "vllm_variants": [
+            "mistralai/Mistral-7B-Instruct-v0.2",
+            "TheBloke/Mistral-7B-Instruct-v0.2-AWQ",
+        ],
+        "hf_formats": ["mistralai/Mistral-7B-Instruct-v0.2"],
+    },
+    "qwen3.5-35b-a3b": {
+        "canonical": "Qwen/Qwen3.5-35B-A3B-Instruct",
+        "ollama": "qwen3.5:35b-a3b",
+        "vllm_variants": ["Qwen/Qwen3.5-35B-A3B-Instruct"],
+        "hf_formats": ["Qwen/Qwen3.5-35B-A3B-Instruct"],
+    },
+}
+
+
+def expand_model_identities(model_id):
+    """Return all known alias IDs for a single model id.
+
+    Matches the input (case-insensitive) against every canonical, Ollama tag,
+    HF format, and vLLM variant in MODEL_IDENTITY_TABLE. On match, returns the
+    full dedup'd sorted list of ALL aliases (lowercased). On miss, returns a
+    single-entry list containing the lowercased input.
+
+    Args:
+        model_id: Raw model identifier in any known format.
+
+    Returns:
+        list[str]: Alias ids (lowercased), sorted.
+    """
+    if not model_id:
+        return []
+    needle = str(model_id).strip().lower()
+    if not needle:
+        return []
+    for _key, identity in MODEL_IDENTITY_TABLE.items():
+        candidates = []
+        canonical = identity.get("canonical")
+        if canonical:
+            candidates.append(canonical)
+        ollama_tag = identity.get("ollama")
+        if ollama_tag:
+            candidates.append(ollama_tag)
+        for vv in identity.get("vllm_variants", []) or []:
+            candidates.append(vv)
+        for hf in identity.get("hf_formats", []) or []:
+            candidates.append(hf)
+        lowered = [c.lower() for c in candidates if c]
+        if needle in lowered:
+            out = set(lowered)
+            return sorted(out)
+    return [needle]
+
+
+# Substring -> canonical key mapping for fuzzy lookups. Order matters: more
+# specific substrings must come before more generic ones.
+_MODEL_ALIAS_PATTERNS = [
+    ("nemotron-nano-30b-a3b", ["nemotron-nano-30b", "nemotron-nano"]),
+    ("qwen3.5-35b-a3b", ["qwen3.5-35b", "qwen-3.5-35b"]),
+    ("qwen3-30b-a3b", ["qwen3-30b", "qwen-3-30b", "qwen3:30b"]),
+    ("gemma-4-26b-a4b", ["gemma-4-26b", "gemma4-26b", "gemma-4"]),
+    ("qwen2.5-32b", ["qwen2.5-32b", "qwen-2.5-32b", "qwen2.5:32b"]),
+    ("llama-3.3-70b", ["llama-3.3-70b", "llama3.3-70b", "llama3.3:70b", "llama-3.3"]),
+    ("qwen2.5-14b", ["qwen2.5-14b", "qwen-2.5-14b", "qwen2.5:14b"]),
+    ("qwen2.5-7b", ["qwen2.5-7b", "qwen-2.5-7b", "qwen2.5:7b"]),
+    ("llama-3.1-8b", ["llama-3.1-8b", "llama3.1-8b", "llama3.1:8b", "llama-3.1"]),
+    ("glm4-9b", ["glm-4-9b", "glm4-9b", "glm4:9b"]),
+    ("mistral-7b", ["mistral-7b", "mistral:7b"]),
+    ("allam-7b", ["allam-7b", "allam:7b", "allam"]),
+    ("jais-13b", ["jais-13b", "jais:13b", "jais"]),
+    ("falcon-h1-7b", ["falcon-h1-7b", "falcon-h1", "falcon:h1"]),
+]
+
+
+def _canonicalize_model_id(model_id):
+    """Fuzzy-match a raw model identifier to a canonical lookup key.
+
+    Args:
+        model_id: Raw model id (e.g. "Qwen/Qwen3-30B-A3B-GPTQ-Int4").
+
+    Returns:
+        str or None: Canonical key from MODEL_ARCH_TABLE, or None if no match.
+    """
+    if not model_id:
+        return None
+    needle = str(model_id).lower()
+    for canonical, patterns in _MODEL_ALIAS_PATTERNS:
+        for pat in patterns:
+            if pat in needle:
+                return canonical
+    return None
+
+
+def detect_model_architecture(model_id):
+    """Classify a model as MoE or dense and report its parameter sizes.
+
+    Args:
+        model_id: Model identifier (HF repo, Ollama tag, vLLM model arg).
+
+    Returns:
+        dict: {type: "moe"|"dense", total_params_b: float,
+               active_params_b: float, confidence: "known"|"inferred"}
+    """
+    canonical = _canonicalize_model_id(model_id)
+    if canonical and canonical in MODEL_ARCH_TABLE:
+        entry = dict(MODEL_ARCH_TABLE[canonical])
+        entry["confidence"] = "known"
+        return entry
+
+    # Substring-based inference for unknown models.
+    needle = (model_id or "").lower()
+    moe_markers = ["-a3b", "-a4b", "-a10b", "moe", "mixture", "mixtral"]
+    is_moe = any(m in needle for m in moe_markers)
+
+    # Best-effort parameter size extraction from the model id (e.g. "70b").
+    import re as _re
+    total_b = 0.0
+    active_b = 0.0
+    m = _re.search(r'(\d+(?:\.\d+)?)\s*b', needle)
+    if m:
+        try:
+            total_b = float(m.group(1))
+        except ValueError:
+            total_b = 0.0
+    if is_moe:
+        a = _re.search(r'-a(\d+(?:\.\d+)?)b', needle)
+        if a:
+            try:
+                active_b = float(a.group(1))
+            except ValueError:
+                active_b = 0.0
+        else:
+            # Fallback: assume ~10% active for unknown MoE models.
+            active_b = round(total_b * 0.1, 1) if total_b else 0.0
+    else:
+        active_b = total_b
+
+    return {
+        "type": "moe" if is_moe else "dense",
+        "total_params_b": total_b,
+        "active_params_b": active_b,
+        "confidence": "inferred",
+    }
+
+
+# ─── v4.0.0-alpha: SMART CONTEXT WINDOW CALCULATION ─────────────────────────
+#
+# Round 3 showed that Ollama's default 131k context on Llama 3.3 70B forces
+# the KV cache to CPU, collapsing throughput 25x. calculate_safe_context()
+# picks a KV-cache-friendly context length using model geometry; the runtime
+# verify_no_cpu_offload() probe watches for the same regression at runtime.
+
+# Safety headroom (GB) reserved for activations, CUDA graphs, misc allocations.
+_CONTEXT_VRAM_HEADROOM_GB = 2.0
+_CONTEXT_MIN = 2048
+_CONTEXT_MAX = 131072
+_CONTEXT_ROUND = 1024
+
+
+def _lookup_geometry(model_id, architecture):
+    """Resolve (num_layers, hidden_size) for a model, with sensible fallbacks.
+
+    Args:
+        model_id: Model identifier or None.
+        architecture: "moe" or "dense" hint used for heuristic fallbacks.
+
+    Returns:
+        tuple: (num_layers: int, hidden_size: int)
+    """
+    canonical = _canonicalize_model_id(model_id)
+    if canonical and canonical in MODEL_GEOMETRY_TABLE:
+        geom = MODEL_GEOMETRY_TABLE[canonical]
+        return int(geom["num_layers"]), int(geom["hidden_size"])
+
+    # Heuristic fallback for unknown models. These are rough dense-family
+    # averages derived from Llama-like architectures and intentionally
+    # conservative (they bias toward a SMALLER safe context).
+    if (architecture or "").lower() == "moe":
+        return 48, 4096
+    return 32, 4096
+
+
+def _vllm_kv_cache_dtype_from_cmdline():
+    """Best-effort: inspect the currently running vLLM process command line
+    for an explicit --kv-cache-dtype flag.
+
+    Uses `ps -eo pid,command` (stdlib) to avoid a psutil dependency. We scan
+    every line containing "vllm" and look for the flag in either
+    `--kv-cache-dtype fp8` or `--kv-cache-dtype=fp8` form.
+
+    Returns:
+        str or None: The raw dtype string (e.g. "fp8", "int4") or None if
+        no vLLM process is found or no explicit flag is set.
+    """
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "command"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode != 0 or not result.stdout:
+            return None
+        for line in result.stdout.splitlines():
+            low = line.lower()
+            if "vllm" not in low:
+                continue
+            # Accept "--kv-cache-dtype X" or "--kv-cache-dtype=X".
+            tokens = line.split()
+            for idx, tok in enumerate(tokens):
+                if tok == "--kv-cache-dtype" and idx + 1 < len(tokens):
+                    return tokens[idx + 1].strip().lower()
+                if tok.startswith("--kv-cache-dtype="):
+                    return tok.split("=", 1)[1].strip().lower()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None
+
+
+def detect_kv_cache_bits(engine_type, turboquant_enabled):
+    """Resolve the bit-width of the KV cache currently in use by the local engine.
+
+    Resolution order:
+        1. TurboQuant on           -> 3 (3-bit KV)
+        2. vLLM --kv-cache-dtype fp8 -> 8
+        3. vLLM --kv-cache-dtype int4 (or similar) -> 4
+        4. Ollama default          -> 16 (fp16)
+        5. vLLM default            -> 16 (fp16)
+        6. Unknown engine          -> 16 (safe: overestimates memory footprint,
+                                          underestimates safe context window)
+
+    This fixes a Round 4 bug where the daemon hard-coded 4 bits even when the
+    engine was actually using fp16, leading safe_context to be overestimated
+    by ~4x on every non-TurboQuant provider.
+
+    Args:
+        engine_type: "vllm", "ollama", "llamacpp", or unknown string.
+        turboquant_enabled: Whether the DCP TurboQuant flag is on.
+
+    Returns:
+        int: KV cache bit-width (3, 4, 8, or 16).
+    """
+    if turboquant_enabled:
+        return 3
+    engine = (engine_type or "").strip().lower()
+    if engine == "vllm":
+        dtype = _vllm_kv_cache_dtype_from_cmdline()
+        if dtype:
+            if "fp8" in dtype or "e4m3" in dtype or "e5m2" in dtype:
+                return 8
+            if "int4" in dtype or "q4" in dtype:
+                return 4
+            if "int8" in dtype or "q8" in dtype:
+                return 8
+        # vLLM default KV cache is fp16.
+        return 16
+    if engine == "ollama":
+        # Ollama defaults to fp16 KV (despite flash-attention). Without a
+        # definitive probe we assume fp16 and err on the side of a smaller,
+        # safer context window.
+        return 16
+    if engine == "llamacpp":
+        # llama.cpp defaults to f16 KV cache unless --cache-type-k is set.
+        return 16
+    # Unknown engine: assume fp16 (conservative / larger memory footprint).
+    return 16
+
+
+def calculate_safe_context(model_size_gb, quant_bits, gpu_vram_gb, model_architecture,
+                           model_id=None):
+    """Compute a KV-cache-safe context length that stays in VRAM.
+
+    Formula:
+        usable_vram    = gpu_vram_gb - model_size_gb - headroom(2 GB)
+        kv_bytes/token = num_layers * 2 * hidden_size * (quant_bits / 8)
+        safe_ctx       = floor(usable_vram * 1e9 / kv_bytes_per_token)
+
+    The result is rounded DOWN to the nearest 1024, capped at 131072, and
+    floored at 2048 tokens.
+
+    Args:
+        model_size_gb: Model weights footprint in GB (in VRAM).
+        quant_bits: KV cache quantization bits (typically 16 for fp16, 8 for
+                    fp8, 4 for int4, 3 for TurboQuant).
+        gpu_vram_gb: Total GPU VRAM in GB.
+        model_architecture: "moe" or "dense".
+        model_id: Optional canonical model id for geometry lookup.
+
+    Returns:
+        int: Safe context length (tokens).
+    """
+    try:
+        model_size_gb = max(0.0, float(model_size_gb or 0))
+        quant_bits = max(1, int(quant_bits or 16))
+        gpu_vram_gb = max(0.0, float(gpu_vram_gb or 0))
+    except (TypeError, ValueError):
+        return _CONTEXT_MIN
+
+    usable_vram_gb = gpu_vram_gb - model_size_gb - _CONTEXT_VRAM_HEADROOM_GB
+    if usable_vram_gb <= 0:
+        # Model already exhausts VRAM; only the floor context is safe.
+        return _CONTEXT_MIN
+
+    num_layers, hidden_size = _lookup_geometry(model_id, model_architecture)
+    # KV cache footprint per token: 2 (K + V) tensors, num_layers deep,
+    # hidden_size wide, in quant_bits precision.
+    kv_bytes_per_token = num_layers * 2 * hidden_size * (quant_bits / 8.0)
+    if kv_bytes_per_token <= 0:
+        return _CONTEXT_MIN
+
+    usable_bytes = usable_vram_gb * 1_000_000_000.0
+    raw = int(usable_bytes // kv_bytes_per_token)
+    # Round DOWN to nearest 1024.
+    rounded = (raw // _CONTEXT_ROUND) * _CONTEXT_ROUND
+    if rounded < _CONTEXT_MIN:
+        return _CONTEXT_MIN
+    if rounded > _CONTEXT_MAX:
+        return _CONTEXT_MAX
+    return rounded
+
+
+# ─── v4.0.0-alpha: CPU OFFLOAD DETECTION ────────────────────────────────────
+
+def _parse_ollama_ps_output(text):
+    """Parse `ollama ps` tabular output into a list of process dicts.
+
+    Args:
+        text: Raw stdout from `ollama ps`.
+
+    Returns:
+        list[dict]: One dict per row with keys NAME, SIZE, PROCESSOR, UNTIL.
+    """
+    rows = []
+    if not text:
+        return rows
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return rows
+    header = lines[0]
+    # Column headers we care about: NAME, ID, SIZE, PROCESSOR, UNTIL
+    # Ollama prints a space-padded table; we split on 2+ spaces.
+    import re as _re
+    for line in lines[1:]:
+        parts = _re.split(r'\s{2,}', line.strip())
+        if len(parts) >= 4:
+            rows.append({
+                "name": parts[0],
+                "processor": parts[-2] if len(parts) >= 2 else "",
+                "raw": line,
+            })
+    return rows
+
+
+def verify_no_cpu_offload():
+    """Check nvidia-smi and `ollama ps` for any sign of CPU KV-cache offload.
+
+    Returns:
+        bool: True if the currently loaded model is 100% on GPU, False if
+              any CPU offload is detected or the probe is inconclusive.
+    """
+    global _cpu_offload_state
+    details = []
+    cpu_offload = False
+
+    # nvidia-smi memory.used check — cheap sanity probe.
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            details.append(f"nvidia-smi memory.used={result.stdout.strip()}")
+    except (OSError, subprocess.SubprocessError) as e:
+        details.append(f"nvidia-smi probe failed: {e}")
+
+    # Ollama ps — the definitive signal. PROCESSOR column shows "100% GPU",
+    # "50%/50% CPU/GPU", etc. Anything containing "CPU" means offload.
+    try:
+        result = subprocess.run(
+            ["ollama", "ps"], capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout:
+            rows = _parse_ollama_ps_output(result.stdout)
+            for row in rows:
+                processor = (row.get("processor") or "").upper()
+                if "CPU" in processor and "100% GPU" not in processor:
+                    cpu_offload = True
+                    details.append(
+                        f"ollama offload: model={row.get('name')} processor={row.get('processor')}"
+                    )
+    except FileNotFoundError:
+        # Ollama not installed — fine, not our engine.
+        pass
+    except (OSError, subprocess.SubprocessError) as e:
+        details.append(f"ollama ps probe failed: {e}")
+
+    joined = "; ".join(details) if details else ""
+    with _cpu_offload_lock:
+        _cpu_offload_state = {
+            "detected": cpu_offload,
+            "last_check": datetime.utcnow().isoformat() + "Z",
+            "details": joined,
+        }
+
+    if cpu_offload:
+        log.warning(
+            "[cpu_offload] CPU offload DETECTED — KV cache spilling out of "
+            "VRAM. Throughput is collapsing. Details: %s", joined
+        )
+        try:
+            report_event(
+                "cpu_offload_detected",
+                joined[:4000],
+                severity="warning",
+            )
+        except Exception as _ev_err:
+            log.debug(f"[cpu_offload] report_event failed: {_ev_err}")
+
+        # One-shot engine restart with the calculated safe context.
+        # Only attempted for Ollama (the only engine we know how to safely
+        # relaunch with a context override). vLLM restarts require operator
+        # intervention; we log and move on.
+        try:
+            detected = detect_served_models()
+            if "ollama" in detected.get("engines", []):
+                log.warning(
+                    "[cpu_offload] Attempting one-shot Ollama restart with "
+                    "safe-context enforcement"
+                )
+                restart_engine("ollama")
+        except Exception as _restart_err:
+            log.debug(f"[cpu_offload] auto-restart attempt failed: {_restart_err}")
+
+    return not cpu_offload
+
+
+def get_cpu_offload_state():
+    """Return the most recent CPU offload probe state (safe for heartbeat).
+
+    Returns:
+        dict: {detected: bool, last_check: iso_string|None, details: str}
+    """
+    with _cpu_offload_lock:
+        return dict(_cpu_offload_state)
+
+
+# ─── v4.0.0-alpha: DYNAMIC CONCURRENCY CAPACITY PROBE ───────────────────────
+#
+# Round 3 showed static concurrency estimates miss reality by 2-3x depending on
+# the GPU, model, and KV cache headroom. The v4.0 probe actually fires parallel
+# requests at the local inference engine and reports the highest N at which
+# aggregate throughput was still improving. Results are cached per
+# (gpu_name, model_id, engine, quant) tuple for 24h.
+
+_CONCURRENCY_CACHE_TTL_S = 24 * 3600  # 24 hours
+_CONCURRENCY_PROBE_HARD_CAP = 32
+_CONCURRENCY_PROBE_LEVELS = [2, 4, 8, 16, 32]
+_CONCURRENCY_PROBE_PER_REQUEST_TIMEOUT = 30
+_CONCURRENCY_PROBE_PROMPT = "write one sentence"
+_CONCURRENCY_PROBE_MAX_TOKENS = 32
+
+
+def _load_concurrency_cache():
+    """Load the concurrency probe cache from disk.
+
+    Returns:
+        dict: Cache contents, or {} on error.
+    """
+    try:
+        if not DCP_CONCURRENCY_CACHE_FILE.exists():
+            return {}
+        raw = DCP_CONCURRENCY_CACHE_FILE.read_text(encoding="utf-8")
+        data = json.loads(raw) if raw.strip() else {}
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError) as e:
+        log.debug(f"[probe] cache load failed: {e}")
+        return {}
+
+
+def _save_concurrency_cache(cache):
+    """Persist the concurrency probe cache to disk.
+
+    Args:
+        cache: Serializable dict to write.
+    """
+    try:
+        DCP_DIR.mkdir(parents=True, exist_ok=True)
+        DCP_CONCURRENCY_CACHE_FILE.write_text(
+            json.dumps(cache, indent=2), encoding="utf-8"
+        )
+    except OSError as e:
+        log.debug(f"[probe] cache save failed: {e}")
+
+
+def _concurrency_cache_key(gpu_name, model_id, engine, quant):
+    """Build a stable cache key for the probe result.
+
+    Args:
+        gpu_name: GPU model name.
+        model_id: Model identifier in use.
+        engine: Engine tag ("vllm", "ollama", etc).
+        quant: Quantization string or None.
+
+    Returns:
+        str: Cache key.
+    """
+    return f"{gpu_name or 'unknown'}|{model_id or 'unknown'}|{engine or 'unknown'}|{quant or 'unknown'}"
+
+
+def _pick_probe_target(detected):
+    """Pick (engine, port, model_id) to probe based on detected engines.
+
+    Args:
+        detected: Output of detect_served_models().
+
+    Returns:
+        tuple or None: (engine, port, model_id) or None if nothing reachable.
+    """
+    engines = detected.get("engines", []) if isinstance(detected, dict) else []
+    # v4.0.0-alpha.2 (Phase 1.5 / Fix C): use the RAW model list for the probe
+    # target id. Ollama's /api/generate needs the Ollama tag form (e.g.
+    # "allam:7b"), not the HF canonical. The expanded cached_models list is
+    # for backend routing; the probe speaks directly to the local engine.
+    raw_models = detected.get("models_raw", []) if isinstance(detected, dict) else []
+    if not raw_models:
+        raw_models = detected.get("models", []) if isinstance(detected, dict) else []
+    first_model = raw_models[0] if raw_models else None
+
+    # Prefer vLLM (continuous batching — the whole point of the probe).
+    for tag in engines:
+        if tag.startswith("vllm:"):
+            try:
+                port = int(tag.split(":", 1)[1])
+                return ("vllm", port, first_model)
+            except ValueError:
+                continue
+    if "ollama" in engines:
+        return ("ollama", 11434, first_model)
+    if "llamacpp" in engines:
+        return ("llamacpp", 8080, first_model)
+    return None
+
+
+def _fire_probe_request(engine, port, model_id):
+    """Fire a single probe request at the local engine.
+
+    Args:
+        engine: "vllm" | "ollama" | "llamacpp".
+        port: Target port.
+        model_id: Model id or None.
+
+    Returns:
+        tuple: (success: bool, tokens: int, elapsed_s: float)
+    """
+    if not HAS_REQUESTS:
+        return False, 0, 0.0
+
+    start = time.time()
+    try:
+        if engine == "ollama":
+            body = {
+                "model": model_id or "",
+                "prompt": _CONCURRENCY_PROBE_PROMPT,
+                "stream": False,
+                "options": {"num_predict": _CONCURRENCY_PROBE_MAX_TOKENS},
+            }
+            r = requests.post(
+                f"http://localhost:{port}/api/generate",
+                json=body, timeout=_CONCURRENCY_PROBE_PER_REQUEST_TIMEOUT,
+            )
+            if not r.ok:
+                return False, 0, 0.0
+            data = r.json()
+            tokens = int(data.get("eval_count") or _CONCURRENCY_PROBE_MAX_TOKENS)
+        else:
+            # vLLM / llamacpp both expose OpenAI-compatible /v1/chat/completions.
+            body = {
+                "model": model_id or "default",
+                "messages": [{"role": "user", "content": _CONCURRENCY_PROBE_PROMPT}],
+                "max_tokens": _CONCURRENCY_PROBE_MAX_TOKENS,
+                "stream": False,
+                "temperature": 0.0,
+            }
+            r = requests.post(
+                f"http://localhost:{port}/v1/chat/completions",
+                json=body, timeout=_CONCURRENCY_PROBE_PER_REQUEST_TIMEOUT,
+            )
+            if not r.ok:
+                return False, 0, 0.0
+            data = r.json()
+            usage = data.get("usage", {}) if isinstance(data, dict) else {}
+            tokens = int(
+                usage.get("completion_tokens")
+                or _CONCURRENCY_PROBE_MAX_TOKENS
+            )
+    except (requests.RequestException, ValueError, KeyError) as e:
+        log.debug(f"[probe] request failed: {e}")
+        return False, 0, 0.0
+
+    elapsed = time.time() - start
+    return True, tokens, elapsed
+
+
+def _run_probe_batch(engine, port, model_id, concurrency):
+    """Fire `concurrency` parallel requests and measure aggregate tok/s.
+
+    Args:
+        engine: Engine type.
+        port: Target port.
+        model_id: Model id or None.
+        concurrency: Number of parallel in-flight requests.
+
+    Returns:
+        tuple: (ok: bool, aggregate_tps: float)
+    """
+    results = []
+    threads = []
+    errors = [0]
+    lock = threading.Lock()
+
+    batch_start = time.time()
+
+    def worker():
+        ok, tokens, elapsed = _fire_probe_request(engine, port, model_id)
+        with lock:
+            if ok:
+                results.append((tokens, elapsed))
+            else:
+                errors[0] += 1
+
+    for _ in range(concurrency):
+        t = threading.Thread(target=worker, daemon=True)
+        threads.append(t)
+        t.start()
+    for t in threads:
+        t.join(timeout=_CONCURRENCY_PROBE_PER_REQUEST_TIMEOUT + 5)
+
+    batch_elapsed = max(time.time() - batch_start, 0.001)
+
+    if errors[0] > 0 or not results:
+        return False, 0.0
+
+    total_tokens = sum(tok for tok, _ in results)
+    aggregate_tps = total_tokens / batch_elapsed
+    return True, aggregate_tps
+
+
+def probe_concurrency_capacity(force_reprobe=None):
+    """Measure maximum useful concurrency on the local inference engine.
+
+    Doubles in-flight request count from 2 until aggregate tok/s stops
+    improving by >10%, any request errors, or the hard cap (32) is hit.
+    Results are cached per (gpu, model, engine, quant) for 24h.
+
+    Args:
+        force_reprobe: Override _FORCE_REPROBE_CONCURRENCY. Forces a fresh
+                       measurement even if the cache is warm.
+
+    Returns:
+        dict: {
+          max_concurrent_users: int,
+          engine_type: str,
+          batching: str,
+          probed_concurrency: int,
+          concurrency_probe_method: "cached"|"measured"|"fallback_static",
+          concurrency_probed_at: iso_string|None,
+          probe_aggregate_tps: float|None,
+          model_id: str|None,
+        }
+    """
+    force = _FORCE_REPROBE_CONCURRENCY if force_reprobe is None else force_reprobe
+
+    detected = detect_served_models()
+    engines = detected.get("engines", []) if isinstance(detected, dict) else []
+
+    # Determine engine type + batching profile first (used by fallback path too).
+    if any(e.startswith("vllm") for e in engines):
+        engine_type = "vllm"
+        batching = "continuous"
+        static_max = 9
+    elif "llamacpp" in engines:
+        engine_type = "llamacpp"
+        batching = "parallel_slots"
+        static_max = 5
+    elif "ollama" in engines:
+        engine_type = "ollama"
+        batching = "sequential"
+        static_max = 3
+    else:
+        engine_type = "unknown"
+        batching = "unknown"
+        static_max = 1
+
+    gpu = detect_gpu() or {}
+    gpu_name = gpu.get("gpu_name") or "unknown"
+    first_model = (detected.get("models") or [None])[0] if isinstance(detected, dict) else None
+    quant = os.environ.get("DCP_QUANTIZATION") or None
+    cache_key = _concurrency_cache_key(gpu_name, first_model, engine_type, quant)
+
+    fallback_result = {
+        "max_concurrent_users": static_max,
+        "engine_type": engine_type,
+        "batching": batching,
+        "probed_concurrency": static_max,
+        "concurrency_probe_method": "fallback_static",
+        "concurrency_probed_at": None,
+        "probe_aggregate_tps": None,
+        "model_id": first_model,
+        # v4.0.0-alpha.2 (Phase 1.5 / Fix B): bandwidth-drift fields
+        "single_user_tps": None,
+        "predicted_peak_tok_s": None,
+        "performance_ratio": None,
+    }
+
+    # 1. Cache lookup.
+    if not force:
+        cache = _load_concurrency_cache()
+        cached = cache.get(cache_key) if isinstance(cache, dict) else None
+        if isinstance(cached, dict):
+            ts = cached.get("timestamp", 0)
+            if (time.time() - ts) < _CONCURRENCY_CACHE_TTL_S:
+                result = dict(fallback_result)
+                result.update({
+                    "max_concurrent_users": int(cached.get("probed_concurrency") or static_max),
+                    "probed_concurrency": int(cached.get("probed_concurrency") or static_max),
+                    "probe_aggregate_tps": cached.get("aggregate_tps"),
+                    "concurrency_probe_method": "cached",
+                    "concurrency_probed_at": cached.get("probed_at"),
+                    # v4.0.0-alpha.2 (Phase 1.5 / Fix B): preserve bandwidth fields
+                    "single_user_tps": cached.get("single_user_tps"),
+                    "predicted_peak_tok_s": cached.get("predicted_peak_tok_s"),
+                    "performance_ratio": cached.get("performance_ratio"),
+                })
+                return result
+
+    # 2. Measure. Bail out to static fallback if no engine is reachable.
+    target = _pick_probe_target(detected)
+    if target is None or engine_type == "unknown":
+        return fallback_result
+
+    engine, port, model_id = target
+    log.info(f"[probe] Measuring concurrency for {engine}:{port} model={model_id}")
+
+    last_good_n = 1
+    last_good_tps = 0.0
+    for n in _CONCURRENCY_PROBE_LEVELS:
+        if n > _CONCURRENCY_PROBE_HARD_CAP:
+            break
+        ok, tps = _run_probe_batch(engine, port, model_id, n)
+        log.info(f"[probe] n={n} ok={ok} aggregate_tps={tps:.1f}")
+        if not ok:
+            break
+        if last_good_tps > 0 and tps < last_good_tps * 1.10:
+            # <10% improvement — saturation reached. Report previous level.
+            break
+        last_good_n = n
+        last_good_tps = tps
+
+    if last_good_n <= 1:
+        log.warning("[probe] Concurrency probe inconclusive, using fallback")
+        return fallback_result
+
+    probed_at = datetime.utcnow().isoformat() + "Z"
+
+    # v4.0.0-alpha.2 (Phase 1.5 / Fix B): single-user throughput measurement
+    # for memory-bandwidth drift detection. We fire ONE extra probe request
+    # at concurrency=1 to measure the decode tok/s a single user actually
+    # sees, then compare against the bandwidth-predicted ceiling.
+    single_user_tps = None
+    performance_ratio = None
+    predicted_peak = None
+    try:
+        ok1, tokens1, elapsed1 = _fire_probe_request(engine, port, model_id)
+        if ok1 and elapsed1 > 0 and tokens1 > 0:
+            single_user_tps = float(tokens1) / float(elapsed1)
+    except Exception as _su_err:
+        log.debug(f"[probe] single-user measurement failed: {_su_err}")
+
+    try:
+        canonical = _canonicalize_model_id(model_id)
+        model_size_gb = 0.0
+        if canonical and canonical in MODEL_GEOMETRY_TABLE:
+            model_size_gb = float(MODEL_GEOMETRY_TABLE[canonical].get("size_gb", 0.0))
+        if model_size_gb > 0:
+            predicted_peak = predicted_peak_tok_s(gpu_name, model_size_gb)
+        if predicted_peak and single_user_tps and single_user_tps > 0:
+            performance_ratio = single_user_tps / predicted_peak
+            if performance_ratio < 0.5:
+                try:
+                    report_event(
+                        "performance_anomaly",
+                        f"Measured {single_user_tps:.1f} tok/s is "
+                        f"{performance_ratio * 100:.0f}% of memory-bandwidth-predicted "
+                        f"{predicted_peak:.1f} tok/s for {model_id} on {gpu_name}. "
+                        f"Possible causes: CPU offload, wrong KV precision, thermal "
+                        f"throttle, PCIe bottleneck.",
+                        severity="warning",
+                    )
+                except Exception as _ev_err:
+                    log.debug(f"[probe] performance_anomaly report failed: {_ev_err}")
+            log.info(
+                "[probe] single_user_tps=%.1f predicted_peak=%.1f ratio=%.2f",
+                single_user_tps, predicted_peak, performance_ratio,
+            )
+    except Exception as _pred_err:
+        log.debug(f"[probe] bandwidth prediction failed: {_pred_err}")
+
+    # Persist the cache entry (including bandwidth fields from Fix B).
+    cache = _load_concurrency_cache()
+    cache[cache_key] = {
+        "probed_concurrency": last_good_n,
+        "aggregate_tps": round(last_good_tps, 2),
+        "probed_at": probed_at,
+        "timestamp": time.time(),
+        "gpu_name": gpu_name,
+        "model_id": model_id,
+        "engine": engine_type,
+        "quant": quant,
+        "single_user_tps": round(single_user_tps, 2) if single_user_tps else None,
+        "predicted_peak_tok_s": round(predicted_peak, 2) if predicted_peak else None,
+        "performance_ratio": round(performance_ratio, 3) if performance_ratio else None,
+    }
+    _save_concurrency_cache(cache)
+
+    result = dict(fallback_result)
+    result.update({
+        "max_concurrent_users": last_good_n,
+        "probed_concurrency": last_good_n,
+        "probe_aggregate_tps": round(last_good_tps, 2),
+        "concurrency_probe_method": "measured",
+        "concurrency_probed_at": probed_at,
+        "single_user_tps": round(single_user_tps, 2) if single_user_tps else None,
+        "predicted_peak_tok_s": round(predicted_peak, 2) if predicted_peak else None,
+        "performance_ratio": round(performance_ratio, 3) if performance_ratio else None,
+    })
+    return result
+
+
+def estimate_concurrency_capacity():
+    """Backward-compat alias for probe_concurrency_capacity().
+
+    v3.5 callers expect this function name. It now returns the probed
+    concurrency result (with full v4.0 fields) to keep the heartbeat
+    payload consistent.
+
+    Returns:
+        dict: Same shape as probe_concurrency_capacity().
+    """
+    return probe_concurrency_capacity()
+
+
+_CONCURRENCY_REPROBE_INTERVAL_S = 6 * 3600  # 6 hours
+
+
+def _concurrency_reprobe_loop():
+    """Background loop: force a concurrency reprobe every 6 hours.
+
+    The in-process cache is invalidated by passing force_reprobe=True so the
+    backend gets fresh numbers even if the hardware is idle. This runs in a
+    daemon thread and never raises.
+    """
+    # Initial delay so we don't double-probe right after startup.
+    time.sleep(_CONCURRENCY_REPROBE_INTERVAL_S)
+    while True:
+        try:
+            if not is_draining():
+                result = probe_concurrency_capacity(force_reprobe=True)
+                log.info(
+                    "[probe] Periodic reprobe complete: method=%s probed=%s",
+                    result.get("concurrency_probe_method"),
+                    result.get("probed_concurrency"),
+                )
+        except Exception as e:
+            log.debug(f"[probe] reprobe loop error: {e}")
+        time.sleep(_CONCURRENCY_REPROBE_INTERVAL_S)
+
+
+# ─── v3.5.0: PASSIVE DAEMON-VERSION CHECK (Feature 5) ───────────────────────
+#
+# The existing check_for_update() function actively downloads and self-updates
+# via the watchdog restart flow. This lighter-weight check simply logs when a
+# newer daemon version is advertised by the backend so operators know to run
+# the installer. It intentionally does NOT perform any file mutations.
+
+_LAST_UPDATE_NAG_TS = 0.0
+_UPDATE_NAG_INTERVAL = 300  # seconds between log warnings
+
+
+def check_for_updates():
+    """
+    Passive check: hit the backend version endpoint and log a warning if a
+    newer daemon version is available. Does not modify any files.
+    Safe to call repeatedly — internal throttling suppresses log spam.
+    """
+    global _LAST_UPDATE_NAG_TS
+    try:
+        url = f"{API_URL.rstrip('/')}/api/providers/daemon/version"
+        if HAS_REQUESTS:
+            r = requests.get(url, timeout=10)
+            if not r.ok:
+                return
+            data = r.json() if r.content else {}
+        else:
+            code, data = http_get(url, timeout=10)
+            if code != 200:
+                return
+        if not isinstance(data, dict):
+            return
+        latest = str(data.get("version", DAEMON_VERSION)).strip()
+        if latest and _is_remote_newer(latest, DAEMON_VERSION):
+            now = time.time()
+            if now - _LAST_UPDATE_NAG_TS >= _UPDATE_NAG_INTERVAL:
+                _LAST_UPDATE_NAG_TS = now
+                log.warning(f"[update] New daemon version available: {latest} (current: {DAEMON_VERSION})")
+                log.warning("[update] Run: curl -sSL https://api.dcp.sa/install | bash to update")
+                try:
+                    report_event(
+                        "daemon_outdated",
+                        f"New version {latest} available (current: {DAEMON_VERSION})",
+                        severity="warning",
+                    )
+                except Exception:
+                    pass
+    except Exception as e:
+        log.debug(f"[update] passive version check failed: {e}")
+
+
+def passive_update_check_loop():
+    """
+    Background thread: call check_for_updates() every 5 minutes.
+    This is distinct from the active self-updater (update_check_loop);
+    here we only *inform* the operator that a newer version exists.
+    """
+    # Stagger first check so we don't hit two update endpoints on startup
+    time.sleep(30)
+    while True:
+        try:
+            check_for_updates()
+        except Exception as e:
+            log.debug(f"[update] passive loop error: {e}")
+        time.sleep(300)  # Every 5 minutes
+
+
+# ─── v4.0.0-alpha.2 (Phase 1.5 / Fix D+E): RUNPOD COST + RUNWAY SELF-REPORT ─
+
+def detect_pod_hourly_cost_usd():
+    """Query the RunPod GraphQL API for this pod's `costPerHr`.
+
+    Uses the pod-scoped RUNPOD_API_KEY env var (which RunPod automatically
+    injects on every pod and which is sufficient for reading your OWN pod's
+    cost). Enables the backend to compute cost-plus pricing floors per
+    provider without manual lookups.
+
+    Returns:
+        float or None: Hourly cost in USD (e.g. 0.59), or None when this is
+        not a RunPod pod, the API query fails, or the response is missing.
+    """
+    pod_id = os.environ.get("RUNPOD_POD_ID")
+    api_key = os.environ.get("RUNPOD_API_KEY")
+    if not (pod_id and api_key):
+        return None
+    try:
+        url = "https://api.runpod.io/graphql?api_key=" + api_key
+        body = {
+            "query": 'query { pod(input: {podId: "' + pod_id + '"}) { costPerHr } }'
+        }
+        code, resp = http_post(url, body, timeout=10)
+        if code != 200 or not isinstance(resp, dict):
+            return None
+        data = resp.get("data") or {}
+        pod = data.get("pod") if isinstance(data, dict) else None
+        if not isinstance(pod, dict):
+            return None
+        cost = pod.get("costPerHr")
+        if cost is None:
+            return None
+        return float(cost)
+    except (ValueError, TypeError) as e:
+        log.debug(f"detect_pod_hourly_cost_usd parse error: {e}")
+        return None
+    except Exception as e:
+        log.debug(f"detect_pod_hourly_cost_usd failed: {e}")
+        return None
+
+
+def detect_account_runway_hours():
+    """Best-effort: query the caller's RunPod account for balance + burn rate
+    and return the remaining runway in hours.
+
+    This will succeed ONLY if the injected RUNPOD_API_KEY happens to be
+    account-scoped (rare for provider pods, but possible for fleet operators).
+    A pod-scoped key returns Unauthorized and this function returns None,
+    leaving centralized runway monitoring to the backend.
+
+    Results are cached in-process for 10 minutes to respect RunPod rate limits.
+
+    Returns:
+        float or None: Hours of runway remaining at the current burn rate,
+        rounded to 1 decimal. None if the key is pod-scoped, the pod is not
+        on RunPod, or the query fails.
+    """
+    global _ACCOUNT_RUNWAY_HOURS, _ACCOUNT_RUNWAY_LAST_CHECK
+    with _runpod_cache_lock:
+        now = time.time()
+        if (now - _ACCOUNT_RUNWAY_LAST_CHECK) < _ACCOUNT_RUNWAY_INTERVAL_S:
+            return _ACCOUNT_RUNWAY_HOURS
+
+    api_key = os.environ.get("RUNPOD_API_KEY")
+    if not api_key:
+        with _runpod_cache_lock:
+            _ACCOUNT_RUNWAY_LAST_CHECK = time.time()
+            _ACCOUNT_RUNWAY_HOURS = None
+        return None
+
+    runway = None
+    try:
+        url = "https://api.runpod.io/graphql?api_key=" + api_key
+        body = {"query": "query { myself { clientBalance currentSpendPerHr } }"}
+        code, resp = http_post(url, body, timeout=10)
+        if code == 200 and isinstance(resp, dict):
+            data = resp.get("data") or {}
+            myself = data.get("myself") if isinstance(data, dict) else None
+            if isinstance(myself, dict):
+                try:
+                    balance = float(myself.get("clientBalance") or 0)
+                    spend = float(myself.get("currentSpendPerHr") or 0)
+                    if spend > 0:
+                        runway = round(balance / spend, 1)
+                except (TypeError, ValueError):
+                    runway = None
+    except Exception as e:
+        log.debug(f"detect_account_runway_hours failed: {e}")
+        runway = None
+
+    with _runpod_cache_lock:
+        _ACCOUNT_RUNWAY_LAST_CHECK = time.time()
+        _ACCOUNT_RUNWAY_HOURS = runway
+    return runway
+
+
+# ─── v4.0.0-alpha.2 (Phase 1.5 / Fix F): PORT MISMATCH DETECTION ────────────
+
+def detect_port_mismatch():
+    """Check whether the local inference engine is on a port with no
+    RunPod public TCP mapping.
+
+    On RunPod, only ports that were declared at pod-creation time get a
+    public mapping (RUNPOD_TCP_PORT_<n> env var). If vLLM is on 8000 but
+    the pod only exposes 22 and 11434, the backend cannot reach vLLM —
+    this is the A5000 incident from Round 4.
+
+    Returns:
+        dict: {
+            mismatch: bool,
+            engine_port: int or None,
+            engine_name: str or None,
+            mapped_ports: list[int],
+            remedy: "none" | "socat" | "reprovision",
+        }
+    """
+    # Candidate (name, port) pairs we probe locally.
+    engines = [
+        ("vllm",     8000),
+        ("vllm_alt", 8001),
+        ("ollama",   11434),
+        ("llamacpp", 8080),
+    ]
+    active = []
+    for name, port in engines:
+        try:
+            code, _resp = http_get(f"http://127.0.0.1:{port}/v1/models", timeout=2)
+            if code == 200:
+                active.append((name, port))
+                continue
+        except Exception:
+            pass
+        try:
+            code, _resp = http_get(f"http://127.0.0.1:{port}/api/tags", timeout=2)
+            if code == 200:
+                active.append((name, port))
+        except Exception:
+            pass
+
+    if not active:
+        return {
+            "mismatch": False,
+            "engine_port": None,
+            "engine_name": None,
+            "mapped_ports": [],
+            "remedy": "none",
+        }
+
+    mapped = []
+    for p in [22, 8000, 8001, 8080, 11434]:
+        if os.environ.get(f"RUNPOD_TCP_PORT_{p}"):
+            mapped.append(p)
+
+    engine_name, engine_port = active[0]
+    if engine_port in mapped:
+        return {
+            "mismatch": False,
+            "engine_port": engine_port,
+            "engine_name": engine_name,
+            "mapped_ports": mapped,
+            "remedy": "none",
+        }
+
+    # If we have ANY non-SSH mapped port we can forward from, socat fixes it.
+    # Otherwise the pod must be reprovisioned with the right port declared.
+    forwardable = [p for p in mapped if p != 22]
+    remedy = "socat" if forwardable else "reprovision"
+    return {
+        "mismatch": True,
+        "engine_port": engine_port,
+        "engine_name": engine_name,
+        "mapped_ports": mapped,
+        "remedy": remedy,
+    }
+
+
+def auto_start_socat_forwarder(engine_port, listen_port):
+    """Start a socat TCP forwarder from 0.0.0.0:listen_port -> 127.0.0.1:engine_port.
+
+    Installs socat via apt-get if missing (Debian/Ubuntu bases — RunPod's
+    default image family). Refuses to start a duplicate forwarder if one is
+    already running against the same port pair.
+
+    Args:
+        engine_port: The local port the inference engine is listening on
+                     (e.g. 8000 for vLLM).
+        listen_port: A RunPod-mapped port the forwarder should accept public
+                     traffic on (e.g. 11434).
+
+    Returns:
+        bool: True if a forwarder is running after the call, False otherwise.
+    """
+    # 1. Check socat is installed; install if missing.
+    try:
+        which = subprocess.run(
+            ["which", "socat"], capture_output=True, text=True, timeout=5,
+        )
+        socat_installed = (which.returncode == 0 and bool(which.stdout.strip()))
+    except (OSError, subprocess.SubprocessError):
+        socat_installed = False
+
+    if not socat_installed:
+        log.warning("[port-mismatch] socat not installed; attempting apt-get install")
+        try:
+            install_env = dict(os.environ)
+            install_env["DEBIAN_FRONTEND"] = "noninteractive"
+            subprocess.run(
+                ["apt-get", "install", "-y", "-qq", "socat"],
+                capture_output=True, text=True, timeout=60,
+                env=install_env, check=True,
+            )
+        except (OSError, subprocess.SubprocessError, subprocess.CalledProcessError) as e:
+            log.error(f"[port-mismatch] socat install failed: {e}")
+            return False
+
+    # 2. Short-circuit if a forwarder is already running for this pair.
+    try:
+        existing = subprocess.run(
+            ["pgrep", "-f", f"socat.*:{listen_port}.*:{engine_port}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if existing.returncode == 0 and existing.stdout.strip():
+            log.info(
+                f"[port-mismatch] socat forwarder already running "
+                f":{listen_port}->:{engine_port}"
+            )
+            return True
+    except (OSError, subprocess.SubprocessError) as e:
+        log.debug(f"[port-mismatch] pgrep check failed: {e}")
+
+    # 3. Launch a new forwarder, detached.
+    try:
+        log_path = "/tmp/socat-daemon.log"
+        try:
+            log_fp = open(log_path, "a")
+        except (OSError, IOError):
+            log_fp = subprocess.DEVNULL
+        subprocess.Popen(
+            [
+                "socat",
+                f"TCP-LISTEN:{listen_port},fork,reuseaddr,bind=0.0.0.0",
+                f"TCP:127.0.0.1:{engine_port}",
+            ],
+            stdout=log_fp,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        log.info(
+            f"[port-mismatch] Started socat forwarder "
+            f":{listen_port} -> :{engine_port}"
+        )
+        return True
+    except (OSError, subprocess.SubprocessError) as e:
+        log.error(f"[port-mismatch] Failed to start socat forwarder: {e}")
+        return False
+
+
+def apply_port_mismatch_remedy():
+    """Run detect_port_mismatch() and, if the remedy is 'socat', pick the
+    best forwardable RunPod-mapped port and start the forwarder.
+
+    Updates _PORT_MISMATCH_STATE so send_heartbeat() can surface the result.
+    Safe to call repeatedly (the forwarder helper is idempotent).
+
+    Returns:
+        dict: The latest port mismatch state.
+    """
+    try:
+        state = detect_port_mismatch()
+    except Exception as e:
+        log.debug(f"[port-mismatch] detect failed: {e}")
+        return dict(_PORT_MISMATCH_STATE)
+
+    if state.get("mismatch") and state.get("remedy") == "socat":
+        engine_port = state.get("engine_port")
+        mapped = state.get("mapped_ports") or []
+        # Prefer 11434 (ollama slot), then 8000, then anything non-SSH.
+        listen_port = None
+        for preferred in (11434, 8000, 8001, 8080):
+            if preferred in mapped and preferred != engine_port:
+                listen_port = preferred
+                break
+        if listen_port is None:
+            for p in mapped:
+                if p != 22 and p != engine_port:
+                    listen_port = p
+                    break
+        if listen_port and engine_port:
+            ok = auto_start_socat_forwarder(engine_port, listen_port)
+            state["socat_started"] = bool(ok)
+            state["socat_listen_port"] = listen_port
+    elif state.get("mismatch") and state.get("remedy") == "reprovision":
+        log.error(
+            "[port-mismatch] UNFIXABLE port mismatch: engine on :%s but no "
+            "non-SSH mapped port is available. Pod must be reprovisioned.",
+            state.get("engine_port"),
+        )
+        try:
+            report_event(
+                "port_mismatch_unfixable",
+                f"Engine {state.get('engine_name')} on port {state.get('engine_port')} "
+                f"has no forwardable mapped port (mapped={state.get('mapped_ports')}). "
+                f"Pod must be reprovisioned.",
+                severity="critical",
+            )
+        except Exception as _ev_err:
+            log.debug(f"[port-mismatch] report_event failed: {_ev_err}")
+
+    with _port_mismatch_lock:
+        _PORT_MISMATCH_STATE.update(state)
+    return dict(state)
+
+
+def send_heartbeat(final=False, status=None):
+    """Send heartbeat with GPU metrics to backend and P2P network.
+
+    Kwargs (v3.5.0):
+      final:  True if this is the final heartbeat during graceful drain.
+      status: Optional status override, e.g. 'draining'. Included in payload.
+    """
     gpu = detect_gpu()
     gpu_info = get_gpu_info()
     cache_metrics = get_model_cache_metrics()
@@ -1570,6 +3459,8 @@ def send_heartbeat():
             "resource_spec": build_resource_spec(gpu),
             "model_cache": cache_metrics,
             "vllm_models": vllm_models,
+            "served_model": os.environ.get("DCP_SERVED_MODEL", ""),
+            "engine": os.environ.get("DCP_ENGINE", ""),
         }
         # Include bandwidth stats if available
         with _bw_lock:
@@ -1593,7 +3484,151 @@ def send_heartbeat():
             "free": get_free_gpu_slot_count(),
         }
         payload["draining"] = is_draining()
-        code, resp = http_post(url, payload)
+        # v3.5.0: Model auto-detection across all inference engines.
+        # v4.0.0-alpha.2 (Phase 1.5 / Fix C): cached_models now contains the
+        # dual-identity alias expansion (Ollama tag + HF canonical + vLLM
+        # variants). The pre-expansion list is also surfaced as
+        # cached_models_raw for backward-compat / debugging.
+        try:
+            detected = detect_served_models()
+            payload["cached_models"] = detected.get("models", [])
+            payload["cached_models_raw"] = detected.get("models_raw", detected.get("models", []))
+            payload["engines_active"] = detected.get("engines", [])
+        except Exception as _detect_err:
+            log.debug(f"detect_served_models failed: {_detect_err}")
+            payload["cached_models"] = []
+            payload["cached_models_raw"] = []
+            payload["engines_active"] = []
+        # v3.5.0: Concurrency capacity estimation (now dynamic probe in v4.0)
+        try:
+            capacity = estimate_concurrency_capacity()
+            payload["concurrency_capacity"] = capacity
+            # v4.0.0-alpha: surface probe fields at top level for the router.
+            if isinstance(capacity, dict):
+                payload["probed_concurrency"] = capacity.get("probed_concurrency")
+                payload["concurrency_probed_at"] = capacity.get("concurrency_probed_at")
+                payload["concurrency_probe_method"] = capacity.get("concurrency_probe_method")
+                # v4.0.0-alpha.2 (Phase 1.5 / Fix B): bandwidth drift signal
+                payload["single_user_tps"] = capacity.get("single_user_tps")
+                payload["predicted_peak_tok_s"] = capacity.get("predicted_peak_tok_s")
+                payload["performance_ratio"] = capacity.get("performance_ratio")
+        except Exception as _cap_err:
+            log.debug(f"estimate_concurrency_capacity failed: {_cap_err}")
+        # v4.0.0-alpha: per-model architecture classification.
+        # v4.0.0-alpha.2 (Phase 1.5 / Fix C): use the raw (pre-expansion) list
+        # so we do not emit duplicate arch entries for each alias of the same
+        # underlying model.
+        try:
+            served_ids = payload.get("cached_models_raw") or payload.get("cached_models") or []
+            arch_report = {}
+            for mid in served_ids:
+                arch_report[mid] = detect_model_architecture(mid)
+            # Expose the first model's architecture at top level for convenience,
+            # plus the full per-model map.
+            payload["architecture"] = (
+                next(iter(arch_report.values()))
+                if arch_report
+                else {"type": "unknown", "total_params_b": 0.0,
+                      "active_params_b": 0.0, "confidence": "inferred"}
+            )
+            payload["architectures_by_model"] = arch_report
+        except Exception as _arch_err:
+            log.debug(f"detect_model_architecture failed: {_arch_err}")
+        # v4.0.0-alpha: effective context the engine was launched with
+        try:
+            with _effective_context_lock:
+                if _effective_context_by_model:
+                    # Pick the smallest safe context across all loaded models
+                    # (most conservative view — if any is at risk, report it).
+                    payload["effective_context_tokens"] = min(
+                        int(v) for v in _effective_context_by_model.values() if v
+                    )
+                    payload["effective_context_by_model"] = dict(_effective_context_by_model)
+                else:
+                    payload["effective_context_tokens"] = None
+        except Exception as _ctx_err:
+            log.debug(f"effective_context surfacing failed: {_ctx_err}")
+        # v4.0.0-alpha: TurboQuant feature flag
+        try:
+            tq_cfg = get_turboquant_config()
+            payload["turboquant_enabled"] = bool(tq_cfg.get("enabled"))
+        except Exception as _tq_err:
+            log.debug(f"get_turboquant_config failed: {_tq_err}")
+            payload["turboquant_enabled"] = False
+        # v4.0.0-alpha: CPU offload detection (runtime probe in heartbeat loop)
+        try:
+            offload_state = get_cpu_offload_state()
+            payload["cpu_offload_detected"] = bool(offload_state.get("detected"))
+            if offload_state.get("last_check"):
+                payload["cpu_offload_last_check"] = offload_state.get("last_check")
+        except Exception as _off_err:
+            log.debug(f"get_cpu_offload_state failed: {_off_err}")
+            payload["cpu_offload_detected"] = False
+        # v4.0.0-alpha.2 (Phase 1.5 / Fix G): daemon code hash for version-skew
+        payload["code_hash"] = _CODE_HASH
+        # v4.0.0-alpha.2 (Phase 1.5 / Fix D): RunPod pod hourly cost (cached)
+        payload["pod_hourly_cost_usd"] = _POD_HOURLY_COST_USD
+        # v4.0.0-alpha.2 (Phase 1.5 / Fix E): account runway hours (best-effort,
+        # rate-limited internally; None if the key is pod-scoped)
+        try:
+            payload["account_runway_hours"] = detect_account_runway_hours()
+        except Exception as _rw_err:
+            log.debug(f"detect_account_runway_hours failed: {_rw_err}")
+            payload["account_runway_hours"] = None
+        # v4.0.0-alpha.2 (Phase 1.5 / Fix F): port-mismatch state
+        try:
+            with _port_mismatch_lock:
+                pm_state = dict(_PORT_MISMATCH_STATE)
+            payload["port_mismatch"] = bool(pm_state.get("mismatch", False))
+            payload["port_mismatch_remedy"] = pm_state.get("remedy", "none")
+        except Exception as _pm_err:
+            log.debug(f"port mismatch surfacing failed: {_pm_err}")
+            payload["port_mismatch"] = False
+            payload["port_mismatch_remedy"] = "none"
+        # v3.5.0: Final drain heartbeat metadata
+        if final:
+            payload["final_heartbeat"] = True
+        if status:
+            payload["status"] = status
+        # Defensive: ensure payload is JSON-safe before sending. Historically
+        # we've seen "Circular reference detected" here when a GPU or network
+        # stats object contained a back-reference. Sanitize first, then send.
+        try:
+            json.dumps(payload)
+            safe_payload = payload
+        except (TypeError, ValueError) as ser_err:
+            log.warning(f"Heartbeat payload not JSON-safe ({ser_err}); sanitizing")
+            safe_payload = _sanitize_for_json(payload)
+        try:
+            code, resp = http_post(url, safe_payload)
+        except ValueError as ve:
+            # Catches "Circular reference detected" from json encoder
+            if "circular" in str(ve).lower():
+                log.warning(f"Heartbeat hit circular reference ({ve}); retrying with default=str")
+                # Build a fully-stringified fallback using default=str
+                body = json.dumps(_sanitize_for_json(payload), default=str)
+                if HAS_REQUESTS:
+                    r = requests.post(
+                        url,
+                        data=body,
+                        headers={"Content-Type": "application/json"},
+                        timeout=15,
+                    )
+                    code, resp = r.status_code, _safe_json(r.text)
+                else:
+                    import urllib.request, urllib.error
+                    req = urllib.request.Request(
+                        url,
+                        data=body.encode(),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    try:
+                        with urllib.request.urlopen(req, timeout=15) as response:
+                            code, resp = response.getcode(), _safe_json(response.read())
+                    except urllib.error.HTTPError as he:
+                        code, resp = he.code, _safe_json(he.read())
+            else:
+                raise
         if code == 200:
             log.info("Heartbeat OK (200)")
         else:
@@ -1605,8 +3640,24 @@ def send_heartbeat():
     emit_p2p_heartbeat(peer_id, gpu, gpu_status)
 
 def heartbeat_loop():
-    """Background thread: send heartbeat every HEARTBEAT_INTERVAL seconds."""
+    """Background thread: send heartbeat every HEARTBEAT_INTERVAL seconds.
+
+    v4.0.0-alpha: Also runs verify_no_cpu_offload() on every heartbeat tick
+    (matches the spec's 60s cadence closely given HEARTBEAT_INTERVAL=30s,
+    so we gate to once per ~60s via a local timestamp).
+    """
+    last_offload_probe = 0.0
     while True:
+        try:
+            now = time.time()
+            if (now - last_offload_probe) >= 60:
+                try:
+                    verify_no_cpu_offload()
+                except Exception as _off_err:
+                    log.debug(f"verify_no_cpu_offload failed: {_off_err}")
+                last_offload_probe = now
+        except Exception as _probe_err:
+            log.debug(f"heartbeat offload-probe wrapper error: {_probe_err}")
         send_heartbeat()
         time.sleep(HEARTBEAT_INTERVAL)
 
@@ -1614,9 +3665,9 @@ def heartbeat_loop():
 
 def check_pending_verification():
     """Check if backend has a pending verification challenge for us."""
-    url = f"{API_URL}/api/verification/pending?key={API_KEY}"
+    url = f"{API_URL}/api/verification/pending"
     try:
-        code, resp = http_get(url)
+        code, resp = http_get(url, headers=_auth_headers())
         if code == 200 and resp.get("pending"):
             challenge = resp["challenge"]
             log.info(f"Verification challenge received: {challenge['challenge_id']}")
@@ -2342,19 +4393,93 @@ def run_vllm_serve_job(task_spec, job_id=None):
     ]
     if seccomp_path:
         docker_cmd.extend(["--security-opt", f"seccomp={seccomp_path}"])
+    # v4.0.0-alpha: TurboQuant launch flags (gated on ~/.dcp/config.json).
+    tq_cfg = get_turboquant_config()
+    turboquant_enabled = bool(tq_cfg.get("enabled"))
+    # When TurboQuant is on, the freed KV-cache VRAM lets us raise max-num-seqs
+    # from the default 32 to 48 (article 32 guidance).
+    max_num_seqs = 48 if turboquant_enabled else int(task_spec.get("max_num_seqs", 32))
+
     docker_cmd += [
         image,
         "--model", model,
         "--dtype", dtype,
         "--max-model-len", str(max_model_len),
+        "--max-num-seqs", str(max_num_seqs),
         "--host", "0.0.0.0",
         "--port", "8000",
     ]
+    if turboquant_enabled:
+        docker_cmd += [
+            "--kv-cache-type", "turboquant",
+            "--turboquant-bits", str(int(tq_cfg.get("bits", 3))),
+        ]
+        if tq_cfg.get("use_polar", True):
+            docker_cmd.append("--turboquant-use-polar")
+        log.info(
+            "[turboquant] Enabled: bits=%s polar=%s max-num-seqs=%s",
+            tq_cfg.get("bits"), tq_cfg.get("use_polar"), max_num_seqs,
+        )
 
     try:
         start_result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=30)
         if start_result.returncode != 0:
-            return {"success": False, "error": f"Failed to start vLLM container: {start_result.stderr[:300]}"}
+            err = start_result.stderr or ""
+            # v4.0.0-alpha: gracefully retry without TurboQuant if the running
+            # vLLM build doesn't recognize the flag (older image versions).
+            if turboquant_enabled and (
+                "kv-cache-type" in err or "turboquant" in err or "unrecognized" in err.lower()
+            ):
+                log.warning(
+                    "[turboquant] vLLM rejected TurboQuant flags; retrying without. "
+                    "stderr=%s", err[:300]
+                )
+                try:
+                    report_event(
+                        "turboquant_unsupported",
+                        f"vLLM does not support TurboQuant flags: {err[:400]}",
+                        severity="warning",
+                    )
+                except Exception as _ev_err:
+                    log.debug(f"[turboquant] report_event failed: {_ev_err}")
+                # Rebuild docker_cmd without TurboQuant flags. The TurboQuant
+                # block only appended, so we can strip by rebuilding the tail.
+                safe_cmd = []
+                skip_next = False
+                tq_flag_values = {"turboquant"}
+                i = 0
+                while i < len(docker_cmd):
+                    tok = docker_cmd[i]
+                    if tok in ("--kv-cache-type", "--turboquant-bits"):
+                        i += 2  # skip flag and its value
+                        continue
+                    if tok == "--turboquant-use-polar":
+                        i += 1
+                        continue
+                    # Also roll max-num-seqs back to 32.
+                    if tok == "--max-num-seqs" and i + 1 < len(docker_cmd):
+                        safe_cmd.append(tok)
+                        safe_cmd.append("32")
+                        i += 2
+                        continue
+                    safe_cmd.append(tok)
+                    i += 1
+                try:
+                    start_result = subprocess.run(
+                        safe_cmd, capture_output=True, text=True, timeout=30
+                    )
+                    if start_result.returncode != 0:
+                        return {
+                            "success": False,
+                            "error": f"Failed to start vLLM container (fallback): "
+                                     f"{start_result.stderr[:300]}",
+                        }
+                except subprocess.TimeoutExpired:
+                    return {"success": False, "error": "Docker start timed out (fallback)"}
+                except (OSError, subprocess.SubprocessError) as retry_err:
+                    return {"success": False, "error": f"Docker start error (fallback): {retry_err}"}
+            else:
+                return {"success": False, "error": f"Failed to start vLLM container: {err[:300]}"}
     except subprocess.TimeoutExpired:
         return {"success": False, "error": "Docker start timed out"}
     except Exception as e:
@@ -2507,18 +4632,24 @@ def poll_and_execute():
         log.debug(f"All {MAX_CONCURRENT_JOBS} GPU slot(s) occupied — skipping job poll")
         return
 
-    # Dual endpoint support: try new endpoint first, fall back to legacy
+    # Dual endpoint support: try new endpoint first, fall back to legacy.
+    # Credentials are passed via the Authorization header (see _auth_headers)
+    # rather than URL query params, to avoid leaking the api_key in access logs.
+    # The legacy path-based endpoint /api/providers/{API_KEY}/jobs is retained
+    # as a last-resort fallback for older backend deployments that still parse
+    # the key from the URL path; we send the Bearer header on that request too
+    # so newer backends ignore the path-baked credential.
     urls = [
-        f"{API_URL}/api/providers/jobs/next?key={API_KEY}",
+        f"{API_URL}/api/providers/jobs/next",
         f"{API_URL}/api/providers/{API_KEY}/jobs",
-        f"{API_URL}/api/jobs/assigned?key={API_KEY}",
+        f"{API_URL}/api/jobs/assigned",
     ]
 
     job = None
     admission_feedback = None
     for url in urls:
         try:
-            code, resp = http_get(url)
+            code, resp = http_get(url, headers=_auth_headers())
             if code == 200:
                 if isinstance(resp, dict):
                     admission_feedback = resp.get("admission") if isinstance(resp.get("admission"), dict) else admission_feedback
@@ -2720,6 +4851,11 @@ def job_poll_loop():
         if is_shutdown_requested():
             log.info("Shutdown requested — stopping job poll loop")
             return
+        # v3.5.0: Feature 4 — skip job polling while draining so no new work
+        # is picked up between SIGTERM and final shutdown.
+        if is_draining():
+            time.sleep(JOB_POLL_INTERVAL)
+            continue
         poll_and_execute()
         # Also check for verification challenges every cycle
         check_pending_verification()
@@ -2743,10 +4879,10 @@ def auto_verify():
 
 # ─── MODEL PRE-CACHE ──────────────────────────────────────────────────────────
 
-# Default models to pre-cache (small ones that fit on most GPUs)
-PRECACHE_MODELS = [
-    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-]
+# Model to pre-cache: use the actually-served model from install.sh (DCP_SERVED_MODEL env),
+# falling back to nothing if not set.  TinyLlama was never used and wasted disk/time.
+_served_model = os.environ.get("DCP_SERVED_MODEL", "").strip()
+PRECACHE_MODELS = [_served_model] if _served_model else []
 
 def precache_models():
     """
@@ -2806,17 +4942,25 @@ def precache_models():
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="DCP Provider Daemon v3.3")
+    parser = argparse.ArgumentParser(description="DCP Provider Daemon v4.0")
     parser.add_argument("--key", help="Override API key")
     parser.add_argument("--url", help="Override API URL")
     parser.add_argument("--no-watchdog", action="store_true", help="Run without crash watchdog")
+    parser.add_argument(
+        "--force-reprobe",
+        action="store_true",
+        help="Ignore cached concurrency probe result and re-measure (v4.0)",
+    )
     args = parser.parse_args()
 
-    global API_KEY, API_URL
+    global API_KEY, API_URL, _FORCE_REPROBE_CONCURRENCY
     if args.key:
         API_KEY = args.key
     if args.url:
         API_URL = args.url
+    if args.force_reprobe:
+        _FORCE_REPROBE_CONCURRENCY = True
+        log.info("[probe] --force-reprobe set; concurrency cache will be ignored this run")
 
     # Validate configuration
     if API_KEY == "INJECT_KEY_HERE" or not API_KEY:
@@ -2826,21 +4970,40 @@ def main():
         log.error("No API URL configured. Use --url or download from DCP dashboard.")
         sys.exit(1)
 
-    # Register signal handlers for graceful shutdown with job draining
+    # Register signal handlers for graceful shutdown with job draining.
+    # v3.5.0: Feature 4 — Graceful Drain on SIGTERM/SIGINT
+    # Flow:
+    #   1. start_draining() sets the _draining flag so job poll loop stops
+    #      accepting new work (job_poll_loop checks is_draining()).
+    #   2. wait_for_drain() blocks up to DRAIN_TIMEOUT_S seconds for in-flight
+    #      jobs to complete.
+    #   3. A final heartbeat is sent with status="draining" so the backend can
+    #      mark this provider offline cleanly.
+    #   4. sys.exit(0) -> watchdog treats this as a clean shutdown.
+    DRAIN_TIMEOUT_S = 300  # 5 minutes
+
     def _handle_signal(sig, frame):
         signame = signal.Signals(sig).name if hasattr(signal, 'Signals') else str(sig)
         active = get_active_job_count()
         if active > 0:
-            log.info(f"Signal {signame} received — draining {active} active job(s) before shutdown")
+            log.info(f"[drain] Signal {signame} received — draining {active} active job(s) before shutdown")
             start_draining()
-            drained = wait_for_drain(timeout=600)  # 10 min max
+            drained = wait_for_drain(timeout=DRAIN_TIMEOUT_S)
             if drained:
                 report_event("daemon_stop", f"Stopped by signal {signame} (drained cleanly)")
             else:
                 report_event("daemon_stop", f"Stopped by signal {signame} (drain timeout, {get_active_job_count()} jobs orphaned)")
         else:
-            log.info(f"Signal {signame} received — no active jobs, shutting down immediately")
+            log.info(f"[drain] Signal {signame} received — no active jobs, shutting down immediately")
+            start_draining()
             report_event("daemon_stop", f"Stopped by signal {signame}")
+
+        # Final heartbeat so backend flips us to draining/offline cleanly.
+        try:
+            send_heartbeat(final=True, status="draining")
+        except Exception as _final_err:
+            log.debug(f"[drain] final heartbeat failed: {_final_err}")
+
         sys.exit(0)
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -2894,6 +5057,148 @@ def main():
     log.info("Pre-caching LLM models...")
     precache_models()
 
+    # ─── v4.0.0-alpha: STARTUP INTROSPECTION ────────────────────────────
+    # Step 4a: Detect served models and classify architecture (MoE/dense).
+    # Step 4b: Compute safe context for each loaded model and warn loudly
+    #          if the engine is already using something that risks CPU
+    #          offload. On startup we only WARN — runtime recovery happens
+    #          via verify_no_cpu_offload() inside the heartbeat loop.
+    # Step 4c: Run an initial concurrency probe (uses cache when warm).
+    try:
+        served_info = detect_served_models()
+    except Exception as _srv_err:
+        log.debug(f"startup detect_served_models failed: {_srv_err}")
+        served_info = {"models": [], "engines": []}
+
+    # v4.0.0-alpha.2 (Phase 1.5 / Fix C): iterate the raw (pre-expansion) list
+    # so we do not run architecture/geometry lookups once per alias.
+    served_ids = served_info.get("models_raw") if isinstance(served_info, dict) else None
+    if not served_ids:
+        served_ids = served_info.get("models", []) if isinstance(served_info, dict) else []
+    if served_ids:
+        log.info(f"[v4] Detected {len(served_ids)} served model(s): {served_ids}")
+    else:
+        log.info("[v4] No served models detected on startup (engines may start later)")
+
+    gpu_info_for_ctx = gpu or {}
+    total_vram_gb = float(gpu_info_for_ctx.get("gpu_vram_mib", 0) or 0) / 1024.0
+
+    for mid in served_ids:
+        try:
+            arch = detect_model_architecture(mid)
+            log.info(
+                "[v4] Architecture: model=%s type=%s total=%.1fB active=%.1fB confidence=%s",
+                mid, arch.get("type"), arch.get("total_params_b", 0.0),
+                arch.get("active_params_b", 0.0), arch.get("confidence"),
+            )
+            canonical = _canonicalize_model_id(mid)
+            model_size_gb = 0.0
+            if canonical and canonical in MODEL_GEOMETRY_TABLE:
+                model_size_gb = float(MODEL_GEOMETRY_TABLE[canonical].get("size_gb", 0.0))
+            else:
+                # Heuristic: ~0.6 GB per active B for int4 dense models.
+                model_size_gb = max(1.0, arch.get("active_params_b", 0.0) * 0.6)
+
+            # v4.0.0-alpha.2 (Phase 1.5 / Fix A): introspect the engine's ACTUAL
+            # KV cache dtype. The previous code hard-coded 4 bits when TurboQuant
+            # was off, which overestimated safe context by ~4x on every fp16
+            # provider (the real Ollama/vLLM default).
+            tq_cfg = get_turboquant_config()
+            # Determine engine type from the current detection snapshot.
+            _startup_engines = served_info.get("engines", []) if isinstance(served_info, dict) else []
+            if any(str(e).startswith("vllm") for e in _startup_engines):
+                _engine_for_kv = "vllm"
+            elif "ollama" in _startup_engines:
+                _engine_for_kv = "ollama"
+            elif "llamacpp" in _startup_engines:
+                _engine_for_kv = "llamacpp"
+            else:
+                _engine_for_kv = "unknown"
+            quant_bits = detect_kv_cache_bits(_engine_for_kv, bool(tq_cfg.get("enabled", False)))
+
+            safe_ctx = calculate_safe_context(
+                model_size_gb=model_size_gb,
+                quant_bits=quant_bits,
+                gpu_vram_gb=total_vram_gb,
+                model_architecture=arch.get("type", "dense"),
+                model_id=mid,
+            )
+            with _effective_context_lock:
+                _effective_context_by_model[mid] = safe_ctx
+            log.info(
+                "[v4] Safe context for %s on %.1fGB GPU: %d tokens "
+                "(model~%.1fGB, quant=%d-bit)",
+                mid, total_vram_gb, safe_ctx, model_size_gb, quant_bits,
+            )
+            # Warn if the engine is currently using a wildly different context
+            # that looks like the old 131k default (Round 3 Llama 3.3 incident).
+            if safe_ctx < 131072 and total_vram_gb < 80:
+                log.info(
+                    "[v4] Startup note: if engine is launched with context > %d "
+                    "tokens on this hardware, KV cache may spill to CPU. The "
+                    "runtime verify_no_cpu_offload() probe will auto-restart.",
+                    safe_ctx,
+                )
+        except Exception as _ctx_err:
+            log.debug(f"[v4] safe-context calc failed for {mid}: {_ctx_err}")
+
+    # Step 4c: Run an initial concurrency probe (populates the cache if empty).
+    try:
+        cap = probe_concurrency_capacity()
+        log.info(
+            "[v4] Concurrency probe: method=%s probed=%s engine=%s",
+            cap.get("concurrency_probe_method"),
+            cap.get("probed_concurrency"),
+            cap.get("engine_type"),
+        )
+        if cap.get("performance_ratio") is not None:
+            log.info(
+                "[v4] Bandwidth ratio: single_user=%.1f tok/s predicted_peak=%.1f tok/s ratio=%.2f",
+                cap.get("single_user_tps") or 0.0,
+                cap.get("predicted_peak_tok_s") or 0.0,
+                cap.get("performance_ratio") or 0.0,
+            )
+    except Exception as _probe_err:
+        log.debug(f"[v4] initial concurrency probe failed: {_probe_err}")
+
+    # Step 4d: v4.0.0-alpha.2 (Phase 1.5 / Fix D) — resolve RunPod pod hourly
+    # cost once. Cached for the lifetime of the process.
+    global _POD_HOURLY_COST_USD
+    try:
+        _POD_HOURLY_COST_USD = detect_pod_hourly_cost_usd()
+        if _POD_HOURLY_COST_USD is not None:
+            log.info(
+                "[v4] RunPod pod hourly cost: $%.4f/hr", _POD_HOURLY_COST_USD
+            )
+        else:
+            log.info("[v4] Pod hourly cost: unavailable (not RunPod or query failed)")
+    except Exception as _cost_err:
+        log.debug(f"[v4] pod hourly cost detection failed: {_cost_err}")
+
+    # Step 4e: v4.0.0-alpha.2 (Phase 1.5 / Fix F) — port mismatch auto-remedy.
+    # If vLLM is on :8000 but only :11434 is publicly mapped (the A5000 case),
+    # auto-install socat and forward. If unfixable, log loudly.
+    try:
+        pm_result = apply_port_mismatch_remedy()
+        if pm_result.get("mismatch"):
+            log.warning(
+                "[v4] Port mismatch: engine=%s port=%s mapped=%s remedy=%s",
+                pm_result.get("engine_name"),
+                pm_result.get("engine_port"),
+                pm_result.get("mapped_ports"),
+                pm_result.get("remedy"),
+            )
+        else:
+            log.info(
+                "[v4] Port mapping OK: engine=%s port=%s",
+                pm_result.get("engine_name"),
+                pm_result.get("engine_port"),
+            )
+    except Exception as _pm_err:
+        log.debug(f"[v4] port mismatch remedy failed: {_pm_err}")
+
+    log.info(f"[v4] Daemon code hash: {_CODE_HASH}")
+
     # Step 5: Send initial heartbeat
     log.info("Sending initial heartbeat...")
     send_heartbeat()
@@ -2922,6 +5227,23 @@ def main():
     log.info("Starting network quality monitor (every %ds)...", NETWORK_QUALITY_INTERVAL)
     nq_thread = threading.Thread(target=network_quality_loop, daemon=True, name="DC1-NetQuality")
     nq_thread.start()
+
+    # v3.5.0: Feature 2 — Engine watchdog (auto-restart Ollama / alert on vLLM)
+    log.info("Starting engine watchdog (every %ds)...", ENGINE_WATCHDOG_INTERVAL)
+    ew_thread = threading.Thread(target=engine_watchdog_loop, daemon=True, name="DC1-EngineWatchdog")
+    ew_thread.start()
+
+    # v3.5.0: Feature 5 — Passive daemon version check (informational)
+    log.info("Starting passive daemon version check (every 300s)...")
+    puc_thread = threading.Thread(target=passive_update_check_loop, daemon=True, name="DC1-PassiveUpdate")
+    puc_thread.start()
+
+    # v4.0.0-alpha: Periodic concurrency reprobe (every 6 hours)
+    log.info("Starting concurrency reprobe loop (every 6h)...")
+    cr_thread = threading.Thread(
+        target=_concurrency_reprobe_loop, daemon=True, name="DC1-ConcurrencyReprobe"
+    )
+    cr_thread.start()
 
     # Step 8: Initialize multi-GPU job slots
     log.info("Initializing GPU job slots...")

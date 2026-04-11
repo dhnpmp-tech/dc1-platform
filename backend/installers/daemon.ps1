@@ -3,12 +3,12 @@ DCP Provider Daemon - Windows Installer v2.0.0
 ===============================================
 This is a THIN INSTALLER only. It:
   1. Finds or installs Python 3.12+
-  2. Downloads the universal dc1_daemon.py from the DC1 backend
+  2. Downloads the universal dcp_daemon.py from the DC1 backend
   3. Registers with the backend
-  4. Launches dc1_daemon.py
+  4. Launches dcp_daemon.py
 
-The actual daemon logic lives in dc1_daemon.py (shared across all platforms).
-All features (GPU logs, auto-update, event reporting, etc.) come from dc1_daemon.py.
+The actual daemon logic lives in dcp_daemon.py (shared across all platforms).
+All features (GPU logs, auto-update, event reporting, etc.) come from dcp_daemon.py.
 
 Usage:
   .\daemon.ps1 -ApiKey "YOUR_KEY" -ApiUrl "https://api.dcp.sa"
@@ -90,10 +90,10 @@ Write-Host "[3/5] Setting up install directory..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
 Write-Host "  Install dir: $INSTALL_DIR" -ForegroundColor Green
 
-# --- Step 4: Download dc1_daemon.py from backend ---
+# --- Step 4: Download dcp_daemon.py from backend ---
 Write-Host "[4/5] Downloading daemon from DCP backend..." -ForegroundColor Yellow
 $daemonUrl = "$ApiUrl/api/providers/download/daemon?key=$ApiKey"
-$daemonPath = "$INSTALL_DIR\dc1_daemon.py"
+$daemonPath = "$INSTALL_DIR\dcp_daemon.py"
 
 try {
     $response = Invoke-WebRequest -Uri $daemonUrl -OutFile $daemonPath -UseBasicParsing -TimeoutSec 30
@@ -136,7 +136,7 @@ Write-Host "`n================================================" -ForegroundColor
 Write-Host "  DCP Provider Daemon installed successfully!" -ForegroundColor Green
 Write-Host "================================================" -ForegroundColor Green
 Write-Host "  Installer:    v$INSTALLER_VERSION"
-Write-Host "  Daemon:       dc1_daemon.py (auto-updating)"
+Write-Host "  Daemon:       dcp_daemon.py (auto-updating)"
 Write-Host "  Install dir:  $INSTALL_DIR"
 Write-Host "  Python:       $pythonExe"
 Write-Host "  Dashboard:    $dashUrl"
@@ -145,7 +145,7 @@ if ($RunMode -eq 'manual') {
     Write-Host "  Or run: $INSTALL_DIR\start-dc1.bat`n"
 }
 Write-Host ""
-Write-Host "  FEATURES (from dc1_daemon.py):" -ForegroundColor Cyan
+Write-Host "  FEATURES (from dcp_daemon.py):" -ForegroundColor Cyan
 Write-Host "    - Auto-updating (new versions download automatically)"
 Write-Host "    - GPU execution logs (sent to backend)"
 Write-Host "    - Real-time job progress reporting"

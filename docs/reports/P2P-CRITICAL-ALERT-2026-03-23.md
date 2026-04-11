@@ -35,10 +35,10 @@
 **Check provider daemon on test machine:**
 ```bash
 # Is daemon running?
-ps aux | grep dc1_daemon.py
+ps aux | grep dcp_daemon.py
 
 # If running, check logs for heartbeat emission
-tail -f /var/log/dc1_daemon.log | grep -i "heartbeat\|p2p"
+tail -f /var/log/dcp_daemon.log | grep -i "heartbeat\|p2p"
 
 # Expected output every 30 seconds:
 # P2P heartbeat emitted (seq=0), status=healthy
@@ -98,19 +98,19 @@ pm2 logs dc1-provider-onboarding | grep -i "p2p\|announce\|discovery" | tail -20
 ### **Cause 1: Provider Daemon Not Running (Probability: 40%)**
 
 **Symptoms:**
-- `ps aux | grep dc1_daemon.py` shows no process
-- `/var/log/dc1_daemon.log` doesn't exist or is old
+- `ps aux | grep dcp_daemon.py` shows no process
+- `/var/log/dcp_daemon.log` doesn't exist or is old
 
 **Fix (5 minutes):**
 ```bash
 # On each provider machine, start daemon
-python3 /backend/installers/dc1_daemon.py &
+python3 /backend/installers/dcp_daemon.py &
 
 # Or via systemd/supervisor
 systemctl start dc1-provider-daemon
 
 # Verify it's running
-ps aux | grep dc1_daemon.py
+ps aux | grep dcp_daemon.py
 ```
 
 **Why this might happen:**
@@ -132,12 +132,12 @@ ps aux | grep dc1_daemon.py
 export P2P_DISCOVERY_ENABLED=true
 
 # Restart daemon
-pkill -f dc1_daemon.py
+pkill -f dcp_daemon.py
 sleep 2
-python3 /backend/installers/dc1_daemon.py &
+python3 /backend/installers/dcp_daemon.py &
 
 # Verify heartbeat emission
-tail -f /var/log/dc1_daemon.log | grep "heartbeat"
+tail -f /var/log/dcp_daemon.log | grep "heartbeat"
 ```
 
 **Why this might happen:**

@@ -52,7 +52,7 @@ curl -X POST https://api.dcp.sa/api/providers/register \
 
 ## Step 2 — Install the daemon
 
-The DCP daemon (`dc1_daemon.py`) runs on your machine, polls for jobs, executes them in Docker containers, and sends heartbeats every 30 seconds.
+The DCP daemon (`dcp_daemon.py`) runs on your machine, polls for jobs, executes them in Docker containers, and sends heartbeats every 30 seconds.
 
 ### Linux / macOS (recommended)
 
@@ -65,13 +65,13 @@ Or manual install:
 
 ```bash
 # Download daemon (if you prefer manual setup)
-curl -o dc1_daemon.py "https://dcp.sa/api/dc1/providers/download/daemon?key=YOUR_PROVIDER_KEY"
+curl -o dcp_daemon.py "https://dcp.sa/api/dc1/providers/download/daemon?key=YOUR_PROVIDER_KEY"
 
 # Install Python dependencies
 pip3 install requests psutil GPUtil docker
 
 # Run the daemon
-DC1_API_KEY=dc1-YOUR_KEY_HERE DC1_API_URL=https://api.dcp.sa python3 dc1_daemon.py
+DC1_API_KEY=dc1-YOUR_KEY_HERE DC1_API_URL=https://api.dcp.sa python3 dcp_daemon.py
 ```
 
 ### Windows
@@ -86,7 +86,7 @@ Download the installer from the [provider download page](https://dcp.sa/provider
 ### As a systemd service (Linux — production)
 
 ```ini
-# /etc/systemd/system/dc1-daemon.service
+# /etc/systemd/system/dcp_daemon.service
 [Unit]
 Description=DCP GPU Daemon
 After=network.target docker.service
@@ -95,7 +95,7 @@ Requires=docker.service
 [Service]
 Environment=DC1_API_KEY=dc1-YOUR_KEY_HERE
 Environment=DC1_API_URL=https://api.dcp.sa
-ExecStart=/usr/bin/python3 /opt/dc1/dc1_daemon.py
+ExecStart=/usr/bin/python3 /opt/dc1/dcp_daemon.py
 Restart=always
 RestartSec=10
 User=root
@@ -106,9 +106,9 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable dc1-daemon
-sudo systemctl start dc1-daemon
-sudo journalctl -u dc1-daemon -f  # watch logs
+sudo systemctl enable dcp_daemon
+sudo systemctl start dcp_daemon
+sudo journalctl -u dcp_daemon -f  # watch logs
 ```
 
 ---
@@ -226,7 +226,7 @@ Keep your daemon running continuously and ensure your GPU has adequate cooling a
 
 **Job stuck in "pending":**
 - The daemon polls every 30 seconds — wait up to a minute
-- Check daemon logs: `journalctl -u dc1-daemon -f`
+- Check daemon logs: `journalctl -u dcp_daemon -f`
 
 ---
 

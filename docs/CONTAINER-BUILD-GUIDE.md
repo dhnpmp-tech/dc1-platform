@@ -189,7 +189,7 @@ services:
 
 ### Provider Daemon Configuration
 
-**File:** `backend/installers/dc1_daemon.py` (or local daemon)
+**File:** `backend/installers/dcp_daemon.py` (or local daemon)
 
 ```bash
 # Provider pulls and runs image

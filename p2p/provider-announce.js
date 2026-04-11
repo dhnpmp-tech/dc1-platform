@@ -2,7 +2,7 @@
 /**
  * DC1 P2P Provider Announce — daemon integration hook
  *
- * Called by dc1_daemon.py after each heartbeat to advertise this machine's
+ * Called by dcp_daemon.py after each heartbeat to advertise this machine's
  * GPU compute spec to the DC1 Kademlia DHT.
  *
  * ── Usage ────────────────────────────────────────────────────────────────

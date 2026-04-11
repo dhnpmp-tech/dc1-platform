@@ -131,8 +131,8 @@ New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
 New-Item -ItemType Directory -Path $LOG_DIR -Force | Out-Null
 
 $daemonUrl = "$DC1_API_URL/api/providers/download/daemon?key=$DC1_API_KEY"
-Invoke-WebRequest -Uri $daemonUrl -OutFile "$INSTALL_DIR\dc1-daemon.py" -UseBasicParsing
-Write-Host "  Installed to $INSTALL_DIR\dc1-daemon.py"
+Invoke-WebRequest -Uri $daemonUrl -OutFile "$INSTALL_DIR\dcp_daemon.py" -UseBasicParsing
+Write-Host "  Installed to $INSTALL_DIR\dcp_daemon.py"
 
 # Save config
 $config = @{
@@ -150,7 +150,7 @@ Write-Host "[8/8] Creating Windows scheduled task..." -ForegroundColor Yellow
 $taskName = "DCP Provider Daemon"
 $taskAction = New-ScheduledTaskAction `
     -Execute $python `
-    -Argument "$INSTALL_DIR\dc1-daemon.py" `
+    -Argument "$INSTALL_DIR\dcp_daemon.py" `
     -WorkingDirectory $INSTALL_DIR
 
 $taskTrigger = New-ScheduledTaskTrigger -AtLogon
@@ -181,7 +181,7 @@ Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  DCP Provider Daemon v3.3.0 — INSTALLED" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  Daemon:  $INSTALL_DIR\dc1-daemon.py"
+Write-Host "  Daemon:  $INSTALL_DIR\dcp_daemon.py"
 Write-Host "  Config:  $INSTALL_DIR\config.json"
 Write-Host "  Logs:    $LOG_DIR\daemon.log"
 Write-Host "  Key:     $($DC1_API_KEY.Substring(0,[Math]::Min(20,$DC1_API_KEY.Length)))..."

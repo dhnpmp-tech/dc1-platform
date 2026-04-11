@@ -132,7 +132,7 @@ sqlite3 providers.db "SELECT COUNT(*) FROM providers WHERE last_heartbeat > date
 # Should be > 0. If 0, providers haven't contacted backend at all.
 
 # 2. Check provider logs (on provider machines)
-# Ask providers to share: tail -100 dc1_daemon.log | grep -i error
+# Ask providers to share: tail -100 dcp_daemon.log | grep -i error
 # Look for: bootstrap, connection, timeout, peer
 
 # 3. Is DNS resolution working?
@@ -157,13 +157,13 @@ sqlite3 providers.db "SELECT id, name, created_at FROM providers ORDER BY create
 Bootstrap is live, but we're not seeing heartbeats from your daemon yet.
 
 Action: Restart your daemon
-$ pkill -f dc1_daemon.py
-$ python3 dc1_daemon.py --daemon-mode
+$ pkill -f dcp_daemon.py
+$ python3 dcp_daemon.py --daemon-mode
 
 Expected: Within 30 seconds, your heartbeat should appear on the network.
 
 If still not appearing after 5 minutes, check your daemon logs:
-$ tail -50 dc1_daemon.log | grep -i error
+$ tail -50 dcp_daemon.log | grep -i error
 
 Support: Reply here or #dcp-incidents
 """
@@ -179,7 +179,7 @@ If restarting doesn't help:
 # Provide update URL:
 curl -s https://api.dcp.sa/daemon/upgrade-path?current_version=3.0.0
 # Or direct link:
-wget https://api.dcp.sa/daemon/dc1_daemon-latest.py -O dc1_daemon.py
+wget https://api.dcp.sa/daemon/dcp_daemon-latest.py -O dcp_daemon.py
 ```
 
 ### Fix #3: Check Network Connectivity
@@ -401,7 +401,7 @@ We're seeing intermittent disconnections from your provider.
 If you see "Lost connection to bootstrap" messages:
 1. Check your network: `ping api.dcp.sa`
 2. Check for firewall rules blocking port 4001: `sudo ufw status`
-3. Restart daemon and monitor logs: `tail -f dc1_daemon.log`
+3. Restart daemon and monitor logs: `tail -f dcp_daemon.log`
 
 Most common cause: ISP-level intermittent outages or firewall rules.
 """
@@ -520,7 +520,7 @@ To capture this market, cache these models on your provider:
 - qwen-2.5-7b (12 GB) — Arabic-friendly, popular
 
 Commands:
-$ python3 dc1_daemon.py --preload-models "allam-7b,arabic-embeddings-bgem3"
+$ python3 dcp_daemon.py --preload-models "allam-7b,arabic-embeddings-bgem3"
 
 Expected earnings uplift: +40–100% if you're the only Arabic provider.
 """

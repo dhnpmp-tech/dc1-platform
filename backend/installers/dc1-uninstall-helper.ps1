@@ -17,7 +17,7 @@ try {
     Get-Process python*, python3* -ErrorAction SilentlyContinue | ForEach-Object {
         try {
             $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-            if ($cmdLine -match "dc1_daemon|dc1-daemon") {
+            if ($cmdLine -match "dcp_daemon|dc1_daemon|dc1-daemon") {
                 Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
                 Write-Host "    Killed daemon process (PID $($_.Id)): $cmdLine"
             }
@@ -57,7 +57,8 @@ $dc1Home = "$env:USERPROFILE\dc1-provider"
 if (Test-Path $dc1Home) {
     Remove-Item "$dc1Home\logs" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item "$dc1Home\seen_jobs.json" -Force -ErrorAction SilentlyContinue
-    # Remove daemon backups (e.g. dc1_daemon.py.v3.1.0.bak)
+    # Remove daemon backups (e.g. dcp_daemon.py.v4.0.0.bak, dc1_daemon.py.v3.5.0.bak)
+    Get-ChildItem "$dc1Home\dcp_daemon.py.*.bak" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem "$dc1Home\dc1_daemon.py.*.bak" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     # Remove dc1-provider home dir if empty
     $remaining = Get-ChildItem $dc1Home -ErrorAction SilentlyContinue
@@ -66,6 +67,7 @@ if (Test-Path $dc1Home) {
 
 # 6. Remove daemon files
 Write-Host "  Removing daemon files..."
+Remove-Item "$installDir\dcp_daemon.py" -ErrorAction SilentlyContinue
 Remove-Item "$installDir\dc1_daemon.py" -ErrorAction SilentlyContinue
 Remove-Item "$installDir\dc1-daemon.py" -ErrorAction SilentlyContinue
 
