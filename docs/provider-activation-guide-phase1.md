@@ -190,7 +190,7 @@ Expected: +30–50% earnings vs current centralized routing.
 
 ### Q: Do I need to change my daemon?
 
-**A**: Not required. Your current daemon (v3.3.0+) already participates in P2P discovery automatically. However, upgrading to v4.0.0 (coming in Phase 28) will unlock direct P2P job submission (faster).
+**A**: The v4.0.0-alpha.2 daemon already participates in P2P discovery automatically and supports direct P2P job submission.
 
 ### Q: What about the 30-second polling latency?
 

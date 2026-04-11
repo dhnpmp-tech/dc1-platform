@@ -114,7 +114,7 @@ const { COST_RATES } = require('./jobs');
 // Daemon versions:
 // - latest: preferred newest version for update nudges
 // - minimum: hard floor for compatibility checks
-const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '3.3.0').trim();
+const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '4.0.0-alpha.2').trim();
 const MIN_DAEMON_VERSION = (process.env.MIN_DAEMON_VERSION || LATEST_DAEMON_VERSION).trim();
 const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
 const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');

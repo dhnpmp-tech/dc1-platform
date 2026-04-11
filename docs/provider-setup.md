@@ -1,6 +1,6 @@
 # Provider Setup — Quick Install, WireGuard, Tray App, and Models
 
-This document covers the current provider onboarding flow for daemon `v3.4.0`, including one-command install, home-network (NAT) setup through WireGuard, system tray monitoring, and model capacity planning.
+This document covers the current provider onboarding flow for daemon `v4.0.0-alpha.2`, including one-command install, home-network (NAT) setup through WireGuard, system tray monitoring, and model capacity planning.
 
 ## Quick Install (Recommended)
 
@@ -63,7 +63,7 @@ After provider setup, install the tray monitor app to track daemon health withou
 - Jobs served
 - Earnings in SAR
 
-## Available Models (Daemon v3.4.0 Whitelist)
+## Available Models (Daemon v4.0.0-alpha.2 Whitelist)
 
 Use these capacity targets when onboarding hardware.
 

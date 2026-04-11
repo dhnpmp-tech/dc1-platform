@@ -13,7 +13,7 @@ DCP's current provider discovery relies entirely on a centralized VPS running Ex
 
 ### 1.1 Registration
 
-A provider downloads the DCP daemon (`dcp_daemon.py v3.3.0`) and runs it on their GPU machine. On first launch, the daemon calls:
+A provider downloads the DCP daemon (`dcp_daemon.py v4.0.0-alpha.2`) and runs it on their GPU machine. On first launch, the daemon calls:
 
 ```
 POST /api/providers/register

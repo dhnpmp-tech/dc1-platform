@@ -174,7 +174,7 @@ Support: Reply here or #dcp-incidents
 If restarting doesn't help:
 ```bash
 # Verify daemon version
-# Providers should have v3.3.0 or newer for Phase 1 support
+# Providers should have v4.0.0-alpha.2 or newer for Phase 1 support
 
 # Provide update URL:
 curl -s https://api.dcp.sa/daemon/upgrade-path?current_version=3.0.0

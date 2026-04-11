@@ -43,7 +43,7 @@ python3 dcp_daemon.py`
 const RUN_WINDOWS = `# Windows
 python dcp_daemon.py`
 
-const DAEMON_OUTPUT = `[DCP] dcp_daemon v3.3.0 starting
+const DAEMON_OUTPUT = `[DCP] dcp_daemon v4.0.0-alpha.2 starting
 [DCP] GPU detected: NVIDIA RTX 4090 (24 GB VRAM)
 [DCP] Provider ID: 42 | Status: online
 [DCP] Heartbeat sent — next in 30s

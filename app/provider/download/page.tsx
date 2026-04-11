@@ -14,7 +14,7 @@ import {
 } from '../../lib/provider-install'
 import { trackProviderInstallEvent } from '../../lib/provider-install-telemetry'
 
-const DAEMON_VERSION = 'v3.3.0'
+const DAEMON_VERSION = 'v4.0.0-alpha.2'
 
 type OS = 'windows' | 'linux' | 'macos'
 
