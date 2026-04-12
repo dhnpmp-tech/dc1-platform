@@ -24,7 +24,7 @@ const { execSync, spawnSync } = require('child_process');
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const DAEMON_PATH = path.resolve(__dirname, '../../installers/dc1-daemon.py');
+const DAEMON_PATH = path.resolve(__dirname, '../../installers/dcp_daemon.py');
 const DAEMON_SRC  = fs.readFileSync(DAEMON_PATH, 'utf8');
 
 // Lightweight Alpine image present on most Docker hosts — no GPU required for isolation tests
@@ -57,7 +57,7 @@ function runIsolated(cmd, extraFlags = []) {
 }
 
 // ─── 1. Static Analysis Tests ──────────────────────────────────────────────
-// These pass without Docker. They parse dc1-daemon.py to confirm required
+// These pass without Docker. They parse dcp_daemon.py to confirm required
 // security flags are assembled into the docker run command.
 
 describe('Static analysis: daemon source contains required security flags', () => {

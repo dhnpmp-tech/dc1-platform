@@ -1,4 +1,4 @@
-# DC1 Provider Setup v3.3.0 — Windows
+# DCP Provider Setup v4.0.0-alpha.2 — Windows
 # Downloads and installs the DC1 daemon + Docker Desktop + NVIDIA Container Toolkit.
 #
 # Usage:
@@ -8,11 +8,11 @@ $ErrorActionPreference = "Stop"
 
 $DC1_API_KEY = "INJECT_KEY_HERE"
 $DC1_API_URL = "INJECT_URL_HERE"
-$INSTALL_DIR = "$env:LOCALAPPDATA\DC1Provider"
-$LOG_DIR = "$env:USERPROFILE\dc1-provider\logs"
+$INSTALL_DIR = "$env:LOCALAPPDATA\DCPProvider"
+$LOG_DIR = "$env:USERPROFILE\dcp-provider\logs"
 
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  DCP Provider Setup v3.3.0 (Windows)" -ForegroundColor Cyan
+Write-Host "  DCP Provider Setup v4.0.0-alpha.2 (Windows)" -ForegroundColor Cyan
 Write-Host "  GPU Compute Marketplace — Saudi Arabia" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
@@ -131,8 +131,8 @@ New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
 New-Item -ItemType Directory -Path $LOG_DIR -Force | Out-Null
 
 $daemonUrl = "$DC1_API_URL/api/providers/download/daemon?key=$DC1_API_KEY"
-Invoke-WebRequest -Uri $daemonUrl -OutFile "$INSTALL_DIR\dc1-daemon.py" -UseBasicParsing
-Write-Host "  Installed to $INSTALL_DIR\dc1-daemon.py"
+Invoke-WebRequest -Uri $daemonUrl -OutFile "$INSTALL_DIR\dcp_daemon.py" -UseBasicParsing
+Write-Host "  Installed to $INSTALL_DIR\dcp_daemon.py"
 
 # Save config
 $config = @{
@@ -150,7 +150,7 @@ Write-Host "[8/8] Creating Windows scheduled task..." -ForegroundColor Yellow
 $taskName = "DCP Provider Daemon"
 $taskAction = New-ScheduledTaskAction `
     -Execute $python `
-    -Argument "$INSTALL_DIR\dc1-daemon.py" `
+    -Argument "$INSTALL_DIR\dcp_daemon.py" `
     -WorkingDirectory $INSTALL_DIR
 
 $taskTrigger = New-ScheduledTaskTrigger -AtLogon
@@ -179,9 +179,9 @@ Start-Sleep -Seconds 3
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  DCP Provider Daemon v3.3.0 — INSTALLED" -ForegroundColor Green
+Write-Host "  DCP Provider Daemon v4.0.0-alpha.2 — INSTALLED" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  Daemon:  $INSTALL_DIR\dc1-daemon.py"
+Write-Host "  Daemon:  $INSTALL_DIR\dcp_daemon.py"
 Write-Host "  Config:  $INSTALL_DIR\config.json"
 Write-Host "  Logs:    $LOG_DIR\daemon.log"
 Write-Host "  Key:     $($DC1_API_KEY.Substring(0,[Math]::Min(20,$DC1_API_KEY.Length)))..."

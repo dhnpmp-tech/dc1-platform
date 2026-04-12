@@ -942,7 +942,7 @@ paths:
   /api/providers/download/daemon:
     get:
       tags: [Providers]
-      summary: Download dc1_daemon.py
+      summary: Download dcp_daemon.py
       security:
         - ProviderApiKey: []
       parameters:
@@ -3010,7 +3010,7 @@ paths:
       tags: [Templates]
       summary: Approved Docker image whitelist
       description: |
-        Returns the full list of approved Docker images that the dc1_daemon.py
+        Returns the full list of approved Docker images that the dcp_daemon.py
         will accept for job execution. Used by the daemon on startup and on each
         job pull to validate the image field before launching a container.
         No authentication required — this is a public endpoint.

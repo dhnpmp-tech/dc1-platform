@@ -11,7 +11,7 @@ DCP runs as a three-plane architecture:
 1. **Control plane (Web + API)**
 : Next.js 14 on `dcp.sa` and the Express API on `api.dcp.sa`.
 2. **Execution plane (Provider GPUs)**
-: `dc1_daemon.py` on provider machines polls for jobs, executes workloads in approved container images, and reports heartbeat state.
+: `dcp_daemon.py` on provider machines polls for jobs, executes workloads in approved container images, and reports heartbeat state.
 3. **Data plane (SQLite + Supabase sync)**
 : SQLite is the write source for operational state, with a bridge that mirrors key records to Supabase for faster reads and analytics.
 

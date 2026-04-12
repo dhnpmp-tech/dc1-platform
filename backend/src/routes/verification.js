@@ -9,6 +9,10 @@ const { requireAdminAuth } = require('../middleware/auth');
 // Source: NVIDIA official specs. GFLOPS = FP32 theoretical peak.
 // ============================================================================
 const GPU_DATABASE = {
+  // Consumer — GeForce RTX 50 series (Blackwell)
+  'RTX 5090':        { vram_mib: 32768, fp32_tflops: 105.0, compute_cap: '12.0', min_gflops: 50000, max_gflops: 120000 },
+  'RTX 5080':        { vram_mib: 16384, fp32_tflops: 70.0,  compute_cap: '12.0', min_gflops: 33000, max_gflops: 80000 },
+
   // Consumer — GeForce RTX 40 series
   'RTX 4090':        { vram_mib: 24576, fp32_tflops: 82.6,  compute_cap: '8.9', min_gflops: 40000, max_gflops: 90000 },
   'RTX 4080 SUPER':  { vram_mib: 16384, fp32_tflops: 52.0,  compute_cap: '8.9', min_gflops: 25000, max_gflops: 58000 },
@@ -184,8 +188,10 @@ function analyzeVerification(provider, challenge, result) {
     score -= 50;
   }
 
-  // 6. Timing check — benchmark should take at least a few seconds
-  if (result.elapsed_seconds != null && result.elapsed_seconds < 0.5) {
+  // 6. Timing check — benchmark should take a reasonable amount of time.
+  //    Modern GPUs (RTX 5090, H200) can legitimately complete 4096x4096 matmul
+  //    in under 0.5s, so the threshold is 0.1s to avoid false positives.
+  if (result.elapsed_seconds != null && result.elapsed_seconds < 0.1) {
     flags.push({
       type: 'too_fast',
       severity: 'critical',

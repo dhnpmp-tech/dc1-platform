@@ -58,8 +58,8 @@ Currency: SAR (Saudi Riyal). Internal billing in **halala** (1 SAR = 100 halala)
 ### Daemon & Installers (`/backend/installers/`)
 | File | Purpose |
 |------|---------|
-| `dc1_daemon.py` | **v3.0 unified** — heartbeats, GPU detection, job polling, Docker/bare-metal execution, dual endpoint support, 10KB stdout, auto-verification |
-| `dc1-daemon.py` | **v3.0 alternate** — same as dc1_daemon.py, GHCR image support, verification challenge handler |
+| `dcp_daemon.py` | **v3.0 unified** — heartbeats, GPU detection, job polling, Docker/bare-metal execution, dual endpoint support, 10KB stdout, auto-verification |
+| `dcp_daemon.py` | **v3.0 alternate** — same as dcp_daemon.py, GHCR image support, verification challenge handler |
 | `dc1-icon.ico` | Custom branded icon for Windows .exe installer (multi-resolution) |
 | `dc1-setup-helper.ps1` | Windows setup: Python install, pip, scheduled task, dashboard shortcut |
 | `dc1-provider-Windows.nsi` | **v2.1** NSIS installer — GPU pre-check page, API key validation, branded icon, version metadata |
@@ -198,13 +198,13 @@ total_spent_halala, total_jobs, created_at, updated_at
 - `POST /api/providers/readiness` — daemon reports CUDA/PyTorch/VRAM checks
 - `GET /api/providers/:api_key/jobs` — daemon polls for pending jobs (marks running, sets timeout)
 - `POST /api/providers/job-result` — daemon submits result + billing calculated
-- `GET /api/providers/download/daemon` — serves `dc1-daemon.py` with injected API key
+- `GET /api/providers/download/daemon` — serves `dcp_daemon.py` with injected API key
 - `GET /api/providers/download/setup` — OS-specific setup script with injected key
 
 **Backend endpoint added to `jobs.js`:**
 - `POST /api/jobs/test` — admin creates test benchmark job for a specific provider
 
-**New: `dc1-daemon.py`** (~300 lines, single-file Python daemon):
+**New: `dcp_daemon.py`** (~300 lines, single-file Python daemon):
 - GPU detection via nvidia-smi subprocess
 - Readiness checks: CUDA available? PyTorch? VRAM >= 4GB?
 - Heartbeat thread (every 30s → POST /api/providers/heartbeat)
@@ -382,7 +382,7 @@ Full test results:
 - Includes billing info (actual_cost_halala, actual_cost_sar)
 - Express body limit increased to 10mb for base64 image payloads
 
-### 27. Docker-Based Job Execution — Daemon v2.0 (`dc1_daemon.py`)
+### 27. Docker-Based Job Execution — Daemon v2.0 (`dcp_daemon.py`)
 **Execution modes:**
 - **Docker mode** (default when Docker + NVIDIA CT detected): `docker run --gpus all --rm -v job_dir:/dc1/job dc1/sd-worker python /dc1/job/task.py`
 - **Bare-metal fallback** (when Docker unavailable): direct subprocess execution (legacy)
@@ -459,7 +459,7 @@ Full pass over provider, renter, and admin endpoints. Every bug verified via liv
 | #12 | Added provider-self-service: GET /api/providers/me endpoint |
 | #13 | Fixed sync bridge: handle null gpu_model gracefully |
 
-### 32. Unified Daemon v3.0 (`dc1_daemon.py`)
+### 32. Unified Daemon v3.0 (`dcp_daemon.py`)
 Merged v1.0 (bare-metal heartbeat only) + v2.0 (Docker-based execution) into a single robust file:
 
 **Key features:**
@@ -507,7 +507,7 @@ Complete rebuild of NSIS installer:
 - Post-start heartbeat check: waits 5s then verifies first heartbeat succeeded
 
 ### 35. Uninstall Helper Rebuild (`dc1-uninstall-helper.ps1`)
-- Kills running Python processes matching dc1_daemon pattern
+- Kills running Python processes matching dcp_daemon pattern
 - Removes config.json and logs directory
 - Cleans up Docker containers/images with dc1 prefix
 - Removes scheduled task, shortcuts, and install directory
@@ -592,7 +592,7 @@ GitHub Actions workflow for automated Docker image builds:
 - `Dockerfile.sd-worker` + `Dockerfile.llm-worker` now use `ARG BASE_IMAGE` for GHCR compatibility
 - `build-images.sh` updated with `--build-arg BASE_IMAGE` and GHCR push summary
 
-### 42. Daemon v3.0 Rewrite (`dc1-daemon.py` — complete rewrite)
+### 42. Daemon v3.0 Rewrite (`dcp_daemon.py` — complete rewrite)
 Major rewrite from previous versions:
 - **`DAEMON_VERSION = "3.0.0"`**, `MAX_STDOUT = 10240` (10KB, up from 5MB — optimized), `JOB_TIMEOUT = 600`
 - **GHCR image registry**: `ghcr.io/dhnpmp-tech/dc1-{sd,llm,base}-worker:latest`
@@ -680,7 +680,7 @@ A full competitive gap analysis was completed (see `DC1-Gap-Analysis-vs-VastAI.d
 | POST | `/api/providers/readiness` | api_key in body | Daemon reports system checks |
 | GET | `/api/providers/:key/jobs` | API key in URL | Daemon polls for pending jobs |
 | POST | `/api/providers/job-result` | api_key in body | Daemon submits job result |
-| GET | `/api/providers/download/daemon` | key query param | Serve dc1-daemon.py with injected key |
+| GET | `/api/providers/download/daemon` | key query param | Serve dcp_daemon.py with injected key |
 | GET | `/api/providers/download/setup` | key+os query params | OS-specific setup script |
 | GET | `/api/providers/earnings` | x-provider-key header | Check earnings balance |
 | POST | `/api/providers/withdraw` | api_key in body | Request earnings withdrawal |
@@ -721,7 +721,7 @@ A full competitive gap analysis was completed (see `DC1-Gap-Analysis-vs-VastAI.d
 registered → [downloads installer via one-liner] → online (heartbeating) → ready (passed CUDA/PyTorch/VRAM checks) → executing (running job) → idle (waiting for next job)
 ```
 
-The daemon (`dc1_daemon.py` v3.0) is a single Python file that runs as a background service:
+The daemon (`dcp_daemon.py` v3.0) is a single Python file that runs as a background service:
 1. Detects GPU via `nvidia-smi` — parses name, VRAM, driver version
 2. Checks Docker + NVIDIA Container Toolkit availability (cached at startup)
 3. Reports readiness (CUDA, PyTorch, VRAM checks) to platform

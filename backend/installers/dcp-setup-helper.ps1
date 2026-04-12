@@ -9,7 +9,7 @@ param(
     [string]$ScheduledStart = "23:00",
     [string]$ScheduledEnd = "07:00",
     [string]$ApiUrl = "$(if ($env:DCP_API_URL) { $env:DCP_API_URL } elseif ($env:DC1_API_URL) { $env:DC1_API_URL } else { 'https://api.dcp.sa' })",
-    [string]$InstallDir = "$env:LOCALAPPDATA\dc1-provider",
+    [string]$InstallDir = "$env:LOCALAPPDATA\dcp-provider",
     [string]$GpuName = "unknown",
     [string]$GpuVram = "0"
 )
@@ -212,10 +212,10 @@ if ($LASTEXITCODE -ne 0) {
 Log "  requests package installed."
 
 # ---------------------------------------------------------------------------
-# Step 5: Download latest dc1_daemon.py from API (fallback to bundled template)
+# Step 5: Download latest dcp_daemon.py from API (fallback to bundled template)
 # ---------------------------------------------------------------------------
 Log "[5/8] Fetching latest daemon from API..."
-$daemonPath = Join-Path $InstallDir "dc1_daemon.py"
+$daemonPath = Join-Path $InstallDir "dcp_daemon.py"
 $daemonDownloadUrl = "$ApiUrl/api/providers/download/daemon?key=$ApiKey"
 $downloaded = $false
 
@@ -233,7 +233,7 @@ try {
 }
 
 if (-not $downloaded) {
-    $bundledPath = Join-Path $InstallDir "dc1_daemon.py"
+    $bundledPath = Join-Path $InstallDir "dcp_daemon.py"
     if (Test-Path $bundledPath) {
         $daemonContent = Get-Content $bundledPath -Raw
         $daemonContent = $daemonContent -replace '\{\{API_KEY\}\}', $ApiKey
@@ -309,7 +309,7 @@ if __name__ == "__main__":
         send_heartbeat()
 "@
     Set-Content -Path $daemonPath -Value $daemonPy -Encoding UTF8
-    Log "  dc1_daemon.py generated inline."
+    Log "  dcp_daemon.py generated inline."
     }
 }
 
@@ -340,20 +340,20 @@ Log "[7/8] Configuring run mode: $RunMode..."
 $taskName = "DCPProviderDaemon"
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-$action = New-ScheduledTaskAction -Execute $pythonExe -Argument "$InstallDir\dc1_daemon.py" -WorkingDirectory $InstallDir
+$action = New-ScheduledTaskAction -Execute $pythonExe -Argument "$InstallDir\dcp_daemon.py" -WorkingDirectory $InstallDir
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest -LogonType Interactive
 
 if ($RunMode -eq 'manual') {
     # Manual mode: no scheduled task — create start/stop scripts
     # v3.2.0: daemon runs as watchdog parent + worker child, so start normally (watchdog handles restarts)
-    $startScript = "@echo off`r`necho Starting DCP Provider Daemon (v3.2.0 with auto-recovery)...`r`nstart /min `"DCP Daemon`" `"$pythonExe`" `"$InstallDir\dc1_daemon.py`"`r`necho Done. Your GPU is now earning.`r`ntimeout /t 3"
-    Set-Content -Path "$InstallDir\start-dc1.bat" -Value $startScript -Encoding ASCII
+    $startScript = "@echo off`r`necho Starting DCP Provider Daemon (v3.2.0 with auto-recovery)...`r`nstart /min `"DCP Daemon`" `"$pythonExe`" `"$InstallDir\dcp_daemon.py`"`r`necho Done. Your GPU is now earning.`r`ntimeout /t 3"
+    Set-Content -Path "$InstallDir\start-dcp.bat" -Value $startScript -Encoding ASCII
     # v3.2.0: kill by command-line match to catch both watchdog and worker processes
-    $stopScript = "@echo off`r`necho Stopping DCP Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
-    Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
+    $stopScript = "@echo off`r`necho Stopping DCP Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dcp_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DCP*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    Set-Content -Path "$InstallDir\stop-dcp.bat" -Value $stopScript -Encoding ASCII
     Log "  Manual mode — no auto-start task created."
-    Log "  Start earning: double-click $InstallDir\start-dc1.bat"
+    Log "  Start earning: double-click $InstallDir\start-dcp.bat"
 } elseif ($RunMode -eq 'scheduled') {
     $startHour = 23; $startMin = 0
     if ($ScheduledStart -match '^(\d{1,2}):(\d{2})$') {
@@ -364,8 +364,8 @@ if ($RunMode -eq 'manual') {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
     Log "  Scheduled mode — runs daily at $triggerTime (until $ScheduledEnd)."
     # Stop script for when user wakes up — kills both watchdog and worker processes
-    $stopScript = "@echo off`r`necho Stopping DCP Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dc1_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DC1*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
-    Set-Content -Path "$InstallDir\stop-dc1.bat" -Value $stopScript -Encoding ASCII
+    $stopScript = "@echo off`r`necho Stopping DCP Provider Daemon...`r`nfor /f `"tokens=2`" %%i in ('wmic process where `"commandline like '%%dcp_daemon%%' and name='python.exe'`" get processid 2^>nul ^| findstr /r `"[0-9]`"') do taskkill /F /PID %%i 2>nul`r`ntaskkill /F /IM python.exe /FI `"WINDOWTITLE eq DCP*`" 2>nul`r`necho Stopped.`r`ntimeout /t 3"
+    Set-Content -Path "$InstallDir\stop-dcp.bat" -Value $stopScript -Encoding ASCII
 } else {
     # Always-on (default): start at every login
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -386,7 +386,7 @@ Log "  Desktop shortcut created: 'DCP - My Earnings'"
 
 # Start daemon (unless manual mode)
 if ($RunMode -eq 'manual') {
-    Log "  Manual mode — skipping auto-start. Use start-dc1.bat when ready."
+    Log "  Manual mode — skipping auto-start. Use start-dcp.bat when ready."
 } else {
     Log "  Starting daemon..."
     Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -417,7 +417,7 @@ if ($RunMode -eq 'manual') {
         Log "    1. Check internet connection"
         Log "    2. Check if firewall is blocking outbound connections"
         Log "    3. Check if antivirus is blocking python.exe"
-        Log "    4. Try: $pythonExe $InstallDir\dc1_daemon.py"
+        Log "    4. Try: $pythonExe $InstallDir\dcp_daemon.py"
     }
 }
 

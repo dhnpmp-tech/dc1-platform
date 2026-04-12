@@ -158,9 +158,9 @@ fi
 # ── Step 7: Download daemon + create service ────────────────────────────
 echo "[7/8] Downloading DCP daemon..."
 mkdir -p "$INSTALL_DIR" "$LOG_DIR"
-curl -sL "${DC1_API_URL}/api/providers/download/daemon?key=${DC1_API_KEY}" -o "${INSTALL_DIR}/dc1-daemon.py"
-chmod +x "${INSTALL_DIR}/dc1-daemon.py"
-echo "  Installed to ${INSTALL_DIR}/dc1-daemon.py"
+curl -sL "${DC1_API_URL}/api/providers/download/daemon?key=${DC1_API_KEY}" -o "${INSTALL_DIR}/dcp_daemon.py"
+chmod +x "${INSTALL_DIR}/dcp_daemon.py"
+echo "  Installed to ${INSTALL_DIR}/dcp_daemon.py"
 
 # Save config
 cat > "${INSTALL_DIR}/config.json" << CONF
@@ -188,7 +188,7 @@ Wants=docker.service
 [Service]
 Type=simple
 User=$ACTUAL_USER
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/dc1-daemon.py
+ExecStart=/usr/bin/python3 ${INSTALL_DIR}/dcp_daemon.py
 Restart=always
 RestartSec=10
 Environment=HOME=$ACTUAL_HOME
@@ -215,7 +215,7 @@ elif [ "$(uname)" = "Darwin" ]; then
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>${INSTALL_DIR}/dc1-daemon.py</string>
+        <string>${INSTALL_DIR}/dcp_daemon.py</string>
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
@@ -228,7 +228,7 @@ PLIST
     echo "  launchd agent created and loaded."
 else
     echo "  [WARN] No service manager found. Run manually:"
-    echo "    python3 ${INSTALL_DIR}/dc1-daemon.py"
+    echo "    python3 ${INSTALL_DIR}/dcp_daemon.py"
 fi
 
 # Status
@@ -237,7 +237,7 @@ echo ""
 echo "============================================"
 echo "  DCP Provider Daemon v3.3.0 — INSTALLED"
 echo "============================================"
-echo "  Daemon:  ${INSTALL_DIR}/dc1-daemon.py"
+echo "  Daemon:  ${INSTALL_DIR}/dcp_daemon.py"
 echo "  Config:  ${INSTALL_DIR}/config.json"
 echo "  Logs:    ${LOG_DIR}/daemon.log"
 echo "  Key:     ${DC1_API_KEY:0:20}..."

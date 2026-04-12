@@ -29,7 +29,7 @@ You are working in a multi-agent environment. Other AI agents (Claude-Cowork, Co
 - SQLite database (better-sqlite3) at `backend/data/providers.db`
 - PM2 process manager for all services
 - VPS: Hostinger (76.13.179.86)
-- Provider daemon: `dc1_daemon.py` v3.3.0 (Python, auto-updates from backend)
+- Provider daemon: `dcp_daemon.py` v3.3.0 (Python, auto-updates from backend)
 - Installer: `daemon.ps1` v2.0.0 (thin PowerShell installer)
 
 ## Key Directories
@@ -37,7 +37,7 @@ You are working in a multi-agent environment. Other AI agents (Claude-Cowork, Co
 - `backend/src/routes/`  Express API routes (providers.js is the main one)
 - `backend/public/`  Static frontend files (provider-onboarding.html)
 - `backend/installers/`  daemon.ps1 thin installer
-- `backend/src/daemon/`  dc1_daemon.py universal daemon
+- `backend/src/daemon/`  dcp_daemon.py universal daemon
 - `backend/data/`  SQLite databases
 
 ## Code Style

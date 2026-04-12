@@ -726,10 +726,10 @@
 
 ## [2026-03-27 04:51 UTC] DevOps Automator — Session Recovery: Path Fix + AGENTS.md Update
 - **Files**: 
-  - `AGENTS.md` (corrected daemon path from `backend/daemon/dc1_daemon.py` → `backend/installers/dc1_daemon.py`)
+  - `AGENTS.md` (corrected daemon path from `backend/daemon/dcp_daemon.py` → `backend/installers/dcp_daemon.py`)
 - **Completed Work**:
   - **Session Recovery:** Previous session error was malformed path `/home/[]/dc1-platform/...`. Corrected to actual workspace `/home/node/dc1-platform/`.
-  - **AGENTS.md Fix:** Updated project structure to reflect correct daemon location (`backend/installers/dc1_daemon.py`)
+  - **AGENTS.md Fix:** Updated project structure to reflect correct daemon location (`backend/installers/dcp_daemon.py`)
   - **DCP-981 Update:** Posted recovery comment clarifying all 5 assigned tasks remain blocked
 - **Assigned Tasks (all blocked):**
   - DCP-985 (Cloudflare tunnel): Needs SSH access to VPS 76.13.179.86
@@ -744,7 +744,7 @@
 ## [2026-03-27 04:51 UTC] Founding Engineer — COMPLETE: DCP-951, DCP-815, DCP-988, DCP-989
 - **Files**: 
   - `backend/src/routes/vllm.js` (function calling)
-  - `backend/installers/dc1_daemon.py` (vLLM auto-detection)
+  - `backend/installers/dcp_daemon.py` (vLLM auto-detection)
   - `backend/src/routes/providers.js` (vLLM models storage)
   - `backend/src/db.js` (vllm_models column)
   - `scripts/e2e-job-flow-test.mjs` (new)
@@ -764,7 +764,7 @@
 ## [2026-03-27 04:45 UTC] Founding Engineer — COMPLETE: Week 2 Gaps 4 & 5 (Function Calling + vLLM Auto-Registration)
 - **Files**: 
   - `backend/src/routes/vllm.js` (function calling implementation)
-  - `backend/installers/dc1_daemon.py` (vLLM auto-detection)
+  - `backend/installers/dcp_daemon.py` (vLLM auto-detection)
   - `backend/src/routes/providers.js` (vLLM models storage)
   - `backend/src/db.js` (vllm_models column)
 - **Completed Work**:
@@ -5325,7 +5325,7 @@
 ## [2026-03-21 18:10 UTC] Codex — DCP-488: Daemon resource_spec now emits compute_environments with GPU UUID bindings
 
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add compute_environments parity and resource-spec routing helpers for GPU UUID-aware scheduling`
-- **Files**: `backend/installers/dc1_daemon.py`, `backend/installers/dc1-daemon.py`, `backend/src/routes/providers.js`, `backend/src/__tests__/providers-resource-spec.test.js`, `AGENT_LOG.md`
+- **Files**: `backend/installers/dcp_daemon.py`, `backend/installers/dcp_daemon.py`, `backend/src/routes/providers.js`, `backend/src/__tests__/providers-resource-spec.test.js`, `AGENT_LOG.md`
 - **Impact**:
   - Updated both daemon installers to return `resource_spec` with both `resources` and `compute_environments`, with per-GPU environment entries tagged by `gpu_uuid`.
   - Each GPU now advertises a `docker-{gpu_uuid}` compute environment containing explicit CPU/RAM/Disk/GPU resource bindings and compute types.
@@ -5763,13 +5763,13 @@
 ## [2026-03-20 05:46 UTC] Codex — DCP-314: Workspace volumes + pause/resume checkpoints + volume cleanup
 
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add per-job workspace volume persistence, Docker checkpoint pause/resume APIs, and 7-day volume cleanup cron`
-- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/installers/dc1_daemon.py`, `infra/docker/run-job.sh`, `backend/src/services/cleanup.js`, `backend/src/scripts/cleanup-job-volumes.js`, `backend/ecosystem.config.js`, `AGENT_LOG.md`
+- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/installers/dcp_daemon.py`, `infra/docker/run-job.sh`, `backend/src/services/cleanup.js`, `backend/src/scripts/cleanup-job-volumes.js`, `backend/ecosystem.config.js`, `AGENT_LOG.md`
 - **Impact**: Jobs now persist `/workspace` to named volumes (`dcp-job-{job_id}`); providers/admin can pause/resume checkpoint-enabled jobs via `/api/jobs/:job_id/pause|resume`; cleanup now prunes aged workspace volumes and PM2 includes a daily volume cleanup cron process.
 
 ## [2026-03-20 05:26 UTC] Codex — DCP-313: Model cache bootstrap, prefetch, and heartbeat metrics
 
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add model-cache bootstrap + prefetch scripts; expose cache disk metrics in daemon heartbeat`
-- **Files**: `infra/setup-model-cache.sh`, `infra/docker/prefetch-models.sh`, `backend/ecosystem.config.js`, `backend/installers/dc1_daemon.py`, `backend/src/routes/providers.js`, `docs/provider-setup.md`
+- **Files**: `infra/setup-model-cache.sh`, `infra/docker/prefetch-models.sh`, `backend/ecosystem.config.js`, `backend/installers/dcp_daemon.py`, `backend/src/routes/providers.js`, `docs/provider-setup.md`
 - **Impact**: PM2 startup now ensures `/opt/dcp/model-cache` and `dcp-model-cache` volume exist before backend boot; new prefetch script warms cache for llama3-8b/mistral-7b; daemon heartbeat now reports model cache disk usage fields for monitoring.
 
 ---
@@ -6059,7 +6059,7 @@
   - DCP-262 (Frontend Developer): Admin pricing dashboard UI tab (depends on DCP-261)
   - DCP-263 (DevOps Automator): Automated post-deploy health check script
   - DCP-264 (Budget Analyst): March 2026 cost report
-- **Files changed (branding sweep)**: daemon.ps1, dc1_daemon.py, dc1-daemon.py, dc1-setup-windows.ps1, dc1-setup-unix.sh, dc1-uninstall-helper.ps1, dc1-provider-setup.sh, daemon.sh.bak, build-deb.sh, dc1-provider_1.0/ artifacts
+- **Files changed (branding sweep)**: daemon.ps1, dcp_daemon.py, dcp_daemon.py, dc1-setup-windows.ps1, dc1-setup-unix.sh, dc1-uninstall-helper.ps1, dc1-provider-setup.sh, daemon.sh.bak, build-deb.sh, dc1-provider_1.0/ artifacts
 - **Board actions still needed**: DCP-84 (VPS env vars + DNS — blocks live payments), DCP-85 (npm/PyPI creds)
 
 ---
@@ -6070,7 +6070,7 @@
   - dc1-setup-windows.ps1: task name, task description, INSTALLED banner
   - dc1-setup-unix.sh: steps 6/7, systemd Description=, INSTALLED banner
   - dc1-uninstall-helper.ps1: 5 user-facing messages + desktop shortcut name
-  - dc1-daemon.py: header, argparse, log.error×2, log.info
+  - dcp_daemon.py: header, argparse, log.error×2, log.info
   - dc1-provider-setup.sh + daemon.sh.bak: log_header×3, log_msg, echo, dashboard URL
   - build-deb.sh + dc1-provider_1.0/: build artifacts synced
 - **DCP-258 CREATED** (high, CR1): Final re-review with explicit list of intentional remaining DC1 (internal identifiers, var names)
@@ -6093,8 +6093,8 @@
   - `backend/installers/daemon.ps1:94`: 'DC1 backend' → 'DCP backend'
   - `backend/installers/daemon.ps1:125`: 'Starting DC1 Provider Daemon' → 'Starting DCP Provider Daemon'
   - `backend/installers/daemon.ps1:136`: 'DC1 Provider Daemon installed successfully!' → 'DCP...'
-  - `backend/installers/dc1_daemon.py:1994`: argparse description DC1 → DCP
-  - `backend/installers/dc1_daemon.py:2030`: startup log DC1 → DCP
+  - `backend/installers/dcp_daemon.py:1994`: argparse description DC1 → DCP
+  - `backend/installers/dcp_daemon.py:2030`: startup log DC1 → DCP
   - `backend/installers/dc1-setup-helper.ps1:353`: stop echo DC1 → DCP
   - `backend/installers/dc1-setup-helper.ps1:367`: duplicate stop echo DC1 → DCP
 - **DCP-256 CREATED** (high, CR1): Re-review with comprehensive DC1 grep requested
@@ -6108,11 +6108,11 @@
   - `app/admin/page.tsx:8`: `@/app/lib/i18n` → `../lib/i18n` (Check 2: relative import alias)
   - `backend/installers/daemon.ps1:36`: `DC1 Provider Daemon - Windows Installer` → `DCP Provider Daemon - Windows Installer`
   - `backend/installers/daemon.ps1:144`: `DC1 - My Earnings` → `DCP - My Earnings`
-  - `backend/installers/dc1_daemon.py:2008-2011`: `DC1 dashboard` → `DCP dashboard` (×2)
+  - `backend/installers/dcp_daemon.py:2008-2011`: `DC1 dashboard` → `DCP dashboard` (×2)
   - `backend/installers/dc1-setup-helper.ps1:305`: `DC1 Provider Daemon v` → `DCP Provider Daemon v`
 - **DCP-255 CREATED** (high, CR1): Re-review task — full 11-point checklist on above 5 fixes
 - **Unblocks**: DCP-254 deploy (pending DCP-255 PASS)
-- **Files changed**: app/admin/page.tsx, backend/installers/daemon.ps1, backend/installers/dc1_daemon.py, backend/installers/dc1-setup-helper.ps1
+- **Files changed**: app/admin/page.tsx, backend/installers/daemon.ps1, backend/installers/dcp_daemon.py, backend/installers/dc1-setup-helper.ps1
 
 ---
 
@@ -6124,8 +6124,8 @@
   - DCP-243: jobSweep.js try-catch + sweepMetrics → backend/src/services/jobSweep.js, server.js
   - DCP-244: GPU detection in heartbeat → backend/src/routes/providers.js, db.js
   - DCP-245: admin.js db.run() full audit → backend/src/routes/admin.js
-  - DCP-246: Docker cap-drop hardening → dc1_daemon.py, dc1-daemon.py
-  - DCP-247: Daemon URL → api.dcp.sa + gpu_info → dc1_daemon.py, daemon.ps1
+  - DCP-246: Docker cap-drop hardening → dcp_daemon.py, dcp_daemon.py
+  - DCP-247: Daemon URL → api.dcp.sa + gpu_info → dcp_daemon.py, daemon.ps1
   - DCP-248: PS 5.1 compat + daemon bootstrap → dc1-setup-helper.ps1
   - DCP-249: DCP token fix (accent) → app/page.tsx
   - DCP-250: i18n all pages + RTL → marketplace, billing, admin, i18n.tsx (+50 keys)
@@ -6999,7 +6999,7 @@ Security Engineer (DCP-153) found issues that would allow financial fraud and ad
 
 - **Commit**: `5f90e1d`  Refactored `daemon.ps1` into thin installer v2.0.0 (303159 lines)
 - **Files**: `backend/installers/daemon.ps1`
-- **Impact**: daemon.ps1 now only installs; all runtime logic lives in `dc1_daemon.py v3.3.0`
+- **Impact**: daemon.ps1 now only installs; all runtime logic lives in `dcp_daemon.py v3.3.0`
 - **Issue**: #34 created with full architecture docs
 
 ## [2025-03-11 11:30 UTC] Claude-Cowork  Registration error fix
@@ -7288,8 +7288,8 @@ Security Engineer (DCP-153) found issues that would allow financial fraud and ad
 - **Files**:
   - `backend/src/db.js` — 2 new migrations: `jobs.endpoint_url TEXT`, `jobs.serve_port INTEGER`
   - `backend/src/routes/jobs.js` — `vllm_serve` job type: cost rate (20 hal/min), ALLOWED_JOB_TYPES, `generateVllmServeSpec()`, JOB_TEMPLATES entry, `result_type='endpoint'`, `POST /:job_id/endpoint-ready` route
-  - `backend/installers/dc1_daemon.py` — `VRAM_REQUIREMENTS["vllm_serve"]=14336`, `_find_free_port()`, `_get_public_ip()`, `run_vllm_serve_job()`, `execute_job()` vllm_serve branch
-  - `backend/installers/dc1-daemon.py` — same changes (mirror)
+  - `backend/installers/dcp_daemon.py` — `VRAM_REQUIREMENTS["vllm_serve"]=14336`, `_find_free_port()`, `_get_public_ip()`, `run_vllm_serve_job()`, `execute_job()` vllm_serve branch
+  - `backend/installers/dcp_daemon.py` — same changes (mirror)
 
 ### Architecture
 1. Renter submits `vllm_serve` job with `params.model` + `duration_minutes`
@@ -7347,8 +7347,8 @@ Security Engineer (DCP-153) found issues that would allow financial fraud and ad
   - `backend/src/routes/templates.js` (NEW) — `GET /api/templates`, `GET /api/templates/whitelist`, `GET /api/templates/:id`
   - `backend/src/server.js` — registered templates router at `/api/templates`
   - `backend/src/routes/jobs.js` — added `custom_container` to `ALLOWED_JOB_TYPES`, added `generateCustomContainerSpec()` + entry in `JOB_TEMPLATES`
-  - `backend/installers/dc1-daemon.py` — `APPROVED_IMAGES` set, image_override JSON parsing + whitelist validation in `run_docker_job()`
-  - `backend/installers/dc1_daemon.py` — same changes (mirror)
+  - `backend/installers/dcp_daemon.py` — `APPROVED_IMAGES` set, image_override JSON parsing + whitelist validation in `run_docker_job()`
+  - `backend/installers/dcp_daemon.py` — same changes (mirror)
   - `app/renter/templates/page.tsx` (NEW) — template picker UI with provider selection, duration, params, submit
   - 8 renter page files — added TemplatesIcon + Templates nav item (`/renter/templates`) after Marketplace
 
@@ -7414,8 +7414,8 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 - **Files**:
   - `backend/src/db.js` — migration: `providers.resource_spec TEXT`
   - `backend/src/routes/providers.js` — register, heartbeat, GET /me
-  - `backend/installers/dc1_daemon.py` — `build_resource_spec()` + heartbeat payload
-  - `backend/installers/dc1-daemon.py` — same (mirror)
+  - `backend/installers/dcp_daemon.py` — `build_resource_spec()` + heartbeat payload
+  - `backend/installers/dcp_daemon.py` — same (mirror)
   - `app/provider/page.tsx` — Resource Advertisement card on dashboard
 
 ### What changed
@@ -7460,7 +7460,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-18 11:45 UTC] Security Engineer — DCP-21: Container security hardening
 
 - **Issue**: DCP-21 (High priority)
-- **Files**: `backend/installers/dc1-daemon.py`, `backend/installers/dc1_daemon.py`
+- **Files**: `backend/installers/dcp_daemon.py`, `backend/installers/dcp_daemon.py`
 - **What changed**:
   - **`--cpus 4`**: Hard CPU core limit per container (was unlimited)
   - **`--memory-swap 16g`**: Set equal to `--memory` to disable swap headroom
@@ -7504,7 +7504,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-18 11:12 UTC] Backend Architect — DCP-18, DCP-19, DCP-20: Job execution engine, GPU metrics, GPU spec reporting
 
 ### DCP-18: Job execution engine
-- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/installers/dc1_daemon.py`, `backend/installers/dc1-daemon.py`
+- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/installers/dcp_daemon.py`, `backend/installers/dcp_daemon.py`
 - **DB migrations**: `jobs.priority` (1=high/2=normal/3=low), `jobs.retry_count`, `jobs.max_retries`, `job_logs` table
 - **Priority queue**: `promoteNextQueuedJob()` now orders by `priority ASC, created_at ASC`
 - **Status lifecycle**: `pending → assigned → pulling → running → completed/failed`. `/api/jobs/assigned` now sets `assigned`; progress endpoint advances to `pulling`/`running`
@@ -7531,7 +7531,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-17 23:41 UTC] DevOps Automator — DCP-8, DCP-12, DCP-13
 
 ### DCP-8: Docker container isolation for job execution
-- **Files**: `backend/installers/dc1_daemon.py`, `backend/installers/dc1-daemon.py`, `backend/docker/Dockerfile.general-worker` (NEW), `backend/docker/build-images.sh`
+- **Files**: `backend/installers/dcp_daemon.py`, `backend/installers/dcp_daemon.py`, `backend/docker/Dockerfile.general-worker` (NEW), `backend/docker/build-images.sh`
 - **What changed**:
   - `run_docker_job()` in both daemons: added `--network none` (no internet inside container), `--name dc1-job-{job_id}` (reliable timeout kill), `--security-opt no-new-privileges:true`, `:ro` read-only volume mount, `shutil.rmtree` cleanup in `finally`
   - Updated image map from GHCR paths to local `dc1/sd-worker`, `dc1/llm-worker`, `dc1/general-worker`
@@ -7561,7 +7561,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-17 23:26 UTC] Security Engineer — DCP-3: task_spec RCE fix + DCP-4: rate limit audit
 
 - **Issues**: DCP-3 (Critical RCE), DCP-4 (Rate Limiting)
-- **Files**: `backend/installers/dc1-daemon.py`, `backend/installers/dc1_daemon.py`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/src/server.js`
+- **Files**: `backend/installers/dcp_daemon.py`, `backend/installers/dcp_daemon.py`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/src/server.js`
 - **What changed**:
   - **DCP-3 (RCE)**: Daemon claimed HMAC verification but never implemented it. Added `HMAC_SECRET = "{{HMAC_SECRET}}"` constant to both daemon files, implemented `verify_task_spec_hmac()` using `hmac.compare_digest()`, added HMAC guard in `poll_and_execute()` that rejects and reports jobs with missing/invalid signatures
   - **DCP-3**: Backend now injects `HMAC_SECRET` into daemon at download time (`providers.js`)
@@ -7654,7 +7654,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ### DCP-41 — Container security tests (COMPLETE)
 - **File**: `backend/tests/security/container-isolation.test.js` (NEW)
 - **Tests**: 42 total — 28 passing, 14 skipped (live Docker tests auto-skip when Docker unavailable)
-- **Coverage**: Static analysis of dc1-daemon.py security flags (--network none, --read-only, --cap-drop all, seccomp, VRAM leak), live container isolation tests, image whitelist enforcement
+- **Coverage**: Static analysis of dcp_daemon.py security flags (--network none, --read-only, --cap-drop all, seccomp, VRAM leak), live container isolation tests, image whitelist enforcement
 - **Breaking changes**: None
 
 ### DCP-40 — Job pipeline integration tests (COMPLETE)
@@ -7770,13 +7770,13 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-19 11:05 UTC] Codex - DCP-113 daemon auto-update repair
 
 - **Commit**: `N/A in Paperclip container (no-git policy)`  `fix: harden daemon self-update endpoint resolution/version compare/rollback backup discovery`
-- **Files**: `backend/installers/dc1_daemon.py`
+- **Files**: `backend/installers/dcp_daemon.py`
 - **Impact**:
   - Bumped daemon version to `3.3.2` so existing `3.3.1` installs detect an update.
   - Auto-update now checks canonical endpoint first: `https://dcp.sa/api/dc1/providers/download/daemon` (legacy `API_URL + /api/providers/download/daemon` kept as fallback).
   - Fixed version comparison to numeric semantic comparison (avoids string-compare errors).
   - Update download now retries across canonical + legacy endpoints and validates payload before replace.
-  - Rollback backup discovery now matches both `dc1_daemon.v*.bak` and legacy `dc1-daemon.v*.bak` patterns.
+  - Rollback backup discovery now matches both `dcp_daemon.v*.bak` and legacy `dcp_daemon.v*.bak` patterns.
   - Restart behavior remains watchdog-driven (`os._exit(42)` then watchdog relaunch).
 
 ---
@@ -7942,7 +7942,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 
 - **Commit**: `n/a (Paperclip no-git container)` — `fix: add vLLM VRAM preflight, model cache pre-download logging, health-gated serve registration, and graceful serve shutdown`
 - **Files**:
-  - `backend/installers/dc1_daemon.py`
+  - `backend/installers/dcp_daemon.py`
 - **Impact**:
   - Added `check_vram_sufficient(model_name, required_vram_gb)` and wired vLLM-specific preflight before execution.
   - vLLM insufficient VRAM path now calls `POST /api/jobs/:job_id/fail` with reason `insufficient_vram` (legacy fallback to `/api/providers/job-result`).
@@ -8013,7 +8013,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
   - Added `GET /api/providers/daemon/windows` to serve `dc1-provider-setup-Windows.exe` with attachment headers.
   - Added `GET /api/providers/daemon/linux` to serve curl-able `backend/public/install.sh` (supports `curl -sSL ... | bash`, prompts/uses `DCP_PROVIDER_KEY`, then fetches `/api/dc1/providers/download/setup`).
   - Kept legacy `/api/providers/download-windows-exe` but routed it through the same installer responder.
-  - Updated `/api/providers/download/daemon` to prefer latest `backend/installers/dc1_daemon.py` with fallback to `dc1-daemon.py`.
+  - Updated `/api/providers/download/daemon` to prefer latest `backend/installers/dcp_daemon.py` with fallback to `dcp_daemon.py`.
   - Rewired provider download page buttons/commands to proxy endpoints: `/api/dc1/providers/daemon/windows` and `curl -sSL https://dcp.sa/api/dc1/providers/daemon/linux | bash`.
   - `makensis` is not installed in this runtime (`which makensis` empty), so added `docs/build-installer.md` with NSIS build steps and expected output artifact.
 
@@ -8312,7 +8312,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-19 23:06 UTC] Codex — DCP-247: daemon URL hardening + heartbeat gpu_info
 
 - **Commit**: `N/A (Paperclip container: git commands disabled)` — Updated daemon/installer URL defaults to `https://api.dcp.sa` for provider API flows and added `gpu_info` (`nvidia-smi` output) to heartbeat payload.
-- **Files**: `backend/installers/dc1_daemon.py`, `backend/installers/daemon.ps1`, `AGENT_LOG.md`
+- **Files**: `backend/installers/dcp_daemon.py`, `backend/installers/daemon.ps1`, `AGENT_LOG.md`
 - **Impact**: Daemon heartbeat now sends both structured `gpu_status` and raw `gpu_info` diagnostics; auto-update URL normalization no longer rewrites through `dcp.sa/api/dc1`; Windows installer usage examples now point to `https://api.dcp.sa`.
 
 ## [2026-03-19 23:08 UTC] Codex — DCP-243: fix jobSweep DB error handling + health sweepErrors
@@ -8323,7 +8323,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-19 23:09 UTC] Codex — DCP-246: Container hardening for job execution
 
 - **Commit**: `N/A (Paperclip container: git commands disabled, fix: container-hardening)` — Enforced stronger Docker hardening in daemon execution paths and Docker wrapper, including seccomp attach where available, `no-new-privileges`, `cap-drop all`, explicit CPU/memory/PID limits, and documented verification steps.
-- **Files**: `backend/installers/dc1_daemon.py`, `backend/installers/dc1-daemon.py`, `backend/src/services/docker-manager.ts`, `docs/container-security.md`, `docs/README.md`
+- **Files**: `backend/installers/dcp_daemon.py`, `backend/installers/dcp_daemon.py`, `backend/src/services/docker-manager.ts`, `docs/container-security.md`, `docs/README.md`
 - **Impact**: Provider job containers now run with tighter isolation/resource controls; vLLM containers keep `bridge` network for endpoint publishing but now enforce seccomp/cap-drop/PID/tmpfs controls. Use `docs/container-security.md` inspect commands to validate limits on live containers.
 
 ## [2026-03-19 23:08 UTC] Codex — DCP-251: Docker job isolation runner script + execution docs
@@ -8346,7 +8346,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
   - `backend/installers/dc1-provider-Windows.nsi`
   - `app/provider/download/page.tsx`
 - **Impact**:
-  - PowerShell helper is now Windows PowerShell 5.1-safe (removed `??` syntax) and attempts to download `dc1_daemon.py` from `https://api.dcp.sa/api/providers/download/daemon?key=...` before using bundled fallback.
+  - PowerShell helper is now Windows PowerShell 5.1-safe (removed `??` syntax) and attempts to download `dcp_daemon.py` from `https://api.dcp.sa/api/providers/download/daemon?key=...` before using bundled fallback.
   - Scheduled task/desktop shortcut naming updated for DCP (`DCPProviderDaemon`, `DCP - My Earnings`) while uninstall keeps backward cleanup for legacy `DC1ProviderDaemon` artifacts.
   - Provider download page Windows CTA now points at explicit `.exe` endpoint (`/api/dc1/providers/download-windows-exe`) and shows daemon version `v3.3.0` to match installer artifacts.
 
@@ -8387,7 +8387,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-20 02:12 UTC] Codex — DCP-271: SSE job log streaming + provider log ingest
 
 - **Commit**: `N/A (paperclip container: git disabled)` — `feat: add real-time job log streaming via SSE with daemon log forwarding`
-- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/installers/dc1_daemon.py`
+- **Files**: `backend/src/db.js`, `backend/src/routes/jobs.js`, `backend/src/routes/providers.js`, `backend/installers/dcp_daemon.py`
 - **Impact**:
   - Added `jobs.logs_jsonl` schema support (create + migration), while preserving existing `job_logs` table behavior.
   - Added `GET /api/jobs/:job_id/logs/stream?key=...` SSE endpoint (renter-owned access, terminal close, finished-job tail fallback).
@@ -8655,7 +8655,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 ## [2026-03-20 05:29 UTC] Codex — DCP-310: Daemon container-spec enforcement + run-job.sh execution path
 
 - **Commit**: `N/A (Paperclip container: git commands disabled)` — `feat: enforce container_spec and route script jobs through infra/docker/run-job.sh`
-- **Files**: `backend/installers/dc1_daemon.py`, `AGENT_LOG.md`
+- **Files**: `backend/installers/dcp_daemon.py`, `AGENT_LOG.md`
 - **Impact**:
   - Daemon now requires `container_spec` for script jobs and rejects raw Python execution when missing.
   - Script job execution now goes through `infra/docker/run-job.sh` with parsed container settings (`image`, `job_cmd`, `network`, `cpus`, `memory`, `tmpfs_size`, `gpus`, `pids_limit`).
@@ -8664,7 +8664,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 
 ## [2026-03-20 05:48 UTC] Codex — DCP-316: job execution history + GPU-seconds cost metering
 - **Commit**: `N/A (Paperclip container: git disabled)`  Implemented execution-attempt persistence, downloadable per-attempt logs, and GPU-seconds-based settlement in daemon/provider result flow.
-- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/src/services/job-execution-logs.js` (new), `backend/installers/dc1_daemon.py`, `AGENT_LOG.md`
+- **Files**: `backend/src/db.js`, `backend/src/routes/providers.js`, `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/src/services/job-execution-logs.js` (new), `backend/installers/dcp_daemon.py`, `AGENT_LOG.md`
 - **Impact**:
   - Added `job_executions` table (`attempt_number`, timestamps, exit code, `gpu_seconds_used`, `cost_halala`, `log_path`) plus indexes.
   - Added `providers.cost_per_gpu_second_halala` (default `0.25`) and switched `/api/providers/job-result` billing to `actual_cost_halala = gpu_seconds_used * cost_per_gpu_second_halala` (rounded halala), with fallback rate derived from existing per-minute job type rates.
@@ -8676,7 +8676,7 @@ Chosen over Tap Payments for: Saudi-first (mada support), SAR-native currency, S
 
 ## [2026-03-20 05:52 UTC] Codex — DCP-315: fault tolerance + container registry allowlist
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: add container registry endpoints + image allowlist validation; persist daemon restart telemetry with crash auto-restart`
-- **Files**: `backend/src/db.js`, `backend/src/server.js`, `backend/src/lib/container-registry.js` (new), `backend/src/routes/containers.js` (new), `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/src/routes/providers.js`, `backend/installers/dc1_daemon.py`, `AGENT_LOG.md`
+- **Files**: `backend/src/db.js`, `backend/src/server.js`, `backend/src/lib/container-registry.js` (new), `backend/src/routes/containers.js` (new), `backend/src/routes/jobs.js`, `backend/src/routes/admin.js`, `backend/src/routes/providers.js`, `backend/installers/dcp_daemon.py`, `AGENT_LOG.md`
 - **Impact**:
   - Added `allowed_images` table and new jobs columns `restart_count` + `last_error` (idempotent migrations in `db.js`).
   - Added public `GET /api/containers/registry` to return template images + admin-approved custom images.
@@ -9724,7 +9724,7 @@ Assign in this order when issue creation comes back:
 - **Impact**:
   - Updated user-facing prose branding in `p2p/README.md` from DC1 to DCP (title, overview, scoped DHT narrative, design rationale text).
   - Updated renter demo image example `dc1/simulate` -> `dcp/simulate` for user-facing consistency.
-  - Left technical identifiers unchanged (`/dc1/...` protocol namespace, `DC1_*` env vars, `dc1-node.js`, `dc1_daemon.py`, paths) to avoid breaking implementation references.
+  - Left technical identifiers unchanged (`/dc1/...` protocol namespace, `DC1_*` env vars, `dc1-node.js`, `dcp_daemon.py`, paths) to avoid breaking implementation references.
 
 ## [2026-03-21 16:46 UTC] Codex — Backend heartbeat no-op: only CEO-owned todos open
 
@@ -16650,7 +16650,7 @@ a
 ## [2026-03-22 10:43 UTC] P2P Network Engineer — Stable provider identity for P2P announce path
 
 - **Commit**: `N/A (Paperclip container: git disabled)` — `feat: persist daemon peer_id and use stable peer keys in DHT provider announcements`
-- **Files**: `backend/installers/dc1_daemon.py`, `p2p/dcp-discovery-scaffold.js`
+- **Files**: `backend/installers/dcp_daemon.py`, `p2p/dcp-discovery-scaffold.js`
 - **Impact**: Added `peer_id` persistence in daemon runtime (`~/.dc1-provider/peer_id`) and heartbeat payload emission so `providers.p2p_peer_id` can remain stable across restarts; updated DCP P2P scaffold to honor explicit `peer_id` when building and indexing provider envelopes in DHT, fixing unstable discovery lookups caused by per-run node IDs.
 
 ## [2026-03-22 10:39 UTC] DevOps Automator  Heartbeat completed: no assignable DevOps work
@@ -17886,7 +17886,7 @@ a
 
 ## [2026-03-22 12:51 UTC] Codex — fix: persist daemon update rollback cooldown to prevent immediate bad re-update
 - **Commit**: `N/A (Paperclip container: git disabled)` — `fix: enforce rollback update-suppression window across watchdog restarts`
-- **Files**: `backend/installers/dc1_daemon.py`, `AGENT_LOG.md`
+- **Files**: `backend/installers/dcp_daemon.py`, `AGENT_LOG.md`
 - **Impact**:
   - Fixed a reliability bug where watchdog rollback cooldown (`ROLLBACK_RECHECK_INTERVAL`) was tracked in-memory but never enforced by the child daemon update loop.
   - Added persistent update suppression state at `~/dc1-provider/update_suppression.json` and environment propagation (`DCP_UPDATE_SUPPRESS_UNTIL`) after rollback.
@@ -18783,7 +18783,7 @@ a
   - Defined phased model-catalog proposal with explicit `model_registry` seed recommendations and scheduling floors (`min_gpu_vram_gb`) for P0/P1/P2.
   - Documented inference + fine-tune compatibility guidance aligned to existing DCP endpoints (`/api/models`, `/api/vllm/models`, `/api/vllm/complete`, `/api/jobs/submit`).
   - Added container template matrix with vLLM launch flags, scheduler profiles, and daemon/runtime integration notes (`resource_spec`, `gpu_uuid`, TP-aware matching, billing meter alignment).
-  - Included implementation notes by file path (`backend/src/db.js`, `backend/src/routes/models.js`, `backend/src/routes/vllm.js`, `backend/src/routes/providers.js`, `backend/installers/dc1_daemon.py`) and explicit 2w/4w/8w rollout + acceptance checklist.
+  - Included implementation notes by file path (`backend/src/db.js`, `backend/src/routes/models.js`, `backend/src/routes/vllm.js`, `backend/src/routes/providers.js`, `backend/installers/dcp_daemon.py`) and explicit 2w/4w/8w rollout + acceptance checklist.
 
 ## [2026-03-22 18:05 UTC] Codex — Budget Analyst heartbeat: inbox empty, no finance-scoped checkout target
 - **Commit**: `N/A (Paperclip container: git disabled)` — `chore: execute heartbeat protocol, refresh budget analyst context, and confirm no self-assignable finance issues`

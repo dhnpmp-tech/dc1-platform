@@ -58,7 +58,7 @@ HEARTBEAT_STALE_MS=90000                # Stale after 90 seconds
 
 ### 2. Provider Daemon Heartbeat Integration — ✅ COMPLETE
 
-**File:** `backend/installers/dc1_daemon.py`
+**File:** `backend/installers/dcp_daemon.py`
 
 **Integration Status:**
 - ✅ Heartbeat function: `emit_p2p_heartbeat(peer_id, gpu, gpu_status)` at line 1077
@@ -79,7 +79,7 @@ HEARTBEAT_STALE_MS=90000                # Stale after 90 seconds
 
 **Current Configuration:**
 ```python
-HEARTBEAT_INTERVAL = 30   # seconds (line 56 in dc1_daemon.py)
+HEARTBEAT_INTERVAL = 30   # seconds (line 56 in dcp_daemon.py)
 ```
 
 ### 3. DHT-Based Provider Discovery — ✅ READY
@@ -127,7 +127,7 @@ P2P_DISCOVERY_ENABLE_MDNS=true            # Local LAN discovery (Phase 2+)
 
 ## Launch Readiness Checklist
 
-### For Provider Nodes (In `backend/installers/dc1_daemon.py`)
+### For Provider Nodes (In `backend/installers/dcp_daemon.py`)
 
 | Item | Status | Details |
 |------|--------|---------|
@@ -229,9 +229,9 @@ recordCheck('Provider heartbeat accepted', heartbeat.ok, `HTTP ${heartbeat.statu
 
 **Provider Side (GPU Node):**
 ```bash
-# 1. Deploy dc1_daemon.py with heartbeat enabled
+# 1. Deploy dcp_daemon.py with heartbeat enabled
 export P2P_DISCOVERY_ENABLED=true
-python3 /backend/installers/dc1_daemon.py
+python3 /backend/installers/dcp_daemon.py
 
 # 2. Verify heartbeat emission
 # Check logs: "P2P heartbeat emitted (seq=0), status=healthy"
@@ -277,7 +277,7 @@ node p2p/test-heartbeat.js
 # Expected: Results: 6/6 passed
 
 # Check provider daemon heartbeat logs
-tail -f /var/log/dc1_daemon.log | grep "P2P heartbeat"
+tail -f /var/log/dcp_daemon.log | grep "P2P heartbeat"
 ```
 
 ### Common Issues & Remediation
@@ -305,7 +305,7 @@ tail -f /var/log/dc1_daemon.log | grep "P2P heartbeat"
 - **Implementation:** `p2p/heartbeat-protocol.js`, `p2p/dcp-discovery-scaffold.js`
 - **Tests:** `p2p/test-heartbeat.js`, `scripts/gpu-job-lifecycle-smoke.mjs`
 - **Deployment Docs:** `p2p/NAT-TRAVERSAL.md`, `p2p/README.md`
-- **Provider Integration:** `backend/installers/dc1_daemon.py` (emit_p2p_heartbeat)
+- **Provider Integration:** `backend/installers/dcp_daemon.py` (emit_p2p_heartbeat)
 - **Roadmap:** `docs/roadmap-to-production.md` (Part 2.5: P2P Architecture)
 
 ---

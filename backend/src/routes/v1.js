@@ -563,7 +563,28 @@ function resolveProviderVramMb(provider) {
   return 0;
 }
 
-function getCapableProviders(minVramMb) {
+// Parse a provider's `cached_models` column, which may be either a
+// JSON-encoded array or a comma-separated string. Returns a lowercase,
+// trimmed list of model identifiers (possibly empty).
+function parseCachedModels(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((s) => String(s).toLowerCase().trim())
+        .filter(Boolean);
+    }
+  } catch (_) {
+    // Fall through to comma-separated parsing
+  }
+  return String(raw)
+    .split(',')
+    .map((s) => s.toLowerCase().trim())
+    .filter(Boolean);
+}
+
+function getCapableProviders(minVramMb, requestedModelId) {
   const providers = db.all(
     `SELECT * FROM providers
      WHERE status = 'online' AND COALESCE(is_paused, 0) = 0
@@ -571,11 +592,27 @@ function getCapableProviders(minVramMb) {
   );
   const nowMs = Date.now();
   const capable = [];
+  const requestedLower = requestedModelId
+    ? String(requestedModelId).toLowerCase().trim()
+    : null;
   for (const p of providers) {
     const hbMs = p.last_heartbeat ? Date.parse(p.last_heartbeat) : NaN;
     if (Number.isFinite(hbMs) && (nowMs - hbMs) > PROVIDER_HEARTBEAT_STALE_MS) continue;
     if (!parseComputeTypes(p.supported_compute_types).has('inference')) continue;
     if (resolveProviderVramMb(p) < minVramMb) continue;
+    if (requestedLower) {
+      const cached = parseCachedModels(p.cached_models);
+      // Backward-compat: if the provider reports no cached_models at all,
+      // fall through (we don't know what they have, so don't exclude).
+      if (cached.length > 0) {
+        const hasModel = cached.some((m) =>
+          m === requestedLower ||
+          m.includes(requestedLower) ||
+          requestedLower.includes(m)
+        );
+        if (!hasModel) continue;
+      }
+    }
     capable.push(p);
   }
   return capable;
@@ -734,6 +771,93 @@ function collectProviderOptionalPassthroughFields(requestBody = {}) {
   return passthrough;
 }
 
+// ── Ollama model alias mapping ──────────────────────────────────────────────
+// Renters request models by HuggingFace ID but Ollama providers serve by
+// Ollama-native names.  When the provider endpoint is on the Ollama port
+// (:11434), map known HuggingFace IDs to their Ollama equivalents.
+const OLLAMA_MODEL_ALIASES = {
+  'qwen/qwen3-30b-a3b-gptq-int4': 'qwen3:30b-a3b',
+  'qwen/qwen3.5-35b-a3b-gptq-int4': 'qwen3.5:35b-a3b',
+  'qwen/qwen2.5-7b-instruct-awq': 'qwen2.5:7b',
+  'qwen/qwen2.5-14b-instruct-awq': 'qwen2.5:14b',
+  'qwen/qwen2.5-3b-instruct': 'qwen2.5:3b',
+  'meta-llama/meta-llama-3-8b-instruct': 'llama3.1:8b',
+  'mistralai/mistral-7b-instruct-v0.2': 'mistral:7b',
+  'thebloke/mistral-7b-instruct-v0.2-awq': 'mistral:7b',
+};
+
+// Reverse lookup: HuggingFace-style id -> Ollama name is already in
+// OLLAMA_MODEL_ALIASES. We also need Ollama -> HF (for when the request
+// uses a HF-style id but the provider's cached_models only lists the
+// Ollama variant). Build this lazily once.
+const OLLAMA_TO_HF_ALIASES = (() => {
+  const reverse = {};
+  for (const [hf, ollama] of Object.entries(OLLAMA_MODEL_ALIASES)) {
+    // Last-writer-wins is fine; both map to the same canonical ollama tag
+    reverse[String(ollama).toLowerCase().trim()] = hf;
+  }
+  return reverse;
+})();
+
+function resolveOllamaModelId(modelId, endpointUrl, providerCachedModels) {
+  if (!modelId) return modelId;
+  const normalized = String(modelId).toLowerCase().trim();
+
+  // Heuristic 1: an Ollama-style tag (contains a ':' and no '/') is almost
+  // always meant for Ollama — apply alias mapping regardless of port.
+  const looksOllama = normalized.includes(':') && !normalized.includes('/');
+  if (looksOllama && OLLAMA_MODEL_ALIASES[normalized]) {
+    return OLLAMA_MODEL_ALIASES[normalized];
+  }
+
+  // Heuristic 2: endpoint clearly points at Ollama (default port OR any port
+  // but we also accept based on path/host containing 'ollama').
+  let endpointLooksOllama = false;
+  if (endpointUrl) {
+    const raw = String(endpointUrl);
+    if (raw.includes(':11434') || /ollama/i.test(raw)) {
+      endpointLooksOllama = true;
+    }
+  }
+
+  // Heuristic 3: provider's cached_models list contains Ollama-style tags.
+  // This lets us detect Ollama providers running on non-standard ports
+  // (RunPod proxy, reverse proxied IP:port, etc).
+  let cachedList = [];
+  if (providerCachedModels) {
+    cachedList = Array.isArray(providerCachedModels)
+      ? providerCachedModels.map((s) => String(s).toLowerCase().trim()).filter(Boolean)
+      : parseCachedModels(providerCachedModels);
+  }
+  const cachedLooksOllama = cachedList.some(
+    (m) => m.includes(':') && !m.includes('/')
+  );
+
+  // Forward mapping: HF-style id -> Ollama name.
+  if (OLLAMA_MODEL_ALIASES[normalized] && (endpointLooksOllama || cachedLooksOllama)) {
+    return OLLAMA_MODEL_ALIASES[normalized];
+  }
+
+  // Reverse mapping: the caller used the HF-style id but the provider's
+  // cached_models list only contains the Ollama tag. If the HF id is mapped
+  // to an ollama tag the provider actually serves, forward it.
+  const ollamaTag = OLLAMA_MODEL_ALIASES[normalized];
+  if (ollamaTag && cachedList.includes(ollamaTag)) {
+    return ollamaTag;
+  }
+
+  // Additional reverse case: caller used an Ollama tag but the provider
+  // only reports the HF-style id in cached_models — map back to HF.
+  if (looksOllama && OLLAMA_TO_HF_ALIASES[normalized]) {
+    const hf = OLLAMA_TO_HF_ALIASES[normalized];
+    if (cachedList.some((m) => m === hf.toLowerCase())) {
+      return hf;
+    }
+  }
+
+  return modelId;
+}
+
 function extractEndpointHost(endpointUrl) {
   try {
     return new URL(String(endpointUrl || '')).host || null;
@@ -795,6 +919,7 @@ async function proxyToProvider({
   tools,
   toolChoice,
   passthroughBody = {},
+  providerCachedModels = null,
 }) {
   const url = buildProviderChatCompletionsUrl(endpointUrl);
   if (!url) {
@@ -803,7 +928,9 @@ async function proxyToProvider({
       detail: 'Provider endpoint URL is missing or invalid',
     };
   }
-  const body = { model: modelId, messages, max_tokens: maxTokens, temperature, stream: !!stream, ...passthroughBody };
+  // Remap HuggingFace model IDs to Ollama names when targeting an Ollama provider
+  const effectiveModelId = resolveOllamaModelId(modelId, endpointUrl, providerCachedModels);
+  const body = { model: effectiveModelId, messages, max_tokens: maxTokens, temperature, stream: !!stream, think: false, ...passthroughBody };
   if (tools !== undefined) body.tools = tools;
   if (toolChoice !== undefined) body.tool_choice = toolChoice;
   let response;
@@ -909,7 +1036,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const modelReq = resolveModelRequirements(model);
     const registryMinVramMb = modelReq.min_vram_gb * 1024;
     const effectiveMinVramMb = resolveEffectiveMinVramMb(modelReq.model_id, registryMinVramMb);
-    const capableProviders = getCapableProviders(effectiveMinVramMb).filter((provider) => {
+    const capableProviders = getCapableProviders(effectiveMinVramMb, modelReq.model_id).filter((provider) => {
       const providerVramMb = resolveProviderVramMb(provider);
       return resolveProviderRoutingModel({
         requestedModelId: modelReq.model_id,
@@ -1126,6 +1253,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         tools,
         toolChoice,
         passthroughBody,
+        providerCachedModels: assignedProvider.cached_models,
       });
 
       const debitAndReturnProxyResult = (resultBody, providerForUsage) => {
@@ -1145,6 +1273,17 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           completionTokens: usageForResponse.completion_tokens || 0,
           costHalala: toUsageSnapshot(usageForResponse).costHalala,
         });
+        // Merge Ollama reasoning tokens into content when content is empty
+        // (Ollama ignores think:false in /v1 endpoint, puts all text in reasoning field)
+        if (Array.isArray(resultBody?.choices)) {
+          for (const choice of resultBody.choices) {
+            const msg = choice?.message;
+            if (msg && (!msg.content || msg.content === '') && msg.reasoning) {
+              msg.content = msg.reasoning;
+              delete msg.reasoning;
+            }
+          }
+        }
         return res.json({
           ...resultBody,
           usage: usageForResponse,
@@ -1325,6 +1464,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           tools,
           toolChoice,
           passthroughBody,
+          providerCachedModels: fallbackProvider.cached_models,
         });
 
         if (fallbackResult.proxyError) continue;

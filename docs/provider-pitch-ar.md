@@ -22,8 +22,8 @@
 
 ```bash
 # Linux / macOS
-curl -fsSL https://dcp.sa/api/providers/download/daemon?key=YOUR_KEY -o dc1_daemon.py
-python3 dc1_daemon.py
+curl -fsSL https://dcp.sa/api/providers/download/daemon?key=YOUR_KEY -o dcp_daemon.py
+python3 dcp_daemon.py
 
 # Windows — في PowerShell
 irm https://dcp.sa/api/providers/download/setup?key=YOUR_KEY^&os=windows | iex

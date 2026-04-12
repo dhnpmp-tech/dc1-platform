@@ -29,7 +29,7 @@ dc1-platform/
     src/
       routes/providers.js    # Main API (register, heartbeat, jobs, earnings)
     installers/
-      dc1_daemon.py          # Universal Python daemon v3.3.0
+      dcp_daemon.py          # Universal Python daemon v3.3.0
       daemon.ps1             # Thin PowerShell installer v2.0.0
       daemon.sh              # Unix shell installer
     public/
@@ -51,7 +51,7 @@ dc1-platform/
 - **Auth**: API key based. Providers: `?key=` query param. Renters: `?key=` query param. Admin: `x-admin-token` header.
 - **Design System**: Amber (#F5A524), Void Black (#07070E), Tailwind custom classes (`dc1-amber`, `dc1-void`, `dc1-surface-l1/l2/l3`)
 - **Process Manager**: PM2
-- **Daemon**: Python 3 (dc1_daemon.py) — runs on provider machines
+- **Daemon**: Python 3 (dcp_daemon.py) — runs on provider machines
 - **VPS**: Hostinger (76.13.179.86), Ubuntu
 
 ## API Routes (providers.js)
@@ -60,7 +60,7 @@ POST /api/providers/register — New provider registration (expects: name, email
 GET  /api/providers/me?key=KEY — Provider dashboard data (returns: provider object with total_jobs, total_earnings_halala, today/week earnings)
 POST /api/providers/heartbeat — Daemon heartbeat with GPU stats
 POST /api/providers/job-result — Job completion reporting
-GET  /api/providers/download/daemon?key=KEY — Serves dc1_daemon.py with injected API key
+GET  /api/providers/download/daemon?key=KEY — Serves dcp_daemon.py with injected API key
 GET  /api/providers/download/setup?key=KEY&os=windows — Platform-specific installer script
 POST /api/providers/pause — Pause provider
 POST /api/providers/resume — Resume provider

@@ -50,7 +50,7 @@ Go to [dcp.sa/provider/register](https://dcp.sa/provider/register) and fill in y
 
 ### Step 2 — Install the Daemon
 
-The DCP daemon (`dc1_daemon.py`) runs on your machine, sends heartbeats every 30 seconds, and executes jobs in Docker containers.
+The DCP daemon (`dcp_daemon.py`) runs on your machine, sends heartbeats every 30 seconds, and executes jobs in Docker containers.
 
 **Linux / macOS:**
 ```bash

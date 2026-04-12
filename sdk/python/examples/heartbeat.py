@@ -1,7 +1,7 @@
 """
 Example: Send heartbeats to keep provider status online.
 
-DC1 expects a heartbeat every 30 seconds.  The daemon (dc1_daemon.py)
+DCP expects a heartbeat every 30 seconds.  The daemon (dcp_daemon.py)
 handles this automatically, but you can use this script for custom
 integrations or testing.
 

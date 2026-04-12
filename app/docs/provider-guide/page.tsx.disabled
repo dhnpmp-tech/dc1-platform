@@ -11,7 +11,7 @@ export default function ProviderGuidePage() {
 
       <h2>Step 2: Install the Daemon</h2>
       <p>After registration, you will see platform-specific install commands:</p>
-      <p><strong>Important:</strong> You must run <strong>dc1_daemon.py v3.3.0 or later</strong>. Older daemon versions do not support HMAC-signed heartbeats and will be rejected by the API. Always download the daemon fresh from the registration page or via the SDK to ensure you have the current version.</p>
+      <p><strong>Important:</strong> You must run <strong>dcp_daemon.py v3.3.0 or later</strong>. Older daemon versions do not support HMAC-signed heartbeats and will be rejected by the API. Always download the daemon fresh from the registration page or via the SDK to ensure you have the current version.</p>
       <p><strong>Linux / macOS:</strong></p>
       <p>Run the curl command shown on screen to download and start the DC1 daemon. The daemon is a Python script that connects your GPU to the DC1 network.</p>
       <p><strong>Windows:</strong></p>

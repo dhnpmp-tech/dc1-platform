@@ -114,7 +114,7 @@ const { COST_RATES } = require('./jobs');
 // Daemon versions:
 // - latest: preferred newest version for update nudges
 // - minimum: hard floor for compatibility checks
-const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '3.3.0').trim();
+const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '4.0.0-alpha.2').trim();
 const MIN_DAEMON_VERSION = (process.env.MIN_DAEMON_VERSION || LATEST_DAEMON_VERSION).trim();
 const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
 const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');
@@ -515,11 +515,12 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
             } catch (_) {}
         }
 
-        // Save to database
+        // Save to database — default supported_compute_types to ["inference"] so
+        // the provider is eligible for inference routing immediately after going online.
         const result = await runStatement(
-            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, location, resource_spec)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), cleanLocation, resourceSpecJson]
+            `INSERT INTO providers (name, email, gpu_model, os, api_key, status, approval_status, created_at, location, resource_spec, supported_compute_types)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [cleanName, cleanEmail, cleanGpuModel, cleanOs, api_key, 'registered', 'pending', new Date().toISOString(), cleanLocation, resourceSpecJson, '["inference"]']
         );
         
         // Return canonical setup download route so clients can follow the URL directly.
@@ -733,7 +734,7 @@ function computeReputationScore(providerId) {
 //
 // HEARTBEAT API CONTRACT
 // ----------------------
-// Called by dc1_daemon.py every 30 seconds while the provider is active.
+// Called by dcp_daemon.py every 30 seconds while the provider is active.
 //
 // Endpoint : POST /api/providers/heartbeat
 // Auth     : api_key in request body (no header required)
@@ -3484,7 +3485,7 @@ router.post('/:id/jobs/:jobId/complete', async (req, res) => {
 });
 
 // ============================================================================
-// GET /api/providers/download/daemon - Serve dc1-daemon.py with injected key
+// GET /api/providers/download/daemon - Serve dcp_daemon.py with injected key
 // ============================================================================
 router.get('/download/daemon', (req, res) => {
     try {
@@ -3495,7 +3496,14 @@ router.get('/download/daemon', (req, res) => {
         const provider = db.get('SELECT id FROM providers WHERE api_key = ?', cleanKey);
         if (!provider) return res.status(401).json({ error: 'Invalid API key' });
 
+        // Daemon filename compat (Option A): the canonical filename is dcp_daemon.py.
+        // The candidate list retains the legacy dc1_daemon.py / dc1-daemon.py names
+        // so that an older backend deploy (pre-rename) or a mixed working tree still
+        // resolves. Existing v3.5.0 providers download from the filename-agnostic
+        // /api/providers/download/daemon route, so the on-disk filename can change
+        // without breaking their self-update loop.
         const daemonCandidates = [
+            path.join(__dirname, '../../installers/dcp_daemon.py'),
             path.join(__dirname, '../../installers/dc1_daemon.py'),
             path.join(__dirname, '../../installers/dc1-daemon.py'),
         ];

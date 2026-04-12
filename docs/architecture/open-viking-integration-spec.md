@@ -106,7 +106,7 @@ All errors must follow `{ "error": "descriptive message" }`.
 ## 5) Runtime/Daemon Integration
 
 Files in scope:
-- `backend/installers/dc1_daemon.py`
+- `backend/installers/dcp_daemon.py`
 - `backend/src/routes/vllm.js`
 - `backend/src/routes/providers.js`
 - `backend/src/routes/models.js`

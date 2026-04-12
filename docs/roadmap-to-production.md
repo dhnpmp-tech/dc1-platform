@@ -39,12 +39,12 @@ Audited against commit `6eee7a3` on `main`.
 
 | # | Requirement | Status | File(s) | Notes |
 |---|---|---|---|---|
-| 1 | Models load in <30s for cached models | **PARTIAL** | `backend/docker/Dockerfile.llm-worker`, `backend/installers/dc1-daemon.py` | Instant-tier (Nemotron Nano, SDXL) pre-baked in Docker image for zero cold start. Cached-tier ~10s after first pull. No SLA monitoring yet. |
+| 1 | Models load in <30s for cached models | **PARTIAL** | `backend/docker/Dockerfile.llm-worker`, `backend/installers/dcp_daemon.py` | Instant-tier (Nemotron Nano, SDXL) pre-baked in Docker image for zero cold start. Cached-tier ~10s after first pull. No SLA monitoring yet. |
 | 2 | Top models cached on provider SSD | **DONE** | `backend/src/routes/providers.js:548-679`, `docker-templates/*.json` | Provider heartbeat tracks `cached_models`, `model_cache_disk_mb`, `model_cache_disk_used_pct`. All templates specify `"mount_path": "/opt/dcp/model-cache"`. |
 | 3 | Inference server: persistent vLLM/TGI containers, OpenAI-compatible API | **DONE** | `backend/src/routes/vllm.js`, `backend/src/db.js:128-151` | `serve_sessions` table tracks long-running containers. `buildOpenAiResponse()` returns OpenAI-compatible JSON. `/api/vllm/complete` and `/api/vllm/complete/stream` endpoints live. |
 | 4 | Long-running containers billed by uptime, serving multiple requests | **PARTIAL** | `backend/src/routes/vllm.js:394-418`, `backend/src/db.js:128-151` | `serve_sessions` billing fields exist (`total_inferences`, `total_tokens`, `total_billed_halala`) but **never updated** after inference — stays at 0 forever. **Sprint 25 Gap 1.** |
 | 5 | Browsable template catalog in the UI | **DONE** | `app/renter/templates/page.tsx`, `docker-templates/` (20 JSON files) | Full template catalog page with category filtering. 6 launch models + additional templates. |
-| 6 | Provider-side model cache persists between jobs | **DONE** | `backend/docker/Dockerfile.llm-worker:23`, `backend/docker/Dockerfile.sd-worker:24`, `backend/installers/dc1-daemon.py` | `HF_HOME=/opt/dcp/model-cache/hf` set in all worker Dockerfiles. Daemon handles model pre-caching on startup. |
+| 6 | Provider-side model cache persists between jobs | **DONE** | `backend/docker/Dockerfile.llm-worker:23`, `backend/docker/Dockerfile.sd-worker:24`, `backend/installers/dcp_daemon.py` | `HF_HOME=/opt/dcp/model-cache/hf` set in all worker Dockerfiles. Daemon handles model pre-caching on startup. |
 | 7 | Automatic provider matching: model, VRAM, latency | **PARTIAL** | `backend/src/routes/providers.js:1642-1713`, `backend/src/routes/jobs.js:57-62` | VRAM check exists (`vram_mb < jobRequirements.vram_required_mb → reject`). Pricing-class sort (PRICING_CLASS_SORT_SQL). **No latency ranking, no cached-model tier validation at routing time. Sprint 25 Gap 5.** |
 | 8 | Rate limiting per API key | **DONE** | `backend/src/middleware/rateLimiter.js` | `vllmCompleteLimiter` (10 req/min), `vllmStreamLimiter` (5 req/min), `jobSubmitLimiter` (10/min), `marketplaceLimiter` (60/min). Per-key extraction for renters and providers. |
 | 9 | Usage metering per endpoint | **PARTIAL** | `backend/src/routes/vllm.js:479-481` | Token counts computed (`approximateTokenCount()`) and returned in response, but **not persisted** to `serve_sessions`. Same root cause as Gap 1. |
@@ -309,7 +309,7 @@ P2P_DISCOVERY_ENABLE_RELAY=true (server mode)
 ```
 Day 1 — Provider Onboarding
 ┌─────────────────────────────────────────┐
-│ Provider starts dc1-daemon on GPU box   │
+│ Provider starts dcp_daemon on GPU box   │
 │ - Detects GPU (RTX 4090, 24GB VRAM)     │
 │ - Generates libp2p peer ID              │
 │ - Connects to DHT bootstrap node (VPS)  │
@@ -357,7 +357,7 @@ Day 1 — Renter Discovery
 - NATed providers can opt-in to relay support via `P2P_DISCOVERY_ENABLE_RELAY=true`
 
 **Remaining (Phase 1 follow-up):**
-- Integrate heartbeat metrics collection into provider daemon (`dc1_daemon.py`)
+- Integrate heartbeat metrics collection into provider daemon (`dcp_daemon.py`)
 - Deploy relay server infrastructure on VPS if needed (optional for Phase 1 — public IP providers work without relay)
 - Wire provider health status to renter UI (show "online", "degraded", "offline" badges)
 

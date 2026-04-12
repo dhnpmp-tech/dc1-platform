@@ -323,9 +323,9 @@ Bundle embeddings + reranker + LLM into a single "one-click Arabic RAG" template
 
 **Step 2: Daemon Deployment**
 ```
-□ Download dc1-daemon (latest version)
+□ Download dcp_daemon (latest version)
 □ Configure: DCP_RENTER_HOST, DCP_PROVIDER_PORT
-□ Start PM2: pm2 start dc1-daemon
+□ Start PM2: pm2 start dcp_daemon
 □ Register provider: POST /api/providers/register
 □ Receive provider_id and API key
 ```

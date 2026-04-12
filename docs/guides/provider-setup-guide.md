@@ -79,7 +79,7 @@ The tray app shows:
 
 ## Step 5: Confirm supported models and VRAM
 
-Daemon `v3.4.0` whitelist currently includes:
+Daemon `v4.0.0-alpha.2` whitelist currently includes:
 
 ### Arabic
 

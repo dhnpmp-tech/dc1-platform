@@ -139,7 +139,7 @@ class DC1ProviderClient:
     def heartbeat(self, gpu_spec: Optional[dict] = None) -> dict:
         """Send a heartbeat to DC1 to keep your provider status online.
 
-        The DC1 daemon (``dc1_daemon.py``) calls this automatically every 30s.
+        The DCP daemon (``dcp_daemon.py``) calls this automatically every 30s.
         Call it manually when running a custom integration or testing.
 
         Args:

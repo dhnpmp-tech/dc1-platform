@@ -6,8 +6,8 @@ CONFIG_DIR="${HOME}/.dcp"
 CONFIG_FILE="${CONFIG_DIR}/config"
 INSTALL_DIR="${HOME}/dcp-provider"
 LOG_DIR="${INSTALL_DIR}/logs"
-DAEMON_PATH="${INSTALL_DIR}/dc1_daemon.py"
-PID_FILE="${INSTALL_DIR}/dc1_daemon.pid"
+DAEMON_PATH="${INSTALL_DIR}/dcp_daemon.py"
+PID_FILE="${INSTALL_DIR}/dcp_daemon.pid"
 
 LAUNCHD_LABEL="com.dcp.provider"
 LAUNCHD_PLIST="${HOME}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
@@ -30,6 +30,9 @@ DCP_PROVIDER_EMAIL="${DCP_PROVIDER_EMAIL:-}"
 DCP_PROVIDER_NAME="${DCP_PROVIDER_NAME:-}"
 DCP_PROVIDER_PHONE="${DCP_PROVIDER_PHONE:-}"
 DCP_SYSTEMD_MODE="${DCP_SYSTEMD_MODE:-user}" # user (default) or system
+
+# Engine selection: "vllm" or "ollama" — set by select_engine()
+DCP_ENGINE="${DCP_ENGINE:-vllm}"
 
 # Positional args for non-interactive install:
 #   curl -sSL https://dcp.sa/install | bash -s -- email@example.com
@@ -103,6 +106,17 @@ write_config() {
     if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
       printf "VLLM_ENDPOINT_URL=%s\n" "${VLLM_ENDPOINT_URL}"
     fi
+    # Engine-specific env vars
+    if [ "${DCP_ENGINE}" = "ollama" ]; then
+      printf "DCP_ENGINE=ollama\n"
+      printf "OLLAMA_FLASH_ATTENTION=1\n"
+      printf "DCP_INFERENCE_PORT=11434\n"
+    else
+      printf "DCP_ENGINE=vllm\n"
+      printf "DCP_INFERENCE_PORT=8000\n"
+    fi
+    # Served model info — daemon reads these for heartbeats and pre-caching
+    printf "DCP_SERVED_MODEL=%s\n" "${DCP_MODEL:-}"
   } > "${CONFIG_DIR}/env"
   chmod 600 "${CONFIG_DIR}/env"
 }
@@ -119,9 +133,14 @@ detect_gpu() {
     else
       VRAM_GB=0
     fi
+    # Detect compute capability and driver version
+    GPU_COMPUTE_CAP="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '[:space:]')"
+    DRIVER_VERSION="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d '[:space:]')"
   else
     GPU_MODEL="CPU"
     VRAM_GB=0
+    GPU_COMPUTE_CAP=""
+    DRIVER_VERSION=""
   fi
 }
 
@@ -269,35 +288,139 @@ WGCONF
 }
 
 
+# ---------------------------------------------------------------------------
+# Engine selection: pick vLLM or Ollama based on GPU architecture
+# ---------------------------------------------------------------------------
+# NOTE: Ollama saturates at ~3 concurrent users (per-user TPS drops >50%).
+# For high-concurrency use cases, vLLM with continuous batching is required.
+# Blackwell vLLM support expected when cu130 wheels ship.
+# ---------------------------------------------------------------------------
+select_engine() {
+  local compute_cap="${GPU_COMPUTE_CAP:-}"
+  local gpu_arch="unknown"
+
+  if [ -z "${compute_cap}" ]; then
+    # No GPU detected — CPU-only mode
+    DCP_ENGINE="ollama"
+    info "No GPU detected — using Ollama (CPU mode)"
+    return
+  fi
+
+  case "${compute_cap}" in
+    12.*) gpu_arch="blackwell_consumer" ;;  # RTX 5090, 5080
+    10.*) gpu_arch="blackwell_dc" ;;        # B100, B200, GB200
+    9.*)  gpu_arch="hopper" ;;              # H100, H200
+    8.9)  gpu_arch="ada" ;;                 # RTX 4090, L40S, L4
+    8.6)  gpu_arch="ampere86" ;;            # RTX 3090, A40, A5000, A6000
+    8.0)  gpu_arch="ampere" ;;              # A100
+    *)    gpu_arch="unknown" ;;
+  esac
+  info "GPU compute: ${compute_cap} (${gpu_arch})"
+
+  case "${gpu_arch}" in
+    blackwell_consumer)
+      # RTX 5090/5080: vLLM broken (11.4 tok/s), Ollama gives 182 tok/s
+      DCP_ENGINE="ollama"
+      info "Blackwell consumer GPU — using Ollama (vLLM broken on sm_120)"
+      ;;
+    ampere|ampere86|ada|hopper)
+      # Ampere (8.0, 8.6), Ada (8.9), Hopper (9.0): vLLM + Marlin kernels
+      DCP_ENGINE="vllm"
+      info "Using vLLM + Marlin kernels (${gpu_arch})"
+      ;;
+    blackwell_dc)
+      # B100/B200: vLLM should work with proper wheels
+      DCP_ENGINE="vllm"
+      info "Blackwell datacenter GPU — using vLLM"
+      ;;
+    *)
+      # Unknown architecture — default to Ollama for safety
+      DCP_ENGINE="ollama"
+      info "Unknown GPU architecture (${compute_cap}) — using Ollama"
+      ;;
+  esac
+
+  if [ -n "${DRIVER_VERSION:-}" ]; then
+    info "Driver version: ${DRIVER_VERSION}"
+  fi
+
+  # Allow override via env var
+  if [ -n "${DCP_ENGINE_OVERRIDE:-}" ]; then
+    DCP_ENGINE="${DCP_ENGINE_OVERRIDE}"
+    info "Engine overridden to: ${DCP_ENGINE}"
+  fi
+}
 
 
+# ---------------------------------------------------------------------------
+# Model selection based on VRAM and engine
+# ---------------------------------------------------------------------------
+# Verified benchmark data from DCP-MODEL-GPU-MATRIX.md (2026-04-09)
+# Mixtral 8x7B does NOT fit on any GPU under 48GB — requires CPU offloading
+# and only gets 12 tok/s. Never select it for < 48GB.
+# ---------------------------------------------------------------------------
 select_model_for_vram() {
-  # Select the best model based on available VRAM
-  # Returns model ID suitable for vLLM
-  if [ "${VRAM_GB}" -ge 48 ]; then
-    DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
-    DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --dtype bfloat16 --max-num-batched-tokens 2096 --trust-remote-code"
-    DCP_NEEDS_VLLM_UPGRADE=true
-    info "Selected: Qwen 3.5 35B-A3B (48GB+ GPU)"
-  elif [ "${VRAM_GB}" -ge 28 ]; then
-    DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
-    DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --dtype bfloat16 --max-model-len 16384 --max-num-batched-tokens 2096 --trust-remote-code"
-    DCP_NEEDS_VLLM_UPGRADE=true
-    info "Selected: Qwen 3.5 35B-A3B (${VRAM_GB}GB GPU)"
-  elif [ "${VRAM_GB}" -ge 20 ]; then
-    DCP_MODEL="Qwen/Qwen3-30B-A3B-GPTQ-Int4"
-    DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --max-model-len 8192 --enable-prefix-caching --trust-remote-code"
-    info "Selected: Qwen3 30B-A3B MoE + Marlin (${VRAM_GB}GB GPU, ~138 tok/s)"
-  elif [ "${VRAM_GB}" -ge 12 ]; then
-    DCP_MODEL="Qwen/Qwen2.5-7B-Instruct-AWQ"
-    DCP_MODEL_EXTRA_ARGS="--quantization awq_marlin --max-model-len 8192"
-    info "Selected: Qwen 2.5 7B AWQ + Marlin kernel (12-16GB GPU, ~120 tok/s)"
-  elif [ "${VRAM_GB}" -ge 8 ]; then
-    DCP_MODEL="Qwen/Qwen2.5-3B-Instruct"
-    DCP_MODEL_EXTRA_ARGS="--max-model-len 8192"
-    info "Selected: Qwen 2.5 3B (8GB GPU)"
+  DCP_MODEL_EXTRA_ARGS=""
+  DCP_NEEDS_VLLM_UPGRADE=false
+
+  if [ "${DCP_ENGINE}" = "ollama" ]; then
+    # -----------------------------------------------------------------------
+    # Ollama model selection (Blackwell / CPU / unknown arch)
+    # Model names use ollama pull format (e.g., qwen3:30b-a3b)
+    # -----------------------------------------------------------------------
+    if [ "${VRAM_GB}" -ge 28 ]; then
+      DCP_MODEL="qwen3:30b-a3b"
+      info "Selected: Qwen3 30B-A3B MoE (${VRAM_GB}GB GPU, ~182 tok/s verified)"
+    elif [ "${VRAM_GB}" -ge 20 ]; then
+      DCP_MODEL="qwen3:30b-a3b"
+      info "Selected: Qwen3 30B-A3B MoE (${VRAM_GB}GB GPU, ~182 tok/s verified)"
+    elif [ "${VRAM_GB}" -ge 12 ]; then
+      DCP_MODEL="qwen2.5:14b"
+      info "Selected: Qwen2.5 14B (${VRAM_GB}GB GPU, ~144 tok/s verified)"
+    elif [ "${VRAM_GB}" -ge 8 ]; then
+      DCP_MODEL="qwen3:8b"
+      info "Selected: Qwen3 8B (${VRAM_GB}GB GPU, ~197 tok/s verified)"
+    elif [ "${VRAM_GB}" -ge 4 ]; then
+      DCP_MODEL="qwen2.5:7b"
+      info "Selected: Qwen2.5 7B (${VRAM_GB}GB GPU, ~270 tok/s verified)"
+    elif [ "${VRAM_GB}" -ge 1 ]; then
+      DCP_MODEL="qwen3:4b"
+      info "Selected: Qwen3 4B (${VRAM_GB}GB GPU, ~270 tok/s verified)"
+    else
+      # CPU-only: smallest model
+      DCP_MODEL="qwen3:4b"
+      info "Selected: Qwen3 4B (CPU mode)"
+    fi
   else
-    fail "GPU has less than 8GB VRAM. Minimum: 8GB."
+    # -----------------------------------------------------------------------
+    # vLLM model selection (Ampere / Ada / Hopper)
+    # HuggingFace model IDs with Marlin quantization flags
+    # -----------------------------------------------------------------------
+    if [ "${VRAM_GB}" -ge 48 ]; then
+      DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
+      DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --dtype bfloat16 --max-num-batched-tokens 2096 --trust-remote-code"
+      DCP_NEEDS_VLLM_UPGRADE=true
+      info "Selected: Qwen 3.5 35B-A3B (48GB+ GPU)"
+    elif [ "${VRAM_GB}" -ge 28 ]; then
+      DCP_MODEL="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
+      DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --dtype bfloat16 --max-model-len 16384 --max-num-batched-tokens 2096 --trust-remote-code"
+      DCP_NEEDS_VLLM_UPGRADE=true
+      info "Selected: Qwen 3.5 35B-A3B (${VRAM_GB}GB GPU)"
+    elif [ "${VRAM_GB}" -ge 20 ]; then
+      DCP_MODEL="Qwen/Qwen3-30B-A3B-GPTQ-Int4"
+      DCP_MODEL_EXTRA_ARGS="--quantization gptq_marlin --max-model-len 8192 --enable-prefix-caching --trust-remote-code"
+      info "Selected: Qwen3 30B-A3B MoE + Marlin (${VRAM_GB}GB GPU, ~197 tok/s verified)"
+    elif [ "${VRAM_GB}" -ge 12 ]; then
+      DCP_MODEL="Qwen/Qwen2.5-7B-Instruct-AWQ"
+      DCP_MODEL_EXTRA_ARGS="--quantization awq_marlin --max-model-len 8192"
+      info "Selected: Qwen 2.5 7B AWQ + Marlin (${VRAM_GB}GB GPU, ~138 tok/s verified)"
+    elif [ "${VRAM_GB}" -ge 8 ]; then
+      DCP_MODEL="Qwen/Qwen2.5-3B-Instruct"
+      DCP_MODEL_EXTRA_ARGS="--max-model-len 8192"
+      info "Selected: Qwen 2.5 3B (8GB GPU)"
+    else
+      fail "GPU has less than 8GB VRAM. Minimum: 8GB."
+    fi
   fi
 
   # Allow override via env var
@@ -308,13 +431,65 @@ select_model_for_vram() {
   fi
 }
 
+
+# ---------------------------------------------------------------------------
+# Ollama install + start functions
+# ---------------------------------------------------------------------------
+install_ollama() {
+  if command -v ollama >/dev/null 2>&1; then
+    info "Ollama already installed"
+    return
+  fi
+  # Need zstd for new Ollama installer (sudo if not root)
+  if command -v apt-get >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then
+      apt-get update -qq && apt-get install -y -qq zstd curl 2>&1 | tail -1
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo apt-get update -qq && sudo apt-get install -y -qq zstd curl 2>&1 | tail -1
+    else
+      warn "Cannot install zstd (not root and no sudo). Ollama install may fail."
+    fi
+  fi
+  info "Installing Ollama..."
+  curl -fsSL https://ollama.com/install.sh | sh 2>&1 | tail -3
+  success "Ollama installed"
+}
+
+start_ollama() {
+  # Check if already running
+  if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+    info "Ollama already running"
+  else
+    info "Starting Ollama..."
+    OLLAMA_FLASH_ATTENTION=1 nohup ollama serve > "${LOG_DIR}/ollama.log" 2>&1 &
+    echo $! > "${INSTALL_DIR}/ollama.pid"
+    sleep 5
+  fi
+
+  info "Pulling model ${DCP_MODEL}..."
+  ollama pull "${DCP_MODEL}" 2>&1 | tail -3
+
+  # Verify it works
+  local test_result
+  test_result=$(curl -s http://localhost:11434/api/chat \
+    -d "{\"model\":\"${DCP_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Say OK\"}],\"stream\":false,\"think\":false}" \
+    --max-time 120)
+
+  if echo "$test_result" | grep -q "eval_count"; then
+    success "Ollama serving ${DCP_MODEL}"
+  else
+    warn "Ollama model test failed. Check ${LOG_DIR}/ollama.log"
+  fi
+}
+
+
+# ---------------------------------------------------------------------------
+# vLLM install + start functions (Ampere / Ada / Hopper)
+# ---------------------------------------------------------------------------
 install_vllm() {
-  # Step 1: Detect GPU architecture
-  local compute_cap=""
+  # Step 1: Detect GPU architecture (for PyTorch CUDA version + vLLM build)
+  local compute_cap="${GPU_COMPUTE_CAP:-}"
   local gpu_arch="standard"
-  GPU_COMPUTE_CAP=""
-  compute_cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '[:space:]')"
-  GPU_COMPUTE_CAP="${compute_cap}"
   if [ -n "${compute_cap}" ]; then
     case "${compute_cap}" in
       12.*) gpu_arch="blackwell_consumer" ;;  # RTX 5090, 5080
@@ -355,21 +530,6 @@ install_vllm() {
   "${PYTHON_BIN}" -c "import vllm" 2>/dev/null && vllm_installed=true
 
   case "${gpu_arch}" in
-    blackwell_consumer)
-      # RTX 5090/5080: needs cu130 wheel
-      info "Blackwell consumer GPU — installing vLLM cu130 build..."
-      local vllm_ver="0.19.0"
-      local cpu_arch
-      cpu_arch="$(uname -m)"
-      "${PYTHON_BIN}" -m pip install -U "https://github.com/vllm-project/vllm/releases/download/v${vllm_ver}/vllm-${vllm_ver}+cu130-cp38-abi3-manylinux_2_35_${cpu_arch}.whl" \
-        --extra-index-url https://download.pytorch.org/whl/cu130 --progress-bar on 2>&1 || {
-          info "cu130 wheel failed, trying nightly..."
-          "${PYTHON_BIN}" -m pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly --progress-bar on 2>&1 || {
-            warn "Could not install vLLM for Blackwell consumer GPU."
-            return 1
-          }
-        }
-      ;;
     blackwell_dc)
       # B100/B200: needs cu128 or cu130 wheel
       info "Blackwell datacenter GPU — installing vLLM cu130 build..."
@@ -397,20 +557,7 @@ install_vllm() {
   esac
   success "vLLM ready"
 
-  # Step 4: Set GPU-specific environment flags
-  case "${gpu_arch}" in
-    blackwell_consumer)
-      # RTX 5090 needs FA2, not FA3/FA4
-      export VLLM_FLASH_ATTN_VERSION=2
-      export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-      info "Set Blackwell consumer flags (FA2, expandable segments)"
-      ;;
-    blackwell_dc)
-      info "Blackwell datacenter — FA4 default"
-      ;;
-  esac
-
-  # Step 5: Qwen 3.5 / Gemma 4 / GLM-5 need latest transformers
+  # Step 4: Qwen 3.5 / Gemma 4 / GLM-5 need latest transformers
   # Install AFTER vLLM with --no-deps to prevent downgrade
   local needs_dev_transformers=false
   if echo "${DCP_MODEL:-}" | grep -qiE "Qwen3\.5|gemma-4|glm-5"; then
@@ -518,9 +665,15 @@ detect_endpoint_url() {
     return
   fi
 
+  # Determine the correct port based on engine
+  local inference_port="8000"
+  if [ "${DCP_ENGINE}" = "ollama" ]; then
+    inference_port="11434"
+  fi
+
   # RunPod: construct from pod ID
   if [ -n "${RUNPOD_POD_ID:-}" ]; then
-    VLLM_ENDPOINT_URL="https://${RUNPOD_POD_ID}-8000.proxy.runpod.net"
+    VLLM_ENDPOINT_URL="https://${RUNPOD_POD_ID}-${inference_port}.proxy.runpod.net"
     info "RunPod endpoint: ${VLLM_ENDPOINT_URL}"
     return
   fi
@@ -532,7 +685,7 @@ detect_endpoint_url() {
     # Looks like a RunPod container ID, but we need the pod ID
     # Check if RUNPOD_POD_ID is in environment
     if [ -n "${RUNPOD_POD_ID:-}" ]; then
-      VLLM_ENDPOINT_URL="https://${RUNPOD_POD_ID}-8000.proxy.runpod.net"
+      VLLM_ENDPOINT_URL="https://${RUNPOD_POD_ID}-${inference_port}.proxy.runpod.net"
       info "RunPod endpoint: ${VLLM_ENDPOINT_URL}"
       return
     fi
@@ -542,13 +695,19 @@ detect_endpoint_url() {
   if [ "${IS_CLOUD:-false}" = "true" ]; then
     echo ""
     info "Could not auto-detect your public endpoint URL."
-    info "Your vLLM server needs to be reachable from the internet."
-    info "Examples:"
-    info "  RunPod:  https://<pod-id>-8000.proxy.runpod.net"
-    info "  Lambda:  http://<instance-ip>:8000"
+    info "Your inference server needs to be reachable from the internet."
+    if [ "${DCP_ENGINE}" = "ollama" ]; then
+      info "Examples:"
+      info "  RunPod:  https://<pod-id>-11434.proxy.runpod.net"
+      info "  Lambda:  http://<instance-ip>:11434"
+    else
+      info "Examples:"
+      info "  RunPod:  https://<pod-id>-8000.proxy.runpod.net"
+      info "  Lambda:  http://<instance-ip>:8000"
+    fi
     echo ""
     if [ -r /dev/tty ]; then
-      read -r -p "  Enter your vLLM endpoint URL (or press Enter to set later): " VLLM_ENDPOINT_URL </dev/tty
+      read -r -p "  Enter your inference endpoint URL (or press Enter to set later): " VLLM_ENDPOINT_URL </dev/tty
     fi
     if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
       success "Endpoint URL set: ${VLLM_ENDPOINT_URL}"
@@ -609,6 +768,16 @@ setup_linux_service() {
     return
   fi
 
+  # Build ExecStartPre for Ollama if needed (start Ollama serve before daemon)
+  local ollama_exec_pre=""
+  local ollama_env=""
+  if [ "${DCP_ENGINE}" = "ollama" ]; then
+    ollama_env="Environment=OLLAMA_FLASH_ATTENTION=1"
+    # Ollama is started separately; the daemon just needs it running
+    # ExecStartPre ensures Ollama is serving before the daemon starts
+    ollama_exec_pre="ExecStartPre=/bin/sh -c 'if ! curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then OLLAMA_FLASH_ATTENTION=1 nohup ollama serve > ${LOG_DIR}/ollama.log 2>&1 & sleep 5; fi'"
+  fi
+
   if [ "${DCP_SYSTEMD_MODE}" = "system" ]; then
     step "Installing systemd system service (requires sudo)"
     local tmp_unit
@@ -624,6 +793,8 @@ Type=simple
 User=${USER}
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${CONFIG_DIR}/env
+${ollama_env}
+${ollama_exec_pre}
 ExecStart=${PYTHON_BIN} ${DAEMON_PATH}
 Restart=always
 RestartSec=5
@@ -661,6 +832,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${CONFIG_DIR}/env
+${ollama_env}
+${ollama_exec_pre}
 ExecStart=${PYTHON_BIN} ${DAEMON_PATH}
 Restart=always
 RestartSec=5
@@ -808,6 +981,10 @@ fetch_provider_id_if_missing() {
   DCP_PROVIDER_ID="$(json_get_number "${me_response}" "id")"
 }
 
+# ===========================================================================
+# MAIN EXECUTION FLOW
+# ===========================================================================
+
 step "DCP Provider setup starting"
 info "API base: ${API_BASE}"
 info "Detected OS: ${DCP_OS}"
@@ -818,6 +995,12 @@ step "Detecting GPU"
 detect_gpu
 info "GPU model: ${GPU_MODEL}"
 info "VRAM (GB): ${VRAM_GB}"
+if [ -n "${GPU_COMPUTE_CAP:-}" ]; then
+  info "Compute capability: ${GPU_COMPUTE_CAP}"
+fi
+if [ -n "${DRIVER_VERSION:-}" ]; then
+  info "Driver version: ${DRIVER_VERSION}"
+fi
 
 step "Ensuring Python runtime"
 ensure_python
@@ -858,9 +1041,16 @@ if [ "${IS_CLOUD}" = "false" ]; then
 fi
 
 step "Setting up inference server"
+select_engine
 select_model_for_vram
-install_vllm
-start_vllm
+
+if [ "${DCP_ENGINE}" = "ollama" ]; then
+  install_ollama
+  start_ollama
+else
+  install_vllm
+  start_vllm
+fi
 
 if [ "${IS_CLOUD}" = "true" ]; then
   step "Configuring cloud endpoint"
@@ -869,6 +1059,9 @@ fi
 
 step "Downloading daemon"
 download_daemon
+
+# Re-write config now that we know the engine, model, and endpoint
+write_config
 
 if [ "${DCP_OS}" = "mac" ]; then
   setup_macos_launchagent
@@ -887,6 +1080,7 @@ printf '%s\n' "============================================"
 echo ""
 info "Provider ID:  ${DCP_PROVIDER_ID:-unknown}"
 info "GPU:          ${GPU_MODEL} (${VRAM_GB}GB)"
+info "Engine:       ${DCP_ENGINE}"
 info "Model:        ${DCP_MODEL:-unknown}"
 info "Status:       Heartbeating every 30s"
 if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
@@ -894,5 +1088,11 @@ if [ -n "${VLLM_ENDPOINT_URL:-}" ]; then
 fi
 info "Dashboard:    https://dcp.sa/provider"
 info "Daemon logs:  ${LOG_DIR}/daemon.log"
-info "vLLM logs:    ${LOG_DIR}/vllm.log"
+if [ "${DCP_ENGINE}" = "ollama" ]; then
+  info "Ollama logs:  ${LOG_DIR}/ollama.log"
+else
+  info "vLLM logs:    ${LOG_DIR}/vllm.log"
+fi
+echo ""
+info "IMPORTANT: Disable thinking tokens for cost control (think:false in API calls)"
 echo ""

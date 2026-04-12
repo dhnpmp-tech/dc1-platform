@@ -14,7 +14,7 @@ This guide provides complete P2P network configuration for operators deploying D
 
 ## Environment Variables
 
-### Provider Daemon Configuration (dc1_daemon.py)
+### Provider Daemon Configuration (dcp_daemon.py)
 
 ```bash
 # === P2P Network Settings ===
@@ -162,10 +162,10 @@ pm2 save
 export DCP_P2P_BOOTSTRAP='/ip4/76.13.179.86/tcp/4001/p2p/12D3KooWE55RVrViP9VZRDTnE6nav8ubuCcFmGV8Kxg3HHQWRzkh'
 
 # Start provider daemon
-python3 /backend/installers/dc1_daemon.py
+python3 /backend/installers/dcp_daemon.py
 
 # Check logs for bootstrap connection
-tail -f /var/log/dc1_daemon.log | grep -i "bootstrap\|dht\|p2p"
+tail -f /var/log/dcp_daemon.log | grep -i "bootstrap\|dht\|p2p"
 
 # Expected output:
 # [P2P] Bootstrapping into DHT...

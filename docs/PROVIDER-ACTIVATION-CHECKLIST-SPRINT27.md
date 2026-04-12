@@ -208,9 +208,9 @@ Week 2, Mon:
 # Provider Operator: Install DC1 daemon
 
 # Step 1: Download latest daemon version
-curl -L https://releases.dcp.sa/dc1-daemon-latest.tar.gz -o dc1-daemon.tar.gz
-tar -xzf dc1-daemon.tar.gz
-cd dc1-daemon
+curl -L https://releases.dcp.sa/dcp_daemon-latest.tar.gz -o dcp_daemon.tar.gz
+tar -xzf dcp_daemon.tar.gz
+cd dcp_daemon
 
 # Step 2: Install dependencies
 sudo apt-get update && sudo apt-get install -y python3-pip python3-venv
@@ -223,9 +223,9 @@ sudo useradd -m -s /bin/bash dc1daemon
 sudo chown -R dc1daemon:dc1daemon /opt/dcp-daemon
 
 # Step 4: Install as systemd service (optional, recommended)
-sudo cp systemd/dc1-daemon.service /etc/systemd/system/
+sudo cp systemd/dcp_daemon.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable dc1-daemon
+sudo systemctl enable dcp_daemon
 ```
 
 ### 3.2 Configuration
@@ -284,8 +284,8 @@ chmod 600 /opt/dcp-daemon/credentials.json
 # Provider Operator: Start daemon
 
 # Option A: Systemd (if installed)
-sudo systemctl start dc1-daemon
-sudo systemctl status dc1-daemon
+sudo systemctl start dcp_daemon
+sudo systemctl status dcp_daemon
 
 # Option B: Manual
 cd /opt/dcp-daemon
@@ -349,7 +349,7 @@ watch -n 5 'ssh <provider> "du -sh /opt/dcp/model-cache"'
   # Expected: < 3000 ms cold-start time
 
 □ Review daemon logs for errors
-  tail -100 /var/log/dc1-daemon.log
+  tail -100 /var/log/dcp_daemon.log
   # Should show: "Model cache ready", "Provider online"
 ```
 
@@ -573,7 +573,7 @@ Tier 3 (High Utilization):
 ```
 Level 1: Self-Service (Provider)
   → Check documentation (docs/PROVIDER-ACTIVATION-CHECKLIST-SPRINT27.md)
-  → Check daemon logs (tail -100 /var/log/dc1-daemon.log)
+  → Check daemon logs (tail -100 /var/log/dcp_daemon.log)
   → Run diagnostics (bash /opt/dcp-daemon/diagnostics.sh)
 
 Level 2: Community (Telegram)
@@ -658,13 +658,13 @@ ACTIVE Provider Checklist:
 sudo rm -rf /opt/dcp/model-cache/*
 
 # Step 2: Stop daemon
-sudo systemctl stop dc1-daemon
+sudo systemctl stop dcp_daemon
 
 # Step 3: Clear daemon state
 rm /opt/dcp-daemon/credentials.json
 
 # Step 4: Restart fresh
-sudo systemctl start dc1-daemon
+sudo systemctl start dcp_daemon
 
 # Step 5: Re-run activation from scratch (Part 3, step by step)
 ```

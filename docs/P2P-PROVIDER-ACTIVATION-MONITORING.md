@@ -93,7 +93,7 @@ curl -s https://api.dcp.sa/api/providers/available | jq '.providers | length'
 **Diagnosis:**
 1. Check if bootstrap is running: `pm2 list | grep bootstrap`
 2. Verify peer ID was injected: `grep -v "REPLACE_WITH" p2p/dc1-node.js`
-3. Check daemon logs on a provider: `tail -f /var/log/dc1_daemon.log | grep heartbeat`
+3. Check daemon logs on a provider: `tail -f /var/log/dcp_daemon.log | grep heartbeat`
 
 **Solution:**
 - If bootstrap not running: Restart with `pm2 start p2p/bootstrap.js --name dc1-p2p-bootstrap`

@@ -175,7 +175,7 @@ async function main () {
   log('Next steps (Phase D):')
   log('  • Run bootstrap.js on VPS (port 4001) for stable peer seeding')
   log('  • Set DC1_P2P_BOOTSTRAP env var on provider machines')
-  log('  • Call provider-announce.js from dc1_daemon.py after heartbeat')
+  log('  • Call provider-announce.js from dcp_daemon.py after heartbeat')
   log('  • Add WebSocket transport for browser-based renter discovery')
   log('  • Add GossipSub for real-time provider availability events')
   log('  • Build /dc1/rendezvous prefix-scan so renters find ALL providers')

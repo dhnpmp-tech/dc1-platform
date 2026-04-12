@@ -134,7 +134,7 @@ Runtime constraints (carry from current daemon hardening):
 
 ## Daemon/runtime changes
 
-1. `backend/installers/dc1_daemon.py` (and parity file `dc1-daemon.py`)
+1. `backend/installers/dcp_daemon.py` (and parity file `dcp_daemon.py`)
 - Extend `build_resource_spec()` compute environment tags:
   - `tp_capable:1|2|4|8`
   - `vllm_nemotron:true` for compatible hosts

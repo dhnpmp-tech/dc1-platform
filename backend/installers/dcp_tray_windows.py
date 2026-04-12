@@ -46,8 +46,8 @@ CONFIG_DIR = Path.home() / ".dcp"
 CONFIG_FILE = CONFIG_DIR / "config"
 INSTALL_DIR = Path.home() / "dcp-provider"
 LOG_FILE = INSTALL_DIR / "logs" / "daemon.log"
-DAEMON_PATH = INSTALL_DIR / "dc1_daemon.py"
-PID_FILE = INSTALL_DIR / "dc1_daemon.pid"
+DAEMON_PATH = INSTALL_DIR / "dcp_daemon.py"
+PID_FILE = INSTALL_DIR / "dcp_daemon.pid"
 
 DASHBOARD_URL = "https://dcp.sa/provider"
 POLL_INTERVAL = 30
@@ -87,7 +87,7 @@ def is_daemon_running():
             ["tasklist", "/FI", f"IMAGENAME eq python*", "/FO", "CSV"],
             capture_output=True, text=True, timeout=5,
         )
-        if "dc1_daemon" in result.stdout.lower():
+        if "dcp_daemon" in result.stdout.lower() or "dc1_daemon" in result.stdout.lower():
             return True
     except Exception:
         pass

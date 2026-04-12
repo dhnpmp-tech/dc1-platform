@@ -42,7 +42,7 @@ If you have an NVIDIA card with 8GB+ VRAM, you can earn SAR from AI compute jobs
 Use your dashboard and request history to estimate expected earnings for your exact utilization pattern.
 
 **Tech stack:**
-- Python daemon (`dc1_daemon.py`) runs in the background
+- Python daemon (`dcp_daemon.py`) runs in the background
 - Jobs execute inside Docker + NVIDIA Container Toolkit (fully isolated)
 - Heartbeat every 30s, auto-reconnect if you lose internet
 - No root access required for renters — pure GPU compute isolation

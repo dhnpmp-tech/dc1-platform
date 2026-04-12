@@ -26,10 +26,10 @@ docker --version`
 
 const DOWNLOAD_LINUX = `# Linux / macOS — downloads daemon with your key pre-injected
 curl "https://dcp.sa/api/dc1/providers/download/daemon?key=YOUR_PROVIDER_KEY" \\
-  -o dc1_daemon.py
+  -o dcp_daemon.py
 
 # Make executable (Linux)
-chmod +x dc1_daemon.py`
+chmod +x dcp_daemon.py`
 
 const DOWNLOAD_WINDOWS = `# Windows (PowerShell — run as Administrator)
 Invoke-WebRequest \`
@@ -38,12 +38,12 @@ Invoke-WebRequest \`
 .\\setup.ps1`
 
 const RUN_LINUX = `# Linux / macOS
-python3 dc1_daemon.py`
+python3 dcp_daemon.py`
 
 const RUN_WINDOWS = `# Windows
-python dc1_daemon.py`
+python dcp_daemon.py`
 
-const DAEMON_OUTPUT = `[DCP] dc1_daemon v3.3.0 starting
+const DAEMON_OUTPUT = `[DCP] dcp_daemon v4.0.0-alpha.2 starting
 [DCP] GPU detected: NVIDIA RTX 4090 (24 GB VRAM)
 [DCP] Provider ID: 42 | Status: online
 [DCP] Heartbeat sent — next in 30s
@@ -190,7 +190,7 @@ export default function ProviderGuidePage() {
       id: 'status-waiting-install-daemon',
       status: t('register.provider.state.waiting.label'),
       action: t('register.provider.status_matrix.waiting.action'),
-      command: 'python3 dc1_daemon.py',
+      command: 'python3 dcp_daemon.py',
     },
     {
       id: 'status-heartbeat-verify-telemetry',

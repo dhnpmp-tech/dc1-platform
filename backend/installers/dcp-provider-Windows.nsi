@@ -1,10 +1,10 @@
 ; =============================================================================
 ; DCP Provider Daemon — Windows NSIS Installer v2.3
 ; =============================================================================
-; Installs to %LOCALAPPDATA%\dc1-provider (NO admin required)
+; Installs to %LOCALAPPDATA%\dcp-provider (NO admin required)
 ; GUI pages: Welcome → GPU Check → API Key → Run Mode → Schedule → Install → Finish
-; Bundles: dc1_daemon.py (v3.3.0), dc1-setup-helper.ps1, dc1-uninstall-helper.ps1
-; Build:   makensis dc1-provider-Windows.nsi
+; Bundles: dcp_daemon.py (v4.0.0-alpha.2), dcp-setup-helper.ps1, dcp-uninstall-helper.ps1
+; Build:   makensis dcp-provider-Windows.nsi
 ; =============================================================================
 
 !include "MUI2.nsh"
@@ -18,15 +18,15 @@
 ; --------------- Product Info ---------------
 !define PRODUCT_NAME "DCP Provider Daemon"
 !define PRODUCT_PUBLISHER "DCP"
-!define PRODUCT_VERSION "3.3.0"
+!define PRODUCT_VERSION "4.0.0"
 !define PRODUCT_WEB_SITE "https://dcp.sa"
 !define DCP_API_BASE "https://api.dcp.sa"
 !define DASHBOARD_URL "https://dcp.sa/provider"
 
 ; --------------- General Settings ---------------
 Name "${PRODUCT_NAME} v${PRODUCT_VERSION}"
-OutFile "dc1-provider-setup-Windows.exe"
-InstallDir "$LOCALAPPDATA\dc1-provider"
+OutFile "dcp-provider-setup-Windows.exe"
+InstallDir "$LOCALAPPDATA\dcp-provider"
 RequestExecutionLevel user
 Unicode True
 
@@ -90,7 +90,7 @@ Page custom SchedulePageCreate SchedulePageLeave
 
 ; 7. Finish
 !define MUI_FINISHPAGE_TITLE "You're All Set!"
-!define MUI_FINISHPAGE_TEXT "DCP Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\nDaemon: v3.3.0 (auto-updating)$\r$\n$\r$\nYour GPU is now earning DCP credits.$\r$\nThe daemon will auto-recover from crashes and update itself.$\r$\nClick 'Open My Dashboard' to track your earnings."
+!define MUI_FINISHPAGE_TEXT "DCP Provider Daemon v${PRODUCT_VERSION} is installed.$\r$\n$\r$\nGPU: $GPU_NAME ($GPU_VRAM MB VRAM)$\r$\nMode: $RUN_MODE$\r$\nDaemon: v4.0.0-alpha.2 (auto-updating)$\r$\n$\r$\nYour GPU is now earning DCP credits.$\r$\nThe daemon will auto-recover from crashes and update itself.$\r$\nClick 'Open My Dashboard' to track your earnings."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open My Dashboard"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenDashboard
@@ -341,9 +341,9 @@ Section "Install"
     SetOutPath "$INSTDIR"
 
     ; Bundle files
-    File "dc1_daemon.py"
-    File "dc1-setup-helper.ps1"
-    File "dc1-uninstall-helper.ps1"
+    File "dcp_daemon.py"
+    File "dcp-setup-helper.ps1"
+    File "dcp-uninstall-helper.ps1"
 
     ; Show progress
     DetailPrint "====================================="
@@ -357,7 +357,7 @@ Section "Install"
     DetailPrint ""
 
     ; Run the setup helper with user selections
-    nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\dc1-setup-helper.ps1" -ApiKey "$API_KEY" -RunMode "$RUN_MODE" -ScheduledStart "$SCHED_START" -ScheduledEnd "$SCHED_END" -InstallDir "$INSTDIR" -GpuName "$GPU_NAME" -GpuVram "$GPU_VRAM"'
+    nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\dcp-setup-helper.ps1" -ApiKey "$API_KEY" -RunMode "$RUN_MODE" -ScheduledStart "$SCHED_START" -ScheduledEnd "$SCHED_END" -InstallDir "$INSTDIR" -GpuName "$GPU_NAME" -GpuVram "$GPU_VRAM"'
     Pop $0
     DetailPrint ""
     DetailPrint "Setup helper exit code: $0"
@@ -376,21 +376,21 @@ Section "Install"
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
     ; Registry (HKCU — no admin needed)
-    WriteRegStr HKCU "Software\DC1Provider" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKCU "Software\DC1Provider" "ApiKey" "$API_KEY"
-    WriteRegStr HKCU "Software\DC1Provider" "RunMode" "$RUN_MODE"
-    WriteRegStr HKCU "Software\DC1Provider" "Version" "${PRODUCT_VERSION}"
-    WriteRegStr HKCU "Software\DC1Provider" "GpuName" "$GPU_NAME"
+    WriteRegStr HKCU "Software\DCPProvider" "InstallLocation" "$INSTDIR"
+    WriteRegStr HKCU "Software\DCPProvider" "ApiKey" "$API_KEY"
+    WriteRegStr HKCU "Software\DCPProvider" "RunMode" "$RUN_MODE"
+    WriteRegStr HKCU "Software\DCPProvider" "Version" "${PRODUCT_VERSION}"
+    WriteRegStr HKCU "Software\DCPProvider" "GpuName" "$GPU_NAME"
 
     ; Add/Remove Programs entry (HKCU)
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "DisplayName" "${PRODUCT_NAME}"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "UninstallString" "$INSTDIR\uninstall.exe"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "Publisher" "${PRODUCT_PUBLISHER}"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "DisplayVersion" "${PRODUCT_VERSION}"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "URLInfoAbout" "${PRODUCT_WEB_SITE}"
-    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "NoModify" 1
-    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider" "NoRepair" 1
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "DisplayName" "${PRODUCT_NAME}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "UninstallString" "$INSTDIR\uninstall.exe"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "Publisher" "${PRODUCT_PUBLISHER}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "InstallLocation" "$INSTDIR"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "DisplayVersion" "${PRODUCT_VERSION}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "URLInfoAbout" "${PRODUCT_WEB_SITE}"
+    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "NoModify" 1
+    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider" "NoRepair" 1
 
     DetailPrint ""
     DetailPrint "====================================="
@@ -401,8 +401,8 @@ SectionEnd
 ; ===================== UNINSTALL SECTION =====================
 Section "Uninstall"
     ; Kill any running daemon processes first
-    nsExec::ExecToLog 'taskkill /F /IM python.exe /FI "WINDOWTITLE eq dc1*" 2>nul'
-    nsExec::ExecToLog 'powershell -Command "Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.MainModule.FileName -match ''dc1'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+    nsExec::ExecToLog 'taskkill /F /IM python.exe /FI "WINDOWTITLE eq dcp*" 2>nul'
+    nsExec::ExecToLog 'powershell -Command "Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.MainModule.FileName -match ''dcp_daemon'' -or $_.MainModule.FileName -match ''dc1'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
 
     ; Stop and remove scheduled task
     nsExec::ExecToLog 'schtasks /End /TN "DCPProviderDaemon"'
@@ -411,8 +411,8 @@ Section "Uninstall"
     nsExec::ExecToLog 'schtasks /Delete /TN "DC1ProviderDaemon" /F'
 
     ; Run uninstall helper if present
-    IfFileExists "$INSTDIR\dc1-uninstall-helper.ps1" 0 +2
-        nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\dc1-uninstall-helper.ps1"'
+    IfFileExists "$INSTDIR\dcp-uninstall-helper.ps1" 0 +2
+        nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\dcp-uninstall-helper.ps1"'
 
     ; Remove desktop shortcut
     Delete "$DESKTOP\DCP - My Earnings.bat"
@@ -422,8 +422,8 @@ Section "Uninstall"
     RMDir /r "$INSTDIR"
 
     ; Remove registry keys
-    DeleteRegKey HKCU "Software\DC1Provider"
-    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DC1Provider"
+    DeleteRegKey HKCU "Software\DCPProvider"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCPProvider"
 
     ; Confirmation
     MessageBox MB_OK "DCP Provider Daemon has been uninstalled.$\n$\nThank you for being a DCP provider!"

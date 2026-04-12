@@ -4,8 +4,8 @@ This document defines the runtime hardening enforced for provider-side Docker jo
 
 ## Scope
 
-- `backend/installers/dc1_daemon.py`
-- `backend/installers/dc1-daemon.py` (fallback copy)
+- `backend/installers/dcp_daemon.py`
+- `backend/installers/dcp_daemon.py` (fallback copy)
 - `backend/src/services/docker-manager.ts` (Mission Control wrapper path)
 
 ## Enforced Controls

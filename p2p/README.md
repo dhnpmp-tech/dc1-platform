@@ -79,7 +79,7 @@ DCP provider data stays within the DCP network.
 | `dc1-node.js` | Core libp2p node factory + DHT helper functions |
 | `dcp-discovery-scaffold.js` | Modern discovery API with CID-based compute environments |
 | `bootstrap.js` | Stable routing-only node to run on VPS (PM2) |
-| `provider-announce.js` | CLI tool called by `dc1_daemon.py` to write spec to DHT |
+| `provider-announce.js` | CLI tool called by `dcp_daemon.py` to write spec to DHT |
 | `heartbeat-protocol.js` | Node liveness tracking via periodic heartbeat announcements |
 | `demo.js` | Self-contained two-node demo — no VPS needed |
 | `test-heartbeat.js` | Heartbeat protocol unit tests |
@@ -228,7 +228,7 @@ export DCP_P2P_BOOTSTRAP=/ip4/76.13.179.86/tcp/4001/p2p/12D3KooW...
 
 Also update `DEFAULT_BOOTSTRAP_ADDR` in `dc1-node.js`.
 
-## Integrating with dc1_daemon.py
+## Integrating with dcp_daemon.py
 
 After the provider daemon's 30-second heartbeat, call `provider-announce.js`
 as a fire-and-forget subprocess:
@@ -407,7 +407,7 @@ changing production listing behavior.
 
 ### Phase D — DHT in production
 - [ ] Run `bootstrap.js` on VPS under PM2
-- [ ] Integrate `provider-announce.js` call into `dc1_daemon.py`
+- [ ] Integrate `provider-announce.js` call into `dcp_daemon.py`
 - [ ] Add WebSocket transport for browser renters
 - [ ] Add GossipSub for real-time provider availability broadcasts
 - [ ] Add Circuit Relay for providers behind NAT
