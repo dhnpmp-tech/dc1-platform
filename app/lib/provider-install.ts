@@ -1,5 +1,5 @@
-const API_BASE = '/api/dc1'
-const PUBLIC_API_FALLBACK = `https://dcp.sa${API_BASE}`
+const API_BASE = '/api/dcp'
+const PUBLIC_API_FALLBACK = `https://api.dcp.sa/api`
 
 export type InstallTarget = 'linux' | 'windows' | 'macos'
 export type ProviderNextActionState = 'waiting' | 'heartbeat' | 'ready' | 'paused' | 'stale'

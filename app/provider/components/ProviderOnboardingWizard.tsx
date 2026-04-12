@@ -871,7 +871,7 @@ function Step5GoLive({
   const [error, setError] = useState('')
   const referralUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/earn?ref=${providerId}`
-    : `https://api.dcp.sa/earn?ref=${providerId}`
+    : `https://dcp.sa/earn?ref=${providerId}`
 
   const activate = useCallback(async () => {
     setActivating(true)

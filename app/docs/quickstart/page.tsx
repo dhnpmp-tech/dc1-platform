@@ -358,7 +358,7 @@ const copy = {
 }
 
 // ── Code snippets ─────────────────────────────────────────────────────────────
-const TOPUP_CODE = `curl -X POST https://dcp.sa/api/dc1/renters/topup \\
+const TOPUP_CODE = `curl -X POST https://api.dcp.sa/api/renters/topup \\
   -H "x-renter-key: YOUR_RENTER_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"amount_sar": 10}'`
@@ -369,7 +369,7 @@ const TOPUP_RESPONSE = `{
   "new_balance_halala": 1000
 }`
 
-const BROWSE_CODE = `curl https://dcp.sa/api/dc1/marketplace`
+const BROWSE_CODE = `curl https://api.dcp.sa/api/marketplace`
 
 const BROWSE_RESPONSE = `{
   "providers": [
@@ -386,7 +386,7 @@ const BROWSE_RESPONSE = `{
   "total": 1
 }`
 
-const SUBMIT_CODE = `curl -X POST https://dcp.sa/api/dc1/jobs/submit \\
+const SUBMIT_CODE = `curl -X POST https://api.dcp.sa/api/jobs/submit \\
   -H "x-renter-key: YOUR_RENTER_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -410,10 +410,10 @@ const SUBMIT_RESPONSE = `{
 }`
 
 const POLL_CODE = `# Poll status
-curl https://dcp.sa/api/dc1/jobs/job-abc123
+curl https://api.dcp.sa/api/jobs/job-abc123
 
 # Fetch output (returns 202 while running, 200 when completed)
-curl https://dcp.sa/api/dc1/jobs/job-abc123/output`
+curl https://api.dcp.sa/api/jobs/job-abc123/output`
 
 const POLL_RESPONSE = `{
   "type": "text",
@@ -454,7 +454,7 @@ import time
 import requests
 
 API_KEY = os.getenv('DCP_RENTER_KEY')
-BASE_URL = 'https://dcp.sa/api/dc1'
+BASE_URL = 'https://api.dcp.sa/api'
 
 submit_payload = {
   'provider_id': 42,
@@ -493,7 +493,7 @@ print(me_resp.get('email'), me_resp.get('balance_halala'))`,
   },
   cli: {
     installCode: `export DCP_RENTER_KEY="dcp-renter-xxxx"
-export API_BASE="https://dcp.sa/api/dc1"`,
+export API_BASE="https://api.dcp.sa/api"`,
   runCode: `curl -X POST "$API_BASE/jobs/submit" \\
   -H "Content-Type: application/json" \\
   -H "x-renter-key: $DCP_RENTER_KEY" \\
