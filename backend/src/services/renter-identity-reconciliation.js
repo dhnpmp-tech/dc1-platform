@@ -23,7 +23,7 @@ function parseIso(value, fallback) {
 }
 
 function generateApiKey() {
-  return `dc1-renter-${crypto.randomBytes(16).toString('hex')}`;
+  return `dcp-renter-${crypto.randomBytes(16).toString('hex')}`;
 }
 
 function ensureUniqueApiKey(db, preferredApiKey, existingRenterId = null) {

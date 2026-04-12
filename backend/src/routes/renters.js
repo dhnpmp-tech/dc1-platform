@@ -376,7 +376,7 @@ router.post('/register', validateBody(renterRegisterSchema), (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: name, email' });
     }
 
-    const api_key = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
+    const api_key = 'dcp-renter-' + crypto.randomBytes(16).toString('hex');
     const now = new Date().toISOString();
 
     const result = runStatement(
@@ -1105,7 +1105,7 @@ router.post(['/me/rotate-key', '/rotate-key'], (req, res) => {
       return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per 24 hours' });
     }
 
-    const newKey = `dc1-renter-${crypto.randomUUID()}`;
+    const newKey = `dcp-renter-${crypto.randomUUID()}`;
     const nowIso = new Date().toISOString();
     runStatement(
       'UPDATE renters SET api_key = ?, rotated_at = ?, updated_at = ? WHERE id = ?',

@@ -91,7 +91,7 @@ Benchmark performance (verified April 2026):
      -d '{"model":"Qwen/Qwen2.5-14B-Instruct-AWQ","messages":[{"role":"user","content":"Hello"}]}'
 4. Monitor live: https://api.dcp.sa/dashboard (enter your API key)
 
-SDKs: Python (pip install dc1-sdk), JavaScript (npm install dc1-renter-sdk).
+SDKs: Python (pip install dcp-sdk), JavaScript (npm install dcp-renter-sdk).
 Webhooks: Register at POST /api/renters/webhooks for job.completed, job.failed events.
 
 ## PROVIDER QUICKSTART

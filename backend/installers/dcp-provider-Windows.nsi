@@ -216,7 +216,7 @@ Function ApiKeyPageCreate
     Pop $0
     SetCtlColors $0 0x666666 transparent
 
-    ${NSD_CreateLabel} 0 72u 100% 16u "Format: dc1-provider-XXXXXXXXXX..."
+    ${NSD_CreateLabel} 0 72u 100% 16u "Format: dcp-provider-XXXXXXXXXX..."
     Pop $0
     SetCtlColors $0 0x999999 transparent
 
@@ -232,8 +232,8 @@ Function ApiKeyPageLeave
 
     ; Basic format validation
     StrCpy $0 $API_KEY 13
-    ${If} $0 != "dc1-provider-"
-        MessageBox MB_YESNO|MB_ICONQUESTION "The API key doesn't start with 'dc1-provider-'. This may not be a valid provider key.$\r$\n$\r$\nContinue anyway?" IDYES +2
+    ${If} $0 != "dcp-provider-"
+        MessageBox MB_YESNO|MB_ICONQUESTION "The API key doesn't start with 'dcp-provider-'. This may not be a valid provider key.$\r$\n$\r$\nContinue anyway?" IDYES +2
         Abort
     ${EndIf}
 FunctionEnd
