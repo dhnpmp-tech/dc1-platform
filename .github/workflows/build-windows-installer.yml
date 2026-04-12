@@ -19,11 +19,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install NSIS
-        run: choco install nsis -y
+        run: |
+          choco install nsis -y
+          echo "C:\Program Files (x86)\NSIS" | Out-File -Append -FilePath $env:GITHUB_PATH
 
       - name: Build installer
         working-directory: backend/installers
-        run: makensis dcp-provider-Windows.nsi
+        run: |
+          & "C:\Program Files (x86)\NSIS\makensis.exe" dcp-provider-Windows.nsi
 
       - name: Verify output
         working-directory: backend/installers

@@ -116,7 +116,7 @@ const { COST_RATES } = require('./jobs');
 // - minimum: hard floor for compatibility checks
 const LATEST_DAEMON_VERSION = (process.env.DAEMON_VERSION || '4.0.0-alpha.2').trim();
 const MIN_DAEMON_VERSION = (process.env.MIN_DAEMON_VERSION || LATEST_DAEMON_VERSION).trim();
-const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dc1-provider-setup-Windows.exe');
+const WINDOWS_INSTALLER_PATH = path.join(__dirname, '../../installers/dcp-provider-setup-Windows.exe');
 const LINUX_INSTALL_SCRIPT_PATH = path.join(__dirname, '../../public/install.sh');
 const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm-configs/compatibility-matrix.json');
 // Auth rate limiting: use the centralized authLimiter (5/IP/15min — brute force protection, DCP-855).
@@ -500,7 +500,7 @@ router.post('/register', registerLimiter, validateBody(providerRegisterSchema), 
         }
 
         // Generate unique API key
-        const api_key = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
+        const api_key = 'dcp-provider-' + crypto.randomBytes(16).toString('hex');
 
         // Generate unique provider ID
         const provider_id = 'prov-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
@@ -657,9 +657,9 @@ router.get('/installer', (req, res) => {
         
         // Determine installer path
         const installerMap = {
-            'Windows': 'dc1-provider-setup-Windows.exe',
-            'Mac': 'dc1-provider-setup-Mac.pkg',
-            'Linux': 'dc1-provider-setup-Linux.deb'
+            'Windows': 'dcp-provider-setup-Windows.exe',
+            'Mac': 'dcp-provider-setup-Mac.pkg',
+            'Linux': 'dcp-provider-setup-Linux.deb'
         };
         
         const installerFile = installerMap[cleanOs];
@@ -2147,13 +2147,13 @@ router.get('/download', async (req, res) => {
 // ============================================================================
 function sendWindowsInstaller(res) {
     if (fs.existsSync(WINDOWS_INSTALLER_PATH)) {
-        res.setHeader('Content-Disposition', 'attachment; filename="dc1-provider-setup.exe"');
+        res.setHeader('Content-Disposition', 'attachment; filename="dcp-provider-setup.exe"');
         res.setHeader('Content-Type', 'application/octet-stream');
         return res.sendFile(WINDOWS_INSTALLER_PATH);
     }
     return res.status(404).json({
         error: 'Installer not yet built',
-        message: 'makensis is required to build backend/installers/dc1-provider-Windows.nsi',
+        message: 'makensis is required to build backend/installers/dcp-provider-Windows.nsi',
         build_docs: '/docs/build-installer.md',
         powershell_alternative: '/api/providers/setup-windows?key=YOUR_KEY'
     });
@@ -4624,7 +4624,7 @@ router.post(['/me/rotate-key', '/rotate-key'], (req, res) => {
             return res.status(429).json({ error: 'Rate limit exceeded: max 3 key rotations per 24 hours' });
         }
 
-        const newKey = `dc1-provider-${crypto.randomUUID()}`;
+        const newKey = `dcp-provider-${crypto.randomUUID()}`;
         const nowIso = new Date().toISOString();
         runStatement(
             'UPDATE providers SET api_key = ?, rotated_at = ?, updated_at = ? WHERE id = ?',
@@ -7390,7 +7390,7 @@ router.get('/me/power-config', (req, res) => {
     res.json({
         config,
         presets: REGIONAL_POWER_PRESETS,
-        instructions: 'Save this as ~/dc1-provider/power_config.json on your provider machine. The daemon will read it on next heartbeat cycle.',
+        instructions: 'Save this as ~/dcp-provider/power_config.json on your provider machine. The daemon will read it on next heartbeat cycle.',
     });
 });
 
@@ -7453,7 +7453,7 @@ router.post('/admin/broadcast-power-config', (req, res) => {
     res.json({
         total_providers: configs.length,
         configs,
-        note: 'Power configs are recommendations. Providers save locally as ~/dc1-provider/power_config.json.',
+        note: 'Power configs are recommendations. Providers save locally as ~/dcp-provider/power_config.json.',
     });
 });
 

@@ -214,7 +214,7 @@ export default function ProviderDownloadPage() {
                 setProviderKey(event.target.value)
                 if (copyError) setCopyError('')
               }}
-              placeholder="dc1-provider-..."
+              placeholder="dcp-provider-..."
               className="w-full rounded-lg px-3 py-2 text-sm"
               style={{ background: '#07070E', color: '#F0F0F0', border: '1px solid rgba(255,255,255,0.12)' }}
             />

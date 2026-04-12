@@ -3443,7 +3443,7 @@ router.post('/providers/:id/rotate-key', (req, res) => {
     const provider = db.get('SELECT id, name FROM providers WHERE id = ?', req.params.id);
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-    const newKey = 'dc1-provider-' + crypto.randomBytes(16).toString('hex');
+    const newKey = 'dcp-provider-' + crypto.randomBytes(16).toString('hex');
     const now = new Date().toISOString();
     db.prepare('UPDATE providers SET api_key = ?, updated_at = ? WHERE id = ?').run(newKey, now, provider.id);
     try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('key_rotated', 'provider', provider.id, `Force-rotated API key for "${provider.name}"`, now); } catch(e) {}
@@ -3463,7 +3463,7 @@ router.post('/renters/:id/rotate-key', (req, res) => {
     const renter = db.get('SELECT id, name FROM renters WHERE id = ?', req.params.id);
     if (!renter) return res.status(404).json({ error: 'Renter not found' });
 
-    const newKey = 'dc1-renter-' + crypto.randomBytes(16).toString('hex');
+    const newKey = 'dcp-renter-' + crypto.randomBytes(16).toString('hex');
     const now = new Date().toISOString();
     db.prepare('UPDATE renters SET api_key = ?, updated_at = ? WHERE id = ?').run(newKey, now, renter.id);
     try { db.prepare('INSERT INTO admin_audit_log (action, target_type, target_id, details, timestamp) VALUES (?,?,?,?,?)').run('key_rotated', 'renter', renter.id, `Force-rotated API key for "${renter.name}"`, now); } catch(e) {}
