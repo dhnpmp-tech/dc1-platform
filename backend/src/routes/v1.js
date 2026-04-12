@@ -777,7 +777,7 @@ function collectProviderOptionalPassthroughFields(requestBody = {}) {
 // (:11434), map known HuggingFace IDs to their Ollama equivalents.
 const OLLAMA_MODEL_ALIASES = {
   'qwen/qwen3-30b-a3b-gptq-int4': 'qwen3:30b-a3b',
-  'qwen/qwen3.5-35b-a3b-gptq-int4': 'qwen3:30b-a3b',
+  'qwen/qwen3.5-35b-a3b-gptq-int4': 'qwen3.5:35b-a3b',
   'qwen/qwen2.5-7b-instruct-awq': 'qwen2.5:7b',
   'qwen/qwen2.5-14b-instruct-awq': 'qwen2.5:14b',
   'qwen/qwen2.5-3b-instruct': 'qwen2.5:3b',

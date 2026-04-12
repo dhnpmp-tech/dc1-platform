@@ -440,9 +440,15 @@ install_ollama() {
     info "Ollama already installed"
     return
   fi
-  # Need zstd for new Ollama installer
+  # Need zstd for new Ollama installer (sudo if not root)
   if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -qq && apt-get install -y -qq zstd curl 2>&1 | tail -1
+    if [ "$(id -u)" = "0" ]; then
+      apt-get update -qq && apt-get install -y -qq zstd curl 2>&1 | tail -1
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo apt-get update -qq && sudo apt-get install -y -qq zstd curl 2>&1 | tail -1
+    else
+      warn "Cannot install zstd (not root and no sudo). Ollama install may fail."
+    fi
   fi
   info "Installing Ollama..."
   curl -fsSL https://ollama.com/install.sh | sh 2>&1 | tail -3
