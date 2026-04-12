@@ -722,7 +722,7 @@ export default function HomePage() {
                 step: '2',
                 title: t('landing.setup_step2_title'),
                 desc: t('landing.setup_step2_desc'),
-                code: '# Linux / macOS\ncurl -sSL "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_PROVIDER_KEY&os=linux" | bash',
+                code: '# Linux / macOS\ncurl -sSL https://api.dcp.sa/install | bash -s -- YOUR_PROVIDER_KEY',
               },
               {
                 step: '3',
@@ -754,10 +754,7 @@ export default function HomePage() {
           <div className="card border-dc1-amber/20">
             <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Windows (PowerShell)</p>
             <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`# Run as Administrator
-Invoke-WebRequest \`
-  -Uri "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_PROVIDER_KEY&os=windows" \`
-  -OutFile setup.ps1
-.\\setup.ps1`}</pre>
+irm https://api.dcp.sa/install.ps1 | iex`}</pre>
             <div className="mt-4 pt-4 border-t border-dc1-border">
               <p className="text-xs text-dc1-text-muted mb-2">After install, your terminal shows:</p>
               <pre className="text-xs text-green-400 font-mono leading-relaxed whitespace-pre-wrap break-words max-w-full">{`✓ GPU detected: RTX 4090 (24 GB)
@@ -958,7 +955,7 @@ provider.start()  # initialize, heartbeat, and run assigned container workloads`
           </div>
           <div className="card border-dc1-amber/20">
             <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Submit a job</p>
-            <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://dcp.sa/api/dc1/jobs/submit \\
+            <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`curl -X POST https://api.dcp.sa/api/jobs/submit \\
   -H "Content-Type: application/json" \\
   -H "x-renter-key: dcp-renter-..." \\
   -d '{

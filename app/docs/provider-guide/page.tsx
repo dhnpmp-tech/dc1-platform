@@ -24,18 +24,11 @@ python --version
 # Verify Docker Desktop
 docker --version`
 
-const DOWNLOAD_LINUX = `# Linux / macOS — downloads daemon with your key pre-injected
-curl "https://dcp.sa/api/dc1/providers/download/daemon?key=YOUR_PROVIDER_KEY" \\
-  -o dcp_daemon.py
-
-# Make executable (Linux)
-chmod +x dcp_daemon.py`
+const DOWNLOAD_LINUX = `# Linux / macOS — one-line install with your key
+curl -sSL https://api.dcp.sa/install | bash -s -- YOUR_PROVIDER_KEY`
 
 const DOWNLOAD_WINDOWS = `# Windows (PowerShell — run as Administrator)
-Invoke-WebRequest \`
-  -Uri "https://dcp.sa/api/dc1/providers/download/setup?key=YOUR_PROVIDER_KEY&os=windows" \`
-  -OutFile setup.ps1
-.\\setup.ps1`
+irm https://api.dcp.sa/install.ps1 | iex`
 
 const RUN_LINUX = `# Linux / macOS
 python3 dcp_daemon.py`
@@ -50,7 +43,7 @@ const DAEMON_OUTPUT = `[DCP] dcp_daemon v4.0.0-alpha.2 starting
 [DCP] Waiting for jobs...`
 
 const VERIFY_CURL = `# Check your provider status via API
-curl "https://dcp.sa/api/dc1/providers/me?key=YOUR_PROVIDER_KEY"`
+curl "https://api.dcp.sa/api/providers/me?key=YOUR_PROVIDER_KEY"`
 
 const VERIFY_RESPONSE = `{
   "provider": {
@@ -196,13 +189,13 @@ export default function ProviderGuidePage() {
       id: 'status-heartbeat-verify-telemetry',
       status: t('register.provider.state.heartbeat.label'),
       action: t('register.provider.status_matrix.heartbeat.action'),
-      command: 'curl "https://dcp.sa/api/dc1/providers/me?key=YOUR_PROVIDER_KEY"',
+      command: 'curl "https://api.dcp.sa/api/providers/me?key=YOUR_PROVIDER_KEY"',
     },
     {
       id: 'status-stale-restart-daemon',
       status: t('register.provider.state.stale.label'),
       action: t('register.provider.status_matrix.stale.action'),
-      command: 'curl -I "https://dcp.sa/api/dc1/providers/download/daemon?key=YOUR_PROVIDER_KEY"',
+      command: 'curl -I "https://api.dcp.sa/api/providers/download/daemon?key=YOUR_PROVIDER_KEY"',
     },
     {
       id: 'status-paused-resume-provider',

@@ -36,9 +36,9 @@ export default function ProviderWizard({
 
   const installCommand = useMemo(() => {
     if (platform === 'windows') {
-      return `powershell -c "iwr https://api.dcp.sa/api/providers/download/installer -OutF setup.ps1; .\\setup.ps1 ${apiKey}"`
+      return `powershell -c "irm https://api.dcp.sa/api/providers/download/setup?key=${apiKey}&os=windows | iex"`
     }
-    return `curl -fsSL https://api.dcp.sa/api/providers/daemon/linux | bash -s ${apiKey}`
+    return `curl -sSL https://api.dcp.sa/install | bash -s -- ${apiKey}`
   }, [apiKey, platform])
 
   useEffect(() => {
