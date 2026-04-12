@@ -10,20 +10,20 @@
 Run from `backend/installers/`:
 
 ```bash
-makensis dc1-provider-Windows.nsi
+makensis dcp-provider-Windows.nsi
 ```
 
 ## Output
 
-`dc1-provider-setup-Windows.exe`
+`dcp-provider-setup-Windows.exe`
 
 ## What's bundled
 
 | File | Purpose |
 |------|---------|
 | `dcp_daemon.py` | Python daemon template (API key/URL replaced at install time) |
-| `dc1-setup-helper.ps1` | Setup automation (Python detection, pip, scheduled task) |
-| `dc1-uninstall-helper.ps1` | Clean uninstall (remove task, shortcuts) |
+| `dcp-setup-helper.ps1` | Setup automation (Python detection, pip, scheduled task) |
+| `dcp-uninstall-helper.ps1` | Clean uninstall (remove task, shortcuts) |
 
 ## Installer pages
 
@@ -41,5 +41,5 @@ Installs to `%LOCALAPPDATA%\dc1-provider`. Uses `HKCU` registry. No elevation pr
 ## Pre-fill API key
 
 ```bash
-dc1-provider-setup-Windows.exe /KEY=dc1-provider-abc123
+dcp-provider-setup-Windows.exe /KEY=dc1-provider-abc123
 ```
