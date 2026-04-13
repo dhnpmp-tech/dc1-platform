@@ -1662,7 +1662,7 @@ router.get('/me', async (req, res) => {
 
         // Recent completed/failed jobs for activity table
         const recentJobs = db.all(
-            `SELECT id, job_id, job_type, status, submitted_at, completed_at, actual_cost_halala, provider_earned_halala, dc1_fee_halala
+            `SELECT id, job_id, job_type, model, status, submitted_at, completed_at, actual_cost_halala, provider_earned_halala, dc1_fee_halala
              FROM jobs WHERE provider_id = ? ORDER BY submitted_at DESC LIMIT 20`,
             provider.id
         );
@@ -1937,6 +1937,7 @@ router.get('/me/metrics', (req, res) => {
             `SELECT
                 job_id,
                 job_type,
+                model,
                 status,
                 COALESCE(actual_duration_minutes, duration_minutes, 0) AS duration_minutes,
                 COALESCE(provider_earned_halala, 0) AS earnings_halala,

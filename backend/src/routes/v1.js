@@ -1268,10 +1268,48 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
           providerResponseId: normalizeString(resultBody?.id, { maxLen: 200 }),
           usage: usageForResponse,
         });
+        // Record as a job so it shows in provider dashboard + recent jobs
+        const proxySnapshot = toUsageSnapshot(usageForResponse);
+        try {
+          const proxyJobId = normalizeString(resultBody?.id, { maxLen: 200 }) || `proxy-${meteringRequestId}`;
+          const proxyNow = new Date().toISOString();
+          const proxyPromptTokens = proxySnapshot.promptTokens || 0;
+          const proxyCompletionTokens = proxySnapshot.completionTokens || 0;
+          // Use per-minute rate as fallback when token rate is 0
+          const proxyCostHalala = proxySnapshot.costHalala > 0
+            ? proxySnapshot.costHalala
+            : Math.max(1, Math.round((modelReq.fallback_rate_halala_per_min || 2) * ((proxyPromptTokens + proxyCompletionTokens) / 30)));
+          const proxyProviderEarned = Math.max(1, Math.round(proxyCostHalala * 0.85));
+          db.prepare(
+            `INSERT OR IGNORE INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at,
+              completed_at, duration_minutes, cost_halala, provider_earned_halala,
+              prompt_tokens, completion_tokens,
+              notes, created_at, updated_at, priority)
+             VALUES (?, ?, ?, 'inference', ?, 'completed', ?, ?, 0, ?, ?,
+              ?, ?,
+              'v1:proxy:chat/completions', ?, ?, 8)`
+          ).run(
+            proxyJobId, providerForUsage?.id, req.renter.id, modelReq.model_id, proxyNow,
+            proxyNow, proxyCostHalala, proxyProviderEarned,
+            proxyPromptTokens, proxyCompletionTokens,
+            proxyNow, proxyNow
+          );
+          // Update provider totals
+          if (providerForUsage?.id) {
+            db.prepare(
+              `UPDATE providers SET total_jobs = total_jobs + 1,
+                total_earnings = total_earnings + ?,
+                claimable_earnings_halala = claimable_earnings_halala + ?
+               WHERE id = ?`
+            ).run(proxyProviderEarned / 100, proxyProviderEarned, providerForUsage.id);
+          }
+        } catch (jobInsertErr) {
+          console.warn('[v1/chat/completions] proxy job record insert failed:', jobInsertErr?.message);
+        }
         inferenceTracker.trackComplete(meteringRequestId, {
           promptTokens: usageForResponse.prompt_tokens || 0,
           completionTokens: usageForResponse.completion_tokens || 0,
-          costHalala: toUsageSnapshot(usageForResponse).costHalala,
+          costHalala: proxySnapshot.costHalala,
         });
         // Merge Ollama reasoning tokens into content when content is empty
         // (Ollama ignores think:false in /v1 endpoint, puts all text in reasoning field)
@@ -1398,10 +1436,46 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             usage: finalUsage || {},
             completionText,
           });
+          // Record streaming job for provider dashboard
+          const streamSnapshot = toUsageSnapshot(finalUsage || {}, completionText);
+          try {
+            const streamJobId = providerResponseId || `stream-${meteringRequestId}`;
+            const streamNow = new Date().toISOString();
+            const streamPromptTokens = streamSnapshot.promptTokens || 0;
+            const streamCompletionTokens = streamSnapshot.completionTokens || 0;
+            const streamCostHalala = streamSnapshot.costHalala > 0
+              ? streamSnapshot.costHalala
+              : Math.max(1, Math.round((modelReq.fallback_rate_halala_per_min || 2) * ((streamPromptTokens + streamCompletionTokens) / 30)));
+            const streamProviderEarned = Math.max(1, Math.round(streamCostHalala * 0.85));
+            db.prepare(
+              `INSERT OR IGNORE INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at,
+                completed_at, duration_minutes, cost_halala, provider_earned_halala,
+                prompt_tokens, completion_tokens,
+                notes, created_at, updated_at, priority)
+               VALUES (?, ?, ?, 'inference', ?, 'completed', ?, ?, 0, ?, ?,
+                ?, ?,
+                'v1:proxy:stream', ?, ?, 8)`
+            ).run(
+              streamJobId, providerForUsage?.id, req.renter.id, modelReq.model_id, streamNow,
+              streamNow, streamCostHalala, streamProviderEarned,
+              streamPromptTokens, streamCompletionTokens,
+              streamNow, streamNow
+            );
+            if (providerForUsage?.id) {
+              db.prepare(
+                `UPDATE providers SET total_jobs = total_jobs + 1,
+                  total_earnings = total_earnings + ?,
+                  claimable_earnings_halala = claimable_earnings_halala + ?
+                 WHERE id = ?`
+              ).run(streamProviderEarned / 100, streamProviderEarned, providerForUsage.id);
+            }
+          } catch (streamJobErr) {
+            console.warn('[v1/stream] proxy job record insert failed:', streamJobErr?.message);
+          }
           inferenceTracker.trackComplete(meteringRequestId, {
             promptTokens: finalUsage?.prompt_tokens || promptTokens,
             completionTokens: finalUsage?.completion_tokens || approximateTokenCount(completionText),
-            costHalala: toUsageSnapshot(finalUsage || {}, completionText).costHalala,
+            costHalala: streamSnapshot.costHalala,
           });
           writeDoneOnce();
           res.end();
