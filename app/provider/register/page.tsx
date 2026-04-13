@@ -62,11 +62,35 @@ type RegistrationField =
 type RegistrationErrors = Partial<Record<RegistrationField, string>>
 
 const GPU_MODEL_VRAM: Record<string, string> = {
+  // Consumer NVIDIA (our target market)
+  'RTX 5090': '32',
   'RTX 4090': '24',
-  'RTX 4080': '16',
+  'RTX 4080 SUPER': '16',
+  'RTX 4070 Ti': '12',
+  'RTX 4060 Ti': '8',
   'RTX 3090': '24',
+  'RTX 3080': '10',
+  'RTX 3070': '8',
+  'RTX 3060 Ti': '8',
+  'RTX A5000': '24',
+  'RTX A6000': '48',
+  // Apple Silicon
+  'Apple M4 Max': '48',
+  'Apple M4 Pro': '24',
+  'Apple M4': '16',
+  'Apple M3 Max': '36',
+  'Apple M3 Pro': '18',
+  'Apple M3': '16',
+  'Apple M2 Max': '32',
+  'Apple M2 Pro': '16',
+  'Apple M2': '16',
+  'Apple M1 Max': '32',
+  'Apple M1 Pro': '16',
+  'Apple M1': '16',
+  // Enterprise
   'H100': '80',
   'H200': '141',
+  'A100': '80',
   'Other': '',
 }
 
@@ -1672,10 +1696,10 @@ function ProviderRegisterPageContent() {
                 </label>
                 <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {[
-                    { value: 'RTX 4090', label: 'RTX 4090', helper: t('register.provider.gpu_option.rtx4090_helper') },
-                    { value: 'RTX 4080', label: 'RTX 4080', helper: t('register.provider.gpu_option.rtx4080_helper') },
-                    { value: 'RTX 3090', label: 'RTX 3090', helper: t('register.provider.gpu_option.rtx3090_helper') },
-                    { value: 'H100', label: 'H100', helper: t('register.provider.gpu_option.h100_helper') },
+                    { value: 'RTX 4090', label: 'RTX 4090 (24 GB)', helper: '137-197 tok/s — best consumer GPU for inference' },
+                    { value: 'RTX 3060 Ti', label: 'RTX 3060 Ti (8 GB)', helper: '107-139 tok/s — great entry-level provider' },
+                    { value: 'Apple M4 Max', label: 'Apple M4 Max (48 GB)', helper: 'MLX engine — Apple Silicon native inference' },
+                    { value: 'Apple M2', label: 'Apple M2 (16 GB)', helper: 'MLX engine — MacBook Air/Pro provider' },
                   ].map((gpu) => (
                     <button
                       key={gpu.value}
@@ -1707,11 +1731,38 @@ function ProviderRegisterPageContent() {
                   required
                 >
                   <option value="">{t('register.provider.gpu_model_placeholder')}</option>
-                  <option value="RTX 4090">NVIDIA RTX 4090 (24 GB)</option>
-                  <option value="RTX 4080">NVIDIA RTX 4080 (16 GB)</option>
-                  <option value="RTX 3090">NVIDIA RTX 3090 (24 GB)</option>
-                  <option value="H100">NVIDIA H100 (80 GB)</option>
-                  <option value="H200">NVIDIA H200 (141 GB)</option>
+                  <optgroup label="Consumer NVIDIA">
+                    <option value="RTX 5090">RTX 5090 (32 GB) — 270 tok/s</option>
+                    <option value="RTX 4090">RTX 4090 (24 GB) — 197 tok/s</option>
+                    <option value="RTX 4080 SUPER">RTX 4080 SUPER (16 GB) — 139 tok/s</option>
+                    <option value="RTX 4070 Ti">RTX 4070 Ti (12 GB)</option>
+                    <option value="RTX 4060 Ti">RTX 4060 Ti (8 GB)</option>
+                    <option value="RTX 3090">RTX 3090 (24 GB) — 172 tok/s</option>
+                    <option value="RTX 3080">RTX 3080 (10 GB)</option>
+                    <option value="RTX 3070">RTX 3070 (8 GB)</option>
+                    <option value="RTX 3060 Ti">RTX 3060 Ti (8 GB) — 107 tok/s</option>
+                  </optgroup>
+                  <optgroup label="Apple Silicon (MLX)">
+                    <option value="Apple M4 Max">M4 Max (48 GB unified)</option>
+                    <option value="Apple M4 Pro">M4 Pro (24 GB unified)</option>
+                    <option value="Apple M4">M4 (16 GB unified)</option>
+                    <option value="Apple M3 Max">M3 Max (36 GB unified)</option>
+                    <option value="Apple M3 Pro">M3 Pro (18 GB unified)</option>
+                    <option value="Apple M3">M3 (16 GB unified)</option>
+                    <option value="Apple M2 Max">M2 Max (32 GB unified)</option>
+                    <option value="Apple M2 Pro">M2 Pro (16 GB unified)</option>
+                    <option value="Apple M2">M2 (16 GB unified)</option>
+                    <option value="Apple M1 Max">M1 Max (32 GB unified)</option>
+                    <option value="Apple M1 Pro">M1 Pro (16 GB unified)</option>
+                    <option value="Apple M1">M1 (16 GB unified)</option>
+                  </optgroup>
+                  <optgroup label="Professional / Enterprise">
+                    <option value="RTX A5000">RTX A5000 (24 GB) — 137 tok/s</option>
+                    <option value="RTX A6000">RTX A6000 (48 GB)</option>
+                    <option value="H100">H100 (80 GB)</option>
+                    <option value="H200">H200 (141 GB)</option>
+                    <option value="A100">A100 (80 GB)</option>
+                  </optgroup>
                   <option value="Other">Other</option>
                 </select>
                 {fieldErrors.gpuModel ? (
