@@ -129,8 +129,8 @@ Function GpuCheckPageCreate
         Abort
     ${EndIf}
 
-    ; Run nvidia-smi to detect GPU
-    nsExec::ExecToStack 'cmd /c nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul'
+    ; Run nvidia-smi to detect GPU — try PATH first, then known Windows install locations
+    nsExec::ExecToStack 'cmd /c (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul) || ("C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe" --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul) || ("C:\Windows\System32\nvidia-smi.exe" --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul)'
     Pop $0  ; exit code
     Pop $1  ; stdout
 
