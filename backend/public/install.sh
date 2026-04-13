@@ -324,9 +324,15 @@ select_engine() {
       info "Blackwell consumer GPU — using Ollama (vLLM broken on sm_120)"
       ;;
     ampere|ampere86|ada|hopper)
-      # Ampere (8.0, 8.6), Ada (8.9), Hopper (9.0): vLLM + Marlin kernels
-      DCP_ENGINE="vllm"
-      info "Using vLLM + Marlin kernels (${gpu_arch})"
+      # Ampere/Ada/Hopper: vLLM needs ~3GB overhead + model.
+      # GPUs with <16GB VRAM should use Ollama (lighter, no PyTorch needed).
+      if [ "${VRAM_GB}" -ge 16 ]; then
+        DCP_ENGINE="vllm"
+        info "Using vLLM + Marlin kernels (${gpu_arch}, ${VRAM_GB}GB VRAM)"
+      else
+        DCP_ENGINE="ollama"
+        info "Using Ollama (${gpu_arch}, ${VRAM_GB}GB VRAM — too small for vLLM overhead)"
+      fi
       ;;
     blackwell_dc)
       # B100/B200: vLLM should work with proper wheels
@@ -508,14 +514,14 @@ install_vllm() {
     case "${gpu_arch}" in
       blackwell_consumer|blackwell_dc)
         info "Installing PyTorch with CUDA 12.8 (Blackwell)..."
-        "${PYTHON_BIN}" -m pip install torch --index-url https://download.pytorch.org/whl/cu128 --progress-bar on 2>&1 || \
-          "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
+        "${PYTHON_BIN}" -m pip install --break-system-packages torch --index-url https://download.pytorch.org/whl/cu128 --progress-bar on 2>&1 || \
+          "${PYTHON_BIN}" -m pip install --break-system-packages torch --progress-bar on 2>&1 || {
             warn "Could not install PyTorch."; return 1
           }
         ;;
       *)
         info "Installing PyTorch..."
-        "${PYTHON_BIN}" -m pip install torch --progress-bar on 2>&1 || {
+        "${PYTHON_BIN}" -m pip install --break-system-packages torch --progress-bar on 2>&1 || {
           warn "Could not install PyTorch."; return 1
         }
         ;;
@@ -536,7 +542,7 @@ install_vllm() {
       local vllm_ver="0.19.0"
       local cpu_arch
       cpu_arch="$(uname -m)"
-      "${PYTHON_BIN}" -m pip install -U "https://github.com/vllm-project/vllm/releases/download/v${vllm_ver}/vllm-${vllm_ver}+cu130-cp38-abi3-manylinux_2_35_${cpu_arch}.whl" \
+      "${PYTHON_BIN}" -m pip install --break-system-packages -U "https://github.com/vllm-project/vllm/releases/download/v${vllm_ver}/vllm-${vllm_ver}+cu130-cp38-abi3-manylinux_2_35_${cpu_arch}.whl" \
         --extra-index-url https://download.pytorch.org/whl/cu130 --progress-bar on 2>&1 || {
           warn "Could not install vLLM for Blackwell datacenter GPU."
           return 1
@@ -548,7 +554,7 @@ install_vllm() {
         info "vLLM already installed"
       else
         info "Installing vLLM..."
-        "${PYTHON_BIN}" -m pip install vllm --progress-bar on 2>&1 || {
+        "${PYTHON_BIN}" -m pip install --break-system-packages vllm --progress-bar on 2>&1 || {
           warn "Could not install vLLM."
           return 1
         }
@@ -566,8 +572,8 @@ install_vllm() {
 
   if [ "${needs_dev_transformers}" = "true" ]; then
     info "Model requires latest transformers — installing from source..."
-    "${PYTHON_BIN}" -m pip install -U huggingface_hub --progress-bar on 2>&1 || true
-    "${PYTHON_BIN}" -m pip install --no-deps git+https://github.com/huggingface/transformers.git --progress-bar on 2>&1 || {
+    "${PYTHON_BIN}" -m pip install --break-system-packages -U huggingface_hub --progress-bar on 2>&1 || true
+    "${PYTHON_BIN}" -m pip install --break-system-packages --no-deps git+https://github.com/huggingface/transformers.git --progress-bar on 2>&1 || {
       warn "Could not install transformers from source."
       return 1
     }
@@ -923,8 +929,8 @@ setup_macos_menubar() {
   # Install rumps + requests if needed
   "${PYTHON_BIN}" -c "import rumps" 2>/dev/null || {
     info "Installing menu bar dependencies (rumps, requests)…"
-    "${PYTHON_BIN}" -m pip install rumps requests -q 2>/dev/null || \
-      "${PYTHON_BIN}" -m pip install --user rumps requests -q 2>/dev/null || \
+    "${PYTHON_BIN}" -m pip install --break-system-packages rumps requests -q 2>/dev/null || \
+      "${PYTHON_BIN}" -m pip install --break-system-packages --user rumps requests -q 2>/dev/null || \
       "${PYTHON_BIN}" -m pip install --break-system-packages rumps requests -q 2>/dev/null || {
         warn "Could not install rumps. Menu bar app will install deps on first launch."
       }
