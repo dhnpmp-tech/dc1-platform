@@ -212,7 +212,7 @@ function LoginPageInner() {
         <div className="w-full max-w-md">
           <div className="card border-dc1-border/50 shadow-lg">
             <div className="flex justify-center mb-8">
-              <img src="/logo.svg" alt="DCP" className="h-12 w-auto" />
+              <img src="/dcp-logo-transparent.svg" alt="DCP" className="h-12 w-auto" />
             </div>
             <h1 className="text-2xl font-bold text-dc1-text-primary text-center mb-2">{t('auth.sign_in')}</h1>
             <p className="text-sm text-dc1-text-secondary text-center mb-6">
