@@ -320,7 +320,7 @@ export default function HomePage() {
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
               <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              INFERENCE API MARKETPLACE — ARABIC AI + SAUDI DATA RESIDENCY
+              GPU COMPUTE MARKETPLACE — EARN SAR RUNNING AI INFERENCE
             </div>
             <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
               {t('landing.hero_title')}
@@ -329,7 +329,7 @@ export default function HomePage() {
               {t('landing.hero_desc')}
             </p>
             <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
-              OpenAI-compatible Inference API with Arabic AI models (ALLaM, JAIS, Falcon), Saudi data residency, and per-token billing — all running on Saudi energy-powered GPU compute.
+              GPU compute marketplace where providers earn SAR by running AI inference on their hardware. Works on Windows (RTX GPUs), macOS (Apple Silicon M1-M4 with MLX), and Linux. The provider app is 4 MB, auto-installs everything, zero config.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <Link
@@ -382,8 +382,8 @@ export default function HomePage() {
                 <p className="text-xs text-dc1-text-secondary">{t('landing.diff_models_desc')}</p>
               </div>
               <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 p-3">
-                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_container_title')}</p>
-                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_container_desc')}</p>
+                <p className="text-xs font-semibold text-dc1-amber mb-1">{t('landing.diff_provider_title')}</p>
+                <p className="text-xs text-dc1-text-secondary">{t('landing.diff_provider_desc')}</p>
               </div>
             </div>
             <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">
@@ -609,8 +609,8 @@ export default function HomePage() {
                 <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_models_desc')}</p>
               </div>
               <div className="text-center">
-                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_container_title')}</p>
-                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_container_desc')}</p>
+                <p className="text-dc1-amber font-semibold text-sm">{t('landing.diff_provider_title')}</p>
+                <p className="text-xs text-dc1-text-secondary mt-1">{t('landing.diff_provider_desc')}</p>
               </div>
             </div>
           </div>
@@ -704,62 +704,70 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            {t('landing.setup_title')}
+            Earn SAR With Your GPU
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
-            {t('landing.setup_desc')}
+            4 MB desktop app. Auto-detects your GPU, installs the inference engine (Ollama or MLX), downloads the AI model, and connects to DCP. Zero config.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          <div className="space-y-8">
-            {[
-              {
-                step: '1',
-                title: t('landing.setup_step1_title'),
-                desc: t('landing.setup_step1_desc'),
-              },
-              {
-                step: '2',
-                title: t('landing.setup_step2_title'),
-                desc: t('landing.setup_step2_desc'),
-                code: '# Linux / macOS\ncurl -sSL https://api.dcp.sa/install | bash -s -- YOUR_PROVIDER_KEY',
-              },
-              {
-                step: '3',
-                title: t('landing.setup_step3_title'),
-                desc: t('landing.setup_step3_desc'),
-              },
-              {
-                step: '4',
-                title: t('landing.setup_step4_title'),
-                desc: t('landing.setup_step4_desc'),
-              },
-            ].map((item) => (
-              <div key={item.step} className="flex gap-4">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-dc1-amber flex items-center justify-center text-dc1-void font-bold text-sm">
-                  {item.step}
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-dc1-text-primary mb-1">{item.title}</h3>
-                  <p className="text-sm text-dc1-text-secondary mb-2">{item.desc}</p>
-                  {item.code && (
-                    <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto max-w-full whitespace-pre-wrap break-all">
-                      {item.code}
-                    </pre>
-                  )}
-                </div>
-              </div>
-            ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
+          <div className="space-y-6">
+            <div className="rounded-xl border border-dc1-amber/30 bg-dc1-amber/5 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber mb-3">Why providers choose DCP</p>
+              <ul className="space-y-2.5 text-sm text-dc1-text-secondary">
+                <li className="flex items-start gap-2">
+                  <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
+                  <span><strong className="text-dc1-text-primary">Windows, macOS (Apple Silicon), and Linux</strong> — works on the hardware you already own</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
+                  <span><strong className="text-dc1-text-primary">4 MB desktop app</strong> — not 180 MB like Electron competitors</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
+                  <span><strong className="text-dc1-text-primary">Auto-detects GPU</strong>, auto-installs inference engine (Ollama/MLX), auto-downloads AI model</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
+                  <span><strong className="text-dc1-text-primary">100-270 tok/s</strong> on consumer GPUs (RTX 3060 Ti to RTX 5090) — benchmark-proven</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
+                  <span><strong className="text-dc1-text-primary">MoE models</strong> (30B parameters, only 3B active) = enterprise quality at consumer hardware speed</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
+                  <span><strong className="text-dc1-text-primary">Auto NAT traversal</strong> via Cloudflare Tunnel — no port forwarding needed</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
+                  <span><strong className="text-dc1-text-primary">Real-time dashboard</strong> with GPU temp, utilization, live earnings, and job feed</span>
+                </li>
+              </ul>
+            </div>
           </div>
-          <div className="card border-dc1-amber/20">
-            <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Windows (PowerShell)</p>
-            <pre className="text-xs text-dc1-amber font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">{`# Run as Administrator
-irm https://api.dcp.sa/install.ps1 | iex`}</pre>
-            <div className="mt-4 pt-4 border-t border-dc1-border">
-              <p className="text-xs text-dc1-text-muted mb-2">After install, your terminal shows:</p>
+          <div className="space-y-4">
+            <div className="card border-dc1-amber/20">
+              <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">Windows</p>
+              <a
+                href="https://api.dcp.sa/download/windows"
+                className="btn btn-primary w-full text-center"
+              >
+                Download DCP Provider
+              </a>
+              <p className="text-xs text-dc1-text-muted mt-2 text-center">4 MB installer — Windows 10/11, RTX GPUs</p>
+            </div>
+            <div className="card border-dc1-amber/20">
+              <p className="text-xs text-dc1-text-muted mb-3 font-mono uppercase tracking-wider">macOS / Linux</p>
+              <pre className="bg-dc1-surface-l1 border border-dc1-border rounded-lg px-4 py-3 text-xs text-dc1-amber font-mono overflow-x-auto max-w-full whitespace-pre-wrap break-all">curl -sSL https://api.dcp.sa/install | bash -s -- YOUR_KEY</pre>
+              <p className="text-xs text-dc1-text-muted mt-2">macOS: Apple Silicon M1-M4 (MLX) | Linux: NVIDIA RTX GPUs (Ollama)</p>
+            </div>
+            <div className="card border-dc1-border">
+              <p className="text-xs text-dc1-text-muted mb-2">After install, your dashboard shows:</p>
               <pre className="text-xs text-green-400 font-mono leading-relaxed whitespace-pre-wrap break-words max-w-full">{`✓ GPU detected: RTX 4090 (24 GB)
-✓ Daemon connected and reporting heartbeat
-✓ Connected to DCP — heartbeat active for compatible workload routing`}</pre>
+✓ Ollama installed, model downloaded
+✓ Cloudflare Tunnel active — no port forwarding needed
+✓ Connected to DCP — earning SAR on inference jobs`}</pre>
             </div>
           </div>
         </div>
@@ -915,7 +923,7 @@ irm https://api.dcp.sa/install.ps1 | iex`}</pre>
 
 provider = DCPProvider(api_key="your-key")
 provider.register_gpu()
-provider.start()  # initialize, heartbeat, and run assigned container workloads`}</pre>
+provider.start()  # initialize, heartbeat, and serve inference workloads`}</pre>
               </div>
             </div>
           </div>

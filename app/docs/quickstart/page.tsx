@@ -120,7 +120,7 @@ const copy = {
     },
     {
       title: 'I am a provider',
-      desc: 'Register GPU hardware, install daemon, and move to heartbeat-ready.',
+      desc: 'Register your GPU (NVIDIA or Apple Silicon), download the 4 MB app, and go online. No Docker needed.',
       cta: 'Start provider onboarding',
       href: '/provider/register',
     },
@@ -245,7 +245,7 @@ const copy = {
     },
     {
       title: 'أنا مزود',
-      desc: 'سجّل العتاد، ثبّت daemon، وانتقل إلى حالة heartbeat الجاهزة.',
+      desc: 'سجّل وحدة GPU (NVIDIA أو Apple Silicon)، نزّل التطبيق بحجم 4 ميغابايت، وابدأ. لا حاجة لـ Docker.',
       cta: 'ابدأ إعداد المزود',
       href: '/provider/register',
     },

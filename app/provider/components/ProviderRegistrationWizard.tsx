@@ -114,13 +114,14 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
   }, [gpuForm])
 
   // ── Install command ────────────────────────────────────────────────────────
+  const isWindows = platform === 'windows'
   const installCommand = useMemo(() => {
     if (!apiKey) return ''
-    if (platform === 'windows') {
-      return `powershell -c "irm https://api.dcp.sa/api/providers/download/setup?key=${apiKey}&os=windows | iex"`
+    if (isWindows) {
+      return `Download the DCP Provider app from https://api.dcp.sa/download/windows`
     }
     return `curl -sSL https://api.dcp.sa/install | bash -s -- ${apiKey}`
-  }, [apiKey, platform])
+  }, [apiKey, isWindows])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleGpuFormChange = useCallback(
@@ -612,9 +613,11 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
               </div>
 
               <div>
-                <h2 className="text-xl font-bold text-dc1-text-primary">Install the DCP daemon</h2>
+                <h2 className="text-xl font-bold text-dc1-text-primary">Install the DCP Provider</h2>
                 <p className="mt-1 text-sm text-dc1-text-secondary">
-                  Run this command on your machine to connect your GPU to the network.
+                  {isWindows
+                    ? 'Download the installer to connect your GPU to the network.'
+                    : 'Run this command on your machine to connect your GPU to the network.'}
                 </p>
               </div>
 
@@ -648,27 +651,49 @@ export default function ProviderRegistrationWizard({ onComplete }: ProviderRegis
               </div>
 
               {/* Install command */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-dc1-text-muted">Install Command</p>
-                <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
-                  <code className="block whitespace-pre-wrap break-all text-sm text-dc1-text-primary font-mono">
-                    {installCommand}
-                  </code>
+              {isWindows ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-dc1-text-muted">Windows Installer</p>
+                  <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                    <p className="text-sm text-dc1-text-secondary mb-3">
+                      Download and run the DCP Provider installer on your Windows machine.
+                    </p>
+                    <a
+                      href="https://api.dcp.sa/download/windows"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-black hover:brightness-110 transition-all"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Download DCP Provider (.exe)
+                    </a>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={copyCommand}
-                  className="btn-secondary px-4 py-2 text-sm"
-                >
-                  {copied ? '✓ Copied!' : 'Copy command'}
-                </button>
-              </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-dc1-text-muted">Install Command</p>
+                  <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                    <code className="block whitespace-pre-wrap break-all text-sm text-dc1-text-primary font-mono">
+                      {installCommand}
+                    </code>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyCommand}
+                    className="btn-secondary px-4 py-2 text-sm"
+                  >
+                    {copied ? '✓ Copied!' : 'Copy command'}
+                  </button>
+                </div>
+              )}
 
               {/* Next steps */}
               <div className="rounded-xl border border-dc1-border bg-dc1-surface-l2 p-4 space-y-2">
                 <p className="text-sm font-semibold text-dc1-text-primary">Next steps</p>
                 <ol className="list-decimal list-inside space-y-1 text-sm text-dc1-text-secondary">
-                  <li>Run the install command on your machine</li>
+                  <li>{isWindows ? 'Download and run the installer' : 'Run the install command on your machine'}</li>
                   <li>The daemon will connect automatically</li>
                   <li>Visit your <a href="/provider/dashboard" className="text-dc1-amber hover:underline">provider dashboard</a> to track earnings</li>
                 </ol>

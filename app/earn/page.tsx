@@ -13,6 +13,9 @@ const GPU_RATES = [
   { model: 'RTX 3060 Ti', rate_halala: 500 },
   { model: 'RTX 3080',    rate_halala: 800 },
   { model: 'RTX 4090',    rate_halala: 1200 },
+  { model: 'Apple M2 Pro (16 GB)', rate_halala: 400 },
+  { model: 'Apple M3 Max (36 GB)', rate_halala: 700 },
+  { model: 'Apple M4 Max (48 GB)', rate_halala: 900 },
   { model: 'A100',        rate_halala: 2200 },
 ]
 
@@ -298,6 +301,27 @@ export default function EarnPage() {
           </p>
           <div className="bg-dc1-void rounded-xl border border-dc1-border p-4 font-mono text-sm overflow-x-auto">
             <span className="text-dc1-text-primary">{quickInstallCommand}</span>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3 items-center">
+            <a
+              href="https://api.dcp.sa/download/windows"
+              className="btn btn-primary btn-sm inline-flex items-center gap-2"
+              onClick={() =>
+                trackProviderInstallEvent('provider_install_cta_clicked', {
+                  source_page: 'earn',
+                  surface: 'quick_install',
+                  destination: 'https://api.dcp.sa/download/windows',
+                  locale: language,
+                  cta_tier: 'primary',
+                  next_action_state: 'waiting',
+                  os_target: 'windows',
+                  has_provider_key: false,
+                  step: 'download_windows',
+                })
+              }
+            >
+              Download for Windows (~4 MB)
+            </a>
           </div>
           <p className="text-xs text-dc1-text-muted mt-3">
             {t('earn.quick_install.note')}

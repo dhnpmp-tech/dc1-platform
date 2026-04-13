@@ -6,28 +6,28 @@ import Header from '../../components/layout/Header'
 import Footer from '../../components/layout/Footer'
 import { useLanguage } from '../../lib/i18n'
 
-const PREREQ_LINUX = `# Verify GPU driver
+const PREREQ_LINUX = `# Verify GPU driver (NVIDIA)
 nvidia-smi
 
-# Verify Python 3.8+
-python3 --version
+# On macOS Apple Silicon, no driver needed — MLX engine is used automatically
 
-# Verify Docker (recommended for job isolation)
-docker --version`
+# Verify Python 3.10+
+python3 --version`
 
 const PREREQ_WINDOWS = `# Verify GPU driver (PowerShell)
 nvidia-smi
 
-# Verify Python 3.8+
-python --version
-
-# Verify Docker Desktop
-docker --version`
+# Python 3.10+ (auto-installed by the DCP app if missing)
+python --version`
 
 const DOWNLOAD_LINUX = `# Linux / macOS — one-line install with your key
+# On Apple Silicon Macs, the MLX inference engine is used automatically
 curl -sSL https://api.dcp.sa/install | bash -s -- YOUR_PROVIDER_KEY`
 
-const DOWNLOAD_WINDOWS = `# Windows (PowerShell — run as Administrator)
+const DOWNLOAD_WINDOWS = `# Windows — download the desktop app (recommended, ~4 MB):
+# https://api.dcp.sa/download/windows
+
+# Alternative: PowerShell one-liner (no admin rights needed)
 irm https://api.dcp.sa/install.ps1 | iex`
 
 const RUN_LINUX = `# Linux / macOS
@@ -57,8 +57,8 @@ const VERIFY_RESPONSE = `{
 }`
 
 const JOB_OUTPUT = `[DCP] Job received: job-abc123 (llm_inference, 30 min)
-[DCP] Pulling Docker image: vllm/vllm-openai:latest
-[DCP] Container started — executing job
+[DCP] Loading model via Ollama engine
+[DCP] Inference running — executing job
 [DCP] Job completed in 612s
 [DCP] Earnings credited: +45.75 SAR (75% of 61.00 SAR)`
 

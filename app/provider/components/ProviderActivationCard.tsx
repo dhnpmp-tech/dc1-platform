@@ -142,12 +142,13 @@ function ActivationWizard({
   const [copied, setCopied] = useState(false)
   const [heartbeatDetected, setHeartbeatDetected] = useState(false)
 
+  const isWindows = platform === 'windows'
   const installCommand = useMemo(() => {
-    if (platform === 'windows') {
-      return `powershell -c "irm https://api.dcp.sa/api/providers/download/setup?key=${apiKey}&os=windows | iex"`
+    if (isWindows) {
+      return `Download the DCP Provider app from https://api.dcp.sa/download/windows`
     }
     return `curl -sSL https://api.dcp.sa/install | bash -s -- ${apiKey}`
-  }, [apiKey, platform])
+  }, [apiKey, isWindows])
 
   // Poll for first heartbeat while on step 2
   useEffect(() => {
@@ -257,41 +258,63 @@ function ActivationWizard({
               ))}
             </div>
 
-            <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
-              <p className="mb-2 text-xs uppercase tracking-wide text-dc1-text-muted">Install command</p>
-              <code className="block whitespace-pre-wrap break-all text-sm text-dc1-text-primary font-mono leading-relaxed">
-                {installCommand}
-              </code>
-            </div>
+            {isWindows ? (
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <p className="mb-2 text-xs uppercase tracking-wide text-dc1-text-muted">Windows installer</p>
+                <p className="text-sm text-dc1-text-secondary mb-3">
+                  Download and run the DCP Provider installer on your Windows machine.
+                </p>
+                <a
+                  href="https://api.dcp.sa/download/windows"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download DCP Provider (.exe)
+                </a>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4">
+                <p className="mb-2 text-xs uppercase tracking-wide text-dc1-text-muted">Install command</p>
+                <code className="block whitespace-pre-wrap break-all text-sm text-dc1-text-primary font-mono leading-relaxed">
+                  {installCommand}
+                </code>
+              </div>
+            )}
 
             <div className="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={copyCommand}
-                className="flex items-center gap-2 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2.5 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3 min-h-[44px] transition-colors"
-              >
-                {copied ? (
-                  <>
-                    <svg className="w-4 h-4 text-status-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    Copy command
-                  </>
-                )}
-              </button>
+              {!isWindows && (
+                <button
+                  type="button"
+                  onClick={copyCommand}
+                  className="flex items-center gap-2 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2.5 text-sm font-semibold text-dc1-text-primary hover:bg-dc1-surface-l3 min-h-[44px] transition-colors"
+                >
+                  {copied ? (
+                    <>
+                      <svg className="w-4 h-4 text-status-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copy command
+                    </>
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setStep(2)}
                 className="rounded-lg bg-dc1-amber px-5 py-2.5 text-sm font-semibold text-black hover:brightness-110 min-h-[44px] transition-all"
               >
-                I ran the command →
+                {isWindows ? 'I installed the app →' : 'I ran the command →'}
               </button>
             </div>
           </div>
