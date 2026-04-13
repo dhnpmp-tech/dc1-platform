@@ -55,3 +55,6 @@ run
 sdk/node/dist/
 sdk/python/dist/
 sdk/python/dcp_provider.egg-info/
+
+# Desktop app installers (served from production, not git)
+backend/public/dcp-provider-setup.*

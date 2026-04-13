@@ -19,10 +19,10 @@ const DAEMON_VERSION = 'v4.0.0-alpha.2'
 type OS = 'windows' | 'linux' | 'macos'
 
 const REQUIREMENTS = [
-  { icon: '🎮', label: 'NVIDIA GPU', detail: 'RTX 2060 or better (8 GB+ VRAM)' },
-  { icon: '🐳', label: 'Docker', detail: 'Docker Desktop (Windows/macOS) or Docker Engine (Linux)' },
-  { icon: '🐍', label: 'Python 3.10+', detail: 'Python 3.10 or newer' },
-  { icon: '💻', label: 'Operating System', detail: 'Windows 10/11 or Ubuntu 20.04+' },
+  { icon: '🎮', label: 'GPU', detail: 'NVIDIA RTX 2060+ (8 GB+ VRAM) or Apple Silicon (M1/M2/M3/M4)' },
+  { icon: '🐍', label: 'Python 3.10+', detail: 'Required for the DCP daemon process' },
+  { icon: '💻', label: 'Operating System', detail: 'Windows 10/11, macOS 12+ (Apple Silicon), or Ubuntu 20.04+' },
+  { icon: '🌐', label: 'Internet', detail: 'Stable connection for receiving inference jobs from the DCP network' },
 ]
 
 export default function ProviderDownloadPage() {
@@ -32,34 +32,45 @@ export default function ProviderDownloadPage() {
   const [copyError, setCopyError] = useState('')
   const [nextActionState, setNextActionState] = useState<ProviderNextActionState>('waiting')
   const installApiBase = useMemo(() => getProviderInstallApiBase(), [])
+  // Auto-detect user's OS
+  const detectedOs: OS = useMemo(() => {
+    if (typeof navigator === 'undefined') return 'windows'
+    const ua = navigator.userAgent.toLowerCase()
+    if (ua.includes('win')) return 'windows'
+    if (ua.includes('mac')) return 'macos'
+    return 'linux'
+  }, [])
+
   const osCards: {
     id: OS
     label: string
     icon: string
     primaryLabel: string
     description: string
+    downloadUrl?: string
   }[] = useMemo(
     () => [
       {
         id: 'windows',
         label: 'Windows',
         icon: '⊞',
-        primaryLabel: t('register.provider.copy_install_command'),
-        description: t('provider.download.os_windows_desc'),
-      },
-      {
-        id: 'linux',
-        label: 'Linux',
-        icon: '🐧',
-        primaryLabel: t('register.provider.copy_install_command'),
-        description: t('provider.download.os_linux_desc'),
+        primaryLabel: 'Download DCP Provider (.exe)',
+        description: 'One-click installer for Windows 10/11. Includes Ollama engine, auto GPU detection, and system tray.',
+        downloadUrl: 'https://api.dcp.sa/download/windows',
       },
       {
         id: 'macos',
         label: 'macOS',
         icon: '🍎',
         primaryLabel: t('register.provider.copy_install_command'),
-        description: t('provider.download.os_macos_desc'),
+        description: 'Apple Silicon (M1-M4) with MLX engine. Intel Macs use Ollama. Desktop app coming soon.',
+      },
+      {
+        id: 'linux',
+        label: 'Linux',
+        icon: '🐧',
+        primaryLabel: t('register.provider.copy_install_command'),
+        description: 'Ubuntu 20.04+ with NVIDIA GPU. Auto-installs Ollama or vLLM based on VRAM.',
       },
     ],
     [t]
@@ -248,45 +259,90 @@ export default function ProviderDownloadPage() {
         </section>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-14">
-          {osCards.map((card) => (
-            <div
-              key={card.id}
-              className="rounded-xl p-6 flex flex-col gap-5"
-              style={{
-                background: '#0D0D1A',
-                border: '1px solid rgba(255,255,255,0.08)',
-              }}
-            >
-              {/* Header */}
-              <div className="flex items-center gap-3">
-                <span className="text-2xl" role="img" aria-hidden="true">{card.icon}</span>
-                <span className="text-lg font-semibold" style={{ color: '#F0F0F0' }}>{card.label}</span>
-              </div>
-
-              {/* Command block (curl only) */}
+          {osCards.map((card) => {
+            const isDetected = card.id === detectedOs
+            return (
               <div
-                className="rounded-lg px-3 py-3 font-mono text-xs break-all"
-                style={{ background: '#07070E', color: '#94A3B8', border: '1px solid rgba(255,255,255,0.06)' }}
+                key={card.id}
+                className="rounded-xl p-6 flex flex-col gap-5 relative"
+                style={{
+                  background: '#0D0D1A',
+                  border: isDetected ? '2px solid rgba(0,229,200,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                }}
               >
-                {installCommands[card.id]}
-              </div>
-              <p className="text-xs" style={{ color: '#94A3B8' }}>{card.description}</p>
+                {isDetected && (
+                  <div
+                    className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-semibold"
+                    style={{ background: 'rgba(0,229,200,0.15)', color: '#00E5C8', border: '1px solid rgba(0,229,200,0.3)' }}
+                  >
+                    Your system
+                  </div>
+                )}
 
-              {/* CTA */}
-                <button
-                  onClick={() => handleCopy(card.id, installCommands[card.id])}
-                  className="mt-auto py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors"
-                  style={{
-                    background: copied === card.id ? 'rgba(34,197,94,0.15)' : 'rgba(245,165,36,0.12)',
-                    color: copied === card.id ? '#22C55E' : '#F5A524',
-                    border: copied === card.id ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(245,165,36,0.25)',
-                  }}
-                  aria-label={`Copy install command for ${card.label}`}
-                >
-                  {copied === card.id ? t('provider.download.copied') : card.primaryLabel}
-                </button>
-            </div>
-          ))}
+                {/* Header */}
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl" role="img" aria-hidden="true">{card.icon}</span>
+                  <span className="text-lg font-semibold" style={{ color: '#F0F0F0' }}>{card.label}</span>
+                </div>
+
+                {/* Windows: Download button. Mac/Linux: curl command */}
+                {card.downloadUrl ? (
+                  <>
+                    <p className="text-sm" style={{ color: '#94A3B8' }}>{card.description}</p>
+                    <a
+                      href={card.downloadUrl}
+                      download
+                      className="mt-auto py-3 px-4 rounded-lg font-semibold text-sm text-center transition-all hover:opacity-90"
+                      style={{
+                        background: 'linear-gradient(135deg, #00E5C8, #00B4A0)',
+                        color: '#07070E',
+                      }}
+                      onClick={() =>
+                        trackProviderInstallEvent('provider_install_cta_clicked', {
+                          source_page: 'provider_download',
+                          surface: 'download_button',
+                          destination: card.downloadUrl!,
+                          locale: language,
+                          cta_tier: 'primary',
+                          next_action_state: nextActionState,
+                          os_target: card.id,
+                          has_provider_key: Boolean(providerKey.trim()),
+                          step: getProviderOnboardingStep(nextActionState),
+                        })
+                      }
+                    >
+                      {card.primaryLabel}
+                    </a>
+                    <p className="text-xs text-center" style={{ color: '#64748B' }}>
+                      4 MB &middot; No admin required &middot; v{DAEMON_VERSION}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className="rounded-lg px-3 py-3 font-mono text-xs break-all"
+                      style={{ background: '#07070E', color: '#94A3B8', border: '1px solid rgba(255,255,255,0.06)' }}
+                    >
+                      {installCommands[card.id]}
+                    </div>
+                    <p className="text-xs" style={{ color: '#94A3B8' }}>{card.description}</p>
+                    <button
+                      onClick={() => handleCopy(card.id, installCommands[card.id])}
+                      className="mt-auto py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors"
+                      style={{
+                        background: copied === card.id ? 'rgba(34,197,94,0.15)' : 'rgba(245,165,36,0.12)',
+                        color: copied === card.id ? '#22C55E' : '#F5A524',
+                        border: copied === card.id ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(245,165,36,0.25)',
+                      }}
+                      aria-label={`Copy install command for ${card.label}`}
+                    >
+                      {copied === card.id ? t('provider.download.copied') : card.primaryLabel}
+                    </button>
+                  </>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         {copyError && (
@@ -336,29 +392,7 @@ export default function ProviderDownloadPage() {
           </section>
         )}
 
-        <div className="mb-14">
-          <a
-            href="/api/dc1/providers/download-windows-exe"
-            download
-            className="inline-flex px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
-            style={{ background: 'rgba(245,165,36,0.12)', color: '#F5A524', border: '1px solid rgba(245,165,36,0.25)' }}
-            onClick={() =>
-              trackProviderInstallEvent('provider_install_cta_clicked', {
-                source_page: 'provider_download',
-                surface: 'windows_installer',
-                destination: '/api/dc1/providers/download-windows-exe',
-                locale: language,
-                cta_tier: 'secondary',
-                next_action_state: nextActionState,
-                os_target: 'windows',
-                has_provider_key: Boolean(providerKey.trim()),
-                step: getProviderOnboardingStep(nextActionState),
-              })
-            }
-          >
-            {t('provider.download.windows_installer_cta')}
-          </a>
-        </div>
+        {/* Removed old standalone Windows installer link — now integrated into OS cards above */}
 
         <section className="mb-14">
           <div className="rounded-xl p-6" style={{ background: 'rgba(245,165,36,0.08)', border: '1px solid rgba(245,165,36,0.22)' }}>

@@ -403,6 +403,21 @@ app.get('/install.sh', (req, res) => {
     return res.sendFile(INSTALL_SCRIPT_PATH);
 });
 
+// Desktop app downloads — Windows provider installer
+app.get('/download/windows', (req, res) => {
+    const exePath = path.join(__dirname, '..', 'public', 'dcp-provider-setup.exe');
+    if (!fs.existsSync(exePath)) {
+        return res.status(404).json({ error: 'Windows installer not available yet' });
+    }
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="DCP-Provider-Setup.exe"');
+    return res.sendFile(exePath);
+});
+app.get('/download/mac', (req, res) => {
+    // TODO: add macOS .dmg when ready
+    return res.status(404).json({ error: 'macOS installer coming soon — use install.sh for now' });
+});
+
 // Renter live inference dashboard (RunPod-style)
 app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'renter-dashboard.html'));
