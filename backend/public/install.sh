@@ -107,7 +107,10 @@ write_config() {
       printf "VLLM_ENDPOINT_URL=%s\n" "${VLLM_ENDPOINT_URL}"
     fi
     # Engine-specific env vars
-    if [ "${DCP_ENGINE}" = "ollama" ]; then
+    if [ "${DCP_ENGINE}" = "mlx" ]; then
+      printf "DCP_ENGINE=mlx\n"
+      printf "DCP_INFERENCE_PORT=8000\n"
+    elif [ "${DCP_ENGINE}" = "ollama" ]; then
       printf "DCP_ENGINE=ollama\n"
       printf "OLLAMA_FLASH_ATTENTION=1\n"
       printf "DCP_INFERENCE_PORT=11434\n"
@@ -299,8 +302,24 @@ select_engine() {
   local compute_cap="${GPU_COMPUTE_CAP:-}"
   local gpu_arch="unknown"
 
+  # ── Apple Silicon detection (must come before NVIDIA check) ──────────
+  if [ "${DCP_OS}" = "mac" ]; then
+    local chip_name=""
+    chip_name="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
+    if echo "${chip_name}" | grep -qi "apple"; then
+      local total_mem_gb
+      total_mem_gb="$(sysctl -n hw.memsize 2>/dev/null | awk '{printf "%d", $1/1073741824}')"
+      DCP_ENGINE="mlx"
+      VRAM_GB="${total_mem_gb}"
+      GPU_MODEL="${chip_name}"
+      info "Apple Silicon detected: ${chip_name} (${total_mem_gb} GB unified memory)"
+      info "Using MLX engine (3x faster than Ollama on Apple Silicon)"
+      return
+    fi
+  fi
+
   if [ -z "${compute_cap}" ]; then
-    # No GPU detected — CPU-only mode
+    # No NVIDIA GPU and not Apple Silicon — CPU-only mode
     DCP_ENGINE="ollama"
     info "No GPU detected — using Ollama (CPU mode)"
     return
@@ -369,9 +388,36 @@ select_model_for_vram() {
   DCP_MODEL_EXTRA_ARGS=""
   DCP_NEEDS_VLLM_UPGRADE=false
 
-  if [ "${DCP_ENGINE}" = "ollama" ]; then
+  if [ "${DCP_ENGINE}" = "mlx" ]; then
     # -----------------------------------------------------------------------
-    # Ollama model selection (Blackwell / CPU / unknown arch)
+    # MLX model selection (Apple Silicon Macs)
+    # MLX is 3x faster than Ollama on Apple Silicon — mandatory for Mac providers.
+    # Uses unified memory (shared CPU+GPU), so VRAM_GB = total system RAM.
+    # MoE models are critical: 35B total / 3B active = quality + speed.
+    # Benchmark source: DCP-APPLE-SILICON-BENCHMARK-RESEARCH.md (2026-04-13)
+    # -----------------------------------------------------------------------
+    if [ "${VRAM_GB}" -ge 128 ]; then
+      DCP_MODEL="mlx-community/Qwen3.5-35B-A3B-4bit"
+      info "Selected: Qwen3.5 35B-A3B MoE via MLX (${VRAM_GB}GB unified, ~130 tok/s)"
+    elif [ "${VRAM_GB}" -ge 64 ]; then
+      DCP_MODEL="mlx-community/Qwen3-30B-A3B-4bit"
+      info "Selected: Qwen3 30B-A3B MoE via MLX (${VRAM_GB}GB unified, ~92 tok/s)"
+    elif [ "${VRAM_GB}" -ge 32 ]; then
+      DCP_MODEL="mlx-community/Qwen3-30B-A3B-4bit"
+      info "Selected: Qwen3 30B-A3B MoE via MLX (${VRAM_GB}GB unified, ~35-40 tok/s)"
+    elif [ "${VRAM_GB}" -ge 16 ]; then
+      DCP_MODEL="mlx-community/Qwen3-8B-4bit"
+      info "Selected: Qwen3 8B via MLX (${VRAM_GB}GB unified, ~35-45 tok/s)"
+    elif [ "${VRAM_GB}" -ge 8 ]; then
+      DCP_MODEL="mlx-community/Qwen3-4B-4bit"
+      info "Selected: Qwen3 4B via MLX (${VRAM_GB}GB unified, ~30-40 tok/s)"
+    else
+      DCP_MODEL="mlx-community/Qwen3-4B-4bit"
+      info "Selected: Qwen3 4B via MLX (${VRAM_GB}GB unified, CPU fallback)"
+    fi
+  elif [ "${DCP_ENGINE}" = "ollama" ]; then
+    # -----------------------------------------------------------------------
+    # Ollama model selection (Blackwell / CPU / small NVIDIA GPUs)
     # Model names use ollama pull format (e.g., qwen3:30b-a3b)
     # -----------------------------------------------------------------------
     if [ "${VRAM_GB}" -ge 28 ]; then
@@ -441,6 +487,42 @@ select_model_for_vram() {
 # ---------------------------------------------------------------------------
 # Ollama install + start functions
 # ---------------------------------------------------------------------------
+install_mlx() {
+  # MLX engine for Apple Silicon Macs — pip install mlx + mlx-lm
+  info "Installing MLX engine for Apple Silicon..."
+  "${PYTHON_BIN}" -m pip install --break-system-packages -q mlx mlx-lm 2>&1 | tail -3 || {
+    warn "pip install failed, trying with --user flag"
+    "${PYTHON_BIN}" -m pip install --user -q mlx mlx-lm 2>&1 | tail -3 || {
+      fail "Could not install MLX. Please install manually: pip install mlx mlx-lm"
+    }
+  }
+  success "MLX installed"
+}
+
+start_mlx_server() {
+  # Start MLX as an OpenAI-compatible server on port 8000
+  info "Downloading model ${DCP_MODEL} (this may take a few minutes)..."
+  nohup "${PYTHON_BIN}" -m mlx_lm.server \
+    --model "${DCP_MODEL}" \
+    --host 0.0.0.0 \
+    --port 8000 \
+    >> "${LOG_DIR}/mlx-server.log" 2>&1 &
+  local mlx_pid=$!
+  echo "${mlx_pid}" > "${INSTALL_DIR}/mlx-server.pid"
+  info "MLX server starting (PID ${mlx_pid}), downloading model weights..."
+  # Wait for server to become healthy (model download + load)
+  local attempts=0
+  while [ $attempts -lt 120 ]; do
+    if curl -s http://localhost:8000/v1/models >/dev/null 2>&1; then
+      success "MLX server ready — serving ${DCP_MODEL}"
+      return
+    fi
+    sleep 5
+    attempts=$((attempts + 1))
+  done
+  warn "MLX server did not become ready in 10 minutes. Check ${LOG_DIR}/mlx-server.log"
+}
+
 install_ollama() {
   if command -v ollama >/dev/null 2>&1; then
     info "Ollama already installed"
@@ -1050,7 +1132,10 @@ step "Setting up inference server"
 select_engine
 select_model_for_vram
 
-if [ "${DCP_ENGINE}" = "ollama" ]; then
+if [ "${DCP_ENGINE}" = "mlx" ]; then
+  install_mlx
+  start_mlx_server
+elif [ "${DCP_ENGINE}" = "ollama" ]; then
   install_ollama
   start_ollama
 else
