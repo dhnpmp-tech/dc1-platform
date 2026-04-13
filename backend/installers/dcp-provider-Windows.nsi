@@ -129,10 +129,39 @@ Function GpuCheckPageCreate
         Abort
     ${EndIf}
 
-    ; Run nvidia-smi to detect GPU — try PATH first, then known Windows install locations
-    nsExec::ExecToStack 'cmd /c (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul) || ("C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe" --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul) || ("C:\Windows\System32\nvidia-smi.exe" --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul)'
-    Pop $0  ; exit code
-    Pop $1  ; stdout
+    ; ── GPU DETECTION WATERFALL ──────────────────────────────────────────────
+    ; Three methods in order of reliability. If ANY succeeds, we have the GPU.
+    ;
+    ; Method 1: WMI via PowerShell (works 99% of the time, no PATH dependency)
+    ; Method 2: nvidia-smi via registry path (NVIDIA stores install path in registry)
+    ; Method 3: nvidia-smi via known filesystem paths + PATH
+    ;
+    ; WMI returns ALL GPUs; we filter for NVIDIA in the PowerShell script.
+    ; ──────────────────────────────────────────────────────────────────────────
+
+    ; Method 1: WMI query (most reliable — no PATH, no nvidia-smi needed)
+    nsExec::ExecToStack 'powershell -NoProfile -Command "$$g = Get-CimInstance Win32_VideoController | Where-Object { $$_.Name -match ''NVIDIA'' } | Select-Object -First 1; if ($$g) { $$vram = [math]::Floor($$g.AdapterRAM / 1048576); Write-Output \"$$($g.Name), $$vram\" } else { exit 1 }"'
+    Pop $0
+    Pop $1
+
+    ${If} $0 != 0
+    ${OrIf} $1 == ""
+        ; Method 2: nvidia-smi via registry path
+        ReadRegStr $2 HKLM "SOFTWARE\NVIDIA Corporation\Global\NvSmi" "NvSmiPath"
+        ${If} $2 != ""
+            nsExec::ExecToStack '"$2\nvidia-smi.exe" --query-gpu=name,memory.total --format=csv,noheader,nounits'
+            Pop $0
+            Pop $1
+        ${EndIf}
+    ${EndIf}
+
+    ${If} $0 != 0
+    ${OrIf} $1 == ""
+        ; Method 3: nvidia-smi via known paths + PATH fallback
+        nsExec::ExecToStack 'cmd /c (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul) || ("C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe" --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul) || ("C:\Windows\System32\nvidia-smi.exe" --query-gpu=name,memory.total --format=csv,noheader,nounits 2>nul)'
+        Pop $0
+        Pop $1
+    ${EndIf}
 
     ${If} $0 == 0
     ${AndIf} $1 != ""
@@ -178,7 +207,7 @@ Function GpuCheckPageCreate
         SendMessage $hGpuStatusLabel ${WM_SETFONT} $2 0
         SetCtlColors $hGpuStatusLabel 0xCC0000 transparent
 
-        ${NSD_CreateLabel} 0 30u 100% 48u "DCP requires an NVIDIA GPU with 4 GB+ VRAM.$\r$\n$\r$\nPossible causes:$\r$\n  • No NVIDIA GPU installed$\r$\n  • NVIDIA drivers not installed$\r$\n  • nvidia-smi not in PATH"
+        ${NSD_CreateLabel} 0 30u 100% 48u "DCP requires an NVIDIA GPU with 4 GB+ VRAM.$\r$\n$\r$\nPossible causes:$\r$\n  • No NVIDIA GPU installed$\r$\n  • NVIDIA drivers not installed (download from nvidia.com/drivers)$\r$\n  • GPU is disabled in Device Manager"
         Pop $0
 
         ${NSD_CreateLabel} 0 90u 100% 24u "You can still continue, but the daemon may not function correctly."
