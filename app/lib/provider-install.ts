@@ -28,14 +28,11 @@ export function getProviderInstallApiBase(): string {
 }
 
 export function buildProviderInstallCommand(target: InstallTarget, apiBase: string, key: string): string {
-  const encodedKey = encodeURIComponent(key || 'YOUR_PROVIDER_KEY')
-
   if (target === 'windows') {
-    return `irm \"${apiBase}/providers/download/setup?key=${encodedKey}&os=windows\" | iex`
+    return `Download the DCP Provider app from https://api.dcp.sa/download/windows`
   }
 
-  const osParam = target === 'macos' ? 'macos' : 'linux'
-  return `curl -fsSL \"${apiBase}/providers/download/setup?key=${encodedKey}&os=${osParam}\" | bash`
+  return `curl -sSL https://api.dcp.sa/install | bash -s -- ${key || 'YOUR_PROVIDER_KEY'}`
 }
 
 export function buildProviderDaemonDownloadUrl(apiBase: string, key: string): string {
