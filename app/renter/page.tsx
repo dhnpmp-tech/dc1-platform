@@ -41,6 +41,7 @@ interface GPU {
   gpu_model: string
   vram_gb: number
   status: 'online' | 'offline'
+  cached_models: string[]
 }
 
 
@@ -222,6 +223,7 @@ export default function RenterDashboard() {
           gpu_model: p.gpu_model,
           vram_gb: p.vram_gb,
           status: 'online' as const,
+          cached_models: Array.isArray(p.cached_models) ? p.cached_models : [],
         })) || []
         setGpus(gpusData)
       }
@@ -364,6 +366,7 @@ export default function RenterDashboard() {
                   <th>{t('table.provider')}</th>
                   <th>{t('table.gpu_model')}</th>
                   <th>{t('table.vram')}</th>
+                  <th>Cached Models</th>
                   <th>{t('table.status')}</th>
                   <th>{t('table.action')}</th>
                 </tr>
@@ -375,6 +378,34 @@ export default function RenterDashboard() {
                       <td className="font-medium">{gpu.provider_name}</td>
                       <td>{gpu.gpu_model}</td>
                       <td>{gpu.vram_gb} GB</td>
+                      <td>
+                        {gpu.cached_models.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {gpu.cached_models.slice(0, 3).map((model) => {
+                              const shortName = model.split('/').pop() || model;
+                              return (
+                                <span
+                                  key={model}
+                                  title={model}
+                                  className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-dc1-amber/10 text-dc1-amber border border-dc1-amber/20 rounded"
+                                >
+                                  {shortName}
+                                </span>
+                              );
+                            })}
+                            {gpu.cached_models.length > 3 && (
+                              <span
+                                title={gpu.cached_models.slice(3).join(', ')}
+                                className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-dc1-surface-l3 text-dc1-text-muted rounded"
+                              >
+                                +{gpu.cached_models.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-dc1-text-muted">None</span>
+                        )}
+                      </td>
                       <td>
                         <StatusBadge status={gpu.status} />
                       </td>
@@ -390,7 +421,7 @@ export default function RenterDashboard() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-dc1-text-secondary">
+                    <td colSpan={6} className="text-center py-8 text-dc1-text-secondary">
                       {t('renter.no_gpus')}
                     </td>
                   </tr>
