@@ -1064,6 +1064,36 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const passthroughBody = collectProviderOptionalPassthroughFields(req.body || {});
 
     const modelReq = resolveModelRequirements(model);
+
+    // Check if the model exists in the registry or is known via cached_models
+    // If completely unknown, return 404 instead of 503
+    const modelLower = (model || '').toLowerCase().trim();
+    const knownInRegistry = modelReq.min_vram_gb > 0 || modelReq.model_id !== model;
+    const knownByCachedProviders = (() => {
+      try {
+        const allProviders = db.all(`SELECT cached_models FROM providers WHERE cached_models IS NOT NULL AND cached_models != ''`);
+        for (const p of allProviders) {
+          const cached = parseCachedModels(p.cached_models);
+          if (cached.some(m => m === modelLower || m.includes(modelLower) || modelLower.includes(m))) return true;
+        }
+      } catch (_) {}
+      return false;
+    })();
+    const knownInCompatMatrix = (() => {
+      const compat = loadVllmCompatibilityIndex();
+      return compat.available && compat.byAlias.has(normalizeModelToken(model));
+    })();
+
+    if (!knownInRegistry && !knownByCachedProviders && !knownInCompatMatrix) {
+      return sendV1Error(res, {
+        status: 404,
+        type: 'invalid_request_error',
+        code: 'model_not_found',
+        message: `Model '${model}' not found. Use GET /v1/models to see available models.`,
+        retryable: false,
+      });
+    }
+
     const registryMinVramMb = modelReq.min_vram_gb * 1024;
     const effectiveMinVramMb = resolveEffectiveMinVramMb(modelReq.model_id, registryMinVramMb);
     const capableProviders = getCapableProviders(effectiveMinVramMb, modelReq.model_id).filter((provider) => {
@@ -1078,7 +1108,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         status: 503,
         type: 'server_error',
         code: 'no_capacity_available',
-        message: 'No inference providers available for this model',
+        message: `No inference providers currently online for '${model}'. Try again shortly.`,
       });
     }
 
