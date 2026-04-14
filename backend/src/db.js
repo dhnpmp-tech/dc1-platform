@@ -16,6 +16,11 @@ const db = new Database(DB_PATH);
 // Enable WAL mode for better concurrency
 db.pragma('journal_mode = WAL');
 
+// Periodic WAL checkpoint to ensure reads see latest writes
+setInterval(() => {
+  try { db.pragma('wal_checkpoint(PASSIVE)'); } catch (_) {}
+}, 30000); // every 30s
+
 // ─── TABLE DEFINITIONS (single definition per table, no duplicates) ───
 
 db.exec(`
