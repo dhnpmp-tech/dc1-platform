@@ -329,16 +329,8 @@ function getModelRows() {
        ON p.status = 'online'
       AND COALESCE(p.is_paused, 0) = 0
       AND p.vllm_endpoint_url IS NOT NULL
-      AND (
-        -- Match by cached_models (real availability)
-        LOWER(p.cached_models) LIKE '%' || LOWER(m.model_id) || '%'
-        -- Also match VRAM-capable providers with no cached_models reported
-        OR (p.cached_models IS NULL AND COALESCE(
-              p.vram_gb,
-              CAST(ROUND(COALESCE(p.gpu_vram_mb, p.gpu_vram_mib, 0) / 1024.0) AS INTEGER),
-              0
-            ) >= m.min_gpu_vram_gb)
-      )
+      AND p.cached_models IS NOT NULL
+      AND LOWER(p.cached_models) LIKE '%' || LOWER(m.model_id) || '%'
      WHERE m.is_active = 1
      GROUP BY m.id
      ORDER BY m.display_name ASC`
