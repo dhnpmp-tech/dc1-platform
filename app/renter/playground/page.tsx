@@ -996,6 +996,62 @@ function GpuPlayground() {
     }
 
     try {
+      // For LLM inference: use /v1/chat/completions directly (fast, streaming, no Docker)
+      if (jobType === 'llm_inference') {
+        const inferenceRes = await fetch('https://api.dcp.sa/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${renterKey}`,
+          },
+          body: JSON.stringify({
+            model: llmModel,
+            messages: [{ role: 'user', content: prompt.trim() }],
+            max_tokens: maxTokens,
+            temperature,
+            stream: false,
+          }),
+        });
+
+        if (!inferenceRes.ok) {
+          const err = await inferenceRes.json().catch(() => ({}));
+          const errMsg = err.error?.message || `HTTP ${inferenceRes.status}`;
+          throw new Error(errMsg);
+        }
+
+        const inferenceData = await inferenceRes.json();
+        const content = inferenceData.choices?.[0]?.message?.content
+          || inferenceData.choices?.[0]?.message?.reasoning_content
+          || '';
+        const usage = inferenceData.usage || {};
+        const timings = inferenceData.timings || {};
+
+        setResult({
+          type: 'llm_inference',
+          prompt: prompt.trim(),
+          response: content,
+          model: inferenceData.model || llmModel,
+          tokens_generated: usage.completion_tokens || 0,
+          tokens_per_second: timings.predicted_per_second || 0,
+          gen_time_s: timings.predicted_ms ? timings.predicted_ms / 1000 : 0,
+          total_time_s: timings.predicted_ms ? timings.predicted_ms / 1000 : 0,
+          device: 'GPU',
+          billing: {
+            actual_cost_halala: usage.pricing?.usd_total ? Math.round(parseFloat(usage.pricing.usd_total) * 375) : 1,
+            actual_cost_sar: usage.pricing?.usd_total ? (parseFloat(usage.pricing.usd_total) * 3.75).toFixed(4) : '0.01',
+          },
+        });
+        setPhase('done');
+        trackPlaygroundEvent('job_submit_success', {
+          job_type: 'llm_inference',
+          provider_id: providerId,
+          model: llmModel,
+          tokens: usage.total_tokens,
+        });
+        return;
+      }
+
+      // For vLLM serve and image gen: use legacy job system
       const containerSpec = {
         image_type: imageType,
         vram_required_mb: vramRequiredMb,
