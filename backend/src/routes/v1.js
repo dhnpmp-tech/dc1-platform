@@ -463,10 +463,40 @@ router.get('/models', (req, res) => {
 
     const nowSecs = Math.floor(Date.now() / 1000);
     const endpointUrl = buildEndpointUrl(req);
+
+    // Count online providers per model by checking cached_models
+    const onlineProviders = db.all(
+      `SELECT cached_models, vram_mb FROM providers
+       WHERE status = 'online' AND COALESCE(is_paused, 0) = 0
+         AND deleted_at IS NULL AND vllm_endpoint_url IS NOT NULL`
+    );
+    const providerCountByModel = new Map();
+    for (const p of onlineProviders) {
+      const cached = parseCachedModels(p.cached_models);
+      for (const m of cached) {
+        providerCountByModel.set(m, (providerCountByModel.get(m) || 0) + 1);
+      }
+      // Also count by VRAM eligibility — if no cached_models, count for models fitting VRAM
+      if (cached.length === 0 && p.vram_mb > 0) {
+        providerCountByModel.set('__vram_' + p.vram_mb, (providerCountByModel.get('__vram_' + p.vram_mb) || 0) + 1);
+      }
+    }
+
     const data = (rows || []).map((row) => {
+      // Match provider count: check if any online provider has this model cached
+      const modelLower = (row.model_id || '').toLowerCase().trim();
+      let pCount = providerCountByModel.get(modelLower) || 0;
+      // Also check partial matches (e.g., "qwen3-8b" matches cached "qwen3:8b")
+      if (pCount === 0) {
+        for (const [cached, count] of providerCountByModel) {
+          if (cached.includes(modelLower) || modelLower.includes(cached)) {
+            pCount = Math.max(pCount, count);
+          }
+        }
+      }
       const contractCore = toCatalogContractCore({
         model: row,
-        providerCount: 0,
+        providerCount: pCount,
         maxVramGb: Number(row.vram_gb || row.min_gpu_vram_gb || 0),
         created: nowSecs,
       });
