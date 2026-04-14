@@ -145,30 +145,36 @@ const API_BASE = '/api/dc1';
 
 type JobType = 'llm_inference' | 'image_generation' | 'vllm_serve';
 
-const LLM_MODELS = [
-  { id: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0', label: 'TinyLlama 1.1B Chat', vram: '~2 GB', speed: 'Fast' },
-  { id: 'google/gemma-2b-it', label: 'Google Gemma 2B Instruct', vram: '~4 GB', speed: 'Fast' },
-  { id: 'microsoft/Phi-3-mini-4k-instruct', label: 'Microsoft Phi-3 Mini (3.8B)', vram: '~4 GB', speed: 'Medium' },
-  { id: 'mistralai/Mistral-7B-Instruct-v0.2', label: 'Mistral 7B Instruct v0.2', vram: '~14 GB', speed: 'Medium' },
-  { id: 'meta-llama/Meta-Llama-3-8B-Instruct', label: 'Llama 3 8B Instruct', vram: '~16 GB', speed: 'Medium' },
-  { id: 'Qwen/Qwen2-7B-Instruct', label: 'Qwen2 7B Instruct', vram: '~14 GB', speed: 'Medium' },
-  { id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B', label: 'DeepSeek R1 7B', vram: '~16 GB', speed: 'Slow' },
-  { id: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B', label: 'DeepSeek R1 Distill 8B', vram: '~16 GB', speed: 'Slow' },
-] as const;
+// Fallback hardcoded models (used while API is loading or if API fails)
+const FALLBACK_LLM_MODELS = [
+  { id: 'qwen3-30b-a3b', label: 'Qwen3 30B-A3B (MoE)', vram: '~20 GB', speed: 'Fast', providers_online: 0 },
+  { id: 'qwen3-8b', label: 'Qwen3 8B', vram: '~6 GB', speed: 'Fast', providers_online: 0 },
+  { id: 'mistral:7b', label: 'Mistral 7B', vram: '~5 GB', speed: 'Fast', providers_online: 0 },
+  { id: 'qwen2.5:14b', label: 'Qwen 2.5 14B', vram: '~10 GB', speed: 'Medium', providers_online: 0 },
+  { id: 'llama3.1:8b', label: 'Llama 3.1 8B', vram: '~6 GB', speed: 'Fast', providers_online: 0 },
+  { id: 'deepseek-r1:7b', label: 'DeepSeek R1 7B', vram: '~5 GB', speed: 'Medium', providers_online: 0 },
+  { id: 'glm4:9b', label: 'GLM4 9B', vram: '~6 GB', speed: 'Fast', providers_online: 0 },
+];
 
 const SD_MODELS = [
   { id: 'CompVis/stable-diffusion-v1-4', label: 'Stable Diffusion v1.4', vram: '~3.5 GB', speed: 'Fast' },
 ] as const;
 
-const VLLM_MODELS = [
-  { id: 'TinyLlama/TinyLlama-1.1B-Chat-v1.0', label: 'TinyLlama 1.1B Chat', vram: '~2 GB' },
-  { id: 'google/gemma-2b-it', label: 'Google Gemma 2B Instruct', vram: '~4 GB' },
-  { id: 'microsoft/Phi-3-mini-4k-instruct', label: 'Microsoft Phi-3 Mini (3.8B)', vram: '~4 GB' },
-  { id: 'mistralai/Mistral-7B-Instruct-v0.2', label: 'Mistral 7B Instruct v0.2', vram: '~14 GB' },
-  { id: 'meta-llama/Meta-Llama-3-8B-Instruct', label: 'Llama 3 8B Instruct', vram: '~16 GB' },
-  { id: 'Qwen/Qwen2-7B-Instruct', label: 'Qwen2 7B Instruct', vram: '~14 GB' },
-  { id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B', label: 'DeepSeek R1 7B', vram: '~16 GB' },
-] as const;
+const FALLBACK_VLLM_MODELS = [
+  { id: 'qwen3-30b-a3b', label: 'Qwen3 30B-A3B (MoE)', vram: '~20 GB', providers_online: 0 },
+  { id: 'qwen3-8b', label: 'Qwen3 8B', vram: '~6 GB', providers_online: 0 },
+  { id: 'mistral:7b', label: 'Mistral 7B', vram: '~5 GB', providers_online: 0 },
+  { id: 'qwen2.5:14b', label: 'Qwen 2.5 14B', vram: '~10 GB', providers_online: 0 },
+  { id: 'llama3.1:8b', label: 'Llama 3.1 8B', vram: '~6 GB', providers_online: 0 },
+];
+
+interface CatalogModel {
+  id: string;
+  label: string;
+  vram: string;
+  speed?: string;
+  providers_online: number;
+}
 
 const COST_RATES: Record<JobType, number> = {
   llm_inference: 15,
@@ -372,8 +378,20 @@ function GpuPlayground() {
   // Job type
   const [jobType, setJobType] = useState<JobType>('llm_inference');
 
+  // Model catalog (fetched from API)
+  const [catalogModels, setCatalogModels] = useState<CatalogModel[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+
+  // Derive LLM_MODELS and VLLM_MODELS from catalog or fallback
+  const LLM_MODELS: CatalogModel[] = catalogLoaded && catalogModels.length > 0
+    ? catalogModels
+    : FALLBACK_LLM_MODELS;
+  const VLLM_MODELS: CatalogModel[] = catalogLoaded && catalogModels.length > 0
+    ? catalogModels
+    : FALLBACK_VLLM_MODELS;
+
   // LLM Form
-  const [llmModel, setLlmModel] = useState<string>(LLM_MODELS[0].id);
+  const [llmModel, setLlmModel] = useState<string>(FALLBACK_LLM_MODELS[0].id);
   const [prompt, setPrompt] = useState('');
   const [maxTokens, setMaxTokens] = useState(256);
   const [temperature, setTemperature] = useState(0.7);
@@ -392,7 +410,7 @@ function GpuPlayground() {
   const [loadingProviders, setLoadingProviders] = useState(false);
 
   // vLLM Serve Form
-  const [vllmModel, setVllmModel] = useState<string>(VLLM_MODELS[0].id);
+  const [vllmModel, setVllmModel] = useState<string>(FALLBACK_VLLM_MODELS[0].id);
   const [vllmDuration, setVllmDuration] = useState(30);
   const [vllmDtype, setVllmDtype] = useState<'float16' | 'bfloat16' | 'float32'>('float16');
   const [vllmMaxModelLen, setVllmMaxModelLen] = useState(4096);
@@ -821,6 +839,47 @@ function GpuPlayground() {
   useEffect(() => {
     if (renterName) fetchProviders();
   }, [renterName, fetchProviders]);
+
+  // Fetch model catalog from /v1/models (OpenAI-compatible, includes real provider_count)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('https://api.dcp.sa/v1/models');
+        if (!res.ok) return;
+        const data = await res.json();
+        const models = data.data || data.models || data;
+        if (!Array.isArray(models) || models.length === 0) return;
+        const mapped: CatalogModel[] = models
+          .map((m: any) => ({
+            id: m.id || m.model_id,
+            label: m.name || m.display_name || m.id,
+            vram: m.max_vram_gb ? `~${m.max_vram_gb} GB` : (m.min_gpu_vram_gb ? `~${m.min_gpu_vram_gb} GB` : '?'),
+            speed: m.provider_count > 0 ? 'Available' : 'Offline',
+            providers_online: m.provider_count ?? 0,
+          }))
+          // Sort: available models first, then by name
+          .sort((a: CatalogModel, b: CatalogModel) => {
+            if (a.providers_online > 0 && b.providers_online === 0) return -1;
+            if (a.providers_online === 0 && b.providers_online > 0) return 1;
+            return a.label.localeCompare(b.label);
+          });
+        if (!cancelled && mapped.length > 0) {
+          setCatalogModels(mapped);
+          setCatalogLoaded(true);
+          // Auto-select first available model
+          const firstAvailable = mapped.find(m => m.providers_online > 0);
+          if (firstAvailable) {
+            setLlmModel(firstAvailable.id);
+            setVllmModel(firstAvailable.id);
+          }
+        }
+      } catch {
+        // Silently fall back to hardcoded models
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     setAdvancedOpen(!isFirstTimeRenter);
@@ -1974,11 +2033,20 @@ function GpuPlayground() {
 
               {/* Model */}
               <div>
-                <label className="block text-sm text-white/60 mb-1.5">{t('playground.model')}</label>
+                <label className="block text-sm text-white/60 mb-1.5">
+                  {t('playground.model')}
+                  {catalogLoaded && <span className="ml-2 text-xs text-white/30">({catalogModels.length} models from catalog)</span>}
+                </label>
                 {jobType === 'llm_inference' ? (
                   <select className={inputCls} value={llmModel} onChange={e => setLlmModel(e.target.value)} disabled={isRunning}>
                     {LLM_MODELS.map(m => (
-                      <option key={m.id} value={m.id}>{m.label} — {m.vram} VRAM, {m.speed}</option>
+                      <option
+                        key={m.id}
+                        value={m.id}
+                        disabled={catalogLoaded && m.providers_online === 0}
+                      >
+                        {m.providers_online > 0 ? '\u25CF' : '\u25CB'} {m.label} — {m.vram} VRAM{m.speed ? `, ${m.speed}` : ''}{catalogLoaded ? ` (${m.providers_online} provider${m.providers_online !== 1 ? 's' : ''})` : ''}
+                      </option>
                     ))}
                   </select>
                 ) : jobType === 'image_generation' ? (
@@ -1990,7 +2058,13 @@ function GpuPlayground() {
                 ) : (
                   <select className={inputCls} value={vllmModel} onChange={e => setVllmModel(e.target.value)} disabled={isRunning}>
                     {VLLM_MODELS.map(m => (
-                      <option key={m.id} value={m.id}>{m.label} — {m.vram} VRAM</option>
+                      <option
+                        key={m.id}
+                        value={m.id}
+                        disabled={catalogLoaded && m.providers_online === 0}
+                      >
+                        {m.providers_online > 0 ? '\u25CF' : '\u25CB'} {m.label} — {m.vram} VRAM{catalogLoaded ? ` (${m.providers_online} provider${m.providers_online !== 1 ? 's' : ''})` : ''}
+                      </option>
                     ))}
                   </select>
                 )}
