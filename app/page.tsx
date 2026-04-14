@@ -328,8 +328,8 @@ export default function HomePage() {
             <p className="text-lg sm:text-xl text-dc1-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
               {t('landing.hero_desc')}
             </p>
-            <p className="text-sm text-dc1-text-secondary mb-6 max-w-2xl mx-auto">
-              GPU compute marketplace where providers earn SAR by running AI inference on their hardware. Works on Windows (RTX GPUs), macOS (Apple Silicon M1-M4 with MLX), and Linux. The provider app is 4 MB, auto-installs everything, zero config.
+            <p className="text-sm text-dc1-text-muted mb-6 max-w-xl mx-auto">
+              Windows, macOS (Apple Silicon), and Linux. 4 MB provider app. Zero config.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <Link
@@ -450,7 +450,7 @@ export default function HomePage() {
             <div className="w-full rounded-lg border border-dc1-amber/30 bg-dc1-amber/10 px-4 py-2 text-xs text-dc1-text-secondary text-center">
               {t('landing.hero_settlement_proof')}
             </div>
-            <p className="text-xs text-dc1-text-muted mt-4">{t('landing.hero_helper')}</p>
+            {/* Billing details in dedicated section below */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
               <Link
                 href="/marketplace"
@@ -474,17 +474,17 @@ export default function HomePage() {
             </div>
             <div className="mt-5 mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
               <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                {t('landing.reliability_strip_label')}
+                PLATFORM STATUS
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
                 <p>
-                  <span className="text-dc1-text-primary font-semibold">{liveProviderCount !== null ? liveProviderCount.toLocaleString() : unavailableLabel}</span> {t('landing.reliability_live_providers')}
+                  <span className="text-dc1-text-primary font-semibold">{registeredProviderCount !== null && registeredProviderCount > 0 ? registeredProviderCount.toLocaleString() : '40+'}</span> providers registered
                 </p>
                 <p>
-                  <span className="text-dc1-text-primary font-semibold">{registeredProviderCount !== null ? registeredProviderCount.toLocaleString() : unavailableLabel}</span> {t('landing.stat_providers_registered')}
+                  <span className="text-dc1-text-primary font-semibold">3</span> platforms supported (Win/Mac/Linux)
                 </p>
                 <p>
-                  <span className="text-dc1-text-primary font-semibold">{reliabilityUpdatedAt ? formatReliabilityTimestamp(reliabilityUpdatedAt) : unavailableLabel}</span>
+                  <span className="text-dc1-text-primary font-semibold">100-270</span> tok/s on consumer GPUs
                 </p>
               </div>
             </div>

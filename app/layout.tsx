@@ -6,8 +6,8 @@ import LanguagePreferenceModal from './components/ui/LanguagePreferenceModal'
 import ChatWidget from './components/ui/ChatWidget'
 
 export const metadata: Metadata = {
-  title: 'DCP — GPU Compute Marketplace',
-  description: 'Power, Digitalized. Connect GPU providers and renters on the transparent, reliable GPU compute marketplace.',
+  title: 'DCP — Saudi GPU Compute Marketplace',
+  description: 'Saudi Arabia\'s GPU compute marketplace. Arabic AI models, PDPL-compliant data residency, per-token billing. Earn SAR with your GPU or rent inference on demand.',
   icons: {
     icon: "/dcp-logo-primary.png",
   },

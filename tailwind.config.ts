@@ -18,7 +18,7 @@ const config: Config = {
           'amber-light': '#60d8e8',
           'text-primary': '#f8fafc',
           'text-secondary': '#94a3b8',
-          'text-muted': '#64748b',
+          'text-muted': '#7b8da5',
           'section-blue': '#0a1628',
           'border': '#1e293b',
           'border-light': '#334155',

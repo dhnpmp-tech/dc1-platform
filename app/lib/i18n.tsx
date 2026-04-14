@@ -1539,10 +1539,10 @@ const translations: Record<Language, Record<string, string>> = {
 
     // Landing page
     'landing.hero_badge': 'GPU COMPUTE — ARABIC AI — SAUDI DATA RESIDENCY',
-    'landing.hero_title_1': 'Borderless',
-    'landing.hero_title_2': 'GPU Compute.',
-    'landing.hero_title': 'Infinite Compute. Real Power.',
-    'landing.hero_desc': 'OpenAI-compatible API. Arabic models. Saudi data residency. Per-token billing.',
+    'landing.hero_title_1': 'Saudi GPU',
+    'landing.hero_title_2': 'Marketplace.',
+    'landing.hero_title': 'GPU Marketplace. Arabic AI.',
+    'landing.hero_desc': 'The only GPU compute marketplace with Saudi data residency, Arabic AI models, and PDPL compliance. OpenAI-compatible API. Per-token billing.',
     'landing.hero_helper': 'Billing uses estimate hold in halala, runtime settlement, and automatic unused-hold return after completion.',
     'mode.strip.title': 'Choose your mode',
     'mode.strip.subtitle': 'Use the same entry lanes everywhere: Marketplace, Playground, Docs/API, Enterprise Support.',
@@ -3822,10 +3822,10 @@ const translations: Record<Language, Record<string, string>> = {
 
     // Landing page
     'landing.hero_badge': 'ميزة الطاقة السعودية + دعم عربي من الدرجة الأولى',
-    'landing.hero_title_1': 'حوسبة GPU',
-    'landing.hero_title_2': 'بلا حدود.',
-    'landing.hero_title': 'حوسبة GPU سعودية لفرق الذكاء الاصطناعي العربية أولاً.',
-    'landing.hero_desc': 'ابدأ عبر Playground أو API داخل حاويات Docker مدعومة بـ GPU، مع أفضلية هيكلية في تكلفة الطاقة السعودية ودعم نماذج عربية مثل ALLaM 7B وFalcon H1 وJAIS 13B وBGE-M3.',
+    'landing.hero_title_1': 'سوق GPU',
+    'landing.hero_title_2': 'السعودي.',
+    'landing.hero_title': 'سوق GPU. ذكاء اصطناعي عربي.',
+    'landing.hero_desc': 'سوق GPU الوحيد مع إقامة البيانات في السعودية ونماذج الذكاء الاصطناعي العربية والامتثال لنظام حماية البيانات الشخصية. API متوافق مع OpenAI. فوترة لكل رمز.',
     'landing.hero_helper': 'الفوترة تعتمد على حجز تقديري بالهللة ثم تسوية حسب وقت التشغيل الفعلي مع إعادة أي رصيد غير مستخدم تلقائيًا.',
     'mode.strip.title': 'اختر وضعك',
     'mode.strip.subtitle': 'استخدم نفس مسارات الدخول دائمًا: Marketplace وPlayground وDocs/API وEnterprise Support.',
