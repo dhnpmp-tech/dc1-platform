@@ -1363,6 +1363,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
                WHERE id = ?`
             ).run(proxyProviderEarned / 100, proxyProviderEarned, providerForUsage.id);
           }
+          // Update renter totals
+          if (req.renter?.id) {
+            db.prepare(
+              `UPDATE renters SET total_spent_halala = total_spent_halala + ?, total_jobs = total_jobs + 1 WHERE id = ?`
+            ).run(proxyCostHalala, req.renter.id);
+          }
         } catch (jobInsertErr) {
           console.warn('[v1/chat/completions] proxy job record insert failed:', jobInsertErr?.message);
         }
@@ -1528,6 +1534,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
                   claimable_earnings_halala = claimable_earnings_halala + ?
                  WHERE id = ?`
               ).run(streamProviderEarned / 100, streamProviderEarned, providerForUsage.id);
+            }
+            // Update renter totals
+            if (req.renter?.id) {
+              db.prepare(
+                `UPDATE renters SET total_spent_halala = total_spent_halala + ?, total_jobs = total_jobs + 1 WHERE id = ?`
+              ).run(streamCostHalala, req.renter.id);
             }
           } catch (streamJobErr) {
             console.warn('[v1/stream] proxy job record insert failed:', streamJobErr?.message);
