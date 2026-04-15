@@ -4099,6 +4099,38 @@ router.get('/me/earnings/history', (req, res) => {
 });
 
 // ============================================================================
+// POST /api/providers/upload-logs — Provider sends startup/gpu/daemon logs
+// ============================================================================
+router.post('/upload-logs', (req, res) => {
+    try {
+        const apiKey = normalizeString(req.body?.api_key || req.headers['x-api-key'] || req.headers['x-provider-key'], { maxLen: 128 });
+        if (!apiKey) return res.status(401).json({ error: 'API key required' });
+
+        const provider = db.get('SELECT id, name FROM providers WHERE api_key = ?', apiKey);
+        if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+        const logs = req.body?.logs;
+        if (!logs || typeof logs !== 'object') return res.status(400).json({ error: 'logs object required' });
+
+        const logDir = path.join(__dirname, '..', 'data', 'provider-logs', String(provider.id));
+        fs.mkdirSync(logDir, { recursive: true });
+
+        let saved = 0;
+        for (const [filename, content] of Object.entries(logs)) {
+            const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 50);
+            fs.writeFileSync(path.join(logDir, `${new Date().toISOString().slice(0,10)}_${safeName}`), String(content).slice(0, 200000));
+            saved++;
+        }
+
+        console.log(`[provider-logs] ${provider.name} (${provider.id}) uploaded ${saved} log files`);
+        res.json({ success: true, files: saved });
+    } catch (error) {
+        console.error('[provider-logs] Upload failed:', error?.message);
+        res.status(500).json({ error: 'Log upload failed' });
+    }
+});
+
+// ============================================================================
 // GET /api/providers/daemon-logs — Recent daemon events/logs
 // ============================================================================
 router.get('/daemon-logs', (req, res) => {
