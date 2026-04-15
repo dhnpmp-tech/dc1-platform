@@ -2558,7 +2558,7 @@ print(response.choices[0].message.content)`}</pre>
                 )}
 
                 {/* TEXT Result */}
-                {result.type === 'text' && result.response && (
+                {(result.type === 'text' || result.type === 'llm_inference') && result.response && (
                   <div className="bg-[#00D9FF]/5 border border-[#00D9FF]/20 rounded-xl p-6">
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-3 h-3 rounded-full bg-[#00D9FF]" />
