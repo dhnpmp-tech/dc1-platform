@@ -403,6 +403,39 @@ app.get('/install.sh', (req, res) => {
     return res.sendFile(INSTALL_SCRIPT_PATH);
 });
 
+// Tauri auto-updater endpoint — serves update manifest
+// Format: https://api.dcp.sa/api/providers/updates/{target}/{current_version}
+app.get('/api/providers/updates/:target/:current_version', (req, res) => {
+    const { target, current_version } = req.params;
+    const LATEST_APP_VERSION = '0.2.0';
+
+    // Compare versions — if current >= latest, no update
+    if (current_version === LATEST_APP_VERSION || current_version > LATEST_APP_VERSION) {
+        return res.status(204).end(); // No update available
+    }
+
+    // Determine download URL and signature based on target
+    const sigPath = path.join(__dirname, '..', 'public', 'dcp-provider-setup.exe.sig');
+    const signature = fs.existsSync(sigPath) ? fs.readFileSync(sigPath, 'utf8').trim() : '';
+
+    if (target.includes('windows')) {
+        return res.json({
+            version: LATEST_APP_VERSION,
+            notes: 'DXGI GPU detection, auto log upload, hidden CMD windows, Ollama 0.0.0.0 binding',
+            pub_date: new Date().toISOString(),
+            platforms: {
+                'windows-x86_64': {
+                    signature,
+                    url: 'https://api.dcp.sa/download/windows',
+                }
+            }
+        });
+    }
+
+    // No update for other platforms yet
+    res.status(204).end();
+});
+
 // Desktop app downloads — Windows provider installer
 app.get('/download/windows', (req, res) => {
     const exePath = path.join(__dirname, '..', 'public', 'dcp-provider-setup.exe');
