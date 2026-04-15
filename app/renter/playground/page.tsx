@@ -1026,6 +1026,13 @@ function GpuPlayground() {
         const usage = inferenceData.usage || {};
         const timings = inferenceData.timings || {};
 
+        // Set job ID from response for Job Detail page
+        const chatcmplId = inferenceData.id || '';
+        setJobStringId(chatcmplId);
+
+        const providerGpu = inferenceRes.headers.get('x-dcp-provider-endpoint-host') || 'GPU';
+        const providerIdHeader = inferenceRes.headers.get('x-dcp-provider-id') || '';
+
         setResult({
           type: 'llm_inference',
           prompt: prompt.trim(),
@@ -1035,7 +1042,7 @@ function GpuPlayground() {
           tokens_per_second: timings.predicted_per_second || 0,
           gen_time_s: timings.predicted_ms ? timings.predicted_ms / 1000 : 0,
           total_time_s: timings.predicted_ms ? timings.predicted_ms / 1000 : 0,
-          device: 'GPU',
+          device: providerGpu,
           billing: {
             actual_cost_halala: usage.pricing?.usd_total ? Math.round(parseFloat(usage.pricing.usd_total) * 375) : 1,
             actual_cost_sar: usage.pricing?.usd_total ? (parseFloat(usage.pricing.usd_total) * 3.75).toFixed(4) : '0.01',
@@ -1044,7 +1051,8 @@ function GpuPlayground() {
         setPhase('done');
         trackPlaygroundEvent('job_submit_success', {
           job_type: 'llm_inference',
-          provider_id: providerId,
+          job_id: chatcmplId,
+          provider_id: providerIdHeader || providerId,
           model: llmModel,
           tokens: usage.total_tokens,
         });

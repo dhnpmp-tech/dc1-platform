@@ -1340,18 +1340,32 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             ? proxySnapshot.costHalala
             : Math.max(1, Math.round((modelReq.fallback_rate_halala_per_min || 2) * ((proxyPromptTokens + proxyCompletionTokens) / 30)));
           const proxyProviderEarned = Math.max(1, Math.round(proxyCostHalala * 0.85));
+          // Extract response text for job result storage
+          const proxyResponseText = resultBody?.choices?.[0]?.message?.content
+            || resultBody?.choices?.[0]?.message?.reasoning_content || '';
+          const proxyResultJson = JSON.stringify({
+            type: 'llm_inference',
+            prompt: messages?.[messages.length - 1]?.content || '',
+            response: proxyResponseText.slice(0, 10000),
+            model: resultBody?.model || modelReq.model_id,
+            tokens_generated: proxyCompletionTokens,
+            tokens_per_second: resultBody?.timings?.predicted_per_second || 0,
+            gen_time_s: resultBody?.timings?.predicted_ms ? resultBody.timings.predicted_ms / 1000 : 0,
+            total_time_s: resultBody?.timings?.predicted_ms ? resultBody.timings.predicted_ms / 1000 : 0,
+            device: providerForUsage?.gpu_model || 'GPU',
+          });
           db.prepare(
             `INSERT OR IGNORE INTO jobs (job_id, provider_id, renter_id, job_type, model, status, submitted_at,
-              completed_at, duration_minutes, cost_halala, provider_earned_halala,
-              prompt_tokens, completion_tokens,
+              started_at, completed_at, duration_minutes, cost_halala, actual_cost_halala, provider_earned_halala,
+              prompt_tokens, completion_tokens, result,
               notes, created_at, updated_at, priority)
-             VALUES (?, ?, ?, 'inference', ?, 'completed', ?, ?, 0, ?, ?,
-              ?, ?,
+             VALUES (?, ?, ?, 'inference', ?, 'completed', ?, ?, ?, 0, ?, ?, ?,
+              ?, ?, ?,
               'v1:proxy:chat/completions', ?, ?, 8)`
           ).run(
             proxyJobId, providerForUsage?.id, req.renter.id, modelReq.model_id, proxyNow,
-            proxyNow, proxyCostHalala, proxyProviderEarned,
-            proxyPromptTokens, proxyCompletionTokens,
+            proxyNow, proxyNow, proxyCostHalala, proxyCostHalala, proxyProviderEarned,
+            proxyPromptTokens, proxyCompletionTokens, proxyResultJson,
             proxyNow, proxyNow
           );
           // Update provider totals
