@@ -415,8 +415,13 @@ app.get('/api/providers/updates/:target/:current_version', (req, res) => {
     }
 
     // Determine download URL and signature based on target
-    const sigPath = path.join(__dirname, '..', 'public', 'dcp-provider-setup.exe.sig');
+    const sigPath = path.join(__dirname, '..', 'public', 'dcp-provider-update.nsis.zip.sig');
     const signature = fs.existsSync(sigPath) ? fs.readFileSync(sigPath, 'utf8').trim() : '';
+
+    if (!signature) {
+        // No signature available — can't serve auto-update
+        return res.status(204).end();
+    }
 
     if (target.includes('windows')) {
         return res.json({
@@ -426,7 +431,7 @@ app.get('/api/providers/updates/:target/:current_version', (req, res) => {
             platforms: {
                 'windows-x86_64': {
                     signature,
-                    url: 'https://api.dcp.sa/download/windows',
+                    url: 'https://api.dcp.sa/download/windows-update',
                 }
             }
         });
@@ -434,6 +439,17 @@ app.get('/api/providers/updates/:target/:current_version', (req, res) => {
 
     // No update for other platforms yet
     res.status(204).end();
+});
+
+// Desktop app auto-update bundle (.nsis.zip for Tauri updater)
+app.get('/download/windows-update', (req, res) => {
+    const zipPath = path.join(__dirname, '..', 'public', 'dcp-provider-update.nsis.zip');
+    if (!fs.existsSync(zipPath)) {
+        return res.status(404).json({ error: 'Update bundle not available' });
+    }
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="DCP-Provider-update.nsis.zip"');
+    return res.sendFile(zipPath);
 });
 
 // Desktop app downloads — Windows provider installer
