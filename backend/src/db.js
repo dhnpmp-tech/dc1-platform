@@ -15,11 +15,13 @@ const db = new Database(DB_PATH);
 
 // Enable WAL mode for better concurrency
 db.pragma('journal_mode = WAL');
+// Auto-checkpoint after every 100 pages (~400KB of writes) — ensures reads are never stale
+db.pragma('wal_autocheckpoint = 100');
 
-// Periodic WAL checkpoint to ensure reads see latest writes
+// Also force checkpoint every 10 seconds as belt-and-suspenders
 setInterval(() => {
   try { db.pragma('wal_checkpoint(PASSIVE)'); } catch (_) {}
-}, 30000); // every 30s
+}, 10000);
 
 // ─── TABLE DEFINITIONS (single definition per table, no duplicates) ───
 

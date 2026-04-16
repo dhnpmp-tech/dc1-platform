@@ -358,56 +358,75 @@ const copy = {
 }
 
 // ── Code snippets ─────────────────────────────────────────────────────────────
-const TOPUP_CODE = `curl -X POST https://api.dcp.sa/api/renters/topup \\
-  -H "x-renter-key: YOUR_RENTER_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"amount_sar": 10}'`
+const TOPUP_CODE = `# Check available models (no auth needed)
+curl https://api.dcp.sa/v1/models`
 
 const TOPUP_RESPONSE = `{
-  "success": true,
-  "topped_up_halala": 1000,
-  "new_balance_halala": 1000
-}`
-
-const BROWSE_CODE = `curl https://api.dcp.sa/api/marketplace`
-
-const BROWSE_RESPONSE = `{
-  "providers": [
+  "data": [
     {
-      "id": 42,
-      "gpu_model": "RTX 4090",
-      "vram_gb": 24,
-      "price_llm_halala_per_hr": 1200,
-      "price_training_halala_per_hr": 1800,
-      "is_live": true,
-      "location": "Riyadh"
+      "id": "qwen3-30b-a3b",
+      "name": "Qwen3 30B-A3B (MoE)",
+      "provider_count": 1,
+      "context_length": 32768,
+      "max_vram_gb": 18
     }
-  ],
-  "total": 1
+  ]
 }`
 
-const SUBMIT_CODE = `curl -X POST https://api.dcp.sa/api/jobs/submit \\
-  -H "x-renter-key: YOUR_RENTER_KEY" \\
+const BROWSE_CODE = `# Run inference (OpenAI-compatible)
+curl -X POST https://api.dcp.sa/v1/chat/completions \\
   -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_RENTER_KEY" \\
   -d '{
-    "provider_id": 42,
-    "job_type": "llm_inference",
-    "duration_minutes": 10,
-    "params": {
-      "model": "meta-llama/Llama-3-8B",
-      "prompt": "Explain transformers in one paragraph"
-    }
+    "model": "qwen3-30b-a3b",
+    "messages": [{"role": "user", "content": "What is the capital of Saudi Arabia?"}],
+    "max_tokens": 100
   }'`
 
-const SUBMIT_RESPONSE = `{
-  "success": true,
-  "job": {
-    "job_id": "job-abc123",
-    "status": "pending",
-    "cost_halala": 200,
-    "provider_id": 42
+const BROWSE_RESPONSE = `{
+  "id": "chatcmpl-abc123",
+  "model": "qwen3-30b-a3b",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "The capital of Saudi Arabia is Riyadh."
+    }
+  }],
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 12,
+    "total_tokens": 27
   }
 }`
+
+const SUBMIT_CODE = `# Python (drop-in OpenAI replacement)
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.dcp.sa/v1",
+    api_key="YOUR_RENTER_KEY"
+)
+
+response = client.chat.completions.create(
+    model="qwen3-30b-a3b",
+    messages=[{"role": "user", "content": "Hello"}],
+    max_tokens=100
+)
+print(response.choices[0].message.content)`
+
+const SUBMIT_RESPONSE = `# Node.js
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://api.dcp.sa/v1",
+  apiKey: "YOUR_RENTER_KEY"
+});
+
+const response = await client.chat.completions.create({
+  model: "qwen3-30b-a3b",
+  messages: [{ role: "user", content: "Hello" }]
+});
+console.log(response.choices[0].message.content);`
 
 const POLL_CODE = `# Poll status
 curl https://api.dcp.sa/api/jobs/job-abc123
@@ -426,46 +445,45 @@ const POLL_RESPONSE = `{
 
 const SDK_SNIPPETS: Record<SdkKey, Omit<SdkCard, 'title' | 'subtitle' | 'installLabel' | 'runLabel' | 'verifyLabel' | 'verifyHint'>> = {
     node: {
-    installCode: `# Check current SDK package names in /docs/sdk-guides before install`,
-  runCode: `import { DC1RenterClient } from '<YOUR_DCP_SDK_PACKAGE>'
+    installCode: `npm install openai`,
+  runCode: `import OpenAI from "openai";
 
-const client = new DC1RenterClient({
-  apiKey: process.env.DCP_RENTER_KEY!,
-  baseUrl: 'https://api.dcp.sa',
-})
+const client = new OpenAI({
+  baseURL: "https://api.dcp.sa/v1",
+  apiKey: process.env.DCP_RENTER_KEY,
+});
 
-  const job = await client.submitJob({
-    provider_id: 42,
-    job_type: 'llm_inference',
-    duration_minutes: 5,
-    container_spec: { image_type: 'vllm-serve' },
-    params: { prompt: 'Explain transformer attention in 2 lines.' },
-  })
+const response = await client.chat.completions.create({
+  model: "qwen3-30b-a3b",
+  messages: [{ role: "user", content: "Explain transformer attention in 2 lines." }],
+  max_tokens: 100,
+});
 
-  const completedJob = await client.waitForJob(job.job_id, { intervalMs: 3000, timeoutMs: 120000 })
-  console.log(completedJob.status, completedJob.job_id)`,
-    verifyCode: `const me = await client.me()
-console.log(me.email, me.balance_halala)`,
+console.log(response.choices[0].message.content);`,
+    verifyCode: `// Check balance
+const res = await fetch("https://api.dcp.sa/api/renters/me", {
+  headers: { "x-renter-key": process.env.DCP_RENTER_KEY }
+});
+const data = await res.json();
+console.log(data.name, data.balance_halala + " halala");`,
   },
   python: {
-    installCode: `# Check current SDK package names in /docs/sdk-guides before install`,
-    runCode: `import os
-import time
-import requests
+    installCode: `pip install openai`,
+    runCode: `from openai import OpenAI
+import os
 
-API_KEY = os.getenv('DCP_RENTER_KEY')
-BASE_URL = 'https://api.dcp.sa/api'
+client = OpenAI(
+    base_url="https://api.dcp.sa/v1",
+    api_key=os.environ["DCP_RENTER_KEY"],
+)
 
-submit_payload = {
-  'provider_id': 42,
-  'job_type': 'llm_inference',
-  'duration_minutes': 5,
-  'container_spec': { 'image_type': 'vllm-serve' },
-  'params': {
-    'model': 'meta-llama/Llama-3-8B',
-    'prompt': 'Summarize this sentence in one line.',
-  },
-}
+response = client.chat.completions.create(
+    model="qwen3-30b-a3b",
+    messages=[{"role": "user", "content": "Summarize this sentence in one line."}],
+    max_tokens=100,
+)
+
+print(response.choices[0].message.content)
 
 submit_resp = requests.post(
   f'{BASE_URL}/jobs/submit',
