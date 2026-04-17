@@ -806,6 +806,22 @@ function collectProviderOptionalPassthroughFields(requestBody = {}) {
 // Ollama-native names.  When the provider endpoint is on the Ollama port
 // (:11434), map known HuggingFace IDs to their Ollama equivalents.
 const OLLAMA_MODEL_ALIASES = {
+  // Dashboard model IDs (dash format) → Ollama tags (colon format)
+  'qwen3-30b-a3b': 'qwen3:30b-a3b',
+  'qwen3-8b': 'qwen3:8b',
+  'qwen3-4b': 'qwen3:4b',
+  'qwen3-14b': 'qwen3:14b',
+  'qwen2.5-7b': 'qwen2.5:7b',
+  'qwen2.5-14b': 'qwen2.5:14b',
+  'qwen3.5-35b-a3b': 'qwen3.5:35b-a3b',
+  'mistral-7b': 'mistral:7b',
+  'llama3.1-8b': 'llama3.1:8b',
+  'deepseek-r1-7b': 'deepseek-r1:7b',
+  'glm4-9b': 'glm4:9b',
+  'falcon3-7b': 'falcon3:7b',
+  'nemotron-30b-a3b': 'nemotron:30b-a3b',
+  'gemma3-27b': 'gemma3:27b',
+  // HuggingFace IDs → Ollama tags
   'qwen/qwen3-30b-a3b-gptq-int4': 'qwen3:30b-a3b',
   'qwen/qwen3.5-35b-a3b-gptq-int4': 'qwen3.5:35b-a3b',
   'qwen/qwen2.5-7b-instruct-awq': 'qwen2.5:7b',
@@ -832,6 +848,11 @@ const OLLAMA_TO_HF_ALIASES = (() => {
 function resolveOllamaModelId(modelId, endpointUrl, providerCachedModels) {
   if (!modelId) return modelId;
   const normalized = String(modelId).toLowerCase().trim();
+
+  // Direct alias lookup — always applies regardless of port or format
+  if (OLLAMA_MODEL_ALIASES[normalized]) {
+    return OLLAMA_MODEL_ALIASES[normalized];
+  }
 
   // Heuristic 1: an Ollama-style tag (contains a ':' and no '/') is almost
   // always meant for Ollama — apply alias mapping regardless of port.
