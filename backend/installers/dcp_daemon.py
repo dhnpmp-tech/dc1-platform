@@ -613,6 +613,7 @@ def _get_or_create_peer_id():
 
 _DEDUP_FILE = CONFIG_DIR / "seen_jobs.json"
 _DEDUP_TTL = 3600  # 1 hour — forget jobs older than this
+_DEDUP_MAX_ENTRIES = 10_000  # size cap so a misbehaving backend can't grow this unbounded
 
 def _load_seen_jobs():
     """Load seen job IDs from disk. Returns dict {job_id: timestamp}."""
@@ -622,15 +623,20 @@ def _load_seen_jobs():
             # Clean expired entries
             now = time.time()
             return {k: v for k, v in data.items() if now - v < _DEDUP_TTL}
-    except:
+    except Exception:
         pass
     return {}
 
 def _save_seen_jobs(seen):
-    """Save seen job IDs to disk."""
+    """Save seen job IDs to disk. Caps total entries to _DEDUP_MAX_ENTRIES
+    by keeping the most recent by timestamp."""
     try:
+        if len(seen) > _DEDUP_MAX_ENTRIES:
+            # Keep the newest _DEDUP_MAX_ENTRIES
+            sorted_items = sorted(seen.items(), key=lambda kv: kv[1], reverse=True)
+            seen = dict(sorted_items[:_DEDUP_MAX_ENTRIES])
         _DEDUP_FILE.write_text(json.dumps(seen))
-    except:
+    except Exception:
         pass
 
 def is_duplicate_job(job_id):
