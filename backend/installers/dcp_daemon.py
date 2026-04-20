@@ -2077,6 +2077,70 @@ def check_engine_health(engine_type, port):
 #
 # Stdlib-only (ss / lsof / netstat / /proc / ps / wmic). No new deps.
 
+# Hoisted for hot-path performance (B2/N2 review fix).
+_SS_PID_RE = re.compile(r"pid=(\d+)")
+
+# Shells / utilities that can host our sentinel in their args without
+# actually being the engine. We reject these as the first argv token so
+# a stray `grep llama-server ...` or `sh -c "vllm ..."` never triggers a
+# respawn. (B1 review fix.)
+_SHELL_DENYLIST = frozenset({
+    "sh", "bash", "zsh", "dash", "ksh", "fish", "ash",
+    "grep", "egrep", "fgrep", "rg", "ag",
+    "awk", "gawk", "mawk", "sed",
+    "tail", "head", "cat", "less", "more",
+    "tee", "xargs", "watch", "strace", "ltrace",
+    "gdb", "lldb", "valgrind",
+})
+
+
+def _token_matches_sentinel(token, needle_lower):
+    """B1 review fix: exact-token OR path-basename match (not substring).
+
+    `"vllm"` matches argv tokens `"vllm"` or `"/opt/venv/bin/vllm"`,
+    but NOT `"wait-for-vllm-debug"` or `"grep vllm /var/log"`.
+    """
+    tl = token.lower()
+    if tl == needle_lower:
+        return True
+    try:
+        base = os.path.basename(tl)
+    except Exception:
+        return False
+    if base == needle_lower:
+        return True
+    # Allow module-style sentinels like "vllm.entrypoints" to match
+    # argv tokens that are the full module path.
+    if "." in needle_lower and tl == needle_lower:
+        return True
+    return False
+
+
+def _pid_uid(pid):
+    """Return the UID owning <pid>, or None if we can't determine it.
+
+    Used for the B3 trust check: before we respawn argv captured from a
+    foreign PID, confirm that PID is owned by the same UID as this daemon.
+    If not (or if we can't tell), skip it.
+    """
+    try:
+        if sys.platform.startswith("linux"):
+            return os.stat(f"/proc/{int(pid)}").st_uid
+        if sys.platform == "darwin":
+            proc = subprocess.run(
+                ["ps", "-o", "uid=", "-p", str(int(pid))],
+                capture_output=True, text=True, timeout=3,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                return int(proc.stdout.strip().split()[0])
+            return None
+        # Windows: skip UID check (no direct equivalent without extra deps)
+        return None
+    except Exception as e:
+        log.debug(f"[watchdog] _pid_uid({pid}) failed: {e}")
+        return None
+
+
 def _pids_listening_on_port(port):
     """Return PIDs (ints) of processes currently listening on the given TCP port.
 
@@ -2084,28 +2148,19 @@ def _pids_listening_on_port(port):
     single failure is logged at debug level and we fall through to the
     next tool. Returns [] if every tool fails or none report a PID.
     """
-    # Attempt 1: ss -tlnp (Linux)
+    # Attempt 1: ss with native sport filter (Linux) — B2 review fix:
+    # Let ss do the port filtering server-side, so we only scan PIDs on
+    # rows that already match the listening port.
     try:
+        port_int = int(port)
         proc = subprocess.run(
-            ["ss", "-tlnp"],
+            ["ss", "-Hltnp", f"sport = :{port_int}"],
             capture_output=True, text=True, timeout=3,
         )
         if proc.returncode == 0 and proc.stdout:
             pids = []
-            port_suffix = f":{port}"
             for line in proc.stdout.splitlines():
-                # We want lines whose local-address column ends in :<port>.
-                # Format varies; check for the token explicitly.
-                cols = line.split()
-                if len(cols) < 4:
-                    continue
-                local = cols[3] if cols[0] == "LISTEN" else (cols[0] if len(cols) >= 4 else "")
-                # Handle both "LISTEN 0 128 *:8000 ..." and "tcp LISTEN 0 128 *:8000 ..."
-                if not local.endswith(port_suffix):
-                    # Scan all columns — different ss versions pad differently.
-                    if not any(c.endswith(port_suffix) for c in cols):
-                        continue
-                for m in re.finditer(r"pid=(\d+)", line):
+                for m in _SS_PID_RE.finditer(line):
                     try:
                         pids.append(int(m.group(1)))
                     except ValueError:
@@ -2221,24 +2276,55 @@ def _capture_engine_argv(port, engine_sentinels):
 
     Args:
         port: TCP port the engine is listening on.
-        engine_sentinels: substrings (case-insensitive) to look for in the
-            first 4 argv tokens, e.g. ["vllm", "vllm.entrypoints"] for vLLM
-            or ["llama-server", "llama_cpp", "llama.cpp"] for llama.cpp.
+        engine_sentinels: tokens (case-insensitive) to match against the
+            first 4 argv tokens by EXACT equality or by path-basename, e.g.
+            ["vllm", "vllm.entrypoints"] for vLLM or
+            ["llama-server", "llama_cpp", "llama.cpp"] for llama.cpp.
+
+    Security hardening (review B1 + B3):
+      - Match is exact-token or basename, never substring, so a stray
+        `grep llama-server /var/log/app.log` can't trigger a respawn.
+      - Reject argv whose first-token basename is a known shell or
+        utility (grep/sed/bash/…).
+      - Verify the listening PID's UID matches this daemon's UID before
+        trusting its argv for re-exec. If UID can't be determined (or
+        mismatches), skip the PID.
 
     Returns:
-        The argv (list[str]) on match, else None. We require a sentinel
-        match to avoid accidentally re-spawning some unrelated process that
-        happens to bind the port (e.g. a stale ssh tunnel).
+        The argv (list[str]) on match, else None.
     """
     pids = _pids_listening_on_port(port)
+    my_uid = None
+    try:
+        my_uid = os.getuid()  # not on Windows
+    except Exception:
+        my_uid = None
+
     for pid in pids:
+        # B3: trust boundary — only respawn argv from a process owned by us.
+        if my_uid is not None:
+            owner_uid = _pid_uid(pid)
+            if owner_uid is None or owner_uid != my_uid:
+                log.debug(f"[watchdog] pid {pid} uid={owner_uid} != daemon uid={my_uid}, skipping")
+                continue
+
         argv = _read_proc_cmdline(pid)
         if not argv:
             continue
-        head_tokens = [tok.lower() for tok in argv[:4]]
+
+        # B1: reject shells / utilities hosting the sentinel in their args.
+        try:
+            first_base = os.path.basename(argv[0].lower())
+        except Exception:
+            first_base = ""
+        if first_base in _SHELL_DENYLIST:
+            log.debug(f"[watchdog] pid {pid} first arg '{argv[0]}' on denylist, skipping")
+            continue
+
+        head_tokens = argv[:4]
         for sentinel in engine_sentinels:
             needle = sentinel.lower()
-            if any(needle in tok for tok in head_tokens):
+            if any(_token_matches_sentinel(t, needle) for t in head_tokens):
                 return argv
     return None
 
@@ -2317,6 +2403,7 @@ def restart_engine(engine_type, port=None):
             try:
                 subprocess.Popen(
                     argv,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
@@ -2352,6 +2439,7 @@ def restart_engine(engine_type, port=None):
             try:
                 subprocess.Popen(
                     argv,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
