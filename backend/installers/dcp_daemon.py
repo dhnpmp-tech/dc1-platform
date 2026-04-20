@@ -4877,6 +4877,41 @@ def execute_job(job):
         with _job_lock:
             _current_job_id = None
 
+# ── Per-endpoint circuit breaker for the job-poll cascade ──
+# After N consecutive failures, skip that endpoint for OPEN_SECONDS so we
+# don't pay three timeouts per poll cycle when one endpoint is down.
+_endpoint_breakers = {}
+_endpoint_breakers_lock = threading.Lock()
+_CIRCUIT_FAIL_THRESHOLD = 5
+_CIRCUIT_OPEN_SECONDS = 60
+
+
+def _circuit_ok(name):
+    with _endpoint_breakers_lock:
+        b = _endpoint_breakers.get(name)
+        if not b:
+            return True
+        return b["open_until"] <= time.time()
+
+
+def _circuit_record(name, ok):
+    with _endpoint_breakers_lock:
+        b = _endpoint_breakers.setdefault(name, {"fails": 0, "open_until": 0.0})
+        if ok:
+            if b["fails"] > 0:
+                log.info(f"[circuit] {name} recovered after {b['fails']} failures")
+            b["fails"] = 0
+            b["open_until"] = 0.0
+        else:
+            b["fails"] += 1
+            if b["fails"] >= _CIRCUIT_FAIL_THRESHOLD and b["open_until"] <= time.time():
+                b["open_until"] = time.time() + _CIRCUIT_OPEN_SECONDS
+                log.warning(
+                    f"[circuit] {name} opened for {_CIRCUIT_OPEN_SECONDS}s "
+                    f"after {b['fails']} consecutive failures"
+                )
+
+
 def poll_and_execute():
     """Poll for assigned jobs and execute them."""
     # Skip polling if draining (finishing current jobs, no new ones)
@@ -4896,18 +4931,22 @@ def poll_and_execute():
     # as a last-resort fallback for older backend deployments that still parse
     # the key from the URL path; we send the Bearer header on that request too
     # so newer backends ignore the path-baked credential.
-    urls = [
-        f"{API_URL}/api/providers/jobs/next",
-        f"{API_URL}/api/providers/{API_KEY}/jobs",
-        f"{API_URL}/api/jobs/assigned",
+    endpoints = [
+        ("jobs_next",   f"{API_URL}/api/providers/jobs/next"),
+        ("jobs_legacy", f"{API_URL}/api/providers/{API_KEY}/jobs"),
+        ("jobs_assigned", f"{API_URL}/api/jobs/assigned"),
     ]
 
     job = None
     admission_feedback = None
-    for url in urls:
+    for name, url in endpoints:
+        if not _circuit_ok(name):
+            log.debug(f"[circuit] skipping {name} (breaker open)")
+            continue
         try:
             code, resp = http_get(url, headers=_auth_headers())
             if code == 200:
+                _circuit_record(name, True)
                 if isinstance(resp, dict):
                     admission_feedback = resp.get("admission") if isinstance(resp.get("admission"), dict) else admission_feedback
                     job = resp.get("job")
@@ -4915,8 +4954,16 @@ def poll_and_execute():
                     job = None
                 if job:
                     break
+            else:
+                # 4xx/5xx: treat as breaker failure (but 404 on a legacy endpoint
+                # on a new backend is the norm, so we only count 5xx + 429 + 408)
+                if code in (408, 429) or (code is not None and 500 <= code < 600):
+                    _circuit_record(name, False)
+                else:
+                    _circuit_record(name, True)
         except Exception as e:
             log.debug(f"Job poll failed on {url}: {e}")
+            _circuit_record(name, False)
             continue
 
     if not job:
