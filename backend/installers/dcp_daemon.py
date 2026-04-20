@@ -1067,19 +1067,21 @@ def get_gpu_info():
                 "cuda_version": None, "raw": raw or "nvidia-smi produced no output"}
     except FileNotFoundError:
         # No nvidia-smi — check if this is Apple Silicon with unified memory
-        import platform
         if platform.system() == "Darwin":
             try:
-                import subprocess as _sp
-                arch = _sp.run(["uname", "-m"], capture_output=True, text=True, timeout=3).stdout.strip()
+                arch = subprocess.run(["uname", "-m"], capture_output=True, text=True, timeout=3).stdout.strip()
                 if arch == "arm64":
-                    mem_bytes = int(_sp.run(["sysctl", "-n", "hw.memsize"],
-                                            capture_output=True, text=True, timeout=3).stdout.strip())
-                    mem_mb = mem_bytes // (1024 * 1024)
-                    chip = _sp.run(["sysctl", "-n", "machdep.cpu.brand_string"],
-                                   capture_output=True, text=True, timeout=3).stdout.strip()
+                    mem_bytes = int(subprocess.run(["sysctl", "-n", "hw.memsize"],
+                                                    capture_output=True, text=True, timeout=3).stdout.strip())
+                    mem_total_mb = mem_bytes // (1024 * 1024)
+                    # Metal practical ceiling: ~75% of unified memory. The OS, other apps,
+                    # and wired kernel pages consume the rest. Reporting 100% causes the
+                    # backend to accept jobs that OOM on the GPU.
+                    mem_mb = int(mem_total_mb * 0.75)
+                    chip = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                                           capture_output=True, text=True, timeout=3).stdout.strip()
                     return {"gpu_name": f"Apple Silicon ({chip})", "vram_mb": mem_mb,
-                            "driver_version": "Metal/MLX", "cuda_version": None,
+                            "driver_version": "Metal", "cuda_version": None,
                             "is_apple_silicon": True}
             except Exception:
                 pass
@@ -1302,14 +1304,16 @@ def detect_gpu():
         return primary
     except FileNotFoundError:
         # No nvidia-smi — check for Apple Silicon
-        import platform
         if platform.system() == "Darwin":
             try:
                 arch = subprocess.run(["uname", "-m"], capture_output=True, text=True, timeout=3).stdout.strip()
                 if arch == "arm64":
                     mem_bytes = int(subprocess.run(["sysctl", "-n", "hw.memsize"],
                                                     capture_output=True, text=True, timeout=3).stdout.strip())
-                    mem_mib = mem_bytes // (1024 * 1024)
+                    mem_total_mib = mem_bytes // (1024 * 1024)
+                    # Metal practical ceiling: ~75% of unified memory. OS + other apps
+                    # reserve the rest. Reporting 100% causes backend to accept OOM'ing jobs.
+                    mem_mib = int(mem_total_mib * 0.75)
                     chip = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
                                            capture_output=True, text=True, timeout=3).stdout.strip()
                     gpu = {
@@ -1321,15 +1325,15 @@ def detect_gpu():
                         "gpu_util_pct": 0,
                         "temp_c": 0,
                         "power_w": None,
-                        "driver_version": "Metal/MLX",
-                        "compute_capability": "Apple Neural Engine",
+                        "driver_version": "Metal",
+                        "compute_capability": "Metal",
                         "cuda_version": None,
                         "is_apple_silicon": True,
                         "all_gpus": [],
                     }
                     gpu["all_gpus"] = [gpu.copy()]
                     del gpu["all_gpus"][0]["all_gpus"]
-                    log.info(f"Apple Silicon detected: {chip} with {mem_mib} MiB unified memory")
+                    log.info(f"Apple Silicon detected: {chip} — {mem_mib}/{mem_total_mib} MiB usable (75% of unified)")
                     return gpu
             except Exception as e2:
                 log.warning(f"Apple Silicon detection failed: {e2}")
