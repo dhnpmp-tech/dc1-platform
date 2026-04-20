@@ -374,8 +374,18 @@ def _sanitize_for_json(obj, _seen=None, _depth=0):
     except Exception:
         return "<unserializable>"
 
-def http_post(url, data, timeout=15):
-    """POST JSON to URL, returns (status_code, response_dict)."""
+def http_post(url, data, timeout=15, return_headers=False):
+    """POST JSON to URL.
+
+    Returns:
+        (status_code, response_dict) by default (backward-compatible).
+        (status_code, response_dict, headers_dict) if return_headers=True.
+
+    headers_dict is a case-insensitive {lowercased_name: value} mapping suitable
+    for extracting server-provided retry hints such as ``Retry-After`` on 429/503
+    responses. A4.1.0 (Task A6): exposing headers lets the heartbeat loop honor
+    server-provided backoff rather than relying purely on local exponential backoff.
+    """
     # Guard against circular references / non-serializable payloads.
     try:
         json.dumps(data)
@@ -396,6 +406,9 @@ def http_post(url, data, timeout=15):
                 timeout=timeout,
             )
             log.warning(f"http_post: requests.post(json=...) failed ({e}); used default=str fallback")
+        if return_headers:
+            hdrs = {k.lower(): v for k, v in r.headers.items()}
+            return r.status_code, _safe_json(r.text), hdrs
         return r.status_code, _safe_json(r.text)
     else:
         import urllib.request, urllib.error
@@ -406,9 +419,71 @@ def http_post(url, data, timeout=15):
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if return_headers:
+                    hdrs = {k.lower(): v for k, v in resp.getheaders()}
+                    return resp.getcode(), _safe_json(resp.read()), hdrs
                 return resp.getcode(), _safe_json(resp.read())
         except urllib.error.HTTPError as e:
+            if return_headers:
+                hdrs = {}
+                try:
+                    if e.headers is not None:
+                        hdrs = {k.lower(): v for k, v in e.headers.items()}
+                except Exception:
+                    hdrs = {}
+                return e.code, _safe_json(e.read()), hdrs
             return e.code, _safe_json(e.read())
+
+
+def _parse_retry_after(header_value):
+    """Parse an HTTP ``Retry-After`` header value into seconds.
+
+    RFC 7231 §7.1.3 permits two forms:
+      1. delta-seconds: a non-negative integer (e.g. ``"120"``).
+      2. HTTP-date: an RFC 1123 / RFC 850 / asctime() date string (e.g.
+         ``"Wed, 21 Oct 2026 07:28:00 GMT"``).
+
+    Returns a non-negative float number of seconds, clamped to [0, 3600].
+    Returns None for missing, malformed, or past-dated values.
+
+    A4.1.0 (Task A6): used by the heartbeat loop to respect server-provided
+    backoff on 429 responses instead of relying purely on local exponential
+    backoff. Clamp bounds the damage if a misbehaving server sends a huge value.
+    """
+    if header_value is None:
+        return None
+    try:
+        raw = str(header_value).strip()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    # Form 1: integer seconds (may also appear as float in the wild; accept both).
+    try:
+        seconds = float(raw)
+        if seconds < 0 or seconds != seconds:  # reject negatives and NaN
+            return None
+        return min(seconds, 3600.0)
+    except ValueError:
+        pass
+    # Form 2: HTTP-date. Use email.utils.parsedate_to_datetime for RFC 1123.
+    try:
+        import email.utils
+        dt = email.utils.parsedate_to_datetime(raw)
+        if dt is None:
+            return None
+        # Naive datetimes are interpreted as UTC per RFC 7231.
+        if dt.tzinfo is None:
+            from datetime import timezone
+            dt = dt.replace(tzinfo=timezone.utc)
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        delta = (dt - now).total_seconds()
+        if delta <= 0:
+            return 0.0
+        return min(delta, 3600.0)
+    except Exception:
+        return None
 
 def http_get(url, timeout=15, headers=None):
     """GET URL, returns (status_code, response_dict).
@@ -3649,7 +3724,7 @@ def apply_port_mismatch_remedy():
     return dict(state)
 
 
-def send_heartbeat(final=False, status=None):  # returns HTTP status code or None on transport error
+def send_heartbeat(final=False, status=None):  # returns (status_code, retry_after_seconds) or (None, None) on transport error
     """Send heartbeat with GPU metrics to backend and P2P network.
 
     Kwargs (v3.5.0):
@@ -3844,8 +3919,10 @@ def send_heartbeat(final=False, status=None):  # returns HTTP status code or Non
         except (TypeError, ValueError) as ser_err:
             log.warning(f"Heartbeat payload not JSON-safe ({ser_err}); sanitizing")
             safe_payload = _sanitize_for_json(payload)
+        retry_after_seconds = None
+        response_headers = {}
         try:
-            code, resp = http_post(url, safe_payload)
+            code, resp, response_headers = http_post(url, safe_payload, return_headers=True)
         except ValueError as ve:
             # Catches "Circular reference detected" from json encoder
             if "circular" in str(ve).lower():
@@ -3860,6 +3937,10 @@ def send_heartbeat(final=False, status=None):  # returns HTTP status code or Non
                         timeout=15,
                     )
                     code, resp = r.status_code, _safe_json(r.text)
+                    try:
+                        response_headers = {k.lower(): v for k, v in r.headers.items()}
+                    except Exception:
+                        response_headers = {}
                 else:
                     import urllib.request, urllib.error
                     req = urllib.request.Request(
@@ -3870,10 +3951,25 @@ def send_heartbeat(final=False, status=None):  # returns HTTP status code or Non
                     try:
                         with urllib.request.urlopen(req, timeout=15) as response:
                             code, resp = response.getcode(), _safe_json(response.read())
+                            try:
+                                response_headers = {k.lower(): v for k, v in response.getheaders()}
+                            except Exception:
+                                response_headers = {}
                     except urllib.error.HTTPError as he:
                         code, resp = he.code, _safe_json(he.read())
+                        try:
+                            if he.headers is not None:
+                                response_headers = {k.lower(): v for k, v in he.headers.items()}
+                        except Exception:
+                            response_headers = {}
             else:
                 raise
+        # Extract server-provided Retry-After hint (A4.1.0 Task A6). Honored on
+        # 429 Too Many Requests and 503 Service Unavailable per RFC 7231 §7.1.3.
+        if code in (429, 503) and response_headers:
+            retry_after_seconds = _parse_retry_after(response_headers.get("retry-after"))
+            if retry_after_seconds is not None:
+                log.info(f"[hb] server requested Retry-After={retry_after_seconds:.0f}s on HTTP {code}")
         if code == 200:
             log.info("Heartbeat OK (200)")
         else:
@@ -3881,10 +3977,11 @@ def send_heartbeat(final=False, status=None):  # returns HTTP status code or Non
     except Exception as e:
         log.error(f"Heartbeat failed: {e}")
         code = None
+        retry_after_seconds = None
 
     # Emit P2P heartbeat (non-blocking)
     emit_p2p_heartbeat(peer_id, gpu, gpu_status)
-    return code
+    return code, retry_after_seconds
 
 def heartbeat_loop():
     """Background thread: send heartbeat every HEARTBEAT_INTERVAL seconds.
@@ -3913,7 +4010,7 @@ def heartbeat_loop():
         except Exception as _probe_err:
             log.debug(f"heartbeat offload-probe wrapper error: {_probe_err}")
 
-        code = send_heartbeat()
+        code, retry_after_seconds = send_heartbeat()
 
         if code is not None and 200 <= code < 300:
             consecutive_failures = 0
@@ -3921,14 +4018,27 @@ def heartbeat_loop():
         else:
             consecutive_failures += 1
             backoff_steps = min(consecutive_failures, 8)  # cap the exponent
-            base_sleep = min(
+            computed_backoff = min(
                 float(HEARTBEAT_MAX_BACKOFF),
                 HEARTBEAT_INTERVAL * (HEARTBEAT_BACKOFF_BASE ** backoff_steps),
             )
-            log.warning(
-                f"[hb] non-OK code={code} failures={consecutive_failures} "
-                f"backing off {base_sleep:.0f}s"
-            )
+            # A4.1.0 (Task A6): when the server sends Retry-After (429 / 503),
+            # honor it rather than relying purely on local exponential backoff.
+            # Take the max so we never retry faster than either signal requests.
+            # retry_after_seconds is already clamped to [0, 3600] by _parse_retry_after.
+            if retry_after_seconds is not None:
+                base_sleep = max(computed_backoff, float(retry_after_seconds))
+                log.warning(
+                    f"[hb] non-OK code={code} failures={consecutive_failures} "
+                    f"retry_after={retry_after_seconds:.0f}s computed={computed_backoff:.0f}s "
+                    f"backing off {base_sleep:.0f}s"
+                )
+            else:
+                base_sleep = computed_backoff
+                log.warning(
+                    f"[hb] non-OK code={code} failures={consecutive_failures} "
+                    f"backing off {base_sleep:.0f}s"
+                )
 
         jitter = base_sleep * HEARTBEAT_JITTER_PCT * (2 * random.random() - 1)
         time.sleep(max(1.0, base_sleep + jitter))
