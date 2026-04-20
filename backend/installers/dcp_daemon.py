@@ -2292,6 +2292,189 @@ GPU_MEMORY_BANDWIDTH_GBPS = {
 }
 
 
+# ─── v4.1.0: DRIVER / CUDA COMPATIBILITY WARNINGS ──────────────────────────
+#
+# Provider misconfigurations reported in Round 4 often traced back to
+# mismatched NVIDIA driver vs GPU architecture or CUDA toolkit. For
+# example: RTX 5090 (Blackwell sm_120) on driver 535 silently falls back
+# to software paths and throttles throughput 5-10x. Surfacing this in
+# the heartbeat lets the backend router downrank affected providers
+# before the renter even hits them.
+#
+# References:
+#   - Blackwell (sm_120 / RTX 50-series): driver >= 550, CUDA >= 12.8
+#   - Hopper (sm_90 / H100, H200):         driver >= 535, CUDA >= 12.2
+#   - Ada Lovelace (sm_89 / RTX 40, L40):  driver >= 525, CUDA >= 12.0
+#   - Ampere (sm_80 / A100, sm_86 / RTX30):driver >= 470, CUDA >= 11.4
+#   - vLLM 0.6+: requires CUDA >= 12.1
+#   - FlashAttention 2: requires compute_capability >= 8.0
+#   - FP8 KV cache: requires compute_capability >= 8.9 (Ada / Hopper+)
+
+# GPU-name prefix -> minimum driver / cuda for normal operation.
+_DRIVER_MIN_BY_GPU = [
+    # Blackwell datacenter (B100/B200) — same floor as consumer Blackwell.
+    ("NVIDIA B200", {"driver": "550", "cuda": "12.8", "arch": "Blackwell"}),
+    ("NVIDIA B100", {"driver": "550", "cuda": "12.8", "arch": "Blackwell"}),
+    # Consumer Blackwell
+    ("NVIDIA GeForce RTX 5090", {"driver": "550", "cuda": "12.8", "arch": "Blackwell"}),
+    ("NVIDIA GeForce RTX 5080", {"driver": "550", "cuda": "12.8", "arch": "Blackwell"}),
+    # Hopper
+    ("NVIDIA H200",             {"driver": "535", "cuda": "12.2", "arch": "Hopper"}),
+    ("NVIDIA H100",             {"driver": "535", "cuda": "12.2", "arch": "Hopper"}),
+    # Ada Lovelace (datacenter + consumer)
+    ("NVIDIA L40S",             {"driver": "525", "cuda": "12.0", "arch": "Ada Lovelace"}),
+    ("NVIDIA L40",              {"driver": "525", "cuda": "12.0", "arch": "Ada Lovelace"}),
+    ("NVIDIA L4",               {"driver": "525", "cuda": "12.0", "arch": "Ada Lovelace"}),
+    ("NVIDIA RTX 6000 Ada",     {"driver": "525", "cuda": "12.0", "arch": "Ada Lovelace"}),
+    ("NVIDIA GeForce RTX 4090", {"driver": "525", "cuda": "12.0", "arch": "Ada Lovelace"}),
+    ("NVIDIA GeForce RTX 4080", {"driver": "525", "cuda": "12.0", "arch": "Ada Lovelace"}),
+    # Ampere
+    ("NVIDIA A100",             {"driver": "470", "cuda": "11.4", "arch": "Ampere"}),
+    ("NVIDIA A40",              {"driver": "470", "cuda": "11.4", "arch": "Ampere"}),
+    ("NVIDIA RTX A6000",        {"driver": "470", "cuda": "11.4", "arch": "Ampere"}),
+    ("NVIDIA RTX A5000",        {"driver": "470", "cuda": "11.4", "arch": "Ampere"}),
+    ("NVIDIA GeForce RTX 3090", {"driver": "470", "cuda": "11.4", "arch": "Ampere"}),
+    ("NVIDIA GeForce RTX 3080", {"driver": "470", "cuda": "11.4", "arch": "Ampere"}),
+]
+
+
+def _parse_version_tuple(version_str):
+    """Parse a version string like '535.129.03' into a tuple of ints.
+    Returns (0,) on any parse error so comparisons degrade gracefully to
+    'older than anything'."""
+    if not version_str:
+        return (0,)
+    try:
+        parts = str(version_str).strip().split(".")
+        out = []
+        for p in parts:
+            # Stop at the first non-numeric segment (e.g. '470-server').
+            digits = ""
+            for ch in p:
+                if ch.isdigit():
+                    digits += ch
+                else:
+                    break
+            if not digits:
+                break
+            out.append(int(digits))
+        return tuple(out) if out else (0,)
+    except Exception:
+        return (0,)
+
+
+def _version_lt(a_str, b_str):
+    """Return True if version a < version b (tuple compare, shorter is padded)."""
+    a = _parse_version_tuple(a_str)
+    b = _parse_version_tuple(b_str)
+    length = max(len(a), len(b))
+    a_padded = a + (0,) * (length - len(a))
+    b_padded = b + (0,) * (length - len(b))
+    return a_padded < b_padded
+
+
+def _lookup_driver_requirement(gpu_name):
+    """Return the {driver, cuda, arch} requirement dict for a GPU name, or None."""
+    if not gpu_name:
+        return None
+    name = str(gpu_name)
+    for prefix, req in _DRIVER_MIN_BY_GPU:
+        if name.startswith(prefix) or prefix in name:
+            return req
+    return None
+
+
+def evaluate_driver_compatibility(gpu_info):
+    """Emit structured warnings when driver/CUDA is too old for detected hardware.
+
+    Args:
+        gpu_info: dict from detect_gpu(). Reads driver_version, cuda_version,
+                  compute_capability, gpu_name, and all_gpus.
+
+    Returns:
+        dict: {
+          "warnings": [ {gpu_name, issue, severity, required, detected,
+                         remedy} ],
+          "driver_version": str|None,
+          "cuda_version": str|None,
+          "compatible": bool,   # True iff no warnings of severity >= "warning"
+        }
+
+    Severity values: "info" (FYI), "warning" (degrades perf), "critical"
+    (engine will fail or fall back to software paths).
+    """
+    out = {
+        "warnings": [],
+        "driver_version": None,
+        "cuda_version": None,
+        "compatible": True,
+    }
+    if not gpu_info or not isinstance(gpu_info, dict):
+        return out
+
+    # Prefer explicit top-level fields; fall back to the first entry of all_gpus.
+    driver_version = gpu_info.get("driver_version")
+    cuda_version = gpu_info.get("cuda_version")
+    all_gpus = gpu_info.get("all_gpus") or []
+    if not driver_version and all_gpus and isinstance(all_gpus[0], dict):
+        driver_version = all_gpus[0].get("driver_version")
+    if not cuda_version and all_gpus and isinstance(all_gpus[0], dict):
+        cuda_version = all_gpus[0].get("cuda_version")
+
+    out["driver_version"] = driver_version
+    out["cuda_version"] = cuda_version
+
+    # Apple Silicon / CPU-only: skip CUDA checks entirely.
+    if driver_version == "Metal":
+        return out
+
+    # Build the list of GPU names to check. Fall back to top-level gpu_name.
+    gpu_entries = []
+    if all_gpus:
+        for g in all_gpus:
+            if isinstance(g, dict) and g.get("gpu_name"):
+                gpu_entries.append(g)
+    elif gpu_info.get("gpu_name"):
+        gpu_entries.append({
+            "gpu_name": gpu_info.get("gpu_name"),
+            "compute_capability": gpu_info.get("compute_capability"),
+        })
+
+    for g in gpu_entries:
+        name = g.get("gpu_name")
+        req = _lookup_driver_requirement(name)
+        if not req:
+            continue  # unknown GPU; skip (covered by tier=unknown flag elsewhere)
+
+        # Driver check
+        if driver_version and _version_lt(driver_version, req["driver"]):
+            out["warnings"].append({
+                "gpu_name": name,
+                "issue": "driver_too_old",
+                "severity": "critical",
+                "required": f">= {req['driver']}",
+                "detected": driver_version,
+                "arch": req["arch"],
+                "remedy": f"Upgrade NVIDIA driver to {req['driver']}+ for {req['arch']} (sudo apt install nvidia-driver-{req['driver'].split('.')[0]})",
+            })
+            out["compatible"] = False
+
+        # CUDA runtime check
+        if cuda_version and _version_lt(cuda_version, req["cuda"]):
+            out["warnings"].append({
+                "gpu_name": name,
+                "issue": "cuda_too_old",
+                "severity": "warning",
+                "required": f">= {req['cuda']}",
+                "detected": cuda_version,
+                "arch": req["arch"],
+                "remedy": f"Install CUDA toolkit {req['cuda']}+ for {req['arch']} inference features",
+            })
+            out["compatible"] = False
+
+    return out
+
+
 def predicted_peak_tok_s(gpu_name, model_size_gb):
     """Compute the memory-bandwidth-bound decode throughput ceiling.
 
@@ -3684,6 +3867,17 @@ def send_heartbeat(final=False, status=None):  # returns HTTP status code or Non
             "compute_capability": gpu.get("compute_capability"),
             "cuda_version": gpu.get("cuda_version"),
         }
+    # v4.1.0 Feature 5: driver/CUDA compatibility warnings. The router
+    # downranks providers with critical warnings and surfaces remedy
+    # guidance back to the provider via the wizard/dashboard.
+    try:
+        gpu_status["driver_compatibility"] = evaluate_driver_compatibility(gpu)
+    except Exception as _dc_err:
+        log.debug(f"evaluate_driver_compatibility failed: {_dc_err}")
+        gpu_status["driver_compatibility"] = {"warnings": [],
+                                              "driver_version": None,
+                                              "cuda_version": None,
+                                              "compatible": True}
     gpu_status["model_cache_path"] = cache_metrics["path"]
     gpu_status["model_cache_exists"] = cache_metrics["exists"]
     gpu_status["model_cache_total_gb"] = cache_metrics["total_gb"]
