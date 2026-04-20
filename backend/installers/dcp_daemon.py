@@ -1295,9 +1295,35 @@ def perform_update(new_version, preferred_download_url=None):
         shutil.copy2(current_path, backup_path)
         log.info(f"Backed up current daemon to {backup_path}")
 
-        # Write new version
-        current_path.write_text(new_code, encoding="utf-8")
-        log.info(f"Updated daemon file to v{new_version}")
+        # Atomic write: create sibling tempfile, fsync, then os.replace.
+        # Prior behavior used current_path.write_text which is non-atomic —
+        # a crash mid-write would leave a truncated daemon that won't restart.
+        tmp_fd, tmp_name = tempfile.mkstemp(
+            prefix=".dcp_daemon.", suffix=".new",
+            dir=str(current_path.parent), text=True,
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(new_code)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass  # fsync not supported on all filesystems
+            # Preserve the original file mode (executable bit etc.)
+            try:
+                os.chmod(tmp_path, current_path.stat().st_mode)
+            except OSError:
+                pass
+            os.replace(tmp_path, current_path)
+        except Exception:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+            raise
+        log.info(f"Updated daemon file to v{new_version} (atomic write)")
 
         report_event("update_success", f"Updated {DAEMON_VERSION} → {new_version}")
 
