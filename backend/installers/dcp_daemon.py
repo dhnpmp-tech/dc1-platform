@@ -5557,6 +5557,40 @@ def main():
     )
     cr_thread.start()
 
+    # Thread supervisor: observe-only. If a worker thread dies from an
+    # uncaught exception, daemon=True makes it silent. Supervisor logs +
+    # reports the death so the backend can surface it. No auto-restart —
+    # restart policy is a design decision left to the watchdog process.
+    _supervised_threads = [
+        hb_thread, job_thread, update_thread, bw_thread,
+        nq_thread, ew_thread, puc_thread, cr_thread,
+    ]
+
+    def _thread_supervisor():
+        seen_dead = set()
+        while True:
+            try:
+                for t in _supervised_threads:
+                    if not t.is_alive() and t.name not in seen_dead:
+                        seen_dead.add(t.name)
+                        log.error(f"[supervisor] thread {t.name} has died")
+                        try:
+                            report_event(
+                                "thread_died",
+                                f"Background thread {t.name} terminated unexpectedly",
+                                severity="error",
+                            )
+                        except Exception:
+                            pass
+            except Exception as e:
+                log.debug(f"[supervisor] check error: {e}")
+            time.sleep(30)
+
+    sup_thread = threading.Thread(
+        target=_thread_supervisor, daemon=True, name="DC1-Supervisor"
+    )
+    sup_thread.start()
+
     # Step 8: Initialize multi-GPU job slots
     log.info("Initializing GPU job slots...")
     init_gpu_slots()
