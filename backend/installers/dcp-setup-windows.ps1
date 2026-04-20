@@ -1,4 +1,4 @@
-# DCP Provider Setup v4.0.0-alpha.2 — Windows
+# DCP Provider Setup v4.1.0 — Windows
 # Downloads and installs the DC1 daemon + Docker Desktop + NVIDIA Container Toolkit.
 #
 # Usage:
@@ -12,7 +12,7 @@ $INSTALL_DIR = "$env:LOCALAPPDATA\DCPProvider"
 $LOG_DIR = "$env:USERPROFILE\dcp-provider\logs"
 
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  DCP Provider Setup v4.0.0-alpha.2 (Windows)" -ForegroundColor Cyan
+Write-Host "  DCP Provider Setup v4.1.0 (Windows)" -ForegroundColor Cyan
 Write-Host "  GPU Compute Marketplace — Saudi Arabia" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
@@ -138,7 +138,7 @@ Write-Host "  Installed to $INSTALL_DIR\dcp_daemon.py"
 $config = @{
     api_key = $DC1_API_KEY
     api_url = $DC1_API_URL
-    daemon_version = "3.3.0"
+    daemon_version = "4.1.0"
     run_mode = "always-on"
     force_bare_metal = $false
 } | ConvertTo-Json
@@ -179,7 +179,7 @@ Start-Sleep -Seconds 3
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  DCP Provider Daemon v4.0.0-alpha.2 — INSTALLED" -ForegroundColor Green
+Write-Host "  DCP Provider Daemon v4.1.0 — INSTALLED" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  Daemon:  $INSTALL_DIR\dcp_daemon.py"
 Write-Host "  Config:  $INSTALL_DIR\config.json"

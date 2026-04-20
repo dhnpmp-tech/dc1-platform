@@ -13,7 +13,7 @@ INSTALL_DIR="/opt/dc1-provider"
 LOG_DIR="$HOME/dc1-provider/logs"
 
 echo "============================================"
-echo "  DCP Provider Setup v3.3.0"
+echo "  DCP Provider Setup v4.1.0"
 echo "  GPU Compute Marketplace — Saudi Arabia"
 echo "============================================"
 echo ""
@@ -167,7 +167,7 @@ cat > "${INSTALL_DIR}/config.json" << CONF
 {
   "api_key": "${DC1_API_KEY}",
   "api_url": "${DC1_API_URL}",
-  "daemon_version": "3.3.0",
+  "daemon_version": "4.1.0",
   "run_mode": "always-on",
   "force_bare_metal": false
 }
@@ -235,7 +235,7 @@ fi
 sleep 3
 echo ""
 echo "============================================"
-echo "  DCP Provider Daemon v3.3.0 — INSTALLED"
+echo "  DCP Provider Daemon v4.1.0 — INSTALLED"
 echo "============================================"
 echo "  Daemon:  ${INSTALL_DIR}/dcp_daemon.py"
 echo "  Config:  ${INSTALL_DIR}/config.json"
