@@ -2226,41 +2226,82 @@ def get_turboquant_config():
 # KV-cache geometry: num_layers, hidden_size per model family.
 # Sources: official HF config.json files verified against the model cards.
 MODEL_GEOMETRY_TABLE = {
-    "qwen3-30b-a3b":     {"num_layers": 48, "hidden_size": 2048, "size_gb": 18.0},
-    "qwen3.5-35b-a3b":   {"num_layers": 48, "hidden_size": 2560, "size_gb": 22.0},
-    "nemotron-nano-30b-a3b": {"num_layers": 48, "hidden_size": 2048, "size_gb": 18.0},
-    "gemma-4-26b-a4b":   {"num_layers": 46, "hidden_size": 3584, "size_gb": 16.0},
-    "qwen2.5-32b":       {"num_layers": 64, "hidden_size": 5120, "size_gb": 20.0},
-    "llama-3.3-70b":     {"num_layers": 80, "hidden_size": 8192, "size_gb": 42.0},
-    "qwen2.5-14b":       {"num_layers": 48, "hidden_size": 5120, "size_gb": 9.0},
-    "qwen2.5-7b":        {"num_layers": 28, "hidden_size": 3584, "size_gb": 4.7},
-    "llama-3.1-8b":      {"num_layers": 32, "hidden_size": 4096, "size_gb": 5.0},
-    "glm4-9b":           {"num_layers": 40, "hidden_size": 4096, "size_gb": 5.8},
-    "mistral-7b":        {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5},
-    "allam-7b":          {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5},
-    "jais-13b":          {"num_layers": 40, "hidden_size": 5120, "size_gb": 8.0},
-    "falcon-h1-7b":      {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5},
+    "qwen3-30b-a3b":         {"num_layers": 48, "hidden_size": 2048, "size_gb": 18.0, "kv_cache_per_1k_gb": 0.40},
+    "qwen3.5-35b-a3b":       {"num_layers": 48, "hidden_size": 2560, "size_gb": 22.0, "kv_cache_per_1k_gb": 0.50},
+    "nemotron-nano-30b-a3b": {"num_layers": 48, "hidden_size": 2048, "size_gb": 18.0, "kv_cache_per_1k_gb": 0.40},
+    "gemma-4-26b-a4b":       {"num_layers": 46, "hidden_size": 3584, "size_gb": 16.0, "kv_cache_per_1k_gb": 0.66},
+    "qwen2.5-32b":           {"num_layers": 64, "hidden_size": 5120, "size_gb": 20.0, "kv_cache_per_1k_gb": 1.31},
+    "llama-3.3-70b":         {"num_layers": 80, "hidden_size": 8192, "size_gb": 42.0, "kv_cache_per_1k_gb": 2.62},
+    "qwen2.5-14b":           {"num_layers": 48, "hidden_size": 5120, "size_gb": 9.0,  "kv_cache_per_1k_gb": 0.98},
+    "qwen2.5-7b":            {"num_layers": 28, "hidden_size": 3584, "size_gb": 4.7,  "kv_cache_per_1k_gb": 0.40},
+    "llama-3.1-8b":          {"num_layers": 32, "hidden_size": 4096, "size_gb": 5.0,  "kv_cache_per_1k_gb": 0.52},
+    "glm4-9b":               {"num_layers": 40, "hidden_size": 4096, "size_gb": 5.8,  "kv_cache_per_1k_gb": 0.65},
+    "mistral-7b":            {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5,  "kv_cache_per_1k_gb": 0.52},
+    "allam-7b":              {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5,  "kv_cache_per_1k_gb": 0.52},
+    "jais-13b":              {"num_layers": 40, "hidden_size": 5120, "size_gb": 8.0,  "kv_cache_per_1k_gb": 0.82},
+    "falcon-h1-7b":          {"num_layers": 32, "hidden_size": 4096, "size_gb": 4.5,  "kv_cache_per_1k_gb": 0.26},
 }
 
 # Architecture table: MoE vs dense with verified parameter counts (billions).
 # Total = nominal parameter count; Active = per-token active params for MoE.
 MODEL_ARCH_TABLE = {
-    "qwen3-30b-a3b":     {"type": "moe",   "total_params_b": 30.0, "active_params_b": 3.0},
-    "qwen3.5-35b-a3b":   {"type": "moe",   "total_params_b": 35.0, "active_params_b": 3.0},
-    "nemotron-nano-30b-a3b": {"type": "moe", "total_params_b": 30.0, "active_params_b": 3.0},
-    "gemma-4-26b-a4b":   {"type": "moe",   "total_params_b": 26.0, "active_params_b": 4.0},
-    "qwen2.5-32b":       {"type": "dense", "total_params_b": 32.0, "active_params_b": 32.0},
-    "llama-3.3-70b":     {"type": "dense", "total_params_b": 70.0, "active_params_b": 70.0},
-    "qwen2.5-14b":       {"type": "dense", "total_params_b": 14.0, "active_params_b": 14.0},
-    "qwen2.5-7b":        {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
-    "llama-3.1-8b":      {"type": "dense", "total_params_b": 8.0,  "active_params_b": 8.0},
-    "glm4-9b":           {"type": "dense", "total_params_b": 9.0,  "active_params_b": 9.0},
-    "mistral-7b":        {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
-    "allam-7b":          {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
-    "jais-13b":          {"type": "dense", "total_params_b": 13.0, "active_params_b": 13.0},
+    "qwen3-30b-a3b":         {"type": "moe",   "total_params_b": 30.0, "active_params_b": 3.0,  "category": "flagship_moe_24gb",   "default_ctx_risk": "safe"},
+    "qwen3.5-35b-a3b":       {"type": "moe",   "total_params_b": 35.0, "active_params_b": 3.0,  "category": "flagship_moe_32gb",   "default_ctx_risk": "safe"},
+    "nemotron-nano-30b-a3b": {"type": "moe",   "total_params_b": 30.0, "active_params_b": 3.0,  "category": "flagship_moe_24gb",   "default_ctx_risk": "safe"},
+    "gemma-4-26b-a4b":       {"type": "moe",   "total_params_b": 26.0, "active_params_b": 4.0,  "category": "small_moe",           "default_ctx_risk": "safe"},
+    "qwen2.5-32b":           {"type": "dense", "total_params_b": 32.0, "active_params_b": 32.0, "category": "dense_workhorse",     "default_ctx_risk": "safe"},
+    "llama-3.3-70b":         {"type": "dense", "total_params_b": 70.0, "active_params_b": 70.0, "category": "dense_70b_tight_fit", "default_ctx_risk": "cpu_offload_risk"},
+    "qwen2.5-14b":           {"type": "dense", "total_params_b": 14.0, "active_params_b": 14.0, "category": "small_efficient",     "default_ctx_risk": "safe"},
+    "qwen2.5-7b":            {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0,  "category": "small_efficient",     "default_ctx_risk": "safe"},
+    "llama-3.1-8b":          {"type": "dense", "total_params_b": 8.0,  "active_params_b": 8.0,  "category": "small_efficient",     "default_ctx_risk": "safe"},
+    "glm4-9b":               {"type": "dense", "total_params_b": 9.0,  "active_params_b": 9.0,  "category": "small_efficient",     "default_ctx_risk": "safe"},
+    "mistral-7b":            {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0,  "category": "small_efficient",     "default_ctx_risk": "safe"},
+    "allam-7b":              {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0,  "category": "small_efficient",     "default_ctx_risk": "safe"},
+    "jais-13b":              {"type": "dense", "total_params_b": 13.0, "active_params_b": 13.0, "category": "small_efficient",     "default_ctx_risk": "safe"},
     # Falcon H1 is technically a hybrid SSM/attention model. Mark as dense
     # for now; revisit once we have a dedicated hybrid code path.
-    "falcon-h1-7b":      {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0},
+    "falcon-h1-7b":          {"type": "dense", "total_params_b": 7.0,  "active_params_b": 7.0,  "category": "small_efficient",     "default_ctx_risk": "safe"},
+}
+
+# ─── v4.1.0 Feature 1: MODEL MARKET DATA TABLE ─────────────────────
+#
+# Policy-driven fields kept separate from intrinsic arch/geometry so that
+# pricing/benchmark updates do not touch model physics tables. OpenRouter
+# prices as of 2026-04 (USD per million tokens, output-weighted estimate).
+# verified_speeds are real measurements from testing logs (see
+# docs/superpowers/plans/2026-04-20-daemon-v4.1.0-features.md).
+MODEL_MARKET_DATA = {
+    "qwen3-30b-a3b": {
+        "openrouter_price_per_m_usd": 0.20,
+        "verified_speeds": {
+            "RTX 4090 vLLM": 197,
+            "RTX 4090 Ollama": 168,
+            "RTX 3090 vLLM": 176,
+            "RTX 5090 Ollama": 182,
+        },
+    },
+    "qwen3.5-35b-a3b": {
+        "openrouter_price_per_m_usd": None,
+        "verified_speeds": {"RTX 5090 Ollama": 123},
+    },
+    "qwen2.5-32b": {
+        "openrouter_price_per_m_usd": 0.90,
+        "verified_speeds": {"RTX A40 Ollama": 25},
+    },
+    "llama-3.3-70b": {
+        "openrouter_price_per_m_usd": 0.40,
+        "verified_speeds": {"RTX A6000 Ollama 8k": 16.9},
+    },
+    "gemma-4-26b-a4b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "nemotron-nano-30b-a3b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "qwen2.5-14b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "qwen2.5-7b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "llama-3.1-8b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "glm4-9b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "mistral-7b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "allam-7b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "jais-13b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
+    "falcon-h1-7b": {"openrouter_price_per_m_usd": None, "verified_speeds": {}},
 }
 
 # ─── v4.0.3 (Phase 1.5 / Fix B): GPU MEMORY BANDWIDTH TABLE ─────────
