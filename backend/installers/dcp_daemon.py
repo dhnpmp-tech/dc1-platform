@@ -2083,9 +2083,28 @@ def restart_engine(engine_type):
                 log.debug(f"[watchdog] pkill ollama failed: {e}")
             time.sleep(2)
             try:
+                env = {**os.environ, "OLLAMA_HOST": "0.0.0.0:11434", "OLLAMA_FLASH_ATTENTION": "1"}
+                # v4.1.0 Feature 2: inject safe context for any primary model we recognize.
+                # When multiple models are served, pick the most restrictive (smallest safe ctx).
+                try:
+                    served_info = detect_served_models()
+                    served = served_info.get("models", []) if isinstance(served_info, dict) else []
+                    gpu_vram_gb = _detect_total_vram_gb()
+                    if served and gpu_vram_gb:
+                        safe_ctxes = [
+                            calculate_safe_context(_canonical_model_id(m), gpu_vram_gb)
+                            for m in served
+                        ]
+                        if safe_ctxes:
+                            chosen = min(safe_ctxes)
+                            env["OLLAMA_NUM_CTX"] = str(chosen)
+                            log.info(f"[ctx] OLLAMA_NUM_CTX={chosen} (safe for {len(served)} models on {gpu_vram_gb:.1f}GB)")
+                except Exception as _ctx_err:
+                    log.debug(f"safe-context injection failed: {_ctx_err}")
+
                 subprocess.Popen(
                     ["ollama", "serve"],
-                    env={**os.environ, "OLLAMA_HOST": "0.0.0.0:11434", "OLLAMA_FLASH_ATTENTION": "1"},
+                    env=env,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -2361,6 +2380,73 @@ def predicted_peak_tok_s(gpu_name, model_size_gb):
     if not bw:
         return None
     return float(bw) / size
+
+
+# v4.1.0 Feature 2: Smart Context Window Calculation
+#
+# Pick the largest context window that fits in (total_vram - model_size - overhead).
+# Silently letting Ollama default to 131K on a 70B/48GB box causes CPU offload
+# and 30x throughput collapse (Round 4 finding: 0.6 tok/s vs 17 tok/s).
+CONTEXT_OVERHEAD_GB = 2.0  # CUDA context, KV cache allocator padding, activations
+CONTEXT_LADDER = [131072, 65536, 32768, 16384, 8192, 4096, 2048]
+
+
+def calculate_safe_context(model_id, total_vram_gb):
+    """Return the largest power-of-two context window that fits in VRAM.
+
+    Returns 4096 for unknown models (safe universal default) and 2048
+    when the model itself barely fits (hard floor).
+    """
+    geo = MODEL_GEOMETRY_TABLE.get(model_id)
+    if not geo:
+        return 4096
+    try:
+        vram = float(total_vram_gb)
+    except (TypeError, ValueError):
+        return 4096
+
+    model_size = float(geo.get("size_gb", 0))
+    kv_per_1k = float(geo.get("kv_cache_per_1k_gb", 0.5))  # conservative fallback
+    if kv_per_1k <= 0:
+        return 4096
+
+    free_for_kv = vram - model_size - CONTEXT_OVERHEAD_GB
+    if free_for_kv <= 0:
+        return 2048  # hard floor; model barely fits, accept tiny context
+
+    max_tokens = int((free_for_kv / kv_per_1k) * 1024)
+    for ctx in CONTEXT_LADDER:
+        if max_tokens >= ctx:
+            return ctx
+    return 2048
+
+
+def _detect_total_vram_gb():
+    """Return total VRAM in GB across all visible GPUs, or None if unknown."""
+    try:
+        gpu = detect_gpu()  # returns flat dict; 'gpu_vram_mib' is the key
+        mib = gpu.get("gpu_vram_mib") or 0
+        return float(mib) / 1024.0 if mib else None
+    except Exception:
+        return None
+
+
+def _canonical_model_id(served_name):
+    """Map a served model name (Ollama tag or HF id) to MODEL_GEOMETRY_TABLE key."""
+    if not served_name:
+        return served_name
+    if served_name in MODEL_GEOMETRY_TABLE:
+        return served_name
+    low = served_name.lower()
+    for key, ident in MODEL_IDENTITY_TABLE.items():
+        if ident.get("ollama", "").lower() == low:
+            return key
+        if ident.get("canonical", "").lower() == low:
+            return key
+        for var in ident.get("vllm_variants", []) + ident.get("hf_formats", []):
+            if var.lower() == low:
+                return key
+    return served_name  # unchanged — calculate_safe_context will hit its fallback
 
 
 # ─── v4.0.3 (Phase 1.5 / Fix C): DUAL-IDENTITY MODEL TABLE ──────────
@@ -2700,8 +2786,8 @@ def detect_kv_cache_bits(engine_type, turboquant_enabled):
     return 16
 
 
-def calculate_safe_context(model_size_gb, quant_bits, gpu_vram_gb, model_architecture,
-                           model_id=None):
+def _calculate_safe_context_v1(model_size_gb, quant_bits, gpu_vram_gb, model_architecture,
+                               model_id=None):
     """Compute a KV-cache-safe context length that stays in VRAM.
 
     Formula:
@@ -5520,7 +5606,7 @@ def main():
                 _engine_for_kv = "unknown"
             quant_bits = detect_kv_cache_bits(_engine_for_kv, bool(tq_cfg.get("enabled", False)))
 
-            safe_ctx = calculate_safe_context(
+            safe_ctx = _calculate_safe_context_v1(
                 model_size_gb=model_size_gb,
                 quant_bits=quant_bits,
                 gpu_vram_gb=total_vram_gb,
