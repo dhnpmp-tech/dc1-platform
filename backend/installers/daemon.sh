@@ -193,7 +193,7 @@ LOGS="$PROVIDER_DIR/logs/daemon.log"
 log_msg() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOGS"; }
 
 send_heartbeat() {
-    DAEMON_VERSION="1.1.0"
+    DAEMON_VERSION="4.1.0"
     OS_INFO="$(uname -s) $(uname -r)"
     PYTHON_VER="$(python3 --version 2>&1 | awk '{print $2}' 2>/dev/null || echo 'N/A')"
 
