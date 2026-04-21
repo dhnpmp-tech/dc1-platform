@@ -48,8 +48,8 @@ PM2 service: `dc1-provider-onboarding` on port 8083.
 
 **Pre-flight (read-only, safe to run):**
 ```bash
-ssh node@76.13.179.86
-cd /home/node/dc1-platform
+ssh root@76.13.179.86
+cd /root/dc1-platform
 git fetch origin
 git log --oneline HEAD..origin/main | head -20     # review incoming commits
 pm2 describe dc1-provider-onboarding | grep -E 'status|uptime'
@@ -58,10 +58,11 @@ pm2 describe dc1-provider-onboarding | grep -E 'status|uptime'
 **Deploy steps (require founder approval before running):**
 ```bash
 # 1. Pull merged work
-cd /home/node/dc1-platform
+cd /root/dc1-platform
 git pull origin main
 
 # 2. Install any new backend deps (no new ones expected, verify)
+#    (skip if `git diff HEAD@{1} HEAD -- backend/package.json` shows no change)
 cd backend
 npm ci --omit=dev
 
@@ -73,14 +74,14 @@ npm ci --omit=dev
 pm2 reload dc1-provider-onboarding
 
 # 5. Verify
-curl -sS http://localhost:8083/health
-curl -sS https://api.dcp.sa/v1/models | jq '.models | length'
+curl -sS http://localhost:8083/api/health
+curl -sS https://api.dcp.sa/v1/models | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('data',[])))"
 ```
 
 **Verify after reload:**
-- `GET https://api.dcp.sa/v1/models` → 200, deduped aliases
-- `POST https://api.dcp.sa/v1/auth/register {"email":"test@example.com"}` → 200 + magic-link sent
-- `GET https://api.dcp.sa/v1/provider/eligibility` with valid key → 200
+- `GET https://api.dcp.sa/v1/models` → 200, deduped aliases (≥27 models)
+- `POST https://api.dcp.sa/v1/auth/register {"email":"…"}` → **202** Accepted + magic-link sent
+- `GET https://api.dcp.sa/v1/provider/eligibility` without key → 401
 - PM2 log tail shows no startup errors: `pm2 logs dc1-provider-onboarding --lines 50 --nostream`
 
 ---
@@ -91,7 +92,7 @@ If any verification fails:
 
 ```bash
 # Roll backend back to pre-deploy tip
-cd /home/node/dc1-platform
+cd /root/dc1-platform
 git log --oneline -10        # find the pre-deploy SHA (before this pull)
 git checkout <pre-deploy-sha> -- backend/
 pm2 reload dc1-provider-onboarding
