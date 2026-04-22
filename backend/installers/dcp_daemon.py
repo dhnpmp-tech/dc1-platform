@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DCP Provider Daemon v4.0.3 — GPU Compute Marketplace
+DCP Provider Daemon v4.1.0 — GPU Compute Marketplace
 Runs as a background service on provider machines.
 
 Features:
@@ -33,6 +33,16 @@ Features:
       E. Account runway hours best-effort self-report
       F. Port-mismatch auto-detect + socat forwarder auto-install
       G. Daemon code hash for version-skew detection across the fleet
+  - v4.1.0 (Phase 2): Reliability + onboarding bundle:
+      - Extended model capability tables + smart context window calc
+      - MoE/dense model_details in heartbeat
+      - Apple Silicon unified-memory bandwidth table
+      - Provider tier classification + driver compatibility warnings
+      - 429-aware heartbeat backoff + http_post widening
+      - vLLM/llama.cpp restart watchdog (supervised with Restart=always)
+      - Pre-flight gate + link-level remediation
+      - Claim-token handshake for fresh installs
+      - Six-step web wizard at /setup + v1 API surface
 
 Usage:
   python3 dcp_daemon.py                    # Uses injected key
@@ -75,7 +85,7 @@ HEARTBEAT_BACKOFF_BASE = 2.0         # double each consecutive failure
 JOB_POLL_INTERVAL = 10    # seconds
 JOB_POLL_JITTER_PCT = 0.10           # ±10% jitter on poll sleep
 UPDATE_CHECK_JITTER_PCT = 0.20       # ±20% jitter on update-check sleep
-DAEMON_VERSION = "4.0.3"
+DAEMON_VERSION = "4.1.0"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
