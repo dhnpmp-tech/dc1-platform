@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const API_BASE = (process.env.DCP_API_BASE || process.env.API_BASE || 'http://76.13.179.86:8083/api').replace(/\/$/, '');
+const API_BASE = (process.env.DCP_API_BASE || process.env.API_BASE || 'https://api.dcp.sa/api').replace(/\/$/, '');
 const PROVIDER_KEY = process.env.DCP_PROVIDER_KEY || process.env.PROVIDER_KEY || '';
 const RENTER_KEY = process.env.DCP_RENTER_KEY || process.env.RENTER_KEY || '';
 const POLL_INTERVAL_MS = Number.parseInt(process.env.DCP_SMOKE_POLL_MS || '3000', 10);

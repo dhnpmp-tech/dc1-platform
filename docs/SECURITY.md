@@ -17,7 +17,7 @@ DCP (Decentralized Compute Platform) is built on principles of transparency, tru
 DCP complies with Saudi Arabia's **Personal Data Protection Law (PDPL)** and related data residency requirements. Your data never leaves Saudi Arabia.
 
 ### Data Location
-- **All inference jobs:** Execute on Saudi-hosted infrastructure (VPS: 76.13.179.86)
+- **All inference jobs:** Execute on Saudi-hosted infrastructure
 - **All model weights:** Stored in Saudi Arabia (no cross-border transfer)
 - **Job logs and metadata:** Retained in Saudi Arabia
 - **Billing and transaction data:** Stored on smart contract escrow (verifiable, immutable)

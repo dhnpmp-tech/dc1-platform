@@ -573,12 +573,12 @@ Six models ready for commercial launch. All serve OpenAI-compatible API via vLLM
 ### DCP-308 — Launch Gate Checklist (in_progress → BLOCKED on operator)
 
 **What it needs:**
-1. **HTTPS/TLS proof** — run `certbot --nginx -d api.dcp.sa` on VPS 76.13.179.86. Evidence: `curl -I https://api.dcp.sa` returning 200 with valid TLS cert.
+1. **HTTPS/TLS proof** — run `certbot --nginx -d api.dcp.sa` on VPS api.dcp.sa. Evidence: `curl -I https://api.dcp.sa` returning 200 with valid TLS cert.
 2. **Step 2 evidence bundle** — PM2 env export, certbot certificate files, nginx config snapshot. Post as artifacts to DCP-308.
 3. **Step 3 deployment artifacts** — ordered deployment command outputs: `pm2 start`, `pm2 status`, health check responses.
 4. **Step 4 post-deploy verification** — full API smoke test output: auth, job submit, provider list, marketplace.
 
-**Unblock owner:** Board/operator. SSH to `76.13.179.86`, run certbot, post evidence.
+**Unblock owner:** Board/operator. SSH to `api.dcp.sa`, run certbot, post evidence.
 
 ### DCP-523 — Sprint Governance (blocked, waiting on DCP-308)
 
@@ -630,7 +630,7 @@ The following Sprint 25 issues should be created immediately from Part 4:
 
 ```
 TODAY
-  └── Operator: run certbot on 76.13.179.86 → DCP-308 Step 2 evidence
+  └── Operator: run certbot on api.dcp.sa → DCP-308 Step 2 evidence
        └── DCP-524 unblocked → engineering confirms service health
             └── DCP-308 reaches DONE → DCP-523 issues GO
                  └── Sprint 25 Phase 1 starts

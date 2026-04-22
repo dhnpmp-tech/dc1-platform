@@ -18,7 +18,7 @@ import type {
 // MC_API_URL must be supplied via env — no hardcoded production IP in the repo.
 // Empty default fails fast at first call instead of silently routing traffic.
 const MC_BASE = process.env['MC_API_URL'] ?? '';
-const MC_TOKEN = process.env['MC_TOKEN'] ?? 'dc1-mc-gate0-2026';
+const MC_TOKEN = process.env['MC_TOKEN'] ?? '';
 const AGENT_NAME = 'VOLT-DOCKER';
 const DEFAULT_PIDS_LIMIT = Number(process.env['DC1_CONTAINER_PIDS_LIMIT'] ?? 256);
 const DEFAULT_TMPFS_SIZE = process.env['DC1_CONTAINER_TMPFS_SIZE'] ?? '1g';

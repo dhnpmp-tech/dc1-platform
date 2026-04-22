@@ -10,8 +10,8 @@ interface PingResult {
 
 const SERVICE_URLS: Record<string, string> = {
   Vercel: 'https://dc1-platform.vercel.app',
-  Supabase: 'https://fvvxqp-qqjszv6vweybvjfpc.supabase.co',
-  'Mission Control': `${process.env.MC_API_URL || 'http://76.13.179.86:8084'}/api/tasks`,
+  Supabase: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://supabase.com',
+  'Mission Control': `${process.env.MC_API_URL || 'https://mc.dcp.sa'}/api/tasks`,
   'GitHub API': 'https://api.github.com',
 };
 

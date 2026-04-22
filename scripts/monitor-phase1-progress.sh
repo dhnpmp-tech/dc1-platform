@@ -40,7 +40,7 @@ fi
 
 # Check if bootstrap is running (if we have SSH access)
 if command -v ssh &> /dev/null 2>&1; then
-  BOOTSTRAP_STATUS=$(ssh root@76.13.179.86 "pm2 status 2>/dev/null | grep dc1-p2p-bootstrap" 2>/dev/null | grep -c "online" || echo "0")
+  BOOTSTRAP_STATUS=$(ssh root@api.dcp.sa "pm2 status 2>/dev/null | grep dc1-p2p-bootstrap" 2>/dev/null | grep -c "online" || echo "0")
   if [ "$BOOTSTRAP_STATUS" -gt "0" ]; then
     echo "   Direct check: Bootstrap node is running on VPS ✓"
   fi

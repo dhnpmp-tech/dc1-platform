@@ -21,8 +21,8 @@ from .models import (
 
 logger = logging.getLogger("dc1.failover.controller")
 
-MC_API = os.getenv("MC_API_URL", "http://76.13.179.86:8084/api")
-MC_TOKEN = os.getenv("MC_API_TOKEN", "dc1-mc-gate0-2026")
+MC_API = os.getenv("MC_API_URL", "https://mc.dcp.sa/api")
+MC_TOKEN = os.getenv("MC_API_TOKEN", "YOUR_MC_API_TOKEN")
 SSH_TIMEOUT = 5  # seconds
 THERMAL_THRESHOLD = 80  # °C
 STALL_THRESHOLD_MIN = 30

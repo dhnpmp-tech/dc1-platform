@@ -24,8 +24,8 @@ from .models import RecoveryContext, RecoveryState
 
 logger = logging.getLogger("dc1.failover.recovery")
 
-MC_API = os.getenv("MC_API_URL", "http://76.13.179.86:8084/api")
-MC_TOKEN = os.getenv("MC_API_TOKEN", "dc1-mc-gate0-2026")
+MC_API = os.getenv("MC_API_URL", "https://mc.dcp.sa/api")
+MC_TOKEN = os.getenv("MC_API_TOKEN", "YOUR_MC_API_TOKEN")
 TELEGRAM_GROUP = os.getenv("DC1_TELEGRAM_GROUP", "-5275672778")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 ESCALATION_TIMEOUT_S = 600  # 10 minutes

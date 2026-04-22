@@ -61,3 +61,36 @@ backend/public/dcp-provider-setup.*
 
 # TypeScript incremental build cache (root tsconfig)
 dist/tsconfig.tsbuildinfo
+
+# Claude agent sandboxes (local worktrees, never commit)
+.claude/worktrees/
+.claude/logs/
+
+# Databases — never commit real or local SQLite files
+*.db
+*.sqlite
+*.sqlite-journal
+backend/database.sqlite
+backend/dc1.db
+
+# Internal docs — these live in dc1-platform-internal (private repo), not here
+CLAUDE.md
+AGENT_LOG.md
+AGENTS.md
+*AGENT-BRIEFING.md
+*-HANDOVER.md
+PAPERCLIP-*.md
+FOUNDER-STRATEGIC-BRIEF.md
+
+# Phase/sprint/status reports — use GitHub Issues, not committed markdown
+PHASE*.md
+SPRINT*.md
+DEVOPS-*.md
+DEPLOY-REQUEST-*.md
+DEPLOY_REQUEST_*.md
+CRITICAL-DCP-*.md
+COPYWRITER-SPRINT*.md
+2026-*-cost-report.md
+2026-*-deployment-status.md
+2026-*-sprint-report.md
+2026-*-next-sprint-plan.md

@@ -5,7 +5,7 @@
 # Run on the provider's machine to auto-detect GPU specs and register with DC1.
 #
 # Usage:
-#   bash <(curl -s "http://76.13.179.86:8083/providers/setup?key=YOUR_API_KEY")
+#   bash <(curl -s "https://api.dcp.sa/providers/setup?key=YOUR_API_KEY")
 #   -- or --
 #   bash daemon.sh YOUR_API_KEY
 # =============================================================================
@@ -14,9 +14,9 @@ set -euo pipefail
 
 # --- Injected or provided API key ---
 DC1_API_KEY="${1:-}"
-DC1_API_BASE="${DC1_API_BASE:-http://76.13.179.86:8083}"
-DC1_MC_BASE="${DC1_MC_BASE:-http://76.13.179.86:8084/api}"
-DC1_MC_TOKEN="${DC1_MC_TOKEN:-dc1-mc-gate0-2026}"
+DC1_API_BASE="${DC1_API_BASE:-https://api.dcp.sa}"
+DC1_MC_BASE="${DC1_MC_BASE:-https://mc.dcp.sa/api}"
+DC1_MC_TOKEN="${DC1_MC_TOKEN:-YOUR_MC_API_TOKEN}"
 AGENT_PORT="${AGENT_PORT:-8085}"
 
 # --- Colors ---
@@ -223,6 +223,6 @@ echo "  VRAM:        ${GPU_MEM_MIB} MiB"
 echo "  Provider ID: ${PROVIDER_ID}"
 echo "  Status:      ONLINE"
 echo ""
-echo "  Dashboard:   http://76.13.179.86:8084/kanban.html"
+echo "  Dashboard:   https://mc.dcp.sa/kanban.html"
 echo "  Support:     support@dc1st.com"
 echo -e "================================================${NC}\n"

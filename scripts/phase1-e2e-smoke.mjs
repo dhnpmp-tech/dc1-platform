@@ -11,7 +11,7 @@
  *   node scripts/phase1-e2e-smoke.mjs
  */
 
-const API_BASE = (process.env.DCP_API_BASE || 'http://76.13.179.86:8083/api').replace(/\/$/, '');
+const API_BASE = (process.env.DCP_API_BASE || 'https://api.dcp.sa/api').replace(/\/$/, '');
 const ADMIN_TOKEN = process.env.DC1_ADMIN_TOKEN || '';
 
 const checks = [];

@@ -14,7 +14,7 @@
  *   3 = Metering/database verification failed
  */
 
-const API_BASE = (process.env.DCP_API_BASE || process.env.API_BASE || 'http://76.13.179.86:8083/api').replace(/\/$/, '');
+const API_BASE = (process.env.DCP_API_BASE || process.env.API_BASE || 'https://api.dcp.sa/api').replace(/\/$/, '');
 const RENTER_KEY = process.env.DCP_RENTER_KEY || process.env.RENTER_KEY || '';
 const ADMIN_TOKEN = process.env.DC1_ADMIN_TOKEN || '';
 const DRY_RUN = process.argv.includes('--dry-run');

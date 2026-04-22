@@ -29,8 +29,8 @@ class Config:
     latency_alert_ms: int = int(os.getenv("LATENCY_ALERT_MS", "2000"))
 
     # Mission Control API
-    mc_api_base: str = os.getenv("MC_API_BASE", "http://76.13.179.86:8084/api")
-    mc_api_token: str = os.getenv("MC_API_TOKEN", "dc1-mc-gate0-2026")
+    mc_api_base: str = os.getenv("MC_API_BASE", "https://mc.dcp.sa/api")
+    mc_api_token: str = os.getenv("MC_API_TOKEN", "YOUR_MC_API_TOKEN")
 
     # Telegram alerts
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")

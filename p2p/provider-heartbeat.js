@@ -9,7 +9,7 @@
  *   node provider-heartbeat.js --peer-id <id> --metrics '{"cpu":45,"memory":60,"gpu":80}' --status healthy
  *
  * Environment:
- *   DCP_P2P_BOOTSTRAP: Bootstrap multiaddr (e.g., /ip4/76.13.179.86/tcp/4001/p2p/...)
+ *   DCP_P2P_BOOTSTRAP: Bootstrap multiaddr (e.g., /ip4/api.dcp.sa/tcp/4001/p2p/...)
  *   P2P_DISCOVERY_ENABLED: Enable P2P announcements (default: false)
  */
 

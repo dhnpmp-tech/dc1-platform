@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 FRONTEND_BASE="https://dcp.sa"
-API_BASE="http://76.13.179.86:8083/api"
+API_BASE="https://api.dcp.sa/api"
 CURL_TIMEOUT=20
 
 pass_count=0

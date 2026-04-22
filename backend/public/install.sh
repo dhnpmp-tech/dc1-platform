@@ -275,7 +275,7 @@ Address = ${wg_ip}/24
 
 [Peer]
 PublicKey = ${wg_server_pubkey}
-Endpoint = ${wg_endpoint:-76.13.179.86:51820}
+Endpoint = ${wg_endpoint:-vpn.dcp.sa:51820}
 AllowedIPs = 10.0.0.0/24
 PersistentKeepalive = 25
 WGCONF

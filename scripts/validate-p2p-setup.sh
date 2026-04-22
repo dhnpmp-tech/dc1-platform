@@ -25,7 +25,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 API_BASE="${API_BASE:-https://api.dcp.sa}"
-BOOTSTRAP_ADDR="${BOOTSTRAP_ADDR:-/ip4/76.13.179.86/tcp/4001}"
+BOOTSTRAP_ADDR="${BOOTSTRAP_ADDR:-/ip4/api.dcp.sa/tcp/4001}"
 DB_PATH="${DB_PATH:-}"
 PROVIDER_KEY="${PROVIDER_KEY:-}"
 

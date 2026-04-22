@@ -11,7 +11,7 @@
  * Execution: Run this script after DCP-612 Phase 1 bootstrap deployment completes
  *
  * Prerequisites:
- * - Bootstrap node deployed on 76.13.179.86:4001 (TCP)
+ * - Bootstrap node deployed on p2p.dcp.sa:4001 (TCP)
  * - At least 1 provider node running with P2P enabled
  * - Backend API accessible at api.dcp.sa or http://localhost:8083
  *
@@ -28,7 +28,7 @@ import { createConnection } from 'net';
 const setTimeout_async = promisify(setTimeout);
 
 const API_BASE = process.env.API_BASE || 'http://localhost:8083';
-const BOOTSTRAP_HOST = process.env.BOOTSTRAP_HOST || '76.13.179.86';
+const BOOTSTRAP_HOST = process.env.BOOTSTRAP_HOST || 'api.dcp.sa';
 const BOOTSTRAP_PORT = process.env.BOOTSTRAP_PORT || 4001;
 const BOOTSTRAP_ADDR = `/ip4/${BOOTSTRAP_HOST}/tcp/${BOOTSTRAP_PORT}`;
 

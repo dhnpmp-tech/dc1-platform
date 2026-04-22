@@ -27,7 +27,7 @@ import {
 // backend infra. Empty default causes explicit startup failure at first call
 // rather than silently routing traffic to a stale host.
 const MC_BASE = process.env['MC_API_URL'] ?? '';
-const MC_TOKEN = process.env['MC_TOKEN'] ?? 'dc1-mc-gate0-2026';
+const MC_TOKEN = process.env['MC_TOKEN'] ?? '';
 const AGENT_NAME = 'VOLT-DOCKER';
 const DEFAULT_MEMORY_LIMIT = 20 * 1024 * 1024 * 1024; // 20 GB
 const DEFAULT_CPU_LIMIT = 8;

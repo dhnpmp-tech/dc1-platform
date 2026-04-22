@@ -279,7 +279,7 @@ If a provider reports TTFT > 20% worse than baseline:
 4. **Check network latency:** Inference requests should complete within model latency
 5. **Measure cold start:** If cold-start degraded, pre-fetch may have failed — rerun `infra/docker/prefetch-models.sh`
 
-Contact: #gpu-providers on Dev Discord, or setup@oida.ae
+Contact: #gpu-providers on Dev Discord, or support@dcp.sa
 
 ---
 

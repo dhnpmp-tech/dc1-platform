@@ -10,7 +10,7 @@ export default function PdplPage() {
       <p className="mt-6 whitespace-pre-line text-dc1-text-secondary">
         {`DCP's Personal Data Protection Law (PDPL) policy is being finalized.
 
-For the current draft or questions about how DCP processes provider data, contact setup@oida.ae.
+For the current draft or questions about how DCP processes provider data, contact support@dcp.sa.
 
 Data we collect during provider onboarding:
 • Full name, phone number, city, country — required by PDPL Article 4 for data-controller obligations

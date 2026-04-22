@@ -15,7 +15,7 @@
  * 4. Benchmarks for all 6 Tier A launch templates
  */
 
-const API_BASE = (process.env.DCP_API_BASE || 'http://76.13.179.86:8083/api').replace(/\/$/, '');
+const API_BASE = (process.env.DCP_API_BASE || 'https://api.dcp.sa/api').replace(/\/$/, '');
 const RENTER_KEY = process.env.DCP_RENTER_KEY || '';
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120000;

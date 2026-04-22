@@ -27,7 +27,7 @@ export function getMcBase(): string {
  * Returns the Mission Control auth token.
  */
 export function getMcToken(): string {
-  return process.env.NEXT_PUBLIC_MC_TOKEN || 'dc1-mc-gate0-2026';
+  return process.env.NEXT_PUBLIC_MC_TOKEN || 'YOUR_MC_API_TOKEN';
 }
 
 /**

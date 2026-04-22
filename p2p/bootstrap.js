@@ -1,7 +1,7 @@
 /**
  * DC1 P2P Bootstrap Node
  *
- * Run on the VPS (76.13.179.86) alongside the Express API.
+ * Run on the VPS (api.dcp.sa) alongside the Express API.
  * Provides a stable, well-known peer address so that newly started
  * provider and renter nodes can find the DHT on first boot.
  *

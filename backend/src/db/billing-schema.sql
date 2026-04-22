@@ -1,5 +1,5 @@
 -- DC1 Billing Engine Schema — Gate 0
--- Run against Supabase project: fvvxqp-qqjszv6vweybvjfpc
+-- Run against your Supabase project (set via SUPABASE_URL)
 
 CREATE TABLE IF NOT EXISTS billing_transactions (
   id UUID PRIMARY KEY,

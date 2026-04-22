@@ -6,7 +6,7 @@ Joins the DC1 P2P mesh via the bootstrap relay, announces GPU capacity,
 bids on incoming job requests, executes accepted jobs, and delivers results
 directly to the renter (P2P) with a relay fallback.
 
-The central VPS API at 76.13.179.86:8083 is NOT involved in job data transfer.
+The central VPS API at api.dcp.sa is NOT involved in job data transfer.
 It is only notified after job completion for billing (optional in Phase C).
 
 Usage:

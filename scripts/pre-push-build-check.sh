@@ -19,7 +19,7 @@ set -euo pipefail
 
 echo "▶ DC1 pre-push: running Next.js build check..."
 
-export BACKEND_URL="${BACKEND_URL:-http://76.13.179.86:8083}"
+export BACKEND_URL="${BACKEND_URL:-https://api.dcp.sa}"
 
 if ! npm run build; then
   echo ""

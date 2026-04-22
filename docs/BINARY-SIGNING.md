@@ -100,7 +100,7 @@ Fingerprint is published in three places: `docs/SECURITY.md`, the DCP landing pa
 ### 4.4 Procurement checklist (founder-only)
 
 - [ ] Decide EV vs OV (recommend EV via SSL.com eSigner)
-- [ ] Open SSL.com account with business email (setup@oida.ae or releases@dcp.sa)
+- [ ] Open SSL.com account with business email (releases@dcp.sa)
 - [ ] Complete D-U-N-S lookup for DCP entity (if organization cert)
 - [ ] Pay for Windows EV (~$349-474/yr depending on vendor)
 - [ ] Enroll in Apple Developer Program — $99/yr

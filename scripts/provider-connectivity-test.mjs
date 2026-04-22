@@ -31,7 +31,7 @@ import { promisify } from 'util'
 const resolveDns = promisify(resolve4)
 
 // Configuration
-const BOOTSTRAP_IP = '76.13.179.86'
+const BOOTSTRAP_IP = 'api.dcp.sa'
 const BOOTSTRAP_PORT = 4001
 const P2P_PORT = parseInt(process.env.DCP_P2P_PORT ?? process.env.DC1_P2P_PORT ?? '4001', 10)
 const TIMEOUT_MS = 5000

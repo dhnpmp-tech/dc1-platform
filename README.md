@@ -37,8 +37,6 @@ The platform is composed of six major layers: a Next.js frontend with role-based
 
 **P2P Discovery** — Decentralized provider discovery via libp2p Kademlia DHT. Providers announce GPU specs to the overlay network; renters query available capacity without relying on a central registry. Currently in phased rollout (centralized bootstrap → full peer-to-peer).
 
-**AI Agent Workforce** — 23+ specialized agent personas (CEO, backend architect, DevOps, security engineer, SRE, etc.) that operate autonomously via Paperclip orchestration — handling code review, deployments, monitoring, and strategic planning.
-
 **Bilingual** — Full English and Arabic support across the dashboard and documentation, including Arabic-optimized LLM model serving.
 
 ## Tech Stack
